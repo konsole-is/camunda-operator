@@ -185,7 +185,9 @@ spec:
   # ... the rest of your cluster
 ```
 
-The connectors pods restart once after the upgrade, and again when you set the block. For an identity without an annotation, such as EKS Pod Identity, bind the new principal `system:serviceaccount:my-cluster-ns:my-cluster-connectors` on the cloud side. See [Workload identity](crds/camundacluster.md#workload-identity).
+The connectors pods restart once after the upgrade, and again when you set the block. A pre-check of the cluster can fail right after the upgrade, for example with `InvalidReference` for a cluster account named `default`. Then the connectors stay on the cluster account until a reconcile passes.
+
+If you pull images from a mirror, the connectors need the pull Secret on their new ServiceAccount: `default`, or the account of `spec.connectors.serviceAccount`. The operator sets no pull Secret on any ServiceAccount. Add it to the `imagePullSecrets` of that account. The operator keeps a pull Secret that you add to an account that it creates. For an identity without an annotation, such as EKS Pod Identity, bind the new principal `system:serviceaccount:my-cluster-ns:my-cluster-connectors` on the cloud side. See [Workload identity](crds/camundacluster.md#workload-identity).
 
 ## Uninstall
 

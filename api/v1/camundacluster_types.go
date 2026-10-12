@@ -251,24 +251,15 @@ type ConnectorsSpec struct {
 	// +optional
 	Version string `json:"version,omitempty"`
 	// ServiceAccount configures the ServiceAccount of the connectors pods.
-	// When unset, the connectors run under the default ServiceAccount of the
-	// namespace. When set, they run under <name>-connectors, or under name.
-	// The connectors never run under the ServiceAccount of the cluster. So
-	// when spec.serviceAccount.name is default, connectors need this block,
-	// or Ready reports InvalidReference. The identities of backupStorageRef
-	// and documentStorageRef never reach them. Only the annotations of this
-	// block go on the account. When they carry
-	// azure.workload.identity/client-id, the connectors pods get the label
-	// azure.workload.identity/use: "true". With create false, the operator
-	// does not read the annotations of the existing account, so add that
-	// label through podLabels yourself. A workload identity without an
-	// annotation binds the principal
-	// system:serviceaccount:<namespace>:<name>-connectors, or the name that
-	// you set. name must differ from the name of the cluster ServiceAccount.
-	// The name default needs create false, so that the account of the
-	// namespace never goes with the cluster. While connectors are not
-	// enabled, the operator does not create or check the account. A preset
-	// can set this block, except name.
+	// When unset, they run under the default ServiceAccount of the namespace.
+	// When set, they run under <cluster name>-connectors, or under name. Only
+	// the annotations of this block go on the account, never the identities
+	// of the buckets. When they carry azure.workload.identity/client-id, the
+	// connectors pods get the label azure.workload.identity/use: "true". The
+	// connectors never run under the cluster ServiceAccount: name must differ
+	// from it, and a spec.serviceAccount.name of default needs this block, or
+	// Ready reports InvalidReference. The name default needs create false. A
+	// preset can set this block, except name.
 	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="connectors.serviceAccount.name default requires create: false"
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
@@ -637,9 +628,8 @@ type CamundaClusterStatus struct {
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 	// ConnectorsServiceAccountName is the ServiceAccount that the connectors
-	// pods run under. It is empty when neither the cluster nor its preset sets
-	// connectors.serviceAccount, and when connectors are not enabled. The connectors then run under the
-	// default account of the namespace, or run no pod.
+	// pods run under. It is empty when neither the cluster nor its preset
+	// sets connectors.serviceAccount, and when connectors are not enabled.
 	// +optional
 	ConnectorsServiceAccountName string `json:"connectorsServiceAccountName,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a

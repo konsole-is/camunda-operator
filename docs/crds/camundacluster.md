@@ -357,7 +357,7 @@ The connectors then run under `my-cluster-connectors`, or under `spec.connectors
 
 When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster.
 
-The connectors account must not have the name of the cluster account. When `spec.serviceAccount.name` is `default`, enabled connectors need `spec.connectors.serviceAccount`, or `Ready` is `False` with reason `InvalidReference`. The API server rejects a spec in which `spec.connectors.serviceAccount.name` equals `spec.serviceAccount.name`. A connectors account named `<name>-camunda` sets `Ready` to `False` with reason `InvalidReference`.
+The connectors account must not have the name of the cluster account. When `spec.serviceAccount.name` is `default`, enabled connectors need `spec.connectors.serviceAccount`, or `Ready` is `False` with reason `InvalidReference`. The API server rejects a spec in which `spec.connectors.serviceAccount.name` equals `spec.serviceAccount.name`. When only one of the two names is set and it equals the derived name of the other account, `Ready` is `False` with reason `InvalidReference`.
 
 ### Azure Workload ID
 

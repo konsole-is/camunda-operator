@@ -3092,24 +3092,15 @@ spec:
                       serviceAccount:
                         description: |-
                           ServiceAccount configures the ServiceAccount of the connectors pods.
-                          When unset, the connectors run under the default ServiceAccount of the
-                          namespace. When set, they run under <name>-connectors, or under name.
-                          The connectors never run under the ServiceAccount of the cluster. So
-                          when spec.serviceAccount.name is default, connectors need this block,
-                          or Ready reports InvalidReference. The identities of backupStorageRef
-                          and documentStorageRef never reach them. Only the annotations of this
-                          block go on the account. When they carry
-                          azure.workload.identity/client-id, the connectors pods get the label
-                          azure.workload.identity/use: "true". With create false, the operator
-                          does not read the annotations of the existing account, so add that
-                          label through podLabels yourself. A workload identity without an
-                          annotation binds the principal
-                          system:serviceaccount:<namespace>:<name>-connectors, or the name that
-                          you set. name must differ from the name of the cluster ServiceAccount.
-                          The name default needs create false, so that the account of the
-                          namespace never goes with the cluster. While connectors are not
-                          enabled, the operator does not create or check the account. A preset
-                          can set this block, except name.
+                          When unset, they run under the default ServiceAccount of the namespace.
+                          When set, they run under <cluster name>-connectors, or under name. Only
+                          the annotations of this block go on the account, never the identities
+                          of the buckets. When they carry azure.workload.identity/client-id, the
+                          connectors pods get the label azure.workload.identity/use: "true". The
+                          connectors never run under the cluster ServiceAccount: name must differ
+                          from it, and a spec.serviceAccount.name of default needs this block, or
+                          Ready reports InvalidReference. The name default needs create false. A
+                          preset can set this block, except name.
                         properties:
                           annotations:
                             additionalProperties:
@@ -3118,12 +3109,11 @@ spec:
                               Annotations to set on the ServiceAccount that the operator creates.
                               Usually these are workload-identity annotations (IRSA, GCP Workload
                               Identity, and more) that give the pods access to cloud resources, such
-                              as the snapshot bucket for backups. When the doc of the field says so,
-                              the operator also adds the identity annotation of each bucket contract
-                              that names an identity. An
-                              annotation set here wins over the operator annotation with the same
-                              key. With create false, the operator sets no annotation. Add them to
-                              the existing ServiceAccount yourself.
+                              as the snapshot bucket for backups. On the spec.serviceAccount of a
+                              CamundaCluster, the operator also adds the identity annotation of each
+                              bucket contract that names an identity. An annotation set here wins
+                              over it. With create false, the operator sets no annotation. Add them
+                              to the existing ServiceAccount yourself.
                             type: object
                           create:
                             description: |-
@@ -5968,12 +5958,11 @@ spec:
                           Annotations to set on the ServiceAccount that the operator creates.
                           Usually these are workload-identity annotations (IRSA, GCP Workload
                           Identity, and more) that give the pods access to cloud resources, such
-                          as the snapshot bucket for backups. When the doc of the field says so,
-                          the operator also adds the identity annotation of each bucket contract
-                          that names an identity. An
-                          annotation set here wins over the operator annotation with the same
-                          key. With create false, the operator sets no annotation. Add them to
-                          the existing ServiceAccount yourself.
+                          as the snapshot bucket for backups. On the spec.serviceAccount of a
+                          CamundaCluster, the operator also adds the identity annotation of each
+                          bucket contract that names an identity. An annotation set here wins
+                          over it. With create false, the operator sets no annotation. Add them
+                          to the existing ServiceAccount yourself.
                         type: object
                       create:
                         description: |-

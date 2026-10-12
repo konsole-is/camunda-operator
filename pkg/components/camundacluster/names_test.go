@@ -278,6 +278,24 @@ func TestCheckConnectorsServiceAccountRefusesTheClusterAccount(t *testing.T) {
 	}
 }
 
+// The message names the field that the user set: here the cluster account
+// takes the derived name of the connectors account.
+func TestCheckConnectorsServiceAccountNamesTheClusterField(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Effective = NewEffective(v1.CamundaClusterSpec{
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "my-cluster-connectors"},
+			Connectors:     &v1.ConnectorsSpec{Enabled: new(true), ServiceAccount: &v1.ServiceAccountSpec{}},
+		})
+	})
+
+	err := CheckConnectorsServiceAccount(in)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `serviceAccount.name "my-cluster-connectors"`)
+	assert.NotContains(t, err.Error(), `connectors.serviceAccount.name "`)
+}
+
 // A cluster account named default is the account that connectors without a
 // block run under, so they would share the cluster identity.
 func TestCheckConnectorsServiceAccountRefusesADefaultClusterAccount(t *testing.T) {

@@ -263,6 +263,14 @@ func CheckConnectorsServiceAccount(in Input) error {
 		return nil
 	}
 
+	if in.Effective.ConnectorsServiceAccount().Name == "" {
+		return fmt.Errorf(
+			"serviceAccount.name %q is the name of the connectors ServiceAccount. "+
+				"Set connectors.serviceAccount.name, or give the cluster another ServiceAccount",
+			name,
+		)
+	}
+
 	return fmt.Errorf(
 		"connectors.serviceAccount.name %q is the ServiceAccount of the cluster. "+
 			"Give the connectors a ServiceAccount of their own",
