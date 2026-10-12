@@ -220,6 +220,8 @@ type ElasticsearchClusterSpec struct {
 	// +optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
 	// PodAnnotations are extra annotations applied to the Elasticsearch pods.
+	// The key camunda.io/service-account-hash belongs to the operator, and a
+	// value for it does not reach the pods.
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 	// Scheduling holds the scheduling constraints of the Elasticsearch pods.

@@ -19,6 +19,7 @@ package elasticsearchcluster
 import (
 	"time"
 
+	esv1 "github.com/elastic/cloud-on-k8s/v3/pkg/apis/elasticsearch/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -26,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/accounthash"
 )
 
 // updateElasticsearchCluster applies mutate to the latest copy of cluster and
@@ -61,6 +63,59 @@ func ownedBy(account *corev1.ServiceAccount, name string) bool {
 	}
 	return false
 }
+
+// nodeTemplate polls until the ECK CR of cluster has a pod template that
+// satisfies match, and returns that template.
+func nodeTemplate(
+	cluster *v1.ElasticsearchCluster,
+	match func(Gomega, *corev1.PodTemplateSpec),
+) corev1.PodTemplateSpec {
+	GinkgoHelper()
+	var template corev1.PodTemplateSpec
+	Eventually(func(g Gomega) {
+		var es esv1.Elasticsearch
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &es)).To(Succeed())
+		g.Expect(es.Spec.NodeSets).NotTo(BeEmpty())
+		template = es.Spec.NodeSets[0].PodTemplate
+		match(g, &template)
+	}, timeout, interval).Should(Succeed())
+	return template
+}
+
+var _ = Describe("ElasticsearchCluster ServiceAccount roll", func() {
+	// Workload identity reads the annotations of the account when a pod
+	// starts, so ECK must restart the nodes when they change.
+	It("rolls the nodes when the account annotations change, and only then", func() {
+		preset := createElasticsearchClusterPreset(smallClusterSpec())
+		cluster := validElasticsearchCluster()
+		cluster.Spec.PresetRef = preset.Name
+		cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{
+			Annotations: map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/old"},
+		}
+		createElasticsearchCluster(cluster)
+		first := nodeTemplate(cluster, func(g Gomega, template *corev1.PodTemplateSpec) {
+			g.Expect(template.Annotations).To(HaveKey(accounthash.Annotation))
+		})
+		hash := first.Annotations[accounthash.Annotation]
+
+		updateElasticsearchCluster(cluster, func(c *v1.ElasticsearchCluster) {
+			c.Spec.ServiceAccount.Annotations[v1.IRSARoleARNAnnotation] = "arn:aws:iam::123456789012:role/new"
+		})
+		changed := nodeTemplate(cluster, func(g Gomega, template *corev1.PodTemplateSpec) {
+			g.Expect(template.Annotations).To(HaveKey(accounthash.Annotation))
+			g.Expect(template.Annotations[accounthash.Annotation]).NotTo(Equal(hash))
+		})
+
+		// The new label proves that the operator applied the edit.
+		updateElasticsearchCluster(cluster, func(c *v1.ElasticsearchCluster) {
+			c.Spec.PodLabels = map[string]string{"team": "platform"}
+		})
+		labeled := nodeTemplate(cluster, func(g Gomega, template *corev1.PodTemplateSpec) {
+			g.Expect(template.Labels).To(HaveKeyWithValue("team", "platform"))
+		})
+		Expect(labeled.Annotations).To(Equal(changed.Annotations))
+	})
+})
 
 var _ = Describe("ElasticsearchCluster ServiceAccount release", func() {
 	// create: false says that the user owns the account. An owner reference

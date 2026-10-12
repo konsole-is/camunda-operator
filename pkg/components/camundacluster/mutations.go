@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/accounthash"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
@@ -201,13 +202,13 @@ func serviceAccountHash(in Input, p Process) string {
 		if !rendersConnectorsServiceAccount(in) {
 			return ""
 		}
-		return annotationsHash(connectorsAccountAnnotations(in))
+		return accounthash.Of(connectorsAccountAnnotations(in))
 	}
 
 	if !rendersServiceAccount(in) {
 		return ""
 	}
-	return annotationsHash(clusterAccountAnnotations(in))
+	return accounthash.Of(clusterAccountAnnotations(in))
 }
 
 // deploymentMutations returns the workload mutations of a Deployment-backed

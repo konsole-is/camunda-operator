@@ -40,6 +40,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/accounthash"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
@@ -437,6 +438,11 @@ func elasticsearchMutations(
 	storage *SnapshotStorage,
 ) []eckelasticsearch.Mutation {
 	secureSettings := secureSettings(cluster, merged, storage)
+	// A user value would keep an old hash on the template when the
+	// ServiceAccountHash mutation is off, and the pods would not roll.
+	podAnnotations := maps.Clone(merged.PodAnnotations)
+	delete(podAnnotations, accounthash.Annotation)
+	accountHash := serviceAccountHash(cluster, merged, storage)
 
 	mutations := []eckelasticsearch.Mutation{
 		{
@@ -475,7 +481,7 @@ func elasticsearchMutations(
 		},
 		{
 			Name:    "PodMetadata",
-			Feature: feature.NewBooleanGate(len(merged.PodLabels) > 0 || len(merged.PodAnnotations) > 0),
+			Feature: feature.NewBooleanGate(len(merged.PodLabels) > 0 || len(podAnnotations) > 0),
 			Mutate: func(m *eckelasticsearch.Mutator) error {
 				m.Edit(func(es *esv1.Elasticsearch) error {
 					template := &es.Spec.NodeSets[0].PodTemplate
@@ -483,11 +489,11 @@ func elasticsearchMutations(
 						labels.Merge(template.Labels, merged.PodLabels),
 						discoveryLabels(cluster),
 					)
-					if len(merged.PodAnnotations) > 0 {
+					if len(podAnnotations) > 0 {
 						if template.Annotations == nil {
 							template.Annotations = map[string]string{}
 						}
-						maps.Copy(template.Annotations, merged.PodAnnotations)
+						maps.Copy(template.Annotations, podAnnotations)
 					}
 					return nil
 				})
@@ -531,6 +537,21 @@ func elasticsearchMutations(
 				return nil
 			},
 		},
+		{
+			Name:    "ServiceAccountHash",
+			Feature: feature.NewBooleanGate(accountHash != ""),
+			Mutate: func(m *eckelasticsearch.Mutator) error {
+				m.Edit(func(es *esv1.Elasticsearch) error {
+					template := &es.Spec.NodeSets[0].PodTemplate
+					if template.Annotations == nil {
+						template.Annotations = map[string]string{}
+					}
+					template.Annotations[accounthash.Annotation] = accountHash
+					return nil
+				})
+				return nil
+			},
+		},
 	}
 
 	return append(mutations, snapshotStorageMutations(storage)...)
@@ -565,6 +586,21 @@ func secureSettings(
 	}
 
 	return sources
+}
+
+// serviceAccountHash returns the hash of the annotations that the operator
+// renders on the ServiceAccount of the pods, or the empty string when it
+// renders none. An account with create false is the user's, so a change to it
+// is not the operator's to roll.
+func serviceAccountHash(
+	cluster *v1.ElasticsearchCluster,
+	merged v1.ElasticsearchClusterSpec,
+	storage *SnapshotStorage,
+) string {
+	if !merged.ServiceAccount.Creates() || !usesServiceAccount(merged, storage) {
+		return ""
+	}
+	return accounthash.Of(serviceAccount(cluster, merged, storage).Annotations)
 }
 
 // retainsVolumes reports whether the retention policy of the merged spec keeps
