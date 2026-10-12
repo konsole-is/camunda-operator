@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -117,19 +118,35 @@ func PasswordHash(value string) string {
 	return hex.EncodeToString(sum[:])[:configHashLength]
 }
 
+// annotationsHash hashes a set of annotations independently of the map
+// order. An empty set returns "".
+func annotationsHash(annotations map[string]string) string {
+	if len(annotations) == 0 {
+		return ""
+	}
+
+	// encoding/json writes the keys sorted and quotes every string, so two
+	// different sets never encode the same. A map of strings always encodes.
+	encoded, _ := json.Marshal(annotations)
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])[:configHashLength]
+}
+
 // PresetFingerprint is the hash input that stands for a CamundaClusterPreset:
 // a digest of its spec with the fields that no process renders removed. The
 // controller records it instead of the generation of the preset, because the
 // generation moves for every spec change, and the fingerprint of a preset is
 // an input of every process hash.
 //
-// The whole of spec.cluster.auth.basic is what this exists for, and neither
-// of its fields renders into a pod template. passwordRotation requests a
+// It leaves out spec.cluster.auth.basic, and neither of its fields renders
+// into a pod template. passwordRotation requests a
 // rotation of the admin password, and only connectors follow that password,
 // through Input.AdminPasswordHash. adminEmail travels to the processes
 // through the admin Secret. Neither may restart a workload, so neither may
-// reach the fingerprint. Every other change of a preset still moves it and
-// rolls the workloads that inherit it.
+// reach the fingerprint. connectors.serviceAccount is left out too: its
+// changes reach the connectors pod template directly, and must not roll the
+// other processes. Every other change of a preset still moves it and rolls
+// the workloads that inherit it.
 func PresetFingerprint(spec v1.CamundaClusterPresetSpec) (string, error) {
 	rendered := spec.DeepCopy()
 	// The wrappers go with the value. The first rotation of a preset adds
@@ -145,6 +162,12 @@ func PresetFingerprint(spec v1.CamundaClusterPresetSpec) (string, error) {
 		}
 		if *auth == (v1.ClusterAuthSpec{}) {
 			rendered.Cluster.Auth = nil
+		}
+	}
+	if connectors := rendered.Cluster.Connectors; connectors != nil {
+		connectors.ServiceAccount = nil
+		if equality.Semantic.DeepEqual(*connectors, v1.ConnectorsSpec{}) {
+			rendered.Cluster.Connectors = nil
 		}
 	}
 

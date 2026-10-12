@@ -42,6 +42,11 @@ const (
 	// ConfigHashAnnotation is the pod template annotation that carries the
 	// hash of the rendered configuration. A change to it rolls the pods.
 	ConfigHashAnnotation = "camunda.io/config-hash"
+	// ServiceAccountHashAnnotation is the pod template annotation that carries
+	// the hash of the annotations that the operator renders on the
+	// ServiceAccount of the pods. A change to it rolls the pods. It is absent
+	// when the operator renders no annotation on that account.
+	ServiceAccountHashAnnotation = "camunda.io/service-account-hash"
 	// RequestedStorageSizeAnnotation is the annotation of the broker
 	// StatefulSet that carries the effective storageSize. The claim template
 	// keeps the size it was created with, so this is where the requested
