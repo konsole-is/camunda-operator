@@ -142,6 +142,15 @@ func (e Effective) ConnectorsEnabled() bool {
 	return e.Connectors != nil && e.Connectors.Enabled != nil && *e.Connectors.Enabled
 }
 
+// ConnectorsServiceAccount returns connectors.serviceAccount, or nil when
+// the connectors block or its serviceAccount is absent.
+func (e Effective) ConnectorsServiceAccount() *v1.ServiceAccountSpec {
+	if e.Connectors == nil {
+		return nil
+	}
+	return e.Connectors.ServiceAccount
+}
+
 // Replicas returns the number of pods of the named component, one of the
 // Component constants. Defaults to 1 when the component block or its replicas
 // field is unset. An unknown component name returns 0.

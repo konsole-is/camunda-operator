@@ -56,6 +56,10 @@ type CleanupJobInput struct {
 	// runs as it, like the upload did. Empty means the default account of
 	// the namespace.
 	ServiceAccountName string
+	// AccountPodLabels are the labels that the identity of that
+	// ServiceAccount needs on the pod, see
+	// camundacluster.ClusterAccountPodLabels.
+	AccountPodLabels map[string]string
 	// ObjectKey is the exact key of the dump to remove.
 	ObjectKey string
 	// CLIImage is the camunda-operator-cli image. Its delete subcommand
@@ -67,7 +71,7 @@ type CleanupJobInput struct {
 // backup where the identity lives. The Job is one camunda-operator-cli
 // delete container under the cluster ServiceAccount. It has the same pod
 // identity surface as the dump Job: the workload-identity pod labels of the
-// bucket and the pod settings of the resolved dump block. The delete is
+// bucket and of the ServiceAccount, and the pod settings of the resolved dump block. The delete is
 // idempotent, so the Job can retry.
 func BuildCleanupJob(in CleanupJobInput) (*batchv1.Job, error) {
 	if in.CLIImage == "" {
@@ -93,7 +97,7 @@ func BuildCleanupJob(in CleanupJobInput) (*batchv1.Job, error) {
 	managed[labels.ClusterKey] = labels.OwnerName(in.ClusterName)
 	managed[BackupUIDLabel] = string(in.Backup.UID)
 
-	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), managed)
+	podManaged := labels.Merge(in.Bucket.WorkloadIdentityPodLabels(), in.AccountPodLabels, managed)
 	podLabels := labels.Merge(dump.PodLabels, podManaged)
 
 	security := containerSecurity(operatorUID)

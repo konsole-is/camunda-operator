@@ -922,3 +922,70 @@ func TestMergeSpecBasicBlockReplacesWholesale(t *testing.T) {
 	assert.Equal(t, "mine", replaced.Auth.Basic.PasswordRotation)
 	assert.Equal(t, "preset-client", replaced.Auth.ClientID, "the other auth fields still merge per field")
 }
+
+// connectors.serviceAccount merges like a workload field: create overrides
+// on its own, and the annotations merge by key, the cluster winning. The
+// preset schema refuses a name, so the name always comes from the cluster.
+func TestMergeSpecConnectorsServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	presetWith := func(account *v1.ServiceAccountSpec) *v1.CamundaClusterPresetSpec {
+		return &v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{
+			Connectors: &v1.ConnectorsSpec{ServiceAccount: account},
+		}}
+	}
+	specWith := func(account *v1.ServiceAccountSpec) v1.CamundaClusterSpec {
+		return v1.CamundaClusterSpec{Connectors: &v1.ConnectorsSpec{ServiceAccount: account}}
+	}
+
+	tests := []struct {
+		name    string
+		preset  *v1.ServiceAccountSpec
+		cluster *v1.ServiceAccountSpec
+		want    *v1.ServiceAccountSpec
+	}{
+		{
+			name:   "the preset block reaches a cluster without one",
+			preset: &v1.ServiceAccountSpec{Annotations: map[string]string{"a": "preset"}},
+			want:   &v1.ServiceAccountSpec{Annotations: map[string]string{"a": "preset"}},
+		},
+		{
+			name:    "the cluster block stands without a preset block",
+			cluster: &v1.ServiceAccountSpec{Name: "mine"},
+			want:    &v1.ServiceAccountSpec{Name: "mine"},
+		},
+		{
+			name: "annotations merge by key and the cluster wins",
+			preset: &v1.ServiceAccountSpec{
+				Annotations: map[string]string{"a": "preset", "b": "preset"},
+			},
+			cluster: &v1.ServiceAccountSpec{Annotations: map[string]string{"b": "cluster"}},
+			want: &v1.ServiceAccountSpec{
+				Annotations: map[string]string{"a": "preset", "b": "cluster"},
+			},
+		},
+		{
+			name:    "the create of the cluster overrides the preset",
+			preset:  &v1.ServiceAccountSpec{Create: new(false)},
+			cluster: &v1.ServiceAccountSpec{Create: new(true)},
+			want:    &v1.ServiceAccountSpec{Create: new(true)},
+		},
+		{
+			name:    "an unset cluster create keeps the preset create",
+			preset:  &v1.ServiceAccountSpec{Create: new(false)},
+			cluster: &v1.ServiceAccountSpec{Name: "mine"},
+			want:    &v1.ServiceAccountSpec{Name: "mine", Create: new(false)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			merged := MergeSpec(specWith(tt.cluster), presetWith(tt.preset), nil)
+
+			require.NotNil(t, merged.Connectors)
+			assert.Equal(t, tt.want, merged.Connectors.ServiceAccount)
+		})
+	}
+}

@@ -525,6 +525,39 @@ func TestBuildJobRunsUnderTheDefaultAccountWithoutAName(t *testing.T) {
 	assert.Empty(t, job.Spec.Template.Spec.ServiceAccountName)
 }
 
+// The Job runs under the cluster ServiceAccount, so it needs the pod labels
+// of that account's identity. A user label never removes them.
+func TestBuildJobCarriesTheAccountPodLabels(t *testing.T) {
+	t.Parallel()
+
+	in := input()
+	in.Dump = &v1.DumpPodSpec{PodLabels: map[string]string{v1.AzureWorkloadIdentityUseLabel: "false"}}
+	in.AccountPodLabels = map[string]string{v1.AzureWorkloadIdentityUseLabel: "true"}
+
+	job, err := BuildJob(in)
+	require.NoError(t, err)
+
+	assert.Equal(t, "true", job.Spec.Template.Labels[v1.AzureWorkloadIdentityUseLabel])
+}
+
+func TestBuildCleanupJobCarriesTheAccountPodLabels(t *testing.T) {
+	t.Parallel()
+
+	job, err := BuildCleanupJob(CleanupJobInput{
+		Backup:             backup(),
+		ClusterName:        "my-cluster",
+		Dump:               &v1.DumpPodSpec{PodLabels: map[string]string{v1.AzureWorkloadIdentityUseLabel: "false"}},
+		Bucket:             s3Bucket(v1.S3StorageAuth{Type: v1.ObjectStorageAuthTypeWorkloadIdentity}),
+		ServiceAccountName: "my-cluster-camunda",
+		AccountPodLabels:   map[string]string{v1.AzureWorkloadIdentityUseLabel: "true"},
+		ObjectKey:          testObjectKey,
+		CLIImage:           "ghcr.io/konsole-is/camunda-operator-cli:0.1.0",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "true", job.Spec.Template.Labels[v1.AzureWorkloadIdentityUseLabel])
+}
+
 func TestBuildJobRunsBothContainersUnderTheServiceAccount(t *testing.T) {
 	t.Parallel()
 

@@ -75,7 +75,7 @@ This reference has three results:
       # ... the rest of your cluster
     ```
 
-- If the bucket carries a workload identity, the operator writes the matching annotation on the ServiceAccount of the cluster. The ServiceAccount is named `<cluster>-camunda` by default. For a bucket that carries no annotation (for example EKS Pod Identity), bind the principal `system:serviceaccount:my-cluster-ns:my-cluster-camunda` on the cloud side.
+- If the bucket carries a workload identity, the operator writes the matching annotation on the ServiceAccount of the cluster. The ServiceAccount is named `<cluster>-camunda` by default. For a bucket that carries no annotation (for example EKS Pod Identity), bind the principal `system:serviceaccount:my-cluster-ns:my-cluster-camunda` on the cloud side. The connectors never run under this ServiceAccount. See [Workload identity](../crds/camundacluster.md#workload-identity).
 
 ### Elasticsearch: the snapshot repository
 

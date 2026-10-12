@@ -431,7 +431,7 @@ func TestEveryProcessHasAStartupProbe(t *testing.T) {
 }
 
 // The service account is rendered by the first component only when the spec
-// asks for it, and every pod template names it.
+// asks for it, and every pod template except the connectors names it.
 func TestServiceAccount(t *testing.T) {
 	t.Parallel()
 
@@ -446,8 +446,14 @@ func TestServiceAccount(t *testing.T) {
 	}
 	assert.True(t, hasAccount)
 	for _, pc := range comps {
+		want := "my-cluster-camunda"
+		if pc.Process.Component == ComponentConnectors {
+			// The connectors never run under the account of the cluster.
+			want = defaultServiceAccountName
+		}
 		assert.Equal(
-			t, "my-cluster-camunda", previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
+			t, want, previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
+			pc.Process.Component,
 		)
 	}
 
@@ -458,7 +464,14 @@ func TestServiceAccount(t *testing.T) {
 			_, isAccount := obj.(*corev1.ServiceAccount)
 			assert.False(t, isAccount, pc.Process.Component)
 		}
-		assert.Empty(t, previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName)
+		want := ""
+		if pc.Process.Component == ComponentConnectors {
+			want = defaultServiceAccountName
+		}
+		assert.Equal(
+			t, want, previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
+			pc.Process.Component,
+		)
 	}
 }
 

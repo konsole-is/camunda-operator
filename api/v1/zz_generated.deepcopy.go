@@ -1288,6 +1288,11 @@ func (in *ConnectorsSpec) DeepCopyInto(out *ConnectorsSpec) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.ServiceAccount != nil {
+		in, out := &in.ServiceAccount, &out.ServiceAccount
+		*out = new(ServiceAccountSpec)
+		(*in).DeepCopyInto(*out)
+	}
 	in.WorkloadSpec.DeepCopyInto(&out.WorkloadSpec)
 }
 

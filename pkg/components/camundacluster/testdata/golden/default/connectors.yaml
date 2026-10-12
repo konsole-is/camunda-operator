@@ -78,7 +78,7 @@ spec:
         runAsGroup: 1001
         runAsNonRoot: true
         runAsUser: 1001
-      serviceAccountName: my-cluster-camunda
+      serviceAccountName: default
 ---
 apiVersion: v1
 kind: Service

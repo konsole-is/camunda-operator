@@ -39,6 +39,9 @@ func TestDerivedNamesOfAShortCluster(t *testing.T) {
 	assert.Equal(t, "my-cluster-zeebe", WorkloadName(cluster, ComponentZeebe))
 	assert.Equal(t, "my-cluster-camunda-admin", AdminSecretName(cluster))
 	assert.Equal(t, "my-cluster-camunda", ServiceAccountName(cluster, NewEffective(v1.CamundaClusterSpec{})))
+	assert.Equal(
+		t, "my-cluster-connectors", ConnectorsServiceAccountName(cluster, NewEffective(v1.CamundaClusterSpec{})),
+	)
 	assert.Equal(t, "my-cluster-camunda-license", MirroredSecretName(cluster, MirrorPurposeLicense))
 	assert.Equal(t, "my-cluster-zeebe-client", ZeebeClientServiceName(cluster))
 }
@@ -53,6 +56,7 @@ func TestLongClusterNamesRenderValidObjects(t *testing.T) {
 	for _, length := range []int{63, 100, 253} {
 		in := fixtureDefault(t)
 		in.Cluster.Name = strings.Repeat("c", length)
+		in.Effective.Connectors.ServiceAccount = &v1.ServiceAccountSpec{}
 
 		comps, err := Build(in)
 		require.NoError(t, err)
@@ -102,6 +106,10 @@ func TestLongClusterNamesRenderValidObjects(t *testing.T) {
 		// character that fits.
 		account := ServiceAccountName(in.Cluster, in.Effective)
 		assert.Empty(t, validation.IsDNS1123Subdomain(account), "%d: %s", length, account)
+
+		connectors := ConnectorsServiceAccountName(in.Cluster, in.Effective)
+		assert.Empty(t, validation.IsDNS1123Subdomain(connectors), "%d: %s", length, connectors)
+		assert.True(t, strings.HasSuffix(connectors, "-connectors"), "%d: %s", length, connectors)
 	}
 }
 
@@ -137,6 +145,8 @@ func TestLongClusterNamesStayApart(t *testing.T) {
 		MirroredSecretName(first, MirrorPurposeLicense),
 		MirroredSecretName(second, MirrorPurposeLicense),
 	)
+	empty := NewEffective(v1.CamundaClusterSpec{})
+	assert.NotEqual(t, ConnectorsServiceAccountName(first, empty), ConnectorsServiceAccountName(second, empty))
 
 	assert.Equal(
 		t, WorkloadName(first, ComponentZeebe), WorkloadName(first, ComponentZeebe),
@@ -159,4 +169,172 @@ func TestServiceAccountNameFromTheSpecIsUntouched(t *testing.T) {
 	})
 
 	assert.Equal(t, "my-account", ServiceAccountName(cluster, e))
+}
+
+// A user-set name for the connectors account is the user's own, so nothing
+// truncates it.
+func TestConnectorsServiceAccountNameFromTheSpecIsUntouched(t *testing.T) {
+	t.Parallel()
+
+	cluster := &v1.CamundaCluster{}
+	cluster.Name = strings.Repeat("c", 253)
+	e := NewEffective(v1.CamundaClusterSpec{Connectors: &v1.ConnectorsSpec{
+		ServiceAccount: &v1.ServiceAccountSpec{Name: "my-connectors"},
+	}})
+
+	assert.Equal(t, "my-connectors", ConnectorsServiceAccountName(cluster, e))
+}
+
+// Without the block the connectors run under the default account of the
+// namespace, even when the cluster has an account of its own.
+func TestPodConnectorsServiceAccountNameWithoutTheBlock(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{}
+		in.Cluster.Spec.Connectors = &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
+	})
+
+	assert.Empty(t, PodConnectorsServiceAccountName(in))
+	assert.Equal(t, "my-cluster-camunda", PodServiceAccountName(in))
+}
+
+func TestPodConnectorsServiceAccountNameWithTheBlock(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Cluster.Spec.Connectors = &v1.ConnectorsSpec{
+			Enabled:        new(true),
+			Version:        "8.9.7",
+			ServiceAccount: &v1.ServiceAccountSpec{},
+		}
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
+	})
+
+	assert.Equal(t, "my-cluster-connectors", PodConnectorsServiceAccountName(in))
+}
+
+// A block that names the default account publishes that name: the status
+// is empty only without a block.
+func TestPodConnectorsServiceAccountNameNamesAnExplicitDefault(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Cluster.Spec.Connectors = &v1.ConnectorsSpec{
+			Enabled:        new(true),
+			Version:        "8.9.7",
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "default", Create: new(false)},
+		}
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
+	})
+
+	assert.Equal(t, "default", PodConnectorsServiceAccountName(in))
+}
+
+// Disabled connectors run no pod, so no account is named for them.
+func TestPodConnectorsServiceAccountNameIsEmptyWhileConnectorsAreOff(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Cluster.Spec.Connectors = &v1.ConnectorsSpec{
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "platform-connectors", Create: new(false)},
+		}
+		in.Effective = NewEffective(MergeSpec(in.Cluster.Spec, nil, nil))
+	})
+
+	assert.Empty(t, PodConnectorsServiceAccountName(in))
+}
+
+// The connectors must never run under the account of the cluster, whether
+// the cluster account has its default name or a name of the spec.
+func TestCheckConnectorsServiceAccountRefusesTheClusterAccount(t *testing.T) {
+	t.Parallel()
+
+	for name, spec := range map[string]v1.CamundaClusterSpec{
+		"the derived cluster name": {
+			Connectors: &v1.ConnectorsSpec{
+				Enabled:        new(true),
+				ServiceAccount: &v1.ServiceAccountSpec{Name: "my-cluster-camunda"},
+			},
+		},
+		"a name of the spec": {
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "platform-sa"},
+			Connectors: &v1.ConnectorsSpec{
+				Enabled:        new(true),
+				ServiceAccount: &v1.ServiceAccountSpec{Name: "platform-sa"},
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			in := newInput(t, func(in *Input) { in.Effective = NewEffective(spec) })
+
+			err := CheckConnectorsServiceAccount(in)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "connectors.serviceAccount.name")
+		})
+	}
+}
+
+// The message names the field that the user set: here the cluster account
+// takes the derived name of the connectors account.
+func TestCheckConnectorsServiceAccountNamesTheClusterField(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Effective = NewEffective(v1.CamundaClusterSpec{
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "my-cluster-connectors"},
+			Connectors:     &v1.ConnectorsSpec{Enabled: new(true), ServiceAccount: &v1.ServiceAccountSpec{}},
+		})
+	})
+
+	err := CheckConnectorsServiceAccount(in)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `serviceAccount.name "my-cluster-connectors"`)
+	assert.NotContains(t, err.Error(), `connectors.serviceAccount.name "`)
+}
+
+// A cluster account named default is the account that connectors without a
+// block run under, so they would share the cluster identity.
+func TestCheckConnectorsServiceAccountRefusesADefaultClusterAccount(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Effective = NewEffective(v1.CamundaClusterSpec{
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "default", Create: new(false)},
+			Connectors:     &v1.ConnectorsSpec{Enabled: new(true)},
+		})
+	})
+
+	err := CheckConnectorsServiceAccount(in)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "connectors.serviceAccount")
+}
+
+// Connectors that are off run no pod, so a default cluster account is fine.
+func TestCheckConnectorsServiceAccountAcceptsADefaultClusterAccountWithoutConnectors(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Effective = NewEffective(v1.CamundaClusterSpec{
+			ServiceAccount: &v1.ServiceAccountSpec{Name: "default", Create: new(false)},
+		})
+	})
+
+	assert.NoError(t, CheckConnectorsServiceAccount(in))
+}
+
+func TestCheckConnectorsServiceAccountAcceptsAnAccountOfTheirOwn(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Effective = NewEffective(v1.CamundaClusterSpec{
+			ServiceAccount: &v1.ServiceAccountSpec{},
+			Connectors:     &v1.ConnectorsSpec{Enabled: new(true), ServiceAccount: &v1.ServiceAccountSpec{}},
+		})
+	})
+
+	assert.NoError(t, CheckConnectorsServiceAccount(in))
 }
