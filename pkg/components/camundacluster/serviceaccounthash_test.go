@@ -59,12 +59,10 @@ func TestClusterAccountAnnotationChangeRollsTheClusterPods(t *testing.T) {
 	t.Parallel()
 
 	connectors := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/connectors"}
-	before := accountHashes(t, annotatedAccounts(t, map[string]string{
-		v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/old",
-	}, connectors))
-	after := accountHashes(t, annotatedAccounts(t, map[string]string{
-		v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/new",
-	}, connectors))
+	old := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/old"}
+	updated := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/new"}
+	before := accountHashes(t, annotatedAccounts(t, old, connectors))
+	after := accountHashes(t, annotatedAccounts(t, updated, connectors))
 
 	for _, process := range clusterProcesses {
 		require.NotEmpty(t, before[process], process)
@@ -94,12 +92,10 @@ func TestConnectorsAccountAnnotationChangeRollsTheConnectorsOnly(t *testing.T) {
 	t.Parallel()
 
 	cluster := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/camunda"}
-	before := accountHashes(t, annotatedAccounts(t, cluster, map[string]string{
-		v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/old",
-	}))
-	after := accountHashes(t, annotatedAccounts(t, cluster, map[string]string{
-		v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/new",
-	}))
+	old := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/old"}
+	updated := map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/new"}
+	before := accountHashes(t, annotatedAccounts(t, cluster, old))
+	after := accountHashes(t, annotatedAccounts(t, cluster, updated))
 
 	require.NotEmpty(t, before[ComponentConnectors])
 	assert.NotEqual(t, before[ComponentConnectors], after[ComponentConnectors])
