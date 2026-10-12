@@ -30,6 +30,10 @@
   // Without a tidy, a Go update leaves the replaced versions in go.sum, and
   // the tidy check of the Tests workflow fails.
   postUpdateOptions: ["gomodTidy"],
+  // The Renovate commit workflow commits the generated files to a
+  // Renovate branch as github-actions[bot]. Without this, Renovate takes the
+  // branch as edited by a person and stops updating and rebasing it.
+  gitIgnoredAuthors: ["41898282+github-actions[bot]@users.noreply.github.com"],
   // Renovate checks each dependency against the OSV database and the
   // Dependabot alerts of the repository. For a vulnerable version it opens a
   // security pull request at once, outside the schedule below. This includes

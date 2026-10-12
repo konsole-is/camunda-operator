@@ -1,0 +1,110 @@
+name: Renovate commit
+
+# Commits the files that the Renovate regenerate workflow uploaded to the
+# Renovate branch, then starts Lint, Tests, and Chart on that commit.
+# GitHub runs a workflow_run workflow from the default branch, so a Renovate
+# branch cannot change the steps that hold the write token.
+on:
+  workflow_run:
+    workflows: ["Renovate regenerate"]
+    types: [completed]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  commit:
+    name: Run on Ubuntu
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+      && startsWith(github.event.workflow_run.head_branch, 'renovate/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+    steps:
+      # The regenerate run uploads no artifact when nothing changed.
+      - name: Look for changed files
+        id: artifact
+        run: |
+          count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+            --jq '[.artifacts[] | select(.name == "changes" and (.expired | not))] | length')
+          echo "found=$([ "$count" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Download the changed files
+        if: steps.artifact.outputs.found == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          name: changes
+          path: ${{ runner.temp }}/changes
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      # The ruleset of main requires signed commits. GitHub signs a commit of
+      # this GraphQL mutation, and it does not sign a git push from a runner.
+      # A newer push to the branch gets its own run. A rerun of this job finds
+      # its own commit on the branch and only dispatches.
+      - name: Commit the generated files
+        id: commit
+        if: steps.artifact.outputs.found == 'true'
+        working-directory: ${{ runner.temp }}/changes
+        run: |
+          # The files come from a run that ran code of the branch, so only
+          # the files that the generators write can land.
+          jq -s -e 'all(.[].path;
+            (startswith("config/prometheus/observability/")
+              or test("^test/fixtures/merge/.+\\.json$")
+              or . == "docs/crds/api-reference.md"
+              or . == "pkg/images/table.json")
+            and (contains("..") | not))' additions.json deletions.json > /dev/null
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha)
+          if [ "$tip" != "$HEAD_SHA" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/commits/$tip" \
+              --jq '"\(.parents[0].sha) \(.commit.author.email)"' > "$RUNNER_TEMP/tip.txt"
+            read -r parent author < "$RUNNER_TEMP/tip.txt"
+            if [ "$parent" = "$HEAD_SHA" ] && [ "$author" = "41898282+github-actions[bot]@users.noreply.github.com" ]; then
+              echo "dispatch=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "dispatch=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+          jq -n \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg branch "$BRANCH" \
+            --arg head "$HEAD_SHA" \
+            --slurpfile additions additions.json \
+            --slurpfile deletions deletions.json \
+            '{
+              query: "mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } } }",
+              variables: {input: {
+                branch: {repositoryNameWithOwner: $repo, branchName: $branch},
+                expectedHeadOid: $head,
+                message: {headline: "chore(generate): regenerate the files that Lint checks"},
+                fileChanges: {additions: $additions, deletions: $deletions}
+              }}
+            }' > "$RUNNER_TEMP/commit.json"
+          gh api graphql --input "$RUNNER_TEMP/commit.json"
+          echo "dispatch=true" >> "$GITHUB_OUTPUT"
+
+      # A commit of GITHUB_TOKEN starts no push run, and its pull_request runs
+      # wait for a maintainer to approve them. A workflow_dispatch run starts
+      # at once, and its check runs attach to the head commit of the branch,
+      # which is the commit above.
+      - name: Run the checks on the new commit
+        if: steps.commit.outputs.dispatch == 'true'
+        run: |
+          for workflow in lint.yml test.yml chart.yml; do
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+          done
