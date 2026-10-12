@@ -53,9 +53,10 @@ jobs:
 
       # The ruleset of main requires signed commits. GitHub signs a commit of
       # this GraphQL mutation, and it does not sign a git push from a runner.
-      # expectedHeadOid makes the mutation fail when Renovate pushed again
-      # after the regenerate run. The run of that newer push then regenerates.
+      # A newer push to the branch gets its own run. A rerun of this job finds
+      # its own commit on the branch and only dispatches.
       - name: Commit the generated files
+        id: commit
         if: steps.artifact.outputs.found == 'true'
         working-directory: ${{ runner.temp }}/changes
         run: |
@@ -67,6 +68,18 @@ jobs:
               or . == "docs/crds/api-reference.md"
               or . == "pkg/images/table.json")
             and (contains("..") | not))' additions.json deletions.json > /dev/null
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha)
+          if [ "$tip" != "$HEAD_SHA" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/commits/$tip" \
+              --jq '"\(.parents[0].sha) \(.commit.author.email)"' > "$RUNNER_TEMP/tip.txt"
+            read -r parent author < "$RUNNER_TEMP/tip.txt"
+            if [ "$parent" = "$HEAD_SHA" ] && [ "$author" = "41898282+github-actions[bot]@users.noreply.github.com" ]; then
+              echo "dispatch=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "dispatch=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
           jq -n \
             --arg repo "$GITHUB_REPOSITORY" \
             --arg branch "$BRANCH" \
@@ -83,13 +96,14 @@ jobs:
               }}
             }' > "$RUNNER_TEMP/commit.json"
           gh api graphql --input "$RUNNER_TEMP/commit.json"
+          echo "dispatch=true" >> "$GITHUB_OUTPUT"
 
       # A commit of GITHUB_TOKEN starts no push run, and its pull_request runs
       # wait for a maintainer to approve them. A workflow_dispatch run starts
       # at once, and its check runs attach to the head commit of the branch,
       # which is the commit above.
       - name: Run the checks on the new commit
-        if: steps.artifact.outputs.found == 'true'
+        if: steps.commit.outputs.dispatch == 'true'
         run: |
           for workflow in lint.yml test.yml chart.yml; do
             gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
