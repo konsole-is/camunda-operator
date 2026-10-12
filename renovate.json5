@@ -30,7 +30,7 @@
   // Without a tidy, a Go update leaves the replaced versions in go.sum, and
   // the tidy check of the Tests workflow fails.
   postUpdateOptions: ["gomodTidy"],
-  // The Renovate regenerate workflow commits the generated files to a
+  // The Renovate commit workflow commits the generated files to a
   // Renovate branch as github-actions[bot]. Without this, Renovate takes the
   // branch as edited by a person and stops updating and rebasing it.
   gitIgnoredAuthors: ["41898282+github-actions[bot]@users.noreply.github.com"],
