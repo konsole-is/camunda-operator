@@ -223,8 +223,8 @@ var _ = Describe("CamundaCluster ServiceAccount release", func() {
 
 	// The derived name belongs to the operator, which deletes an account of
 	// that name while the cluster uses none. Connectors that name it as an
-	// account of the user would lose it, so the cluster refuses them before
-	// it applies anything.
+	// account of the user lose it, so the cluster refuses them before it
+	// applies anything.
 	DescribeTable(
 		"refuses connectors that name the reserved cluster account",
 		func(enabled bool) {

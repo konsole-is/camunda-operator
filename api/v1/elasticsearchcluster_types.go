@@ -203,10 +203,10 @@ type ElasticsearchClusterSpec struct {
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// ServiceAccount configures the ServiceAccount of the Elasticsearch pods.
-	// The name <name>-es belongs to the operator. It deletes an account of
-	// that name while neither the cluster nor its preset sets this block and
-	// the snapshot bucket uses no workload identity. It deletes one that it
-	// did not create too.
+	// The name <name>-es belongs to the operator. While neither the cluster
+	// nor its preset sets this block and the snapshot bucket uses no workload
+	// identity, the operator deletes the account <name>-es. It deletes one
+	// that it did not create too.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// ExtraEnv are extra environment variables for every Elasticsearch node.

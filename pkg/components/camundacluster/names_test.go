@@ -383,6 +383,25 @@ func TestCheckConnectorsServiceAccountAcceptsTheClusterAccountWhileConnectorsAre
 	assert.NoError(t, CheckConnectorsServiceAccount(in))
 }
 
+// A bucket with workload identity gives the cluster the account of that name,
+// so the account is not deleted, and connectors that are off do not register
+// it.
+func TestCheckConnectorsServiceAccountAcceptsTheReservedNameWithAWorkloadIdentityBucket(t *testing.T) {
+	t.Parallel()
+
+	in := newInput(t, func(in *Input) {
+		in.Backup = s3Bucket()
+		in.Effective = NewEffective(v1.CamundaClusterSpec{
+			Connectors: &v1.ConnectorsSpec{
+				Enabled:        new(false),
+				ServiceAccount: &v1.ServiceAccountSpec{Name: "my-cluster-camunda", Create: new(false)},
+			},
+		})
+	})
+
+	assert.NoError(t, CheckConnectorsServiceAccount(in))
+}
+
 // With create true the connectors claim no account of the user, so the name
 // is not refused while they are off.
 func TestCheckConnectorsServiceAccountAcceptsTheReservedNameWithCreate(t *testing.T) {
