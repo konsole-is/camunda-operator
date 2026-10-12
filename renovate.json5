@@ -264,14 +264,15 @@
       matchFileNames: ["fleet-manager/**", ".tool-versions"],
       matchDepNames: ["node"],
       groupName: "fleet-manager-node",
-      allowedVersions: "/^v?24\\./",
+      allowedVersions: "/^v?26\\./",
     },
     {
-      // packageManager in fleet-manager/package.json pins pnpm, and corepack
-      // runs that release. A new major of pnpm is a change by hand.
+      // packageManager in fleet-manager/package.json pins pnpm, and the fleet-*
+      // Make targets install that release. A new major of pnpm is a change by
+      // hand.
       matchFileNames: ["fleet-manager/package.json"],
       matchDepNames: ["pnpm"],
-      allowedVersions: "/^10\\./",
+      allowedVersions: "/^12\\./",
     },
     {
       // eslint-config-next carries the release number of next.
@@ -299,7 +300,7 @@
     {
       // @types/node follows the Node.js major of the fleet manager.
       matchPackageNames: ["@types/node"],
-      allowedVersions: "/^24\\./",
+      allowedVersions: "/^26\\./",
     },
   ],
 }
