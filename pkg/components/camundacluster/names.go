@@ -260,8 +260,8 @@ func CheckConnectorsServiceAccount(in Input) error {
 		ConnectorsServiceAccountName(in.Cluster, in.Effective) == ServiceAccountName(in.Cluster, in.Effective) {
 		return fmt.Errorf(
 			"connectors.serviceAccount.name %q is reserved for the ServiceAccount that the operator "+
-				"creates for the cluster. The operator applies nothing, so it deletes no account of that "+
-				"name, until you give the connectors a ServiceAccount of another name",
+				"creates for the cluster. The operator applies nothing until you give the connectors a "+
+				"ServiceAccount of another name",
 			account.Name,
 		)
 	}

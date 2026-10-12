@@ -189,6 +189,10 @@ The connectors pods restart once after the upgrade, and again when you set the b
 
 If you pull images from a mirror, the connectors need the pull Secret on their new ServiceAccount: `default`, or the account of `spec.connectors.serviceAccount`. The operator sets no pull Secret on any ServiceAccount. Add it to the `imagePullSecrets` of that account. The operator keeps a pull Secret that you add to an account that it creates. See [Workload identity](crds/camundacluster.md#workload-identity).
 
+### Pods under an annotated ServiceAccount restart once
+
+From this release, a change to the annotations that the operator puts on a ServiceAccount restarts the `CamundaCluster` pods that run under it. When the operator puts annotations on the ServiceAccount of `CamundaCluster` pods, these pods restart once after you upgrade to this release.
+
 ## Uninstall
 
 ```bash

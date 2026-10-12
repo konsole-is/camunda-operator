@@ -3099,14 +3099,14 @@ spec:
                         description: |-
                           ServiceAccount configures the ServiceAccount of the connectors pods.
                           When unset, they run under the default ServiceAccount of the namespace.
-                          When set, they run under <cluster name>-connectors, or under name. Only
+                          When set, they run under <name>-connectors, or under name. Only
                           the annotations of this block go on the account, never the identities
                           of the buckets. When they carry azure.workload.identity/client-id, the
                           connectors pods get the label azure.workload.identity/use: "true". The
                           connectors never run under the cluster ServiceAccount: name must differ
                           from it, and a spec.serviceAccount.name of default needs this block, or
                           Ready reports InvalidReference. The name default needs create false.
-                          With create false, name must not be <cluster name>-camunda while
+                          With create false, name must not be <name>-camunda while
                           neither the cluster nor its preset sets spec.serviceAccount and no
                           referenced bucket uses workload identity. Ready then reports
                           InvalidReference, also while connectors are off. A preset can set this
@@ -5973,7 +5973,7 @@ spec:
                       the account, it adds the identity annotation of each bucket that names
                       one. When the annotations carry azure.workload.identity/client-id, the
                       pods of these workloads, the backup Jobs included, get the label
-                      azure.workload.identity/use: "true". The name <cluster name>-camunda
+                      azure.workload.identity/use: "true". The name <name>-camunda
                       belongs to the operator. While neither the cluster nor its preset sets
                       this block and no referenced bucket uses workload identity, the
                       operator deletes an account of that name. It deletes one that it did

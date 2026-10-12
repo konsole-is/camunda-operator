@@ -19,7 +19,6 @@ package camundacluster
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -43,39 +42,52 @@ import (
 // inputs, so a bucket change rolls only the processes that ConfigHash gives
 // them to.
 func (res *resolver) resolveObjectStorage(ctx context.Context, in *components.Input) error {
-	shared := len(res.inputs)
-	backup, err := res.objectStorage(ctx, res.cluster.Spec.BackupStorageRef)
+	inputs, err := res.resolveBuckets(ctx, in)
 	if err != nil {
 		return err
 	}
+	in.BucketHashInputs = inputs
+
+	return res.checkServiceAccount(ctx, in)
+}
+
+// resolveBuckets reads and checks the referenced buckets, sets them on in, and
+// returns their hash inputs. It records none of them in the shared inputs.
+func (res *resolver) resolveBuckets(ctx context.Context, in *components.Input) ([]string, error) {
+	shared := res.inputs
+	res.inputs = nil
+	defer func() { res.inputs = shared }()
+
+	backup, err := res.objectStorage(ctx, res.cluster.Spec.BackupStorageRef)
+	if err != nil {
+		return nil, err
+	}
 	documents, err := res.objectStorage(ctx, res.cluster.Spec.DocumentStorageRef)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	annotations, err := components.DerivedServiceAccountAnnotations(backup, documents)
 	if err != nil {
-		return &conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: err.Error()}
+		return nil, &conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: err.Error()}
 	}
 	in.ServiceAccountAnnotations = annotations
 	in.Documents = documents
 
 	if backup != nil {
 		if err := res.rejectSharedAzureContainer(ctx, backup); err != nil {
-			return err
+			return nil, err
 		}
 		if err := res.checkBucketCredentials(ctx, backup); err != nil {
-			return err
+			return nil, err
 		}
 		in.Backup = backup
 		if err := res.requireSnapshotRepository(in); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	in.BucketHashInputs = slices.Clone(res.inputs[shared:])
-	res.inputs = res.inputs[:shared]
 
-	return res.checkServiceAccount(ctx, in)
+	return res.inputs, nil
 }
 
 // checkServiceAccount fails the pre-check when the connectors would run under
