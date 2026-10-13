@@ -90,12 +90,8 @@ jobs:
       - name: Check that the page scenarios are generated
         run: |
           make fleet-scenarios
-          if [ -n "$(git status --porcelain -- fleet-manager/e2e/scenarios)" ]; then
-            git status --porcelain -- fleet-manager/e2e/scenarios
-            git diff -- fleet-manager/e2e/scenarios
-            echo "::error::The page scenarios are out of date. Run make fleet-scenarios and commit the result."
-            exit 1
-          fi
+          git add --intent-to-add fleet-manager/e2e/scenarios
+          git diff --exit-code -- fleet-manager/e2e/scenarios
 
       - name: Check the docs against the simple-english rules
         run: make docs-sentences
