@@ -241,6 +241,82 @@ func TestSimulatorReportsARecreateDeploymentWithAnUnreadyPodAsUnavailable(t *tes
 	assert.Equal(t, corev1.ConditionFalse, available.Status, "a Recreate Deployment allows no unavailable Pod")
 }
 
+// changeImage sets the image of the Deployment optimize of c to image.
+func changeImage(t *testing.T, c client.Client, image string) {
+	t.Helper()
+
+	var d appsv1.Deployment
+	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "optimize"}, &d))
+	d.Spec.Template.Spec.Containers[0].Image = image
+	require.NoError(t, c.Update(context.Background(), &d))
+}
+
+// replicaSetsOf returns the ReplicaSets of team-a by name.
+func replicaSetsOf(t *testing.T, c client.Client) map[string]appsv1.ReplicaSet {
+	t.Helper()
+
+	var sets appsv1.ReplicaSetList
+	require.NoError(t, c.List(context.Background(), &sets, client.InNamespace("team-a")))
+	byName := map[string]appsv1.ReplicaSet{}
+	for _, rs := range sets.Items {
+		byName[rs.Name] = rs
+	}
+	return byName
+}
+
+func TestSimulatorKeepsTheOldReplicaSetOfADeploymentAtZero(t *testing.T) {
+	c := fakeClient(t, webapp())
+	sim := newSimulator(c)
+	sim.watch("team-a")
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err)
+
+	changeImage(t, c, "camunda/optimize:8.9.24")
+	_, err = sim.pass(context.Background())
+	require.NoError(t, err)
+
+	sets := replicaSetsOf(t, c)
+	require.Len(t, sets, 2, "the Deployment controller keeps the old ReplicaSet")
+	for _, rs := range sets {
+		switch rs.Annotations[revisionAnnotation] {
+		case "1":
+			assert.Equal(t, int32(0), *rs.Spec.Replicas, "the old ReplicaSet is scaled to 0")
+			assert.Zero(t, rs.Status.Replicas)
+		case "2":
+			assert.Equal(t, int32(2), *rs.Spec.Replicas)
+		default:
+			assert.Failf(t, "unknown revision", "%s has revision %q", rs.Name, rs.Annotations[revisionAnnotation])
+		}
+	}
+
+	var pods corev1.PodList
+	require.NoError(t, c.List(context.Background(), &pods, client.InNamespace("team-a")))
+	assert.Len(t, pods.Items, 2, "only the new ReplicaSet runs Pods")
+}
+
+func TestSimulatorDeletesTheReplicaSetsBeyondTheRevisionHistoryLimit(t *testing.T) {
+	d := webapp()
+	d.Spec.RevisionHistoryLimit = new(int32(1))
+	c := fakeClient(t, d)
+	sim := newSimulator(c)
+	sim.watch("team-a")
+
+	for _, image := range []string{"", "camunda/optimize:8.9.24", "camunda/optimize:8.9.25"} {
+		if image != "" {
+			changeImage(t, c, image)
+		}
+		_, err := sim.pass(context.Background())
+		require.NoError(t, err)
+	}
+
+	sets := replicaSetsOf(t, c)
+	revisions := make([]string, 0, len(sets))
+	for _, rs := range sets {
+		revisions = append(revisions, rs.Annotations[revisionAnnotation])
+	}
+	assert.ElementsMatch(t, []string{"2", "3"}, revisions, "one old revision stays beside the current one")
+}
+
 func TestSimulatorReplacesThePodsOfAnOldTemplate(t *testing.T) {
 	c := fakeClient(t, brokers())
 	sim := newSimulator(c)

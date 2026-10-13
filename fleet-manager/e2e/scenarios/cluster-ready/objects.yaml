@@ -657,6 +657,8 @@ status:
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
   labels:
@@ -671,6 +673,9 @@ metadata:
     fieldsType: FieldsV1
     fieldsV1:
       f:metadata:
+        f:annotations:
+          .: {}
+          f:deployment.kubernetes.io/revision: {}
         f:labels:
           .: {}
           f:camunda.io/cluster: {}
@@ -927,6 +932,8 @@ status:
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
   labels:
@@ -941,6 +948,9 @@ metadata:
     fieldsType: FieldsV1
     fieldsV1:
       f:metadata:
+        f:annotations:
+          .: {}
+          f:deployment.kubernetes.io/revision: {}
         f:labels:
           .: {}
           f:camunda.io/cluster: {}

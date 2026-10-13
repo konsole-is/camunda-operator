@@ -325,40 +325,37 @@ func (s *simulator) deployments(ctx context.Context, ns string) (int, error) {
 }
 
 // deployment brings d, its ReplicaSet, and its Pods to the state of its
-// current template. It deletes each other ReplicaSet of d, with its Pods.
+// current template, and retires each other ReplicaSet of d.
 func (s *simulator) deployment(ctx context.Context, d *appsv1.Deployment) (int, error) {
 	replicas := ptr.Deref(d.Spec.Replicas, 1)
 	ready := s.readyCount(kindDeployment, d.Namespace, d.Name, replicas)
 	hash := templateHash(d.Spec.Template, d)
 	rsName := d.Name + "-" + hash
-	writes := 0
 
 	var sets appsv1.ReplicaSetList
 	if err := s.client.List(ctx, &sets, client.InNamespace(d.Namespace)); err != nil {
-		return writes, fmt.Errorf("listing ReplicaSets: %w", err)
+		return 0, fmt.Errorf("listing ReplicaSets: %w", err)
 	}
+	var old []*appsv1.ReplicaSet
+	revision := 0
 	for i := range sets.Items {
 		rs := &sets.Items[i]
-		if !controlledBy(rs, "Deployment", d.Name) || rs.Name == rsName {
+		if !controlledBy(rs, "Deployment", d.Name) {
 			continue
 		}
-		pods, err := s.ownedPods(ctx, rs.Namespace, "ReplicaSet", rs.Name)
-		if err != nil {
-			return writes, err
+		revision = max(revision, rsRevision(rs))
+		if rs.Name != rsName {
+			old = append(old, rs)
 		}
-		for j := range pods {
-			if err := s.deletePod(ctx, &pods[j]); err != nil {
-				return writes, err
-			}
-			writes++
-		}
-		if err := s.client.Delete(ctx, rs); client.IgnoreNotFound(err) != nil {
-			return writes, fmt.Errorf("deleting ReplicaSet %s: %w", rs.Name, err)
-		}
-		writes++
+	}
+
+	writes, err := s.retireReplicaSets(ctx, old, int(ptr.Deref(d.Spec.RevisionHistoryLimit, 10)))
+	if err != nil {
+		return writes, err
 	}
 
 	rs := replicaSetFor(d, hash, replicas)
+	rs.Annotations = map[string]string{revisionAnnotation: strconv.Itoa(revision + 1)}
 	created, err := s.createIfMissing(ctx, rs)
 	if created {
 		writes++
@@ -406,6 +403,63 @@ func (s *simulator) deployment(ctx context.Context, d *appsv1.Deployment) (int, 
 		return writes, fmt.Errorf("writing the status: %w", err)
 	}
 	return writes + 1, nil
+}
+
+// revisionAnnotation holds the revision of a ReplicaSet of a Deployment.
+const revisionAnnotation = "deployment.kubernetes.io/revision"
+
+// rsRevision returns the revision of rs, or 0 when it has none.
+func rsRevision(rs *appsv1.ReplicaSet) int {
+	revision, _ := strconv.Atoi(rs.Annotations[revisionAnnotation])
+	return revision
+}
+
+// retireReplicaSets scales each of old to 0 and deletes its Pods, as the
+// Deployment controller does after a rollout, and deletes the oldest of old
+// beyond limit.
+func (s *simulator) retireReplicaSets(ctx context.Context, old []*appsv1.ReplicaSet, limit int) (int, error) {
+	slices.SortFunc(old, func(a, b *appsv1.ReplicaSet) int {
+		return cmp.Or(cmp.Compare(rsRevision(b), rsRevision(a)), cmp.Compare(a.Name, b.Name))
+	})
+
+	writes := 0
+	for i, rs := range old {
+		pods, err := s.ownedPods(ctx, rs.Namespace, "ReplicaSet", rs.Name)
+		if err != nil {
+			return writes, err
+		}
+		for j := range pods {
+			if err := s.deletePod(ctx, &pods[j]); err != nil {
+				return writes, err
+			}
+			writes++
+		}
+
+		if i >= limit {
+			if err := s.client.Delete(ctx, rs); client.IgnoreNotFound(err) != nil {
+				return writes, fmt.Errorf("deleting ReplicaSet %s: %w", rs.Name, err)
+			}
+			writes++
+			continue
+		}
+
+		if ptr.Deref(rs.Spec.Replicas, 1) != 0 {
+			rs.Spec.Replicas = new(int32(0))
+			if err := s.client.Update(ctx, rs, client.FieldOwner(kubeControllerManager)); err != nil {
+				return writes, fmt.Errorf("scaling ReplicaSet %s to 0: %w", rs.Name, err)
+			}
+			writes++
+		}
+		status := appsv1.ReplicaSetStatus{ObservedGeneration: rs.Generation}
+		if !equality.Semantic.DeepEqual(status, rs.Status) {
+			rs.Status = status
+			if err := s.client.Status().Update(ctx, rs, client.FieldOwner(kubeControllerManager)); err != nil {
+				return writes, fmt.Errorf("writing the status of ReplicaSet %s: %w", rs.Name, err)
+			}
+			writes++
+		}
+	}
+	return writes, nil
 }
 
 // replicaSetFor returns the ReplicaSet of d for the template with hash, as
