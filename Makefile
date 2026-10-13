@@ -269,7 +269,7 @@ docker-push-cli: ## Push docker image with camunda-operator-cli.
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
 PLATFORMS ?= linux/amd64,linux/arm64
-# BUILDX_OUTPUT is where docker-buildx and docker-buildx-cli send the image. The release workflow sets it to
+# BUILDX_OUTPUT is where docker-buildx, docker-buildx-cli, and docker-buildx-fleet send the image. The release workflow sets it to
 # --load, with one platform in PLATFORMS, to scan the image of each platform before it pushes them.
 BUILDX_OUTPUT ?= --push
 .PHONY: docker-buildx
@@ -638,6 +638,28 @@ fleet-playwright: fleet-install ## Install the Chromium browser that the fleet m
 fleet-gallery: fleet-build fleet-playwright ## Screenshot each fleet manager gallery story at 1440 px and 390 px into fleet-manager/ui-gallery, and fail on a serious or critical axe violation.
 	$(FLEET_PNPM) run build:gallery
 	$(FLEET_PNPM) run gallery
+
+.PHONY: docker-build-fleet
+docker-build-fleet: ## Build the fleet manager image.
+	$(CONTAINER_TOOL) build -t ${FLEET_IMG} -f $(FLEET_DIR)/Dockerfile .
+
+.PHONY: docker-push-fleet
+docker-push-fleet: ## Push the fleet manager image.
+	$(CONTAINER_TOOL) push ${FLEET_IMG}
+
+# docker-buildx-fleet builds each platform in emulation. docker-buildx builds
+# on the platform of the builder instead, but pnpm installs the native
+# packages of the platform it runs on, and the standalone output copies them.
+.PHONY: docker-buildx-fleet
+docker-buildx-fleet: ## Build and push the fleet manager image for cross-platform support
+	- $(CONTAINER_TOOL) buildx create --name camunda-operator-builder
+	$(CONTAINER_TOOL) buildx use camunda-operator-builder
+	$(CONTAINER_TOOL) buildx build $(BUILDX_OUTPUT) --platform=$(PLATFORMS) --tag ${FLEET_IMG} -f $(FLEET_DIR)/Dockerfile .
+	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
+
+.PHONY: fleet-image-test
+fleet-image-test: docker-build-fleet ## Build the fleet manager image and check that it starts as non-root with its data.
+	CONTAINER_TOOL=$(CONTAINER_TOOL) $(FLEET_DIR)/deploy/test-image.sh "$(FLEET_IMG)"
 
 ##@ Documentation
 
