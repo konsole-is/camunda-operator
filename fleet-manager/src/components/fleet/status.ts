@@ -11,7 +11,7 @@ export type StatusTone = "ok" | "warn" | "bad" | "off" | "muted";
 /**
  * describeReady turns a Ready condition into the words and the tone that the
  * status components show. A missing condition is "No status". The reason is
- * kept for False and Unknown only, because True always says Healthy.
+ * kept for False and Unknown only.
  */
 export function describeReady(condition: ConditionLike | undefined): {
   tone: StatusTone;

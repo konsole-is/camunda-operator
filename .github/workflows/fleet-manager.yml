@@ -40,12 +40,9 @@ jobs:
         run: make fleet-lint
       - name: Run the fleet manager tests
         run: make fleet-test
-      - name: Build the fleet manager
-        run: make fleet-build
-      - name: Install the Playwright browser
-        run: make fleet-playwright FLEET_PLAYWRIGHT_FLAGS=--with-deps
-      - name: Screenshot and check the UI gallery
-        run: make fleet-gallery
+      # fleet-gallery runs fleet-build and fleet-playwright first.
+      - name: Build the fleet manager and check the UI gallery
+        run: make fleet-gallery FLEET_PLAYWRIGHT_FLAGS=--with-deps
       - name: Upload the UI gallery
         id: gallery
         if: ${{ !cancelled() }}
