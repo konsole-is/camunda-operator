@@ -247,4 +247,5 @@ func TestGenerateReadsTheConditionTypesOfTheRealAPI(t *testing.T) {
 	assert.Subset(t, cluster, []string{"Ready", "MirroredSecretsReady", "ZeebeReady", "AdminSecretReady"})
 	assert.Subset(t, set(t, out, "coreDatabaseServerConditionTypes"), []string{"ClusterReady"})
 	assert.Subset(t, set(t, out, "pluginsSharedConditionTypes"), []string{"Accepted", "Applied"})
+	assert.Contains(t, set(t, out, "fleetEnvironmentConditionTypes"), "Ready")
 }

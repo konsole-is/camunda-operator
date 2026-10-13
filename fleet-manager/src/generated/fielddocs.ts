@@ -4399,5 +4399,97 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#secondarystorageconfigstatus"
       }
     }
+  },
+  "fleet.camunda.io": {
+    "Environment": {
+      "spec": {
+        "description": "spec is the policy of the environment",
+        "anchor": "#environment"
+      },
+      "spec.color": {
+        "description": "Color is the color that the fleet manager shows for the environment,\nas a hex color such as #2E7D32. It changes nothing for a claim.",
+        "anchor": "#environmentspec"
+      },
+      "spec.deletionPolicy": {
+        "description": "DeletionPolicy is the deletion policy of a claim of the environment\nthat sets none itself. Delete deletes the resources of its plugin\nrequests with the claim. Orphan keeps them. Unset means Delete. A\nchange applies to new claims only.",
+        "anchor": "#environmentspec"
+      },
+      "spec.displayName": {
+        "description": "DisplayName is the name that the fleet manager shows for the\nenvironment, at most 64 characters. It changes nothing for a claim.",
+        "anchor": "#environmentspec"
+      },
+      "spec.namespaceCreation": {
+        "description": "NamespaceCreation lets the create flow of the fleet manager create a\nnamespace in the environment. Unset, the create flow cannot create a\nnamespace.",
+        "anchor": "#environmentspec"
+      },
+      "spec.namespaceCreation.allowed": {
+        "description": "Allowed lets the create flow create a namespace in the environment.",
+        "anchor": "#namespacecreation"
+      },
+      "spec.namespaceCreation.labels": {
+        "description": "Labels are fixed labels of a new namespace. Each is a valid label. The\nlabel fleet.camunda.io/environment is not allowed here, because the\ncreate flow sets it.",
+        "anchor": "#namespacecreation"
+      },
+      "spec.namespaceCreation.requiredLabelKeys": {
+        "description": "RequiredLabelKeys are label keys, for example team. The create flow\nasks for a value of each key and sets the label on the new namespace.\nEach key is a valid label key. The key fleet.camunda.io/environment is\nnot allowed here.",
+        "anchor": "#namespacecreation"
+      },
+      "spec.parameters": {
+        "description": "Parameters holds the policy of the parameters of each\nPluginRegistration, by registration name and then by parameter name.\nA parameter without a policy keeps the value of its registration, and\na claim cannot change it. A change applies to new claims only.",
+        "anchor": "#environmentspec"
+      },
+      "spec.platformConfigRef": {
+        "description": "PlatformConfigRef names the CamundaPlatformConfig of a claim of the\nenvironment that names none itself. A change applies to new claims\nonly.",
+        "anchor": "#environmentspec"
+      },
+      "spec.presets": {
+        "description": "Presets lists, for each preset kind, the presets that a claim of the\nenvironment can use. The claim controller checks a new claim, and a\npreset change of an existing claim, against the current lists.",
+        "anchor": "#environmentspec"
+      },
+      "spec.presets.camundaCluster": {
+        "description": "CamundaCluster are the names of the CamundaClusterPresets that a\ncluster claim can use.",
+        "anchor": "#environmentpresets"
+      },
+      "spec.presets.databaseServer": {
+        "description": "DatabaseServer are the names of the DatabaseServerPresets that the\nbuilt-in PostgreSQL of a claim can use.",
+        "anchor": "#environmentpresets"
+      },
+      "spec.presets.elasticsearchCluster": {
+        "description": "ElasticsearchCluster are the names of the ElasticsearchClusterPresets\nthat the built-in Elasticsearch of a claim can use.",
+        "anchor": "#environmentpresets"
+      },
+      "spec.releases": {
+        "description": "Releases lists the CamundaReleases that a claim of the environment can\nuse. The claim controller checks a new claim, and a release change of\nan existing claim, against the current list.",
+        "anchor": "#environmentspec"
+      },
+      "spec.releases.allowed": {
+        "description": "Allowed are the names of the CamundaReleases that a claim can use.",
+        "anchor": "#environmentreleases"
+      },
+      "spec.releases.default": {
+        "description": "Default is the release of a claim that names none. It is one of\nallowed.",
+        "anchor": "#environmentreleases"
+      },
+      "spec.sections": {
+        "description": "Sections holds the policy of each PluginSection, by section name. A\nclaim of the environment can select only a registration that the\npolicy of its section allows. A section that is not listed offers\nonly the empty option. A change applies to new claims only.",
+        "anchor": "#environmentspec"
+      },
+      "status": {
+        "description": "status is the state of the environment",
+        "anchor": "#environment"
+      },
+      "status.conditions": {
+        "description": "Conditions report the state of the environment. Ready is False with\nreason InvalidReference when a release, preset, platform config,\nsection, or registration that the spec names does not exist. The\nmessage names each missing object.",
+        "anchor": "#environmentstatus"
+      },
+      "status.namespaces": {
+        "description": "Namespaces is the number of namespaces that carry the label of this\nenvironment. It is unset until the environment controller counts the\nnamespaces.",
+        "anchor": "#environmentstatus"
+      },
+      "status.observedGeneration": {
+        "description": "ObservedGeneration is the last generation that the environment\ncontroller processed.",
+        "anchor": "#environmentstatus"
+      }
+    }
   }
 };

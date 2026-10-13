@@ -162,6 +162,15 @@ export const coreSecondaryStorageConfigConditionTypes = [
 ] as const;
 export type CoreSecondaryStorageConfigConditionType = (typeof coreSecondaryStorageConfigConditionTypes)[number];
 
+export const fleetSharedConditionTypes = [
+] as const;
+export type FleetSharedConditionType = (typeof fleetSharedConditionTypes)[number];
+
+export const fleetEnvironmentConditionTypes = [
+  "Ready",
+] as const;
+export type FleetEnvironmentConditionType = (typeof fleetEnvironmentConditionTypes)[number];
+
 export const pluginsSharedConditionTypes = [
   "Accepted",
   "Applied",
