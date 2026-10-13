@@ -9,6 +9,7 @@ on:
       - config/crd/bases/**
       - config/samples/**
       - docs/crds/api-reference.md
+      - Makefile
   pull_request:
     paths:
       - fleet-manager/**
@@ -16,6 +17,7 @@ on:
       - config/crd/bases/**
       - config/samples/**
       - docs/crds/api-reference.md
+      - Makefile
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
