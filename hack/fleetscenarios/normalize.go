@@ -57,10 +57,10 @@ const (
 // normalize returns objs in a form that depends only on the scenario, so a
 // second run writes the same bytes:
 //
-//  1. An Event stays only when the object it is about is in objs. Its name
-//     comes from that object, its reason, and its note, and one Event stays
-//     for each of them. It has no series, and its reporting instance names
-//     scenarioNode in place of the host.
+//  1. An Event stays only when the object it is about, by UID, is in objs.
+//     Its name comes from that object, its reason, and its note, and one
+//     Event stays for each of them. It has no series, and its reporting
+//     instance names scenarioNode in place of the host.
 //  2. The UID of each object comes from scenarioUID. Each occurrence of a
 //     real UID anywhere in objs, such as an owner reference or the name of
 //     a field manager, becomes the scenario UID of the object that it names.
@@ -132,8 +132,8 @@ func describe(obj *unstructured.Unstructured) string {
 func normalizeEvents(objs []unstructured.Unstructured) []unstructured.Unstructured {
 	held := map[string]bool{}
 	for i := range objs {
-		if !isEvent(&objs[i]) {
-			held[objs[i].GetKind()+"/"+objs[i].GetNamespace()+"/"+objs[i].GetName()] = true
+		if !isEvent(&objs[i]) && objs[i].GetUID() != "" {
+			held[string(objs[i].GetUID())] = true
 		}
 	}
 
@@ -149,7 +149,8 @@ func normalizeEvents(objs []unstructured.Unstructured) []unstructured.Unstructur
 		kind, _, _ := unstructured.NestedString(e.Object, "regarding", "kind")
 		namespace, _, _ := unstructured.NestedString(e.Object, "regarding", "namespace")
 		name, _, _ := unstructured.NestedString(e.Object, "regarding", "name")
-		if !held[kind+"/"+namespace+"/"+name] {
+		uid, _, _ := unstructured.NestedString(e.Object, "regarding", "uid")
+		if !held[uid] {
 			continue
 		}
 

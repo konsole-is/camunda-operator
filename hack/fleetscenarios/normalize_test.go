@@ -363,6 +363,18 @@ func TestNormalizeWritesNoCountAndNoHostOfAnEvent(t *testing.T) {
 	assert.Equal(t, scenarioUID("CamundaCluster", "team-a", "orders"), regarding["uid"])
 }
 
+func TestNormalizeLeavesOutAnEventAboutAnEarlierObjectOfTheSameName(t *testing.T) {
+	earlier := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "earlier")
+	current := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "current")
+	out, err := normalize(
+		newServiceIPs(),
+		[]unstructured.Unstructured{current, event("orders.a", earlier, "Created", "Created")},
+	)
+	require.NoError(t, err)
+
+	assert.Len(t, out, 1, "the Event is about an object that a state deleted")
+}
+
 func TestNormalizeLeavesOutAnEventAboutAnObjectOutsideTheScenario(t *testing.T) {
 	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "u")
 	gone := object("v1", "Pod", "team-a", "orders-zeebe-0", "u2")
