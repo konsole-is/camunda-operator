@@ -713,7 +713,7 @@ status:
 
 ### Routes
 
-`status.endpoints` lists the routes of the management plane, sorted by name. Each entry is a path on an external URL, with the Service and the port that serve it. Read this list to route traffic to the management plane. A plane in the `keycloak` mode with every app on one host, as in [One host for the management plane](#one-host-for-the-management-plane), publishes:
+`status.endpoints` lists the routes of the management plane, sorted by name. Each entry is a path on an external URL, with the Service and the port that serve it. Read this list to route traffic to the management plane. The example below is a plane in the `keycloak` mode that runs every app on the host `camunda.example.com`. Keycloak is at `https://camunda.example.com/auth`. Identity is at `/identity`, Console at `/console`, and Web Modeler at `/modeler` and `/modeler-ws`. This plane publishes:
 
 ```yaml
 status:

@@ -149,14 +149,14 @@ const (
 	EndpointKeycloak = "keycloak"
 	// EndpointIdentity routes Management Identity.
 	EndpointIdentity = "identity"
-	// EndpointConsole routes Console. It is present only while console is
-	// set.
+	// EndpointConsole routes Console. It is present only while spec.console
+	// is set.
 	EndpointConsole = "console"
 	// EndpointWebModeler routes the Web Modeler application and its API. It
-	// is present only while webModeler is set.
+	// is present only while spec.webModeler is set.
 	EndpointWebModeler = "web-modeler"
 	// EndpointWebModelerWebsockets routes the live updates of Web Modeler. It
-	// is present only while webModeler is set.
+	// is present only while spec.webModeler is set.
 	EndpointWebModelerWebsockets = "web-modeler-websockets"
 )
 
@@ -479,13 +479,14 @@ type CamundaManagementClusterStatus struct {
 	ManagementAuthConfig string `json:"managementAuthConfig,omitempty"`
 	// Endpoints lists the routes of this management plane, sorted by name.
 	// Each entry is a path on an external URL, with the Service and the port
-	// that serve it. The path of an entry is the path of the external URL of
-	// its app, or / for a URL without a path. The entry belongs to the host
-	// of that URL. keycloak is present in the keycloak mode, console while
-	// console is set, and web-modeler and web-modeler-websockets while
-	// webModeler is set. The longest matching path prefix wins. The entries
-	// stay while the management plane is suspended, because the Services
-	// stay.
+	// that serve it. An access extension reads it and does not derive a
+	// Service from the mode fields. The path of an entry is the path of the
+	// external URL of its app, or / for a URL without a path. The entry
+	// belongs to the host of that URL. keycloak is present in the keycloak
+	// mode, console while spec.console is set, and web-modeler and
+	// web-modeler-websockets while spec.webModeler is set. The longest
+	// matching path prefix wins. The entries stay while the management plane
+	// is suspended, because the Services stay.
 	// +listType=map
 	// +listMapKey=name
 	// +optional
