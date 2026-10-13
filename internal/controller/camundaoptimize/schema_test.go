@@ -172,6 +172,15 @@ var _ = Describe("CamundaOptimize schema", func() {
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
 	})
 
+	It("rejects an externalUrl with a percent-encoded character", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "https://camunda.example.com/%2F"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(
+			MatchError(ContainSubstring("externalUrl must carry no percent-encoded character")),
+		)
+	})
+
 	It("rejects an externalUrl with a query or a fragment", func() {
 		for _, url := range []string{
 			"https://optimize.example.com?tenant=a",
