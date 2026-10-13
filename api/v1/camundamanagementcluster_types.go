@@ -477,10 +477,10 @@ type CamundaManagementClusterStatus struct {
 	// managementAuthRef.
 	// +optional
 	ManagementAuthConfig string `json:"managementAuthConfig,omitempty"`
-	// Endpoints lists the routes of this management plane, sorted by name:
-	// each path on an external URL, with the Service and the port that
-	// serve it. The path of an entry is the path of the external URL of its
-	// app, or / for a URL without a path, and the entry belongs to the host
+	// Endpoints lists the routes of this management plane, sorted by name.
+	// Each entry is a path on an external URL, with the Service and the port
+	// that serve it. The path of an entry is the path of the external URL of
+	// its app, or / for a URL without a path. The entry belongs to the host
 	// of that URL. keycloak is present in the keycloak mode, console while
 	// console is set, and web-modeler and web-modeler-websockets while
 	// webModeler is set. The longest matching path prefix wins. The entries
