@@ -8,7 +8,7 @@ import {
   renderCrdTypes,
   writeCrdTypes,
   type Crd,
-} from "../../scripts/generate-crd-types.mts";
+} from "../../scripts/generate-crd-types.mjs";
 import { typeCheck } from "./typecheck";
 
 const dir = "test/generated/__virtual__";
@@ -152,7 +152,9 @@ describe("renderCrdTypes", { timeout: 60_000 }, () => {
   });
 
   it("ignores a version that is not served", async () => {
-    const schema = { openAPIV3Schema: { type: "object", properties: { spec } } };
+    const schema: { openAPIV3Schema: JSONSchema } = {
+      openAPIV3Schema: { type: "object", properties: { spec } },
+    };
     const file = await renderCrdTypes(
       widgetCrd({}, [
         { name: "v1alpha1", served: false, schema },
@@ -166,7 +168,9 @@ describe("renderCrdTypes", { timeout: 60_000 }, () => {
   });
 
   it("refuses a CRD that serves two versions", async () => {
-    const schema = { openAPIV3Schema: { type: "object" } };
+    const schema: { openAPIV3Schema: JSONSchema } = {
+      openAPIV3Schema: { type: "object" },
+    };
     await expect(
       renderCrdTypes(
         widgetCrd({}, [
