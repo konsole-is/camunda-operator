@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/yaml"
@@ -38,6 +39,11 @@ const (
 	jobComplete = "Complete"
 	jobFailed   = "Failed"
 )
+
+// reservedStateNames are the names of the other files beside a
+// scenario.yaml: the input, the output of the seed, and the hand-written
+// observe.yaml of the Playwright tests.
+var reservedStateNames = []string{"scenario", "objects", "observe"}
 
 // scenario is the content of one scenario.yaml. The package doc of main
 // describes each key.
@@ -140,8 +146,10 @@ func (s *scenario) validate() error {
 	for i, st := range s.States {
 		where := fmt.Sprintf("state %q", st.Name)
 		switch {
-		case st.Name == "objects" || st.Name == "scenario":
-			errs = append(errs, fmt.Errorf("state %d has the name %q, which is an output file", i+1, st.Name))
+		case slices.Contains(reservedStateNames, st.Name):
+			errs = append(errs, fmt.Errorf(
+				"state %d has the name %q, which is the name of another file of the scenario", i+1, st.Name,
+			))
 		case len(validation.IsDNS1123Label(st.Name)) > 0:
 			errs = append(errs, fmt.Errorf("state name %q is not a DNS label", st.Name))
 		case seen[st.Name]:

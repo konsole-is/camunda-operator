@@ -81,7 +81,16 @@ func TestReadScenarioRefusesAStateNamedLikeAnOutput(t *testing.T) {
     description: Clashes with objects.yaml.
 `
 	_, err := readScenario(writeScenario(t, body))
-	assert.ErrorContains(t, err, `state 1 has the name "objects", which is an output file`)
+	assert.ErrorContains(t, err, `state 1 has the name "objects", which is the name of another file of the scenario`)
+}
+
+func TestReadScenarioRefusesAStateNamedLikeTheObserveFile(t *testing.T) {
+	body := validScenario + `states:
+  - name: observe
+    description: Clashes with the hand-written observe.yaml.
+`
+	_, err := readScenario(writeScenario(t, body))
+	assert.ErrorContains(t, err, `state 1 has the name "observe", which is the name of another file of the scenario`)
 }
 
 func TestReadScenarioRefusesTwoStatesWithOneName(t *testing.T) {
