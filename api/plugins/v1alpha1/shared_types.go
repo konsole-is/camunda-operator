@@ -270,7 +270,7 @@ type TargetRef struct {
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 	// AdditionalServiceAccounts are the names of more ServiceAccounts that
-	// the cloud identity of the request also trusts, for example those of
+	// the cloud identity of the request also trusts. Examples are those of
 	// the built-in storage beside the claim. Each name is a ServiceAccount in
 	// the namespace of the request. A name with a namespace part is refused,
 	// so that a request never makes a cloud identity trust a ServiceAccount
