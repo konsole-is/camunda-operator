@@ -33,6 +33,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	"github.com/konsole-is/camunda-operator/pkg/externalurl"
 	"github.com/konsole-is/camunda-operator/pkg/images"
 	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 )
@@ -254,7 +255,7 @@ func identityEnv(in Input) []corev1.EnvVar {
 
 	env := identityProviderEnv(in)
 	env = append(env, corev1.EnvVar{Name: identityEnvURL, Value: external})
-	if path := externalPath(parseURL(external)); path != "" {
+	if path := externalurl.ContextPath(externalurl.Parse(external)); path != "" {
 		env = append(env, corev1.EnvVar{Name: identityEnvBasePath, Value: path})
 	}
 	env = append(env, identityDatabaseEnv(in.Databases.Identity)...)

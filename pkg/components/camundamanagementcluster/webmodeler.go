@@ -33,6 +33,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	"github.com/konsole-is/camunda-operator/pkg/externalurl"
 	"github.com/konsole-is/camunda-operator/pkg/images"
 	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 )
@@ -391,13 +392,13 @@ func webModelerMailEnv(mail v1.WebModelerMailSpec, ref *v1.LocalCredentialsSecre
 // a path needs the context path, and an http URL needs the redirect to https
 // turned off, which is on by default.
 func webModelerServerEnv(spec v1.WebModelerSpec) []corev1.EnvVar {
-	external := parseURL(spec.ExternalURL)
+	external := externalurl.Parse(spec.ExternalURL)
 
 	env := []corev1.EnvVar{
 		{Name: webModelerEnvServerURL, Value: spec.ExternalURL},
 		{Name: webModelerEnvHTTPSOnly, Value: strconv.FormatBool(external.Scheme == schemeHTTPS)},
 	}
-	if path := externalPath(external); path != "" {
+	if path := externalurl.ContextPath(external); path != "" {
 		env = append(env, corev1.EnvVar{Name: webModelerEnvContextPath, Value: path})
 	}
 
@@ -433,7 +434,7 @@ func webModelerProviderEnv(in Input) []corev1.EnvVar {
 // restapi process needs them: where the WebSocket server is inside the
 // Kubernetes cluster, and where a browser reaches it.
 func webModelerPusherEnv(in Input) []corev1.EnvVar {
-	external := parseURL(in.webModeler().WebsocketsExternalURL)
+	external := externalurl.Parse(in.webModeler().WebsocketsExternalURL)
 
 	return []corev1.EnvVar{
 		{
@@ -482,7 +483,7 @@ func webModelerClientPusherPort(external *url.URL) string {
 // both sides of the pairing must agree on. A URL that names no path uses the
 // root.
 func webModelerPusherPath(external *url.URL) string {
-	if path := externalPath(external); path != "" {
+	if path := externalurl.ContextPath(external); path != "" {
 		return path
 	}
 
@@ -517,7 +518,7 @@ func webModelerWebsocketsContainerSpec(in Input) corev1.Container {
 // container. The base path travels with the credentials, because the browser
 // is told the same one through CLIENT_PUSHER_PATH.
 func webModelerWebsocketsEnv(in Input) []corev1.EnvVar {
-	external := parseURL(in.webModeler().WebsocketsExternalURL)
+	external := externalurl.Parse(in.webModeler().WebsocketsExternalURL)
 
 	return []corev1.EnvVar{
 		{Name: webModelerEnvAppID, Value: PusherAppID},

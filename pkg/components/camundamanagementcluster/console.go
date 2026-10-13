@@ -30,6 +30,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	"github.com/konsole-is/camunda-operator/pkg/externalurl"
 	"github.com/konsole-is/camunda-operator/pkg/images"
 	"github.com/konsole-is/camunda-operator/pkg/workloadmutations"
 )
@@ -199,7 +200,7 @@ func consoleEnv(in Input) []corev1.EnvVar {
 			corev1.EnvVar{Name: consoleEnvKeycloakRealm, Value: provider.Realm},
 		)
 	}
-	if path := externalPath(parseURL(in.console().ExternalURL)); path != "" {
+	if path := externalurl.ContextPath(externalurl.Parse(in.console().ExternalURL)); path != "" {
 		env = append(env, corev1.EnvVar{Name: consoleEnvContextPath, Value: path})
 	}
 
