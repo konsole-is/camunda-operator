@@ -48,6 +48,13 @@ const (
 	ReasonExporterConflict = "ExporterConflict"
 )
 
+// The names of the entries of status.endpoints of a CamundaOptimize.
+const (
+	// EndpointOptimize routes every path of the Optimize webapp. Optimize has
+	// no context path, so it needs a host of its own.
+	EndpointOptimize = "optimize"
+)
+
 // CamundaOptimizeSpec is the desired state of one Optimize instance. It
 // attaches to one CamundaCluster and reads the data of that cluster from
 // Elasticsearch.
@@ -57,9 +64,9 @@ const (
 // the cluster cannot have different values.
 type CamundaOptimizeSpec struct {
 	// Version is the Optimize version to deploy, as a full semantic version.
-	// Optimize has its own patch line, so it does not follow the version of
-	// the cluster. The major and the minor must match the effective version
-	// of the referenced cluster. If they differ, Ready reports
+	// Camunda releases Optimize with the minor and the patch of the
+	// orchestration cluster, so set it to the effective version of the
+	// referenced cluster. If the major or the minor differs, Ready reports
 	// VersionMismatch.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
@@ -158,6 +165,17 @@ type CamundaOptimizeStatus struct {
 	// set while a failed check keeps them at zero after the cluster resumed.
 	// +optional
 	SuspendedBy OptimizeSuspension `json:"suspendedBy,omitempty"`
+	// Endpoints lists the routes of this Optimize: one entry, optimize, with
+	// the path prefix /, the webapp Service, and its HTTP port. An access
+	// extension reads it and does not derive the Service name. The entry
+	// stays while the workloads are at zero with the cluster, because the
+	// Service stays. It is empty before the first render. It is also empty
+	// while another CamundaOptimize holds the cluster or the cluster is gone,
+	// because the operator then deletes the webapp Service.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
 }
 
 // OptimizeSuspension names why the Optimize workloads are at zero with the
