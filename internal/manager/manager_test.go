@@ -50,6 +50,8 @@ func TestSchemeRecognizesEveryKindTheManagerReconciles(t *testing.T) {
 		v1.GroupVersion.WithKind("CamundaManagementCluster"),
 		pluginsv1alpha1.GroupVersion.WithKind("PluginSection"),
 		pluginsv1alpha1.GroupVersion.WithKind("PluginRegistration"),
+		pluginsv1alpha1.GroupVersion.WithKind("PluginRequest"),
+		pluginsv1alpha1.GroupVersion.WithKind("Grant"),
 		esv1.GroupVersion.WithKind("Elasticsearch"),
 		monitoringv1.SchemeGroupVersion.WithKind(monitoringv1.PodMonitorsKind),
 		keycloak.GroupVersion.WithKind("Keycloak"),

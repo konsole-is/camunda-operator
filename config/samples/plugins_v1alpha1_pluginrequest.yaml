@@ -1,0 +1,23 @@
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    app.kubernetes.io/name: camunda-operator
+    app.kubernetes.io/managed-by: kustomize
+    plugins.camunda.io/section: backup-storage
+    plugins.camunda.io/registration: aws-s3
+    fleet.camunda.io/claim: orders
+  name: orders-backup-storage
+spec:
+  section: backup-storage
+  registration: aws-s3
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda
+  parameters:
+    versioning: true
+  deletionPolicy: Delete
