@@ -438,6 +438,24 @@ func TestSimulatorNamesAStepWhoseObjectIsMissing(t *testing.T) {
 	assert.EqualError(t, err, "workload step names StatefulSet team-a/orders-zeeb, which does not exist")
 }
 
+func TestSimulatorAllowsTheDeletionOfAStepObjectThatExisted(t *testing.T) {
+	sts := brokers()
+	c := fakeClient(t, sts)
+	sim := newSimulator(c)
+	sim.add([]workloadStep{{
+		Kind: kindStatefulSet, Namespace: "team-a", Name: "orders-zeebe", ReadyReplicas: new(int32(1)),
+	}})
+	require.NoError(t, sim.missingSteps(context.Background()))
+
+	require.NoError(t, c.Delete(context.Background(), sts))
+	assert.NoError(t, sim.missingSteps(context.Background()), "a later state deleted the StatefulSet")
+
+	sim.add([]workloadStep{{
+		Kind: kindStatefulSet, Namespace: "team-a", Name: "orders-zeebe", ReadyReplicas: new(int32(2)),
+	}})
+	assert.Error(t, sim.missingSteps(context.Background()), "a new step needs its object again")
+}
+
 func TestSimulatorLeavesOtherNamespacesAlone(t *testing.T) {
 	c := fakeClient(t, brokers())
 	sim := newSimulator(c)

@@ -66,12 +66,15 @@ type simulator struct {
 	client     client.Client
 	namespaces []string
 	steps      map[objectKey]workloadStep
+	// matched holds each step whose object missingSteps found once. A later
+	// state may delete that object.
+	matched map[objectKey]bool
 }
 
 // newSimulator returns a simulator that writes through c and watches no
 // namespace yet.
 func newSimulator(c client.Client) *simulator {
-	return &simulator{client: c, steps: map[objectKey]workloadStep{}}
+	return &simulator{client: c, steps: map[objectKey]workloadStep{}, matched: map[objectKey]bool{}}
 }
 
 // watch adds namespaces to the namespaces that a pass covers.
@@ -87,7 +90,9 @@ func (s *simulator) watch(namespaces ...string) {
 // same object.
 func (s *simulator) add(steps []workloadStep) {
 	for _, step := range steps {
-		s.steps[objectKey{step.Kind, step.Namespace, step.Name}] = step
+		key := objectKey{step.Kind, step.Namespace, step.Name}
+		s.steps[key] = step
+		delete(s.matched, key)
 	}
 }
 
@@ -542,9 +547,9 @@ func deploymentStatus(d *appsv1.Deployment, rsName string, replicas, ready int32
 	return status
 }
 
-// jobs runs each Job of ns that has not finished: it makes the one Pod of
-// the Job and finishes the Job with the outcome of its step, or Complete
-// when it has no step. A suspended Job does not run.
+// jobs runs each Job of ns that has not finished: it makes the Pods of the
+// Job and finishes the Job with the outcome of its step, or Complete when it
+// has no step. A suspended Job does not run.
 func (s *simulator) jobs(ctx context.Context, ns string) (int, error) {
 	var list batchv1.JobList
 	if err := s.client.List(ctx, &list, client.InNamespace(ns)); err != nil {
@@ -925,7 +930,7 @@ func podSuffix(seed string) string {
 }
 
 // missingSteps returns an error that names each workload step whose object
-// does not exist.
+// no call has found since the step was added.
 func (s *simulator) missingSteps(ctx context.Context) error {
 	keys := slices.SortedFunc(maps.Keys(s.steps), func(a, b objectKey) int {
 		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
@@ -944,11 +949,16 @@ func (s *simulator) missingSteps(ctx context.Context) error {
 		}
 
 		err := s.client.Get(ctx, client.ObjectKey{Namespace: key.Namespace, Name: key.Name}, obj)
-		if apierrors.IsNotFound(err) {
-			errs = append(errs, fmt.Errorf(
-				"workload step names %s %s/%s, which does not exist", key.Kind, key.Namespace, key.Name,
-			))
-		} else if err != nil {
+		switch {
+		case err == nil:
+			s.matched[key] = true
+		case apierrors.IsNotFound(err):
+			if !s.matched[key] {
+				errs = append(errs, fmt.Errorf(
+					"workload step names %s %s/%s, which does not exist", key.Kind, key.Namespace, key.Name,
+				))
+			}
+		default:
 			errs = append(errs, fmt.Errorf("reading %s %s/%s: %w", key.Kind, key.Namespace, key.Name, err))
 		}
 	}
