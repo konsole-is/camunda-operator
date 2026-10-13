@@ -171,7 +171,8 @@ type CamundaOptimizeStatus struct {
 	// +optional
 	SuspendedBy OptimizeSuspension `json:"suspendedBy,omitempty"`
 	// Endpoints lists the routes of this Optimize: one entry, optimize, with
-	// the path prefix /, the webapp Service, and its HTTP port. An access
+	// the path of spec.externalUrl as its path prefix (/ for a URL without a
+	// path), the webapp Service, and its HTTP port. An access
 	// extension reads it and does not derive the Service name. The entry
 	// stays while the workloads are at zero with the cluster, because the
 	// Service stays. It is empty before the first render. It is also empty
