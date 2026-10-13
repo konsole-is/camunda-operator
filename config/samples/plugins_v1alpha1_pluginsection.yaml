@@ -1,0 +1,16 @@
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginSection
+metadata:
+  name: backup-storage
+spec:
+  label: Backup storage
+  description: Where the cluster keeps its backups.
+  order: 40
+  selection: One
+  emptyOptionLabel: No backups
+  slot: backupStorage
+  appliesTo:
+    - CamundaClusterClaim
+  outputs:
+    - key: objectStorageConfig
+      description: The name of the ObjectStorageConfig that the cluster writes its backups to.
