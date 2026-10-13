@@ -1,6 +1,7 @@
 {{- if .Values.fleetManager.enabled }}
-# The app has no login. No pod in the cluster can call it. kubectl
-# port-forward still works, because it reaches the pod through the kubelet.
+# The app has no login. This policy allows no traffic from other pods, and
+# kubectl port-forward still works, because it reaches the pod through the
+# kubelet. Another policy that selects the pod can still allow traffic.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
