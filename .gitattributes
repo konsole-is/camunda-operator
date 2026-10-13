@@ -3,3 +3,4 @@ config/crd/bases/*.yaml linguist-generated=true
 api/**/zz_generated.deepcopy.go linguist-generated=true
 dist/chart/** linguist-generated=true
 go.sum linguist-generated=true
+fleet-manager/src/generated/** linguist-generated=true
