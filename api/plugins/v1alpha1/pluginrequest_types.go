@@ -131,7 +131,8 @@ type PluginRequestStatus struct {
 // PluginRequest asks a plugin for the resources of one section of a claim.
 // A claim controller writes the spec, and the plugin controller that serves
 // the registration writes the status. The claim names a request
-// <claim>-<section>.
+// <claim>-<section>. The name is at most 63 characters, because other
+// objects carry it in a label value.
 type PluginRequest struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -150,10 +151,10 @@ type PluginRequest struct {
 
 // +kubebuilder:object:root=true
 
-// PluginRequestList contains a list of PluginRequest.
+// PluginRequestList contains a list of PluginRequest
 type PluginRequestList struct {
-	metav1.TypeMeta `                json:",inline"`
-	metav1.ListMeta `                json:"metadata,omitzero"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []PluginRequest `json:"items"`
 }
 
