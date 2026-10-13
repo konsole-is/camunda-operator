@@ -32,6 +32,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/config"
+	crenvtest "sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/konsole-is/camunda-operator/internal/manager"
@@ -57,7 +58,7 @@ const objectsFile = "objects.yaml"
 // <state>.yaml for each named state. It returns an error when a settle
 // times out, or when a workload step, an overlay, or a deletion names an
 // object that does not exist.
-func generate(ctx context.Context, sc *scenario) (map[string][]unstructured.Unstructured, error) {
+func generate(ctx context.Context, sc *scenario) (_ map[string][]unstructured.Unstructured, err error) {
 	plane, err := envtest.ControlPlane(envtest.Options{})
 	if err != nil {
 		return nil, fmt.Errorf("building the control plane: %w", err)
@@ -66,7 +67,9 @@ func generate(ctx context.Context, sc *scenario) (map[string][]unstructured.Unst
 	if err != nil {
 		return nil, fmt.Errorf("starting the control plane: %w", err)
 	}
-	defer func() { _ = plane.Stop() }()
+	defer func() {
+		err = errors.Join(err, stopPlane(plane))
+	}()
 
 	scheme := runtime.NewScheme()
 	if err := manager.AddToScheme(scheme); err != nil {
@@ -117,6 +120,20 @@ func generate(ctx context.Context, sc *scenario) (map[string][]unstructured.Unst
 	}
 
 	return outputs, nil
+}
+
+// stopPlane stops plane, and tries again while it fails, because the
+// shutdown of envtest is sometimes slow to release its ports. It returns the
+// last error when every try failed.
+func stopPlane(plane *crenvtest.Environment) error {
+	var err error
+	for range 5 {
+		if err = plane.Stop(); err == nil {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("stopping the control plane: %w", err)
 }
 
 // toUnstructured returns objs as unstructured objects, with each JSON
@@ -194,8 +211,9 @@ func settleAndList(
 	if err != nil {
 		return nil, err
 	}
-	err = runReconcilers(ctx, cfg, scheme, func(ctx context.Context) error {
-		return settle(ctx, sim, sco, settleTimeout, before)
+	deadline := time.Now().Add(settleTimeout)
+	err = runReconcilers(ctx, cfg, scheme, deadline, func(ctx context.Context) error {
+		return settle(ctx, sim, sco, time.Until(deadline), before)
 	})
 	if err != nil {
 		return nil, err
@@ -217,14 +235,15 @@ func settleAndList(
 // runReconcilers runs every reconciler of the operator against cfg while
 // during runs, then stops them and waits for the manager to return. during
 // starts once a reconciler has finished a reconcile. runReconcilers fails
-// when no reconciler finishes one within settleTimeout, or when the manager
-// stops first. The manager skips the check of unique controller names,
+// when no reconciler finishes one before deadline, or when the manager stops
+// first. The manager skips the check of unique controller names,
 // because one process starts the same controllers again for each state and
 // each scenario.
 func runReconcilers(
 	ctx context.Context,
 	cfg *rest.Config,
 	scheme *runtime.Scheme,
+	deadline time.Time,
 	during func(context.Context) error,
 ) error {
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
@@ -261,7 +280,7 @@ func runReconcilers(
 		close(stopped)
 	}()
 
-	err = waitForReconcile(ctx, before, stopped)
+	err = waitForReconcile(ctx, before, deadline, stopped)
 	if err == nil {
 		err = during(ctx)
 	}
@@ -273,8 +292,12 @@ func runReconcilers(
 // waitForReconcile returns nil once a controller has finished a reconcile
 // since the counts before were read. A settle that starts before the
 // controllers could find a scenario quiet that they have not seen yet.
-func waitForReconcile(ctx context.Context, before map[string]float64, stopped <-chan struct{}) error {
-	deadline := time.Now().Add(settleTimeout)
+func waitForReconcile(
+	ctx context.Context,
+	before map[string]float64,
+	deadline time.Time,
+	stopped <-chan struct{},
+) error {
 	for {
 		reconciles, _, err := controllerActivity()
 		if err != nil {
