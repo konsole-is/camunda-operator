@@ -42,3 +42,21 @@ jobs:
         run: make fleet-test
       - name: Build the fleet manager
         run: make fleet-build
+      - name: Install the Playwright browser
+        run: make fleet-playwright FLEET_PLAYWRIGHT_FLAGS=--with-deps
+      - name: Screenshot and check the UI gallery
+        run: make fleet-gallery
+      - name: Upload the UI gallery
+        id: gallery
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-gallery
+          path: fleet-manager/ui-gallery/
+          if-no-files-found: warn
+      - name: Link the UI gallery in the job summary
+        if: ${{ !cancelled() && steps.gallery.outputs.artifact-url != '' }}
+        env:
+          GALLERY_URL: ${{ steps.gallery.outputs.artifact-url }}
+        run: |
+          echo "UI gallery: [ui-gallery](${GALLERY_URL}). Open index.html in the archive." >> "${GITHUB_STEP_SUMMARY}"

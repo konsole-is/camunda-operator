@@ -14,6 +14,7 @@
     "lint": "eslint --max-warnings 0 . && prettier --check . && next typegen && tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
+    "gallery": "rm -rf ui-gallery test-results && playwright test"
     "generate": "node scripts/generate-crd-types.mts ../config/crd/bases src/generated/crds"
   },
   "dependencies": {
@@ -31,6 +32,8 @@
     "server-only": "0.0.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.64.0",
     "@tailwindcss/postcss": "4.3.3",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",

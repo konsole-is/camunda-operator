@@ -176,7 +176,9 @@ export const uiStories: Story[] = [
         <PopoverTrigger asChild>
           <Button variant="outline">Filters</Button>
         </PopoverTrigger>
-        <PopoverContent>Only clusters that are not ready</PopoverContent>
+        <PopoverContent aria-label="Filters">
+          Only clusters that are not ready
+        </PopoverContent>
       </Popover>
     ),
   },
