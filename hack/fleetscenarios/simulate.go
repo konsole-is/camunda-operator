@@ -774,7 +774,7 @@ func (s *simulator) runPod(ctx context.Context, pod *corev1.Pod, ready bool) (in
 	status := *pod.Status.DeepCopy()
 	status.Phase = corev1.PodRunning
 	status.StartTime = &scenarioTime
-	status.Conditions = podConditions(corev1.ConditionTrue, readiness)
+	status.Conditions = podConditions(readiness)
 	status.ContainerStatuses = nil
 	for _, c := range pod.Spec.Containers {
 		status.ContainerStatuses = append(status.ContainerStatuses, corev1.ContainerStatus{
@@ -799,7 +799,7 @@ func (s *simulator) finishPod(ctx context.Context, pod *corev1.Pod, succeeded bo
 	status := *pod.Status.DeepCopy()
 	status.Phase = phase
 	status.StartTime = &scenarioTime
-	status.Conditions = podConditions(corev1.ConditionTrue, corev1.ConditionFalse)
+	status.Conditions = podConditions(corev1.ConditionFalse)
 	status.ContainerStatuses = nil
 	for _, c := range pod.Spec.Containers {
 		status.ContainerStatuses = append(status.ContainerStatuses, corev1.ContainerStatus{
@@ -819,14 +819,14 @@ func (s *simulator) finishPod(ctx context.Context, pod *corev1.Pod, succeeded bo
 
 // podConditions returns the conditions of a Pod that is scheduled and
 // initialized, with the status of ContainersReady and Ready as ready.
-func podConditions(initialized, ready corev1.ConditionStatus) []corev1.PodCondition {
+func podConditions(ready corev1.ConditionStatus) []corev1.PodCondition {
 	conditions := make([]corev1.PodCondition, 0, 4)
 	for _, c := range []struct {
 		t      corev1.PodConditionType
 		status corev1.ConditionStatus
 	}{
 		{corev1.PodScheduled, corev1.ConditionTrue},
-		{corev1.PodInitialized, initialized},
+		{corev1.PodInitialized, corev1.ConditionTrue},
 		{corev1.ContainersReady, ready},
 		{corev1.PodReady, ready},
 	} {
