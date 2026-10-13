@@ -53,7 +53,7 @@ const (
 )
 
 // SectionPolicy is the policy of an Environment for one PluginSection.
-// +kubebuilder:validation:XValidation:rule="!has(self.default) || self.default == '' || (has(self.allowed) && self.default in self.allowed)",message="default must be one of allowed"
+// +kubebuilder:validation:XValidation:rule="!has(self.default) || size(self.default) == 0 || (has(self.allowed) && self.default in self.allowed)",message="default must be one of allowed"
 // +kubebuilder:validation:XValidation:rule="!has(self.required) || !self.required || (has(self.allowed) && size(self.allowed) > 0)",message="required needs at least one registration in allowed"
 type SectionPolicy struct {
 	// Required makes a claim of the environment select a registration of the

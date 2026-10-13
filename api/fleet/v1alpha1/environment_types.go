@@ -25,7 +25,7 @@ import (
 // EnvironmentSpec is the policy that an Environment sets for the claims in
 // its namespaces. A namespace belongs to the Environment that its label
 // fleet.camunda.io/environment names.
-// +kubebuilder:validation:XValidation:rule="!has(self.releases) || !has(self.releases.default) || self.releases.default == '' || (has(self.releases.allowed) && self.releases.default in self.releases.allowed)",message="releases.default must be one of releases.allowed"
+// +kubebuilder:validation:XValidation:rule="!has(self.releases) || !has(self.releases.default) || size(self.releases.default) == 0 || (has(self.releases.allowed) && self.releases.default in self.releases.allowed)",message="releases.default must be one of releases.allowed"
 type EnvironmentSpec struct {
 	// DisplayName is the name that the fleet manager shows for the
 	// environment, at most 64 characters. It changes nothing for a claim.

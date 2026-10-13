@@ -282,7 +282,7 @@ spec:
                   type: object
                   x-kubernetes-validations:
                   - message: default must be one of allowed
-                    rule: '!has(self.default) || self.default == '''' || (has(self.allowed)
+                    rule: '!has(self.default) || size(self.default) == 0 || (has(self.allowed)
                       && self.default in self.allowed)'
                   - message: required needs at least one registration in allowed
                     rule: '!has(self.required) || !self.required || (has(self.allowed)
@@ -297,9 +297,8 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: releases.default must be one of releases.allowed
-              rule: '!has(self.releases) || !has(self.releases.default) || self.releases.default
-                == '''' || (has(self.releases.allowed) && self.releases.default in
-                self.releases.allowed)'
+              rule: '!has(self.releases) || !has(self.releases.default) || size(self.releases.default)
+                == 0 || (has(self.releases.allowed) && self.releases.default in self.releases.allowed)'
           status:
             description: status is the state of the environment
             properties:
