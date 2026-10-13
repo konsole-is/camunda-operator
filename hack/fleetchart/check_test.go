@@ -209,7 +209,11 @@ func TestCheckEnabledRefusesSettingsRulesInTheClusterRole(t *testing.T) {
 		Verbs:     []string{"get", "update"},
 	})
 
-	assert.Len(t, checkEnabled(render(t, c), testKinds), 1)
+	assert.Equal(
+		t,
+		[]string{"the ClusterRole grants ConfigMaps, but the settings rules belong in the Role of the app namespace"},
+		checkEnabled(render(t, c), testKinds),
+	)
 }
 
 func TestCheckEnabledRefusesWildcardsAndExternalSecretWrites(t *testing.T) {
@@ -227,12 +231,10 @@ func TestCheckEnabledRefusesWildcardsAndExternalSecretWrites(t *testing.T) {
 
 	problems := checkEnabled(render(t, c), testKinds)
 
-	assert.Len(t, problems, 2)
-	assert.Contains(
-		t,
-		problems,
+	assert.Equal(t, []string{
+		"the ClusterRole has a wildcard rule on apiGroups [apps], resources [*], verbs [get]",
 		"the ClusterRole allows create on externalsecrets.external-secrets.io, which the app only reads",
-	)
+	}, problems)
 }
 
 func TestCheckEnabledRequiresTheSettingsRoleToNameTheConfigMap(t *testing.T) {
@@ -266,7 +268,11 @@ func TestCheckEnabledRequiresBindingsToTheAppServiceAccount(t *testing.T) {
 	c := validChart()
 	c.clusterRoleBinding.Subjects[0].Name = "someone-else"
 
-	assert.Len(t, checkEnabled(render(t, c), testKinds), 1)
+	assert.Equal(
+		t,
+		[]string{"the ClusterRoleBinding does not bind the ServiceAccount of the app"},
+		checkEnabled(render(t, c), testKinds),
+	)
 }
 
 func TestCheckEnabledRefusesARenderedSettingsConfigMap(t *testing.T) {
@@ -332,7 +338,11 @@ func TestCheckEnabledRequiresTheServerToListenOnEveryAddress(t *testing.T) {
 	c := validChart()
 	c.deployment.Spec.Template.Spec.Containers[0].Env = nil
 
-	assert.Len(t, checkEnabled(render(t, c), testKinds), 1)
+	assert.Equal(
+		t,
+		[]string{"the container does not set HOSTNAME=0.0.0.0, so kubectl port-forward cannot reach the server"},
+		checkEnabled(render(t, c), testKinds),
+	)
 }
 
 func TestCheckEnabledRequiresAReadOnlyRootFileSystem(t *testing.T) {

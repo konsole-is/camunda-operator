@@ -230,7 +230,15 @@ func checkClusterRole(rules []rbacv1.PolicyRule, kinds []groupResource) []string
 	}
 	for _, r := range rules {
 		if slices.Contains(r.APIGroups, "*") || slices.Contains(r.Resources, "*") || slices.Contains(r.Verbs, "*") {
-			problems = append(problems, "the ClusterRole has the wildcard rule "+r.String())
+			problems = append(
+				problems,
+				fmt.Sprintf(
+					"the ClusterRole has a wildcard rule on apiGroups %v, resources %v, verbs %v",
+					r.APIGroups,
+					r.Resources,
+					r.Verbs,
+				),
+			)
 		}
 		if slices.Contains(r.APIGroups, "") && slices.Contains(r.Resources, "configmaps") {
 			problems = append(
