@@ -274,6 +274,33 @@ type ElasticsearchClusterSpec struct {
 // started. Restart the operator after you install ECK.
 const ReasonECKNotInstalled = "ECKNotInstalled"
 
+// The component conditions of an ElasticsearchCluster. Ready is True only
+// when CredentialsReady, ElasticsearchReady, StorageContractReady,
+// KeystoreReady, and a present SnapshotRepositoryReady are True.
+// MetricsReady never affects Ready.
+const (
+	// ConditionCredentialsReady reports whether the file-realm user Secret and
+	// the roles Secret of the cluster are applied.
+	ConditionCredentialsReady = "CredentialsReady"
+	// ConditionElasticsearchReady reports whether the ECK Elasticsearch
+	// resource is ready.
+	ConditionElasticsearchReady = "ElasticsearchReady"
+	// ConditionStorageContractReady reports whether the SecondaryStorageConfig
+	// that the cluster publishes is applied.
+	ConditionStorageContractReady = "StorageContractReady"
+	// ConditionKeystoreReady reports whether the keystore entries that the
+	// bucket of spec.snapshotStorageRef needs are applied. It reads Disabled
+	// when the bucket needs none.
+	ConditionKeystoreReady = "KeystoreReady"
+	// ConditionSnapshotRepositoryReady reports whether the snapshot
+	// repository of the cluster is registered in Elasticsearch. It is absent
+	// when spec.snapshotStorageRef is unset.
+	ConditionSnapshotRepositoryReady = "SnapshotRepositoryReady"
+	// ConditionMetricsReady reports whether the exporter is ready. It reads
+	// Disabled while monitoring is off.
+	ConditionMetricsReady = "MetricsReady"
+)
+
 // PersistentVolumeClaimRetentionPolicyType is what happens to the data
 // volumes of a resource (an ElasticsearchCluster, the brokers of a
 // CamundaCluster) when the resource is deleted.

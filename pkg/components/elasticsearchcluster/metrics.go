@@ -35,9 +35,6 @@ import (
 )
 
 const (
-	// ConditionMetrics is the condition type of the metrics component.
-	ConditionMetrics = "MetricsReady"
-
 	// DefaultExporterImage is the elasticsearch_exporter release that the
 	// operator deploys unless spec.monitoring.exporter.image overrides it.
 	DefaultExporterImage = "quay.io/prometheuscommunity/elasticsearch-exporter:v1.9.0"
@@ -105,7 +102,7 @@ func MetricsComponent(
 	// fails.
 	return component.NewComponentBuilder().
 		WithName("metrics").
-		WithConditionType(ConditionMetrics).
+		WithConditionType(v1.ConditionMetricsReady).
 		WithFeatureGate(feature.NewBooleanGate(MonitoringEnabled(merged))).
 		WithResource(exporter).
 		WithResource(metrics).

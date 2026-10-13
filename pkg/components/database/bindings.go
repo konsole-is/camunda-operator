@@ -44,10 +44,6 @@ const (
 	// that the Database publishes.
 	bindingsComponentLabel = "database"
 
-	// ConditionBindings is the condition type of the bindings component, the
-	// single ocf component that publishes the bindings of the Database.
-	ConditionBindings = component.ConditionType("BindingsReady")
-
 	// CredentialUsernameKey and CredentialPasswordKey are the keys of every
 	// credential Secret that the Database controller publishes.
 	CredentialUsernameKey = "username"
@@ -305,7 +301,7 @@ func backupCredentialsRefMutation(rb Bindings) databaseconfig.Mutation {
 func bindingsComponentBuilder() *component.Builder {
 	return component.NewComponentBuilder().
 		WithName("bindings").
-		WithConditionType(ConditionBindings)
+		WithConditionType(v1.ConditionBindingsReady)
 }
 
 // WithdrawnBindingsComponent assembles the bindings component with its feature

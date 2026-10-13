@@ -26,7 +26,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 )
 
 var _ = Describe("ElasticsearchCluster grace periods", func() {
@@ -35,7 +34,7 @@ var _ = Describe("ElasticsearchCluster grace periods", func() {
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		createElasticsearchCluster(cluster)
-		expectConditionFalse(cluster, components.ConditionElasticsearch)
+		expectConditionFalse(cluster, v1.ConditionElasticsearchReady)
 
 		By("waiting on the datastore period while only Elasticsearch is not ready")
 		expectRequeueNear(cluster, suiteGracePeriods.Datastore)
@@ -47,7 +46,7 @@ var _ = Describe("ElasticsearchCluster grace periods", func() {
 			latest.Spec.Monitoring = &v1.MonitoringSpec{ServiceMonitor: &v1.ServiceMonitorSpec{Enabled: true}}
 			g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
-		expectConditionFalse(cluster, components.ConditionMetrics)
+		expectConditionFalse(cluster, v1.ConditionMetricsReady)
 		expectRequeueNear(cluster, suiteGracePeriods.Workload)
 	})
 })

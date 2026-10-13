@@ -156,25 +156,6 @@ const camundaRole = `camunda:
         - manage_ilm
 `
 
-const (
-	// ConditionCredentials is the condition type of the credentials
-	// component.
-	ConditionCredentials = "CredentialsReady"
-	// ConditionElasticsearch is the condition type of the elasticsearch
-	// component.
-	ConditionElasticsearch = "ElasticsearchReady"
-	// ConditionStorageContract is the condition type of the storage-contract
-	// component.
-	ConditionStorageContract = "StorageContractReady"
-	// ConditionKeystore is the condition type of the keystore component.
-	ConditionKeystore = "KeystoreReady"
-	// ConditionSnapshotRepository reports whether the snapshot repository of
-	// the cluster is registered in Elasticsearch. The controller sets it
-	// directly: registration is a call against Elasticsearch, not a Kubernetes
-	// resource, so no component owns it.
-	ConditionSnapshotRepository = "SnapshotRepositoryReady"
-)
-
 // CACertKey is the key of the CA certificate inside the Secret that
 // CACertSecretName names.
 const CACertKey = caCertKey
@@ -249,7 +230,7 @@ func CredentialsComponent(
 
 	return component.NewComponentBuilder().
 		WithName("credentials").
-		WithConditionType(ConditionCredentials).
+		WithConditionType(v1.ConditionCredentialsReady).
 		WithResource(userSecret).
 		WithResource(rolesSecret).
 		Build()
@@ -306,7 +287,7 @@ func ElasticsearchComponent(
 
 	return component.NewComponentBuilder().
 		WithName("elasticsearch").
-		WithConditionType(ConditionElasticsearch).
+		WithConditionType(v1.ConditionElasticsearchReady).
 		WithResource(account, accountOption(merged.ServiceAccount, usesServiceAccount(merged, storage))).
 		WithResource(elasticsearch).
 		WithGracePeriod(gracePeriod).
@@ -680,7 +661,7 @@ func StorageContractComponent(
 
 	return component.NewComponentBuilder().
 		WithName("storage-contract").
-		WithConditionType(ConditionStorageContract).
+		WithConditionType(v1.ConditionStorageContractReady).
 		WithResource(userSecret, component.ReadOnly(), component.BlockOnAbsence(), component.Auxiliary()).
 		WithResource(contract).
 		Build()
