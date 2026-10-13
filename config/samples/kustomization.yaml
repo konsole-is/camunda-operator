@@ -22,4 +22,5 @@ resources:
 - core_v1_databaseserver.yaml
 - core_v1_databaseserverpreset.yaml
 - core_v1_camundarelease.yaml
+- fleet_v1alpha1_environment.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

@@ -138,12 +138,13 @@ mkdocs build --strict       # catches a broken link or a missing nav entry
 make fleet-lint             # fleet-manager/ only: eslint, prettier --check, tsc --noEmit
 make fleet-test             # fleet-manager/ only: vitest
 make fleet-build            # fleet-manager/ only: next build
+make fleet-generate         # then `git status --porcelain fleet-manager/src/generated` prints nothing
 make fleet-scenarios        # then `git status --porcelain fleet-manager/e2e/scenarios` prints nothing; needs make setup-envtest
 ```
 
-Run `make fleet-lint`, `make fleet-test`, and `make fleet-build` when a change touches
-`fleet-manager/`. They need the Node.js of `fleet-manager/.node-version`, which `.tool-versions`
-pins too. pnpm refuses any other version.
+Run the `fleet-*` gates when a change touches `fleet-manager/`. Run `make fleet-generate` also
+when a change touches a CRD or a condition type of `api/`. They need the Node.js
+of `fleet-manager/.node-version`, which `.tool-versions` pins too. pnpm refuses any other version.
 
 Run `make fleet-scenarios` for every change, not only a change under `fleet-manager/`. A change
 to any reconciler can change a scenario. It needs Go and envtest, not Node.js.

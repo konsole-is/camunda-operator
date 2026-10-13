@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -39,15 +40,16 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
-// AddToScheme registers in s every kind that the manager reads, watches, or
-// applies: the built-in Kubernetes kinds, the kinds of the core and plugins
-// groups of this operator, and the kinds of ECK, the Prometheus Operator,
-// the Keycloak Operator, CloudNativePG, and the Barman Cloud plugin.
+// AddToScheme registers in s every kind of the core, plugins, and fleet groups
+// of this operator, and the other kinds that the manager reads, watches, or
+// applies: the built-in Kubernetes kinds and the kinds of ECK, the Prometheus
+// Operator, the Keycloak Operator, CloudNativePG, and the Barman Cloud plugin.
 func AddToScheme(s *runtime.Scheme) error {
 	builder := runtime.NewSchemeBuilder(
 		clientgoscheme.AddToScheme,
 		v1.AddToScheme,
 		pluginsv1alpha1.AddToScheme,
+		fleetv1alpha1.AddToScheme,
 		esv1.AddToScheme,
 		monitoringv1.AddToScheme,
 		keycloak.AddToScheme,

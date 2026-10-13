@@ -67,6 +67,7 @@ jobs:
               or test("^test/fixtures/merge/.+\\.json$")
               or . == "docs/crds/api-reference.md"
               or . == "pkg/images/table.json"
+              or startswith("fleet-manager/src/generated/")
               or (test("^fleet-manager/e2e/scenarios/[^/]+/[^/]+\\.yaml$")
                 and (endswith("/scenario.yaml") | not)
                 and (endswith("/observe.yaml") | not)))
