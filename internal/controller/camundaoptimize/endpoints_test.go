@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -112,6 +113,34 @@ var _ = Describe("CamundaOptimize endpoints", func() {
 		expectOptimize(s.optimize, func(g Gomega, latest *v1.CamundaOptimize) {
 			g.Expect(latest.Status.Endpoints).To(BeEmpty())
 		})
+	})
+
+	// A selector is immutable, so this Deployment makes every render of the
+	// webapp fail before its Service exists.
+	It("publishes no route while its webapp cannot be applied", func() {
+		ns := newNamespace()
+		cluster := createCluster(ns, createBinding(ns))
+		selector := map[string]string{"app": "not-optimize"}
+		blocker := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "co-blocked-webapp", Namespace: ns},
+			Spec: appsv1.DeploymentSpec{
+				Selector: &metav1.LabelSelector{MatchLabels: selector},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: selector},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "busybox"}}},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, blocker)).To(Succeed())
+
+		optimize := createNamedOptimize("co-blocked", ns, cluster, createAuth(ns, true), "8.9.4")
+
+		expectClusterEnv(cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
+		Consistently(func(g Gomega) {
+			var latest v1.CamundaOptimize
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(optimize), &latest)).To(Succeed())
+			g.Expect(latest.Status.Endpoints).To(BeEmpty())
+		}, "3s", interval).Should(Succeed())
 	})
 
 	// A released instance deletes its Services, so a kept route would send

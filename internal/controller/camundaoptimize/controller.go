@@ -274,12 +274,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
-	optimize.Status.Endpoints = components.Endpoints(&optimize)
 	r.recordSuspensionChange(&optimize, prior, suspendedBy(res))
 
 	if reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr
 	}
+
+	// Only an apply without error proves that the webapp Service exists.
+	optimize.Status.Endpoints = components.Endpoints(&optimize)
 
 	var wait time.Duration
 
