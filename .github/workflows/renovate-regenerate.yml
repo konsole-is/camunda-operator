@@ -1,7 +1,9 @@
 name: Renovate regenerate
 
 # Renovate updates inputs of files that Lint checks for drift: the images
-# table reads test/e2e/matrix, and the API reference reads go.mod. This
+# table reads test/e2e/matrix, and the API reference reads go.mod. The fleet
+# manager types read the CRDs and the generator versions of
+# fleet-manager/package.json. This
 # workflow regenerates those files on a Renovate branch and uploads the
 # changed ones for the Renovate commit workflow to commit.
 on:
@@ -39,14 +41,19 @@ jobs:
           hack/ci-retry.sh go mod download
           hack/ci-retry.sh go -C api mod download
 
+      - name: Setup Node for the fleet manager
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: fleet-manager/.node-version
+
       # The same generators as the drift checks of lint.yml.
       - name: Run the generators
-        run: make observability merge-fixtures api-docs generate
+        run: make observability merge-fixtures api-docs generate fleet-generate
 
       - name: Collect the changed files
         id: changes
         run: |
-          paths=(config/prometheus/observability test/fixtures/merge docs/crds/api-reference.md pkg/images/table.json)
+          paths=(config/prometheus/observability test/fixtures/merge docs/crds/api-reference.md pkg/images/table.json fleet-manager/src/generated)
           git add --all -- "${paths[@]}"
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"

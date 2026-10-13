@@ -1,3 +1,5 @@
 pnpm-lock.yaml
 # The quote style of the fixtures is part of the cases they test.
 test/fixtures/
+# Written by make fleet-generate.
+src/generated/
