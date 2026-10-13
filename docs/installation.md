@@ -1,6 +1,6 @@
 # Installation
 
-The operator ships as a Helm chart and as a plain Kubernetes manifest. Every release publishes both, together with two container images: the controller manager (`ghcr.io/konsole-is/camunda-operator`) and a companion CLI (`ghcr.io/konsole-is/camunda-operator-cli`). The chart and both images are signed with [cosign](https://docs.sigstore.dev/).
+The operator ships as a Helm chart and as a plain Kubernetes manifest. Every release publishes both, together with three container images: the controller manager (`ghcr.io/konsole-is/camunda-operator`), a companion CLI (`ghcr.io/konsole-is/camunda-operator-cli`), and the fleet manager (`ghcr.io/konsole-is/camunda-operator-fleet-manager`). The chart and the three images are signed with [cosign](https://docs.sigstore.dev/).
 
 The manager never runs the CLI itself. The Jobs that the operator creates run it, for example the upload of a `LogicalBackupRDBMS` dump. Both install paths point the manager at the CLI image of the same release. If you mirror the manager image, mirror the CLI image too.
 
@@ -57,7 +57,7 @@ The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist
 | `certManager.enabled` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
 | `fleetManager.enabled` | `false` | Install the fleet manager, a web app for the Camunda clusters of the Kubernetes cluster. See [Install the fleet manager](fleet-manager/install.md). |
 
-To pull from a mirror, set `manager.image.repository` and `manager.cliImage.repository`, and put the pull Secret in `manager.imagePullSecrets`. That Secret applies to the manager Pod only, not to the Jobs that run the CLI image. Those Jobs and the Camunda pods run under the ServiceAccount of their `CamundaCluster`. The connectors run under their own ServiceAccount, or under the ServiceAccount `default` of the namespace. Add the pull Secret to the `imagePullSecrets` of each of these ServiceAccounts, see [Workload identity](crds/camundacluster.md#workload-identity). The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) lists these values.
+To pull from a mirror, set `manager.image.repository` and `manager.cliImage.repository`, and put the pull Secret in `manager.imagePullSecrets`. If you install the fleet manager, also set `fleetManager.image.repository`. That Secret applies to the manager Pod only, not to the Jobs that run the CLI image. Those Jobs and the Camunda pods run under the ServiceAccount of their `CamundaCluster`. The connectors run under their own ServiceAccount, or under the ServiceAccount `default` of the namespace. Add the pull Secret to the `imagePullSecrets` of each of these ServiceAccounts, see [Workload identity](crds/camundacluster.md#workload-identity). The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) lists these values.
 
 Example:
 
@@ -237,8 +237,11 @@ git clone https://github.com/konsole-is/camunda-operator
 cd camunda-operator
 make docker-build docker-push         IMG=<registry>/camunda-operator:<tag>
 make docker-build-cli docker-push-cli CLI_IMG=<registry>/camunda-operator-cli:<tag>
-make helm-generate IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camunda-operator-cli:<tag>
-make helm-deploy   IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camunda-operator-cli:<tag>
+make docker-build-fleet docker-push-fleet FLEET_IMG=<registry>/camunda-operator-fleet-manager:<tag>
+make helm-generate IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camunda-operator-cli:<tag> \
+  FLEET_IMG=<registry>/camunda-operator-fleet-manager:<tag>
+make helm-deploy   IMG=<registry>/camunda-operator:<tag> CLI_IMG=<registry>/camunda-operator-cli:<tag> \
+  FLEET_IMG=<registry>/camunda-operator-fleet-manager:<tag>
 ```
 
-This needs Docker, Go, and the `kubebuilder` CLI. `make helm-generate` renders `dist/chart/values.yaml`, `dist/chart/values.schema.json`, and `dist/chart/templates/` from `config/`. The repository holds only `Chart.yaml` and `README.md` of the chart. `IMG` and `CLI_IMG` set the two images for `make deploy`, `make build-installer`, and `make helm-deploy` in the same way.
+This needs Docker, Go, and the `kubebuilder` CLI. `make helm-generate` renders `dist/chart/values.yaml`, `dist/chart/values.schema.json`, and `dist/chart/templates/` from `config/`. The repository holds only `Chart.yaml` and `README.md` of the chart. `IMG` and `CLI_IMG` set the two images of the operator for `make deploy`, `make build-installer`, and `make helm-deploy` in the same way. `FLEET_IMG` sets the fleet manager image for `make helm-generate` and `make helm-deploy`. The fleet manager image is needed only when you install the fleet manager.
