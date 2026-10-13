@@ -86,24 +86,24 @@ func main() {
 
 	scheme := runtime.NewScheme()
 	if err := manager.AddToScheme(scheme); err != nil {
-		fmt.Fprintf(os.Stderr, "building the scheme of the manager: %v\n", err)
+		fmt.Fprintf(os.Stderr, "tsfielddocs: building the scheme of the manager: %v\n", err)
 		os.Exit(1)
 	}
 
 	docs, err := build(*crds, scheme)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "tsfielddocs:", err)
 		os.Exit(1)
 	}
 
 	raw, err := render(docs)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "tsfielddocs:", err)
 		os.Exit(1)
 	}
 
 	if err := os.WriteFile(*out, raw, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "writing the field docs: %v\n", err)
+		fmt.Fprintf(os.Stderr, "tsfielddocs: writing the field docs: %v\n", err)
 		os.Exit(1)
 	}
 }

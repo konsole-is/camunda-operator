@@ -81,6 +81,7 @@ If one is needed, move the scaffolded files to `api/v1` and fix the path.
 - `**/zz_generated.*.go` - from `make generate`
 - `PROJECT` - from `kubebuilder [OPTIONS]`
 - `fleet-manager/src/generated/**` - from `make fleet-generate`
+- `fleet-manager/e2e/scenarios/*/*.yaml` except the hand-written `scenario.yaml` and `observe.yaml` - from `make fleet-scenarios`
 
 **One exception: removing a kind.** Kubebuilder v4 scaffolds an API but never removes one. There is
 no `kubebuilder delete api`. To remove a kind, delete its `resource:` block from `PROJECT` by hand,

@@ -187,7 +187,8 @@ type EnvironmentStatus struct {
 // values, and the deletion default. A namespace belongs to the Environment
 // that its label fleet.camunda.io/environment names. Without any
 // Environment, the modes and the parameter values of the registrations
-// apply.
+// apply. The name is at most 63 characters, because other objects carry it
+// in a label value.
 type Environment struct {
 	metav1.TypeMeta `json:",inline"`
 
