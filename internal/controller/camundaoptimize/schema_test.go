@@ -181,6 +181,29 @@ var _ = Describe("CamundaOptimize schema", func() {
 		)
 	})
 
+	It("rejects an externalUrl with a dot segment", func() {
+		for _, url := range []string{
+			"https://camunda.example.com/a/../optimize",
+			"https://camunda.example.com/./optimize",
+			"https://camunda.example.com/optimize/..",
+		} {
+			optimize := minimalCamundaOptimize()
+			optimize.Spec.ExternalURL = url
+
+			Expect(k8sClient.Create(ctx, optimize)).To(
+				MatchError(ContainSubstring("externalUrl must carry no . or .. path segment")),
+			)
+		}
+	})
+
+	It("accepts an externalUrl with dots inside a segment", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "https://camunda.example.com/v1.2/.optimize"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
+	})
+
 	It("rejects an externalUrl with a query or a fragment", func() {
 		for _, url := range []string{
 			"https://optimize.example.com?tenant=a",

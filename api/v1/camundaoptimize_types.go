@@ -93,6 +93,7 @@ type CamundaOptimizeSpec struct {
 	// <externalUrl>/api/authentication/callback there.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains(',')",message="externalUrl must carry no comma: Management Identity reads the callback list as comma-separated"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('/[.][.]?(/|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Optimize"
 	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/')",message="externalUrl must not end with a slash: the login callback is appended to it"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="externalUrl must carry no query and no fragment: the login callback is appended to it"
