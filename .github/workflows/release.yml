@@ -78,6 +78,8 @@ jobs:
       # of the wrong platform stops the release here.
       - name: Test the fleet manager image
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          TEST_IMAGE_TIMEOUT: "300"
         run: fleet-manager/deploy/test-image.sh "${FLEET_IMG}"
 
   release:
