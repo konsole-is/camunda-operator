@@ -73,6 +73,12 @@ func settle(
 		if err != nil {
 			return err
 		}
+		collected, err := sim.collectGarbage(ctx, objs)
+		if err != nil {
+			return err
+		}
+		busy = busy || collected > 0
+
 		current := map[string]string{}
 		for i := range objs {
 			current[objs[i].GetAPIVersion()+" "+describe(&objs[i])] = objs[i].GetResourceVersion()
