@@ -54,8 +54,11 @@ func validEnvironment() *fleetv1alpha1.Environment {
 				},
 			},
 			NamespaceCreation: &fleetv1alpha1.NamespaceCreation{
-				Allowed:           true,
-				Labels:            map[string]string{"owner": "platform"},
+				Allowed: true,
+				Labels: map[string]fleetv1alpha1.LabelValue{
+					"owner":                   "platform",
+					"example.com/cost-center": "cc-1234",
+				},
 				RequiredLabelKeys: []string{"team", "example.com/cost-center"},
 			},
 		},
@@ -135,6 +138,11 @@ var _ = Describe("Environment schema", func() {
 				e.Spec.Releases.Default = "camunda-8-8"
 			}, "releases.default must be one of releases.allowed",
 		),
+		Entry(
+			"refuses an empty allowed release", func(e *fleetv1alpha1.Environment) {
+				e.Spec.Releases = &fleetv1alpha1.EnvironmentReleases{Allowed: []string{""}}
+			}, "spec.releases.allowed[0]",
+		),
 
 		Entry(
 			"admits a section without a default", func(e *fleetv1alpha1.Environment) {
@@ -156,6 +164,11 @@ var _ = Describe("Environment schema", func() {
 				setSection(e, fleetv1alpha1.SectionPolicy{Required: true})
 			}, "required needs at least one registration in allowed",
 		),
+		Entry(
+			"refuses a required section whose only allowed registration is empty", func(e *fleetv1alpha1.Environment) {
+				setSection(e, fleetv1alpha1.SectionPolicy{Required: true, Allowed: []string{""}})
+			}, "allowed[0]",
+		),
 
 		Entry(
 			"refuses the environment label in the namespace labels", func(e *fleetv1alpha1.Environment) {
@@ -163,9 +176,24 @@ var _ = Describe("Environment schema", func() {
 			}, "the environment label is set by the app",
 		),
 		Entry(
+			"refuses a namespace label whose key is not a label key", func(e *fleetv1alpha1.Environment) {
+				e.Spec.NamespaceCreation.Labels["Team Name"] = "platform"
+			}, "namespaceCreation.labels must have valid label keys",
+		),
+		Entry(
+			"refuses a namespace label whose value is not a label value", func(e *fleetv1alpha1.Environment) {
+				e.Spec.NamespaceCreation.Labels["team"] = "platform team"
+			}, "spec.namespaceCreation.labels.team",
+		),
+		Entry(
 			"refuses a required label key that is not a label key", func(e *fleetv1alpha1.Environment) {
 				e.Spec.NamespaceCreation.RequiredLabelKeys = []string{"Team Name"}
-			}, "spec.namespaceCreation.requiredLabelKeys[0]",
+			}, "namespaceCreation.requiredLabelKeys must be valid label keys",
+		),
+		Entry(
+			"refuses a required label key whose name is longer than 63 characters", func(e *fleetv1alpha1.Environment) {
+				e.Spec.NamespaceCreation.RequiredLabelKeys = []string{"example.com/" + strings.Repeat("a", 64)}
+			}, "namespaceCreation.requiredLabelKeys must be valid label keys",
 		),
 
 		Entry(

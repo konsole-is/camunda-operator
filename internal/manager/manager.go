@@ -40,9 +40,9 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
-// AddToScheme registers in s every kind that the manager reads, watches, or
-// applies: the built-in Kubernetes kinds, the kinds of the core, plugins, and
-// fleet groups of this operator, and the kinds of ECK, the Prometheus
+// AddToScheme registers in s every kind of the core, plugins, and fleet groups
+// of this operator, and the other kinds that the manager reads, watches, or
+// applies: the built-in Kubernetes kinds and the kinds of ECK, the Prometheus
 // Operator, the Keycloak Operator, CloudNativePG, and the Barman Cloud plugin.
 func AddToScheme(s *runtime.Scheme) error {
 	builder := runtime.NewSchemeBuilder(

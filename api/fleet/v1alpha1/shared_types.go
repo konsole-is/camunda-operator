@@ -70,6 +70,7 @@ type SectionPolicy struct {
 	// only the empty option.
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=253
 	// +optional
 	Allowed []string `json:"allowed,omitempty"`

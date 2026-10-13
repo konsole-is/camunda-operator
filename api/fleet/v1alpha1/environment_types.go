@@ -106,6 +106,7 @@ type EnvironmentReleases struct {
 	// Allowed are the names of the CamundaReleases that a claim can use.
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=253
 	// +optional
 	Allowed []string `json:"allowed,omitempty"`
@@ -116,28 +117,36 @@ type EnvironmentReleases struct {
 	Default string `json:"default,omitempty"`
 }
 
-// NamespaceCreation is what the create flow of the fleet manager writes on a
-// namespace that it creates in an environment. The create flow always sets
-// the label fleet.camunda.io/environment.
+// NamespaceCreation controls how the create flow of the fleet manager creates
+// a namespace in an environment. The create flow always sets the label
+// fleet.camunda.io/environment on the new namespace.
 // +kubebuilder:validation:XValidation:rule="!has(self.labels) || !('fleet.camunda.io/environment' in self.labels)",message="the environment label is set by the app"
 type NamespaceCreation struct {
 	// Allowed lets the create flow create a namespace in the environment.
 	// +optional
 	Allowed bool `json:"allowed,omitempty"`
-	// Labels are fixed labels of a new namespace. The label
-	// fleet.camunda.io/environment is not allowed here, because the create
-	// flow sets it.
+	// Labels are fixed labels of a new namespace. Each is a valid label. The
+	// label fleet.camunda.io/environment is not allowed here, because the
+	// create flow sets it.
+	// +kubebuilder:validation:MaxProperties=32
+	// +kubebuilder:validation:XValidation:rule="self.all(k, !format.qualifiedName().validate(k).hasValue())",message="namespaceCreation.labels must have valid label keys"
 	// +optional
-	Labels map[string]string `json:"labels,omitempty"`
+	Labels map[string]LabelValue `json:"labels,omitempty"`
 	// RequiredLabelKeys are label keys, for example team. The create flow
 	// asks for a value of each key and sets the label on the new namespace.
 	// Each key is a valid label key.
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=16
-	// +kubebuilder:validation:items:Pattern=`^([a-z0-9.-]+/)?[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$`
+	// +kubebuilder:validation:items:MaxLength=317
+	// +kubebuilder:validation:XValidation:rule="self.all(k, !format.qualifiedName().validate(k).hasValue())",message="namespaceCreation.requiredLabelKeys must be valid label keys"
 	// +optional
 	RequiredLabelKeys []string `json:"requiredLabelKeys,omitempty"`
 }
+
+// LabelValue is the value of a Kubernetes label.
+// +kubebuilder:validation:MaxLength=63
+// +kubebuilder:validation:Pattern=`^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$`
+type LabelValue string
 
 // EnvironmentStatus is the state of an Environment. The environment
 // controller writes it.
