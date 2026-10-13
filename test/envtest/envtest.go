@@ -105,52 +105,10 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 
 	gomega.Expect(manager.AddToScheme(scheme.Scheme)).To(gomega.Succeed())
 
-	root, err := utils.ModuleRoot()
+	control, err := ControlPlane(opts)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 
-	crdPaths := []string{filepath.Join(root, "config", "crd", "bases")}
-	if !opts.WithoutECK {
-		// The ECK CRDs come from the resolved module, so the rendered
-		// Elasticsearch CR applies against the API server. ECK itself does
-		// not run in envtest.
-		crdPaths = append(crdPaths, crdPath(utils.ECKCRDPath))
-	}
-	if !opts.WithoutKeycloak {
-		// The Keycloak Operator publishes no Go module, so its CRD is
-		// vendored. The Keycloak Operator itself does not run in envtest.
-		crdPaths = append(crdPaths, crdPath(utils.KeycloakCRDPath))
-	}
-	if !opts.WithoutCNPG {
-		// The CloudNativePG and Barman Cloud Go modules ship no CRD
-		// manifests, so both schemas are vendored. Neither operator runs in
-		// envtest. WithoutCNPG leaves both out, because a cluster that does
-		// not serve CloudNativePG cannot serve its plugin either.
-		// WithoutBarmanPlugin leaves out the plugin alone.
-		crdPaths = append(crdPaths, crdPath(utils.CNPGCRDPath))
-		if !opts.WithoutBarmanPlugin {
-			crdPaths = append(crdPaths, crdPath(utils.BarmanCRDPath))
-		}
-	}
-
 	ginkgo.By("bootstrapping test environment")
-	control := &crenvtest.Environment{
-		CRDDirectoryPaths:     crdPaths,
-		ErrorIfCRDPathMissing: true,
-		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
-		// A full run starts one control plane per suite, and several of them
-		// boot at once on one machine. Two budgets of envtest are too small
-		// under that load, and a boot that is slow is not a defect of the
-		// suite that reports it. The control plane gets twenty seconds by
-		// default, and the wait for the CRDs to appear as API resources gets
-		// ten. ControlPlaneStartTimeout wins over
-		// KUBEBUILDER_CONTROLPLANE_START_TIMEOUT, which nothing in this
-		// repository sets. Start merges CRDDirectoryPaths and
-		// ErrorIfCRDPathMissing into CRDInstallOptions, so naming the struct
-		// here keeps both.
-		ControlPlaneStartTimeout: 2 * time.Minute,
-		CRDInstallOptions:        crenvtest.CRDInstallOptions{MaxTime: time.Minute},
-	}
-
 	cfg, err := control.Start()
 	gomega.Expect(err).NotTo(gomega.HaveOccurred())
 	gomega.Expect(cfg).NotTo(gomega.BeNil())
@@ -181,15 +139,66 @@ func StartWith(opts Options, register func(mgr ctrl.Manager) error) *Env {
 	return &Env{Ctx: ctx, Cfg: cfg, Client: apiClient, cancel: cancel, control: control}
 }
 
-// crdPath resolves one CRD directory through resolve and fails the suite when
-// it cannot, so a control plane never boots without a schema its specs need.
-func crdPath(resolve func() (string, error)) string {
-	ginkgo.GinkgoHelper()
+// ControlPlane returns the control plane that StartWith boots, not yet
+// started: the CRDs of the operator, the CRDs of the third-party operators
+// that opts keeps, and the start budgets of a loaded machine.
+// hack/fleetscenarios boots the same control plane, so a page scenario sees
+// the CRDs that the controller suites see.
+func ControlPlane(opts Options) (*crenvtest.Environment, error) {
+	root, err := utils.ModuleRoot()
+	if err != nil {
+		return nil, err
+	}
 
-	path, err := resolve()
-	gomega.Expect(err).NotTo(gomega.HaveOccurred())
+	crdPaths := []string{filepath.Join(root, "config", "crd", "bases")}
+	var resolvers []func() (string, error)
+	if !opts.WithoutECK {
+		// The ECK CRDs come from the resolved module, so the rendered
+		// Elasticsearch CR applies against the API server. ECK itself does
+		// not run in envtest.
+		resolvers = append(resolvers, utils.ECKCRDPath)
+	}
+	if !opts.WithoutKeycloak {
+		// The Keycloak Operator publishes no Go module, so its CRD is
+		// vendored. The Keycloak Operator itself does not run in envtest.
+		resolvers = append(resolvers, utils.KeycloakCRDPath)
+	}
+	if !opts.WithoutCNPG {
+		// The CloudNativePG and Barman Cloud Go modules ship no CRD
+		// manifests, so both schemas are vendored. Neither operator runs in
+		// envtest. WithoutCNPG leaves both out, because a cluster that does
+		// not serve CloudNativePG cannot serve its plugin either.
+		// WithoutBarmanPlugin leaves out the plugin alone.
+		resolvers = append(resolvers, utils.CNPGCRDPath)
+		if !opts.WithoutBarmanPlugin {
+			resolvers = append(resolvers, utils.BarmanCRDPath)
+		}
+	}
+	for _, resolve := range resolvers {
+		path, err := resolve()
+		if err != nil {
+			return nil, err
+		}
+		crdPaths = append(crdPaths, path)
+	}
 
-	return path
+	return &crenvtest.Environment{
+		CRDDirectoryPaths:     crdPaths,
+		ErrorIfCRDPathMissing: true,
+		BinaryAssetsDirectory: utils.EnvtestBinaryDir(),
+		// A full run starts one control plane per suite, and several of them
+		// boot at once on one machine. Two budgets of envtest are too small
+		// under that load, and a boot that is slow is not a defect of the
+		// suite that reports it. The control plane gets twenty seconds by
+		// default, and the wait for the CRDs to appear as API resources gets
+		// ten. ControlPlaneStartTimeout wins over
+		// KUBEBUILDER_CONTROLPLANE_START_TIMEOUT, which nothing in this
+		// repository sets. Start merges CRDDirectoryPaths and
+		// ErrorIfCRDPathMissing into CRDInstallOptions, so naming the struct
+		// here keeps both.
+		ControlPlaneStartTimeout: 2 * time.Minute,
+		CRDInstallOptions:        crenvtest.CRDInstallOptions{MaxTime: time.Minute},
+	}, nil
 }
 
 // Stop cancels the context of the manager and tears the control plane down.

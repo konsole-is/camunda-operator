@@ -666,6 +666,11 @@ docker-buildx-fleet: ## Build and push the fleet manager image for cross-platfor
 fleet-image-test: docker-build-fleet ## Build the fleet manager image and check that it starts as non-root with its data.
 	CONTAINER_TOOL=$(CONTAINER_TOOL) $(FLEET_DIR)/deploy/test-image.sh "$(FLEET_IMG)"
 
+.PHONY: fleet-scenarios
+fleet-scenarios: setup-envtest ## Regenerate the page scenarios of the fleet manager with the reconcilers on envtest.
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
+		go run ./hack/fleetscenarios -dir $(FLEET_DIR)/e2e/scenarios
+
 ##@ Documentation
 
 .PHONY: docs-serve
