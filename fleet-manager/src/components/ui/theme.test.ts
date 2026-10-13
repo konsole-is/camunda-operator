@@ -10,13 +10,15 @@ const primitives = readdirSync(dir).filter(
     !file.endsWith(".test.tsx"),
 );
 
-// shadcn color classes whose names the tokens use for something else, and
-// white text, which is under the contrast floor on --accent and --bad.
+// shadcn color classes whose names the tokens use for something else, white
+// text, which is under the contrast floor on --accent and --bad, and the
+// input edge, which is under 3:1.
 const FOREIGN = [
   /(?<![\w-])bg-accent(?![\w-])/,
   /accent-foreground/,
   /(?<![\w-])bg-muted(?![\w-])/,
   /(?<![\w-])text-white(?![\w-])/,
+  /(?<![\w-])border-input(?![\w-])/,
 ];
 
 describe("shadcn primitives", () => {
