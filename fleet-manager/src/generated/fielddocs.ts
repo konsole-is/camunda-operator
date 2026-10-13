@@ -9,9 +9,11 @@ export interface FieldDoc {
 
 /**
  * FieldDocs holds a FieldDoc by API group, kind, and field path. A path joins
- * the JSON names with dots. An array adds no segment.
+ * the JSON names with dots. An array adds no segment. A group, kind, or path
+ * that names a property of Object.prototype, such as constructor, gives that
+ * property, not undefined.
  */
-export type FieldDocs = Record<string, Record<string, Record<string, FieldDoc>>>;
+export type FieldDocs = Partial<Record<string, Partial<Record<string, Partial<Record<string, FieldDoc>>>>>>;
 
 export const fieldDocs: FieldDocs = {
   "core.camunda.io": {

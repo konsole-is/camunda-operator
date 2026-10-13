@@ -4,10 +4,11 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import { fieldDocs } from "@/generated/fielddocs";
+import { typeCheck } from "./typecheck";
 
 const repoDir = fileURLToPath(new URL("../../..", import.meta.url));
 
-describe("fieldDocs", () => {
+describe("fieldDocs", { timeout: 60_000 }, () => {
   it("has the description and the anchor of CamundaCluster spec.zeebe.partitions", () => {
     const crd = parse(
       fs.readFileSync(
@@ -23,7 +24,7 @@ describe("fieldDocs", () => {
       schema.properties.spec.properties.zeebe.properties.partitions.description;
 
     expect(
-      fieldDocs["core.camunda.io"].CamundaCluster["spec.zeebe.partitions"],
+      fieldDocs["core.camunda.io"]?.CamundaCluster?.["spec.zeebe.partitions"],
     ).toEqual({ description, anchor: "#zeebespec" });
     expect(description).toMatch(/^Partitions is the number of partitions\./);
   });
@@ -39,12 +40,21 @@ describe("fieldDocs", () => {
       ),
     );
 
-    const missing = Object.entries(fieldDocs["core.camunda.io"]).flatMap(
+    const missing = Object.entries(fieldDocs["core.camunda.io"] ?? {}).flatMap(
       ([kind, paths]) =>
-        Object.entries(paths)
-          .filter(([, doc]) => !anchors.has(doc.anchor))
-          .map(([field, doc]) => `${kind} ${field} ${doc.anchor}`),
+        Object.entries(paths ?? {})
+          .filter(([, doc]) => !anchors.has(doc?.anchor ?? ""))
+          .map(([field, doc]) => `${kind} ${field} ${doc?.anchor}`),
     );
     expect(missing).toEqual([]);
+  });
+
+  it("makes a caller handle a group, a kind, or a path without an entry", () => {
+    const name = "test/generated/__virtual__/lookup.ts";
+    const result = typeCheck({
+      [name]: `import { fieldDocs } from "../../../src/generated/fielddocs";\nexport const description: string = fieldDocs["a.camunda.io"]["Kind"]["spec.x"].description;\n`,
+    });
+
+    expect(result[name]).not.toEqual([]);
   });
 });
