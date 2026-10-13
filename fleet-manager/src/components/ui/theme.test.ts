@@ -37,6 +37,11 @@ describe("shadcn primitives", () => {
     );
   });
 
+  it.each(primitives)("%s hovers the accent with accent-hover", (file) => {
+    const source = readFileSync(path.join(dir, file), "utf8");
+    expect(source).not.toMatch(/hover:bg-primary\//);
+  });
+
   it.each(primitives)("%s reads only CSS variables that exist", (file) => {
     const css = readFileSync(
       path.join(dir, "..", "..", "app", "globals.css"),
