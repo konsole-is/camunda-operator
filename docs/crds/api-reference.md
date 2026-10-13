@@ -669,7 +669,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `version` _string_ | Version is the Optimize version to deploy, as a full semantic version.<br />Optimize has its own patch line, so it does not follow the version of<br />the cluster. The major and the minor must match the effective version<br />of the referenced cluster. If they differ, Ready reports<br />VersionMismatch. |  | Pattern: `^\d+\.\d+\.\d+$` <br /> |
+| `version` _string_ | Version is the Optimize version to deploy, as a full semantic version.<br />Camunda releases Optimize with the minor and the patch of the<br />orchestration cluster, so set it to the effective version of the<br />referenced cluster. If the major or the minor differs, Ready reports<br />VersionMismatch. |  | Pattern: `^\d+\.\d+\.\d+$` <br /> |
 | `managementAuthRef` _string_ | ManagementAuthRef names the cluster-scoped ManagementAuthConfig that<br />provides the Management Identity OIDC configuration. Optimize<br />authenticates against Management Identity, not against the built-in<br />auth of the orchestration cluster. |  | MinLength: 1 <br /> |
 | `externalUrl` _string_ | ExternalURL is the URL where browsers reach this Optimize.<br />In the two Keycloak modes, the management plane of managementAuthRef<br />registers <externalUrl>/api/authentication/callback on the optimize<br />client of the realm. Thus a person who signs in here comes back here.<br />Without a URL, the plane registers no callback, and Keycloak refuses<br />the return. The exception is a callback that somebody added to the<br />realm manually.<br />In the oidc mode, the field has no effect. The identity provider of the<br />platform config holds the callback URLs, so add<br /><externalUrl>/api/authentication/callback there. |  | Optional: \{\} <br /> |
 | `clusterRef` _[ClusterRef](#clusterref)_ | ClusterRef names the CamundaCluster that this Optimize instance reads.<br />The secondary storage of that cluster must be Elasticsearch. No other<br />CamundaOptimize can be attached to it.<br />The reference is immutable. A change to another cluster changes the pod<br />selectors of the Deployments, and Kubernetes does not permit that.<br />Also, the old cluster keeps the exporter settings of this Optimize. |  |  |
@@ -695,6 +695,7 @@ _Appears in:_
 | `observedGeneration` _integer_ | ObservedGeneration is the last generation that the operator processed. |  | Optional: \{\} <br /> |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions represent the current state. Ready holds the reason of a<br />failed pre-check. Otherwise it follows the conditions of the two<br />workloads, and MirroredSecretsReady when the Optimize references a<br />Secret in another namespace. The per-workload conditions (WebappReady,<br />ImporterReady) and MirroredSecretsReady also appear here. |  | Optional: \{\} <br /> |
 | `suspendedBy` _[OptimizeSuspension](#optimizesuspension)_ | SuspendedBy tells why the Optimize workloads are at zero with the<br />referenced cluster. It is empty while they follow their spec. It stays<br />set while a failed check keeps them at zero after the cluster resumed. |  | Enum: [Cluster StorageClaim] <br />Optional: \{\} <br /> |
+| `endpoints` _[Endpoint](#endpoint) array_ | Endpoints lists the routes of this Optimize: one entry, optimize, with<br />the path prefix /, the webapp Service, and its HTTP port. An access<br />extension reads it and does not derive the Service name. The entry<br />stays while the workloads are at zero with the cluster, because the<br />Service stays. It is empty while no webapp Service exists. |  | Optional: \{\} <br /> |
 
 
 #### CamundaPlatformConfig
@@ -1666,6 +1667,7 @@ and the Service and port that serve it.
 
 _Appears in:_
 - [CamundaClusterStatus](#camundaclusterstatus)
+- [CamundaOptimizeStatus](#camundaoptimizestatus)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
