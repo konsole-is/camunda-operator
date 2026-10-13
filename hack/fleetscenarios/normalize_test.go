@@ -18,6 +18,7 @@ package main
 
 import (
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // object returns an unstructured object for the tests of normalize. A uid
@@ -285,6 +287,19 @@ func TestNormalizeGivesAnEventANameFromWhatItIsAbout(t *testing.T) {
 	second := run("orders.28f2a3b4c5d6e7f9", "uid-two")
 	assert.Equal(t, first, second, "two runs of one event must write the same Event")
 	assert.Regexp(t, `^orders\.[0-9a-f]{16}$`, first.GetName())
+}
+
+func TestNormalizeGivesAnEventAboutALongNameAValidName(t *testing.T) {
+	long := strings.Repeat("a", 235) + "-" + strings.Repeat("b", 17)
+	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", long, "u")
+	out, err := normalize([]unstructured.Unstructured{cluster, event("long.a", cluster, "Created", "Created")})
+	require.NoError(t, err)
+
+	for _, obj := range out {
+		if isEvent(&obj) {
+			assert.Empty(t, validation.IsDNS1123Subdomain(obj.GetName()), obj.GetName())
+		}
+	}
 }
 
 func TestNormalizeWritesEachEventOnce(t *testing.T) {

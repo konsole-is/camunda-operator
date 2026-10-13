@@ -156,7 +156,11 @@ func normalizeEvents(objs []unstructured.Unstructured) []unstructured.Unstructur
 		reason, _, _ := unstructured.NestedString(e.Object, "reason")
 		note, _, _ := unstructured.NestedString(e.Object, "note")
 		sum := sha256.Sum256([]byte(strings.Join([]string{kind, namespace, name, reason, note}, "/")))
-		e.SetName(name + "." + hex.EncodeToString(sum[:8]))
+		suffix := "." + hex.EncodeToString(sum[:8])
+		// An Event name is a DNS subdomain of at most 253 characters, and
+		// the object it is about can have a name of that length.
+		prefix := strings.TrimRight(name[:min(len(name), 253-len(suffix))], "-.")
+		e.SetName(prefix + suffix)
 		if seen[e.GetName()] {
 			continue
 		}
