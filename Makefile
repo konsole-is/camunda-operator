@@ -531,6 +531,11 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 	$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
 		| go run ./hack/fleetchart -enabled=true -crds config/crd/bases
 	go run ./hack/fleetchart -enabled=false < dist/install.yaml
+	@$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		--set 'manager.imagePullSecrets[0].name=verify-pull' \
+		--show-only templates/fleet-manager/deployment.yaml | grep -q 'name: verify-pull' || { \
+		echo "ERROR: the fleet manager Pod does not use manager.imagePullSecrets" >&2; exit 1; }
+	@echo "  the fleet manager Pod uses manager.imagePullSecrets"
 	@set -e; \
 	max=0; worst=""; \
 	for opts in \

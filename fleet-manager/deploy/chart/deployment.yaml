@@ -21,6 +21,10 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
+      {{- with .Values.manager.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: fleet-manager
           image: "{{ .Values.fleetManager.image.repository }}:{{ .Values.fleetManager.image.tag }}"

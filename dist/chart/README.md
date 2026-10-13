@@ -27,7 +27,7 @@ The defaults are the values of a released chart.
 | `manager.args` | `["--leader-elect"]` | Arguments of the manager. Keep `--leader-elect` when you run more than one replica. |
 | `manager.env` | `[]` | Environment variables. |
 | `manager.envOverrides` | `{}` | Environment variables as a map. A name here wins over the same name in `manager.env`. |
-| `manager.imagePullSecrets` | `[]` | Image pull secrets. |
+| `manager.imagePullSecrets` | `[]` | Image pull secrets of the manager Pod and of the fleet manager Pod. |
 | `manager.podSecurityContext` | `runAsNonRoot: true`, `seccompProfile.type: RuntimeDefault` | Pod security context. |
 | `manager.securityContext` | drops `ALL`, read-only root FS, no privilege escalation | Container security context. |
 | `manager.resources` | requests `10m`/`64Mi`, limits `500m`/`128Mi` | Resource requests and limits. |
