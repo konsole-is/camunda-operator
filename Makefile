@@ -602,6 +602,11 @@ fleet-test: fleet-install ## Run the fleet manager tests with Vitest.
 fleet-build: fleet-install ## Build the fleet manager with next build.
 	$(FLEET_PNPM) run build
 
+.PHONY: fleet-scenarios
+fleet-scenarios: setup-envtest ## Regenerate the page scenarios of the fleet manager with the reconcilers on envtest.
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \
+		go run ./hack/fleetscenarios -dir $(FLEET_DIR)/e2e/scenarios
+
 ##@ Documentation
 
 .PHONY: docs-serve

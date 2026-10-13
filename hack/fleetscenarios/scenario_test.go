@@ -132,8 +132,6 @@ func TestReadScenarioRefusesAnEmptySeed(t *testing.T) {
 }
 
 func TestReadScenarioReadsEveryCheckedInScenario(t *testing.T) {
-	t.Skip("the scenarios land in Task 8")
-
 	paths, err := filepath.Glob("../../fleet-manager/e2e/scenarios/*/scenario.yaml")
 	require.NoError(t, err)
 	require.NotEmpty(t, paths)
