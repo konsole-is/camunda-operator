@@ -63,6 +63,9 @@ jobs:
           - image: cli
             target: docker-build-cli
             variable: CLI_IMG
+          - image: fleet-manager
+            target: docker-build-fleet
+            variable: FLEET_IMG
     env:
       REF: camunda-operator-${{ matrix.image }}:scan
     steps:
@@ -115,31 +118,28 @@ jobs:
       security-events: write   # upload SARIF to code scanning
     # The release images are multi-platform. The arch list is the PLATFORMS
     # of the Makefile, and the suffix is the one that release.yml gives the
-    # image name.
+    # image name. A release from before the fleet manager has no fleet
+    # manager image, so optional lets that entry skip the scan.
     strategy:
       fail-fast: false
       matrix:
-        image: [manager, cli]
+        image: [manager, cli, fleet-manager]
         arch: [amd64, arm64]
         include:
           - image: manager
             suffix: ""
+            optional: false
           - image: cli
             suffix: "-cli"
+            optional: false
+          - image: fleet-manager
+            suffix: "-fleet-manager"
+            optional: true
     env:
       TRIVY_PLATFORM: linux/${{ matrix.arch }}
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
-
-      # The release tag is v0.1.0. The images carry the version without the v.
-      - name: Find the latest release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SUFFIX: ${{ matrix.suffix }}
-        run: |
-          tag=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)
-          echo "REF=ghcr.io/${GITHUB_REPOSITORY}${SUFFIX}:${tag#v}" >> "${GITHUB_ENV}"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
@@ -148,7 +148,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The release tag is v0.1.0. The images carry the version without the v.
+      - name: Find the latest release
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUFFIX: ${{ matrix.suffix }}
+          IMAGE: ${{ matrix.image }}
+          OPTIONAL: ${{ matrix.optional }}
+        run: |
+          tag=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)
+          ref="ghcr.io/${GITHUB_REPOSITORY}${SUFFIX}:${tag#v}"
+          echo "REF=${ref}" >> "${GITHUB_ENV}"
+          scan=true
+          if [[ "${OPTIONAL}" == "true" ]] && ! out=$(docker manifest inspect "${ref}" 2>&1); then
+            # ghcr answers "manifest unknown" for a tag that does not exist.
+            if [[ "${out}" != *"manifest unknown"* ]]; then
+              echo "${out}" >&2
+              exit 1
+            fi
+            echo "Release ${tag} has no ${IMAGE} image ${ref}, so the scan is skipped."
+            scan=false
+          fi
+          echo "scan=${scan}" >> "${GITHUB_OUTPUT}"
+
       - name: Write the Trivy report
+        if: steps.find.outputs.scan == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.REF }}
@@ -156,12 +181,14 @@ jobs:
           output: trivy.sarif
 
       - name: Upload the report to code scanning
+        if: steps.find.outputs.scan == 'true'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy.sarif
           category: trivy-release-${{ matrix.image }}-${{ matrix.arch }}
 
       - name: Fail on a HIGH or CRITICAL finding with a fix
+        if: steps.find.outputs.scan == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         env:
           TRIVY_SKIP_DB_UPDATE: "true"
