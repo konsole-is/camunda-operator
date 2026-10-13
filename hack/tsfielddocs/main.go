@@ -225,6 +225,7 @@ func walkStruct(
 		if prop.Items != nil && prop.Items.Schema != nil {
 			prop = *prop.Items.Schema
 		}
+
 		if err := walkStruct(docs, path, next, prop.Properties, local); err != nil {
 			return err
 		}
