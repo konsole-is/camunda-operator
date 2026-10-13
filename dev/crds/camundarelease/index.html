@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2281,6 +2281,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <p>When you edit a release, every resource that references it rolls to the new version. Each kind keeps its own rule about a version it refuses:</p>
 <ul>
 <li>A cluster whose brokers run a higher version refuses the move and reports <code>Ready: False</code> with reason <code>VersionDowngradeRefused</code>. The <a href="../camundacluster/#version">CamundaCluster page</a> states the rule and the annotation that sanctions a downgrade.</li>
+<li>A cluster whose brokers run a version two or more minors below the release refuses the move and reports <code>Ready: False</code> with reason <code>VersionSkipRefused</code>. Move the release one minor at a time. The <a href="../camundacluster/#a-skipped-minor-is-refused">CamundaCluster page</a> states the rule.</li>
 <li>A server whose data directory runs another PostgreSQL major refuses the change and reports <code>Ready: False</code> with reason <code>VersionChangeRefused</code>. It keeps the major it has. The <a href="../databaseserver/#the-postgresql-version">DatabaseServer page</a> states the rule.</li>
 <li>Camunda 8.9 needs Elasticsearch 8.19 or later on major 8, or 9.2 or later on major 9. An <code>ElasticsearchCluster</code> on an earlier version reports <code>Ready: False</code> with reason <code>InvalidReference</code>.</li>
 </ul>

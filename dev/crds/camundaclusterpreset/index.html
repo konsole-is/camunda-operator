@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2217,6 +2217,10 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <td>Merged by key. The cluster wins on a conflict.</td>
 </tr>
 <tr>
+<td><code>connectors.serviceAccount</code></td>
+<td><code>create</code> replaces the preset value when the cluster sets it. <code>annotations</code> merge by key, and the cluster wins on a conflict. <code>name</code> is instance-bound.</td>
+</tr>
+<tr>
 <td><code>scheduling</code> (top-level, per component, and <code>backup.dump.scheduling</code>)</td>
 <td>Never merged. A block set on the cluster replaces the preset block at that level entirely.</td>
 </tr>
@@ -2241,7 +2245,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <td>Follows the component rules above. <code>scratchVolume</code> replaces as a whole block. <code>postgresImage</code> and <code>activeDeadlineSeconds</code> are replaced when the cluster sets them.</td>
 </tr>
 <tr>
-<td><code>platformConfigRef</code>, <code>presetRef</code>, <code>releaseRef</code>, <code>externalUrl</code>, <code>serviceAccount</code>, <code>storageRef</code>, <code>backupStorageRef</code>, <code>documentStorageRef</code>, <code>monitoring</code>, <code>suspend</code>, <code>pause</code></td>
+<td><code>platformConfigRef</code>, <code>presetRef</code>, <code>releaseRef</code>, <code>externalUrl</code>, <code>serviceAccount</code> (the top-level block), <code>connectors.serviceAccount.name</code>, <code>storageRef</code>, <code>backupStorageRef</code>, <code>documentStorageRef</code>, <code>monitoring</code>, <code>suspend</code>, <code>pause</code></td>
 <td>Instance-bound. They always come from the cluster and are rejected in a preset.</td>
 </tr>
 <tr>
@@ -2382,11 +2386,17 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-1-96"><a id="__codelineno-1-96" name="__codelineno-1-96" href="#__codelineno-1-96"></a><span class="w">      </span><span class="c1"># object. Optional. CPU and memory.</span>
 </span><span id="__span-1-97"><a id="__codelineno-1-97" name="__codelineno-1-97" href="#__codelineno-1-97"></a><span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
 </span><span id="__span-1-98"><a id="__codelineno-1-98" name="__codelineno-1-98" href="#__codelineno-1-98"></a><span class="w">        </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"250m"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="s">"512Mi"</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-1-99"><a id="__codelineno-1-99" name="__codelineno-1-99" href="#__codelineno-1-99"></a><span class="w">      </span><span class="c1"># object. Optional. ServiceAccount of the connectors pods. The name is instance-bound and rejected here.</span>
+</span><span id="__span-1-100"><a id="__codelineno-1-100" name="__codelineno-1-100" href="#__codelineno-1-100"></a><span class="w">      </span><span class="nt">serviceAccount</span><span class="p">:</span>
+</span><span id="__span-1-101"><a id="__codelineno-1-101" name="__codelineno-1-101" href="#__codelineno-1-101"></a><span class="w">        </span><span class="c1"># boolean. Optional, default: true. When false, the connectors ServiceAccount of each cluster must already exist.</span>
+</span><span id="__span-1-102"><a id="__codelineno-1-102" name="__codelineno-1-102" href="#__codelineno-1-102"></a><span class="w">        </span><span class="nt">create</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-103"><a id="__codelineno-1-103" name="__codelineno-1-103" href="#__codelineno-1-103"></a><span class="w">        </span><span class="c1"># map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the connectors pods.</span>
+</span><span id="__span-1-104"><a id="__codelineno-1-104" name="__codelineno-1-104" href="#__codelineno-1-104"></a><span class="w">        </span><span class="nt">annotations</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{}</span>
 </span></code></pre></div>
 <h3 id="validation-rules">Validation rules<a class="headerlink" href="#validation-rules" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>spec.cluster</code> is required.</li>
-<li>The instance-bound fields are rejected in <code>spec.cluster</code>: <code>platformConfigRef</code>, <code>presetRef</code>, <code>releaseRef</code>, <code>externalUrl</code>, <code>serviceAccount</code>, <code>storageRef</code>, <code>backupStorageRef</code>, <code>documentStorageRef</code>, <code>monitoring</code>, <code>suspend</code>, and <code>pause</code>. An explicit zero value, for example <code>suspend: false</code> or an empty <code>presetRef</code>, counts as unset.</li>
+<li>The instance-bound fields are rejected in <code>spec.cluster</code>: <code>platformConfigRef</code>, <code>presetRef</code>, <code>releaseRef</code>, <code>externalUrl</code>, <code>serviceAccount</code>, <code>connectors.serviceAccount.name</code>, <code>storageRef</code>, <code>backupStorageRef</code>, <code>documentStorageRef</code>, <code>monitoring</code>, <code>suspend</code>, and <code>pause</code>. An explicit zero value, for example <code>suspend: false</code> or an empty <code>presetRef</code>, counts as unset.</li>
 <li><code>version</code> and <code>connectors.version</code> are rejected in <code>spec.cluster</code>. They belong to a <a href="../camundarelease/">CamundaRelease</a> or to the cluster.</li>
 <li>The fields of <code>spec.cluster</code> obey the same schema rules as on a <code>CamundaCluster</code>. <code>whenDeleted</code> is <code>Delete</code> or <code>Retain</code>, and the backup durations are ISO 8601 days and time. <code>auth.clientId</code> requires <code>auth.clientSecretRef</code>.</li>
 <li>The transition rules of a <code>CamundaCluster</code> do not bind a preset: a preset can lower <code>zeebe.storageSize</code>. A referencing cluster keeps its applied volumes.</li>

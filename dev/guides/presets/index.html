@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2207,7 +2207,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="nt">externalUrl</span><span class="p">:</span><span class="w"> </span><span class="s">"https://orders.camunda.example.com"</span>
 </span></code></pre></div>
 <p>The broker count, the partitions, the volumes, the connectors, the backup policy, and the administrators all come from the preset <code>medium</code>. The versions come from the release <code>camunda-8-9-4</code>. The authentication method and the identity provider come from the platform config <code>production</code>.</p>
-<p>A cluster sets the fields that belong to it alone: the references, the URL, the ServiceAccount, monitoring, <code>suspend</code>, and <code>pause</code>. The API server rejects a preset that sets one of them, or that sets <code>version</code> or <code>connectors.version</code>. The <a href="../../crds/camundaclusterpreset/#validation-rules">validation rules</a> list them.</p>
+<p>A cluster sets the fields that belong to it alone: the references, the URL, the ServiceAccount, monitoring, <code>suspend</code>, and <code>pause</code>. The name of the connectors ServiceAccount also belongs to the cluster alone. The API server rejects a preset that sets one of them, or that sets <code>version</code> or <code>connectors.version</code>. The <a href="../../crds/camundaclusterpreset/#validation-rules">validation rules</a> list them. A preset can set the annotations of <code>connectors.serviceAccount</code>, so every cluster on it gives its connectors the same role settings.</p>
 <p>An <code>ElasticsearchCluster</code> works the same way. The instance-bound fields are <code>presetRef</code>, <code>releaseRef</code>, <code>secondaryStorageConfig</code>, and <code>suspend</code>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ElasticsearchCluster</span>
@@ -2315,6 +2315,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </ul>
 <p>The examples on this page use the second way.</p>
 <p>Every cluster whose brokers run a higher version refuses a lower one. Each one reports <code>Ready: False</code> with reason <code>VersionDowngradeRefused</code> and keeps the version its brokers run. To lower a fleet on purpose, lower the release first and let every cluster refuse. Then set the annotation <code>camunda.io/allow-version-downgrade</code> to the version of the release, on each cluster you want to move. Read the caution in <a href="../../crds/camundacluster/#downgrade-on-purpose">Downgrade on purpose</a> first.</p>
+<p>Move a release one minor at a time. A cluster whose brokers run a version two or more minors below the release refuses the move. It reports <code>Ready: False</code> with reason <code>VersionSkipRefused</code> and keeps the version its brokers run. To recover, set the release to the next minor. Wait until every cluster runs the new minor before you raise the release again. <a href="../../crds/camundacluster/#upgrade">Upgrade</a> says how long to wait.</p>
 <p>A <code>DatabaseServer</code> refuses a PostgreSQL major other than the one its data directory runs, higher or lower. It reports <code>Ready: False</code> with reason <code>VersionChangeRefused</code> and keeps the major it has. No annotation lets that change through. To run a later major, create a server on it and move the data over. The <a href="../../crds/databaseserver/#the-postgresql-version">DatabaseServer page</a> states the rule.</p>
 <p>A resource that references a preset or a release that does not exist reports <code>Ready: False</code> with reason <code>InvalidReference</code> and keeps running as it is.</p>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>

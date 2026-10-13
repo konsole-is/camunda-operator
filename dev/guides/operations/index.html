@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2552,7 +2552,7 @@
 </tr>
 </tbody>
 </table>
-<p><code>Ready</code> can also report <code>SuspensionHeld</code>, <code>StorageAlreadyAttached</code>, <code>WaitingForHandover</code>, or <code>VersionDowngradeRefused</code>. The <a href="../../crds/camundacluster/#status">CamundaCluster</a> page lists every reason.</p>
+<p><code>Ready</code> can also report <code>SuspensionHeld</code>, <code>StorageAlreadyAttached</code>, <code>WaitingForHandover</code>, <code>VersionDowngradeRefused</code>, or <code>VersionSkipRefused</code>. The <a href="../../crds/camundacluster/#status">CamundaCluster</a> page lists every reason.</p>
 <p><code>Disabled</code> shows on these conditions:</p>
 <ul>
 <li><code>GatewayReady</code>, when the gateway is <code>Embedded</code>.</li>
@@ -2570,7 +2570,7 @@
 <li><code>volumes</code> lists every bound broker volume with its name and capacity.</li>
 <li><code>observedGeneration</code> is the last generation of the spec that the operator processed. If it is lower than <code>metadata.generation</code>, the operator has not processed your last edit yet.</li>
 </ul>
-<p>When you set <code>spec.serviceAccount</code>, or a bucket uses workload identity, <code>serviceAccountName</code> names the ServiceAccount that the pods run under.</p>
+<p>When you set <code>spec.serviceAccount</code>, or a bucket uses workload identity, <code>serviceAccountName</code> names the ServiceAccount that the pods run under, except the connectors. When you set <code>spec.connectors.serviceAccount</code>, <code>connectorsServiceAccountName</code> names the ServiceAccount of the connectors.</p>
 <p>An <code>ElasticsearchCluster</code> uses the same reason vocabulary. Read the <a href="../../crds/elasticsearchcluster/">ElasticsearchCluster</a> page for its condition types.</p>
 <h2 id="change-the-topology">Change the topology<a class="headerlink" href="#change-the-topology" title="Permanent link">&para;</a></h2>
 <p>The gateway and each web application run <code>Standalone</code> or <code>Embedded</code>. You change the mode on the cluster, and the operator changes the workloads. A cluster with a standalone gateway and a standalone Operate:</p>
@@ -2609,6 +2609,11 @@
 <td><code>&lt;name&gt;-gateway</code>, or <code>&lt;name&gt;-zeebe</code> when the gateway is <code>Embedded</code></td>
 <td><code>26500</code> gRPC, <code>8080</code> HTTP</td>
 <td>The gRPC API, the REST API under <code>/v2/</code>, and the embedded web applications under <code>/operate/</code>, <code>/tasklist/</code>, and <code>/admin/</code>.</td>
+</tr>
+<tr>
+<td><code>&lt;name&gt;-zeebe-client</code>, only when the gateway is <code>Embedded</code></td>
+<td><code>26500</code> gRPC, <code>8080</code> HTTP</td>
+<td>The same APIs as <code>&lt;name&gt;-zeebe</code>, from ready brokers only. Route traffic from outside the cluster to this Service.</td>
 </tr>
 <tr>
 <td><code>&lt;name&gt;-operate</code>, <code>&lt;name&gt;-tasklist</code>, <code>&lt;name&gt;-admin</code></td>
@@ -2932,7 +2937,7 @@
 </span><span id="__span-26-10"><a id="__codelineno-26-10" name="__codelineno-26-10" href="#__codelineno-26-10"></a><span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <h2 id="find-the-resources-of-a-cluster">Find the resources of a cluster<a class="headerlink" href="#find-the-resources-of-a-cluster" title="Permanent link">&para;</a></h2>
-<p>Every resource that the operator creates carries labels that name its owner and its role:</p>
+<p>These labels name the owner and the role of an object:</p>
 <table>
 <thead>
 <tr>
@@ -2963,10 +2968,11 @@
 </tr>
 <tr>
 <td><code>app.kubernetes.io/managed-by</code></td>
-<td><code>camunda-operator</code>. The pods and volume claims carry the two labels above, not this one.</td>
+<td><code>camunda-operator</code>. Not every pod and volume claim carries it, so select them by the labels above.</td>
 </tr>
 </tbody>
 </table>
+<p><a href="../../architecture/#discovery-labels">Discovery labels</a> lists the stable values of these labels and the objects that the promise covers.</p>
 <p>Three examples:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="c1"># Every pod of one cluster.</span>
 </span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pod<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-l<span class="w"> </span>camunda.io/cluster<span class="o">=</span>my-cluster
@@ -2980,7 +2986,7 @@
 <h2 id="delete-a-cluster">Delete a cluster<a class="headerlink" href="#delete-a-cluster" title="Permanent link">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>camundacluster<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns
 </span></code></pre></div>
-<p>Kubernetes garbage-collects everything that the cluster owns: the workloads, the Services, the admin Secret, the copied Secrets, and the ServiceMonitors. A ServiceAccount that the operator created goes too. The broker volumes follow the retention policy of the cluster. With <code>Delete</code>, the default, they go with the cluster. With <code>Retain</code>, they stay, and a later cluster with the same name attaches them again. Set the policy before you delete:</p>
+<p>Kubernetes garbage-collects everything that the cluster owns: the workloads, the Services, the admin Secret, the copied Secrets, and the ServiceMonitors. A ServiceAccount that the operator created goes too, unless you switched its <code>create</code> to <code>false</code>. The broker volumes follow the retention policy of the cluster. With <code>Delete</code>, the default, they go with the cluster. With <code>Retain</code>, they stay, and a later cluster with the same name attaches them again. Set the policy before you delete:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
 </span><span id="__span-29-2"><a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaCluster</span>
 </span><span id="__span-29-3"><a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a><span class="nt">metadata</span><span class="p">:</span>

@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -482,6 +482,34 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="How a feature finds its workloads">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#discovery-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discovery labels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-labels-on-the-reference-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other labels on the reference pages
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2062,6 +2090,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="How a feature finds its workloads">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#discovery-labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Discovery labels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-labels-on-the-reference-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other labels on the reference pages
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2186,34 +2242,140 @@ Every other capability is its own kind. A backup, for example, is a <code>Logica
 <li>You can create, change, or delete an attached feature without an edit to the cluster spec.</li>
 </ul>
 <h2 id="how-a-feature-finds-its-workloads">How a feature finds its workloads<a class="headerlink" href="#how-a-feature-finds-its-workloads" title="Permanent link">&para;</a></h2>
-<p>The operator labels every resource that it creates with the owner, the component, and itself:</p>
+<p>The operator labels the objects in <a href="#discovery-labels">Discovery labels</a> with their owner and their role.</p>
+<p>A feature finds the workloads of a cluster through these labels, or it reads the cluster through <code>clusterRef</code>.
+To call the cluster, a feature reads the status of the <code>CamundaCluster</code>. <code>status.management</code> holds the address of the management API. <code>status.gateway</code> holds the gRPC and REST addresses of the client APIs. Both are empty while the cluster is suspended.</p>
+<h3 id="discovery-labels">Discovery labels<a class="headerlink" href="#discovery-labels" title="Permanent link">&para;</a></h3>
+<p>The labels in this section are a stable promise. Extensions, the fleet manager, and your own selectors can rely on them. A change to one of these keys or values is a breaking change, and the release notes name it.</p>
+<p>The tables list the objects and the values that the promise covers. Other objects carry some of these keys too, with other component values. The Jobs of a backup or a restore are an example. A component value that this page does not list is not part of the promise.</p>
 <table>
 <thead>
 <tr>
 <th>Label</th>
 <th>Value</th>
+<th>Objects that carry it</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>camunda.io/&lt;owner-kind&gt;</code></td>
-<td>the name of the owning custom resource. The key names the kind, for example <code>camunda.io/cluster</code> for a <code>CamundaCluster</code>.</td>
+<td><code>camunda.io/cluster</code></td>
+<td>The name of the <code>CamundaCluster</code>.</td>
+<td>The pods, workloads, Services, Secrets, ServiceMonitors, and broker volume claims of the cluster. The pods, Deployments, Services, and Secrets of a <code>CamundaOptimize</code>, with the name in its <code>clusterRef</code>.</td>
+</tr>
+<tr>
+<td><code>camunda.io/elasticsearch-cluster</code></td>
+<td>The name of the <code>ElasticsearchCluster</code>.</td>
+<td>The ECK <code>Elasticsearch</code> resource, the Elasticsearch pods, and their data volume claims. The Deployment, pods, and Service of the metrics exporter.</td>
+</tr>
+<tr>
+<td><code>camunda.io/database-server</code></td>
+<td>The name of the <code>DatabaseServer</code>.</td>
+<td>The CloudNativePG <code>Cluster</code> resource, the PostgreSQL instance pods, their volume claims, and their Services.</td>
+</tr>
+<tr>
+<td><code>camunda.io/database</code></td>
+<td>The name of the <code>Database</code>.</td>
+<td>The Secrets, <code>DatabaseConfig</code> resources, and <code>SecondaryStorageConfig</code> resources that the <code>Database</code> publishes. A <code>Database</code> runs no pods.</td>
 </tr>
 <tr>
 <td><code>camunda.io/component</code></td>
-<td>the role of the resource, for example <code>zeebe</code>, <code>gateway</code>, <code>elasticsearch</code></td>
-</tr>
-<tr>
-<td><code>app.kubernetes.io/managed-by</code></td>
-<td><code>camunda-operator</code></td>
+<td>The role of the object inside its owner. The next table lists the values.</td>
+<td>Every object in the rows above.</td>
 </tr>
 </tbody>
 </table>
-<p>The owner keys are <code>camunda.io/cluster</code>, <code>camunda.io/elasticsearch-cluster</code>, <code>camunda.io/database-server</code>, <code>camunda.io/database</code>, <code>camunda.io/management-cluster</code>, <code>camunda.io/backup-schedule</code>, <code>camunda.io/logical-backup-elasticsearch</code>, <code>camunda.io/logical-backup-rdbms</code>, <code>camunda.io/logical-restore-elasticsearch</code>, <code>camunda.io/logical-restore-rdbms</code>, and <code>camunda.io/point-in-time-restore</code>.
-A label value holds at most 63 characters. For a longer name, the value is the start of the name followed by a hash.</p>
-<p>ECK and CloudNativePG run pods and volumes from a template of this operator. These pods and volumes carry the owner and component labels, but not the <code>managed-by</code> label.</p>
-<p>A feature finds the workloads of a cluster through these labels, or it reads the cluster through <code>clusterRef</code>.
-To call the cluster, a feature reads the status of the <code>CamundaCluster</code>. <code>status.management</code> holds the address of the management API. <code>status.gateway</code> holds the gRPC and REST addresses of the client APIs. Both are empty while the cluster is suspended.</p>
+<table>
+<thead>
+<tr>
+<th>Owner</th>
+<th>Values of <code>camunda.io/component</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CamundaCluster</code></td>
+<td><code>zeebe</code>, <code>gateway</code>, <code>operate</code>, <code>tasklist</code>, <code>admin</code>, <code>connectors</code>. On its Secrets: <code>admin-secret</code>, <code>mirrored-secrets</code></td>
+</tr>
+<tr>
+<td><code>CamundaOptimize</code></td>
+<td><code>optimize-webapp</code>, <code>optimize-importer</code>. On its Secrets: <code>optimize-secrets</code></td>
+</tr>
+<tr>
+<td><code>ElasticsearchCluster</code></td>
+<td><code>elasticsearch</code>, <code>elasticsearch-exporter</code></td>
+</tr>
+<tr>
+<td><code>DatabaseServer</code></td>
+<td><code>postgres</code></td>
+</tr>
+<tr>
+<td><code>Database</code></td>
+<td><code>database</code></td>
+</tr>
+</tbody>
+</table>
+<p>Select on the owner key, and add <code>camunda.io/component</code> to narrow the result to one role:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># The PostgreSQL instance pods of the DatabaseServer my-pg.</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pod<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-l<span class="w"> </span>camunda.io/database-server<span class="o">=</span>my-pg
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># The broker pods of a cluster, without its Optimize pods.</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pod<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-l<span class="w"> </span>camunda.io/cluster<span class="o">=</span>my-cluster,camunda.io/component<span class="o">=</span>zeebe
+</span></code></pre></div>
+<p>The Optimize pods carry the <code>camunda.io/cluster</code> label of their cluster. A selector on <code>camunda.io/cluster</code> alone returns them together with the pods of the cluster. Their <code>camunda.io/component</code> value tells them apart.</p>
+<p>A web application in <code>embedded</code> mode has no pods of its own, so a selector on its component value finds no pods. It runs in the <code>gateway</code> pods, or in the <code>zeebe</code> pods when the gateway is embedded too.</p>
+<p>A label value holds at most 63 characters. For a longer name, the value is the start of the name followed by a hash. Kubernetes rejects a selector with the full name of such a resource.</p>
+<p>A label that you set in a <code>podLabels</code> field never replaces a discovery label. Not every pod and volume claim carries <code>app.kubernetes.io/managed-by</code>. Select them by the discovery labels.</p>
+<p>The operator does not create the Elasticsearch and PostgreSQL pods itself. ECK creates each Elasticsearch pod from the pod template of the node set, and copies its labels onto the pod. The data volume claims get the labels of the volume claim template. CloudNativePG copies the <code>inheritedMetadata</code> of its <code>Cluster</code> onto the instance pods, the volume claims, and the Services. The operator puts the discovery labels into both templates, so these objects carry them.</p>
+<p>The keys name the <code>ElasticsearchCluster</code> or the <code>DatabaseServer</code>, not the <code>CamundaCluster</code> that uses it. To go from a cluster to its storage pods, find the storage resource that the cluster uses. Then select its pods by the key of that resource.</p>
+<h3 id="other-labels-on-the-reference-pages">Other labels on the reference pages<a class="headerlink" href="#other-labels-on-the-reference-pages" title="Permanent link">&para;</a></h3>
+<p>Other pages of these docs tell you to select on more <code>camunda.io/</code> labels. These labels are stable too, as each page describes them. A change to one of them is also a breaking change.</p>
+<table>
+<thead>
+<tr>
+<th>Labels</th>
+<th>Objects</th>
+<th>Where you use them</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>camunda.io/management-cluster</code></td>
+<td>The Deployments and Services of a <code>CamundaManagementCluster</code></td>
+<td><a href="../crds/camundamanagementcluster/#what-you-get">CamundaManagementCluster: What you get</a></td>
+</tr>
+<tr>
+<td><code>camunda.io/management-cluster</code>, <code>camunda.io/management-cluster-namespace</code></td>
+<td>A <code>ManagementAuthConfig</code> that a <code>CamundaManagementCluster</code> wrote</td>
+<td><a href="../crds/managementauthconfig/#who-wrote-this-contract">ManagementAuthConfig</a></td>
+</tr>
+<tr>
+<td><code>camunda.io/cluster</code>, <code>camunda.io/cluster-namespace</code>, and <code>camunda.io/component: web-modeler-cluster-user</code></td>
+<td>The Web Modeler user Secrets</td>
+<td><a href="../crds/camundamanagementcluster/#deploy-to-a-cluster">CamundaManagementCluster: Deploy to a cluster</a></td>
+</tr>
+<tr>
+<td><code>camunda.io/storage-claim</code></td>
+<td>The pods that write to a backend</td>
+<td><a href="../crds/camundacluster/#waiting-for-a-handover">CamundaCluster: Waiting for a handover</a></td>
+</tr>
+<tr>
+<td><code>camunda.io/writer-uid</code>, <code>camunda.io/component: storage-writer</code>, and <code>app.kubernetes.io/managed-by</code></td>
+<td>The storage writer Leases</td>
+<td><a href="../crds/camundacluster/#a-restore-that-is-gone-still-holds-the-backend">CamundaCluster: A restore that is gone still holds the backend</a></td>
+</tr>
+<tr>
+<td><code>camunda.io/backup-schedule</code>, <code>camunda.io/cluster</code></td>
+<td>The backups that a schedule creates. You can also put the schedule label on a backup that you create.</td>
+<td><a href="../crds/backupschedule/#the-backups-that-a-schedule-creates">BackupSchedule: The backups that a schedule creates</a></td>
+</tr>
+<tr>
+<td><code>camunda.io/logical-restore-elasticsearch</code>, <code>camunda.io/logical-restore-rdbms</code>, or <code>camunda.io/point-in-time-restore</code>, with <code>camunda.io/cluster</code> and <code>camunda.io/component: restore</code></td>
+<td>The restore Jobs</td>
+<td><a href="../guides/operations/#delete-a-restore">Operations: Delete a restore</a></td>
+</tr>
+</tbody>
+</table>
+<p>The operator also sets <code>camunda.io/</code> labels for its own use, for example <code>camunda.io/cluster-uid</code> and <code>camunda.io/optimize-uid</code>. A <code>camunda.io/</code> label that this page does not list is not part of the promise. It can change in a minor release.</p>
 <h2 id="how-a-feature-acts-on-a-cluster">How a feature acts on a cluster<a class="headerlink" href="#how-a-feature-acts-on-a-cluster" title="Permanent link">&para;</a></h2>
 <p>A feature that must stop a cluster, such as a restore, adds an annotation with the prefix <code>suspension-hold.camunda.io/</code> to the <code>CamundaCluster</code>. The value says why. The cluster stays suspended while it has at least one of these annotations, and its <code>Ready</code> condition reports <code>SuspensionHeld</code>. When the feature removes its annotation, the cluster starts again, unless <code>spec.suspend</code> is true. See <a href="../crds/camundacluster/#suspension-holds">Suspension holds</a>.</p>
 <h2 id="contracts-carry-connection-details">Contracts carry connection details<a class="headerlink" href="#contracts-carry-connection-details" title="Permanent link">&para;</a></h2>

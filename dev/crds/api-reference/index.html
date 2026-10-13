@@ -60,7 +60,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2718,6 +2718,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#endpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#endpointprotocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EndpointProtocol
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#exporterspec" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4745,6 +4767,28 @@
     <span class="md-ellipsis">
       
         ElasticsearchStorage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#endpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#endpointprotocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EndpointProtocol
       
     </span>
   </a>
@@ -6785,7 +6829,7 @@ merges its own fields over it, with the rules of the preset doc.</p>
 <tbody>
 <tr>
 <td><code>cluster</code> <em><a href="#camundaclusterspec">CamundaClusterSpec</a></em></td>
-<td>Cluster is the configuration baseline that the clusters that reference<br />the preset get. It uses the CamundaCluster spec type. A preset must not<br />set the fields that belong to one cluster only: platformConfigRef,<br />presetRef, releaseRef, externalUrl, serviceAccount, storageRef,<br />backupStorageRef, documentStorageRef, monitoring, suspend, and pause.<br />It must also not set the fields that belong to a CamundaRelease:<br />version and connectors.version. An explicit zero value, such as an<br />empty presetRef or suspend: false, counts as unset. Templated YAML<br />often renders unset fields in this way. The CamundaCluster doc gives<br />the details of each field. The CamundaClusterPreset doc gives the merge<br />rules.</td>
+<td>Cluster is the configuration baseline that the clusters that reference<br />the preset get. It uses the CamundaCluster spec type. A preset must not<br />set the references of one cluster: platformConfigRef, presetRef,<br />releaseRef, storageRef, backupStorageRef, and documentStorageRef. It<br />must also not set externalUrl, serviceAccount,<br />connectors.serviceAccount.name, monitoring, suspend, or pause.<br />It must also not set the fields that belong to a CamundaRelease:<br />version and connectors.version. An explicit zero value, such as an<br />empty presetRef or suspend: false, counts as unset. Templated YAML<br />often renders unset fields in this way. The CamundaCluster doc gives<br />the details of each field. The CamundaClusterPreset doc gives the merge<br />rules.</td>
 <td></td>
 <td>Required: {} <br /></td>
 </tr>
@@ -6830,7 +6874,7 @@ to one cluster only.</p>
 </tr>
 <tr>
 <td><code>version</code> <em>string</em></td>
-<td>Version is the Camunda version to deploy, as a full semantic version.<br />Required unless the resolved release provides it. Forbidden in a<br />preset. The operator refuses a version below 8.9.0, also when it comes<br />from the release. The operator also refuses a version below the<br />version that the brokers run, with Ready reason VersionDowngradeRefused.<br />The annotation camunda.io/allow-version-downgrade on the CamundaCluster,<br />set to that version, permits it.</td>
+<td>Version is the Camunda version to deploy, as a full semantic version.<br />Required unless the resolved release provides it. Forbidden in a<br />preset. The operator refuses a version below 8.9.0, also when it comes<br />from the release. The operator also refuses a version below the<br />version that the brokers run, with Ready reason VersionDowngradeRefused.<br />The annotation camunda.io/allow-version-downgrade on the CamundaCluster,<br />set to that version, permits it.<br />The operator also refuses a version more than one minor above the<br />version that the brokers run, in the same major, with Ready reason<br />VersionSkipRefused. No annotation permits that move.</td>
 <td></td>
 <td>Pattern: <code>^\d+\.\d+\.\d+$</code> <br />Optional: {} <br /></td>
 </tr>
@@ -6842,7 +6886,7 @@ to one cluster only.</p>
 </tr>
 <tr>
 <td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
-<td>ServiceAccount configures the ServiceAccount of every workload. The<br />workloads get access to the buckets of backupStorageRef and<br />documentStorageRef through this identity.</td>
+<td>ServiceAccount configures the ServiceAccount of every workload except<br />the connectors, which connectors.serviceAccount configures. The<br />workloads get access to the buckets of backupStorageRef and<br />documentStorageRef through this identity. When the operator creates<br />the account, it adds the identity annotation of each bucket that names<br />one. When the annotations carry azure.workload.identity/client-id, the<br />pods of these workloads, the backup Jobs included, get the label<br />azure.workload.identity/use: "true". The name <name>-camunda<br />belongs to the operator. While neither the cluster nor its preset sets<br />this block and no referenced bucket uses workload identity, the<br />operator deletes an account of that name. It deletes one that it did<br />not create too, except while connectors.serviceAccount names it with<br />create false: Ready then reports InvalidReference.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -6908,7 +6952,7 @@ to one cluster only.</p>
 </tr>
 <tr>
 <td><code>podAnnotations</code> <em>object (keys:string, values:string)</em></td>
-<td>PodAnnotations are extra annotations of every workload pod.</td>
+<td>PodAnnotations are extra annotations of every workload pod. The keys<br />camunda.io/config-hash and camunda.io/service-account-hash belong to the<br />operator. A value for them here, or in the podAnnotations of a process,<br />does not reach the pods.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -7007,6 +7051,12 @@ to one cluster only.</p>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
+<td><code>endpoints</code> <em><a href="#endpoint">Endpoint</a> array</em></td>
+<td>Endpoints lists the routes of this cluster, sorted by name: each path<br />on the external URL, with the Service and the port that serve it. An<br />access extension reads it and does not derive a Service from the mode<br />fields. The longest matching path prefix wins, and default takes every<br />path that no other entry names. The entries stay while the cluster is<br />suspended, because the Services stay.</td>
+<td></td>
+<td>Optional: {} <br /></td>
+</tr>
+<tr>
 <td><code>adminPassword</code> <em><a href="#adminpasswordstatus">AdminPasswordStatus</a></em></td>
 <td>AdminPassword is the state of the admin credential of a basic-auth<br />cluster. It is unset under OIDC.</td>
 <td></td>
@@ -7014,7 +7064,13 @@ to one cluster only.</p>
 </tr>
 <tr>
 <td><code>serviceAccountName</code> <em>string</em></td>
-<td>ServiceAccountName is the ServiceAccount that the pods of this cluster<br />run under. It is empty when they run under the default account of the<br />namespace. An extension that runs a pod for this cluster reads it and<br />does not derive the name itself.</td>
+<td>ServiceAccountName is the ServiceAccount that the pods of this cluster<br />run under, except the connectors. It is empty when they run under the<br />default account of the namespace. An extension that runs a pod for<br />this cluster reads it and does not derive the name itself.</td>
+<td></td>
+<td>Optional: {} <br /></td>
+</tr>
+<tr>
+<td><code>connectorsServiceAccountName</code> <em>string</em></td>
+<td>ConnectorsServiceAccountName is the ServiceAccount that the connectors<br />pods run under. It is empty when neither the cluster nor its preset<br />sets connectors.serviceAccount, and when connectors are not enabled.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -7864,6 +7920,12 @@ Deployment.</p>
 <td>Pattern: <code>^\d+\.\d+\.\d+$</code> <br />Optional: {} <br /></td>
 </tr>
 <tr>
+<td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
+<td>ServiceAccount configures the ServiceAccount of the connectors pods.<br />When unset, they run under the default ServiceAccount of the namespace.<br />When set, they run under <name>-connectors, or under name. Only<br />the annotations of this block go on the account, never the identities<br />of the buckets. When they carry azure.workload.identity/client-id, the<br />connectors pods get the label azure.workload.identity/use: "true". The<br />connectors never run under the cluster ServiceAccount: name must differ<br />from it, and a spec.serviceAccount.name of default needs this block, or<br />Ready reports InvalidReference. The name default needs create false.<br />With create false, name must not be <name>-camunda while<br />neither the cluster nor its preset sets spec.serviceAccount and no<br />referenced bucket uses workload identity. Ready then reports<br />InvalidReference, also while connectors are off. A preset can set this<br />block, except name.</td>
+<td></td>
+<td>Optional: {} <br /></td>
+</tr>
+<tr>
 <td><code>replicas</code> <em>integer</em></td>
 <td>Replicas is the number of pods of this process. Defaults to 1. On a<br />CamundaCluster it has no effect on an embedded web application.</td>
 <td></td>
@@ -7895,7 +7957,7 @@ Deployment.</p>
 </tr>
 <tr>
 <td><code>podAnnotations</code> <em>object (keys:string, values:string)</em></td>
-<td>PodAnnotations are extra annotations of the pods of this process.</td>
+<td>PodAnnotations are extra annotations of the pods of this process. In a<br />CamundaCluster, the keys camunda.io/config-hash and<br />camunda.io/service-account-hash belong to the operator, and a value for<br />them does not reach the pods.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -7965,7 +8027,7 @@ Deployment.</p>
 </tr>
 <tr>
 <td><code>podAnnotations</code> <em>object (keys:string, values:string)</em></td>
-<td>PodAnnotations are extra annotations of the pods of this process.</td>
+<td>PodAnnotations are extra annotations of the pods of this process. In a<br />CamundaCluster, the keys camunda.io/config-hash and<br />camunda.io/service-account-hash belong to the operator, and a value for<br />them does not reach the pods.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -9205,7 +9267,7 @@ CamundaRelease.</p>
 </tr>
 <tr>
 <td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
-<td>ServiceAccount configures the ServiceAccount of the Elasticsearch pods.</td>
+<td>ServiceAccount configures the ServiceAccount of the Elasticsearch pods.<br />The name <name>-es belongs to the operator. While neither the cluster<br />nor its preset sets this block and the snapshot bucket uses no workload<br />identity, the operator deletes the account <name>-es. It deletes one<br />that it did not create too.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -9229,7 +9291,7 @@ CamundaRelease.</p>
 </tr>
 <tr>
 <td><code>podAnnotations</code> <em>object (keys:string, values:string)</em></td>
-<td>PodAnnotations are extra annotations applied to the Elasticsearch pods.</td>
+<td>PodAnnotations are extra annotations applied to the Elasticsearch pods.<br />The key camunda.io/service-account-hash belongs to the operator, and a<br />value for it does not reach the pods.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -9366,6 +9428,78 @@ CamundaRelease.</p>
 <td>NodeCount is the number of data nodes of the Elasticsearch cluster. An<br />ElasticsearchCluster sets it in the contract that it publishes. For an<br />Elasticsearch cluster that this operator does not manage, set it<br />yourself.<br />A consumer that sets no index replica count of its own gets 0 replicas<br />on one node and 1 replica on two or more nodes. Without a node count,<br />the consumer keeps the default of the Camunda application.</td>
 <td></td>
 <td>Minimum: 1 <br />Optional: {} <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="endpoint">Endpoint<a class="headerlink" href="#endpoint" title="Permanent link">&para;</a></h4>
+<p>Endpoint is one route that a resource needs: a path on the external URL
+and the Service and port that serve it.</p>
+<p><em>Appears in:</em>
+- <a href="#camundaclusterstatus">CamundaClusterStatus</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+<th>Default</th>
+<th>Validation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code> <em>string</em></td>
+<td>Name identifies the route, for example operate or grpc.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>service</code> <em>string</em></td>
+<td>Service is the name of a Service in the namespace of the resource.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>port</code> <em>integer</em></td>
+<td>Port is the port of the Service.</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>pathPrefix</code> <em>string</em></td>
+<td>PathPrefix is the path that the route matches. It is empty for gRPC.</td>
+<td></td>
+<td>Optional: {} <br /></td>
+</tr>
+<tr>
+<td><code>protocol</code> <em><a href="#endpointprotocol">EndpointProtocol</a></em></td>
+<td>Protocol is HTTP or GRPC.</td>
+<td></td>
+<td>Enum: [HTTP GRPC] <br /></td>
+</tr>
+</tbody>
+</table>
+<h4 id="endpointprotocol">EndpointProtocol<a class="headerlink" href="#endpointprotocol" title="Permanent link">&para;</a></h4>
+<p><em>Underlying type:</em> <em>string</em></p>
+<p>EndpointProtocol is the protocol of a route.</p>
+<p><em>Validation:</em>
+- Enum: [HTTP GRPC]</p>
+<p><em>Appears in:</em>
+- <a href="#endpoint">Endpoint</a></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HTTP</code></td>
+<td>EndpointProtocolHTTP is a route for HTTP traffic, matched by path prefix.<br /></td>
+</tr>
+<tr>
+<td><code>GRPC</code></td>
+<td>EndpointProtocolGRPC is a route for gRPC traffic. It has no path prefix.<br /></td>
 </tr>
 </tbody>
 </table>
@@ -9637,7 +9771,7 @@ takes.</p>
 </tr>
 <tr>
 <td><code>podAnnotations</code> <em>object (keys:string, values:string)</em></td>
-<td>PodAnnotations are extra annotations of the pods of this process.</td>
+<td>PodAnnotations are extra annotations of the pods of this process. In a<br />CamundaCluster, the keys camunda.io/config-hash and<br />camunda.io/service-account-hash belong to the operator, and a value for<br />them does not reach the pods.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -9766,7 +9900,7 @@ it.</p>
 </tr>
 <tr>
 <td><code>externalUrl</code> <em>string</em></td>
-<td>ExternalURL is the URL where browsers reach Management Identity.<br />Identity registers it as the redirect URI of its own client.</td>
+<td>ExternalURL is the URL where browsers reach Management Identity.<br />Identity registers it as the redirect URI of its own client. Identity<br />serves under the path of this URL, so it can share one host with<br />Keycloak, Console, and Web Modeler. A URL with a path other than "/"<br />must use https, because Camunda requires https for Identity under a<br />path.</td>
 <td></td>
 <td></td>
 </tr>
@@ -9814,7 +9948,7 @@ it.</p>
 </tr>
 <tr>
 <td><code>podAnnotations</code> <em>object (keys:string, values:string)</em></td>
-<td>PodAnnotations are extra annotations of the pods of this process.</td>
+<td>PodAnnotations are extra annotations of the pods of this process. In a<br />CamundaCluster, the keys camunda.io/config-hash and<br />camunda.io/service-account-hash belong to the operator, and a value for<br />them does not reach the pods.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -13516,6 +13650,7 @@ keystore, never from the settings of a snapshot repository.</p>
 <p>ServiceAccountSpec configures the ServiceAccount of the pods of a resource.</p>
 <p><em>Appears in:</em>
 - <a href="#camundaclusterspec">CamundaClusterSpec</a>
+- <a href="#connectorsspec">ConnectorsSpec</a>
 - <a href="#elasticsearchclusterspec">ElasticsearchClusterSpec</a></p>
 <table>
 <thead>
@@ -13535,13 +13670,13 @@ keystore, never from the settings of a snapshot repository.</p>
 </tr>
 <tr>
 <td><code>create</code> <em>boolean</em></td>
-<td>Create makes the operator create and own the ServiceAccount. Defaults<br />to true. False names a ServiceAccount that already exists. The operator<br />then does not create, annotate, or own it. If it does not exist, Ready<br />reports InvalidReference, except on a suspended ElasticsearchCluster. The operator never takes ownership of a<br />ServiceAccount that it did not create, because it deletes an owned one<br />with the resource.</td>
+<td>Create makes the operator create and own the ServiceAccount. Defaults<br />to true. False names a ServiceAccount that already exists. The operator<br />then does not create, annotate, or own it. If it does not exist, Ready<br />reports InvalidReference. Ready does not report it on a suspended<br />ElasticsearchCluster or for connectors that are not enabled.<br />While create is false, the operator never takes ownership of the<br />ServiceAccount, because it deletes an owned one with the resource. A<br />switch to false removes the owner reference from the account that the<br />operator created. The account then stays when the resource is deleted.<br />With create true, the operator owns and annotates the account of that<br />name, also one that it did not create. An account that another<br />resource controls is not taken over, and the apply fails.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
 <td><code>annotations</code> <em>object (keys:string, values:string)</em></td>
-<td>Annotations to set on the ServiceAccount that the operator creates.<br />Usually these are workload-identity annotations (IRSA, GCP Workload<br />Identity, and more) that give the pods access to cloud resources, such<br />as the snapshot bucket for backups. The operator also adds the identity<br />annotation of each bucket contract that names an identity. An annotation<br />set here wins over the operator annotation with the same key. With<br />create false, the operator sets no annotation. Add them to the existing<br />ServiceAccount yourself.</td>
+<td>Annotations to set on the ServiceAccount that the operator creates.<br />Usually these are workload-identity annotations (IRSA, GCP Workload<br />Identity, and more) that give the pods access to cloud resources, such<br />as the snapshot bucket for backups. Except on connectors.serviceAccount<br />of a CamundaCluster, the operator also adds the identity annotation of<br />each referenced bucket that names an identity. An annotation set here<br />wins over it. With create false, the operator sets no annotation. Add them<br />to the existing ServiceAccount yourself.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -13674,7 +13809,7 @@ Admin.</p>
 </tr>
 <tr>
 <td><code>podAnnotations</code> <em>object (keys:string, values:string)</em></td>
-<td>PodAnnotations are extra annotations of the pods of this process.</td>
+<td>PodAnnotations are extra annotations of the pods of this process. In a<br />CamundaCluster, the keys camunda.io/config-hash and<br />camunda.io/service-account-hash belong to the operator, and a value for<br />them does not reach the pods.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -13894,7 +14029,7 @@ CamundaCluster uses it, and so does each workload of a CamundaOptimize.</p>
 </tr>
 <tr>
 <td><code>podAnnotations</code> <em>object (keys:string, values:string)</em></td>
-<td>PodAnnotations are extra annotations of the pods of this process.</td>
+<td>PodAnnotations are extra annotations of the pods of this process. In a<br />CamundaCluster, the keys camunda.io/config-hash and<br />camunda.io/service-account-hash belong to the operator, and a value for<br />them does not reach the pods.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -13953,7 +14088,7 @@ with persistent volumes.</p>
 </tr>
 <tr>
 <td><code>podAnnotations</code> <em>object (keys:string, values:string)</em></td>
-<td>PodAnnotations are extra annotations of the pods of this process.</td>
+<td>PodAnnotations are extra annotations of the pods of this process. In a<br />CamundaCluster, the keys camunda.io/config-hash and<br />camunda.io/service-account-hash belong to the operator, and a value for<br />them does not reach the pods.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>

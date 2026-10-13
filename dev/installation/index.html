@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -517,6 +517,45 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Upgrade">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#connectors-no-longer-use-the-cluster-serviceaccount" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connectors no longer use the cluster ServiceAccount
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pods-under-an-annotated-serviceaccount-restart-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pods under an annotated ServiceAccount restart once
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#elasticsearch-pods-under-an-annotated-serviceaccount-restart-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Elasticsearch pods under an annotated ServiceAccount restart once
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2174,6 +2213,45 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Upgrade">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#connectors-no-longer-use-the-cluster-serviceaccount" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connectors no longer use the cluster ServiceAccount
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pods-under-an-annotated-serviceaccount-restart-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pods under an annotated ServiceAccount restart once
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#elasticsearch-pods-under-an-annotated-serviceaccount-restart-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Elasticsearch pods under an annotated ServiceAccount restart once
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2292,7 +2370,7 @@
 </tr>
 </tbody>
 </table>
-<p>To pull from a mirror, set <code>manager.image.repository</code> and <code>manager.cliImage.repository</code>, and put the pull Secret in <code>manager.imagePullSecrets</code>. That Secret applies to the manager Pod only, not to the Jobs that run the CLI image. Those Jobs and the Camunda pods run under the ServiceAccount of their <code>CamundaCluster</code>. Add the pull Secret to the <code>imagePullSecrets</code> of that ServiceAccount, see <a href="../crds/camundacluster/#workload-identity">Workload identity</a>. The <a href="https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md">chart README</a> lists these values.</p>
+<p>To pull from a mirror, set <code>manager.image.repository</code> and <code>manager.cliImage.repository</code>, and put the pull Secret in <code>manager.imagePullSecrets</code>. That Secret applies to the manager Pod only, not to the Jobs that run the CLI image. Those Jobs and the Camunda pods run under the ServiceAccount of their <code>CamundaCluster</code>. The connectors run under their own ServiceAccount, or under the ServiceAccount <code>default</code> of the namespace. Add the pull Secret to the <code>imagePullSecrets</code> of each of these ServiceAccounts, see <a href="../crds/camundacluster/#workload-identity">Workload identity</a>. The <a href="https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md">chart README</a> lists these values.</p>
 <p>Example:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>helm<span class="w"> </span>install<span class="w"> </span>camunda-operator<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>oci://ghcr.io/konsole-is/charts/camunda-operator<span class="w"> </span><span class="se">\</span>
@@ -2384,8 +2462,28 @@
 <p>Without <code>--set</code> or <code>-f</code>, Helm keeps the values of the last release. If you pass a value, Helm uses the chart defaults for all the values you do not pass. In that case, pass every value of the install again. Do not use <code>--reuse-values</code>, because it keeps the image tags of the old chart.</p>
 <p>The CRDs carry the annotation <code>helm.sh/resource-policy: keep</code>. Helm updates them in place and never deletes them.</p>
 <p>To upgrade a manifest install, apply the <code>install.yaml</code> of the new release with <code>--server-side</code>, as in <a href="#install-without-helm">Install without Helm</a>. Make the same mirror edits again before you apply.</p>
+<h3 id="connectors-no-longer-use-the-cluster-serviceaccount">Connectors no longer use the cluster ServiceAccount<a class="headerlink" href="#connectors-no-longer-use-the-cluster-serviceaccount" title="Permanent link">&para;</a></h3>
+<p>From this release, the connectors of a <code>CamundaCluster</code> run under the default ServiceAccount of the namespace. Before, they ran under the ServiceAccount of the cluster and got its cloud role. If a connector of yours uses that role, set <code>spec.connectors.serviceAccount</code> right after you upgrade the operator. An AWS connector with the default credentials chain is an example. Give the connectors a role of their own, not the role of the cluster:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaCluster</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">connectors</span><span class="p">:</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="nt">serviceAccount</span><span class="p">:</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">      </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">        </span><span class="nt">eks.amazonaws.com/role-arn</span><span class="p">:</span><span class="w"> </span><span class="s">"arn:aws:iam::123456789012:role/my-cluster-connectors"</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">  </span><span class="c1"># ... the rest of your cluster</span>
+</span></code></pre></div>
+<p>The connectors pods restart once after the upgrade, and again when you set the block. If <code>spec.serviceAccount.name</code> is <code>default</code> and connectors are enabled, the cluster reports <code>InvalidReference</code>, and the connectors keep the cluster account until you set <code>spec.connectors.serviceAccount</code>. For an identity without an annotation, such as EKS Pod Identity, bind the new principal <code>system:serviceaccount:my-cluster-ns:my-cluster-connectors</code> on the cloud side.</p>
+<p>If you pull images from a mirror, the connectors need the pull Secret on their new ServiceAccount: <code>default</code>, or the account of <code>spec.connectors.serviceAccount</code>. The operator sets no pull Secret on any ServiceAccount. Add it to the <code>imagePullSecrets</code> of that account. The operator keeps a pull Secret that you add to an account that it creates. See <a href="../crds/camundacluster/#workload-identity">Workload identity</a>.</p>
+<h3 id="pods-under-an-annotated-serviceaccount-restart-once">Pods under an annotated ServiceAccount restart once<a class="headerlink" href="#pods-under-an-annotated-serviceaccount-restart-once" title="Permanent link">&para;</a></h3>
+<p>From this release, a change to the annotations that the operator puts on a ServiceAccount restarts the <code>CamundaCluster</code> pods that run under it. When the operator puts annotations on the ServiceAccount of <code>CamundaCluster</code> pods, these pods restart once after you upgrade to this release.</p>
+<h3 id="elasticsearch-pods-under-an-annotated-serviceaccount-restart-once">Elasticsearch pods under an annotated ServiceAccount restart once<a class="headerlink" href="#elasticsearch-pods-under-an-annotated-serviceaccount-restart-once" title="Permanent link">&para;</a></h3>
+<p>From this release, a change to the annotations that the operator puts on the ServiceAccount of an <code>ElasticsearchCluster</code> restarts its Elasticsearch pods. An <code>ElasticsearchCluster</code> whose operator-created account has annotations restarts its pods once after you upgrade to this release. The annotations come from <code>spec.serviceAccount.annotations</code> or from the workload identity of the snapshot bucket. See <a href="../crds/elasticsearchcluster/#serviceaccount">ServiceAccount</a>.</p>
 <h2 id="uninstall">Uninstall<a class="headerlink" href="#uninstall" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>helm<span class="w"> </span>uninstall<span class="w"> </span>camunda-operator<span class="w"> </span>--namespace<span class="w"> </span>camunda-operator-system
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>helm<span class="w"> </span>uninstall<span class="w"> </span>camunda-operator<span class="w"> </span>--namespace<span class="w"> </span>camunda-operator-system
 </span></code></pre></div>
 <p>Because of the <code>keep</code> policy, the CRDs and every custom resource stored in them survive the uninstall. The Camunda workloads keep running, but nothing manages them.</p>
 <p>To remove everything, do these steps in this order:</p>
@@ -2398,19 +2496,19 @@
 <p><strong>Caution:</strong> When you delete a backup resource, the operator deletes the snapshots or the dump of that backup from the bucket. If you delete the cluster or its <code>ObjectStorageConfig</code> first, the backup goes and leaves its artifacts in the bucket. When you delete a <code>CamundaCluster</code>, the broker volumes follow <code>spec.zeebe.persistentVolumeClaimRetentionPolicy</code>. The default deletes them.</p>
 </blockquote>
 <p>Delete the CRDs by name. The CRD manifests carry no labels, so a label selector does not match them:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>-f<span class="w"> </span>https://github.com/konsole-is/camunda-operator/releases/download/v&lt;version&gt;/crds.yaml
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>-f<span class="w"> </span>https://github.com/konsole-is/camunda-operator/releases/download/v&lt;version&gt;/crds.yaml
 </span></code></pre></div>
 <p>Without the release file, delete every CRD in the <code>core.camunda.io</code> group:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nv">crds</span><span class="o">=</span><span class="k">$(</span>kubectl<span class="w"> </span>get<span class="w"> </span>crd<span class="w"> </span>-o<span class="w"> </span>name<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s1">'\.core\.camunda\.io$'</span><span class="k">)</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-n<span class="w"> </span><span class="s2">"</span><span class="nv">$crds</span><span class="s2">"</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span><span class="w"> </span>kubectl<span class="w"> </span>delete<span class="w"> </span><span class="nv">$crds</span><span class="p">;</span><span class="w"> </span><span class="k">fi</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nv">crds</span><span class="o">=</span><span class="k">$(</span>kubectl<span class="w"> </span>get<span class="w"> </span>crd<span class="w"> </span>-o<span class="w"> </span>name<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s1">'\.core\.camunda\.io$'</span><span class="k">)</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span>-n<span class="w"> </span><span class="s2">"</span><span class="nv">$crds</span><span class="s2">"</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span><span class="w"> </span>kubectl<span class="w"> </span>delete<span class="w"> </span><span class="nv">$crds</span><span class="p">;</span><span class="w"> </span><span class="k">fi</span>
 </span></code></pre></div>
 <h2 id="install-from-source">Install from source<a class="headerlink" href="#install-from-source" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/konsole-is/camunda-operator
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nb">cd</span><span class="w"> </span>camunda-operator
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>make<span class="w"> </span>docker-build<span class="w"> </span>docker-push<span class="w">         </span><span class="nv">IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator:&lt;tag&gt;
-</span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>make<span class="w"> </span>docker-build-cli<span class="w"> </span>docker-push-cli<span class="w"> </span><span class="nv">CLI_IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator-cli:&lt;tag&gt;
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>make<span class="w"> </span>helm-generate<span class="w"> </span><span class="nv">IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator:&lt;tag&gt;<span class="w"> </span><span class="nv">CLI_IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator-cli:&lt;tag&gt;
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>make<span class="w"> </span>helm-deploy<span class="w">   </span><span class="nv">IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator:&lt;tag&gt;<span class="w"> </span><span class="nv">CLI_IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator-cli:&lt;tag&gt;
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/konsole-is/camunda-operator
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="nb">cd</span><span class="w"> </span>camunda-operator
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>make<span class="w"> </span>docker-build<span class="w"> </span>docker-push<span class="w">         </span><span class="nv">IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator:&lt;tag&gt;
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>make<span class="w"> </span>docker-build-cli<span class="w"> </span>docker-push-cli<span class="w"> </span><span class="nv">CLI_IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator-cli:&lt;tag&gt;
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>make<span class="w"> </span>helm-generate<span class="w"> </span><span class="nv">IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator:&lt;tag&gt;<span class="w"> </span><span class="nv">CLI_IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator-cli:&lt;tag&gt;
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>make<span class="w"> </span>helm-deploy<span class="w">   </span><span class="nv">IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator:&lt;tag&gt;<span class="w"> </span><span class="nv">CLI_IMG</span><span class="o">=</span>&lt;registry&gt;/camunda-operator-cli:&lt;tag&gt;
 </span></code></pre></div>
 <p>This needs Docker, Go, and the <code>kubebuilder</code> CLI. <code>make helm-generate</code> renders <code>dist/chart/values.yaml</code>, <code>dist/chart/values.schema.json</code>, and <code>dist/chart/templates/</code> from <code>config/</code>. The repository holds only <code>Chart.yaml</code> and <code>README.md</code> of the chart. <code>IMG</code> and <code>CLI_IMG</code> set the two images for <code>make deploy</code>, <code>make build-installer</code>, and <code>make helm-deploy</code> in the same way.</p>
 

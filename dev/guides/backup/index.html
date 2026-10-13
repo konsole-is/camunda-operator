@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2390,7 +2390,7 @@
 </span></code></pre></div>
 </li>
 <li>
-<p>If the bucket carries a workload identity, the operator writes the matching annotation on the ServiceAccount of the cluster. The ServiceAccount is named <code>&lt;cluster&gt;-camunda</code> by default. For a bucket that carries no annotation (for example EKS Pod Identity), bind the principal <code>system:serviceaccount:my-cluster-ns:my-cluster-camunda</code> on the cloud side.</p>
+<p>If the bucket carries a workload identity, the operator writes the matching annotation on the ServiceAccount of the cluster. The ServiceAccount is named <code>&lt;cluster&gt;-camunda</code> by default. For a bucket that carries no annotation (for example EKS Pod Identity), bind the principal <code>system:serviceaccount:my-cluster-ns:my-cluster-camunda</code> on the cloud side. The connectors never run under this ServiceAccount. See <a href="../../crds/camundacluster/#workload-identity">Workload identity</a>.</p>
 </li>
 </ul>
 <h3 id="elasticsearch-the-snapshot-repository">Elasticsearch: the snapshot repository<a class="headerlink" href="#elasticsearch-the-snapshot-repository" title="Permanent link">&para;</a></h3>

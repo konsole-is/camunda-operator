@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2205,9 +2205,38 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </div>
 </div>
 <h2 id="merge-rules">Merge rules<a class="headerlink" href="#merge-rules" title="Permanent link">&para;</a></h2>
-<p><code>spec.server</code> of the preset is the baseline. The <a href="../camundarelease/">CamundaRelease</a> of <code>releaseRef</code> merges over it, and the server spec merges over both. A field set on the <code>DatabaseServer</code> replaces the value of the layer below for that field. A field left unset on the server comes from the layer below.</p>
-<p>Every object and every map is replaced as a whole, never merged field by field or key by key. This includes <code>resources</code>, <code>serviceAccount</code>, <code>scheduling</code>, <code>monitoring</code>, <code>archive</code>, <code>podLabels</code>, and <code>podAnnotations</code>. A server that sets its own <code>archive</code> block drops the bucket and the retention of the preset with it. A server that sets one pod label drops every pod label of the preset.</p>
-<p>An empty map (<code>podLabels: {}</code>, <code>podAnnotations: {}</code>) counts as unset, so it does not remove the map of the preset. To remove it, set the map that you want on the server. Or reference a preset without that map.</p>
+<p><code>spec.server</code> of the preset is the baseline. The <a href="../camundarelease/">CamundaRelease</a> of <code>releaseRef</code> merges over it, and the server spec merges over both. The release supplies the version only. A field set on the <code>DatabaseServer</code> replaces the value of the layer below for that field. A field left unset on the server comes from the layer below. Each field merges as the table says.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Merge behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>platformConfigRef</code>, <code>instances</code>, <code>storageSize</code>, <code>storageClassName</code>, <code>walStorageSize</code></td>
+<td>The server value replaces the preset value. An unset server field inherits the preset value.</td>
+</tr>
+<tr>
+<td><code>resources</code>, <code>serviceAccount</code>, <code>scheduling</code>, <code>monitoring</code>, <code>archive</code></td>
+<td>Replaced as a whole block, never merged field by field. A server that sets its own <code>archive</code> block drops the bucket and the retention of the preset with it.</td>
+</tr>
+<tr>
+<td><code>podLabels</code>, <code>podAnnotations</code></td>
+<td>Replaced as a whole map, never merged key by key. A server that sets one pod label drops every pod label of the preset. An empty map (<code>podLabels: {}</code>, <code>podAnnotations: {}</code>) counts as unset and keeps the preset value.</td>
+</tr>
+<tr>
+<td><code>presetRef</code>, <code>releaseRef</code>, <code>databaseServerConfig</code>, <code>suspend</code></td>
+<td>Instance-bound. They always come from the server and are rejected in a preset.</td>
+</tr>
+<tr>
+<td><code>version</code></td>
+<td>Not part of a preset. It comes from <code>spec.databaseServer.version</code> of the release, and a server value replaces it. A preset that sets it is rejected.</td>
+</tr>
+</tbody>
+</table>
+<p>To remove a map that the preset sets, set the map that you want on the server. Or reference a preset without that map.</p>
 <h2 id="fleet-settings">Fleet settings<a class="headerlink" href="#fleet-settings" title="Permanent link">&para;</a></h2>
 <p>A preset can set <code>archive</code> and <code>platformConfigRef</code>. One bucket then serves every server that references the preset, because each server writes its archive under a prefix of its own. One image repository serves them all as well.</p>
 <h2 id="changes">Changes<a class="headerlink" href="#changes" title="Permanent link">&para;</a></h2>
