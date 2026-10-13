@@ -35,25 +35,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	"github.com/konsole-is/camunda-operator/internal/controller/backupschedule"
-	"github.com/konsole-is/camunda-operator/internal/controller/camundacluster"
-	"github.com/konsole-is/camunda-operator/internal/controller/camundamanagementcluster"
-	"github.com/konsole-is/camunda-operator/internal/controller/camundaoptimize"
-	"github.com/konsole-is/camunda-operator/internal/controller/camundaplatformconfig"
-	"github.com/konsole-is/camunda-operator/internal/controller/database"
-	"github.com/konsole-is/camunda-operator/internal/controller/databaseconfig"
-	"github.com/konsole-is/camunda-operator/internal/controller/databaseserver"
-	"github.com/konsole-is/camunda-operator/internal/controller/databaseserverconfig"
-	"github.com/konsole-is/camunda-operator/internal/controller/elasticsearchcluster"
-	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackupelasticsearch"
-	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackuprdbms"
-	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestoreelasticsearch"
-	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestorerdbms"
-	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
-	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
-	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
-	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/manager"
+	"github.com/konsole-is/camunda-operator/internal/reconcilers"
 	"github.com/konsole-is/camunda-operator/internal/version"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
 	// +kubebuilder:scaffold:imports
@@ -252,156 +235,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&camundacluster.CamundaClusterReconciler{
-		Client:         mgr.GetClient(),
-		APIReader:      mgr.GetAPIReader(),
-		Scheme:         mgr.GetScheme(),
-		ClaimNamespace: s.namespace,
-		GracePeriods:   s.gracePeriods,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "CamundaCluster")
-		os.Exit(1)
-	}
-	if err := (&camundaplatformconfig.CamundaPlatformConfigReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "CamundaPlatformConfig")
-		os.Exit(1)
-	}
-	if err := (&elasticsearchcluster.ElasticsearchClusterReconciler{
-		Client:       mgr.GetClient(),
-		APIReader:    mgr.GetAPIReader(),
-		Scheme:       mgr.GetScheme(),
+	if err := reconcilers.Setup(mgr, reconcilers.Options{
+		Namespace:    s.namespace,
+		CLIImage:     s.cliImage,
 		GracePeriods: s.gracePeriods,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "ElasticsearchCluster")
-		os.Exit(1)
-	}
-	if err := (&logicalbackuprdbms.LogicalBackupRDBMSReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr, logicalbackuprdbms.Options{CLIImage: s.cliImage}); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupRDBMS")
-		os.Exit(1)
-	}
-	if err := (&database.DatabaseReconciler{
-		Client:         mgr.GetClient(),
-		APIReader:      mgr.GetAPIReader(),
-		Scheme:         mgr.GetScheme(),
-		ClaimNamespace: s.namespace,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "Database")
-		os.Exit(1)
-	}
-	if err := (&databaseserverconfig.DatabaseServerConfigReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "DatabaseServerConfig")
-		os.Exit(1)
-	}
-	if err := (&databaseserver.DatabaseServerReconciler{
-		Client:       mgr.GetClient(),
-		APIReader:    mgr.GetAPIReader(),
-		Scheme:       mgr.GetScheme(),
-		GracePeriods: s.gracePeriods,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "DatabaseServer")
-		os.Exit(1)
-	}
-	if err := (&databaseconfig.DatabaseConfigReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "DatabaseConfig")
-		os.Exit(1)
-	}
-	if err := (&secondarystorageconfig.SecondaryStorageConfigReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "SecondaryStorageConfig")
-		os.Exit(1)
-	}
-	if err := (&objectstorageconfig.ObjectStorageConfigReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "ObjectStorageConfig")
-		os.Exit(1)
-	}
-	if err := logicalbackupelasticsearch.New(
-		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), logicalbackupelasticsearch.Options{},
-	).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "LogicalBackupElasticsearch")
-		os.Exit(1)
-	}
-	pitrReconciler := pointintimerestore.New(
-		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), s.namespace,
-		pointintimerestore.Options{},
-	)
-	if err := pitrReconciler.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "PointInTimeRestore")
-		os.Exit(1)
-	}
-	if err := (&backupschedule.BackupScheduleReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr, backupschedule.Options{}); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "BackupSchedule")
-		os.Exit(1)
-	}
-	if err := (&camundaoptimize.Reconciler{
-		Client:         mgr.GetClient(),
-		APIReader:      mgr.GetAPIReader(),
-		Scheme:         mgr.GetScheme(),
-		ClaimNamespace: s.namespace,
-		GracePeriods:   s.gracePeriods,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "CamundaOptimize")
-		os.Exit(1)
-	}
-	managementCluster := camundamanagementcluster.New(
-		mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(),
-	)
-	managementCluster.ClaimNamespace = s.namespace
-	managementCluster.GracePeriods = s.gracePeriods
-	if err := managementCluster.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "CamundaManagementCluster")
-		os.Exit(1)
-	}
-	if err := (&managementauthconfig.ManagementAuthConfigReconciler{
-		Client:    mgr.GetClient(),
-		APIReader: mgr.GetAPIReader(),
-		Scheme:    mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "ManagementAuthConfig")
-		os.Exit(1)
-	}
-	if err := logicalrestoreelasticsearch.New(
-		mgr.GetClient(),
-		mgr.GetAPIReader(),
-		mgr.GetScheme(),
-		logicalrestoreelasticsearch.Options{ClaimNamespace: s.namespace},
-	).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreElasticsearch")
-		os.Exit(1)
-	}
-	if err := logicalrestorerdbms.New(
-		mgr.GetClient(),
-		mgr.GetAPIReader(),
-		mgr.GetScheme(),
-		logicalrestorerdbms.Options{CLIImage: s.cliImage, ClaimNamespace: s.namespace},
-	).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Failed to create controller", "controller", "LogicalRestoreRDBMS")
+	}); err != nil {
+		setupLog.Error(err, "Failed to create the controllers")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
