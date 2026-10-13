@@ -4,7 +4,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 /**
- * Give label to a table that can be wider than its box. The box is then a
+ * Give a label to a table that can be wider than its box. The box is then a
  * named region that takes focus, so a keyboard user can scroll it.
  */
 function Table({

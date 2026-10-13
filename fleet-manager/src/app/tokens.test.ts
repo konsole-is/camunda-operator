@@ -62,6 +62,23 @@ function contrast(a: string, b: string): number {
   return (light + 0.05) / (dark + 0.05);
 }
 
+// The color that a fill of `top` at `alpha` gives over `bottom`.
+function over(top: string, alpha: number, bottom: string): string {
+  return `#${[1, 3, 5]
+    .map((i) => {
+      const t = parseInt(top.slice(i, i + 2), 16);
+      const b = parseInt(bottom.slice(i, i + 2), 16);
+      return Math.round(t * alpha + b * (1 - alpha))
+        .toString(16)
+        .padStart(2, "0");
+    })
+    .join("")}`.toUpperCase();
+}
+
+function mappedToken(color: string): string | undefined {
+  return new RegExp(`--color-${color}:\\s*var\\((--[\\w-]+)\\)`).exec(css)?.[1];
+}
+
 describe("design tokens", () => {
   it.each(Object.entries(TOKENS))(
     "defines %s as %s on :root",
@@ -95,11 +112,24 @@ describe("design tokens", () => {
   it.each(SURFACE_TOKENS)(
     "gives the border of a form control on %s a contrast of at least 3:1",
     (surface) => {
-      const input = /--color-input:\s*var\((--[\w-]+)\)/.exec(css)?.[1];
-      expect(input).toBeDefined();
-      const border = tokenValue(input!);
+      const edge = mappedToken("control-edge");
+      expect(edge).toBeDefined();
+      const border = tokenValue(edge!);
       expect(border).toBeDefined();
       expect(contrast(border!, tokenValue(surface)!)).toBeGreaterThanOrEqual(3);
+    },
+  );
+
+  // The primitives fill a hovered control with input at 50%.
+  it.each(SURFACE_TOKENS)(
+    "gives --muted text on a hovered control on %s a contrast of at least 4.5:1",
+    (surface) => {
+      const input = mappedToken("input");
+      expect(input).toBeDefined();
+      const fill = over(tokenValue(input!)!, 0.5, tokenValue(surface)!);
+      expect(contrast(tokenValue("--muted")!, fill)).toBeGreaterThanOrEqual(
+        4.5,
+      );
     },
   );
 });

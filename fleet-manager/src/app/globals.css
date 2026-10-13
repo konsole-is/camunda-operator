@@ -65,7 +65,9 @@
   --color-muted-foreground: var(--muted);
   --color-destructive: var(--bad);
   --color-destructive-foreground: var(--bg);
-  --color-input: var(--faint);
+  --color-input: var(--border);
+  /* The edge of a form control. --border is under 3:1 on the surfaces. */
+  --color-control-edge: var(--faint);
   --color-ring: var(--info);
 
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
