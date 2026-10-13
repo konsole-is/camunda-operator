@@ -143,14 +143,15 @@ func checkWorkload(c chart) []string {
 			"the container does not set HOSTNAME=0.0.0.0, so kubectl port-forward cannot reach the server",
 		)
 	}
-	if container.SecurityContext != nil && ptr.Deref(container.SecurityContext.ReadOnlyRootFilesystem, false) {
-		for _, path := range []string{"/app/.next/cache", "/tmp"} {
-			mounted := slices.ContainsFunc(container.VolumeMounts, func(m corev1.VolumeMount) bool {
-				return m.MountPath == path
-			})
-			if !mounted {
-				problems = append(problems, "the container has a read-only root file system and no volume at "+path)
-			}
+	if container.SecurityContext == nil || !ptr.Deref(container.SecurityContext.ReadOnlyRootFilesystem, false) {
+		return append(problems, "the container does not set readOnlyRootFilesystem: true")
+	}
+	for _, path := range []string{"/app/.next/cache", "/tmp"} {
+		mounted := slices.ContainsFunc(container.VolumeMounts, func(m corev1.VolumeMount) bool {
+			return m.MountPath == path
+		})
+		if !mounted {
+			problems = append(problems, "the container has a read-only root file system and no volume at "+path)
 		}
 	}
 

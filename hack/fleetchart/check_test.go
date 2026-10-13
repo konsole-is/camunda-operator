@@ -335,6 +335,19 @@ func TestCheckEnabledRequiresTheServerToListenOnEveryAddress(t *testing.T) {
 	assert.Len(t, checkEnabled(render(t, c), testKinds), 1)
 }
 
+func TestCheckEnabledRequiresAReadOnlyRootFileSystem(t *testing.T) {
+	t.Parallel()
+
+	c := validChart()
+	c.deployment.Spec.Template.Spec.Containers[0].SecurityContext = nil
+
+	assert.Equal(
+		t,
+		[]string{"the container does not set readOnlyRootFilesystem: true"},
+		checkEnabled(render(t, c), testKinds),
+	)
+}
+
 func TestCheckEnabledRequiresWritableCacheAndTmp(t *testing.T) {
 	t.Parallel()
 
