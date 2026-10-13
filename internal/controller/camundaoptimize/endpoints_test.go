@@ -47,6 +47,24 @@ func readyReason(o *v1.CamundaOptimize) string {
 	return ""
 }
 
+// blockDeployment creates a Deployment with a selector that the operator does
+// not render. A selector is immutable, so every apply of the workload of that
+// name fails before its Service exists.
+func blockDeployment(namespace, name string) {
+	GinkgoHelper()
+	selector := map[string]string{"app": "not-optimize"}
+	Expect(k8sClient.Create(ctx, &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: selector},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: selector},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "busybox"}}},
+			},
+		},
+	})).To(Succeed())
+}
+
 var _ = Describe("CamundaOptimize endpoints", func() {
 	It("publishes the route of the webapp on a new Optimize", func() {
 		s := newScenario("8.9.4")
@@ -115,23 +133,10 @@ var _ = Describe("CamundaOptimize endpoints", func() {
 		})
 	})
 
-	// A selector is immutable, so this Deployment makes every render of the
-	// webapp fail before its Service exists.
 	It("publishes no route while its webapp cannot be applied", func() {
 		ns := newNamespace()
 		cluster := createCluster(ns, createBinding(ns))
-		selector := map[string]string{"app": "not-optimize"}
-		blocker := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{Name: "co-blocked-webapp", Namespace: ns},
-			Spec: appsv1.DeploymentSpec{
-				Selector: &metav1.LabelSelector{MatchLabels: selector},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{Labels: selector},
-					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "busybox"}}},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, blocker)).To(Succeed())
+		blockDeployment(ns, "co-blocked-webapp")
 
 		optimize := createNamedOptimize("co-blocked", ns, cluster, createAuth(ns, true), "8.9.4")
 
@@ -141,6 +146,20 @@ var _ = Describe("CamundaOptimize endpoints", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(optimize), &latest)).To(Succeed())
 			g.Expect(latest.Status.Endpoints).To(BeEmpty())
 		}, "3s", interval).Should(Succeed())
+	})
+
+	It("publishes its route while only its importer cannot be applied", func() {
+		ns := newNamespace()
+		cluster := createCluster(ns, createBinding(ns))
+		blockDeployment(ns, "co-blocked-importer")
+
+		optimize := createNamedOptimize("co-blocked", ns, cluster, createAuth(ns, true), "8.9.4")
+
+		expectOptimize(optimize, func(g Gomega, latest *v1.CamundaOptimize) {
+			g.Expect(latest.Status.Endpoints).To(HaveExactElements(
+				HaveField("Service", "co-blocked-webapp"),
+			))
+		})
 	})
 
 	// A released instance deletes its Services, so a kept route would send
