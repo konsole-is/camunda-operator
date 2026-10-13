@@ -3,3 +3,5 @@ pnpm-lock.yaml
 test/fixtures/
 # Written by make fleet-generate.
 src/generated/
+# Helm templates are not YAML until Helm renders them.
+deploy/chart/

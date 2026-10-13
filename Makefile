@@ -5,6 +5,9 @@ IMG ?= controller:latest
 # build-installer and deploy stamp it into the manifests, helm-deploy into
 # the chart values.
 CLI_IMG ?= ghcr.io/konsole-is/camunda-operator-cli:latest
+# Image URL of the fleet manager, the web app of the chart value
+# fleetManager.enabled. helm-generate stamps it into the chart values.
+FLEET_IMG ?= ghcr.io/konsole-is/camunda-operator-fleet-manager:latest
 # OPERATOR_VERSION is the version that the manager reports, without the v of
 # the tag. The release workflow sets it from the tag. Without it the manager
 # reports 0.0.0-dev.
@@ -25,6 +28,7 @@ OPERATOR_NAMESPACE ?= camunda-operator-system
 # localhost:5000/img:tag correct, since ${IMG%:*} strips only the final colon.
 export IMG
 export CLI_IMG
+export FLEET_IMG
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -265,7 +269,7 @@ docker-push-cli: ## Push docker image with camunda-operator-cli.
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
 PLATFORMS ?= linux/amd64,linux/arm64
-# BUILDX_OUTPUT is where docker-buildx and docker-buildx-cli send the image. The release workflow sets it to
+# BUILDX_OUTPUT is where docker-buildx, docker-buildx-cli, and docker-buildx-fleet send the image. The release workflow sets it to
 # --load, with one platform in PLATFORMS, to scan the image of each platform before it pushes them.
 BUILDX_OUTPUT ?= --push
 .PHONY: docker-buildx
@@ -479,9 +483,10 @@ install-helm: ## Install the pinned version of Helm if it is missing.
 	}
 
 .PHONY: helm-generate
-helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify images with IMG and CLI_IMG.
+helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify images with IMG, CLI_IMG, and FLEET_IMG.
 	kubebuilder edit --plugins=helm/v2-alpha --force
 	go run ./hack/helmcli "$(HELM_CHART_DIR)"
+	go run ./hack/helmfleet -image "$(FLEET_IMG)" "$(HELM_CHART_DIR)"
 	go run ./hack/helmschema "$(HELM_CHART_DIR)"
 
 ## Maximum gzipped rendered chart size in bytes before helm-verify fails.
@@ -500,7 +505,7 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		echo "$(HELM_CHART_DIR)/values.schema.json not found; run 'make helm-generate' first." >&2; exit 1; }
 	$(HELM) lint "$(HELM_CHART_DIR)"
 	@# The schema must reject an unknown key and a value of the wrong type.
-	@for opts in "--set prometheus.enabeld=true" "--set prometheus.enabled=yes"; do \
+	@for opts in "--set prometheus.enabeld=true" "--set prometheus.enabled=yes" "--set fleetManager.enabeld=true"; do \
 		err="$$($(HELM) template verify "$(HELM_CHART_DIR)" $$opts 2>&1 >/dev/null || true)"; \
 		case "$$err" in *"meet the specifications of the schema"*) ;; *) \
 			echo "ERROR: the values schema did not reject: helm template $$opts" >&2; exit 1 ;; \
@@ -517,6 +522,20 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 	@# helm-deploy passes the image tags like this, and a tag can be a number.
 	$(HELM) template verify "$(HELM_CHART_DIR)" \
 		--set-string manager.image.tag=8 --set-string manager.cliImage.tag=8 > /dev/null
+	$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		--set-string fleetManager.image.tag=8 > /dev/null
+	@# The fleet manager renders only when fleetManager.enabled is true. Then it
+	@# renders with the RBAC list of the app and a NetworkPolicy that refuses
+	@# all ingress. dist/install.yaml never holds it.
+	$(HELM) template verify "$(HELM_CHART_DIR)" | go run ./hack/fleetchart -enabled=false
+	$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		| go run ./hack/fleetchart -enabled=true -crds config/crd/bases
+	go run ./hack/fleetchart -enabled=false < dist/install.yaml
+	@$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		--set 'manager.imagePullSecrets[0].name=verify-pull' \
+		--show-only templates/fleet-manager/deployment.yaml | grep -q 'name: verify-pull' || { \
+		echo "ERROR: the fleet manager Pod does not use manager.imagePullSecrets" >&2; exit 1; }
+	@echo "  the fleet manager Pod uses manager.imagePullSecrets"
 	@set -e; \
 	max=0; worst=""; \
 	for opts in \
@@ -525,8 +544,9 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		"--set rbac.helpers.enabled=true" \
 		"--set prometheus.enabled=true" \
 		"--set certManager.enabled=true" \
-		"--set crd.enabled=false --set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true" \
-		"--set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true" \
+		"--set fleetManager.enabled=true" \
+		"--set crd.enabled=false --set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true --set fleetManager.enabled=true" \
+		"--set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true --set fleetManager.enabled=true" \
 	; do \
 		label="$${opts:-<defaults>}"; \
 		tmp="$$(mktemp)"; \
@@ -546,7 +566,7 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 	fi
 
 .PHONY: helm-deploy
-helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify images with IMG and CLI_IMG.
+helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify images with IMG, CLI_IMG, and FLEET_IMG.
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
 		--create-namespace \
@@ -554,6 +574,8 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 		--set-string manager.image.tag=$${IMG##*:} \
 		--set-string manager.cliImage.repository=$${CLI_IMG%:*} \
 		--set-string manager.cliImage.tag=$${CLI_IMG##*:} \
+		--set-string fleetManager.image.repository=$${FLEET_IMG%:*} \
+		--set-string fleetManager.image.tag=$${FLEET_IMG##*:} \
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)
@@ -621,6 +643,28 @@ fleet-playwright: fleet-install ## Install the Chromium browser that the fleet m
 fleet-gallery: fleet-build fleet-playwright ## Screenshot each fleet manager gallery story at 1440 px and 390 px into fleet-manager/ui-gallery, and fail on a serious or critical axe violation.
 	$(FLEET_PNPM) run build:gallery
 	$(FLEET_PNPM) run gallery
+
+.PHONY: docker-build-fleet
+docker-build-fleet: ## Build the fleet manager image.
+	$(CONTAINER_TOOL) build -t ${FLEET_IMG} -f $(FLEET_DIR)/Dockerfile .
+
+.PHONY: docker-push-fleet
+docker-push-fleet: ## Push the fleet manager image.
+	$(CONTAINER_TOOL) push ${FLEET_IMG}
+
+# docker-buildx-fleet builds each platform in emulation. docker-buildx builds
+# on the platform of the builder instead, but pnpm installs the native
+# packages of the platform it runs on, and the standalone output copies them.
+.PHONY: docker-buildx-fleet
+docker-buildx-fleet: ## Build and push the fleet manager image for cross-platform support
+	- $(CONTAINER_TOOL) buildx create --name camunda-operator-builder
+	$(CONTAINER_TOOL) buildx use camunda-operator-builder
+	$(CONTAINER_TOOL) buildx build $(BUILDX_OUTPUT) --platform=$(PLATFORMS) --tag ${FLEET_IMG} -f $(FLEET_DIR)/Dockerfile .
+	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
+
+.PHONY: fleet-image-test
+fleet-image-test: docker-build-fleet ## Build the fleet manager image and check that it starts as non-root with its data.
+	CONTAINER_TOOL=$(CONTAINER_TOOL) $(FLEET_DIR)/deploy/test-image.sh "$(FLEET_IMG)"
 
 ##@ Documentation
 

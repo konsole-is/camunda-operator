@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - fleet-manager/**
+      - pkg/images/table.json
       - .github/workflows/fleet-manager.yml
       - config/crd/bases/**
       - config/samples/**
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - fleet-manager/**
+      - pkg/images/table.json
       - .github/workflows/fleet-manager.yml
       - config/crd/bases/**
       - config/samples/**
@@ -57,3 +59,15 @@ jobs:
           GALLERY_URL: ${{ steps.gallery.outputs.artifact-url }}
         run: |
           echo "UI gallery: [ui-gallery](${GALLERY_URL}). Open index.html in the archive." >> "${GITHUB_STEP_SUMMARY}"
+
+  image:
+    name: Build and test the image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v7
+
+      # The image installs its own Node.js and pnpm, so the job needs no
+      # setup step.
+      - name: Build and test the fleet manager image
+        run: make fleet-image-test FLEET_IMG=fleet-manager:ci

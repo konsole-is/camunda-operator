@@ -41,3 +41,5 @@ annotations:
       image: ghcr.io/konsole-is/camunda-operator:0.0.1
     - name: cli
       image: ghcr.io/konsole-is/camunda-operator-cli:0.0.1
+    - name: fleet-manager
+      image: ghcr.io/konsole-is/camunda-operator-fleet-manager:0.0.1
