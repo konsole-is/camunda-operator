@@ -101,13 +101,14 @@ var _ = Describe("PluginRequest schema", func() {
 
 	// The claim controller applies the whole spec again on each reconcile,
 	// so the fields that may change must stay writable.
-	It("admits an update of the inputs, the parameters, and the target ServiceAccount", func() {
+	It("admits an update of the inputs, the parameters, the target ServiceAccount, and the deletion policy", func() {
 		request := newRequest()
 		expectAdmission(request, "")
 
 		request.Spec.Inputs = map[string]string{"kmsKeyArn": "arn:aws:kms:eu-west-1:111122223333:key/1"}
 		request.Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(`{"versioning":false}`)}
 		request.Spec.Target.ServiceAccountName = "orders-connectors"
+		request.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
 
 		Expect(k8sClient.Update(ctx, request)).To(Succeed())
 	})
