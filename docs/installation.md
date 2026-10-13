@@ -55,6 +55,7 @@ The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist
 | `rbac.helpers.enabled` | `false` | Install admin, editor, and viewer `ClusterRole`s for every custom resource. |
 | `crd.enabled` | `true` | Install the CRDs with the chart. Set `false` to manage them yourself (below). |
 | `certManager.enabled` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
+| `fleetManager.enabled` | `false` | Install the fleet manager, a web app for the Camunda clusters of the Kubernetes cluster. See [Install the fleet manager](fleet-manager/install.md). |
 
 To pull from a mirror, set `manager.image.repository` and `manager.cliImage.repository`, and put the pull Secret in `manager.imagePullSecrets`. That Secret applies to the manager Pod only, not to the Jobs that run the CLI image. Those Jobs and the Camunda pods run under the ServiceAccount of their `CamundaCluster`. The connectors run under their own ServiceAccount, or under the ServiceAccount `default` of the namespace. Add the pull Secret to the `imagePullSecrets` of each of these ServiceAccounts, see [Workload identity](crds/camundacluster.md#workload-identity). The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) lists these values.
 
@@ -80,6 +81,8 @@ kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/re
 Use `--server-side`: the `CamundaCluster` CRD is larger than the annotation that client-side apply writes.
 
 The manifest differs from the chart defaults in two ways. It creates the namespace `camunda-operator-system`. And it includes the admin, editor, and viewer `ClusterRole`s for every custom resource, the same set the chart renders with `rbac.helpers.enabled=true`.
+
+The manifest does not contain the fleet manager. Only the chart installs it.
 
 The manifest pins the CLI image in the manager's `CAMUNDA_OPERATOR_CLI_IMAGE` environment variable. To use a mirror, edit that value and the image of the manager Deployment before you apply.
 
@@ -137,13 +140,14 @@ env:
 
 ## Verify the signatures
 
-The chart and both images are signed with cosign keyless signatures. There is no public key. Verification checks the identity of the release workflow:
+The chart and the three images are signed with cosign keyless signatures. There is no public key. Verification checks the identity of the release workflow:
 
 ```bash
 for artifact in \
   ghcr.io/konsole-is/charts/camunda-operator:<version> \
   ghcr.io/konsole-is/camunda-operator:<version> \
-  ghcr.io/konsole-is/camunda-operator-cli:<version>; do
+  ghcr.io/konsole-is/camunda-operator-cli:<version> \
+  ghcr.io/konsole-is/camunda-operator-fleet-manager:<version>; do
   cosign verify "$artifact" \
     --certificate-identity-regexp '^https://github\.com/konsole-is/camunda-operator/\.github/workflows/release\.yml@refs/tags/.+$' \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com

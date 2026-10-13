@@ -41,6 +41,12 @@ The defaults are the values of a released chart.
 | `metrics.port` | `8443` | Metrics server port. |
 | `certManager.enabled` | `false` | Make the `ServiceMonitor` verify the metrics endpoint with the certificate in the Secret `metrics-server-cert`. The chart does not create that Secret. |
 | `prometheus.enabled` | `false` | Install a `ServiceMonitor`. Needs the prometheus-operator CRDs. You apply the alert rules and dashboards yourself, see [Observability](https://github.com/konsole-is/camunda-operator/blob/main/docs/observability.md). |
+| `fleetManager.enabled` | `false` | Install the fleet manager, a web app for the Camunda clusters of the Kubernetes cluster. See [Install the fleet manager](https://github.com/konsole-is/camunda-operator/blob/main/docs/fleet-manager/install.md). |
+| `fleetManager.image.repository` | `ghcr.io/konsole-is/camunda-operator-fleet-manager` | Fleet manager image repository. |
+| `fleetManager.image.tag` | the chart version | Fleet manager image tag. |
+| `fleetManager.image.pullPolicy` | `IfNotPresent` | Image pull policy of the fleet manager. |
+| `fleetManager.resources` | requests `50m`/`256Mi`, limit memory `512Mi` | Resource requests and limits of the fleet manager. |
+| `fleetManager.settings.*` | `""` | Reserved for the settings of the fleet manager. This release does not read them. |
 | `nameOverride` | unset | Replace the chart name in the resource names and in the `app.kubernetes.io/name` label. |
 | `fullnameOverride` | unset | Replace the release and chart name at the start of each resource name. |
 
@@ -52,7 +58,7 @@ camunda-operator:
 - at '/prometheus': additional properties 'enabeld' not allowed
 ```
 
-Some values go to a Kubernetes field as a whole: `manager.resources`, `manager.podSecurityContext`, `manager.securityContext`, `manager.strategy`, and each value with an empty default, such as `manager.nodeSelector`. Helm accepts any key in these values. The Kubernetes API checks their content. If an image tag looks like a number, set it with `--set-string`, for example `--set-string manager.image.tag=8`. Helm reads `--set manager.image.tag=8` as a number, and the schema expects a string.
+Some values go to a Kubernetes field as a whole: `manager.resources`, `manager.podSecurityContext`, `manager.securityContext`, `manager.strategy`, `fleetManager.resources`, and each value with an empty default, such as `manager.nodeSelector`. Helm accepts any key in these values. The Kubernetes API checks their content. If an image tag looks like a number, set it with `--set-string`, for example `--set-string manager.image.tag=8`. The same holds for `manager.cliImage.tag` and `fleetManager.image.tag`. Helm reads `--set manager.image.tag=8` as a number, and the schema expects a string.
 
 `make helm-generate` writes `values.yaml` and `values.schema.json` from `config/`. Do not edit these files. Change the defaults in `config/`.
 
