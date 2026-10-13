@@ -82,7 +82,7 @@ spec:
               externalUrl:
                 description: |-
                   ExternalURL is the URL where browsers reach this Optimize. It has no
-                  path, because Optimize serves at the root of its own host.
+                  path, because the operator serves Optimize at the root of its own host.
 
                   In the two Keycloak modes, the management plane of managementAuthRef
                   registers <externalUrl>/api/authentication/callback on the optimize
@@ -99,8 +99,8 @@ spec:
                 - message: externalUrl must be a valid http or https URL
                   rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                     == 'https') && url(self).getHostname() != ''
-                - message: 'externalUrl must carry no path: Optimize serves at the
-                    root of its own host'
+                - message: 'externalUrl must carry no path: the operator serves Optimize
+                    at the root of its own host'
                   rule: '!isURL(self) || url(self).getEscapedPath() in ['''', ''/'']'
                 - message: 'externalUrl must carry no comma: Management Identity reads
                     the callback list as comma-separated'

@@ -29,8 +29,8 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
-// Optimize has no context path, so one route takes every path of its host
-// to the webapp. The importer serves no browser traffic.
+// The operator serves Optimize at the root of its host, so one route takes
+// every path to the webapp. The importer serves no browser traffic.
 func TestEndpointsRouteEveryPathToTheWebapp(t *testing.T) {
 	t.Parallel()
 
