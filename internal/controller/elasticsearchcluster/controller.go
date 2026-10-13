@@ -209,7 +209,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		// The repository condition cannot be trusted through a failed
 		// pre-check: the bucket resolution it depends on just failed, and a
 		// True left standing would assert a registration nobody can verify.
-		meta.RemoveStatusCondition(cluster.GetStatusConditions(), components.ConditionSnapshotRepository)
+		meta.RemoveStatusCondition(cluster.GetStatusConditions(), v1.ConditionSnapshotRepositoryReady)
 		r.forgetSnapshotRepository(&cluster)
 		conditions.Stage(&cluster, conditions.Failed(&cluster, failure))
 
@@ -621,7 +621,7 @@ func readyWithRepository(
 		// The cluster has no repository, now or any more. Drop a condition
 		// left over from a bucket that the spec used to reference, so status
 		// never asserts something the spec no longer asks for.
-		meta.RemoveStatusCondition(cluster.GetStatusConditions(), components.ConditionSnapshotRepository)
+		meta.RemoveStatusCondition(cluster.GetStatusConditions(), v1.ConditionSnapshotRepositoryReady)
 		return ready
 	}
 

@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 )
 
 // healthyComponent returns a component whose condition is staged True on
@@ -59,7 +58,7 @@ func healthyComponent(t *testing.T, cluster *v1.ElasticsearchCluster) *component
 // registration path builds one.
 func repositoryFailure(cluster *v1.ElasticsearchCluster) metav1.Condition {
 	return metav1.Condition{
-		Type:               components.ConditionSnapshotRepository,
+		Type:               v1.ConditionSnapshotRepositoryReady,
 		Status:             metav1.ConditionFalse,
 		Reason:             v1.ReasonConnectionFailed,
 		Message:            "registering snapshot repository: connection refused",
@@ -84,7 +83,7 @@ func TestReadyWithRepositoryOverridesATrueReady(t *testing.T) {
 	assert.Equal(t, v1.ReasonConnectionFailed, ready.Reason)
 	assert.Equal(t, failure.Message, ready.Message)
 
-	staged := meta.FindStatusCondition(cluster.Status.Conditions, components.ConditionSnapshotRepository)
+	staged := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionSnapshotRepositoryReady)
 	require.NotNil(t, staged, "the repository condition must be staged on the cluster")
 	assert.Equal(t, metav1.ConditionFalse, staged.Status)
 }
@@ -96,7 +95,7 @@ func TestReadyWithRepositoryKeepsATrueReadyWhenHealthy(t *testing.T) {
 	cluster := &v1.ElasticsearchCluster{}
 	comp := healthyComponent(t, cluster)
 	healthy := metav1.Condition{
-		Type:   components.ConditionSnapshotRepository,
+		Type:   v1.ConditionSnapshotRepositoryReady,
 		Status: metav1.ConditionTrue,
 		Reason: v1.ReasonHealthy,
 	}
@@ -130,6 +129,6 @@ func TestReadyWithRepositoryDropsAStaleCondition(t *testing.T) {
 	readyWithRepository(cluster, metav1.Condition{}, nil)
 
 	assert.Nil(t, meta.FindStatusCondition(
-		cluster.Status.Conditions, components.ConditionSnapshotRepository,
+		cluster.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 	))
 }

@@ -252,7 +252,7 @@ func (r *ElasticsearchClusterReconciler) repositoryCondition(
 	reason, message string,
 ) metav1.Condition {
 	return metav1.Condition{
-		Type:               components.ConditionSnapshotRepository,
+		Type:               v1.ConditionSnapshotRepositoryReady,
 		Status:             status,
 		Reason:             reason,
 		Message:            message,

@@ -148,7 +148,7 @@ func itBacksUpTheElasticsearchCluster(cluster *v1.CamundaCluster, elasticsearch,
 		Eventually(func(g Gomega) {
 			expectCondition(
 				g, esResource, elasticsearch, cluster.Namespace,
-				escomponents.ConditionSnapshotRepository, v1.ReasonHealthy,
+				v1.ConditionSnapshotRepositoryReady, v1.ReasonHealthy,
 			)
 		}, esReadyTimeout, 5*time.Second).Should(Succeed())
 

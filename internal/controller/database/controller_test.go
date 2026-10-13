@@ -905,7 +905,7 @@ var _ = Describe("Database controller", func() {
 		By("owning the BindingsReady condition of the loser")
 		var latest v1.Database
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mover), &latest)).To(Succeed())
-		bindings := meta.FindStatusCondition(latest.Status.Conditions, string(components.ConditionBindings))
+		bindings := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionBindingsReady)
 		Expect(bindings).NotTo(BeNil())
 		Expect(bindings.Reason).To(Equal("Disabled"))
 

@@ -117,6 +117,12 @@ type DatabaseStatus struct {
 // it cannot apply the uniqueness rule of the logical database name.
 const ReasonServerIdentityUnknown = "ServerIdentityUnknown"
 
+// ConditionBindingsReady reports whether the credential Secrets, the
+// DatabaseConfig, and the SecondaryStorageConfig that the Database publishes
+// are applied. It reads Disabled when the Database lost its claim on the
+// logical database name and removed them.
+const ConditionBindingsReady = "BindingsReady"
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
