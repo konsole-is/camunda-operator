@@ -37,6 +37,18 @@ describe("shadcn primitives", () => {
     );
   });
 
+  it.each(primitives)("%s reads only CSS variables that exist", (file) => {
+    const css = readFileSync(
+      path.join(dir, "..", "..", "app", "globals.css"),
+      "utf8",
+    );
+    const source = readFileSync(path.join(dir, file), "utf8");
+    for (const [, name] of source.matchAll(/var\((--[\w-]+)/g)) {
+      if (name.startsWith("--radix-")) continue;
+      expect(css, `${file} reads ${name}`).toMatch(new RegExp(`${name}:`));
+    }
+  });
+
   it.each(primitives)(
     "%s uses no color name that a token gives another meaning",
     (file) => {

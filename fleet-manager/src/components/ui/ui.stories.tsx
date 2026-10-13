@@ -46,9 +46,13 @@ export const uiStories: Story[] = [
         <Button variant="ghost">More</Button>
         <Button variant="destructive">Delete</Button>
         <Button variant="link">View</Button>
-        <Button disabled>Saving</Button>
       </div>
     ),
+  },
+  {
+    component: "Button",
+    name: "Disabled",
+    render: () => <Button disabled>Saving</Button>,
   },
   {
     component: "Button",
@@ -64,13 +68,21 @@ export const uiStories: Story[] = [
   },
   {
     component: "Input",
-    name: "Labelled and disabled",
+    name: "Enabled",
     render: () => (
       <div className="flex max-w-sm flex-col gap-2">
         <label htmlFor="story-name" className="text-sm font-medium text-muted">
           Name
         </label>
         <Input id="story-name" defaultValue="orders" />
+      </div>
+    ),
+  },
+  {
+    component: "Input",
+    name: "Disabled",
+    render: () => (
+      <div className="flex max-w-sm flex-col gap-2">
         <label htmlFor="story-ns" className="text-sm font-medium text-muted">
           Namespace
         </label>
@@ -100,40 +112,48 @@ export const uiStories: Story[] = [
   },
   {
     component: "Checkbox",
-    name: "Checked and unchecked",
+    name: "Checked",
     render: () => (
-      <div className="flex flex-col gap-3">
-        <label className="flex items-center gap-2">
-          <Checkbox defaultChecked /> Keep the resources
-        </label>
-        <label className="flex items-center gap-2">
-          <Checkbox /> Delete the backups
-        </label>
-      </div>
+      <label className="flex items-center gap-2">
+        <Checkbox defaultChecked /> Keep the resources
+      </label>
+    ),
+  },
+  {
+    component: "Checkbox",
+    name: "Unchecked",
+    render: () => (
+      <label className="flex items-center gap-2">
+        <Checkbox /> Delete the backups
+      </label>
     ),
   },
   {
     component: "Tabs",
-    name: "Overview selected",
+    name: "Default",
     render: () => (
-      <div className="flex flex-col gap-6">
-        <Tabs defaultValue="overview">
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="logs">Logs</TabsTrigger>
-          </TabsList>
-          <TabsContent value="overview">Overview of the cluster</TabsContent>
-          <TabsContent value="logs">Logs of the cluster</TabsContent>
-        </Tabs>
-        <Tabs defaultValue="overview">
-          <TabsList variant="line">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="logs">Logs</TabsTrigger>
-          </TabsList>
-          <TabsContent value="overview">Overview of the cluster</TabsContent>
-          <TabsContent value="logs">Logs of the cluster</TabsContent>
-        </Tabs>
-      </div>
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">Overview of the cluster</TabsContent>
+        <TabsContent value="logs">Logs of the cluster</TabsContent>
+      </Tabs>
+    ),
+  },
+  {
+    component: "Tabs",
+    name: "Line",
+    render: () => (
+      <Tabs defaultValue="overview">
+        <TabsList variant="line">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">Overview of the cluster</TabsContent>
+        <TabsContent value="logs">Logs of the cluster</TabsContent>
+      </Tabs>
     ),
   },
   {

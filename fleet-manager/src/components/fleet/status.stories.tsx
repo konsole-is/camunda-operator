@@ -43,18 +43,32 @@ export const statusStories: Story[] = [
   },
   {
     component: "StatusDot",
-    name: "All states",
+    name: "Ready",
+    render: () => <StatusDot label="Zeebe" condition={{ status: "True" }} />,
+  },
+  {
+    component: "StatusDot",
+    name: "Not ready",
     render: () => (
-      <div className="flex items-center gap-3">
-        <StatusDot label="Zeebe" condition={{ status: "True" }} />
-        <StatusDot
-          label="Operate"
-          condition={{ status: "False", reason: "PodsNotReady" }}
-        />
-        <StatusDot label="Tasklist" condition={{ status: "Unknown" }} />
-        <StatusDot label="Optimize" />
-        <StatusDot label="Backups" off />
-      </div>
+      <StatusDot
+        label="Zeebe"
+        condition={{ status: "False", reason: "PodsNotReady" }}
+      />
     ),
+  },
+  {
+    component: "StatusDot",
+    name: "Unknown",
+    render: () => <StatusDot label="Zeebe" condition={{ status: "Unknown" }} />,
+  },
+  {
+    component: "StatusDot",
+    name: "No status",
+    render: () => <StatusDot label="Zeebe" />,
+  },
+  {
+    component: "StatusDot",
+    name: "Not used",
+    render: () => <StatusDot label="Backups" off />,
   },
 ];

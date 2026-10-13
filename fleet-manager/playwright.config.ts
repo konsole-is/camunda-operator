@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
-const GALLERY = "http://127.0.0.1:3100";
-const PRODUCTION = "http://127.0.0.1:3101";
+const GALLERY = "http://127.0.0.1:3611";
+const PRODUCTION = "http://127.0.0.1:3612";
 
 // make fleet-gallery builds .next (production) and .next-gallery
 // (FLEET_DEV_GALLERY=1) first. next.config.ts picks the directory from the
@@ -17,7 +17,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "./node_modules/.bin/next start --hostname 127.0.0.1 --port 3100",
+        "./node_modules/.bin/next start --hostname 127.0.0.1 --port 3611",
       url: `${GALLERY}/dev/gallery`,
       env: { FLEET_DEV_GALLERY: "1" },
       reuseExistingServer: false,
@@ -25,7 +25,7 @@ export default defineConfig({
     },
     {
       command:
-        "./node_modules/.bin/next start --hostname 127.0.0.1 --port 3101",
+        "./node_modules/.bin/next start --hostname 127.0.0.1 --port 3612",
       url: `${PRODUCTION}/fleet`,
       env: { FLEET_DEV_GALLERY: "0" },
       reuseExistingServer: false,
