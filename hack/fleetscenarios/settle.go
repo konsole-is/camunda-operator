@@ -40,11 +40,11 @@ const (
 // controller runs a reconcile or finishes one, the last reconcile that each
 // controller finished did not fail, no object of the scope changes, the
 // simulator has nothing to write, and each object that must observe its
-// generation has observed it. A reconcile
-// that a controller queued for later with RequeueAfter does not keep a
-// scenario busy. When the scenario is not quiet within timeout, settle
-// returns an error. before holds the counts of controllerActivity from before
-// the reconcilers started, because the counts live as long as the process.
+// generation has observed it. A reconcile that a controller queued for later
+// with RequeueAfter does not keep a scenario busy. When the scenario is not
+// quiet within timeout, settle returns an error. before holds the counts of
+// controllerActivity from before the reconcilers started, because the counts
+// live as long as the process.
 func settle(
 	ctx context.Context,
 	sim *simulator,
@@ -73,12 +73,6 @@ func settle(
 		if err != nil {
 			return err
 		}
-		collected, err := sim.collectGarbage(ctx, objs)
-		if err != nil {
-			return err
-		}
-		busy = busy || collected > 0
-
 		current := map[string]string{}
 		for i := range objs {
 			current[objs[i].GetAPIVersion()+" "+describe(&objs[i])] = objs[i].GetResourceVersion()

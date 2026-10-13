@@ -89,7 +89,6 @@ type state struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
 	Apply       []map[string]any `json:"apply,omitempty"`
-	Delete      []objectRef      `json:"delete,omitempty"`
 	Workload    []workloadStep   `json:"workload,omitempty"`
 	Overlays    []overlay        `json:"overlays,omitempty"`
 }
@@ -161,11 +160,6 @@ func (s *scenario) validate() error {
 			errs = append(errs, fmt.Errorf("%s has no description", where))
 		}
 		errs = append(errs, validateObjects("object to apply of "+where+",", st.Apply)...)
-		for j, ref := range st.Delete {
-			if ref.APIVersion == "" || ref.Kind == "" || ref.Name == "" {
-				errs = append(errs, fmt.Errorf("object to delete %d of %s names no object", j+1, where))
-			}
-		}
 		errs = append(errs, validateSteps(where, st.Workload)...)
 		errs = append(errs, validateOverlays(where, st.Overlays)...)
 	}

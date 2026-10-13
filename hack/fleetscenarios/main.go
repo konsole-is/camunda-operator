@@ -41,11 +41,10 @@ limitations under the License.
 //     only status that a person writes.
 //   - states: optional. Named changes, each on top of the one before. A
 //     state has a name (a DNS label other than objects, scenario, and
-//     observe), a description, and optional apply (objects), delete (object
-//     references), workload (steps that replace the step of the same
-//     object; a step that gives a finished Job another outcome fails the
-//     run), and overlays (applied after the overlays of the scenario and of
-//     the states before it).
+//     observe), a description, and optional apply (objects), workload
+//     (steps that replace the step of the same object; a step that gives a
+//     finished Job another outcome fails the run), and overlays (applied
+//     after the overlays of the scenario and of the states before it).
 //
 // For example:
 //

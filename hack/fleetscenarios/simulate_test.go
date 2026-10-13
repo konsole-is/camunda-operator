@@ -26,7 +26,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -166,41 +165,6 @@ func TestSimulatorMakesAStatefulSetReady(t *testing.T) {
 	assert.Zero(t, writes, "a second pass over a ready StatefulSet writes nothing")
 }
 
-func TestSimulatorGivesTheBrokerPodsTheirStableNetworkIdentity(t *testing.T) {
-	sts := brokers()
-	sts.Spec.ServiceName = "orders-zeebe"
-	c := fakeClient(t, sts)
-	sim := newSimulator(c)
-	sim.watch("team-a")
-
-	_, err := sim.pass(context.Background())
-	require.NoError(t, err)
-
-	pod := getPod(t, c, "orders-zeebe-1")
-	assert.Equal(t, "orders-zeebe-1", pod.Spec.Hostname)
-	assert.Equal(t, "orders-zeebe", pod.Spec.Subdomain)
-}
-
-func TestSimulatorReportsTheInitContainersOfAJobAsDone(t *testing.T) {
-	job := backupJob()
-	job.Spec.Template.Spec.InitContainers = []corev1.Container{{Name: "dump", Image: "postgres:17"}}
-	c := fakeClient(t, job)
-	sim := newSimulator(c)
-	sim.watch("team-a")
-
-	_, err := sim.pass(context.Background())
-	require.NoError(t, err)
-
-	var pods corev1.PodList
-	require.NoError(t, c.List(context.Background(), &pods, client.InNamespace("team-a")))
-	require.Len(t, pods.Items, 1)
-	statuses := pods.Items[0].Status.InitContainerStatuses
-	require.Len(t, statuses, 1)
-	assert.Equal(t, "dump", statuses[0].Name)
-	require.NotNil(t, statuses[0].State.Terminated)
-	assert.Zero(t, statuses[0].State.Terminated.ExitCode)
-}
-
 func TestSimulatorAppliesAReadyReplicasStep(t *testing.T) {
 	c := fakeClient(t, brokers())
 	sim := newSimulator(c)
@@ -276,82 +240,6 @@ func TestSimulatorReportsARecreateDeploymentWithAnUnreadyPodAsUnavailable(t *tes
 	assert.Equal(t, corev1.ConditionFalse, available.Status, "a Recreate Deployment allows no unavailable Pod")
 }
 
-// changeImage sets the image of the Deployment optimize of c to image.
-func changeImage(t *testing.T, c client.Client, image string) {
-	t.Helper()
-
-	var d appsv1.Deployment
-	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "optimize"}, &d))
-	d.Spec.Template.Spec.Containers[0].Image = image
-	require.NoError(t, c.Update(context.Background(), &d))
-}
-
-// replicaSetsOf returns the ReplicaSets of team-a by name.
-func replicaSetsOf(t *testing.T, c client.Client) map[string]appsv1.ReplicaSet {
-	t.Helper()
-
-	var sets appsv1.ReplicaSetList
-	require.NoError(t, c.List(context.Background(), &sets, client.InNamespace("team-a")))
-	byName := map[string]appsv1.ReplicaSet{}
-	for _, rs := range sets.Items {
-		byName[rs.Name] = rs
-	}
-	return byName
-}
-
-func TestSimulatorKeepsTheOldReplicaSetOfADeploymentAtZero(t *testing.T) {
-	c := fakeClient(t, webapp())
-	sim := newSimulator(c)
-	sim.watch("team-a")
-	_, err := sim.pass(context.Background())
-	require.NoError(t, err)
-
-	changeImage(t, c, "camunda/optimize:8.9.24")
-	_, err = sim.pass(context.Background())
-	require.NoError(t, err)
-
-	sets := replicaSetsOf(t, c)
-	require.Len(t, sets, 2, "the Deployment controller keeps the old ReplicaSet")
-	for _, rs := range sets {
-		switch rs.Annotations[revisionAnnotation] {
-		case "1":
-			assert.Equal(t, int32(0), *rs.Spec.Replicas, "the old ReplicaSet is scaled to 0")
-			assert.Zero(t, rs.Status.Replicas)
-		case "2":
-			assert.Equal(t, int32(2), *rs.Spec.Replicas)
-		default:
-			assert.Failf(t, "unknown revision", "%s has revision %q", rs.Name, rs.Annotations[revisionAnnotation])
-		}
-	}
-
-	var pods corev1.PodList
-	require.NoError(t, c.List(context.Background(), &pods, client.InNamespace("team-a")))
-	assert.Len(t, pods.Items, 2, "only the new ReplicaSet runs Pods")
-}
-
-func TestSimulatorDeletesTheReplicaSetsBeyondTheRevisionHistoryLimit(t *testing.T) {
-	d := webapp()
-	d.Spec.RevisionHistoryLimit = new(int32(1))
-	c := fakeClient(t, d)
-	sim := newSimulator(c)
-	sim.watch("team-a")
-
-	for _, image := range []string{"", "camunda/optimize:8.9.24", "camunda/optimize:8.9.25"} {
-		if image != "" {
-			changeImage(t, c, image)
-		}
-		_, err := sim.pass(context.Background())
-		require.NoError(t, err)
-	}
-
-	sets := replicaSetsOf(t, c)
-	revisions := make([]string, 0, len(sets))
-	for _, rs := range sets {
-		revisions = append(revisions, rs.Annotations[revisionAnnotation])
-	}
-	assert.ElementsMatch(t, []string{"2", "3"}, revisions, "one old revision stays beside the current one")
-}
-
 func TestSimulatorReplacesThePodsOfAnOldTemplate(t *testing.T) {
 	c := fakeClient(t, brokers())
 	sim := newSimulator(c)
@@ -411,48 +299,9 @@ func TestSimulatorFailsAJobOnAFailedStep(t *testing.T) {
 
 	var job batchv1.Job
 	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "backup"}, &job))
-	assert.Equal(t, int32(7), job.Status.Failed, "the default backoff limit of 6 allows 7 tries")
+	assert.Equal(t, int32(1), job.Status.Failed)
 	assert.True(t, hasJobCondition(&job, batchv1.JobFailed))
 	assert.False(t, hasJobCondition(&job, batchv1.JobComplete))
-
-	var pods corev1.PodList
-	require.NoError(t, c.List(context.Background(), &pods, client.InNamespace("team-a")))
-	assert.Len(t, pods.Items, 7)
-	for i := range pods.Items {
-		assert.Equal(t, corev1.PodFailed, pods.Items[i].Status.Phase)
-	}
-}
-
-func TestSimulatorTriesAFailingJobAsOftenAsItsBackoffLimitAllows(t *testing.T) {
-	job := backupJob()
-	job.Spec.BackoffLimit = new(int32(3))
-	c := fakeClient(t, job)
-	sim := newSimulator(c)
-	sim.watch("team-a")
-	sim.add([]workloadStep{{Kind: kindJob, Namespace: "team-a", Name: "backup", JobOutcome: jobFailed}})
-
-	_, err := sim.pass(context.Background())
-	require.NoError(t, err)
-
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(job), job))
-	assert.Equal(t, int32(4), job.Status.Failed)
-}
-
-func TestSimulatorCompletesEachCompletionOfAJob(t *testing.T) {
-	job := backupJob()
-	job.Spec.Completions = new(int32(3))
-	c := fakeClient(t, job)
-	sim := newSimulator(c)
-	sim.watch("team-a")
-
-	_, err := sim.pass(context.Background())
-	require.NoError(t, err)
-
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(job), job))
-	assert.Equal(t, int32(3), job.Status.Succeeded)
-	var pods corev1.PodList
-	require.NoError(t, c.List(context.Background(), &pods, client.InNamespace("team-a")))
-	assert.Len(t, pods.Items, 3)
 }
 
 func TestSimulatorRefusesAStepThatChangesTheOutcomeOfAFinishedJob(t *testing.T) {
@@ -516,39 +365,6 @@ func TestSimulatorBindsAPendingClaim(t *testing.T) {
 	assert.NotEmpty(t, claim.Spec.VolumeName)
 }
 
-func TestSimulatorReleasesADeletedClaimOnceNoPodUsesIt(t *testing.T) {
-	claim := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace:  "team-a",
-			Name:       "data",
-			Finalizers: []string{pvcProtectionFinalizer},
-		},
-	}
-	user := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "user"},
-		Spec: corev1.PodSpec{Volumes: []corev1.Volume{{
-			Name: "data",
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "data"},
-			},
-		}}},
-	}
-	c := fakeClient(t, claim, user)
-	sim := newSimulator(c)
-	sim.watch("team-a")
-	require.NoError(t, c.Delete(context.Background(), claim))
-
-	_, err := sim.pass(context.Background())
-	require.NoError(t, err)
-	assert.NotNil(t, getClaim(t, c, "team-a", "data").DeletionTimestamp, "a Pod still uses the claim")
-
-	require.NoError(t, c.Delete(context.Background(), user))
-	_, err = sim.pass(context.Background())
-	require.NoError(t, err)
-	err = c.Get(context.Background(), client.ObjectKeyFromObject(claim), &corev1.PersistentVolumeClaim{})
-	assert.True(t, apierrors.IsNotFound(err), "the claim is gone once no Pod uses it")
-}
-
 func TestSimulatorNamesAStepWhoseObjectIsMissing(t *testing.T) {
 	c := fakeClient(t, brokers())
 	sim := newSimulator(c)
@@ -562,24 +378,6 @@ func TestSimulatorNamesAStepWhoseObjectIsMissing(t *testing.T) {
 
 	err = sim.missingSteps(context.Background())
 	assert.EqualError(t, err, "workload step names StatefulSet team-a/orders-zeeb, which does not exist")
-}
-
-func TestSimulatorAllowsTheDeletionOfAStepObjectThatExisted(t *testing.T) {
-	sts := brokers()
-	c := fakeClient(t, sts)
-	sim := newSimulator(c)
-	sim.add([]workloadStep{{
-		Kind: kindStatefulSet, Namespace: "team-a", Name: "orders-zeebe", ReadyReplicas: new(int32(1)),
-	}})
-	require.NoError(t, sim.missingSteps(context.Background()))
-
-	require.NoError(t, c.Delete(context.Background(), sts))
-	assert.NoError(t, sim.missingSteps(context.Background()), "a later state deleted the StatefulSet")
-
-	sim.add([]workloadStep{{
-		Kind: kindStatefulSet, Namespace: "team-a", Name: "orders-zeebe", ReadyReplicas: new(int32(2)),
-	}})
-	assert.Error(t, sim.missingSteps(context.Background()), "a new step needs its object again")
 }
 
 func TestSimulatorLeavesOtherNamespacesAlone(t *testing.T) {

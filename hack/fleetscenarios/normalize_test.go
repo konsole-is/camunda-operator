@@ -201,7 +201,7 @@ func TestNormalizeSetsTheGenerationToOne(t *testing.T) {
 	assert.Equal(t, int64(1), conditions[0].(map[string]any)["observedGeneration"])
 }
 
-func TestNormalizeKeepsAnObservedGenerationThatIsBehindBehind(t *testing.T) {
+func TestNormalizeKeepsAnObservedGenerationThatIsBehind(t *testing.T) {
 	for _, observedBefore := range []int64{1, 3} {
 		obj := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "u")
 		obj.SetGeneration(4)

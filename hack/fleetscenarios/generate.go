@@ -370,8 +370,7 @@ func refObject(ref objectRef) *unstructured.Unstructured {
 
 // runState applies the changes of st, runs the reconcilers until the
 // scenario settles, and returns the normalized objects of the scope. It
-// appends the overlays of st to overlays. It fails when an object that st
-// deletes still exists after the settle.
+// appends the overlays of st to overlays.
 func runState(
 	ctx context.Context,
 	cfg *rest.Config,
@@ -391,40 +390,8 @@ func runState(
 		return nil, err
 	}
 
-	for _, ref := range st.Delete {
-		obj := refObject(ref)
-		err := c.Delete(ctx, obj)
-		if apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("delete names %s, which does not exist", describe(obj))
-		}
-		if err != nil {
-			return nil, fmt.Errorf("deleting %s: %w", describe(obj), err)
-		}
-	}
-
 	sim.add(st.Workload)
 	*overlays = append(*overlays, st.Overlays...)
 
-	objs, err := settleAndList(ctx, cfg, scheme, c, sim, sco, ips, *overlays)
-	if err != nil {
-		return nil, err
-	}
-
-	// envtest runs no controller that removes the finalizers of Kubernetes,
-	// such as the one on each Namespace, so a deleted object can stay.
-	for _, ref := range st.Delete {
-		obj := refObject(ref)
-		err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-		if err == nil {
-			return nil, fmt.Errorf(
-				"delete names %s, which still exists after the settle, with the finalizers %v",
-				describe(obj), obj.GetFinalizers(),
-			)
-		}
-		if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("reading %s: %w", describe(obj), err)
-		}
-	}
-
-	return objs, nil
+	return settleAndList(ctx, cfg, scheme, c, sim, sco, ips, *overlays)
 }

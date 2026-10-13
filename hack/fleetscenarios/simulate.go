@@ -48,9 +48,6 @@ const (
 	kubelet               = "kubelet"
 )
 
-// pvcProtectionFinalizer keeps a claim that a Pod uses from being deleted.
-const pvcProtectionFinalizer = "kubernetes.io/pvc-protection"
-
 // objectKey names the object of a workload step.
 type objectKey struct {
 	Kind, Namespace, Name string
@@ -66,15 +63,12 @@ type simulator struct {
 	client     client.Client
 	namespaces []string
 	steps      map[objectKey]workloadStep
-	// matched holds each step whose object missingSteps found once. A later
-	// state may delete that object.
-	matched map[objectKey]bool
 }
 
 // newSimulator returns a simulator that writes through c and watches no
 // namespace yet.
 func newSimulator(c client.Client) *simulator {
-	return &simulator{client: c, steps: map[objectKey]workloadStep{}, matched: map[objectKey]bool{}}
+	return &simulator{client: c, steps: map[objectKey]workloadStep{}}
 }
 
 // watch adds namespaces to the namespaces that a pass covers.
@@ -90,9 +84,7 @@ func (s *simulator) watch(namespaces ...string) {
 // same object.
 func (s *simulator) add(steps []workloadStep) {
 	for _, step := range steps {
-		key := objectKey{step.Kind, step.Namespace, step.Name}
-		s.steps[key] = step
-		delete(s.matched, key)
+		s.steps[objectKey{step.Kind, step.Namespace, step.Name}] = step
 	}
 }
 
@@ -283,8 +275,6 @@ func statefulSetPodFor(sts *appsv1.StatefulSet, revision string, ordinal int32) 
 	pod.Labels[appsv1.ControllerRevisionHashLabelKey] = revision
 	pod.Labels[appsv1.StatefulSetPodNameLabel] = name
 	pod.Labels[appsv1.PodIndexLabel] = strconv.Itoa(int(ordinal))
-	pod.Spec.Hostname = name
-	pod.Spec.Subdomain = sts.Spec.ServiceName
 	pod.OwnerReferences = []metav1.OwnerReference{
 		*metav1.NewControllerRef(sts, appsv1.SchemeGroupVersion.WithKind("StatefulSet")),
 	}
@@ -327,37 +317,40 @@ func (s *simulator) deployments(ctx context.Context, ns string) (int, error) {
 }
 
 // deployment brings d, its ReplicaSet, and its Pods to the state of its
-// current template, and retires each other ReplicaSet of d.
+// current template. It deletes each other ReplicaSet of d, with its Pods.
 func (s *simulator) deployment(ctx context.Context, d *appsv1.Deployment) (int, error) {
 	replicas := ptr.Deref(d.Spec.Replicas, 1)
 	ready := s.readyCount(kindDeployment, d.Namespace, d.Name, replicas)
 	hash := templateHash(d.Spec.Template, d)
 	rsName := d.Name + "-" + hash
+	writes := 0
 
 	var sets appsv1.ReplicaSetList
 	if err := s.client.List(ctx, &sets, client.InNamespace(d.Namespace)); err != nil {
-		return 0, fmt.Errorf("listing ReplicaSets: %w", err)
+		return writes, fmt.Errorf("listing ReplicaSets: %w", err)
 	}
-	var old []*appsv1.ReplicaSet
-	revision := 0
 	for i := range sets.Items {
 		rs := &sets.Items[i]
-		if !controlledBy(rs, "Deployment", d.Name) {
+		if !controlledBy(rs, "Deployment", d.Name) || rs.Name == rsName {
 			continue
 		}
-		revision = max(revision, rsRevision(rs))
-		if rs.Name != rsName {
-			old = append(old, rs)
+		pods, err := s.ownedPods(ctx, rs.Namespace, "ReplicaSet", rs.Name)
+		if err != nil {
+			return writes, err
 		}
-	}
-
-	writes, err := s.retireReplicaSets(ctx, old, int(ptr.Deref(d.Spec.RevisionHistoryLimit, 10)))
-	if err != nil {
-		return writes, err
+		for j := range pods {
+			if err := s.deletePod(ctx, &pods[j]); err != nil {
+				return writes, err
+			}
+			writes++
+		}
+		if err := s.client.Delete(ctx, rs); client.IgnoreNotFound(err) != nil {
+			return writes, fmt.Errorf("deleting ReplicaSet %s: %w", rs.Name, err)
+		}
+		writes++
 	}
 
 	rs := replicaSetFor(d, hash, replicas)
-	rs.Annotations = map[string]string{revisionAnnotation: strconv.Itoa(revision + 1)}
 	created, err := s.createIfMissing(ctx, rs)
 	if created {
 		writes++
@@ -405,63 +398,6 @@ func (s *simulator) deployment(ctx context.Context, d *appsv1.Deployment) (int, 
 		return writes, fmt.Errorf("writing the status: %w", err)
 	}
 	return writes + 1, nil
-}
-
-// revisionAnnotation holds the revision of a ReplicaSet of a Deployment.
-const revisionAnnotation = "deployment.kubernetes.io/revision"
-
-// rsRevision returns the revision of rs, or 0 when it has none.
-func rsRevision(rs *appsv1.ReplicaSet) int {
-	revision, _ := strconv.Atoi(rs.Annotations[revisionAnnotation])
-	return revision
-}
-
-// retireReplicaSets scales each of old to 0 and deletes its Pods, as the
-// Deployment controller does after a rollout, and deletes the oldest of old
-// beyond limit.
-func (s *simulator) retireReplicaSets(ctx context.Context, old []*appsv1.ReplicaSet, limit int) (int, error) {
-	slices.SortFunc(old, func(a, b *appsv1.ReplicaSet) int {
-		return cmp.Or(cmp.Compare(rsRevision(b), rsRevision(a)), cmp.Compare(a.Name, b.Name))
-	})
-
-	writes := 0
-	for i, rs := range old {
-		pods, err := s.ownedPods(ctx, rs.Namespace, "ReplicaSet", rs.Name)
-		if err != nil {
-			return writes, err
-		}
-		for j := range pods {
-			if err := s.deletePod(ctx, &pods[j]); err != nil {
-				return writes, err
-			}
-			writes++
-		}
-
-		if i >= limit {
-			if err := s.client.Delete(ctx, rs); client.IgnoreNotFound(err) != nil {
-				return writes, fmt.Errorf("deleting ReplicaSet %s: %w", rs.Name, err)
-			}
-			writes++
-			continue
-		}
-
-		if ptr.Deref(rs.Spec.Replicas, 1) != 0 {
-			rs.Spec.Replicas = new(int32(0))
-			if err := s.client.Update(ctx, rs, client.FieldOwner(kubeControllerManager)); err != nil {
-				return writes, fmt.Errorf("scaling ReplicaSet %s to 0: %w", rs.Name, err)
-			}
-			writes++
-		}
-		status := appsv1.ReplicaSetStatus{ObservedGeneration: rs.Generation}
-		if !equality.Semantic.DeepEqual(status, rs.Status) {
-			rs.Status = status
-			if err := s.client.Status().Update(ctx, rs, client.FieldOwner(kubeControllerManager)); err != nil {
-				return writes, fmt.Errorf("writing the status of ReplicaSet %s: %w", rs.Name, err)
-			}
-			writes++
-		}
-	}
-	return writes, nil
 }
 
 // replicaSetFor returns the ReplicaSet of d for the template with hash, as
@@ -603,9 +539,9 @@ func deploymentStatus(d *appsv1.Deployment, rsName string, replicas, ready int32
 	return status
 }
 
-// jobs runs each Job of ns that has not finished: it makes the Pods of the
-// Job and finishes the Job with the outcome of its step, or Complete when it
-// has no step. A suspended Job does not run.
+// jobs runs each Job of ns that has not finished: it makes the one Pod of
+// the Job and finishes the Job with the outcome of its step, or Complete
+// when it has no step. A suspended Job does not run.
 func (s *simulator) jobs(ctx context.Context, ns string) (int, error) {
 	var list batchv1.JobList
 	if err := s.client.List(ctx, &list, client.InNamespace(ns)); err != nil {
@@ -661,40 +597,31 @@ func finishedOutcome(job *batchv1.Job) string {
 	return ""
 }
 
-// runJob makes the Pods of job, finishes them with outcome, and writes the
+// runJob makes the Pod of job, finishes it with outcome, and writes the
 // status of job.
 func (s *simulator) runJob(ctx context.Context, job *batchv1.Job, outcome string) (int, error) {
-	// The defaults of the API server for spec.completions and
-	// spec.backoffLimit.
-	pods := ptr.Deref(job.Spec.Completions, 1)
-	if outcome == jobFailed {
-		pods = ptr.Deref(job.Spec.BackoffLimit, 6) + 1
+	writes := 0
+	name := job.Name + "-" + podSuffix(job.Name+"/0")
+	var pod corev1.Pod
+	err := s.client.Get(ctx, client.ObjectKey{Namespace: job.Namespace, Name: name}, &pod)
+	if apierrors.IsNotFound(err) {
+		pod = *podFromTemplate(job.Spec.Template, job.Namespace, name)
+		pod.Labels[batchv1.JobNameLabel] = job.Name
+		pod.OwnerReferences = []metav1.OwnerReference{
+			*metav1.NewControllerRef(job, batchv1.SchemeGroupVersion.WithKind("Job")),
+		}
+		if err := s.client.Create(ctx, &pod, client.FieldOwner(kubeControllerManager)); err != nil {
+			return writes, fmt.Errorf("creating Pod %s: %w", name, err)
+		}
+		writes++
+	} else if err != nil {
+		return writes, fmt.Errorf("reading Pod %s: %w", name, err)
 	}
 
-	writes := 0
-	for i := range pods {
-		name := job.Name + "-" + podSuffix(job.Name+"/"+strconv.Itoa(int(i)))
-		var pod corev1.Pod
-		err := s.client.Get(ctx, client.ObjectKey{Namespace: job.Namespace, Name: name}, &pod)
-		if apierrors.IsNotFound(err) {
-			pod = *podFromTemplate(job.Spec.Template, job.Namespace, name)
-			pod.Labels[batchv1.JobNameLabel] = job.Name
-			pod.OwnerReferences = []metav1.OwnerReference{
-				*metav1.NewControllerRef(job, batchv1.SchemeGroupVersion.WithKind("Job")),
-			}
-			if err := s.client.Create(ctx, &pod, client.FieldOwner(kubeControllerManager)); err != nil {
-				return writes, fmt.Errorf("creating Pod %s: %w", name, err)
-			}
-			writes++
-		} else if err != nil {
-			return writes, fmt.Errorf("reading Pod %s: %w", name, err)
-		}
-
-		n, err := s.finishPod(ctx, &pod, outcome == jobComplete)
-		writes += n
-		if err != nil {
-			return writes, err
-		}
+	n, err := s.finishPod(ctx, &pod, outcome == jobComplete)
+	writes += n
+	if err != nil {
+		return writes, err
 	}
 
 	job.Status.StartTime = &scenarioTime
@@ -711,7 +638,7 @@ func (s *simulator) runJob(ctx context.Context, job *batchv1.Job, outcome string
 	if outcome == jobComplete {
 		const message = "Reached expected number of succeeded pods"
 		job.Status.CompletionTime = &scenarioTime
-		job.Status.Succeeded = pods
+		job.Status.Succeeded = 1
 		job.Status.Conditions = append(
 			job.Status.Conditions,
 			condition(batchv1.JobSuccessCriteriaMet, batchv1.JobReasonCompletionsReached, message),
@@ -719,7 +646,7 @@ func (s *simulator) runJob(ctx context.Context, job *batchv1.Job, outcome string
 		)
 	} else {
 		const message = "Job has reached the specified backoff limit"
-		job.Status.Failed = pods
+		job.Status.Failed = 1
 		job.Status.Conditions = append(
 			job.Status.Conditions,
 			condition(batchv1.JobFailureTarget, batchv1.JobReasonBackoffLimitExceeded, message),
@@ -742,14 +669,6 @@ func (s *simulator) claims(ctx context.Context, ns string) (int, error) {
 	writes := 0
 	for i := range list.Items {
 		claim := &list.Items[i]
-		if claim.DeletionTimestamp != nil {
-			n, err := s.releaseClaim(ctx, claim)
-			writes += n
-			if err != nil {
-				return writes, err
-			}
-			continue
-		}
 		if claim.Status.Phase == corev1.ClaimBound {
 			continue
 		}
@@ -774,32 +693,6 @@ func (s *simulator) claims(ctx context.Context, ns string) (int, error) {
 		writes++
 	}
 	return writes, nil
-}
-
-// releaseClaim removes the protection finalizer from claim, which is being
-// deleted, once no Pod uses it, as kube-controller-manager does.
-func (s *simulator) releaseClaim(ctx context.Context, claim *corev1.PersistentVolumeClaim) (int, error) {
-	if !slices.Contains(claim.Finalizers, pvcProtectionFinalizer) {
-		return 0, nil
-	}
-
-	var pods corev1.PodList
-	if err := s.client.List(ctx, &pods, client.InNamespace(claim.Namespace)); err != nil {
-		return 0, fmt.Errorf("listing the Pods of %s: %w", claim.Namespace, err)
-	}
-	for _, pod := range pods.Items {
-		for _, v := range pod.Spec.Volumes {
-			if v.PersistentVolumeClaim != nil && v.PersistentVolumeClaim.ClaimName == claim.Name {
-				return 0, nil
-			}
-		}
-	}
-
-	claim.Finalizers = slices.DeleteFunc(claim.Finalizers, func(f string) bool { return f == pvcProtectionFinalizer })
-	if err := s.client.Update(ctx, claim, client.FieldOwner(kubeControllerManager)); err != nil {
-		return 0, fmt.Errorf("releasing PersistentVolumeClaim %s/%s: %w", claim.Namespace, claim.Name, err)
-	}
-	return 1, nil
 }
 
 // createIfMissing creates obj unless an object of its name exists. It
@@ -882,7 +775,6 @@ func (s *simulator) runPod(ctx context.Context, pod *corev1.Pod, ready bool) (in
 	status.Phase = corev1.PodRunning
 	status.StartTime = &scenarioTime
 	status.Conditions = podConditions(corev1.ConditionTrue, readiness)
-	status.InitContainerStatuses = initContainerStatuses(pod)
 	status.ContainerStatuses = nil
 	for _, c := range pod.Spec.Containers {
 		status.ContainerStatuses = append(status.ContainerStatuses, corev1.ContainerStatus{
@@ -908,7 +800,6 @@ func (s *simulator) finishPod(ctx context.Context, pod *corev1.Pod, succeeded bo
 	status.Phase = phase
 	status.StartTime = &scenarioTime
 	status.Conditions = podConditions(corev1.ConditionTrue, corev1.ConditionFalse)
-	status.InitContainerStatuses = initContainerStatuses(pod)
 	status.ContainerStatuses = nil
 	for _, c := range pod.Spec.Containers {
 		status.ContainerStatuses = append(status.ContainerStatuses, corev1.ContainerStatus{
@@ -924,29 +815,6 @@ func (s *simulator) finishPod(ctx context.Context, pod *corev1.Pod, succeeded bo
 		})
 	}
 	return s.writePodStatus(ctx, pod, status)
-}
-
-// initContainerStatuses returns the statuses of the init containers of pod,
-// each ended with exit code 0, as the kubelet reports them once the Pod is
-// initialized.
-func initContainerStatuses(pod *corev1.Pod) []corev1.ContainerStatus {
-	if len(pod.Spec.InitContainers) == 0 {
-		return nil
-	}
-	statuses := make([]corev1.ContainerStatus, 0, len(pod.Spec.InitContainers))
-	for _, c := range pod.Spec.InitContainers {
-		statuses = append(statuses, corev1.ContainerStatus{
-			Name:    c.Name,
-			Image:   c.Image,
-			Started: new(false),
-			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
-				Reason:     "Completed",
-				StartedAt:  scenarioTime,
-				FinishedAt: scenarioTime,
-			}},
-		})
-	}
-	return statuses
 }
 
 // podConditions returns the conditions of a Pod that is scheduled and
@@ -1012,7 +880,7 @@ func podSuffix(seed string) string {
 }
 
 // missingSteps returns an error that names each workload step whose object
-// no call has found since the step was added.
+// does not exist.
 func (s *simulator) missingSteps(ctx context.Context) error {
 	keys := slices.SortedFunc(maps.Keys(s.steps), func(a, b objectKey) int {
 		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
@@ -1031,16 +899,11 @@ func (s *simulator) missingSteps(ctx context.Context) error {
 		}
 
 		err := s.client.Get(ctx, client.ObjectKey{Namespace: key.Namespace, Name: key.Name}, obj)
-		switch {
-		case err == nil:
-			s.matched[key] = true
-		case apierrors.IsNotFound(err):
-			if !s.matched[key] {
-				errs = append(errs, fmt.Errorf(
-					"workload step names %s %s/%s, which does not exist", key.Kind, key.Namespace, key.Name,
-				))
-			}
-		default:
+		if apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf(
+				"workload step names %s %s/%s, which does not exist", key.Kind, key.Namespace, key.Name,
+			))
+		} else if err != nil {
 			errs = append(errs, fmt.Errorf("reading %s %s/%s: %w", key.Kind, key.Namespace, key.Name, err))
 		}
 	}
