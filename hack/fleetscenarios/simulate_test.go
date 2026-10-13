@@ -304,6 +304,21 @@ func TestSimulatorFailsAJobOnAFailedStep(t *testing.T) {
 	assert.False(t, hasJobCondition(&job, batchv1.JobComplete))
 }
 
+func TestSimulatorRefusesAStepThatChangesTheOutcomeOfAFinishedJob(t *testing.T) {
+	c := fakeClient(t, backupJob())
+	sim := newSimulator(c)
+	sim.watch("team-a")
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err)
+
+	sim.add([]workloadStep{{Kind: kindJob, Namespace: "team-a", Name: "backup", JobOutcome: jobFailed}})
+	_, err = sim.pass(context.Background())
+	assert.EqualError(
+		t, err,
+		"workload step gives Job team-a/backup the outcome Failed, but the Job finished Complete",
+	)
+}
+
 func hasJobCondition(job *batchv1.Job, t batchv1.JobConditionType) bool {
 	for _, c := range job.Status.Conditions {
 		if c.Type == t && c.Status == corev1.ConditionTrue {

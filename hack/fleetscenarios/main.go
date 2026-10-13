@@ -40,11 +40,12 @@ limitations under the License.
 //     written as a JSON merge patch after the reconcilers stop. It is the
 //     only status that a person writes.
 //   - states: optional. Named changes, each on top of the one before. A
-//     state has a name (a DNS label other than objects and scenario), a
-//     description, and optional apply (objects), delete (object
+//     state has a name (a DNS label other than objects, scenario, and
+//     observe), a description, and optional apply (objects), delete (object
 //     references), workload (steps that replace the step of the same
-//     object), and overlays (applied after the overlays of the scenario and
-//     of the states before it).
+//     object; a step that gives a finished Job another outcome fails the
+//     run), and overlays (applied after the overlays of the scenario and of
+//     the states before it).
 //
 // For example:
 //

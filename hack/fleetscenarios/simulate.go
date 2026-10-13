@@ -551,13 +551,24 @@ func (s *simulator) jobs(ctx context.Context, ns string) (int, error) {
 	writes := 0
 	for i := range list.Items {
 		job := &list.Items[i]
-		if ptr.Deref(job.Spec.Suspend, false) || jobFinished(job) {
-			continue
-		}
-
 		outcome := jobComplete
 		if step, ok := s.steps[objectKey{kindJob, job.Namespace, job.Name}]; ok {
 			outcome = step.JobOutcome
+		}
+
+		if finished := finishedOutcome(job); finished != "" {
+			// Kubernetes never changes the outcome of a finished Job, so a
+			// later step for it would have no effect.
+			if finished != outcome {
+				return writes, fmt.Errorf(
+					"workload step gives Job %s/%s the outcome %s, but the Job finished %s",
+					ns, job.Name, outcome, finished,
+				)
+			}
+			continue
+		}
+		if ptr.Deref(job.Spec.Suspend, false) {
+			continue
 		}
 		n, err := s.runJob(ctx, job, outcome)
 		writes += n
@@ -568,11 +579,21 @@ func (s *simulator) jobs(ctx context.Context, ns string) (int, error) {
 	return writes, nil
 }
 
-// jobFinished reports whether job has a true Complete or Failed condition.
-func jobFinished(job *batchv1.Job) bool {
-	return slices.ContainsFunc(job.Status.Conditions, func(c batchv1.JobCondition) bool {
-		return (c.Type == batchv1.JobComplete || c.Type == batchv1.JobFailed) && c.Status == corev1.ConditionTrue
-	})
+// finishedOutcome returns jobComplete or jobFailed when job has that true
+// condition, and "" when job has not finished.
+func finishedOutcome(job *batchv1.Job) string {
+	for _, c := range job.Status.Conditions {
+		if c.Status != corev1.ConditionTrue {
+			continue
+		}
+		switch c.Type {
+		case batchv1.JobComplete:
+			return jobComplete
+		case batchv1.JobFailed:
+			return jobFailed
+		}
+	}
+	return ""
 }
 
 // runJob makes the Pod of job, finishes it with outcome, and writes the
