@@ -140,7 +140,8 @@ func TestNormalizeSetsEveryTimestampToTheScenarioTime(t *testing.T) {
 	conditions, _, _ := unstructured.NestedSlice(got.Object, "status", "conditions")
 	assert.Equal(t, "2026-01-01T00:00:00Z", conditions[0].(map[string]any)["lastTransitionTime"])
 
-	renew, _, _ := unstructured.NestedString(find(t, out, "Lease", "camunda-system", "claim").Object, "spec", "renewTime")
+	got = find(t, out, "Lease", "camunda-system", "claim")
+	renew, _, _ := unstructured.NestedString(got.Object, "spec", "renewTime")
 	assert.Equal(t, "2026-01-01T00:00:00.000000Z", renew, "a MicroTime stays in the micro format")
 }
 
@@ -167,7 +168,7 @@ func TestNormalizeSortsManagedFields(t *testing.T) {
 	out, err := normalize([]unstructured.Unstructured{obj})
 	require.NoError(t, err)
 
-	var got []string
+	got := make([]string, 0, len(out[0].GetManagedFields()))
 	for _, f := range out[0].GetManagedFields() {
 		got = append(got, f.Manager+" "+string(f.Operation)+" "+f.Subresource)
 	}
@@ -219,7 +220,8 @@ func TestNormalizeGivesAServiceAClusterIPFromItsName(t *testing.T) {
 
 		out, err := normalize([]unstructured.Unstructured{svc, headless})
 		require.NoError(t, err)
-		ip, _, _ = unstructured.NestedString(find(t, out, "Service", "team-a", "orders-zeebe").Object, "spec", "clusterIP")
+		headless = find(t, out, "Service", "team-a", "orders-zeebe")
+		ip, _, _ = unstructured.NestedString(headless.Object, "spec", "clusterIP")
 		assert.Equal(t, "None", ip, "a headless Service keeps None")
 		return find(t, out, "Service", "team-a", "orders-gateway")
 	}
@@ -237,7 +239,7 @@ func TestNormalizeSortsTheObjects(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	var got []string
+	got := make([]string, 0, len(out))
 	for i := range out {
 		got = append(got, out[i].GetAPIVersion()+" "+describe(&out[i]))
 	}

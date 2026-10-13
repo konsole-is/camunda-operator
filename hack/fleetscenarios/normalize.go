@@ -48,6 +48,12 @@ const scenarioNode = "scenario-node"
 // reconcilers write.
 const eventAPIVersion = "events.k8s.io/v1"
 
+// The kinds that the generator treats apart from the others.
+const (
+	kindEvent     = "Event"
+	kindNamespace = "Namespace"
+)
+
 // normalize returns objs in a form that depends only on the scenario, so a
 // second run writes the same bytes:
 //
@@ -165,7 +171,7 @@ func normalizeEvents(objs []unstructured.Unstructured) []unstructured.Unstructur
 
 // isEvent reports whether obj is an Event of the events.k8s.io API.
 func isEvent(obj *unstructured.Unstructured) bool {
-	return obj.GetAPIVersion() == eventAPIVersion && obj.GetKind() == "Event"
+	return obj.GetAPIVersion() == eventAPIVersion && obj.GetKind() == kindEvent
 }
 
 // normalizeObject applies rules 2 to 8 of normalize to obj, a copy that it

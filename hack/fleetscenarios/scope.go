@@ -88,7 +88,7 @@ func newScope(ctx context.Context, cfg *rest.Config) (*scope, error) {
 		}
 		for _, r := range list.APIResources {
 			if !slices.Contains(r.Verbs, "list") || strings.Contains(r.Name, "/") ||
-				(gv.Group == "" && r.Kind == "Event") {
+				(gv.Group == "" && r.Kind == kindEvent) {
 				continue
 			}
 			gvr := gv.WithResource(r.Name)

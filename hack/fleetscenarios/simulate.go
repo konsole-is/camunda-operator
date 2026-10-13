@@ -362,7 +362,7 @@ func (s *simulator) deployment(ctx context.Context, d *appsv1.Deployment) (int, 
 		return writes, fmt.Errorf("reading ReplicaSet %s: %w", rsName, err)
 	}
 	if ptr.Deref(rs.Spec.Replicas, 1) != replicas {
-		rs.Spec.Replicas = ptr.To(replicas)
+		rs.Spec.Replicas = new(replicas)
 		if err := s.client.Update(ctx, rs, client.FieldOwner(kubeControllerManager)); err != nil {
 			return writes, fmt.Errorf("scaling ReplicaSet %s: %w", rsName, err)
 		}
@@ -430,7 +430,7 @@ func replicaSetFor(d *appsv1.Deployment, hash string, replicas int32) *appsv1.Re
 			},
 		},
 		Spec: appsv1.ReplicaSetSpec{
-			Replicas: ptr.To(replicas),
+			Replicas: new(replicas),
 			Selector: selector,
 			Template: template,
 		},
@@ -611,17 +611,21 @@ func (s *simulator) runJob(ctx context.Context, job *batchv1.Job, outcome string
 		}
 	}
 	if outcome == jobComplete {
+		const message = "Reached expected number of succeeded pods"
 		job.Status.CompletionTime = &scenarioTime
 		job.Status.Succeeded = 1
-		job.Status.Conditions = append(job.Status.Conditions,
-			condition(batchv1.JobSuccessCriteriaMet, batchv1.JobReasonCompletionsReached, "Reached expected number of succeeded pods"),
-			condition(batchv1.JobComplete, batchv1.JobReasonCompletionsReached, "Reached expected number of succeeded pods"),
+		job.Status.Conditions = append(
+			job.Status.Conditions,
+			condition(batchv1.JobSuccessCriteriaMet, batchv1.JobReasonCompletionsReached, message),
+			condition(batchv1.JobComplete, batchv1.JobReasonCompletionsReached, message),
 		)
 	} else {
+		const message = "Job has reached the specified backoff limit"
 		job.Status.Failed = 1
-		job.Status.Conditions = append(job.Status.Conditions,
-			condition(batchv1.JobFailureTarget, batchv1.JobReasonBackoffLimitExceeded, "Job has reached the specified backoff limit"),
-			condition(batchv1.JobFailed, batchv1.JobReasonBackoffLimitExceeded, "Job has reached the specified backoff limit"),
+		job.Status.Conditions = append(
+			job.Status.Conditions,
+			condition(batchv1.JobFailureTarget, batchv1.JobReasonBackoffLimitExceeded, message),
+			condition(batchv1.JobFailed, batchv1.JobReasonBackoffLimitExceeded, message),
 		)
 	}
 	if err := s.client.Status().Update(ctx, job, client.FieldOwner(kubeControllerManager)); err != nil {
@@ -752,7 +756,7 @@ func (s *simulator) runPod(ctx context.Context, pod *corev1.Pod, ready bool) (in
 			Name:    c.Name,
 			Image:   c.Image,
 			Ready:   ready,
-			Started: ptr.To(true),
+			Started: new(true),
 			State:   corev1.ContainerState{Running: &corev1.ContainerStateRunning{StartedAt: scenarioTime}},
 		})
 	}
@@ -776,7 +780,7 @@ func (s *simulator) finishPod(ctx context.Context, pod *corev1.Pod, succeeded bo
 		status.ContainerStatuses = append(status.ContainerStatuses, corev1.ContainerStatus{
 			Name:    c.Name,
 			Image:   c.Image,
-			Started: ptr.To(false),
+			Started: new(false),
 			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
 				ExitCode:   exitCode,
 				Reason:     reason,
@@ -791,7 +795,7 @@ func (s *simulator) finishPod(ctx context.Context, pod *corev1.Pod, succeeded bo
 // podConditions returns the conditions of a Pod that is scheduled and
 // initialized, with the status of ContainersReady and Ready as ready.
 func podConditions(initialized, ready corev1.ConditionStatus) []corev1.PodCondition {
-	var conditions []corev1.PodCondition
+	conditions := make([]corev1.PodCondition, 0, 4)
 	for _, c := range []struct {
 		t      corev1.PodConditionType
 		status corev1.ConditionStatus

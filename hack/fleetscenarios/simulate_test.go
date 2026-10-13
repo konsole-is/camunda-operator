@@ -114,11 +114,12 @@ func backupJob() *batchv1.Job {
 	}
 }
 
-func getPod(t *testing.T, c client.Client, namespace, name string) *corev1.Pod {
+// getPod returns the Pod of team-a with name.
+func getPod(t *testing.T, c client.Client, name string) *corev1.Pod {
 	t.Helper()
 
 	var pod corev1.Pod
-	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, &pod))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: name}, &pod))
 	return &pod
 }
 
@@ -153,7 +154,7 @@ func TestSimulatorMakesAStatefulSetReady(t *testing.T) {
 	assert.Equal(t, sts.Generation, sts.Status.ObservedGeneration)
 
 	for ordinal := range 3 {
-		pod := getPod(t, c, "team-a", fmt.Sprintf("orders-zeebe-%d", ordinal))
+		pod := getPod(t, c, fmt.Sprintf("orders-zeebe-%d", ordinal))
 		assert.True(t, podReady(pod))
 		claim := getClaim(t, c, "team-a", fmt.Sprintf("data-orders-zeebe-%d", ordinal))
 		assert.Equal(t, corev1.ClaimBound, claim.Status.Phase)
@@ -179,10 +180,10 @@ func TestSimulatorAppliesAReadyReplicasStep(t *testing.T) {
 	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "orders-zeebe"}, &sts))
 	assert.Equal(t, int32(1), sts.Status.ReadyReplicas)
 	assert.Equal(t, int32(3), sts.Status.Replicas)
-	assert.True(t, podReady(getPod(t, c, "team-a", "orders-zeebe-0")))
-	assert.False(t, podReady(getPod(t, c, "team-a", "orders-zeebe-1")))
-	assert.False(t, podReady(getPod(t, c, "team-a", "orders-zeebe-2")))
-	assert.Equal(t, corev1.PodRunning, getPod(t, c, "team-a", "orders-zeebe-2").Status.Phase)
+	assert.True(t, podReady(getPod(t, c, "orders-zeebe-0")))
+	assert.False(t, podReady(getPod(t, c, "orders-zeebe-1")))
+	assert.False(t, podReady(getPod(t, c, "orders-zeebe-2")))
+	assert.Equal(t, corev1.PodRunning, getPod(t, c, "orders-zeebe-2").Status.Phase)
 }
 
 func TestSimulatorMakesADeploymentReadyThroughAReplicaSet(t *testing.T) {
@@ -225,7 +226,7 @@ func TestSimulatorReplacesThePodsOfAnOldTemplate(t *testing.T) {
 	sim.watch("team-a")
 	_, err := sim.pass(context.Background())
 	require.NoError(t, err)
-	before := getPod(t, c, "team-a", "orders-zeebe-0").Labels[appsv1.ControllerRevisionHashLabelKey]
+	before := getPod(t, c, "orders-zeebe-0").Labels[appsv1.ControllerRevisionHashLabelKey]
 
 	var sts appsv1.StatefulSet
 	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "orders-zeebe"}, &sts))
@@ -238,7 +239,7 @@ func TestSimulatorReplacesThePodsOfAnOldTemplate(t *testing.T) {
 	}
 
 	for ordinal := range 3 {
-		pod := getPod(t, c, "team-a", fmt.Sprintf("orders-zeebe-%d", ordinal))
+		pod := getPod(t, c, fmt.Sprintf("orders-zeebe-%d", ordinal))
 		assert.NotEqual(t, before, pod.Labels[appsv1.ControllerRevisionHashLabelKey])
 		assert.Equal(t, "camunda/camunda:8.9.24", pod.Spec.Containers[0].Image)
 	}

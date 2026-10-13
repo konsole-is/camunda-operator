@@ -38,8 +38,9 @@ func readOutput(t *testing.T, scenarioName, file string) []unstructured.Unstruct
 	data, err := os.ReadFile(filepath.Join(scenariosDir, scenarioName, file))
 	require.NoError(t, err)
 
-	var objs []unstructured.Unstructured
-	for _, doc := range strings.Split(string(data), "\n---\n")[1:] {
+	docs := strings.Split(string(data), "\n---\n")[1:]
+	objs := make([]unstructured.Unstructured, 0, len(docs))
+	for _, doc := range docs {
 		var obj map[string]any
 		require.NoError(t, yaml.Unmarshal([]byte(doc), &obj))
 		objs = append(objs, unstructured.Unstructured{Object: obj})

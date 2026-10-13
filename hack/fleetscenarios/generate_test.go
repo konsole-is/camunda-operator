@@ -125,14 +125,19 @@ func TestApplyOverlaysNamesAMissingObject(t *testing.T) {
 
 	err := applyOverlays(context.Background(), c, []overlay{{
 		Reason: "test",
-		Object: objectRef{APIVersion: "core.camunda.io/v1", Kind: "CamundaCluster", Namespace: "team-b", Name: "missing"},
+		Object: objectRef{
+			APIVersion: "core.camunda.io/v1",
+			Kind:       "CamundaCluster",
+			Namespace:  "team-b",
+			Name:       "missing",
+		},
 		Status: map[string]any{"adminPassword": map[string]any{"rotation": "2026-01"}},
 	}})
 	assert.EqualError(t, err, "overlay names CamundaCluster team-b/missing, which does not exist")
 }
 
-// condition returns the condition of obj with type t, and fails the test
-// when obj has none.
+// condition returns the condition of obj with type conditionType, and fails
+// the test when obj has none.
 func condition(t *testing.T, obj unstructured.Unstructured, conditionType string) map[string]any {
 	t.Helper()
 
@@ -148,7 +153,7 @@ func condition(t *testing.T, obj unstructured.Unstructured, conditionType string
 
 // managers returns the field managers of obj.
 func managers(obj unstructured.Unstructured) []string {
-	var names []string
+	names := make([]string, 0, len(obj.GetManagedFields()))
 	for _, f := range obj.GetManagedFields() {
 		names = append(names, f.Manager)
 	}

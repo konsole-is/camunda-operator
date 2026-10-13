@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/config"
@@ -88,7 +87,7 @@ func generate(ctx context.Context, sc *scenario) (map[string][]unstructured.Unst
 
 	namespace := &unstructured.Unstructured{}
 	namespace.SetAPIVersion("v1")
-	namespace.SetKind("Namespace")
+	namespace.SetKind(kindNamespace)
 	namespace.SetName(operatorNamespace)
 	seed, err := toUnstructured(sc.Seed)
 	if err != nil {
@@ -148,7 +147,7 @@ func applyObjects(
 ) error {
 	ordered := slices.Clone(objs)
 	slices.SortStableFunc(ordered, func(a, b unstructured.Unstructured) int {
-		aNamespace, bNamespace := a.GetKind() == "Namespace", b.GetKind() == "Namespace"
+		aNamespace, bNamespace := a.GetKind() == kindNamespace, b.GetKind() == kindNamespace
 		switch {
 		case aNamespace && !bNamespace:
 			return -1
@@ -169,7 +168,7 @@ func applyObjects(
 		if err != nil {
 			return fmt.Errorf("applying %s: %w", describe(obj), err)
 		}
-		if obj.GetKind() == "Namespace" {
+		if obj.GetKind() == kindNamespace {
 			sco.add(obj.GetName())
 			sim.watch(obj.GetName())
 		}
@@ -223,7 +222,7 @@ func runReconcilers(
 		Cache:                  manager.CacheOptions(),
 		Metrics:                metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "0",
-		Controller:             config.Controller{SkipNameValidation: ptr.To(true)},
+		Controller:             config.Controller{SkipNameValidation: new(true)},
 	})
 	if err != nil {
 		return fmt.Errorf("creating the manager: %w", err)
@@ -261,7 +260,12 @@ func applyOverlays(ctx context.Context, c client.Client, overlays []overlay) err
 			return fmt.Errorf("encoding the overlay of %s: %w", describe(obj), err)
 		}
 
-		err = c.Status().Patch(ctx, obj, client.RawPatch(types.MergePatchType, patch), client.FieldOwner(overlayManager))
+		err = c.Status().Patch(
+			ctx,
+			obj,
+			client.RawPatch(types.MergePatchType, patch),
+			client.FieldOwner(overlayManager),
+		)
 		if apierrors.IsNotFound(err) {
 			return fmt.Errorf("overlay names %s, which does not exist", describe(obj))
 		}
