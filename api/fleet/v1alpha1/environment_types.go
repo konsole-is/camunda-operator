@@ -25,13 +25,16 @@ import (
 // EnvironmentSpec is the policy that an Environment sets for the claims in
 // its namespaces. A namespace belongs to the Environment that its label
 // fleet.camunda.io/environment names.
+// +kubebuilder:validation:XValidation:rule="!has(self.releases) || !has(self.releases.default) || self.releases.default == '' || (has(self.releases.allowed) && self.releases.default in self.releases.allowed)",message="releases.default must be one of releases.allowed"
 type EnvironmentSpec struct {
 	// DisplayName is the name that the fleet manager shows for the
-	// environment. It changes nothing for a claim.
+	// environment, at most 64 characters. It changes nothing for a claim.
+	// +kubebuilder:validation:MaxLength=64
 	// +optional
 	DisplayName string `json:"displayName,omitempty"`
 	// Color is the color that the fleet manager shows for the environment,
 	// as a hex color such as #2E7D32. It changes nothing for a claim.
+	// +kubebuilder:validation:Pattern=`^#[0-9a-fA-F]{6}$`
 	// +optional
 	Color string `json:"color,omitempty"`
 	// PlatformConfigRef names the CamundaPlatformConfig of a claim of the
@@ -65,8 +68,9 @@ type EnvironmentSpec struct {
 	Parameters map[string]ParameterPolicies `json:"parameters,omitempty"`
 	// DeletionPolicy is the deletion policy of a claim of the environment
 	// that sets none itself. Delete deletes the resources of its plugin
-	// requests with the claim. Orphan keeps them. A change applies to new
-	// claims only.
+	// requests with the claim. Orphan keeps them. Unset means Delete. A
+	// change applies to new claims only.
+	// +kubebuilder:default=Delete
 	// +optional
 	DeletionPolicy pluginsv1alpha1.DeletionPolicy `json:"deletionPolicy,omitempty"`
 	// NamespaceCreation lets the create flow of the fleet manager create a
@@ -115,6 +119,7 @@ type EnvironmentReleases struct {
 // NamespaceCreation is what the create flow of the fleet manager writes on a
 // namespace that it creates in an environment. The create flow always sets
 // the label fleet.camunda.io/environment.
+// +kubebuilder:validation:XValidation:rule="!has(self.labels) || !('fleet.camunda.io/environment' in self.labels)",message="the environment label is set by the app"
 type NamespaceCreation struct {
 	// Allowed lets the create flow create a namespace in the environment.
 	// +optional
@@ -126,7 +131,10 @@ type NamespaceCreation struct {
 	Labels map[string]string `json:"labels,omitempty"`
 	// RequiredLabelKeys are label keys, for example team. The create flow
 	// asks for a value of each key and sets the label on the new namespace.
+	// Each key is a valid label key.
 	// +listType=set
+	// +kubebuilder:validation:MaxItems=16
+	// +kubebuilder:validation:items:Pattern=`^([a-z0-9.-]+/)?[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$`
 	// +optional
 	RequiredLabelKeys []string `json:"requiredLabelKeys,omitempty"`
 }
@@ -160,6 +168,7 @@ type EnvironmentStatus struct {
 // +kubebuilder:printcolumn:name="Namespaces",type=integer,JSONPath=`.status.namespaces`
 // +kubebuilder:printcolumn:name="Display name",type=string,JSONPath=`.spec.displayName`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:validation:XValidation:rule="self.metadata.name.size() <= 63",message="metadata.name must be at most 63 characters, because it is used as a label value"
 
 // Environment sets the policy for the claims in its namespaces: the releases,
 // presets, and plugin registrations that a claim can use, the parameter

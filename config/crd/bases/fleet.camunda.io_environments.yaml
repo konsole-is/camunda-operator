@@ -66,13 +66,15 @@ spec:
                 description: |-
                   Color is the color that the fleet manager shows for the environment,
                   as a hex color such as #2E7D32. It changes nothing for a claim.
+                pattern: ^#[0-9a-fA-F]{6}$
                 type: string
               deletionPolicy:
+                default: Delete
                 description: |-
                   DeletionPolicy is the deletion policy of a claim of the environment
                   that sets none itself. Delete deletes the resources of its plugin
-                  requests with the claim. Orphan keeps them. A change applies to new
-                  claims only.
+                  requests with the claim. Orphan keeps them. Unset means Delete. A
+                  change applies to new claims only.
                 enum:
                 - Delete
                 - Orphan
@@ -80,7 +82,8 @@ spec:
               displayName:
                 description: |-
                   DisplayName is the name that the fleet manager shows for the
-                  environment. It changes nothing for a claim.
+                  environment, at most 64 characters. It changes nothing for a claim.
+                maxLength: 64
                 type: string
               namespaceCreation:
                 description: |-
@@ -104,11 +107,18 @@ spec:
                     description: |-
                       RequiredLabelKeys are label keys, for example team. The create flow
                       asks for a value of each key and sets the label on the new namespace.
+                      Each key is a valid label key.
                     items:
+                      pattern: ^([a-z0-9.-]+/)?[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$
                       type: string
+                    maxItems: 16
                     type: array
                     x-kubernetes-list-type: set
                 type: object
+                x-kubernetes-validations:
+                - message: the environment label is set by the app
+                  rule: '!has(self.labels) || !(''fleet.camunda.io/environment'' in
+                    self.labels)'
               parameters:
                 additionalProperties:
                   additionalProperties:
@@ -167,6 +177,10 @@ spec:
                           gives the parameter.
                         x-kubernetes-preserve-unknown-fields: true
                     type: object
+                    x-kubernetes-validations:
+                    - message: 'allowed needs claimEditable: true'
+                      rule: '!has(self.allowed) || size(self.allowed) == 0 || (has(self.claimEditable)
+                        && self.claimEditable)'
                   description: |-
                     ParameterPolicies holds the policy of each parameter of one
                     PluginRegistration, by parameter name.
@@ -266,6 +280,13 @@ spec:
                         section. The fleet manager then hides the empty option.
                       type: boolean
                   type: object
+                  x-kubernetes-validations:
+                  - message: default must be one of allowed
+                    rule: '!has(self.default) || self.default == '''' || (has(self.allowed)
+                      && self.default in self.allowed)'
+                  - message: required needs at least one registration in allowed
+                    rule: '!has(self.required) || !self.required || (has(self.allowed)
+                      && size(self.allowed) > 0)'
                 description: |-
                   Sections holds the policy of each PluginSection, by section name. A
                   claim of the environment can select only a registration that the
@@ -274,6 +295,11 @@ spec:
                 maxProperties: 64
                 type: object
             type: object
+            x-kubernetes-validations:
+            - message: releases.default must be one of releases.allowed
+              rule: '!has(self.releases) || !has(self.releases.default) || self.releases.default
+                == '''' || (has(self.releases.allowed) && self.releases.default in
+                self.releases.allowed)'
           status:
             description: status is the state of the environment
             properties:
@@ -357,6 +383,10 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be at most 63 characters, because it is used
+            as a label value
+          rule: self.metadata.name.size() <= 63
     served: true
     storage: true
     subresources:
