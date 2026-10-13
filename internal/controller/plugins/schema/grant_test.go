@@ -23,6 +23,9 @@ import (
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -65,12 +68,34 @@ var _ = Describe("Grant schema", func() {
 			func(g *pluginsv1alpha1.Grant) { g.Spec.Template = "bucket-read" },
 			"template is immutable",
 		),
-		Entry(
-			"format",
-			func(g *pluginsv1alpha1.Grant) { g.Spec.Format = "gcp-iam-binding" },
-			"format is immutable",
-		),
 	)
+
+	It("refuses an update of the format", func() {
+		grant := newGrant()
+		Expect(createGrant(grant)).To(Succeed())
+
+		grant.Spec.Format = "gcp-iam-binding"
+
+		Expect(k8sClient.Update(ctx, grant)).To(MatchError(ContainSubstring("spec.format: Unsupported value")))
+	})
+
+	// The API server skips CEL rules after an enum error, so the message of
+	// this rule is reachable only once a second format exists.
+	It("serves format with a rule that keeps it immutable", func() {
+		served := &unstructured.Unstructured{}
+		served.SetGroupVersionKind(apiextensionsv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "grants.plugins.camunda.io"}, served)).To(Succeed())
+
+		var crd apiextensionsv1.CustomResourceDefinition
+		Expect(runtime.DefaultUnstructuredConverter.FromUnstructured(served.Object, &crd)).To(Succeed())
+
+		Expect(crd.Spec.Versions).To(HaveLen(1))
+		format := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties["spec"].Properties["format"]
+		Expect(format.XValidations).To(ContainElement(SatisfyAll(
+			HaveField("Rule", "self == oldSelf"),
+			HaveField("Message", ContainSubstring("format is immutable")),
+		)))
+	})
 
 	// The plugin renders the fragment again when the template or its inputs
 	// change, so the fragment must stay writable.
