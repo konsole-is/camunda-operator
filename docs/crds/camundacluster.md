@@ -751,7 +751,7 @@ spec:
     # []EnvVar. Optional. Extra environment variables of the broker container.
     extraEnv:
       - name: JAVA_TOOL_OPTIONS
-        value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
+        value: "-XX:+ExitOnOutOfMemoryError -Xmx1g"
     # []EnvFromSource. Optional. Extra environment sources (ConfigMaps, Secrets) of the broker container.
     extraEnvFrom:
       - configMapRef:
@@ -937,9 +937,11 @@ spec:
     resources:
       requests:
         memory: "8Gi"
+      limits:
+        memory: "8Gi"
     extraEnv:
       - name: JAVA_TOOL_OPTIONS
-        value: "-XX:+ExitOnOutOfMemoryError -Xmx6g"
+        value: "-XX:+ExitOnOutOfMemoryError -Xmx2g"
   storageRef: "my-storage-config"
   backupStorageRef: "my-backup-bucket"
   monitoring:

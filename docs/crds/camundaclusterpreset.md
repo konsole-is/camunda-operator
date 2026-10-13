@@ -143,7 +143,7 @@ spec:
       # []EnvVar. Optional. Environment variables of the brokers. Merged by name with cluster entries.
       extraEnv:
         - name: JAVA_TOOL_OPTIONS
-          value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
+          value: "-XX:+ExitOnOutOfMemoryError -Xmx1g"
     # object. Optional. Gateway baseline.
     gateway:
       # string (Standalone | Embedded). Optional.
@@ -215,7 +215,7 @@ spec:
       storageSize: "32Gi"
       extraEnv:
         - name: JAVA_TOOL_OPTIONS
-          value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
+          value: "-XX:+ExitOnOutOfMemoryError -Xmx1g"
     gateway:
       mode: Standalone
       replicas: 2
