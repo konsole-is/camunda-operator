@@ -159,6 +159,7 @@ type InputDecl struct {
 	// Name is the name of the input. The request carries its value under
 	// this name.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	Name string `json:"name"`
 	// From names the output that gives the value, in the form
 	// <section>/<output>.
@@ -204,6 +205,8 @@ type GrantTemplate struct {
 	Description string `json:"description,omitempty"`
 	// RequiresInputs names the inputs that must have a value before the
 	// plugin writes the grant.
+	// +kubebuilder:validation:MaxItems=32
+	// +kubebuilder:validation:items:MaxLength=63
 	// +optional
 	RequiresInputs []string `json:"requiresInputs,omitempty"`
 }

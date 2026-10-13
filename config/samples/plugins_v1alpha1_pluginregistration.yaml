@@ -1,0 +1,64 @@
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  name: s3-backup-bucket
+spec:
+  sections:
+    - backup-storage
+  label: New S3 bucket
+  description: Creates one S3 bucket for the backups of each cluster.
+  docsUrl: https://example.com/docs/s3-backup-bucket
+  mode: Optional
+  controller:
+    name: s3-backup-bucket-controller
+    version: 0.1.0
+  serviceAccount:
+    namespace: camunda-plugins
+    name: s3-backup-bucket-controller
+  operatorVersions: ">=0.3.0 <1.0.0"
+  parameters:
+    type: object
+    properties:
+      retentionDays:
+        type: integer
+        minimum: 1
+  parameterValues:
+    retentionDays: 30
+  claimEditable:
+    - retentionDays
+  inputs:
+    - name: kmsKey
+      from: encryption-key/keyRef
+      formats:
+        - aws-kms-arn
+  outputs:
+    - key: objectStorageConfig
+      description: The name of the ObjectStorageConfig that points at the bucket.
+  limits:
+    - label: Region
+      value: eu-west-1
+      description: The chart creates every bucket in this region.
+  grantTemplates:
+    - name: bucket-access
+      format: aws-iam-statement
+      description: Lets the cluster read and write its backups.
+      template:
+        Effect: Allow
+        Action: ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+        Resource: ["arn:aws:s3:::{{ .request }}", "arn:aws:s3:::{{ .request }}/*"]
+    - name: key-access
+      format: aws-iam-statement
+      description: Lets the cluster use the key that encrypts the bucket.
+      requiresInputs:
+        - kmsKey
+      template:
+        Effect: Allow
+        Action: ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource: "*"
+  deletionPolicies:
+    - Delete
+    - Orphan
+  metricQueries:
+    - label: Bucket size
+      query: 'sum(aws_s3_bucket_size_bytes{bucket="{{ .request }}"})'
+      unit: bytes
