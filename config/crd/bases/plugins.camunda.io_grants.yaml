@@ -41,7 +41,8 @@ spec:
         description: |-
           Grant asks the identity of a cluster for one permission on behalf of a
           PluginRequest. A plugin controller writes the spec, and the identity
-          extension of the cluster writes the status.
+          extension of the cluster writes the status. The name is at most 63
+          characters, because other objects carry it in a label value.
         properties:
           apiVersion:
             description: |-

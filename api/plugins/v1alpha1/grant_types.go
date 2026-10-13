@@ -77,7 +77,8 @@ type GrantStatus struct {
 
 // Grant asks the identity of a cluster for one permission on behalf of a
 // PluginRequest. A plugin controller writes the spec, and the identity
-// extension of the cluster writes the status.
+// extension of the cluster writes the status. The name is at most 63
+// characters, because other objects carry it in a label value.
 type Grant struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -96,10 +97,10 @@ type Grant struct {
 
 // +kubebuilder:object:root=true
 
-// GrantList contains a list of Grant.
+// GrantList contains a list of Grant
 type GrantList struct {
-	metav1.TypeMeta `        json:",inline"`
-	metav1.ListMeta `        json:"metadata,omitzero"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []Grant `json:"items"`
 }
 
