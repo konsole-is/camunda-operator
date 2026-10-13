@@ -47,8 +47,8 @@ const valuesKey = "fleetManager:"
 // verbs are the quoted repository and tag. Quoted, so that YAML reads a tag
 // such as 8 as a string and the values schema types it as one.
 const valuesBlock = `
-## Fleet manager: a web app that shows and changes the Camunda clusters of
-## this Kubernetes cluster. It has no login. Reach it with kubectl port-forward.
+## Fleet manager: a web app for the Camunda clusters of this Kubernetes
+## cluster. It has no login. Reach it with kubectl port-forward.
 ##
 fleetManager:
   ## Set to true to install the fleet manager
@@ -70,7 +70,8 @@ fleetManager:
       cpu: 50m
       memory: 256Mi
 
-  ## Settings that the fleet manager starts with.
+  ## Reserved for the settings of the fleet manager. This release does not
+  ## read them.
   ##
   settings:
     kubernetesClusterName: ""
