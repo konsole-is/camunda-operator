@@ -359,6 +359,21 @@ func TestSimulatorRefusesAStepThatChangesTheOutcomeOfAFinishedJob(t *testing.T) 
 	)
 }
 
+func TestSimulatorLeavesAJobWithAParallelismOfZero(t *testing.T) {
+	job := backupJob()
+	job.Spec.Parallelism = new(int32(0))
+	c := fakeClient(t, job)
+	sim := newSimulator(c)
+	sim.watch("team-a")
+
+	writes, err := sim.pass(context.Background())
+	require.NoError(t, err)
+
+	assert.Zero(t, writes)
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(job), job))
+	assert.Empty(t, finishedOutcome(job))
+}
+
 func hasJobCondition(job *batchv1.Job, t batchv1.JobConditionType) bool {
 	for _, c := range job.Status.Conditions {
 		if c.Type == t && c.Status == corev1.ConditionTrue {

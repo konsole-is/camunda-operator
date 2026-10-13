@@ -575,7 +575,8 @@ func (s *simulator) jobs(ctx context.Context, ns string) (int, error) {
 			}
 			continue
 		}
-		if ptr.Deref(job.Spec.Suspend, false) {
+		// A Job with a parallelism of 0 runs no Pod, as a suspended one.
+		if ptr.Deref(job.Spec.Suspend, false) || ptr.Deref(job.Spec.Parallelism, 1) == 0 {
 			continue
 		}
 		n, err := s.runJob(ctx, job, outcome)
