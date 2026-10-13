@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
@@ -193,6 +194,11 @@ var _ = Describe("Environment schema", func() {
 			}, "the environment label is set by the app",
 		),
 		Entry(
+			"refuses the environment label in the required label keys", func(e *fleetv1alpha1.Environment) {
+				e.Spec.NamespaceCreation.RequiredLabelKeys = []string{fleetv1alpha1.LabelEnvironment}
+			}, "the environment label is set by the app",
+		),
+		Entry(
 			"refuses a namespace label whose key is not a label key", func(e *fleetv1alpha1.Environment) {
 				e.Spec.NamespaceCreation.Labels["Team Name"] = "platform"
 			}, "namespaceCreation.labels must have valid label keys",
@@ -295,5 +301,23 @@ var _ = Describe("Environment schema", func() {
 		var got fleetv1alpha1.Environment
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), &got)).To(Succeed())
 		Expect(got.Spec.DeletionPolicy).To(Equal(pluginsv1alpha1.DeletionPolicyDelete))
+	})
+
+	It("keeps a namespace count of zero in the status", func() {
+		obj := validEnvironment()
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+
+		obj.Status.Namespaces = ptr.To[int32](0)
+		Expect(k8sClient.Status().Update(ctx, obj)).To(Succeed())
+
+		got := &unstructured.Unstructured{}
+		got.SetGroupVersionKind(fleetv1alpha1.GroupVersion.WithKind("Environment"))
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), got)).To(Succeed())
+
+		count, found, err := unstructured.NestedInt64(got.Object, "status", "namespaces")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(found).To(BeTrue(), "status.namespaces is missing")
+		Expect(count).To(BeZero())
 	})
 })

@@ -121,6 +121,7 @@ type EnvironmentReleases struct {
 // a namespace in an environment. The create flow always sets the label
 // fleet.camunda.io/environment on the new namespace.
 // +kubebuilder:validation:XValidation:rule="!has(self.labels) || !('fleet.camunda.io/environment' in self.labels)",message="the environment label is set by the app"
+// +kubebuilder:validation:XValidation:rule="!has(self.requiredLabelKeys) || !('fleet.camunda.io/environment' in self.requiredLabelKeys)",message="the environment label is set by the app"
 type NamespaceCreation struct {
 	// Allowed lets the create flow create a namespace in the environment.
 	// +optional
@@ -134,7 +135,8 @@ type NamespaceCreation struct {
 	Labels map[string]LabelValue `json:"labels,omitempty"`
 	// RequiredLabelKeys are label keys, for example team. The create flow
 	// asks for a value of each key and sets the label on the new namespace.
-	// Each key is a valid label key.
+	// Each key is a valid label key. The key fleet.camunda.io/environment is
+	// not allowed here.
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=16
 	// +kubebuilder:validation:items:MaxLength=317
@@ -166,7 +168,7 @@ type EnvironmentStatus struct {
 	// Namespaces is the number of namespaces that carry the label of this
 	// environment.
 	// +optional
-	Namespaces int32 `json:"namespaces,omitempty"`
+	Namespaces *int32 `json:"namespaces,omitempty"`
 }
 
 // +kubebuilder:object:root=true
