@@ -63,7 +63,7 @@ const (
 //     scenarioNode in place of the host.
 //  2. The UID of each object comes from scenarioUID. Each occurrence of a
 //     real UID anywhere in objs, such as an owner reference or the name of
-//     a field manager, becomes the UID of the object that holds it.
+//     a field manager, becomes the scenario UID of the object that it names.
 //  3. metadata.resourceVersion is removed, and so is the resource version
 //     of the object that an Event is about.
 //  4. Each RFC 3339 string becomes scenarioTime, in the layout of the
@@ -73,8 +73,8 @@ const (
 //     subresource.
 //  7. metadata.generation becomes 1, and so does each observedGeneration in
 //     status that equals the generation. One that is behind stays.
-//  8. The cluster IP of a v1 Service comes from its namespace and name. The
-//     API server picks a free IP at random.
+//  8. Each v1 Service with a cluster IP gets an IP of 10.0.0.0/24, the
+//     Service range of envtest. The API server picks a free IP at random.
 //  9. The objects are sorted by apiVersion, kind, namespace, and name.
 func normalize(objs []unstructured.Unstructured) ([]unstructured.Unstructured, error) {
 	objs = normalizeEvents(objs)
@@ -86,9 +86,14 @@ func normalize(objs []unstructured.Unstructured) ([]unstructured.Unstructured, e
 		}
 	}
 
+	ips, err := serviceIPs(objs)
+	if err != nil {
+		return nil, err
+	}
+
 	out := make([]unstructured.Unstructured, 0, len(objs))
 	for i := range objs {
-		obj, err := normalizeObject(objs[i].DeepCopy(), uids)
+		obj, err := normalizeObject(objs[i].DeepCopy(), uids, ips)
 		if err != nil {
 			return nil, fmt.Errorf("normalizing %s: %w", describe(&objs[i]), err)
 		}
@@ -174,9 +179,42 @@ func isEvent(obj *unstructured.Unstructured) bool {
 	return obj.GetAPIVersion() == eventAPIVersion && obj.GetKind() == kindEvent
 }
 
+// serviceIPs returns the scenario IP of each v1 Service of objs that has a
+// cluster IP, keyed by namespace and name. It fails when objs holds more
+// Services than the range has free IPs.
+func serviceIPs(objs []unstructured.Unstructured) (map[string]string, error) {
+	var keys []string
+	for i := range objs {
+		isService := objs[i].GetAPIVersion() == "v1" && objs[i].GetKind() == "Service"
+		ip, _, _ := unstructured.NestedString(objs[i].Object, "spec", "clusterIP")
+		if isService && ip != "" && ip != corev1.ClusterIPNone {
+			keys = append(keys, objs[i].GetNamespace()+"/"+objs[i].GetName())
+		}
+	}
+	slices.Sort(keys)
+
+	// The API server of envtest serves its own Service at 10.0.0.1.
+	const first, last = 10, 254
+	if len(keys) > last-first+1 {
+		return nil, fmt.Errorf(
+			"%d Services have a cluster IP, and 10.0.0.0/24 has room for %d", len(keys), last-first+1,
+		)
+	}
+	ips := make(map[string]string, len(keys))
+	for i, key := range keys {
+		ips[key] = fmt.Sprintf("10.0.0.%d", first+i)
+	}
+	return ips, nil
+}
+
 // normalizeObject applies rules 2 to 8 of normalize to obj, a copy that it
-// may change. uids maps each real UID to its scenario UID.
-func normalizeObject(obj *unstructured.Unstructured, uids map[string]string) (*unstructured.Unstructured, error) {
+// may change. uids maps each real UID to its scenario UID, and ips maps the
+// namespace and name of each Service with a cluster IP to its scenario IP.
+func normalizeObject(
+	obj *unstructured.Unstructured,
+	uids map[string]string,
+	ips map[string]string,
+) (*unstructured.Unstructured, error) {
 	unstructured.RemoveNestedField(obj.Object, "metadata", "resourceVersion")
 
 	if obj.GetAPIVersion() == "v1" && obj.GetKind() == "Secret" {
@@ -188,7 +226,10 @@ func normalizeObject(obj *unstructured.Unstructured, uids map[string]string) (*u
 	}
 
 	if obj.GetAPIVersion() == "v1" && obj.GetKind() == "Service" {
-		setClusterIP(obj)
+		if ip, ok := ips[obj.GetNamespace()+"/"+obj.GetName()]; ok {
+			_ = unstructured.SetNestedField(obj.Object, ip, "spec", "clusterIP")
+			_ = unstructured.SetNestedStringSlice(obj.Object, []string{ip}, "spec", "clusterIPs")
+		}
 	}
 
 	fields := obj.GetManagedFields()
@@ -223,21 +264,6 @@ func normalizeObject(obj *unstructured.Unstructured, uids map[string]string) (*u
 	fixTimes(out.Object)
 
 	return out, nil
-}
-
-// setClusterIP sets the cluster IP of the Service obj to an IP of
-// 10.96.0.0/16 that comes from its namespace and name. A headless Service
-// keeps None.
-func setClusterIP(obj *unstructured.Unstructured) {
-	ip, _, _ := unstructured.NestedString(obj.Object, "spec", "clusterIP")
-	if ip == "" || ip == corev1.ClusterIPNone {
-		return
-	}
-
-	sum := sha256.Sum256([]byte(obj.GetNamespace() + "/" + obj.GetName()))
-	ip = fmt.Sprintf("10.96.%d.%d", sum[0], max(sum[1], 1))
-	_ = unstructured.SetNestedField(obj.Object, ip, "spec", "clusterIP")
-	_ = unstructured.SetNestedStringSlice(obj.Object, []string{ip}, "spec", "clusterIPs")
 }
 
 // setObservedGeneration sets each observedGeneration under v that equals

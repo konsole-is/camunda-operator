@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -211,22 +212,37 @@ func TestNormalizeKeepsAnObservedGenerationThatIsBehind(t *testing.T) {
 	assert.Equal(t, int64(3), observed)
 }
 
-func TestNormalizeGivesAServiceAClusterIPFromItsName(t *testing.T) {
-	run := func(ip string) unstructured.Unstructured {
-		svc := object("v1", "Service", "team-a", "orders-gateway", "u")
+func TestNormalizeGivesEachServiceAClusterIPOfTheEnvtestRange(t *testing.T) {
+	service := func(name, ip string) unstructured.Unstructured {
+		svc := object("v1", "Service", "team-a", name, name)
 		svc.Object["spec"] = map[string]any{"clusterIP": ip, "clusterIPs": []any{ip}}
-		headless := object("v1", "Service", "team-a", "orders-zeebe", "u2")
-		headless.Object["spec"] = map[string]any{"clusterIP": "None", "clusterIPs": []any{"None"}}
-
-		out, err := normalize([]unstructured.Unstructured{svc, headless})
+		return svc
+	}
+	run := func(gatewayIP, connectorsIP string) []unstructured.Unstructured {
+		out, err := normalize([]unstructured.Unstructured{
+			service("orders-gateway", gatewayIP),
+			service("orders-connectors", connectorsIP),
+			service("orders-zeebe", "None"),
+		})
 		require.NoError(t, err)
-		headless = find(t, out, "Service", "team-a", "orders-zeebe")
-		ip, _, _ = unstructured.NestedString(headless.Object, "spec", "clusterIP")
-		assert.Equal(t, "None", ip, "a headless Service keeps None")
-		return find(t, out, "Service", "team-a", "orders-gateway")
+		return out
 	}
 
-	assert.Equal(t, run("10.0.0.42"), run("10.0.0.250"))
+	first := run("10.0.0.42", "10.0.0.7")
+	assert.Equal(t, first, run("10.0.0.250", "10.0.0.99"), "two runs with other IPs must write the same objects")
+
+	ip := func(name string) string {
+		svc := find(t, first, "Service", "team-a", name)
+		value, _, _ := unstructured.NestedString(svc.Object, "spec", "clusterIP")
+		return value
+	}
+	_, envtestRange, err := net.ParseCIDR("10.0.0.0/24")
+	require.NoError(t, err)
+	for _, name := range []string{"orders-gateway", "orders-connectors"} {
+		assert.True(t, envtestRange.Contains(net.ParseIP(ip(name))), name)
+	}
+	assert.NotEqual(t, ip("orders-gateway"), ip("orders-connectors"))
+	assert.Equal(t, "None", ip("orders-zeebe"), "a headless Service keeps None")
 }
 
 func TestNormalizeSortsTheObjects(t *testing.T) {

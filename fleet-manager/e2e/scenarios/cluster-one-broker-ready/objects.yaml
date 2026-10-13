@@ -5803,9 +5803,9 @@ metadata:
     uid: 62b3fc18-8353-5cc6-9ad3-45fcbde92b43
   uid: f4ad1994-a7fd-59b2-bbfb-703f3a03f2d4
 spec:
-  clusterIP: 10.96.251.201
+  clusterIP: 10.0.0.10
   clusterIPs:
-  - 10.96.251.201
+  - 10.0.0.10
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
@@ -5877,9 +5877,9 @@ metadata:
     uid: 62b3fc18-8353-5cc6-9ad3-45fcbde92b43
   uid: 93d073b3-1c45-531d-b3f7-e261df65870c
 spec:
-  clusterIP: 10.96.58.64
+  clusterIP: 10.0.0.11
   clusterIPs:
-  - 10.96.58.64
+  - 10.0.0.11
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
