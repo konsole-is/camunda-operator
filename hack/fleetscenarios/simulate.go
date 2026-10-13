@@ -500,6 +500,9 @@ func deploymentStatus(d *appsv1.Deployment, rsName string, replicas, ready int32
 	if rolling := d.Spec.Strategy.RollingUpdate; rolling != nil && rolling.MaxUnavailable != nil {
 		maxUnavailable = *rolling.MaxUnavailable
 	}
+	if d.Spec.Strategy.Type == appsv1.RecreateDeploymentStrategyType {
+		maxUnavailable = intstr.FromInt32(0)
+	}
 	unavailable, err := intstr.GetScaledValueFromIntOrPercent(&maxUnavailable, int(replicas), false)
 	if err != nil {
 		unavailable = 0

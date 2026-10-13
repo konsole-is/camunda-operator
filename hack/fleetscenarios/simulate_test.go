@@ -220,6 +220,26 @@ func TestSimulatorMakesADeploymentReadyThroughAReplicaSet(t *testing.T) {
 	assert.Zero(t, writes, "a second pass over a ready Deployment writes nothing")
 }
 
+func TestSimulatorReportsARecreateDeploymentWithAnUnreadyPodAsUnavailable(t *testing.T) {
+	d := webapp()
+	d.Spec.Replicas = new(int32(4))
+	d.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
+	c := fakeClient(t, d)
+	sim := newSimulator(c)
+	sim.watch("team-a")
+	sim.add([]workloadStep{{
+		Kind: kindDeployment, Namespace: "team-a", Name: "optimize", ReadyReplicas: new(int32(3)),
+	}})
+
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err)
+
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(d), d))
+	available := d.Status.Conditions[0]
+	assert.Equal(t, appsv1.DeploymentAvailable, available.Type)
+	assert.Equal(t, corev1.ConditionFalse, available.Status, "a Recreate Deployment allows no unavailable Pod")
+}
+
 func TestSimulatorReplacesThePodsOfAnOldTemplate(t *testing.T) {
 	c := fakeClient(t, brokers())
 	sim := newSimulator(c)
