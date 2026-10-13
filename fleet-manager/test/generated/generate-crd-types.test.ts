@@ -151,6 +151,54 @@ describe("renderCrdTypes", { timeout: 60_000 }, () => {
     expect(result[`${dir}/values.ts`]).toEqual([]);
   });
 
+  it("lets a field with x-kubernetes-preserve-unknown-fields and no type take any JSON value", async () => {
+    const file = await renderCrdTypes(
+      widgetCrd({
+        spec: {
+          type: "object",
+          properties: {
+            value: { "x-kubernetes-preserve-unknown-fields": true },
+          },
+        },
+      }),
+      "widgets.yaml",
+    );
+
+    const values = { text: "arn", number: 1, list: [1, "two"], object: {} };
+    const result = typeCheck({
+      [`${dir}/widget.ts`]: file.source,
+      ...Object.fromEntries(
+        Object.entries(values).map(([name, value]) => [
+          `${dir}/${name}.ts`,
+          probe("Widget", { ...widget, spec: { value } }),
+        ]),
+      ),
+    });
+    for (const name of Object.keys(values)) {
+      expect(result[`${dir}/${name}.ts`]).toEqual([]);
+    }
+  });
+
+  it("types a list with maxItems as an array, so a string[] fits", async () => {
+    const file = await renderCrdTypes(
+      widgetCrd({
+        spec: {
+          type: "object",
+          properties: {
+            keys: { type: "array", maxItems: 4, items: { type: "string" } },
+          },
+        },
+      }),
+      "widgets.yaml",
+    );
+
+    const result = typeCheck({
+      [`${dir}/widget.ts`]: file.source,
+      [`${dir}/keys.ts`]: `import type { WidgetSpec } from "./widget";\nconst keys: string[] = ["a"];\nexport const spec: WidgetSpec = { keys };\n`,
+    });
+    expect(result[`${dir}/keys.ts`]).toEqual([]);
+  });
+
   it("ignores a version that is not served", async () => {
     const schema: { openAPIV3Schema: JSONSchema } = {
       openAPIV3Schema: { type: "object", properties: { spec } },
