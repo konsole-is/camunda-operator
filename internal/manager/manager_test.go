@@ -35,10 +35,10 @@ import (
 )
 
 // Each kind below is a kind of this operator, or a kind that the manager
-// reads, watches, or applies through typed objects. A kind the scheme does not recognize fails at runtime only, on a
-// Kubernetes cluster that serves it. The envtest suites register into the
-// global client-go scheme, which knows the built-in kinds already, so a
-// missing built-in kind passes every suite.
+// reads, watches, or applies through typed objects. A kind the scheme does not
+// recognize fails at runtime only, on a Kubernetes cluster that serves it. The
+// envtest suites register into the global client-go scheme, which knows the
+// built-in kinds already, so a missing built-in kind passes every suite.
 func TestSchemeRecognizesEveryKindTheManagerReconciles(t *testing.T) {
 	t.Parallel()
 

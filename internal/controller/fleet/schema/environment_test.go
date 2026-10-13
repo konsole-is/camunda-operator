@@ -23,6 +23,8 @@ import (
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -83,6 +85,21 @@ func setPolicy(e *fleetv1alpha1.Environment, p fleetv1alpha1.ParameterPolicy) {
 
 func setSection(e *fleetv1alpha1.Environment, s fleetv1alpha1.SectionPolicy) {
 	e.Spec.Sections["backup-storage"] = s
+}
+
+// unstructuredEnvironment returns validEnvironment with value at path. The
+// typed client drops an empty list under omitempty, so a spec that sends
+// allowed: [] must go through an unstructured object.
+func unstructuredEnvironment(value map[string]any, path ...string) *unstructured.Unstructured {
+	typed := validEnvironment()
+	content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(typed)
+	Expect(err).NotTo(HaveOccurred())
+
+	obj := &unstructured.Unstructured{Object: content}
+	obj.SetGroupVersionKind(fleetv1alpha1.GroupVersion.WithKind("Environment"))
+	Expect(unstructured.SetNestedField(obj.Object, value, path...)).To(Succeed())
+
+	return obj
 }
 
 var _ = Describe("Environment schema", func() {
@@ -241,6 +258,32 @@ var _ = Describe("Environment schema", func() {
 			"refuses a deletion policy outside Delete and Orphan", func(e *fleetv1alpha1.Environment) {
 				e.Spec.DeletionPolicy = "Retain"
 			}, "spec.deletionPolicy",
+		),
+	)
+
+	DescribeTable(
+		"admission of an explicit empty allowed list",
+		func(value map[string]any, path []string, wantErr string) {
+			obj := unstructuredEnvironment(value, path...)
+			err := k8sClient.Create(ctx, obj)
+			if wantErr == "" {
+				Expect(err).NotTo(HaveOccurred())
+				DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+			} else {
+				Expect(err).To(MatchError(ContainSubstring(wantErr)))
+			}
+		},
+		Entry(
+			"admits a parameter policy with an empty allowed list and without claimEditable",
+			map[string]any{"value": int64(3), "allowed": []any{}},
+			[]string{"spec", "parameters", "aws-connectors", "policies"},
+			"",
+		),
+		Entry(
+			"refuses a required section with an empty allowed list",
+			map[string]any{"required": true, "allowed": []any{}},
+			[]string{"spec", "sections", "backup-storage"},
+			"required needs at least one registration in allowed",
 		),
 	)
 
