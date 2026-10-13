@@ -21,10 +21,6 @@ package v1alpha1
 // PrerequisiteNotMet or OperationPending, so this group has no reason of its
 // own for waiting.
 const (
-	// ConditionRequestsReady reports whether every PluginRequest of a claim
-	// that fills a slot has its outputs. Its reasons come from ocf.
-	ConditionRequestsReady = "RequestsReady"
-
 	// ReasonNoEnvironment means that the namespace of a claim has no
 	// environment label while at least one Environment exists.
 	ReasonNoEnvironment = "NoEnvironment"
