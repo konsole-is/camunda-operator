@@ -37,13 +37,14 @@ func TestEndpointsRouteEveryPathToTheWebapp(t *testing.T) {
 	o := &v1.CamundaOptimize{}
 	o.Name = "my-optimize"
 
-	assert.Equal(t, []v1.Endpoint{{
+	want := []v1.Endpoint{{
 		Name:       "optimize",
 		Service:    "my-optimize-webapp",
 		Port:       8090,
 		PathPrefix: "/",
 		Protocol:   v1.EndpointProtocolHTTP,
-	}}, Endpoints(o))
+	}}
+	assert.Equal(t, want, Endpoints(o))
 }
 
 // A long name truncates in the Service name. The route must name the Service
