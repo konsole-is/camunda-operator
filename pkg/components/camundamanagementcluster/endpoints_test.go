@@ -147,8 +147,8 @@ func TestEndpointsOfEveryPlane(t *testing.T) {
 	}
 }
 
-// An app serves under the path of its URL, without a trailing slash, so the
-// route matches that path and nothing else.
+// An app serves under the path of its URL, without a trailing slash or a
+// query.
 func TestEndpointsTakeThePathTheAppServesUnder(t *testing.T) {
 	t.Parallel()
 

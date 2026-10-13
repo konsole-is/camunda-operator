@@ -24,6 +24,8 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
+const identityPathURL = "https://camunda.example.com/identity"
+
 // expectEndpoints polls until the published management cluster satisfies
 // match.
 func expectEndpoints(mc *v1.CamundaManagementCluster, match func(Gomega, *v1.CamundaManagementCluster)) {
@@ -36,7 +38,7 @@ func expectEndpoints(mc *v1.CamundaManagementCluster, match func(Gomega, *v1.Cam
 var _ = Describe("CamundaManagementCluster endpoints", func() {
 	It("publishes the routes of a new plane in the keycloak mode", func() {
 		s := newScenario(withManagedKeycloak, func(f *fixture) {
-			f.mc.Spec.Identity.ExternalURL = "https://camunda.example.com/identity"
+			f.mc.Spec.Identity.ExternalURL = identityPathURL
 		})
 		http := v1.EndpointProtocolHTTP
 
@@ -95,6 +97,58 @@ var _ = Describe("CamundaManagementCluster endpoints", func() {
 		expectEndpoints(s.mc, func(g Gomega, latest *v1.CamundaManagementCluster) {
 			identity := conditionOf(g, latest, v1.ConditionIdentityReady)
 			g.Expect(identity.Reason).To(BeElementOf(string(component.Suspending), string(component.Suspended)))
+			g.Expect(latest.Status.Endpoints).To(Equal(before))
+		})
+	})
+
+	// The new Identity path would change the identity route, so an unchanged
+	// table shows that the routes are the ones of the last plane that passed
+	// the checks.
+	It("keeps its last routes while a check of the spec fails", func() {
+		s := newScenario(withConsole)
+
+		var before []v1.Endpoint
+		expectEndpoints(s.mc, func(g Gomega, latest *v1.CamundaManagementCluster) {
+			g.Expect(latest.Status.Endpoints).NotTo(BeEmpty())
+			before = latest.Status.Endpoints
+		})
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.Identity.ExternalURL = identityPathURL
+			latest.Spec.Identity.DatabaseConfigRef = "dbc-does-not-exist"
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectEndpoints(s.mc, func(g Gomega, latest *v1.CamundaManagementCluster) {
+			g.Expect(conditionOf(g, latest, v1.ConditionReady).Reason).To(Equal(v1.ReasonInvalidReference))
+			g.Expect(latest.Status.Endpoints).To(Equal(before))
+		})
+	})
+
+	It("keeps its last routes while another plane holds the realm it moves to", func() {
+		holder := newScenario(withExternalKeycloak)
+		expectRealmClaimHolder(externalRealmTarget(), holder.mc)
+
+		s := newScenario(withExternalKeycloak, func(f *fixture) {
+			f.mc.Spec.IdentityProvider.ExternalKeycloak.URL = "https://keycloak-b.example.com/auth"
+		})
+
+		var before []v1.Endpoint
+		expectEndpoints(s.mc, func(g Gomega, latest *v1.CamundaManagementCluster) {
+			g.Expect(latest.Status.Endpoints).NotTo(BeEmpty())
+			before = latest.Status.Endpoints
+		})
+
+		Eventually(func(g Gomega) {
+			latest := readManagementCluster(g, s.mc)
+			latest.Spec.IdentityProvider.ExternalKeycloak.URL = keycloakExternalURL
+			latest.Spec.Identity.ExternalURL = identityPathURL
+			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		expectEndpoints(s.mc, func(g Gomega, latest *v1.CamundaManagementCluster) {
+			g.Expect(conditionOf(g, latest, v1.ConditionReady).Reason).To(Equal(v1.ReasonRealmClaimedElsewhere))
 			g.Expect(latest.Status.Endpoints).To(Equal(before))
 		})
 	})
