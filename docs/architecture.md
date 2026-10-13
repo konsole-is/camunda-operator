@@ -153,7 +153,7 @@ The operator applies the resources that it keeps in shape, such as the workloads
 
 ## The fleet manager
 
-The fleet manager is a web app that the chart installs when `fleetManager.enabled` is `true`, see [Install the fleet manager](fleet-manager/install.md). It runs in the release namespace under its own ServiceAccount. The ClusterRole of that ServiceAccount reads every kind of the operator. It can also write the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets. It cannot write a `CamundaCluster` or a `CamundaManagementCluster`.
+The fleet manager is a web app that the chart installs when `fleetManager.enabled` is `true`, see [Install the fleet manager](fleet-manager/install.md). It runs in the release namespace under its own ServiceAccount. The ClusterRole of that ServiceAccount reads every kind of the operator. It also reads pods, Services, and volume claims. The workloads of a resource carry the labels in [How a feature finds its workloads](#how-a-feature-finds-its-workloads). It can also write the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets. It cannot write a `CamundaCluster` or a `CamundaManagementCluster`.
 
 ## The api module
 
