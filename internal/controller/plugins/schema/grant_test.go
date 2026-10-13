@@ -17,8 +17,6 @@ limitations under the License.
 package schema
 
 import (
-	"strings"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -34,25 +32,26 @@ import (
 var _ = Describe("Grant schema", func() {
 	It("admits a name of 63 characters", func() {
 		grant := newGrant()
-		grant.Name = strings.Repeat("a", 63)
+		grant.Name = nameOfLength(63)
 
-		Expect(createGrant(grant)).To(Succeed())
+		expectAdmission(grant, "")
 	})
 
 	It("refuses a name of 64 characters", func() {
 		grant := newGrant()
-		grant.Name = strings.Repeat("a", 64)
+		grant.Name = nameOfLength(64)
 
-		Expect(createGrant(grant)).To(MatchError(ContainSubstring(
+		expectAdmission(
+			grant,
 			"metadata.name must be at most 63 characters, because it is used as a label value",
-		)))
+		)
 	})
 
 	DescribeTable(
 		"refuses an update of an immutable field",
 		func(change func(*pluginsv1alpha1.Grant), message string) {
 			grant := newGrant()
-			Expect(createGrant(grant)).To(Succeed())
+			expectAdmission(grant, "")
 
 			change(grant)
 
@@ -72,7 +71,7 @@ var _ = Describe("Grant schema", func() {
 
 	It("refuses an update of the format", func() {
 		grant := newGrant()
-		Expect(createGrant(grant)).To(Succeed())
+		expectAdmission(grant, "")
 
 		grant.Spec.Format = "gcp-iam-binding"
 
@@ -101,7 +100,7 @@ var _ = Describe("Grant schema", func() {
 	// change, so the fragment must stay writable.
 	It("admits an update of the fragment", func() {
 		grant := newGrant()
-		Expect(createGrant(grant)).To(Succeed())
+		expectAdmission(grant, "")
 
 		grant.Spec.Fragment = &apiextensionsv1.JSON{
 			Raw: []byte(`{"Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::orders-backups/*"]}`),
@@ -114,10 +113,7 @@ var _ = Describe("Grant schema", func() {
 		grant := newGrant()
 		grant.Spec.Fragment = &apiextensionsv1.JSON{Raw: []byte(`[{"Effect":"Allow"}]`)}
 
-		err := createGrant(grant)
-
-		Expect(err).To(MatchError(ContainSubstring("spec.fragment")))
-		Expect(err).To(MatchError(ContainSubstring("must be of type object")))
+		expectAdmission(grant, "spec.fragment in body must be of type object")
 	})
 })
 
@@ -140,15 +136,4 @@ func newGrant() *pluginsv1alpha1.Grant {
 			},
 		},
 	}
-}
-
-// createGrant creates the grant and deletes it when the spec ends.
-func createGrant(grant *pluginsv1alpha1.Grant) error {
-	if err := k8sClient.Create(ctx, grant); err != nil {
-		return err
-	}
-
-	DeferCleanup(k8sClient.Delete, ctx, grant)
-
-	return nil
 }

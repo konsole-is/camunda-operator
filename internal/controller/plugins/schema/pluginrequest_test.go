@@ -17,8 +17,6 @@ limitations under the License.
 package schema
 
 import (
-	"strings"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -31,25 +29,26 @@ import (
 var _ = Describe("PluginRequest schema", func() {
 	It("admits a name of 63 characters", func() {
 		request := newRequest()
-		request.Name = strings.Repeat("a", 63)
+		request.Name = nameOfLength(63)
 
-		Expect(createRequest(request)).To(Succeed())
+		expectAdmission(request, "")
 	})
 
 	It("refuses a name of 64 characters", func() {
 		request := newRequest()
-		request.Name = strings.Repeat("a", 64)
+		request.Name = nameOfLength(64)
 
-		Expect(createRequest(request)).To(MatchError(ContainSubstring(
+		expectAdmission(
+			request,
 			"metadata.name must be at most 63 characters, because it is used as a label value",
-		)))
+		)
 	})
 
 	DescribeTable(
 		"refuses an update of an immutable field",
 		func(change func(*pluginsv1alpha1.PluginRequest), message string) {
 			request := newRequest()
-			Expect(createRequest(request)).To(Succeed())
+			expectAdmission(request, "")
 
 			change(request)
 
@@ -88,7 +87,7 @@ var _ = Describe("PluginRequest schema", func() {
 		request := newRequest()
 		request.Spec.Target.AdditionalServiceAccounts = []string{"orders-es-es", "orders-pg-postgres"}
 
-		Expect(createRequest(request)).To(Succeed())
+		expectAdmission(request, "")
 	})
 
 	// A reader looks up each name in the namespace of the request, so a
@@ -97,17 +96,14 @@ var _ = Describe("PluginRequest schema", func() {
 		request := newRequest()
 		request.Spec.Target.AdditionalServiceAccounts = []string{"other-team/orders-es-es"}
 
-		err := createRequest(request)
-
-		Expect(err).To(MatchError(ContainSubstring("spec.target.additionalServiceAccounts[0]")))
-		Expect(err).To(MatchError(ContainSubstring("should match")))
+		expectAdmission(request, "spec.target.additionalServiceAccounts[0] in body should match")
 	})
 
 	// The claim controller applies the whole spec again on each reconcile,
 	// so the fields that may change must stay writable.
 	It("admits an update of the inputs, the parameters, and the target ServiceAccount", func() {
 		request := newRequest()
-		Expect(createRequest(request)).To(Succeed())
+		expectAdmission(request, "")
 
 		request.Spec.Inputs = map[string]string{"kmsKeyArn": "arn:aws:kms:eu-west-1:111122223333:key/1"}
 		request.Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(`{"versioning":false}`)}
@@ -118,7 +114,7 @@ var _ = Describe("PluginRequest schema", func() {
 
 	It("defaults the severity of a summary item to Info after a status write", func() {
 		request := newRequest()
-		Expect(createRequest(request)).To(Succeed())
+		expectAdmission(request, "")
 
 		request.Status.Summary = []pluginsv1alpha1.SummaryItem{{Label: "Bucket", Value: "orders-backups"}}
 		Expect(k8sClient.Status().Update(ctx, request)).To(Succeed())
@@ -155,15 +151,4 @@ func newRequest() *pluginsv1alpha1.PluginRequest {
 			DeletionPolicy: pluginsv1alpha1.DeletionPolicyDelete,
 		},
 	}
-}
-
-// createRequest creates the request and deletes it when the spec ends.
-func createRequest(request *pluginsv1alpha1.PluginRequest) error {
-	if err := k8sClient.Create(ctx, request); err != nil {
-		return err
-	}
-
-	DeferCleanup(k8sClient.Delete, ctx, request)
-
-	return nil
 }
