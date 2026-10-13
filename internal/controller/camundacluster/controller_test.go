@@ -1111,8 +1111,6 @@ var _ = Describe("CamundaCluster controller", func() {
 
 	It("applies a patch move and a one-minor move", func() {
 		cluster := createDefaultCluster()
-		zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
-		gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
 		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":" + runningVersion))
 
 		By("moving one patch")
@@ -1127,9 +1125,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.10.0"))
 		}, timeout, interval).Should(Succeed())
 
-		stampStatefulSetReady(zeebeKey)
-		stampDeploymentReady(gatewayKey)
-		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+		expectHealthyOnceWorkloadsAreReady(cluster)
 		Expect(countEvents(Default, cluster, v1.ReasonVersionSkipRefused)).To(BeZero())
 	})
 
