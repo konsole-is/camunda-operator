@@ -69,7 +69,10 @@ export interface FieldDoc {
   anchor: string;
 }
 
-/** FieldDocs holds a FieldDoc by API group, kind, and field path. A path joins the JSON names with dots. An array adds no segment. */
+/**
+ * FieldDocs holds a FieldDoc by API group, kind, and field path. A path joins
+ * the JSON names with dots. An array adds no segment.
+ */
 export type FieldDocs = Record<string, Record<string, Record<string, FieldDoc>>>;
 
 export const fieldDocs: FieldDocs = `
@@ -233,8 +236,7 @@ func walkStruct(
 // encoding/json reads them.
 func jsonFields(t reflect.Type) map[string]reflect.Type {
 	fields := map[string]reflect.Type{}
-	for i := range t.NumField() {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
 		switch {
 		case name == "-":

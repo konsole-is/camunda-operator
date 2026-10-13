@@ -94,8 +94,9 @@ func exampleAPI(t *testing.T) string {
 func set(t *testing.T, out []byte, name string) []string {
 	block := regexp.MustCompile(`(?s)export const ` + name + ` = \[\n(.*?)\] as const;`).FindSubmatch(out)
 	require.NotNil(t, block, "no const array %s in:\n%s", name, out)
-	var types []string
-	for _, m := range regexp.MustCompile(`"([^"]+)"`).FindAllSubmatch(block[1], -1) {
+	matches := regexp.MustCompile(`"([^"]+)"`).FindAllSubmatch(block[1], -1)
+	types := make([]string, 0, len(matches))
+	for _, m := range matches {
 		types = append(types, string(m[1]))
 	}
 	return types

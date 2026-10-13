@@ -7,7 +7,10 @@ export interface FieldDoc {
   anchor: string;
 }
 
-/** FieldDocs holds a FieldDoc by API group, kind, and field path. A path joins the JSON names with dots. An array adds no segment. */
+/**
+ * FieldDocs holds a FieldDoc by API group, kind, and field path. A path joins
+ * the JSON names with dots. An array adds no segment.
+ */
 export type FieldDocs = Record<string, Record<string, Record<string, FieldDoc>>>;
 
 export const fieldDocs: FieldDocs = {

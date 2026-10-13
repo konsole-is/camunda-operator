@@ -101,7 +101,7 @@ func fixtureSchema() *apiextensionsv1.JSONSchemaProps {
 }
 
 func TestWalkDocumentsEachFieldUnderTheTypeThatHoldsIt(t *testing.T) {
-	kind := reflect.TypeOf(fixtureKind{})
+	kind := reflect.TypeFor[fixtureKind]()
 
 	docs, err := walk(kind, fixtureSchema(), kind.PkgPath())
 	require.NoError(t, err)
@@ -119,7 +119,7 @@ func TestWalkDocumentsEachFieldUnderTheTypeThatHoldsIt(t *testing.T) {
 }
 
 func TestWalkRefusesAFieldThatTheGoTypeDoesNotHave(t *testing.T) {
-	kind := reflect.TypeOf(fixtureKind{})
+	kind := reflect.TypeFor[fixtureKind]()
 	schema := fixtureSchema()
 	schema.Properties["spec"].Properties["colour"] = leaf("A field that only the CRD has.")
 
