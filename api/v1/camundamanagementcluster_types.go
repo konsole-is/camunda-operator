@@ -141,6 +141,25 @@ const (
 	ReasonInvalidCABundle = "InvalidCABundle"
 )
 
+// The names of the entries of status.endpoints of a
+// CamundaManagementCluster.
+const (
+	// EndpointKeycloak routes the Keycloak that the operator runs, under
+	// /auth. It is present only in the keycloak mode.
+	EndpointKeycloak = "keycloak"
+	// EndpointIdentity routes Management Identity.
+	EndpointIdentity = "identity"
+	// EndpointConsole routes Console. It is present only while console is
+	// set.
+	EndpointConsole = "console"
+	// EndpointWebModeler routes the Web Modeler application and its API. It
+	// is present only while webModeler is set.
+	EndpointWebModeler = "web-modeler"
+	// EndpointWebModelerWebsockets routes the live updates of Web Modeler. It
+	// is present only while webModeler is set.
+	EndpointWebModelerWebsockets = "web-modeler-websockets"
+)
+
 // CamundaManagementClusterSpec describes one management plane: Management
 // Identity, its identity provider, and, when set, Console and Web Modeler.
 // +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) ? has(self.identity.admin.claimName) : has(self.identity.admin.username)",message="identity.admin: set claimName and claimValue in oidc mode, username in the keycloak modes"
@@ -458,6 +477,19 @@ type CamundaManagementClusterStatus struct {
 	// managementAuthRef.
 	// +optional
 	ManagementAuthConfig string `json:"managementAuthConfig,omitempty"`
+	// Endpoints lists the routes of this management plane, sorted by name:
+	// each path on an external URL, with the Service and the port that
+	// serve it. The path of an entry is the path of the external URL of its
+	// app, or / for a URL without a path, and the entry belongs to the host
+	// of that URL. keycloak is present in the keycloak mode, console while
+	// console is set, and web-modeler and web-modeler-websockets while
+	// webModeler is set. The longest matching path prefix wins. The entries
+	// stay while the management plane is suspended, because the Services
+	// stay.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
 	// Clusters lists every CamundaCluster that clusterSelector matched, and
 	// shows whether the management plane serves it.
 	// +listType=map
