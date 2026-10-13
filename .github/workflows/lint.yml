@@ -84,6 +84,19 @@ jobs:
           git add --intent-to-add fleet-manager/src/generated
           git diff --exit-code -- fleet-manager/src/generated
 
+      # The files beside each scenario.yaml under fleet-manager/e2e/scenarios
+      # are what the reconcilers write on envtest. A change to a reconciler
+      # that changes what it writes must regenerate them in the same change.
+      - name: Check that the page scenarios are generated
+        run: |
+          make fleet-scenarios
+          if [ -n "$(git status --porcelain -- fleet-manager/e2e/scenarios)" ]; then
+            git status --porcelain -- fleet-manager/e2e/scenarios
+            git diff -- fleet-manager/e2e/scenarios
+            echo "::error::The page scenarios are out of date. Run make fleet-scenarios and commit the result."
+            exit 1
+          fi
+
       - name: Check the docs against the simple-english rules
         run: make docs-sentences
 

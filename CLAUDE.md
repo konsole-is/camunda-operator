@@ -140,11 +140,15 @@ make fleet-test             # fleet-manager/ only: vitest
 make fleet-build            # fleet-manager/ only: next build
 make fleet-generate         # then `git status --porcelain fleet-manager/src/generated` prints nothing
 make fleet-gallery          # fleet-manager/ only: screenshots of each gallery story into fleet-manager/ui-gallery, axe check
+make fleet-scenarios        # then `git status --porcelain fleet-manager/e2e/scenarios` prints nothing; needs make setup-envtest
 ```
 
 Run the `fleet-*` gates when a change touches `fleet-manager/`. Run `make fleet-generate` also
 when a change touches a CRD or a condition type of `api/`. They need the Node.js
 of `fleet-manager/.node-version`, which `.tool-versions` pins too. pnpm refuses any other version.
+
+Run `make fleet-scenarios` for every change, not only a change under `fleet-manager/`. A change
+to any reconciler can change a scenario. It needs Go and envtest, not Node.js.
 
 Two traps that cost time before:
 

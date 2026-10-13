@@ -5,3 +5,8 @@ test/fixtures/
 src/generated/
 # Helm templates are not YAML until Helm renders them.
 deploy/chart/
+# Written by make fleet-scenarios. scenario.yaml and observe.yaml are
+# written by hand.
+e2e/scenarios/*/*.yaml
+!e2e/scenarios/*/scenario.yaml
+!e2e/scenarios/*/observe.yaml

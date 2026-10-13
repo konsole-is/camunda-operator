@@ -7,7 +7,8 @@ repository: architecture, project rules, and the skills to load before you write
 
 **Single-group layout (default):**
 ```
-cmd/main.go                    Manager entry (registers controllers/webhooks)
+cmd/main.go                    Manager entry (flags, manager, webhooks)
+internal/reconcilers/*         Setup registers every reconciler; cmd/main.go and hack/fleetscenarios call it
 api/go.mod                     The api module; consumers import it without the operator's dependencies
 api/<version>/*_types.go       CRD schemas (+kubebuilder markers)
 api/<version>/zz_generated.*   Auto-generated (DO NOT EDIT)
@@ -88,6 +89,14 @@ Do NOT delete `// +kubebuilder:scaffold:*` comments. CLI injects code at these m
 
 ### Keep Project Structure
 Do not move files around. The CLI expects files in specific locations.
+
+### Register a Reconciler in internal/reconcilers
+`internal/reconcilers.Setup` registers every reconciler. `cmd/main.go` and
+`hack/fleetscenarios` call it, so the page scenarios of the fleet manager run
+every reconciler that the manager runs. `kubebuilder create api --controller=true`
+writes the setup of a new controller at the `+kubebuilder:scaffold:builder`
+marker of `cmd/main.go`. Move that block into `Setup` and keep the marker. The
+controller name (the argument of `Named`) is the name of the package directory.
 
 ### Always Use CLI Commands
 Always use `kubebuilder create api` and `kubebuilder create webhook` to scaffold. Do NOT create files manually.

@@ -1,0 +1,156 @@
+schemaVersion: 1
+description: >-
+  The CamundaCluster of config/samples, applied with kubectl, with every
+  workload ready. The cluster has no backup storage and no ServiceMonitor,
+  because envtest cannot reach a bucket and does not serve the
+  ServiceMonitor kind. It has no zeebe block, so the brokers take their
+  count, resources, and Java options from the medium preset. The memory
+  request of 8Gi in the sample is above the limit of 4Gi of the preset,
+  and the API server refuses that StatefulSet.
+seed:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: team-a
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: oidc-credentials
+      namespace: camunda-system
+    stringData:
+      client-secret: scenario
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: camunda-license
+      namespace: camunda-system
+    stringData:
+      license-key: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaPlatformConfig
+    metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
+      name: camundaplatformconfig-sample
+    spec:
+      auth:
+        method: oidc
+        oidc:
+          issuerUrl: "https://login.example.com/realms/camunda"
+          clientId: "camunda-orchestration"
+          audience: "camunda-orchestration"
+          clientSecretRef:
+            name: "oidc-credentials"
+            namespace: "camunda-system"
+            key: "client-secret"
+      licenseSecretRef:
+        name: "camunda-license"
+        namespace: "camunda-system"
+        key: "license-key"
+      images:
+        camunda: "registry.example.com/camunda/camunda"
+        optimize: "registry.example.com/camunda/optimize"
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaClusterPreset
+    metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
+      name: medium
+    spec:
+      cluster:
+        podLabels:
+          company.com/team: "automation-ops"
+        podAnnotations:
+          company.com/cluster-preset: "medium"
+        zeebe:
+          replicas: 3
+          partitions: 3
+          replicationFactor: 3
+          resources:
+            requests: { cpu: "1", memory: "2Gi" }
+            limits: { cpu: "2", memory: "4Gi" }
+          storageClassName: "ssd"
+          storageSize: "32Gi"
+          extraEnv:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
+        gateway:
+          mode: Standalone
+          replicas: 2
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+        operate:
+          mode: Embedded
+        tasklist:
+          mode: Embedded
+        admin:
+          mode: Embedded
+        connectors:
+          enabled: true
+          replicas: 1
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaRelease
+    metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
+      name: camunda-8-9-0
+    spec:
+      version: "8.9.0"
+      connectors:
+        version: "8.9.7"
+      elasticsearch:
+        version: "9.2.4"
+      databaseServer:
+        version: "17"
+      extraEnv:
+        - name: CAMUNDA_FEATURE_FLAG
+          value: "true"
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: camundacluster-sample-storage-credentials
+      namespace: team-a
+    stringData:
+      username: camunda
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: SecondaryStorageConfig
+    metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
+      name: camundacluster-sample-storage
+      namespace: team-a
+    spec:
+      type: elasticsearch
+      elasticsearch:
+        endpoint: "https://elasticsearchcluster-sample-es-http:9200"
+        credentialsSecretRef:
+          name: camundacluster-sample-storage-credentials
+          usernameKey: username
+          passwordKey: password
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaCluster
+    metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
+      name: camundacluster-sample
+      namespace: team-a
+    spec:
+      platformConfigRef: camundaplatformconfig-sample
+      presetRef: medium
+      releaseRef: camunda-8-9-0
+      externalUrl: "https://my-cluster.camunda.example.com"
+      serviceAccount:
+        annotations:
+          eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
+      connectors:
+        enabled: true
+      storageRef: camundacluster-sample-storage
+      suspend: false
