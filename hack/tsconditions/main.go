@@ -86,12 +86,12 @@ func main() {
 
 	raw, err := generate(*apiDir)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "tsconditions:", err)
 		os.Exit(1)
 	}
 
 	if err := os.WriteFile(*out, raw, 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "writing the condition types: %v\n", err)
+		fmt.Fprintf(os.Stderr, "tsconditions: writing the condition types: %v\n", err)
 		os.Exit(1)
 	}
 }
