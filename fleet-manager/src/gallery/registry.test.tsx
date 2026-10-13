@@ -52,6 +52,7 @@ describe("the gallery stories", () => {
       "Logo",
       "TopNav",
       "SetupNav",
+      "SetupBreadcrumb",
       "AppShell",
     ]) {
       expect(components).toContain(name);

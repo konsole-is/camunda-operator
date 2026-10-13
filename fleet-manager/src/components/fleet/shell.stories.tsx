@@ -27,6 +27,18 @@ export const shellStories: Story[] = [
     render: () => <SetupNav pathname="/setup/presets" />,
   },
   {
+    component: "SetupBreadcrumb",
+    name: "Detail page",
+    render: () => <SetupBreadcrumb pathname="/setup/presets/gold" />,
+  },
+  {
+    component: "SetupBreadcrumb",
+    name: "Long name",
+    render: () => (
+      <SetupBreadcrumb pathname="/setup/releases/camunda-8-9-long-term-support-with-extended-security-patches-eu-north-1" />
+    ),
+  },
+  {
     component: "AppShell",
     name: "Fleet page",
     render: () => <AppShell pathname="/fleet">{heading("Fleet")}</AppShell>,
