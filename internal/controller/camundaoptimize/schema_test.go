@@ -156,6 +156,23 @@ var _ = Describe("CamundaOptimize schema", func() {
 		)
 	})
 
+	It("accepts an externalUrl with a port and no path", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "http://optimize.example.com:8080"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, optimize) })
+	})
+
+	It("rejects an externalUrl with a path", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = "https://camunda.example.com/optimize"
+
+		Expect(k8sClient.Create(ctx, optimize)).To(
+			MatchError(ContainSubstring("externalUrl must carry no path")),
+		)
+	})
+
 	It("rejects an externalUrl with a query or a fragment", func() {
 		for _, url := range []string{
 			"https://optimize.example.com?tenant=a",

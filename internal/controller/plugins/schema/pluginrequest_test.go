@@ -99,6 +99,20 @@ var _ = Describe("PluginRequest schema", func() {
 		expectAdmission(request, "spec.target.additionalServiceAccounts[0] in body should match")
 	})
 
+	It("admits a ServiceAccount name in target.serviceAccountName", func() {
+		request := newRequest()
+		request.Spec.Target.ServiceAccountName = "orders.camunda"
+
+		expectAdmission(request, "")
+	})
+
+	It("refuses a name with a namespace in target.serviceAccountName", func() {
+		request := newRequest()
+		request.Spec.Target.ServiceAccountName = "other-team/orders"
+
+		expectAdmission(request, "spec.target.serviceAccountName in body should match")
+	})
+
 	// The claim controller applies the whole spec again on each reconcile,
 	// so the fields that may change must stay writable.
 	It("admits an update of the inputs, the parameters, the target ServiceAccount, and the deletion policy", func() {

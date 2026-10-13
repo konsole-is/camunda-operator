@@ -141,7 +141,7 @@ Optimize reads tenants and users from `spec.baseUrl` of the contract. That URL i
 
 After a person signs in, the identity provider sends the browser back to Optimize. The provider accepts only the callback URLs that its Optimize client lists.
 
-- In the two Keycloak modes of a [CamundaManagementCluster](camundamanagementcluster.md), set `spec.externalUrl` to the URL of this Optimize in a browser. The management plane registers the callback for you. See [Optimize](camundamanagementcluster.md#optimize) on that page.
+- In the two Keycloak modes of a [CamundaManagementCluster](camundamanagementcluster.md), set `spec.externalUrl` to the URL of this Optimize in a browser. The operator serves Optimize at the root of its own host, so the URL has no path. The management plane registers the callback for you. See [Optimize](camundamanagementcluster.md#optimize) on that page.
 - In the `oidc` mode, the operator registers nothing, and `spec.externalUrl` has no effect. Add the callback of each Optimize to the Optimize application at your provider. Camunda names the path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
 
 ```yaml
@@ -300,7 +300,7 @@ A `CamundaOptimize` that never held the cluster removes nothing from it.
 status:
   endpoints:
   - name: optimize
-    # Optimize has no context path, so give it a host of its own.
+    # The operator serves Optimize at the root of its own host.
     pathPrefix: /
     port: 8090
     protocol: HTTP
@@ -396,7 +396,7 @@ The API server enforces these at admission:
 
 - `spec.version` must be a full semantic version such as `8.9.0`. A two-segment version is rejected.
 - `spec.managementAuthRef` must not be empty.
-- `spec.externalUrl` must be an `http` or `https` URL with a host. It carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash.
+- `spec.externalUrl` must be an `http` or `https` URL with a host and no path. The operator serves Optimize at the root of its own host, so a URL such as `https://camunda.example.com/optimize` is refused. The URL carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash.
 - `spec.importer.replicas` must be `0` or `1`.
 - `spec.clusterRef` is immutable.
 
