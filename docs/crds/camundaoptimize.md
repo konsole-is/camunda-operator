@@ -160,7 +160,7 @@ A missing callback does not change the status of this resource. The sign-in fail
 
 ## Versions
 
-`spec.version` is the Optimize version, as a full semantic version such as `8.9.0`. Camunda releases Optimize with the minor and the patch of the orchestration cluster, see the [component version matrix](https://docs.camunda.io/docs/reference/supported-environments/#component-version-matrix). Set it to the version of the cluster.
+`spec.version` is the Optimize version, as a full semantic version such as `8.9.0`. Camunda releases Optimize with the minor and the patch of the orchestration cluster. See the [component version matrix](https://docs.camunda.io/docs/reference/supported-environments/#component-version-matrix). Set it to the version of the cluster.
 
 The major and the minor must match the effective version of the cluster. That is `spec.version` of the `CamundaCluster`, or the version of its release. The operator does not refuse a different patch, but Camunda does not support it. A different major or minor reports `VersionMismatch`:
 
