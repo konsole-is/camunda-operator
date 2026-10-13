@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
@@ -247,7 +248,139 @@ func TestRefuseDowngrade(t *testing.T) {
 	}
 }
 
-func TestRecordRefusedDowngrade(t *testing.T) {
+func TestRefuseSkip(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// effective is the version of the preset-merged spec.
+		effective string
+		// storage holds the running version that the guard reads.
+		storage brokerStorage
+		// running and next are what a refusal must name. An empty running
+		// means that the case expects no refusal.
+		running, next string
+	}{
+		{
+			name:      "a two-minor move",
+			effective: "8.11.0",
+			storage:   brokerStorageRunning("8.9.9"),
+			running:   "8.9.9",
+			next:      "8.10",
+		},
+		{
+			name:      "a two-minor move on the volumes of a recreated cluster",
+			effective: "8.11.0",
+			storage: brokerStorage{claims: []corev1.PersistentVolumeClaim{{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{components.BrokerVersionAnnotation: "8.9.9"},
+				},
+			}}},
+			running: "8.9.9",
+			next:    "8.10",
+		},
+		{
+			name:      "a one-minor move",
+			effective: "8.10.0",
+			storage:   brokerStorageRunning("8.9.9"),
+		},
+		{
+			name:      "a patch move",
+			effective: "8.9.10",
+			storage:   brokerStorageRunning("8.9.9"),
+		},
+		{
+			name:      "the applied version is one minor below, whatever the pods run",
+			effective: "8.11.0",
+			storage:   brokerStorageRunning("8.10.0"),
+		},
+		{
+			name:      "no running version before the first apply",
+			effective: "8.11.0",
+			storage:   brokerStorage{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			in := components.Input{
+				Effective: components.NewEffective(v1.CamundaClusterSpec{Version: tt.effective}),
+			}
+
+			failure := refuseSkip(in, tt.storage)
+
+			if tt.running == "" {
+				assert.Nil(t, failure)
+				return
+			}
+
+			require.NotNil(t, failure)
+			assert.Equal(t, v1.ReasonVersionSkipRefused, failure.Reason)
+			assert.Contains(t, failure.Message, tt.effective+" skips a minor: the brokers run "+tt.running)
+			assert.Contains(
+				t, failure.Message, "latest patch of "+tt.next+" first",
+				"the message names the minor to move to first",
+			)
+			assert.NotContains(
+				t, failure.Message, components.AllowVersionDowngradeAnnotation,
+				"no annotation lets a skip through, so the message offers none",
+			)
+		})
+	}
+}
+
+func TestRefuseVersionChange(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		sanctioned string
+		effective  string
+		// want is the reason of the refusal. Empty means no refusal.
+		want string
+	}{
+		{name: "a downgrade", effective: "8.9.8", want: v1.ReasonVersionDowngradeRefused},
+		{name: "a skipped minor", effective: "8.11.0", want: v1.ReasonVersionSkipRefused},
+		{
+			name:       "the downgrade annotation does not let a skip through",
+			sanctioned: "8.11.0",
+			effective:  "8.11.0",
+			want:       v1.ReasonVersionSkipRefused,
+		},
+		{name: "a one-minor move", effective: "8.10.0"},
+		{name: "the running version", effective: "8.9.9"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: "cc", Namespace: "ns"}}
+			if tt.sanctioned != "" {
+				cluster.Annotations = map[string]string{
+					components.AllowVersionDowngradeAnnotation: tt.sanctioned,
+				}
+			}
+			in := components.Input{
+				Effective: components.NewEffective(v1.CamundaClusterSpec{Version: tt.effective}),
+			}
+
+			failure := refuseVersionChange(cluster, in, brokerStorageRunning("8.9.9"))
+
+			if tt.want == "" {
+				assert.Nil(t, failure)
+				return
+			}
+
+			require.NotNil(t, failure)
+			assert.Equal(t, tt.want, failure.Reason)
+		})
+	}
+}
+
+func TestRecordRefusedVersion(t *testing.T) {
 	t.Parallel()
 
 	refused := metav1.Condition{
@@ -271,41 +404,41 @@ func TestRecordRefusedDowngrade(t *testing.T) {
 		{
 			name: "the first refusal is recorded",
 			record: func(r *CamundaClusterReconciler) {
-				r.recordRefusedDowngrade(refusedCluster(nil), refused)
+				r.recordRefusedVersion(refusedCluster(nil), refused)
 			},
 			want: 1,
 		},
 		{
 			name: "a reconcile that reads the cluster before the refusal lands records no second event",
 			record: func(r *CamundaClusterReconciler) {
-				r.recordRefusedDowngrade(refusedCluster(nil), refused)
-				r.recordRefusedDowngrade(refusedCluster(nil), refused)
-				r.recordRefusedDowngrade(refusedCluster(nil), refused)
+				r.recordRefusedVersion(refusedCluster(nil), refused)
+				r.recordRefusedVersion(refusedCluster(nil), refused)
+				r.recordRefusedVersion(refusedCluster(nil), refused)
 			},
 			want: 1,
 		},
 		{
 			name: "the Ready condition stops a manager that starts with an empty memo",
 			record: func(r *CamundaClusterReconciler) {
-				r.recordRefusedDowngrade(refusedCluster(&refused), refused)
+				r.recordRefusedVersion(refusedCluster(&refused), refused)
 			},
 			want: 0,
 		},
 		{
 			name: "another refusal of the same cluster is recorded",
 			record: func(r *CamundaClusterReconciler) {
-				r.recordRefusedDowngrade(refusedCluster(nil), refused)
-				r.recordRefusedDowngrade(refusedCluster(nil), other)
+				r.recordRefusedVersion(refusedCluster(nil), refused)
+				r.recordRefusedVersion(refusedCluster(nil), other)
 			},
 			want: 2,
 		},
 		{
 			name: "a cluster recreated under the same name is recorded",
 			record: func(r *CamundaClusterReconciler) {
-				r.recordRefusedDowngrade(refusedCluster(nil), refused)
+				r.recordRefusedVersion(refusedCluster(nil), refused)
 				recreated := refusedCluster(nil)
 				recreated.UID = "second"
-				r.recordRefusedDowngrade(recreated, refused)
+				r.recordRefusedVersion(recreated, refused)
 			},
 			want: 2,
 		},
@@ -313,9 +446,9 @@ func TestRecordRefusedDowngrade(t *testing.T) {
 			name: "a refusal that came back after the cluster ran is recorded",
 			record: func(r *CamundaClusterReconciler) {
 				cluster := refusedCluster(nil)
-				r.recordRefusedDowngrade(cluster, refused)
+				r.recordRefusedVersion(cluster, refused)
 				r.refusals.forget(client.ObjectKeyFromObject(cluster))
-				r.recordRefusedDowngrade(cluster, refused)
+				r.recordRefusedVersion(cluster, refused)
 			},
 			want: 2,
 		},
@@ -333,6 +466,27 @@ func TestRecordRefusedDowngrade(t *testing.T) {
 			assert.Equal(t, tt.want, len(recorder.Events))
 		})
 	}
+}
+
+func TestRecordRefusedVersionReason(t *testing.T) {
+	t.Parallel()
+
+	skipped := metav1.Condition{
+		Type:    v1.ConditionReady,
+		Status:  metav1.ConditionFalse,
+		Reason:  v1.ReasonVersionSkipRefused,
+		Message: "the effective version 8.11.0 skips a minor: the brokers run 8.9.9",
+	}
+	recorder := events.NewFakeRecorder(1)
+	r := &CamundaClusterReconciler{EventRecorder: recorder}
+
+	r.recordRefusedVersion(refusedCluster(nil), skipped)
+
+	require.Len(t, recorder.Events, 1)
+	assert.Contains(
+		t, <-recorder.Events, corev1.EventTypeWarning+" "+v1.ReasonVersionSkipRefused,
+		"the event carries the reason of the refusal it reports",
+	)
 }
 
 // refusedCluster returns the cluster that one reconcile received, with ready

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "name": "resources merge per request and limit entry",
+  "rule": "`resources`",
+  "preset": {
+    "cluster": {
+      "zeebe": {
+        "resources": {
+          "requests": {
+            "cpu": "1",
+            "memory": "2Gi"
+          }
+        }
+      }
+    }
+  },
+  "spec": {
+    "zeebe": {
+      "resources": {
+        "requests": {
+          "cpu": "2"
+        },
+        "limits": {
+          "memory": "4Gi"
+        }
+      }
+    }
+  },
+  "merged": {
+    "zeebe": {
+      "resources": {
+        "limits": {
+          "memory": "4Gi"
+        },
+        "requests": {
+          "cpu": "2",
+          "memory": "2Gi"
+        }
+      }
+    }
+  }
+}

@@ -47,14 +47,15 @@ type dumpResolution struct {
 	// come from different owners. The pod settings can come from the backup,
 	// but the image always comes from the cluster. podOwned reports that
 	// they come from the backup.
-	pod          *v1.DumpPodSpec
-	podOwned     bool
-	image        string
-	account      string
-	bucketSecret string
-	dbSecret     v1.LocalCredentialsSecretRef
-	server       *v1.DatabaseServerConfig
-	dbConfig     *v1.DatabaseConfig
+	pod           *v1.DumpPodSpec
+	podOwned      bool
+	image         string
+	account       string
+	accountLabels map[string]string
+	bucketSecret  string
+	dbSecret      v1.LocalCredentialsSecretRef
+	server        *v1.DatabaseServerConfig
+	dbConfig      *v1.DatabaseConfig
 }
 
 // admit runs the full pre-checks and starts the backup when they pass. The
@@ -198,16 +199,17 @@ func (r *LogicalBackupRDBMSReconciler) resolveDump(
 	}
 
 	return &dumpResolution{
-		cluster:      precheck.Cluster,
-		bucket:       precheck.Bucket,
-		pod:          pod.settings,
-		podOwned:     pod.owned,
-		image:        pod.image,
-		account:      pod.account,
-		bucketSecret: bucketSecret,
-		dbSecret:     *dbConfig.Spec.BackupCredentialsSecretRef,
-		server:       server,
-		dbConfig:     dbConfig,
+		cluster:       precheck.Cluster,
+		bucket:        precheck.Bucket,
+		pod:           pod.settings,
+		podOwned:      pod.owned,
+		image:         pod.image,
+		account:       pod.account,
+		accountLabels: pod.accountLabels,
+		bucketSecret:  bucketSecret,
+		dbSecret:      *dbConfig.Spec.BackupCredentialsSecretRef,
+		server:        server,
+		dbConfig:      dbConfig,
 	}, nil, nil
 }
 
@@ -380,14 +382,15 @@ type podResolution struct {
 	settings *v1.DumpPodSpec
 	// owned reports that settings is the backup's own block. The builders
 	// keep its environment out of the CLI containers.
-	owned   bool
-	image   string
-	account string
+	owned         bool
+	image         string
+	account       string
+	accountLabels map[string]string
 }
 
 // resolvePod resolves the pod of the Job through the preset of the cluster
-// when it names one. It resolves the pod settings, the ServiceAccount, and
-// the image. The pod settings are the backup's own block, which replaces the
+// when it names one. It resolves the pod settings, the ServiceAccount with
+// the pod labels of its identity, and the image. The pod settings are the backup's own block, which replaces the
 // cluster's as a whole, or else the cluster's block. The image is always the
 // cluster's: the Job runs with the credentials of the cluster, so the
 // executable stays the choice of the cluster owner.
@@ -442,10 +445,11 @@ func (r *LogicalBackupRDBMSReconciler) resolvePod(
 	}
 
 	return &podResolution{
-		settings: settings,
-		owned:    owned,
-		image:    image,
-		account:  cluster.Status.ServiceAccountName,
+		settings:      settings,
+		owned:         owned,
+		image:         image,
+		account:       cluster.Status.ServiceAccountName,
+		accountLabels: camundacluster.ClusterAccountPodLabels(cluster),
 	}, nil, nil
 }
 

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "name": "a server block replaces the whole preset block",
+  "rule": "`resources`, `serviceAccount`, `scheduling`, `monitoring`, `archive`",
+  "preset": {
+    "server": {
+      "resources": {
+        "requests": {
+          "cpu": "1",
+          "memory": "2Gi"
+        }
+      },
+      "serviceAccount": {
+        "annotations": {
+          "a": "preset",
+          "b": "preset"
+        }
+      }
+    }
+  },
+  "spec": {
+    "resources": {
+      "limits": {
+        "memory": "4Gi"
+      }
+    },
+    "serviceAccount": {
+      "annotations": {
+        "a": "server"
+      }
+    }
+  },
+  "merged": {
+    "resources": {
+      "limits": {
+        "memory": "4Gi"
+      }
+    },
+    "serviceAccount": {
+      "annotations": {
+        "a": "server"
+      }
+    }
+  }
+}

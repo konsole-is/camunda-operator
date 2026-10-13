@@ -37,56 +37,97 @@ import (
 // An Elasticsearch cluster that takes backups also needs the snapshot
 // repository of its storage contract: without it the web applications have
 // nowhere to write, so the reference is incomplete.
+//
+// The hash inputs of the buckets go to in.BucketHashInputs, not to the shared
+// inputs, so a bucket change rolls only the processes that ConfigHash gives
+// them to.
 func (res *resolver) resolveObjectStorage(ctx context.Context, in *components.Input) error {
-	backup, err := res.objectStorage(ctx, res.cluster.Spec.BackupStorageRef)
+	inputs, err := res.resolveBuckets(ctx, in)
 	if err != nil {
 		return err
 	}
+	in.BucketHashInputs = inputs
+
+	return res.checkServiceAccount(ctx, in)
+}
+
+// resolveBuckets reads and checks the referenced buckets, sets them on in, and
+// returns their hash inputs. It records none of them in the shared inputs.
+func (res *resolver) resolveBuckets(ctx context.Context, in *components.Input) ([]string, error) {
+	shared := res.inputs
+	res.inputs = nil
+	defer func() { res.inputs = shared }()
+
+	backup, err := res.objectStorage(ctx, res.cluster.Spec.BackupStorageRef)
+	if err != nil {
+		return nil, err
+	}
 	documents, err := res.objectStorage(ctx, res.cluster.Spec.DocumentStorageRef)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	annotations, err := components.DerivedServiceAccountAnnotations(backup, documents)
 	if err != nil {
-		return &conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: err.Error()}
+		return nil, &conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: err.Error()}
 	}
 	in.ServiceAccountAnnotations = annotations
 	in.Documents = documents
 
 	if backup != nil {
 		if err := res.rejectSharedAzureContainer(ctx, backup); err != nil {
-			return err
+			return nil, err
 		}
 		if err := res.checkBucketCredentials(ctx, backup); err != nil {
-			return err
+			return nil, err
 		}
 		in.Backup = backup
 		if err := res.requireSnapshotRepository(in); err != nil {
+			return nil, err
+		}
+	}
+
+	return res.inputs, nil
+}
+
+// checkServiceAccount fails the pre-check when the connectors would run under
+// the ServiceAccount of the cluster or name the account reserved for the
+// cluster, and when the spec names a pre-existing ServiceAccount, of the
+// cluster or of the connectors, that does not exist.
+// The operator never creates, annotates, nor owns a pre-existing account, so
+// an absent one would otherwise surface as unschedulable pods. Nothing
+// watches it, so that failure is unwatched: the reconcile comes back on a
+// timer instead of an event.
+func (res *resolver) checkServiceAccount(ctx context.Context, in *components.Input) error {
+	if err := components.CheckConnectorsServiceAccount(*in); err != nil {
+		return &conditions.PreCheckFailure{Reason: v1.ReasonInvalidReference, Message: err.Error()}
+	}
+
+	if !in.Effective.ServiceAccount.Creates() {
+		name := components.ServiceAccountName(res.cluster, in.Effective)
+		if err := res.requireServiceAccount(ctx, name, "serviceAccount.create"); err != nil {
 			return err
 		}
 	}
 
-	return res.checkServiceAccount(ctx, in)
-}
-
-// checkServiceAccount fails the pre-check when the spec names a pre-existing
-// ServiceAccount that does not exist. The operator never creates, annotates,
-// nor owns it, so an absent one would otherwise surface as unschedulable
-// pods. Nothing watches the ServiceAccount, so the failure is unwatched: the
-// reconcile comes back on a timer instead of an event.
-func (res *resolver) checkServiceAccount(ctx context.Context, in *components.Input) error {
-	if in.Effective.ServiceAccount.Creates() {
+	connectors := components.PodConnectorsServiceAccountName(*in)
+	if connectors == "" || in.Effective.ConnectorsServiceAccount().Creates() {
 		return nil
 	}
 
-	name := components.ServiceAccountName(res.cluster, in.Effective)
+	return res.requireServiceAccount(ctx, connectors, "connectors.serviceAccount.create")
+}
+
+// requireServiceAccount fails the pre-check, unwatched, when the
+// ServiceAccount name does not exist in the namespace of the cluster. flag is
+// the create field that made the account a reference, for the message.
+func (res *resolver) requireServiceAccount(ctx context.Context, name, flag string) error {
 	key := client.ObjectKey{Namespace: res.cluster.Namespace, Name: name}
 	if err := res.reader.Get(ctx, key, &corev1.ServiceAccount{}); err != nil {
 		if apierrors.IsNotFound(err) {
 			return conditions.NewUnwatchedFailure(
 				v1.ReasonInvalidReference,
-				fmt.Sprintf("ServiceAccount %s not found, and serviceAccount.create is false", key),
+				fmt.Sprintf("ServiceAccount %s not found, and %s is false", key, flag),
 			)
 		}
 

@@ -25,6 +25,13 @@ limitations under the License.
 // Database. One key per kind keeps two owners of different kinds with the same
 // name apart, and lets an extension select the resources of one kind without
 // knowing the component vocabulary of the other.
+//
+// ClusterKey, ElasticsearchClusterKey, DatabaseServerKey, DatabaseKey, and
+// ComponentKey are a stable promise to extensions and the fleet manager. The
+// section "Discovery labels" of docs/architecture.md lists their values and
+// the objects that carry them. The section after it lists the other keys that
+// the user docs tell users to select on. A change to a listed key is a
+// breaking change.
 package labels
 
 import (

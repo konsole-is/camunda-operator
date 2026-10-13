@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "the cluster version is the merged version",
+  "rule": "`version`",
+  "preset": {
+    "cluster": {
+      "replicas": 3
+    }
+  },
+  "spec": {
+    "version": "9.2.4"
+  },
+  "merged": {
+    "version": "9.2.4",
+    "replicas": 3
+  }
+}

@@ -93,6 +93,42 @@ The operator registers the snapshot repository `<namespace>.<name>` in Elasticse
 
 For an `AzureBlob` bucket, the endpoint must have the form `https://<account>.blob.<suffix>`, without a port or a path. Otherwise `Ready` reports `InvalidReference`.
 
+## ServiceAccount
+
+When `spec.serviceAccount` is set, or when the snapshot bucket uses workload identity, the Elasticsearch pods run under the ServiceAccount `spec.serviceAccount.name`, or `<name>-es` by default. Otherwise they run under the ServiceAccount `default` of the namespace. Unless `spec.serviceAccount.create` is `false`, the operator creates the named account. The account carries the annotations of the bucket identity, see [ObjectStorageConfig](objectstorageconfig.md#authentication). An annotation in `spec.serviceAccount.annotations` wins over the derived one.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-es-snapshot-role"
+  # ... the rest of your cluster
+```
+
+The cloud reads the annotations of the ServiceAccount when a pod starts. So when the annotations that the operator puts on the account change, the Elasticsearch pods restart. This holds for an edit of `spec.serviceAccount.annotations`, and for a snapshot bucket that names another identity. The pod template then carries a new value of the annotation `camunda.io/service-account-hash`. Other changes of the spec, such as `spec.replicas`, keep this value.
+
+With `serviceAccount.create: false`, the operator does not create or change the ServiceAccount, and it does not read its annotations. A change to the annotations of that account restarts no pod. After such a change, restart the pods yourself. Add or change a value in `spec.podAnnotations`, and ECK restarts the pods:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  name: my-cluster-es
+  namespace: my-cluster-ns
+spec:
+  serviceAccount:
+    name: "platform-es"
+    create: false
+  podAnnotations:
+    example.com/restarted-at: "2026-10-12T10:00:00Z"
+  # ... the rest of your cluster
+```
+
 ## Credentials
 
 The operator generates the password of the user `camunda` once and keeps it. To rotate it, delete the Secret `<name>-es-user`. The operator then generates a new password and publishes it in a new Secret. The `CamundaCluster` that uses the contract restarts its pods with the new password.
@@ -122,7 +158,7 @@ With `spec.suspend: true`, the operator deletes the ECK resource and keeps the d
 
 ## Deletion
 
-Deletion removes everything the operator created: the ECK resource, the Secrets, the `SecondaryStorageConfig`, and the exporter. The data volumes obey `spec.persistentVolumeClaimRetentionPolicy.whenDeleted`. With `Delete`, ECK removes them with the cluster. With `Retain`, the volumes stay and a later cluster with the same name reattaches them.
+Deletion removes everything the operator created: the ECK resource, the Secrets, the `SecondaryStorageConfig`, the exporter, and the ServiceAccount. A ServiceAccount with `create: false` stays, also when the operator created it before the switch. The data volumes obey `spec.persistentVolumeClaimRetentionPolicy.whenDeleted`. With `Delete`, ECK removes them with the cluster. With `Retain`, the volumes stay and a later cluster with the same name reattaches them.
 
 ## Status
 
@@ -198,9 +234,9 @@ spec:
   snapshotStorageRef: "my-backup-bucket"
   # object. Optional. ServiceAccount of the Elasticsearch pods. The operator creates one when this block is set, or when the snapshot bucket uses workload identity.
   serviceAccount:
-    # string. Optional, default: <name>-es. Name of the ServiceAccount. A workload identity without an annotation binds the principal system:serviceaccount:<namespace>:<name>.
+    # string. Optional, default: <name>-es. Name of the ServiceAccount. A workload identity without an annotation binds the principal system:serviceaccount:<namespace>:<name>. The name <name>-es belongs to the operator. While neither the cluster nor its preset sets serviceAccount and the snapshot bucket does not use workload identity, the operator deletes an account of that name. It deletes one that you created too.
     name: "my-cluster-es"
-    # boolean. Optional, default: true. With false, you manage the ServiceAccount. The operator does not create, annotate, or own it, and a missing one fails Ready.
+    # boolean. Optional, default: true. With false, you manage the ServiceAccount. The operator does not create, annotate, or own it, and a missing one fails Ready. A switch to false removes the owner reference from the account that the operator created, so it stays when you delete the cluster. A switch back to true owns and annotates it again.
     create: true
     # map[string]string. Optional. Annotations for workload identity (IRSA, GCP Workload Identity). A value set here wins over the one the operator derives from the bucket.
     annotations:
@@ -221,7 +257,7 @@ spec:
   extraEnvFrom: []
   # map[string]string. Optional. Extra labels on the Elasticsearch pods.
   podLabels: {}
-  # map[string]string. Optional. Extra annotations on the Elasticsearch pods.
+  # map[string]string. Optional. Extra annotations on the Elasticsearch pods. The key `camunda.io/service-account-hash` belongs to the operator, and a value for it does not reach the pods.
   podAnnotations: {}
   # object. Optional. Scheduling constraints of the Elasticsearch pods. When set, it replaces the whole scheduling block of the preset.
   scheduling:

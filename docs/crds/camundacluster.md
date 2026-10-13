@@ -61,9 +61,11 @@ spec:
 
 Each enabled process gets a workload and a Service named `<name>-<component>`. A standalone gateway serves on the Service `<name>-gateway`, with gRPC on port `26500` and HTTP on port `8080`. An embedded gateway serves the same ports on `<name>-zeebe`. HTTP serves the REST API under `/v2/` and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. A standalone web application serves on its own Service on port `8080`.
 
+With an embedded gateway, the operator also creates the Service `<name>-zeebe-client`. It carries only the ports `26500` and `8080`, and it sends traffic only to brokers that are ready. Route traffic from outside the cluster to this Service, not to `<name>-zeebe`. `status.endpoints` names the Service for each path. See [Routes](#routes).
+
 `status.gateway` publishes the two client addresses, so you do not have to work out which Service runs the gateway. See [Status](#status).
 
-Every resource carries the labels `camunda.io/cluster` and `camunda.io/component`. The component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`. List the workloads of a cluster:
+Each workload, its pods, and its Service carry the labels `camunda.io/cluster` and `camunda.io/component`. The component is one of `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, and `connectors`. [Discovery labels](../architecture.md#discovery-labels) lists the labels that you can rely on. List the workloads of a cluster:
 
 ```bash
 kubectl get deploy,sts,svc -n my-cluster-ns -l camunda.io/cluster=my-cluster
@@ -91,7 +93,34 @@ The effective version is `spec.version`, or the version of the [CamundaRelease](
 
 To upgrade, raise `spec.version`, or raise the version of the release that `releaseRef` names. The operator rolls every workload to the new version, except Connectors, which follows `spec.connectors.version`. `kubectl get camundacluster` shows the new version at once, and `Ready` reads `Updating` until every process is healthy again.
 
-Move one minor at a time, and move to the latest patch of your minor first. Camunda blocks the start after a skipped minor, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/#required-upgrade-procedure). [Prepare for upgrade](https://docs.camunda.io/docs/self-managed/upgrade/prepare-for-upgrade/) lists what changes in each minor. An attached [CamundaOptimize](camundaoptimize.md#versions) reports `VersionMismatch` until you raise its version to the same minor.
+Move one minor at a time, and move to the latest patch of your minor first. Camunda blocks the start after a skipped minor, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/#required-upgrade-procedure). The operator refuses a version that skips a minor before it rolls a pod, see [A skipped minor is refused](#a-skipped-minor-is-refused). [Prepare for upgrade](https://docs.camunda.io/docs/self-managed/upgrade/prepare-for-upgrade/) lists what changes in each minor. An attached [CamundaOptimize](camundaoptimize.md#versions) reports `VersionMismatch` until you raise its version to the same minor.
+
+Wait between two minor upgrades in a row. Each broker must take a snapshot on the new minor before you move again. By default, a broker takes a snapshot every five minutes. A broker that finds a snapshot from two minors back refuses to start, see [Upgrade Zeebe](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/update-zeebe/#troubleshooting). The operator does not refuse this move. It compares the new version with the version that its brokers run, not with their snapshots.
+
+### A skipped minor is refused
+
+The operator refuses a version more than one minor above the version that the brokers run. The cluster reports `Ready: False` with reason `VersionSkipRefused` and records a Warning event with the same name. It applies no change of the spec, and the brokers keep the version they have.
+
+```yaml
+status:
+  observedGeneration: 5
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: VersionSkipRefused
+      message: 'the effective version 8.11.0 skips a minor: the brokers run 8.9.9.
+        Camunda upgrades one minor at a time, and a broker that starts after a skipped
+        minor marks itself unhealthy and applies no migration. Set the version to
+        the latest patch of 8.10 first, and move to 8.11.0 once every broker runs it'
+      observedGeneration: 5
+      lastTransitionTime: "2026-10-11T09:14:00Z"
+```
+
+To recover, set the version to the latest patch of the next minor. When `Ready` is `True` again, every broker runs it. Then wait for a snapshot, as [Upgrade](#upgrade) says, and set the version that you want. No annotation lets a skipped minor through. `camunda.io/allow-version-downgrade` applies to a lower version only.
+
+The rule reads the effective version and the running version, as the downgrade rule below does. A raised `spec.version`, a removed `spec.version` over a newer release, and a raised release all meet it. A cluster that you create again on retained volumes obeys the rule too. A change of major is not a skipped minor, and the operator does not refuse it. Camunda does not support a change of major, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/).
+
+A suspended cluster reports the refusal when it resumes. It then stays at zero until you set a version that the brokers can move to.
 
 ### A lower version is refused
 
@@ -296,11 +325,59 @@ On the RDBMS path, the backup credentials of the `DatabaseConfig` feed the dump 
 
 ## Workload identity
 
-The pods run under the default ServiceAccount of the namespace, unless the cluster needs an account of its own. The cluster gets one when `spec.serviceAccount` is set, or when a referenced bucket has no credentials Secret and authenticates through workload identity. That account is `<name>-camunda`, or `spec.serviceAccount.name`. `status.serviceAccountName` shows the account that the pods use.
+The pods of the cluster, except the connectors, run under the default ServiceAccount of the namespace, unless the cluster needs an account of its own. The cluster gets one when `spec.serviceAccount` is set, or when a referenced bucket has no credentials Secret and authenticates through workload identity. That account is `<name>-camunda`, or `spec.serviceAccount.name`. `status.serviceAccountName` shows the account that the pods use.
+
+The name `<name>-camunda` belongs to the operator. While neither the cluster nor its preset sets `spec.serviceAccount` and no referenced bucket uses workload identity, the operator deletes a ServiceAccount of that name. It deletes one that you created too. Give an account of your own another name. Connectors that name the account with `create: false` are refused, and the account stays, see [Connectors](#connectors).
 
 When a referenced bucket names a workload identity, the operator puts the matching annotation on the ServiceAccount. [ObjectStorageConfig](objectstorageconfig.md#authentication) lists the annotations. An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and you bind the principal `system:serviceaccount:<namespace>:<name>-camunda` on the cloud side. Two buckets that name different identities of one cloud report `InvalidReference`.
 
-With `serviceAccount.create: false`, the operator does not create the ServiceAccount. It reports `InvalidReference` while the ServiceAccount does not exist.
+The cloud reads the annotations of the ServiceAccount when a pod starts. So when the annotations that the operator puts on the ServiceAccount change, the pods that run under it restart. These are the brokers, the gateway, and the web applications. This holds for an edit of `spec.serviceAccount.annotations` and for a referenced bucket that names another identity. These changes do not restart the connectors. Any other change to a referenced bucket restarts the same pods, see [Changes and referenced Secrets](#changes-and-referenced-secrets). A backup Job that starts after the change runs with the new annotations.
+
+With `serviceAccount.create: false`, the operator does not create or change the ServiceAccount, and it does not read its annotations. It reports `InvalidReference` while the ServiceAccount does not exist. A change to the annotations of that account restarts no pod. After such a change, restart the pods yourself:
+
+```bash
+kubectl rollout restart statefulset/my-cluster-zeebe -n my-cluster-ns
+kubectl rollout restart deployment -n my-cluster-ns \
+  -l 'camunda.io/cluster=my-cluster,camunda.io/component in (gateway,operate,tasklist,admin)'
+```
+
+The second command restarts the gateway and each web application that runs in a Deployment of its own. When all of them run in the brokers, it finds no Deployment, and the first command is enough.
+
+When you switch `create` from true to false, the operator removes its owner reference from the ServiceAccount that it created. That is its last change to the account. The labels and annotations stay, and the account stays when you delete the cluster. The operator no longer sets its labels or annotations, so you can change them. When you switch back to `create: true`, the operator owns the account again and sets the annotations of the spec.
+
+### Connectors
+
+The connectors never run under the ServiceAccount of the cluster, and the identities of the buckets never reach them. Process authors model the calls that the connectors make, so with the role of the cluster a process can read or delete backups. The connectors read documents through the REST API of the cluster, and Camunda says not to give them the document store role ([IAM Roles for Service Accounts](https://docs.camunda.io/docs/self-managed/deployment/helm/cloud-providers/amazon/amazon-eks/irsa/#document-store-s3)).
+
+When neither the cluster nor its [preset](camundaclusterpreset.md#merge-rules) sets `connectors.serviceAccount`, the connectors run under the ServiceAccount `default` of the namespace. To give them a cloud role of their own, set the block:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  connectors:
+    enabled: true
+    version: "8.9.7"
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-connectors"
+  # ... the rest of your cluster
+```
+
+The connectors then run under `my-cluster-connectors`, or under `spec.connectors.serviceAccount.name`. That account carries only the annotations of the block. A change of these annotations restarts the connectors pods, and no other pod. For an identity without an annotation, bind the principal `system:serviceaccount:<namespace>:<name>-connectors` on the cloud side. `status.connectorsServiceAccountName` shows the account. When the block is gone from the cluster and from its preset, the connectors go back to the ServiceAccount `default`. The account that the operator created stays until you delete the cluster.
+
+While connectors are not enabled, the operator creates no connectors account. When connectors are enabled and `create` is `false`, `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the cluster. After a change to the annotations of that account, restart the connectors pods yourself, with `kubectl rollout restart deployment/my-cluster-connectors -n my-cluster-ns`. When you switch `spec.connectors.serviceAccount.create` to `false`, the operator removes its owner reference from the connectors account, as for the cluster account. When you switch back to `true`, the operator owns the account again.
+
+The connectors account must not have the name of the cluster account. When `spec.serviceAccount.name` is `default`, enabled connectors need `spec.connectors.serviceAccount`, or `Ready` is `False` with reason `InvalidReference`. The API server rejects a spec in which `spec.connectors.serviceAccount.name` equals `spec.serviceAccount.name`. When only one of the two names is set and it equals the derived name of the other account, `Ready` is `False` with reason `InvalidReference`. With `create: false`, `spec.connectors.serviceAccount.name` must not be `<name>-camunda` while neither the cluster nor its preset sets `spec.serviceAccount` and no referenced bucket uses workload identity. When it is, `Ready` is `False` with reason `InvalidReference`, also while connectors are off. The operator then keeps the account.
+
+### Azure Workload ID
+
+On Azure, a pod needs the label `azure.workload.identity/use: "true"` as well as the annotation `azure.workload.identity/client-id` on its account. When `spec.serviceAccount.annotations` carry the client ID, the operator adds the label to every pod that runs under the cluster account, the backup Jobs included. When `spec.connectors.serviceAccount.annotations` carry it, the operator adds the label to the connectors pods only.
+
+The operator reads the annotations of the spec, not of the account. With `create: false`, the operator does not read the annotations of the existing account. If that account carries the client ID, add the label `azure.workload.identity/use: "true"` through `podLabels` or `connectors.podLabels` yourself.
 
 ## Environment and JVM
 
@@ -364,6 +441,8 @@ spec:
 
 A change to the cluster or to a referenced resource rolls out to the pods on its own. So does a change to a key that the cluster reads from a referenced Secret. A change to the labels or annotations of a Secret, or to a key that the cluster does not read, rolls nothing. The [CamundaPlatformConfig](camundaplatformconfig.md) is cluster-scoped, so the operator copies the Secrets it names in another namespace into the namespace of the cluster. Each copy follows its source.
 
+A change to a referenced ObjectStorageConfig or its credentials Secret restarts the brokers, the gateway, and every web application, also one in its own Deployment. The connectors keep running, because they do not use the buckets.
+
 The API server accepts a cluster that names something you did not create yet, so you can create the resources in any order. A missing `CamundaPlatformConfig`, `CamundaClusterPreset`, `CamundaRelease`, `SecondaryStorageConfig`, `DatabaseConfig`, `DatabaseServerConfig`, or `ObjectStorageConfig` sets `Ready` to `False` with reason `InvalidReference`. A missing Secret or key sets reason `MissingSecret`.
 
 When one of these checks fails for a running cluster, the workloads stay up on the configuration that the operator applied last. `Ready` carries the failure, and the cluster keeps its backend. When the check passes again, the cluster takes the change. A suspension still stops the workloads while a check fails, see [Suspend and pause](#suspend-and-pause).
@@ -382,7 +461,7 @@ status:
 
 ## Suspend and pause
 
-`spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` and `status.gateway` are empty. When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
+`spec.suspend: true` scales every workload to zero and keeps the broker volumes. `Ready` is `True` with reason `Suspended`, and `status.management` and `status.gateway` are empty. `status.endpoints` stays, see [Routes](#routes). When you set `suspend` back to false, `Ready` reads `Updating` until the workloads are healthy again. A backup of a suspended cluster waits with reason `ClusterSuspended`.
 
 `suspend` also stops the workloads while a reference check fails. You do not have to correct the reference first. `Ready` then reports the failure, and the message says why the workloads are at zero:
 
@@ -417,6 +496,7 @@ The operator also holds a cluster at zero on its own. `spec.suspend` stays yours
 | `False` | `WaitingForHandover` | Something else still writes the backend. | Wait, or remove what the message names. See [Waiting for a handover](#waiting-for-a-handover). |
 | `False` | `InvalidReference` / `MissingSecret` | The suspension ended while a reference check fails. The message ends with `stay at zero until the reference check passes`. | Correct the reference that the message names. |
 | `False` | `VersionDowngradeRefused` | The cluster resumed on a version below the one that its brokers run. | Set the version forward, or [downgrade on purpose](#downgrade-on-purpose). |
+| `False` | `VersionSkipRefused` | The cluster resumed on a version more than one minor above the version that its brokers run. | Set the version to the next minor first. See [A skipped minor is refused](#a-skipped-minor-is-refused). |
 
 ### Suspension holds
 
@@ -456,7 +536,7 @@ CAUTION: Do not remove the hold of a restore that still runs. If `spec.suspend` 
 
 ## Deletion
 
-Deleting the cluster removes every resource that the operator created for it, and it releases the backend that the cluster held. Another cluster on that backend starts when the pods of the deleted one are gone. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay.
+Deleting the cluster removes every resource that the operator created for it, and it releases the backend that the cluster held. Another cluster on that backend starts when the pods of the deleted one are gone. The broker volumes follow `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` (see [Storage](#storage)). The `ElasticsearchCluster`, the `Database`, and the contracts are separate resources and stay. A ServiceAccount with `create: false` stays too, also when the operator created it before the switch.
 
 ## Status
 
@@ -481,9 +561,10 @@ Deleting the cluster removes every resource that the operator created for it, an
 | `Ready` | `Degraded` | A process is still not ready at the end of its grace period, but some of its replicas are ready. | Read the pods and events of the process that the message names. |
 | `Ready` | `Down` | A process is still not ready at the end of its grace period, and none of its replicas is ready. | Read the pods and events of the process that the message names. |
 | `Ready` | `Suspended` / `SuspensionHeld` / `StorageAlreadyAttached` / `WaitingForHandover` | Every workload is at zero. Only `Suspended` has `Ready: True`. | See [Why the cluster is at zero replicas](#why-the-cluster-is-at-zero-replicas). |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec is invalid. Other causes are an absent ServiceAccount with `create: false`, two conflicting buckets, a shared Azure container, or a missing snapshot repository. A running cluster keeps its workloads. | Read the message. Create the missing resource or correct the named field. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, or the merged spec is invalid. Other causes are an absent ServiceAccount with `create: false`, two conflicting buckets, a shared Azure container, or a missing snapshot repository. A connectors ServiceAccount with the name of the cluster ServiceAccount is a cause too. So is one with `create: false` and the name `<name>-camunda`, while neither the cluster nor its preset sets `spec.serviceAccount` and no referenced bucket uses workload identity. So are connectors without their own ServiceAccount when the cluster ServiceAccount is `default`. A running cluster keeps its workloads. | Read the message. Create the missing resource or correct the named field. |
 | `Ready` | `MissingSecret` | A referenced Secret or one of its keys is missing. A running cluster keeps its workloads. | Create the Secret with the named key. |
 | `Ready` | `VersionDowngradeRefused` | The effective version is below the version that the brokers run, and no annotation sanctions the move. The operator applies nothing. | Set the version forward again, or [downgrade on purpose](#downgrade-on-purpose). |
+| `Ready` | `VersionSkipRefused` | The effective version is more than one minor above the version that the brokers run. The operator applies nothing. | Move one minor at a time. Set the version to the latest patch of the next minor first, see [A skipped minor is refused](#a-skipped-minor-is-refused). |
 
 When the operator cannot apply a workload of a cluster in `StorageAlreadyAttached` or `WaitingForHandover`, the message also carries the last apply error.
 
@@ -516,9 +597,73 @@ status:
 
 `status.adminPassword.rotation` is the last `passwordRotation` value that the operator applied, after the preset merge. A rotation is in progress while the effective value is not empty and differs from it. A cluster that inherits the value from its preset has none in its own spec, so compare the preset value with the status.
 
-`status.serviceAccountName` is the ServiceAccount that the pods run under, or empty for the default account of the namespace. A backup Job runs under the same account.
+`status.serviceAccountName` is the ServiceAccount that the pods run under, except the connectors, or empty for the default account of the namespace. A backup Job runs under the same account.
+
+`status.connectorsServiceAccountName` is the ServiceAccount that the connectors run under. It is empty when neither the cluster nor its preset sets `connectors.serviceAccount`, and when connectors are not enabled.
+
+```yaml
+status:
+  # Empty when the pods run under the default ServiceAccount of the namespace.
+  serviceAccountName: my-cluster-camunda
+  # Set only when the cluster or its preset sets connectors.serviceAccount, while connectors are enabled.
+  connectorsServiceAccountName: my-cluster-connectors
+```
 
 `status.volumes` lists every bound broker volume, sorted by name, with its `name` and its `capacity`. `status.observedGeneration` is the last generation the operator reconciled.
+
+### Routes
+
+`status.endpoints` lists the routes of the cluster, sorted by name. Each entry is a path on the external URL, with the Service and the port that serve it. Read this list to route traffic to the cluster. You do not have to work out from the mode fields which process serves a path. The cluster from [Topology](#topology), with Operate standalone and connectors enabled, publishes:
+
+```yaml
+status:
+  endpoints:
+  - name: admin
+    pathPrefix: /admin
+    port: 8080
+    protocol: HTTP
+    # Admin is embedded, so the process that runs the gateway serves it.
+    service: my-cluster-gateway
+  - name: connectors
+    # Only while spec.connectors.enabled is true.
+    pathPrefix: /inbound
+    port: 8080
+    protocol: HTTP
+    service: my-cluster-connectors
+  - name: default
+    # Every path that no other entry names, for example the login page.
+    pathPrefix: /
+    port: 8080
+    protocol: HTTP
+    service: my-cluster-gateway
+  - name: grpc
+    # No path prefix. gRPC needs a route of its own.
+    port: 26500
+    protocol: GRPC
+    service: my-cluster-gateway
+  - name: operate
+    pathPrefix: /operate
+    port: 8080
+    protocol: HTTP
+    # Operate is standalone, so it has its own Service.
+    service: my-cluster-operate
+  - name: rest
+    pathPrefix: /v2
+    port: 8080
+    protocol: HTTP
+    service: my-cluster-gateway
+  - name: tasklist
+    pathPrefix: /tasklist
+    port: 8080
+    protocol: HTTP
+    service: my-cluster-gateway
+```
+
+Match the longest `pathPrefix` first. Thus `/operate` goes to its own Service, and `/` takes the paths that are left. An embedded web application names the Service of the process that runs the gateway, as `admin` and `tasklist` do above. With an embedded gateway, every entry that names `my-cluster-gateway` above names `my-cluster-zeebe-client` instead.
+
+Camunda serves the inbound webhooks of connectors under `/inbound/<webhook ID>`. See [HTTP Webhook connector](https://docs.camunda.io/docs/components/connectors/protocol/http-webhook/#activate-the-http-webhook-connector-by-deploying-your-diagram).
+
+The entries stay while the cluster is suspended, and while a reference check fails. The Services stay too, so a route answers again when the cluster resumes. `status.gateway` and `status.management` are empty while the cluster is suspended.
 
 ## Spec reference
 
@@ -541,13 +686,13 @@ spec:
   version: "8.9.0"
   # string. Optional. External base URL of the cluster, for OIDC redirect URLs and web application links.
   externalUrl: "https://my-cluster.camunda.example.com"
-  # object. Optional. ServiceAccount of every workload pod. See Workload identity.
+  # object. Optional. ServiceAccount of every workload pod except the connectors. See Workload identity.
   serviceAccount:
     # string. Optional, default: <name>-camunda. Name of the ServiceAccount.
     name: "camunda-prod"
-    # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it.
+    # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false removes the owner reference of the operator from an account that it created, see Workload identity.
     create: true
-    # map[string]string. Optional. Annotations on the ServiceAccount. Ignored when create is false.
+    # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods.
     annotations:
       eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
   # object. Optional. OIDC client of this cluster and its administrators. Overrides the platform config and the preset.
@@ -613,7 +758,7 @@ spec:
           name: "zeebe-overrides"
     # map[string]string. Optional. Extra labels of the broker pods.
     podLabels: {}
-    # map[string]string. Optional. Extra annotations of the broker pods.
+    # map[string]string. Optional. Extra annotations of the broker pods. The keys `camunda.io/config-hash` and `camunda.io/service-account-hash` belong to the operator, and a value for them does not reach the pods.
     podAnnotations: {}
     # object. Optional. Scheduling constraints of the broker pods. Replaces the top-level block and the preset block entirely.
     scheduling:
@@ -659,13 +804,21 @@ spec:
     enabled: true
     # string. Required when enabled, unless the release provides it. Version of the connectors bundle image as x.y.z.
     version: "8.9.7"
+    # object. Optional. ServiceAccount of the connectors pods. Without it, they run under the default ServiceAccount of the namespace. See Workload identity.
+    serviceAccount:
+      # string. Optional, default when the block is set: <name>-connectors. Name of the ServiceAccount. Must differ from serviceAccount.name. The name default needs create: false. With create: false, the name <name>-camunda is refused while neither the cluster nor its preset sets serviceAccount and no referenced bucket uses workload identity.
+      name: "my-cluster-connectors"
+      # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false removes the owner reference of the operator from an account that it created, see Workload identity.
+      create: true
+      # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods. The identities of the buckets are never added.
+      annotations: {}
   # []EnvVar. Optional. Extra environment variables of every workload. A per-component entry with the same name wins.
   extraEnv: []
   # []EnvFromSource. Optional. Extra environment sources of every workload.
   extraEnvFrom: []
   # map[string]string. Optional. Extra labels of every workload pod.
   podLabels: {}
-  # map[string]string. Optional. Extra annotations of every workload pod.
+  # map[string]string. Optional. Extra annotations of every workload pod. The keys `camunda.io/config-hash` and `camunda.io/service-account-hash` belong to the operator, and a value for them does not reach the pods.
   podAnnotations: {}
   # object. Optional. Scheduling constraints of every workload, unless a component sets its own. Replaces the preset block entirely.
   scheduling: {}
@@ -744,6 +897,8 @@ The API server enforces these rules at admission:
 - `spec.zeebe.storageClassName` is immutable.
 - A new inline `spec.zeebe.storageSize` cannot be smaller than the inline value it replaces.
 - `spec.zeebe.replicationFactor` must not exceed `spec.zeebe.replicas`.
+- `spec.connectors.serviceAccount.name` must differ from `spec.serviceAccount.name`.
+- `spec.connectors.serviceAccount.name: default` requires `create: false`.
 - `spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted` is `Delete` or `Retain`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
 - `spec.auth.basic.adminEmail` is empty or an address with a dot in its domain.
@@ -759,7 +914,7 @@ The operator checks these rules on the merged spec after the preset and the rele
 - `backup.primaryStorage.continuous` is not true with a `schedule` of `none`.
 - An `extraEnv` entry under `CAMUNDA_SECURITY_INITIALIZATION_DEFAULTROLES_` reads as `<role>_<type>_<n>` or `<role>_<type>`, with `USERS`, `CLIENTS`, `GROUPS`, `ROLES`, or `MAPPINGRULES` as the type. `MAPPING_RULES` and `MAPPING-RULES` also work. Camunda stops the identity initialization on any other form. The brokers alone run the identity initialization. So the rule covers the top level, `zeebe`, and each block that runs embedded on the brokers. [Authentication](../guides/authentication.md) shows the form that works.
 
-A separate rule refuses an effective version below the one that the brokers run, with reason `VersionDowngradeRefused`. [A lower version is refused](#a-lower-version-is-refused) states it.
+Two separate rules compare the effective version with the version that the brokers run. A lower version is refused with reason `VersionDowngradeRefused`, see [A lower version is refused](#a-lower-version-is-refused). A version that skips a minor is refused with reason `VersionSkipRefused`, see [A skipped minor is refused](#a-skipped-minor-is-refused).
 
 ### A production-shaped example
 

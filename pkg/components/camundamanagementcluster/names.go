@@ -275,12 +275,18 @@ func IdentityPodLabels(mc *v1.CamundaManagementCluster) map[string]string {
 	return labels.Discovery(labels.ManagementCluster(mc.Name), ComponentIdentity)
 }
 
-// IdentityServiceURL returns the URL of Management Identity inside the
-// Kubernetes cluster. A component of the management plane calls the Identity
-// API over it, so it stays reachable while no browser can reach the external
-// URL.
+// IdentityServiceURL returns the root URL of the Management Identity Service
+// inside the Kubernetes cluster. It does not carry the path that Identity
+// serves under.
 func IdentityServiceURL(mc *v1.CamundaManagementCluster) string {
 	return serviceURL(IdentityName(mc), mc.Namespace, IdentityServicePortHTTP)
+}
+
+// identityInternalURL is the URL that Console and Web Modeler call the Identity
+// API over: the Service, under the path of spec.identity.externalUrl. It works
+// while no browser can reach the external URL.
+func identityInternalURL(mc *v1.CamundaManagementCluster) string {
+	return IdentityServiceURL(mc) + externalPath(parseURL(mc.Spec.Identity.ExternalURL))
 }
 
 // IdentityName returns the name of the Management Identity Deployment and

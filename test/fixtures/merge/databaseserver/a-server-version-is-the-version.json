@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "the server version is the merged version",
+  "rule": "`version`",
+  "preset": {
+    "server": {
+      "instances": 3
+    }
+  },
+  "spec": {
+    "version": "17"
+  },
+  "merged": {
+    "version": "17",
+    "instances": 3
+  }
+}

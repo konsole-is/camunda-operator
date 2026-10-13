@@ -27,11 +27,17 @@ graph LR
 
 ## Merge rules
 
-`spec.server` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the server spec merges over both. A field set on the `DatabaseServer` replaces the value of the layer below for that field. A field left unset on the server comes from the layer below.
+`spec.server` of the preset is the baseline. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the server spec merges over both. The release supplies the version only. A field set on the `DatabaseServer` replaces the value of the layer below for that field. A field left unset on the server comes from the layer below. Each field merges as the table says.
 
-Every object and every map is replaced as a whole, never merged field by field or key by key. This includes `resources`, `serviceAccount`, `scheduling`, `monitoring`, `archive`, `podLabels`, and `podAnnotations`. A server that sets its own `archive` block drops the bucket and the retention of the preset with it. A server that sets one pod label drops every pod label of the preset.
+| Field | Merge behavior |
+| --- | --- |
+| `platformConfigRef`, `instances`, `storageSize`, `storageClassName`, `walStorageSize` | The server value replaces the preset value. An unset server field inherits the preset value. |
+| `resources`, `serviceAccount`, `scheduling`, `monitoring`, `archive` | Replaced as a whole block, never merged field by field. A server that sets its own `archive` block drops the bucket and the retention of the preset with it. |
+| `podLabels`, `podAnnotations` | Replaced as a whole map, never merged key by key. A server that sets one pod label drops every pod label of the preset. An empty map (`podLabels: {}`, `podAnnotations: {}`) counts as unset and keeps the preset value. |
+| `presetRef`, `releaseRef`, `databaseServerConfig`, `suspend` | Instance-bound. They always come from the server and are rejected in a preset. |
+| `version` | Not part of a preset. It comes from `spec.databaseServer.version` of the release, and a server value replaces it. A preset that sets it is rejected. |
 
-An empty map (`podLabels: {}`, `podAnnotations: {}`) counts as unset, so it does not remove the map of the preset. To remove it, set the map that you want on the server. Or reference a preset without that map.
+To remove a map that the preset sets, set the map that you want on the server. Or reference a preset without that map.
 
 ## Fleet settings
 

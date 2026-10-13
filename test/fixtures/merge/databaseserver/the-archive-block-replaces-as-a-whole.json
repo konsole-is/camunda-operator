@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "a server archive block replaces the whole preset block, so the preset base backup schedule is gone",
+  "rule": "`resources`, `serviceAccount`, `scheduling`, `monitoring`, `archive`",
+  "preset": {
+    "server": {
+      "archive": {
+        "objectStorageRef": "fleet-archive",
+        "retentionPeriodDays": 30,
+        "baseBackupSchedule": "0 0 2 * * *"
+      }
+    }
+  },
+  "spec": {
+    "archive": {
+      "objectStorageRef": "my-archive",
+      "retentionPeriodDays": 7
+    }
+  },
+  "merged": {
+    "archive": {
+      "objectStorageRef": "my-archive",
+      "retentionPeriodDays": 7
+    }
+  }
+}

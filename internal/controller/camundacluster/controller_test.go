@@ -42,10 +42,12 @@ import (
 )
 
 // lowerVersion is one patch below the version that newCluster sets, so a spec
-// can ask for a version that the brokers already run past.
+// can ask for a version that the brokers already run past. skippedVersion is
+// two minors above runningVersion, so it skips 8.10.
 const (
 	runningVersion = "8.9.9"
 	lowerVersion   = "8.9.8"
+	skippedVersion = "8.11.0"
 )
 
 // newNamespace creates a uniquely named Namespace and registers its deletion.
@@ -631,6 +633,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
 			g.Expect(latest.Status.Gateway).NotTo(BeNil(), "a running cluster keeps publishing its endpoints")
 			g.Expect(latest.Status.Management).NotTo(BeNil())
+			g.Expect(latest.Status.Endpoints).NotTo(BeEmpty(), "a failed check keeps the last routes")
 		}, "3s", interval).Should(Succeed())
 
 		By("recreating the Secret")
@@ -1079,6 +1082,123 @@ var _ = Describe("CamundaCluster controller", func() {
 			cluster, metav1.ConditionFalse,
 			Equal(v1.ReasonVersionDowngradeRefused),
 			ContainSubstring("8.9.8 is below the running version 8.9.9"),
+		)
+	})
+
+	It("refuses a version that skips a minor, and keeps the brokers on their version", func() {
+		cluster := createDefaultCluster()
+		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":" + runningVersion))
+
+		By("raising spec.version by two minors")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = skippedVersion })
+		expectReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonVersionSkipRefused),
+			And(
+				ContainSubstring("8.11.0 skips a minor: the brokers run 8.9.9"),
+				ContainSubstring("latest patch of 8.10 first"),
+			),
+		)
+		expectEvent(cluster, v1.ReasonVersionSkipRefused, corev1.EventTypeWarning)
+		Consistently(func(g Gomega) {
+			g.Expect(countEvents(g, cluster, v1.ReasonVersionSkipRefused)).To(Equal(int32(1)))
+		}, "2s", interval).Should(Succeed(), "the refusal is recorded once, not once per reconcile")
+		Consistently(func() string { return zeebeContainer(cluster).Image }, "2s", interval).Should(
+			HaveSuffix(":"+runningVersion),
+			"the refusal keeps the running image. A newer image means the refusal applied it",
+		)
+	})
+
+	It("applies a patch move and a one-minor move", func() {
+		cluster := createDefaultCluster()
+		zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
+		gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
+		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":" + runningVersion))
+
+		By("moving one patch")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = "8.9.10" })
+		Eventually(func(g Gomega) {
+			g.Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.10"))
+		}, timeout, interval).Should(Succeed())
+
+		By("moving one minor")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Version = "8.10.0" })
+		Eventually(func(g Gomega) {
+			g.Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.10.0"))
+		}, timeout, interval).Should(Succeed())
+
+		stampStatefulSetReady(zeebeKey)
+		stampDeploymentReady(gatewayKey)
+		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+		Expect(countEvents(Default, cluster, v1.ReasonVersionSkipRefused)).To(BeZero())
+	})
+
+	It("stops the workloads of a suspended cluster whose skipped minor is refused", func() {
+		cluster := createDefaultCluster()
+		zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
+		gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
+		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":" + runningVersion))
+
+		By("raising spec.version by two minors and setting spec.suspend in one edit")
+		updateCluster(cluster, func(c *v1.CamundaCluster) {
+			c.Spec.Version = skippedVersion
+			c.Spec.Suspend = true
+		})
+		Eventually(func(g Gomega) {
+			g.Expect(*fetchStatefulSet(zeebeKey).Spec.Replicas).To(BeZero())
+			g.Expect(*fetchDeployment(gatewayKey).Spec.Replicas).To(BeZero())
+		}, timeout, interval).Should(Succeed())
+		expectReady(cluster, metav1.ConditionTrue, Equal(string(component.Suspended)), Not(BeEmpty()))
+		Expect(zeebeContainer(cluster).Image).To(
+			HaveSuffix(":"+runningVersion), "the suspended render keeps the running image",
+		)
+
+		By("resuming the cluster, which meets the refusal")
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = false })
+		expectReady(
+			cluster, metav1.ConditionFalse,
+			Equal(v1.ReasonVersionSkipRefused),
+			ContainSubstring("8.11.0 skips a minor: the brokers run 8.9.9"),
+		)
+	})
+
+	It("refuses a skipped minor of a cluster recreated on retained volumes", func() {
+		ns := newNamespace()
+		cfg := createPlatformConfig()
+		binding := createBinding(ns, true)
+		cluster := newCluster(ns, cfg, binding)
+		createCluster(cluster)
+		zeebeKey := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-zeebe"}
+		fetchStatefulSet(zeebeKey)
+
+		By("stamping the running version on the bound broker claims")
+		sc := createExpandableStorageClass()
+		claim := createBoundBrokerClaim(cluster, "0", sc.Name, "1Gi")
+		Eventually(func(g Gomega) {
+			var latest corev1.PersistentVolumeClaim
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), &latest)).To(Succeed())
+			g.Expect(latest.Annotations).To(HaveKeyWithValue(components.BrokerVersionAnnotation, runningVersion))
+		}, timeout, interval).Should(Succeed())
+
+		By("deleting the cluster and its StatefulSet while the claims stay")
+		Expect(k8sClient.Delete(ctx, cluster)).To(Succeed())
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &v1.CamundaCluster{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		Eventually(func(g Gomega) {
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, zeebeKey, &appsv1.StatefulSet{}))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		By("recreating it under the same name two minors up")
+		recreated := newCluster(ns, cfg, binding)
+		recreated.Name = cluster.Name
+		recreated.Spec.Version = skippedVersion
+		createCluster(recreated)
+		expectReady(
+			recreated, metav1.ConditionFalse,
+			Equal(v1.ReasonVersionSkipRefused),
+			ContainSubstring("8.11.0 skips a minor: the brokers run 8.9.9"),
 		)
 	})
 

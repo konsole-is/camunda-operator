@@ -75,25 +75,27 @@ const versionFloor = "8.9.0"
 // indexReplicas, connectors.enabled, and connectors.version. Auth.clientId
 // replaces the whole client: a cluster that sets it takes auth.audience and
 // auth.clientSecretRef from spec only, and without it they override
-// individually. Resources merge per request and limit entry. ExtraEnv
-// merges by variable name, lower layer first, and an entry of a higher layer
-// with the same name replaces it. ExtraEnvFrom concatenates, lower layer
-// first. PodLabels and podAnnotations merge by key with the higher layer
-// winning. Scheduling never merges: a block set on the cluster replaces the
-// block of the preset at that level (top-level, per component, or under
-// backup.dump) entirely. Auth.admin and auth.basic never merge either, and
-// they exist at the top level only: a block set on the cluster replaces the
-// whole block of the preset. The backup block merges per field: the
-// primary-storage schedule, checkpoint interval, and retention each override
-// on their own, and backup.dump follows the component rules above, with its
-// scratch volume replaced as a whole block. A release carries only versions,
-// images, and environment, so it takes part in the version and the
-// environment rules alone. The instance-bound fields (platformConfigRef,
-// presetRef, releaseRef, externalUrl, serviceAccount, storageRef,
-// backupStorageRef, documentStorageRef, monitoring, suspend, pause) always
-// come from spec. A nil preset or release is an empty layer. The result
-// shares no memory with spec, preset, or release, so callers can mutate it
-// freely.
+// individually. Resources merge per request and limit entry. ExtraEnv merges
+// by variable name, lower layer first, and an entry of a higher layer with
+// the same name replaces it. ExtraEnvFrom concatenates, lower layer first.
+// PodLabels and podAnnotations merge by key with the higher layer winning.
+// Connectors.serviceAccount merges the same way: create overrides
+// individually, and its annotations merge by key. Scheduling never merges: a
+// block set on the cluster replaces the block of the preset at that level
+// (top-level, per component, or under backup.dump) entirely. Auth.admin and
+// auth.basic never merge either, and they exist at the top level only: a
+// block set on the cluster replaces the whole block of the preset. The
+// backup block merges per field: the primary-storage schedule, checkpoint
+// interval, and retention each override on their own, and backup.dump
+// follows the component rules above, with its scratch volume replaced as a
+// whole block. A release carries only versions, images, and environment, so
+// it takes part in the version and the environment rules alone. The
+// instance-bound fields (platformConfigRef, presetRef, releaseRef,
+// externalUrl, serviceAccount, storageRef, backupStorageRef,
+// documentStorageRef, monitoring, suspend, pause) come from spec, and a
+// preset cannot set connectors.serviceAccount.name. A nil preset or release
+// is an empty layer. The result shares no memory with spec, preset, or
+// release, so callers can mutate it freely.
 func MergeSpec(
 	spec v1.CamundaClusterSpec,
 	preset *v1.CamundaClusterPresetSpec,
@@ -483,6 +485,28 @@ func mergeConnectors(base, over *v1.ConnectorsSpec) *v1.ConnectorsSpec {
 	if over.Version != "" {
 		base.Version = over.Version
 	}
+	base.ServiceAccount = mergeServiceAccount(base.ServiceAccount, over.ServiceAccount)
+
+	return base
+}
+
+// mergeServiceAccount merges a ServiceAccount block: name and create
+// override one by one, and the annotations merge by key.
+func mergeServiceAccount(base, over *v1.ServiceAccountSpec) *v1.ServiceAccountSpec {
+	if over == nil {
+		return base
+	}
+	if base == nil {
+		return over
+	}
+
+	if over.Name != "" {
+		base.Name = over.Name
+	}
+	if over.Create != nil {
+		base.Create = over.Create
+	}
+	base.Annotations = mergeMap(base.Annotations, over.Annotations)
 
 	return base
 }

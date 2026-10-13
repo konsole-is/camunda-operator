@@ -38,6 +38,35 @@ Multi-group layout organizes APIs by group name (e.g., `batch`, `apps`). Check t
 6. Fix `path` in `PROJECT` file for each resource
 7. Update test suite CRD paths (add one more `..` to relative paths)
 
+**This repository is multigroup.** `PROJECT` has `multigroup: true`. The
+core kinds stay at `api/v1`, with the paths that `PROJECT` records. New
+groups live at `api/<group>/<version>`, for example `api/plugins/v1alpha1`,
+and are scaffolded with
+`kubebuilder create api --group <group> --version <version> --kind <Kind> --resource --controller=false`.
+
+Fix three things by hand after each `kubebuilder create api`:
+
+1. The scheme. The `api` module never imports controller-runtime. Each
+   group's `groupversion_info.go` sets
+   `SchemeBuilder = v1.NewBuilder(SchemeGroupVersion)` with the `Builder` of
+   `api/v1/groupversion_info.go`, and `kubebuilder create api` keeps an
+   existing file. In the new types file, change `init` to
+   `SchemeBuilder.Register(&<Kind>{}, &<Kind>List{})`.
+2. The line in `cmd/main.go`. Kubebuilder adds
+   `utilruntime.Must(<group><version>.AddToScheme(scheme))` and an import
+   at the `+kubebuilder:scaffold:*` markers. Remove both, and add the
+   group to `internal/manager.AddToScheme` once. Keep the markers.
+3. The install. Kubebuilder adds the CRD base to
+   `config/crd/kustomization.yaml` and the roles to
+   `config/rbac/kustomization.yaml`. Remove those entries. A new CRD joins
+   `config/crd/kustomization.yaml`, and its roles join
+   `config/rbac/kustomization.yaml`, with the first controller that acts
+   on the kind. The sample stays in `config/samples/kustomization.yaml`.
+
+In the multigroup layout, `kubebuilder create webhook --group core`
+scaffolds under `api/core/v1`, not `api/v1`. No core webhook is planned.
+If one is needed, move the scaffolded files to `api/v1` and fix the path.
+
 ## Critical Rules
 
 ### Never Edit These (Auto-Generated)

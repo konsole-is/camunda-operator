@@ -78,6 +78,14 @@ const ReasonRejected = "Rejected"
 // target version as its value, permits one such downgrade.
 const ReasonVersionDowngradeRefused = "VersionDowngradeRefused"
 
+// ReasonVersionSkipRefused on Ready means that the effective version of the
+// cluster is more than one minor above the version that its brokers run, in
+// the same major. Camunda upgrades one minor at a time and blocks the start
+// after a skipped minor. The operator applies nothing while this reason
+// stays. The message names the two versions and the minor to move to first.
+// No annotation permits the move.
+const ReasonVersionSkipRefused = "VersionSkipRefused"
+
 // ComponentMode says where a process of the unified binary runs.
 // +kubebuilder:validation:Enum=Standalone;Embedded
 type ComponentMode string
@@ -89,6 +97,26 @@ const (
 	// ComponentModeEmbedded runs the process inside the nearest standalone
 	// host up the chain: the gateway when it is standalone, otherwise zeebe.
 	ComponentModeEmbedded ComponentMode = "Embedded"
+)
+
+// The names of the entries of status.endpoints of a CamundaCluster.
+const (
+	// EndpointDefault routes every path that no other entry names, for
+	// example the login and the OIDC callback.
+	EndpointDefault = "default"
+	// EndpointREST routes the orchestration cluster REST API under /v2.
+	EndpointREST = "rest"
+	// EndpointOperate routes Operate under /operate.
+	EndpointOperate = "operate"
+	// EndpointTasklist routes Tasklist under /tasklist.
+	EndpointTasklist = "tasklist"
+	// EndpointAdmin routes Admin under /admin.
+	EndpointAdmin = "admin"
+	// EndpointGRPC routes the gRPC API of the gateway.
+	EndpointGRPC = "grpc"
+	// EndpointConnectors routes the inbound webhooks of connectors under
+	// /inbound. It is present only while spec.connectors.enabled is true.
+	EndpointConnectors = "connectors"
 )
 
 // WorkloadSpec holds the settings of one process: the size, the environment,
@@ -129,7 +157,10 @@ type WorkloadSpec struct {
 	// PodLabels are extra labels of the pods of this process.
 	// +optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
-	// PodAnnotations are extra annotations of the pods of this process.
+	// PodAnnotations are extra annotations of the pods of this process. In a
+	// CamundaCluster, the keys camunda.io/config-hash and
+	// camunda.io/service-account-hash belong to the operator, and a value for
+	// them does not reach the pods.
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 	// Scheduling holds the scheduling constraints of the pods of this process.
@@ -221,8 +252,25 @@ type ConnectorsSpec struct {
 	// unless the resolved release provides it. Forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
-	Version      string `json:"version,omitempty"`
-	WorkloadSpec `       json:",inline"`
+	Version string `json:"version,omitempty"`
+	// ServiceAccount configures the ServiceAccount of the connectors pods.
+	// When unset, they run under the default ServiceAccount of the namespace.
+	// When set, they run under <name>-connectors, or under name. Only
+	// the annotations of this block go on the account, never the identities
+	// of the buckets. When they carry azure.workload.identity/client-id, the
+	// connectors pods get the label azure.workload.identity/use: "true". The
+	// connectors never run under the cluster ServiceAccount: name must differ
+	// from it, and a spec.serviceAccount.name of default needs this block, or
+	// Ready reports InvalidReference. The name default needs create false.
+	// With create false, name must not be <name>-camunda while
+	// neither the cluster nor its preset sets spec.serviceAccount and no
+	// referenced bucket uses workload identity. Ready then reports
+	// InvalidReference, also while connectors are off. A preset can set this
+	// block, except name.
+	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="connectors.serviceAccount.name default requires create: false"
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
+	WorkloadSpec   `                    json:",inline"`
 }
 
 // ClusterAuthSpec holds the credentials of one cluster and the identities
@@ -388,6 +436,9 @@ type CamundaClusterSpec struct {
 	// version that the brokers run, with Ready reason VersionDowngradeRefused.
 	// The annotation camunda.io/allow-version-downgrade on the CamundaCluster,
 	// set to that version, permits it.
+	// The operator also refuses a version more than one minor above the
+	// version that the brokers run, in the same major, with Ready reason
+	// VersionSkipRefused. No annotation permits that move.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
@@ -396,9 +447,19 @@ type CamundaClusterSpec struct {
 	// Ingress.
 	// +optional
 	ExternalURL string `json:"externalUrl,omitempty"`
-	// ServiceAccount configures the ServiceAccount of every workload. The
+	// ServiceAccount configures the ServiceAccount of every workload except
+	// the connectors, which connectors.serviceAccount configures. The
 	// workloads get access to the buckets of backupStorageRef and
-	// documentStorageRef through this identity.
+	// documentStorageRef through this identity. When the operator creates
+	// the account, it adds the identity annotation of each bucket that names
+	// one. When the annotations carry azure.workload.identity/client-id, the
+	// pods of these workloads, the backup Jobs included, get the label
+	// azure.workload.identity/use: "true". The name <name>-camunda
+	// belongs to the operator. While neither the cluster nor its preset sets
+	// this block and no referenced bucket uses workload identity, the
+	// operator deletes an account of that name. It deletes one that it did
+	// not create too, except while connectors.serviceAccount names it with
+	// create false: Ready then reports InvalidReference.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// Auth holds the credentials of this cluster and the identities that get
@@ -456,7 +517,10 @@ type CamundaClusterSpec struct {
 	// PodLabels are extra labels of every workload pod.
 	// +optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
-	// PodAnnotations are extra annotations of every workload pod.
+	// PodAnnotations are extra annotations of every workload pod. The keys
+	// camunda.io/config-hash and camunda.io/service-account-hash belong to the
+	// operator. A value for them here, or in the podAnnotations of a process,
+	// does not reach the pods.
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 	// Scheduling holds the scheduling constraints of every workload that does
@@ -557,16 +621,31 @@ type CamundaClusterStatus struct {
 	// does not use an old endpoint.
 	// +optional
 	Gateway *GatewayBinding `json:"gateway,omitempty"`
+	// Endpoints lists the routes of this cluster, sorted by name: each path
+	// on the external URL, with the Service and the port that serve it. An
+	// access extension reads it and does not derive a Service from the mode
+	// fields. The longest matching path prefix wins, and default takes every
+	// path that no other entry names. The entries stay while the cluster is
+	// suspended, because the Services stay.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
 	// AdminPassword is the state of the admin credential of a basic-auth
 	// cluster. It is unset under OIDC.
 	// +optional
 	AdminPassword *AdminPasswordStatus `json:"adminPassword,omitempty"`
 	// ServiceAccountName is the ServiceAccount that the pods of this cluster
-	// run under. It is empty when they run under the default account of the
-	// namespace. An extension that runs a pod for this cluster reads it and
-	// does not derive the name itself.
+	// run under, except the connectors. It is empty when they run under the
+	// default account of the namespace. An extension that runs a pod for
+	// this cluster reads it and does not derive the name itself.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+	// ConnectorsServiceAccountName is the ServiceAccount that the connectors
+	// pods run under. It is empty when neither the cluster nor its preset
+	// sets connectors.serviceAccount, and when connectors are not enabled.
+	// +optional
+	ConnectorsServiceAccountName string `json:"connectorsServiceAccountName,omitempty"`
 	// Conditions represent the current state. Ready holds the reason of a
 	// failed pre-check, or it follows the conditions of the components that
 	// the cluster needs. The per-process conditions (ZeebeReady, GatewayReady,
@@ -603,6 +682,7 @@ type CamundaCluster struct {
 	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageClassName) || (has(self.zeebe) && has(self.zeebe.storageClassName) && self.zeebe.storageClassName == oldSelf.zeebe.storageClassName)",message="zeebe.storageClassName is immutable"
 	// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zeebe) || !has(oldSelf.zeebe.storageSize) || !has(self.zeebe) || !has(self.zeebe.storageSize) || !quantity(string(self.zeebe.storageSize)).isLessThan(quantity(string(oldSelf.zeebe.storageSize)))",message="zeebe.storageSize cannot be shrunk"
 	// +kubebuilder:validation:XValidation:rule="!has(self.zeebe) || !has(self.zeebe.replicas) || !has(self.zeebe.replicationFactor) || self.zeebe.replicationFactor <= self.zeebe.replicas",message="zeebe.replicationFactor must not exceed zeebe.replicas"
+	// +kubebuilder:validation:XValidation:rule="!has(self.serviceAccount) || !has(self.serviceAccount.name) || !has(self.connectors) || !has(self.connectors.serviceAccount) || !has(self.connectors.serviceAccount.name) || self.connectors.serviceAccount.name != self.serviceAccount.name",message="connectors.serviceAccount.name must differ from serviceAccount.name"
 	// +required
 	Spec CamundaClusterSpec `json:"spec"`
 

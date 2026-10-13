@@ -244,6 +244,34 @@ The operator supports `version` `8.9.0` and later.
 
 Management Identity needs a PostgreSQL database of its own. Management Identity, Keycloak, and Web Modeler must each name a different [DatabaseConfig](databaseconfig.md). Two components that name one report `InvalidReference`.
 
+### One host for the management plane
+
+Management Identity serves under the path of `externalUrl`. Console and Web Modeler also serve under the paths of their URLs. As a result, the whole management plane can share one host:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaManagementCluster
+metadata:
+  name: my-management
+  namespace: my-management-ns
+spec:
+  identity:
+    version: "8.9.0"
+    externalUrl: "https://camunda.example.com/identity"
+    databaseConfigRef: "my-identity-db"
+    admin:
+      username: "admin"
+      email: "admin@example.com"
+  console:
+    version: "8.9.0"
+    externalUrl: "https://camunda.example.com/console"
+  # ... the rest of your management cluster
+```
+
+Route `/identity` to the Service `my-management-identity` on port 80, and `/console` to `my-management-console` on port 80. Keep the path in each request, because Identity and Console expect every request under their paths. Camunda shows the same layout in the [combined Ingress setup](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/ingress/ingress-setup/#configuration).
+
+An Identity URL with a path other than `/` must use `https`. Camunda requires https for Identity under a path, as [Identity `contextPath`](https://docs.camunda.io/docs/self-managed/operational-guides/troubleshooting/#identity-contextpath) says. The API server refuses an `http` Identity URL with such a path. It accepts `http://identity.example.com/`, because `/` is the root of the host.
+
 ### The first administrator
 
 `spec.identity.admin` names the person who signs in first and grants access to the rest. Management Identity reads it on its first start only and stores the result in its database.
@@ -756,7 +784,7 @@ spec:
   identity:
     # string. Required. Management Identity version, as major.minor.patch. Supported: 8.9.0 and later.
     version: "8.9.0"
-    # string. Required. The URL a browser reaches Management Identity at. Must be an http or https URL.
+    # string. Required. The URL a browser reaches Management Identity at. Must be an http or https URL. Identity serves under its path. A URL with a path other than / must be https.
     externalUrl: "https://identity.camunda.example.com"
     # string. Required. Name of the DatabaseConfig of the Management Identity database, in this namespace.
     databaseConfigRef: "my-identity-db"
@@ -853,6 +881,7 @@ The API server refuses an apply that breaks one of these:
 - `spec.identity.admin.claimName` holds no equals sign.
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL with a host.
 - The path of `spec.identityProvider.keycloak.externalUrl` is exactly `/auth`.
+- `spec.identity.externalUrl` uses `https` when it has a path other than `/`.
 - `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
 - `spec.identityProvider.externalKeycloak.url` carries no user and no password.
 - `spec.identityProvider.externalKeycloak.caBundleSecretRef` requires an `https` url.

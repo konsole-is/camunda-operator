@@ -31,7 +31,7 @@ import (
 // order; the brokers add VolumeRetention.
 var workloadMutationNames = []string{
 	MutationResources, MutationSchedulingConstraints, MutationPodMetadata, MutationServiceAccount,
-	MutationTrustStore,
+	MutationServiceAccountHash, MutationTrustStore,
 }
 
 // A process without overrides registers every mutation and fires none: the
@@ -58,7 +58,13 @@ func TestMutationsAreGatedOffWithoutOverrides(t *testing.T) {
 		assert.Empty(t, template.Spec.Containers[0].Resources, pc.Process.Component)
 		assert.Nil(t, template.Spec.Affinity, pc.Process.Component)
 		assert.Empty(t, template.Spec.Tolerations, pc.Process.Component)
-		assert.Empty(t, template.Spec.ServiceAccountName, pc.Process.Component)
+		// The connectors name the default account in the base workload, so
+		// that an apply moves them off an account they ran under before.
+		wantAccount := ""
+		if pc.Process.Component == ComponentConnectors {
+			wantAccount = defaultServiceAccountName
+		}
+		assert.Equal(t, wantAccount, template.Spec.ServiceAccountName, pc.Process.Component)
 		assert.Equal(
 			t,
 			labels.Merge(
@@ -100,7 +106,7 @@ func TestMutationsFireOnOverrides(t *testing.T) {
 		t,
 		[]string{
 			MutationResources, MutationSchedulingConstraints, MutationPodMetadata, MutationServiceAccount,
-			MutationTrustStore,
+			MutationServiceAccountHash, MutationTrustStore,
 		},
 		zeebe,
 	)
@@ -112,7 +118,10 @@ func TestMutationsFireOnOverrides(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(
 		t,
-		[]string{MutationResources, MutationPodMetadata, MutationServiceAccount, MutationTrustStore},
+		[]string{
+			MutationResources, MutationPodMetadata, MutationServiceAccount, MutationServiceAccountHash,
+			MutationTrustStore,
+		},
 		gateway,
 	)
 

@@ -44,6 +44,7 @@ spec:
     podTemplate:
       metadata:
         annotations:
+          camunda.io/service-account-hash: 0074eb9bd7ad2b2e
           prometheus.io/scrape: "true"
         labels:
           camunda.io/component: elasticsearch

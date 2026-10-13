@@ -113,18 +113,6 @@ func expectBinding(cluster *v1.CamundaCluster, match func(Gomega, *v1.Management
 	}, timeout, interval).Should(Succeed())
 }
 
-// expectPublishedAccount polls until the cluster publishes name as the
-// ServiceAccount its pods run under. An empty name is a cluster whose pods
-// run under the default account of the namespace.
-func expectPublishedAccount(cluster *v1.CamundaCluster, name string) {
-	GinkgoHelper()
-	Eventually(func(g Gomega) {
-		var latest v1.CamundaCluster
-		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-		g.Expect(latest.Status.ServiceAccountName).To(Equal(name))
-	}, timeout, interval).Should(Succeed())
-}
-
 var _ = Describe("CamundaCluster backup wiring", func() {
 	Describe("the published management binding", func() {
 		// The default topology runs a standalone gateway, which hosts the web
@@ -220,73 +208,6 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				g.Expect(published).NotTo(BeNil())
 				g.Expect(published.BackupRepository).To(Equal("repository-of-this-contract"))
 			})
-		})
-	})
-
-	// A consumer that renders a pod against the cluster reads this field.
-	// Rebuilding the rule from the spec and every bucket the cluster
-	// references is what shipped a dump Job that named an account the
-	// cluster never rendered.
-	Describe("the published ServiceAccount", func() {
-		It("names the account of the spec", func() {
-			ns := newNamespace()
-			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
-			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
-			createCluster(cluster)
-
-			expectPublishedAccount(cluster, "platform-sa")
-		})
-
-		// A workload-identity bucket binds the account by name on the cloud
-		// side, so the cluster renders one even though the spec asks for
-		// none.
-		It("names the derived account of a workload-identity bucket", func() {
-			ns := newNamespace()
-			binding := createBinding(ns, true)
-			setSnapshotRepository(binding, "my-repository")
-			cluster := newCluster(ns, createPlatformConfig(), binding)
-			cluster.Spec.BackupStorageRef = createBucket(ns, "arn:aws:iam::123456789012:role/camunda").Name
-			createCluster(cluster)
-
-			expectPublishedAccount(cluster, cluster.Name+"-camunda")
-		})
-
-		// Static keys reach the pods in a Secret, so the pods carry no cloud
-		// identity and the operator renders no account. A consumer that named
-		// one here would name an account that does not exist.
-		It("is empty for a bucket with static credentials", func() {
-			ns := newNamespace()
-			binding := createBinding(ns, true)
-			setSnapshotRepository(binding, "my-repository")
-			keys := createSecret(ns, "minio-keys", map[string]string{
-				"accessKeyId": "minio", "secretAccessKey": "minio123",
-			})
-			cluster := newCluster(ns, createPlatformConfig(), binding)
-			cluster.Spec.BackupStorageRef = createStaticBucket(ns, keys.Name).Name
-			createCluster(cluster)
-
-			// The binding proves the cluster reconciled. Without it an empty
-			// account would also match a status that was never written.
-			expectBinding(cluster, func(g Gomega, published *v1.ManagementBinding) {
-				g.Expect(published).NotTo(BeNil())
-			})
-			expectPublishedAccount(cluster, "")
-		})
-
-		// The account outlives a suspension: the ServiceAccount stays, and a
-		// cleanup Job of a deleted backup still needs the identity it holds.
-		It("stays published while the cluster is suspended", func() {
-			ns := newNamespace()
-			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
-			cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{Name: "platform-sa"}
-			createCluster(cluster)
-			expectPublishedAccount(cluster, "platform-sa")
-
-			updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.Suspend = true })
-			expectBinding(cluster, func(g Gomega, published *v1.ManagementBinding) {
-				g.Expect(published).To(BeNil())
-			})
-			expectPublishedAccount(cluster, "platform-sa")
 		})
 	})
 
@@ -669,6 +590,72 @@ var _ = Describe("CamundaCluster backup wiring", func() {
 				Equal(v1.ReasonMissingSecret),
 				ContainSubstring("absent-keys"),
 			)
+		})
+
+		// The connectors run under an account of their own and read nothing
+		// of the bucket, so an edit of the bucket must not restart them.
+		It("rolls the processes of the cluster account and not the connectors when the bucket changes", func() {
+			ns := newNamespace()
+			binding := createBinding(ns, true)
+			setSnapshotRepository(binding, "my-repository")
+			createSecret(ns, "minio-keys", map[string]string{
+				"accessKeyId": "minio", "secretAccessKey": "minio123",
+			})
+			bucket := createStaticBucket(ns, "minio-keys")
+
+			cluster := newCluster(ns, createPlatformConfig(), binding)
+			cluster.Spec.BackupStorageRef = bucket.Name
+			cluster.Spec.Connectors = &v1.ConnectorsSpec{Enabled: new(true), Version: "8.9.7"}
+			cluster.Spec.Operate = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+			cluster.Spec.Tasklist = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+			cluster.Spec.Admin = &v1.WebAppSpec{Mode: v1.ComponentModeStandalone}
+			createCluster(cluster)
+
+			zeebe := client.ObjectKey{Namespace: ns, Name: components.WorkloadName(cluster, components.ComponentZeebe)}
+			deployments := map[string]client.ObjectKey{}
+			for _, comp := range []string{
+				components.ComponentGateway,
+				components.ComponentOperate,
+				components.ComponentTasklist,
+				components.ComponentAdmin,
+			} {
+				deployments[comp] = client.ObjectKey{Namespace: ns, Name: components.WorkloadName(cluster, comp)}
+			}
+			connectorsKey := client.ObjectKey{
+				Namespace: ns,
+				Name:      components.WorkloadName(cluster, components.ComponentConnectors),
+			}
+
+			zeebeBefore := fetchStatefulSet(zeebe).Spec.Template
+			before := map[string]corev1.PodTemplateSpec{}
+			for comp, key := range deployments {
+				before[comp] = fetchDeployment(key).Spec.Template
+			}
+			connectorsBefore := fetchDeployment(connectorsKey).Spec.Template
+
+			Eventually(func(g Gomega) {
+				var latest v1.ObjectStorageConfig
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(bucket), &latest)).To(Succeed())
+				latest.Spec.S3.ForcePathStyle = true
+				g.Expect(k8sClient.Update(ctx, &latest)).To(Succeed())
+			}, timeout, interval).Should(Succeed())
+
+			Eventually(func(g Gomega) {
+				var sts appsv1.StatefulSet
+				g.Expect(k8sClient.Get(ctx, zeebe, &sts)).To(Succeed())
+				g.Expect(sts.Spec.Template).NotTo(Equal(zeebeBefore))
+				for comp, key := range deployments {
+					var deployment appsv1.Deployment
+					g.Expect(k8sClient.Get(ctx, key, &deployment)).To(Succeed())
+					g.Expect(deployment.Spec.Template).NotTo(Equal(before[comp]), comp)
+				}
+			}, timeout, interval).Should(Succeed())
+
+			Consistently(func(g Gomega) {
+				var connectorsNow appsv1.Deployment
+				g.Expect(k8sClient.Get(ctx, connectorsKey, &connectorsNow)).To(Succeed())
+				g.Expect(connectorsNow.Spec.Template).To(Equal(connectorsBefore))
+			}, 2*time.Second, interval).Should(Succeed())
 		})
 	})
 })

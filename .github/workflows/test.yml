@@ -4,10 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The Renovate commit workflow starts this one on the commit it pushes.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -52,3 +57,9 @@ jobs:
           # part of a container start that times out on a slow Docker daemon
           # ("wait for reaper: context deadline exceeded").
           TESTCONTAINERS_RYUK_DISABLED: "true"
+
+      # A typo in the -X path of the ldflags does not fail the build. The
+      # manager then reports 0.0.0-dev in a release. This builds the version
+      # test with the ldflags of a release build and checks the Dockerfile.
+      - name: Check that a release build reports its tag
+        run: make test-version-stamp

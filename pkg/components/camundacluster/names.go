@@ -17,9 +17,12 @@ limitations under the License.
 package camundacluster
 
 import (
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/accounthash"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
@@ -40,6 +43,9 @@ const (
 	// ConfigHashAnnotation is the pod template annotation that carries the
 	// hash of the rendered configuration. A change to it rolls the pods.
 	ConfigHashAnnotation = "camunda.io/config-hash"
+	// ServiceAccountHashAnnotation is accounthash.Annotation. It is absent
+	// when the operator renders no annotation on the account of the pods.
+	ServiceAccountHashAnnotation = accounthash.Annotation
 	// RequestedStorageSizeAnnotation is the annotation of the broker
 	// StatefulSet that carries the effective storageSize. The claim template
 	// keeps the size it was created with, so this is where the requested
@@ -135,9 +141,15 @@ const (
 
 // The suffixes of the resources that are not named after a component.
 const (
-	adminSecretSuffix    = "-camunda-admin"
-	serviceAccountSuffix = "-camunda"
+	adminSecretSuffix              = "-camunda-admin"
+	serviceAccountSuffix           = "-camunda"
+	zeebeClientServiceSuffix       = "-zeebe-client"
+	connectorsServiceAccountSuffix = "-connectors"
 )
+
+// defaultServiceAccountName is the account that Kubernetes creates in every
+// namespace.
+const defaultServiceAccountName = "default"
 
 // WorkloadName returns the name of the workload and Service of a component:
 // the cluster name and the component, joined by a dash. The Service is the
@@ -149,6 +161,16 @@ func WorkloadName(cluster *v1.CamundaCluster, component string) string {
 	return labels.BoundedName(cluster.Name, validation.DNS1123LabelMaxLength-len(suffix)) + suffix
 }
 
+// ZeebeClientServiceName returns the name of the Service that routes client
+// traffic to the ready brokers of a cluster whose gateway is embedded. Like
+// every Service name, a long cluster name truncates and keeps its identity in
+// a hash.
+func ZeebeClientServiceName(cluster *v1.CamundaCluster) string {
+	limit := validation.DNS1123LabelMaxLength - len(zeebeClientServiceSuffix)
+
+	return labels.BoundedName(cluster.Name, limit) + zeebeClientServiceSuffix
+}
+
 // AdminSecretName returns the name of the Secret that holds the admin
 // credentials of a basic-auth cluster.
 func AdminSecretName(cluster *v1.CamundaCluster) string {
@@ -158,8 +180,8 @@ func AdminSecretName(cluster *v1.CamundaCluster) string {
 }
 
 // PodServiceAccountName returns the ServiceAccount that the pods of the
-// cluster run under, or the empty string when they run under the default
-// account of their namespace.
+// cluster run under, except the connectors, or the empty string when they
+// run under the default account of their namespace.
 //
 // The pods need a named account only when something binds one: the spec asks
 // for one, or a referenced bucket authenticates through workload identity.
@@ -193,4 +215,84 @@ func ServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
 	limit := validation.DNS1123SubdomainMaxLength - len(serviceAccountSuffix)
 
 	return labels.BoundedName(cluster.Name, limit) + serviceAccountSuffix
+}
+
+// PodConnectorsServiceAccountName returns the ServiceAccount that the
+// connectors pods run under, or the empty string when connectors are not
+// enabled or connectors.serviceAccount is unset.
+//
+// A consumer outside this package reads status.connectorsServiceAccountName.
+func PodConnectorsServiceAccountName(in Input) string {
+	if !in.Effective.ConnectorsEnabled() || in.Effective.ConnectorsServiceAccount() == nil {
+		return ""
+	}
+
+	return ConnectorsServiceAccountName(in.Cluster, in.Effective)
+}
+
+// ConnectorsServiceAccountName returns the name that the ServiceAccount of
+// the connectors carries: the name the spec sets, or <cluster>-connectors,
+// bounded like ServiceAccountName. It is the principal that a workload
+// identity without an annotation binds for the connectors.
+func ConnectorsServiceAccountName(cluster *v1.CamundaCluster, e Effective) string {
+	if account := e.ConnectorsServiceAccount(); account != nil && account.Name != "" {
+		return account.Name
+	}
+
+	limit := validation.DNS1123SubdomainMaxLength - len(connectorsServiceAccountSuffix)
+
+	return labels.BoundedName(cluster.Name, limit) + connectorsServiceAccountSuffix
+}
+
+// CheckConnectorsServiceAccount returns an error when the connectors would
+// run under the ServiceAccount name of the cluster, the derived one
+// included, or under the default account while the cluster account is the
+// default account. Two owners of one account would fight over it, and the
+// connectors would get the cluster identity.
+//
+// It also returns an error, connectors on or off, when
+// connectors.serviceAccount names the derived cluster account with create
+// false and PodServiceAccountName is empty. The operator reserves that name.
+func CheckConnectorsServiceAccount(in Input) error {
+	account := in.Effective.ConnectorsServiceAccount()
+	if account != nil && !account.Creates() && PodServiceAccountName(in) == "" &&
+		ConnectorsServiceAccountName(in.Cluster, in.Effective) == ServiceAccountName(in.Cluster, in.Effective) {
+		return fmt.Errorf(
+			"connectors.serviceAccount.name %q is reserved for the ServiceAccount that the operator "+
+				"creates for the cluster. The operator applies nothing until you give the connectors a "+
+				"ServiceAccount of another name",
+			account.Name,
+		)
+	}
+
+	if !in.Effective.ConnectorsEnabled() {
+		return nil
+	}
+
+	name := PodConnectorsServiceAccountName(in)
+	if name == "" && PodServiceAccountName(in) == defaultServiceAccountName {
+		return fmt.Errorf(
+			"serviceAccount.name is %q, the account that the connectors run under without "+
+				"connectors.serviceAccount. Set connectors.serviceAccount to give the connectors a ServiceAccount "+
+				"of their own",
+			defaultServiceAccountName,
+		)
+	}
+	if name == "" || name != ServiceAccountName(in.Cluster, in.Effective) {
+		return nil
+	}
+
+	if in.Effective.ConnectorsServiceAccount().Name == "" {
+		return fmt.Errorf(
+			"serviceAccount.name %q is the name of the connectors ServiceAccount. "+
+				"Set connectors.serviceAccount.name, or give the cluster another ServiceAccount",
+			name,
+		)
+	}
+
+	return fmt.Errorf(
+		"connectors.serviceAccount.name %q is the ServiceAccount of the cluster. "+
+			"Give the connectors a ServiceAccount of their own",
+		name,
+	)
 }

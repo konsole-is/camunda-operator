@@ -164,3 +164,31 @@ func TestBoundedNameHandlesALimitSmallerThanTheHash(t *testing.T) {
 		"a short bound still separates two names",
 	)
 }
+
+// docs/architecture.md promises these keys to selectors outside this
+// repository. A changed value breaks each of them.
+func TestDiscoveryKeysAreStable(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "camunda.io/cluster", ClusterKey)
+	assert.Equal(t, "camunda.io/component", ComponentKey)
+	assert.Equal(t, "camunda.io/elasticsearch-cluster", ElasticsearchClusterKey)
+	assert.Equal(t, "camunda.io/database-server", DatabaseServerKey)
+	assert.Equal(t, "camunda.io/database", DatabaseKey)
+}
+
+func TestKeysThatTheUserDocsSelectOnAreStable(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, "camunda.io/management-cluster", ManagementClusterKey)
+	assert.Equal(t, "camunda.io/management-cluster-namespace", ManagementClusterNamespaceKey)
+	assert.Equal(t, "camunda.io/cluster-namespace", ClusterNamespaceKey)
+	assert.Equal(t, "camunda.io/storage-claim", StorageClaimKey)
+	assert.Equal(t, "camunda.io/writer-uid", WriterUIDKey)
+	assert.Equal(t, "camunda.io/backup-schedule", BackupScheduleKey)
+	assert.Equal(t, "camunda.io/logical-restore-elasticsearch", LogicalRestoreElasticsearchKey)
+	assert.Equal(t, "camunda.io/logical-restore-rdbms", LogicalRestoreRDBMSKey)
+	assert.Equal(t, "camunda.io/point-in-time-restore", PointInTimeRestoreKey)
+	assert.Equal(t, "app.kubernetes.io/managed-by", ManagedByKey)
+	assert.Equal(t, "camunda-operator", ManagedBy)
+}

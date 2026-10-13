@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "name": "an unset cluster scalar inherits the preset value",
+  "rule": "per-component `mode`, `replicas`, `zeebe.partitions`, `zeebe.replicationFactor`, `zeebe.storageClassName`, `zeebe.storageSize`, `zeebe.persistentVolumeClaimRetentionPolicy`, `indexReplicas`, `connectors.enabled`",
+  "preset": {
+    "cluster": {
+      "indexReplicas": 1,
+      "zeebe": {
+        "replicas": 3,
+        "partitions": 3,
+        "replicationFactor": 3,
+        "storageClassName": "ssd",
+        "storageSize": "32Gi",
+        "persistentVolumeClaimRetentionPolicy": {
+          "whenDeleted": "Retain"
+        }
+      },
+      "gateway": {
+        "mode": "Standalone",
+        "replicas": 2
+      },
+      "connectors": {
+        "enabled": true
+      }
+    }
+  },
+  "spec": {},
+  "merged": {
+    "zeebe": {
+      "replicas": 3,
+      "partitions": 3,
+      "replicationFactor": 3,
+      "storageClassName": "ssd",
+      "storageSize": "32Gi",
+      "persistentVolumeClaimRetentionPolicy": {
+        "whenDeleted": "Retain"
+      }
+    },
+    "gateway": {
+      "mode": "Standalone",
+      "replicas": 2
+    },
+    "connectors": {
+      "enabled": true
+    },
+    "indexReplicas": 1
+  }
+}

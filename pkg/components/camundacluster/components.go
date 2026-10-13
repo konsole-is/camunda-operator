@@ -116,9 +116,12 @@ type namedPort struct {
 // of enabled processes take part in Ready. The admin Secret and the mirrored
 // Secrets are separate components, see AdminSecretComponent and
 // MirroredSecretComponent. The zeebe component also carries the
-// ServiceAccount, so it exists before any pod references it: it is rendered
-// when spec.serviceAccount is set or a referenced bucket derives a
-// workload-identity annotation.
+// ServiceAccount of the cluster, so it exists before any pod references it:
+// it is rendered when spec.serviceAccount is set or a referenced bucket
+// derives a workload-identity annotation. The connectors component carries
+// the ServiceAccount of the connectors when spec.connectors.serviceAccount
+// is set. With create false, neither component renders its account. It
+// only releases an account that it created before.
 func Build(in Input) ([]ProcessComponent, error) {
 	processes := Resolve(in.Effective)
 	comps := make([]ProcessComponent, 0, len(processes))
@@ -141,8 +144,9 @@ func Build(in Input) ([]ProcessComponent, error) {
 }
 
 // zeebeComponent builds the brokers: the optional ServiceAccount, the
-// StatefulSet, the headless Service, and the optional ServiceMonitor. It is
-// gated on p.Enabled like every process component.
+// StatefulSet, the headless Service, the client Service while the brokers
+// run the gateway, and the optional ServiceMonitor. It is gated on p.Enabled
+// like every process component.
 func zeebeComponent(in Input, p Process) (*component.Component, error) {
 	account, err := serviceaccount.NewBuilder(serviceAccountFor(in)).Build()
 	if err != nil {
@@ -161,6 +165,11 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		return nil, err
 	}
 
+	client, err := service.NewBuilder(clientServiceFor(in, p)).Build()
+	if err != nil {
+		return nil, err
+	}
+
 	monitor, err := servicemonitor.NewBuilder(serviceMonitorFor(in, p)).Build()
 	if err != nil {
 		return nil, err
@@ -170,45 +179,64 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
 		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
-		// A pre-existing ServiceAccount is excluded, not gated: a gated-off
-		// resource is a deletion target, and the operator must never delete
-		// an account it does not own. With create true the gate cleans up
-		// the owned account when nothing uses one anymore.
-		IncludeWhen(
-			in.Effective.ServiceAccount.Creates(),
-			func() component.Resource { return account },
-			component.GatedBy(feature.NewBooleanGate(usesServiceAccount(in))),
-		).
+		WithResource(account, accountOption(in.Effective.ServiceAccount, usesServiceAccount(in))).
 		WithResource(sts).
 		WithResource(svc).
+		// Gated, not excluded: a gateway that moves out of the brokers
+		// deletes the Service that routed to them.
+		WithResource(client, component.GatedBy(feature.NewBooleanGate(p.EmbeddedGateway))).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
 }
 
-// serviceAccountFor renders the ServiceAccount of every workload pod: the
-// workload-identity annotations that the referenced buckets derive, with the
-// annotations of spec.serviceAccount merged over them, so an explicit user
-// value on the same key wins.
-func serviceAccountFor(in Input) *corev1.ServiceAccount {
-	var user map[string]string
-	if in.Effective.ServiceAccount != nil {
-		user = in.Effective.ServiceAccount.Annotations
+// accountOption registers a ServiceAccount that the spec block account
+// configures. With create true the operator owns the account, and deletes it
+// while used is false. With create false the account is the user's: the
+// operator never applies or deletes it, and removes its owner reference from an
+// account that it created before, so the account outlives the cluster.
+func accountOption(account *v1.ServiceAccountSpec, used bool) component.ResourceOption {
+	if !account.Creates() {
+		return component.OrphanWhen(true)
 	}
-	annotations := labels.Merge(in.ServiceAccountAnnotations, user)
-	if len(annotations) == 0 {
-		annotations = nil
-	}
+	return component.GatedBy(feature.NewBooleanGate(used))
+}
 
+// serviceAccountFor renders the ServiceAccount of every workload pod except
+// the connectors, with the annotations of clusterAccountAnnotations.
+func serviceAccountFor(in Input) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        ServiceAccountName(in.Cluster, in.Effective),
 			Namespace:   in.Cluster.Namespace,
 			Labels:      managedLabels(in.Cluster, ComponentZeebe),
-			Annotations: annotations,
+			Annotations: clusterAccountAnnotations(in),
 		},
 	}
+}
+
+// clusterAccountAnnotations returns the annotations of the cluster
+// ServiceAccount: the workload-identity annotations that the referenced
+// buckets derive, with the annotations of spec.serviceAccount merged over
+// them, so an explicit user value on the same key wins. Nil when there are
+// none.
+func clusterAccountAnnotations(in Input) map[string]string {
+	var user map[string]string
+	if in.Effective.ServiceAccount != nil {
+		user = in.Effective.ServiceAccount.Annotations
+	}
+
+	return nilWhenEmpty(labels.Merge(in.ServiceAccountAnnotations, user))
+}
+
+// nilWhenEmpty returns nil for an empty map, so a rendered object carries no
+// empty annotations field.
+func nilWhenEmpty(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // managedLabels returns the labels of an object that the operator applies
@@ -298,18 +326,68 @@ func podTemplate(in Input, p Process) corev1.PodTemplateSpec {
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: labels.Merge(
-				DerivedPodLabels(in.Backup, in.Documents),
+				identityPodLabels(in, p),
 				StoragePodLabels(in.Cluster.Name, in.Cluster.UID, in.Storage.Claim),
 				discoveryLabels(in.Cluster, p.Component),
 			),
 			Annotations: map[string]string{ConfigHashAnnotation: configHash(in, p, r)},
 		},
 		Spec: corev1.PodSpec{
-			Containers:      []corev1.Container{container(in, p, r)},
-			Volumes:         r.volumes,
-			SecurityContext: podSecurityContext(),
+			ServiceAccountName: baseServiceAccountName(p),
+			Containers:         []corev1.Container{container(in, p, r)},
+			Volumes:            r.volumes,
+			SecurityContext:    podSecurityContext(),
 		},
 	}
+}
+
+// baseServiceAccountName returns the account that the pods of p name before
+// MutationServiceAccount names their own. The API server copies
+// serviceAccountName into the deprecated serviceAccount field and back, so
+// an apply that drops the name keeps the old account. The connectors name
+// the default account of the namespace instead, so that connectors that ran
+// under the account of the cluster leave it.
+func baseServiceAccountName(p Process) string {
+	if p.Component == ComponentConnectors {
+		return defaultServiceAccountName
+	}
+	return ""
+}
+
+// identityPodLabels returns the labels that bind the pods of p to the cloud
+// identity of the ServiceAccount they run under. The connectors run under an
+// account of their own, so the labels that the buckets derive never reach
+// them.
+func identityPodLabels(in Input, p Process) map[string]string {
+	if p.Component == ComponentConnectors {
+		return azureUseLabel(connectorsAccountAnnotations(in))
+	}
+
+	return labels.Merge(DerivedPodLabels(in.Backup, in.Documents), azureUseLabel(clusterAccountAnnotations(in)))
+}
+
+// azureUseLabel returns azure.workload.identity/use: "true" when annotations
+// carry an Azure client ID, else nil. Azure binds a pod only when the pod
+// carries the label and its account carries the client ID.
+func azureUseLabel(annotations map[string]string) map[string]string {
+	if _, ok := annotations[v1.AzureClientIDAnnotation]; !ok {
+		return nil
+	}
+
+	return map[string]string{v1.AzureWorkloadIdentityUseLabel: "true"}
+}
+
+// ClusterAccountPodLabels returns the labels that a pod which runs under
+// status.serviceAccountName of cluster needs for the identity that
+// spec.serviceAccount annotates: azure.workload.identity/use when the
+// annotations carry azure.workload.identity/client-id, else nil. The labels
+// of a bucket identity are not part of it: the bucket contract gives those.
+func ClusterAccountPodLabels(cluster *v1.CamundaCluster) map[string]string {
+	if cluster.Spec.ServiceAccount == nil {
+		return nil
+	}
+
+	return azureUseLabel(cluster.Spec.ServiceAccount.Annotations)
 }
 
 // StoragePodLabels returns the labels that find every pod that writes the
@@ -448,7 +526,7 @@ func serviceFor(in Input, p Process) *corev1.Service {
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: discoveryLabels(in.Cluster, p.Component),
-			Ports:    servicePorts(p),
+			Ports:    servicePorts(ports(p)),
 		},
 	}
 
@@ -460,8 +538,26 @@ func serviceFor(in Input, p Process) *corev1.Service {
 	return svc
 }
 
-func servicePorts(p Process) []corev1.ServicePort {
-	named := ports(p)
+// clientServiceFor renders the Service that routes reach the brokers through
+// when the brokers run the gateway. It has a cluster IP and lists only ready
+// brokers, unlike the headless broker Service. It carries the gRPC and HTTP
+// ports and no management port.
+func clientServiceFor(in Input, p Process) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ZeebeClientServiceName(in.Cluster),
+			Namespace: in.Cluster.Namespace,
+			Labels:    managedLabels(in.Cluster, p.Component),
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     corev1.ServiceTypeClusterIP,
+			Selector: discoveryLabels(in.Cluster, p.Component),
+			Ports:    servicePorts([]namedPort{{portNameGRPC, PortGRPC}, {portNameHTTP, PortHTTP}}),
+		},
+	}
+}
+
+func servicePorts(named []namedPort) []corev1.ServicePort {
 	result := make([]corev1.ServicePort, 0, len(named))
 	for _, np := range named {
 		result = append(result, corev1.ServicePort{
@@ -521,10 +617,16 @@ func monitoringGate(in Input) component.ResourceOption {
 }
 
 // deploymentComponent builds a Deployment-backed process (the gateway, a web
-// application, or connectors): the Deployment, its Service, and the optional
+// application, or connectors): the ServiceAccount that the operator creates
+// for the connectors, the Deployment, its Service, and the optional
 // ServiceMonitor. It is gated on p.Enabled, so an embedded or disabled
 // process deletes its resources.
 func deploymentComponent(in Input, p Process) (*component.Component, error) {
+	account, err := serviceaccount.NewBuilder(connectorsServiceAccountFor(in)).Build()
+	if err != nil {
+		return nil, err
+	}
+
 	workload, err := deployment.NewBuilder(deploymentFor(in, p)).
 		WithMutation(deploymentMutations(in, p)...).
 		Build()
@@ -546,12 +648,58 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
 		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
+		// Only the connectors run under an account of their own.
+		IncludeWhen(
+			p.Component == ComponentConnectors && registersConnectorsServiceAccount(in),
+			func() component.Resource { return account },
+			accountOption(in.Effective.ConnectorsServiceAccount(), true),
+		).
 		WithResource(workload).
 		WithResource(svc).
 		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
+}
+
+// registersConnectorsServiceAccount reports whether the connectors component
+// registers the connectors ServiceAccount: while the connectors run under it,
+// and with create false also while connectors are off, as one edit can turn
+// them off and switch create. While connectors are off, no check keeps the
+// connectors account apart from the cluster account, so an account with the
+// name of the cluster account is not registered: its release would remove the
+// owner reference that the cluster component sets.
+func registersConnectorsServiceAccount(in Input) bool {
+	if PodConnectorsServiceAccountName(in) != "" {
+		return true
+	}
+
+	return !in.Effective.ConnectorsServiceAccount().Creates() &&
+		ConnectorsServiceAccountName(in.Cluster, in.Effective) != ServiceAccountName(in.Cluster, in.Effective)
+}
+
+// connectorsServiceAccountFor renders the ServiceAccount of the connectors.
+// It carries the annotations of connectors.serviceAccount only.
+func connectorsServiceAccountFor(in Input) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        ConnectorsServiceAccountName(in.Cluster, in.Effective),
+			Namespace:   in.Cluster.Namespace,
+			Labels:      managedLabels(in.Cluster, ComponentConnectors),
+			Annotations: connectorsAccountAnnotations(in),
+		},
+	}
+}
+
+// connectorsAccountAnnotations returns the annotations of
+// connectors.serviceAccount, or nil when there are none.
+func connectorsAccountAnnotations(in Input) map[string]string {
+	account := in.Effective.ConnectorsServiceAccount()
+	if account == nil {
+		return nil
+	}
+
+	return nilWhenEmpty(account.Annotations)
 }
 
 // deploymentFor renders the base rolling-update Deployment of a process.
@@ -586,8 +734,14 @@ func bucketUsesWorkloadIdentity(bucket *v1.ObjectStorageConfig) bool {
 
 // rendersServiceAccount reports whether the operator renders the
 // ServiceAccount the pods use: it is used at all, and the spec does not name
-// a foreign one. A foreign account is excluded from the component rather
-// than gated off, so it is never a deletion target.
+// a foreign one.
 func rendersServiceAccount(in Input) bool {
 	return in.Effective.ServiceAccount.Creates() && usesServiceAccount(in)
+}
+
+// rendersConnectorsServiceAccount reports whether the operator renders the
+// ServiceAccount the connectors pods use: they run under a named account, and
+// connectors.serviceAccount.create is not false.
+func rendersConnectorsServiceAccount(in Input) bool {
+	return PodConnectorsServiceAccountName(in) != "" && in.Effective.ConnectorsServiceAccount().Creates()
 }

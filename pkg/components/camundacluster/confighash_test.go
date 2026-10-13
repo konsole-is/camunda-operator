@@ -18,6 +18,7 @@ package camundacluster
 
 import (
 	"regexp"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -86,6 +87,49 @@ func TestConfigHashAdminPassword(t *testing.T) {
 	assert.Equal(t, ConfigHash(rotated, connectors), ConfigHash(same, connectors), "same password, same hash")
 }
 
+// The connectors run under an account of their own and read nothing of a
+// bucket, so a bucket change must not restart them.
+func TestBucketChangeRollsTheClusterPodsOnly(t *testing.T) {
+	t.Parallel()
+
+	inputs := func(generation string) Input {
+		in := separatedInput(t, s3Bucket(), nil)
+		in.BucketHashInputs = []string{"ObjectStorageConfig/my-cluster-ns/my-backup-config=" + generation}
+		return in
+	}
+	before := podTemplates(t, inputs("1"))
+	after := podTemplates(t, inputs("2"))
+
+	for _, process := range clusterProcesses {
+		assert.NotEqual(t, before[process], after[process], "%s must roll", process)
+	}
+	assert.Equal(t, before[ComponentConnectors], after[ComponentConnectors], "the connectors must not roll")
+}
+
+// Before the bucket inputs had a field of their own, they sat in HashInputs.
+// The processes of the cluster account must keep that hash, or every pod of
+// a cluster with a bucket restarts on the operator upgrade.
+func TestBucketHashInputsKeepTheHashOfTheClusterProcesses(t *testing.T) {
+	t.Parallel()
+
+	bucketInputs := []string{
+		"ObjectStorageConfig/my-cluster-ns/my-backup-config=3",
+		"Secret/my-cluster-ns/minio-keys=0123456789abcdef",
+	}
+	scoped := separatedInput(t, s3Bucket(), nil)
+	scoped.HashInputs = []string{"Secret/my-cluster-ns/es-user=12", "SecondaryStorageConfig/my-cluster-ns/es=1"}
+	scoped.BucketHashInputs = bucketInputs
+	shared := separatedInput(t, s3Bucket(), nil)
+	shared.HashInputs = append(slices.Clone(scoped.HashInputs), bucketInputs...)
+
+	for _, p := range Resolve(scoped.Effective) {
+		if p.Component == ComponentConnectors {
+			continue
+		}
+		assert.Equal(t, ConfigHash(shared, p), ConfigHash(scoped, p), p.Component)
+	}
+}
+
 // PasswordHash never returns the password itself, and equal passwords hash
 // equal so the config hash stays stable across reconciles.
 func TestPasswordHash(t *testing.T) {
@@ -139,4 +183,34 @@ func TestPresetFingerprintIgnoresThePasswordRotation(t *testing.T) {
 	withEmail, err := PresetFingerprint(addressed)
 	require.NoError(t, err)
 	assert.Equal(t, first, withEmail, "an admin email may not roll the workloads either")
+}
+
+// The connectors account of a preset reaches the connectors pods through
+// their own ServiceAccount hash, so a change to it must not roll the other
+// processes through the fingerprint.
+func TestPresetFingerprintIgnoresTheConnectorsAccount(t *testing.T) {
+	t.Parallel()
+
+	none := v1.CamundaClusterPresetSpec{Cluster: v1.CamundaClusterSpec{Version: "8.9.9"}}
+	annotated := *none.DeepCopy()
+	annotated.Cluster.Connectors = &v1.ConnectorsSpec{ServiceAccount: &v1.ServiceAccountSpec{
+		Annotations: map[string]string{v1.IRSARoleARNAnnotation: "arn:aws:iam::123456789012:role/connectors"},
+	}}
+	enabled := *annotated.DeepCopy()
+	enabled.Cluster.Connectors.Enabled = new(true)
+	enabledOnly := *none.DeepCopy()
+	enabledOnly.Cluster.Connectors = &v1.ConnectorsSpec{Enabled: new(true)}
+
+	bare, err := PresetFingerprint(none)
+	require.NoError(t, err)
+	withAccount, err := PresetFingerprint(annotated)
+	require.NoError(t, err)
+	assert.Equal(t, bare, withAccount, "the first connectors account of a preset may not roll the workloads")
+
+	withEnabled, err := PresetFingerprint(enabled)
+	require.NoError(t, err)
+	onlyEnabled, err := PresetFingerprint(enabledOnly)
+	require.NoError(t, err)
+	assert.Equal(t, onlyEnabled, withEnabled)
+	assert.NotEqual(t, bare, onlyEnabled, "every other connectors change still rolls the workloads")
 }

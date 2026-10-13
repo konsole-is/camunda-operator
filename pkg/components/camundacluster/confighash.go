@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
@@ -38,6 +39,11 @@ const configHashLength = 16
 // together with in.HashInputs. It is stable across reconciles for the same
 // input, so the pods of a process roll only when a value rendered for that
 // process or a referenced object changes.
+//
+// The hash of every process except connectors also takes in.BucketHashInputs.
+// These processes carry the identity of the buckets, and the brokers write
+// the backups. Connectors run under an account of their own and read nothing
+// of a bucket, so a bucket change does not restart them.
 //
 // The hash of connectors also takes in.AdminPasswordHash, the digest of the
 // admin password that the admin Secret publishes. Connectors authenticate
@@ -60,6 +66,9 @@ func configHash(in Input, p Process, r rendered) string {
 	}
 
 	inputs := slices.Clone(in.HashInputs)
+	if p.Component != ComponentConnectors {
+		inputs = append(inputs, in.BucketHashInputs...)
+	}
 	slices.Sort(inputs)
 	for _, input := range inputs {
 		b.WriteString("input=" + input + "\n")
@@ -123,13 +132,15 @@ func PasswordHash(value string) string {
 // generation moves for every spec change, and the fingerprint of a preset is
 // an input of every process hash.
 //
-// The whole of spec.cluster.auth.basic is what this exists for, and neither
-// of its fields renders into a pod template. passwordRotation requests a
+// It leaves out spec.cluster.auth.basic, and neither of its fields renders
+// into a pod template. passwordRotation requests a
 // rotation of the admin password, and only connectors follow that password,
 // through Input.AdminPasswordHash. adminEmail travels to the processes
 // through the admin Secret. Neither may restart a workload, so neither may
-// reach the fingerprint. Every other change of a preset still moves it and
-// rolls the workloads that inherit it.
+// reach the fingerprint. connectors.serviceAccount is left out too: its
+// changes reach the connectors pod template directly, and must not roll the
+// other processes. Every other change of a preset still moves it and rolls
+// the workloads that inherit it.
 func PresetFingerprint(spec v1.CamundaClusterPresetSpec) (string, error) {
 	rendered := spec.DeepCopy()
 	// The wrappers go with the value. The first rotation of a preset adds
@@ -145,6 +156,12 @@ func PresetFingerprint(spec v1.CamundaClusterPresetSpec) (string, error) {
 		}
 		if *auth == (v1.ClusterAuthSpec{}) {
 			rendered.Cluster.Auth = nil
+		}
+	}
+	if connectors := rendered.Cluster.Connectors; connectors != nil {
+		connectors.ServiceAccount = nil
+		if equality.Semantic.DeepEqual(*connectors, v1.ConnectorsSpec{}) {
+			rendered.Cluster.Connectors = nil
 		}
 	}
 

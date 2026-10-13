@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster block replaces the whole preset block",
+  "rule": "`resources`, `serviceAccount`, `scheduling`, `monitoring`, `persistentVolumeClaimRetentionPolicy`",
+  "preset": {
+    "cluster": {
+      "resources": {
+        "requests": {
+          "cpu": "1",
+          "memory": "4Gi"
+        }
+      },
+      "scheduling": {
+        "tolerations": [
+          {
+            "key": "preset"
+          }
+        ]
+      },
+      "persistentVolumeClaimRetentionPolicy": {
+        "whenDeleted": "Retain"
+      }
+    }
+  },
+  "spec": {
+    "resources": {
+      "requests": {
+        "cpu": "2"
+      }
+    },
+    "scheduling": {
+      "tolerations": [
+        {
+          "key": "cluster"
+        }
+      ]
+    }
+  },
+  "merged": {
+    "resources": {
+      "requests": {
+        "cpu": "2"
+      }
+    },
+    "scheduling": {
+      "tolerations": [
+        {
+          "key": "cluster"
+        }
+      ]
+    },
+    "persistentVolumeClaimRetentionPolicy": {
+      "whenDeleted": "Retain"
+    }
+  }
+}

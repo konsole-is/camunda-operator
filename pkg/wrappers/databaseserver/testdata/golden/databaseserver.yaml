@@ -1,0 +1,10 @@
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  name: orders-pg
+  namespace: team-a
+spec:
+  databaseServerConfig: orders-pg
+  instances: 2
+  presetRef: small
+  storageSize: 20Gi

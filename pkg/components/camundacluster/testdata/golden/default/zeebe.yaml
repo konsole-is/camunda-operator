@@ -38,6 +38,7 @@ spec:
     metadata:
       annotations:
         camunda.io/config-hash: bad168afea081f4d
+        camunda.io/service-account-hash: 2331a04272fc5c78
         company.com/cluster-preset: medium
         prometheus.io/scrape: "true"
       labels:

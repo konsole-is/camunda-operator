@@ -36,19 +36,25 @@ type ServiceAccountSpec struct {
 	// Create makes the operator create and own the ServiceAccount. Defaults
 	// to true. False names a ServiceAccount that already exists. The operator
 	// then does not create, annotate, or own it. If it does not exist, Ready
-	// reports InvalidReference, except on a suspended ElasticsearchCluster. The operator never takes ownership of a
-	// ServiceAccount that it did not create, because it deletes an owned one
-	// with the resource.
+	// reports InvalidReference. Ready does not report it on a suspended
+	// ElasticsearchCluster or for connectors that are not enabled.
+	// While create is false, the operator never takes ownership of the
+	// ServiceAccount, because it deletes an owned one with the resource. A
+	// switch to false removes the owner reference from the account that the
+	// operator created. The account then stays when the resource is deleted.
+	// With create true, the operator owns and annotates the account of that
+	// name, also one that it did not create. An account that another
+	// resource controls is not taken over, and the apply fails.
 	// +optional
 	Create *bool `json:"create,omitempty"`
 	// Annotations to set on the ServiceAccount that the operator creates.
 	// Usually these are workload-identity annotations (IRSA, GCP Workload
 	// Identity, and more) that give the pods access to cloud resources, such
-	// as the snapshot bucket for backups. The operator also adds the identity
-	// annotation of each bucket contract that names an identity. An annotation
-	// set here wins over the operator annotation with the same key. With
-	// create false, the operator sets no annotation. Add them to the existing
-	// ServiceAccount yourself.
+	// as the snapshot bucket for backups. Except on connectors.serviceAccount
+	// of a CamundaCluster, the operator also adds the identity annotation of
+	// each referenced bucket that names an identity. An annotation set here
+	// wins over it. With create false, the operator sets no annotation. Add them
+	// to the existing ServiceAccount yourself.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
@@ -197,6 +203,10 @@ type ElasticsearchClusterSpec struct {
 	// +optional
 	StorageClassName *string `json:"storageClassName,omitempty"`
 	// ServiceAccount configures the ServiceAccount of the Elasticsearch pods.
+	// The name <name>-es belongs to the operator. While neither the cluster
+	// nor its preset sets this block and the snapshot bucket uses no workload
+	// identity, the operator deletes the account <name>-es. It deletes one
+	// that it did not create too.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// ExtraEnv are extra environment variables for every Elasticsearch node.
@@ -210,6 +220,8 @@ type ElasticsearchClusterSpec struct {
 	// +optional
 	PodLabels map[string]string `json:"podLabels,omitempty"`
 	// PodAnnotations are extra annotations applied to the Elasticsearch pods.
+	// The key camunda.io/service-account-hash belongs to the operator, and a
+	// value for it does not reach the pods.
 	// +optional
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 	// Scheduling holds the scheduling constraints of the Elasticsearch pods.

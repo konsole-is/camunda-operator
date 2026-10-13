@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "pod labels and annotations merge by key and the cluster wins",
+  "rule": "`podLabels`, `podAnnotations`",
+  "preset": {
+    "cluster": {
+      "podLabels": {
+        "team": "preset",
+        "shared": "preset"
+      },
+      "podAnnotations": {
+        "note": "preset",
+        "shared": "preset"
+      }
+    }
+  },
+  "spec": {
+    "podLabels": {
+      "shared": "cluster"
+    },
+    "podAnnotations": {
+      "shared": "cluster"
+    }
+  },
+  "merged": {
+    "podLabels": {
+      "shared": "cluster",
+      "team": "preset"
+    },
+    "podAnnotations": {
+      "note": "preset",
+      "shared": "cluster"
+    }
+  }
+}

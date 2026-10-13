@@ -176,6 +176,45 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "externalUrl must be a valid http or https URL",
 		),
 		Entry(
+			"rejects an http identity externalUrl with a path",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = "http://camunda.example.com/identity"
+			}, "externalUrl with a path needs https",
+		),
+		Entry(
+			"rejects an http identity externalUrl with a path and a scheme in capitals",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = "HTTP://camunda.example.com/identity"
+			}, "externalUrl with a path needs https",
+		),
+		Entry(
+			"accepts an https identity externalUrl with a path",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = "https://camunda.example.com/identity"
+			}, "",
+		),
+		Entry(
+			"accepts an http identity externalUrl without a path",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = "http://identity.example.com"
+			}, "",
+		),
+		Entry(
+			"accepts an http identity externalUrl with a bare slash",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = "http://identity.example.com/"
+			}, "",
+		),
+		Entry(
+			"accepts an http Console externalUrl with a path",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Console = &v1.ConsoleSpec{
+					Version:     "8.9.0",
+					ExternalURL: "http://camunda.example.com/console",
+				}
+			}, "",
+		),
+		Entry(
 			"rejects an identity extraEnv that sets the Keycloak URL",
 			validManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.Identity.ExtraEnv = []corev1.EnvVar{

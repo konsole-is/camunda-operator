@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/accounthash"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
@@ -43,9 +44,14 @@ const (
 	// MutationPodMetadata adds the user pod labels and annotations of the
 	// cluster and the component block; a discovery label always wins.
 	MutationPodMetadata = "PodMetadata"
-	// MutationServiceAccount names the ServiceAccount of the cluster on the
-	// pods when spec.serviceAccount is set.
+	// MutationServiceAccount names the ServiceAccount of the pods: the
+	// account of the cluster, or the account of the connectors for the
+	// connectors process.
 	MutationServiceAccount = "ServiceAccount"
+	// MutationServiceAccountHash puts ServiceAccountHashAnnotation on the pods
+	// when the operator renders annotations on their ServiceAccount, so that
+	// a change of those annotations restarts the pods.
+	MutationServiceAccountHash = "ServiceAccountHash"
 	// MutationVolumeRetention keeps the broker volumes on deletion when
 	// spec.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted is Retain.
 	MutationVolumeRetention = "VolumeRetention"
@@ -87,9 +93,10 @@ func statefulSetMutations(in Input, p Process) []statefulset.Mutation {
 
 // workloadMutations returns the mutations of a process that a StatefulSet and
 // a Deployment share: the override mutations, each gated on its field
-// (Resources, SchedulingConstraints, PodMetadata, ServiceAccount), and
-// TrustStore. Every builder registers them, so a process with no overrides
-// and no private certificate authority renders the base workload only.
+// (Resources, SchedulingConstraints, PodMetadata, ServiceAccount),
+// ServiceAccountHash, and TrustStore. Every builder registers them, so a
+// process with no overrides, no annotations on a rendered ServiceAccount, and
+// no private certificate authority renders the base workload only.
 func workloadMutations(in Input, p Process) []workloadMutation {
 	e := in.Effective
 	workload := e.Workload(p.Component)
@@ -101,6 +108,11 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 
 	userLabels := labels.Merge(e.PodLabels, workload.PodLabels)
 	userAnnotations := labels.Merge(e.PodAnnotations, workload.PodAnnotations)
+	// A user value would keep an old hash on the template when the
+	// ServiceAccountHash mutation is off, and the pods would not roll.
+	delete(userAnnotations, ServiceAccountHashAnnotation)
+	account := podServiceAccountName(in, p)
+	accountHash := serviceAccountHash(in, p)
 
 	return []workloadMutation{
 		{
@@ -147,10 +159,21 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 		},
 		{
 			Name:    MutationServiceAccount,
-			Feature: feature.NewBooleanGate(usesServiceAccount(in)),
+			Feature: feature.NewBooleanGate(account != ""),
 			Mutate: func(m primitives.WorkloadMutator) error {
 				m.EditPodSpec(func(spec *editors.PodSpecEditor) error {
-					spec.SetServiceAccountName(ServiceAccountName(in.Cluster, in.Effective))
+					spec.SetServiceAccountName(account)
+					return nil
+				})
+				return nil
+			},
+		},
+		{
+			Name:    MutationServiceAccountHash,
+			Feature: feature.NewBooleanGate(accountHash != ""),
+			Mutate: func(m primitives.WorkloadMutator) error {
+				m.EditPodTemplateMetadata(func(meta *editors.ObjectMetaEditor) error {
+					meta.EnsureAnnotation(ServiceAccountHashAnnotation, accountHash)
 					return nil
 				})
 				return nil
@@ -158,6 +181,34 @@ func workloadMutations(in Input, p Process) []workloadMutation {
 		},
 		trustStoreMutation(in, p),
 	}
+}
+
+// podServiceAccountName returns the ServiceAccount that the pods of p run
+// under, or the empty string for the default account of the namespace.
+func podServiceAccountName(in Input, p Process) string {
+	if p.Component == ComponentConnectors {
+		return PodConnectorsServiceAccountName(in)
+	}
+
+	return PodServiceAccountName(in)
+}
+
+// serviceAccountHash returns the hash of the annotations that the operator
+// renders on the ServiceAccount of the pods of p, or the empty string when it
+// renders none there. An account with create false is the user's, so a change
+// to it is not the operator's to roll.
+func serviceAccountHash(in Input, p Process) string {
+	if p.Component == ComponentConnectors {
+		if !rendersConnectorsServiceAccount(in) {
+			return ""
+		}
+		return accounthash.Of(connectorsAccountAnnotations(in))
+	}
+
+	if !rendersServiceAccount(in) {
+		return ""
+	}
+	return accounthash.Of(clusterAccountAnnotations(in))
 }
 
 // deploymentMutations returns the workload mutations of a Deployment-backed

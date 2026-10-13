@@ -56,7 +56,7 @@ spec:
 
 The broker count, the partitions, the volumes, the connectors, the backup policy, and the administrators all come from the preset `medium`. The versions come from the release `camunda-8-9-4`. The authentication method and the identity provider come from the platform config `production`.
 
-A cluster sets the fields that belong to it alone: the references, the URL, the ServiceAccount, monitoring, `suspend`, and `pause`. The API server rejects a preset that sets one of them, or that sets `version` or `connectors.version`. The [validation rules](../crds/camundaclusterpreset.md#validation-rules) list them.
+A cluster sets the fields that belong to it alone: the references, the URL, the ServiceAccount, monitoring, `suspend`, and `pause`. The name of the connectors ServiceAccount also belongs to the cluster alone. The API server rejects a preset that sets one of them, or that sets `version` or `connectors.version`. The [validation rules](../crds/camundaclusterpreset.md#validation-rules) list them. A preset can set the annotations of `connectors.serviceAccount`, so every cluster on it gives its connectors the same role settings.
 
 An `ElasticsearchCluster` works the same way. The instance-bound fields are `presetRef`, `releaseRef`, `secondaryStorageConfig`, and `suspend`:
 
@@ -193,6 +193,8 @@ You can roll versions in two ways. Name the release for the way you pick:
 The examples on this page use the second way.
 
 Every cluster whose brokers run a higher version refuses a lower one. Each one reports `Ready: False` with reason `VersionDowngradeRefused` and keeps the version its brokers run. To lower a fleet on purpose, lower the release first and let every cluster refuse. Then set the annotation `camunda.io/allow-version-downgrade` to the version of the release, on each cluster you want to move. Read the caution in [Downgrade on purpose](../crds/camundacluster.md#downgrade-on-purpose) first.
+
+Move a release one minor at a time. A cluster whose brokers run a version two or more minors below the release refuses the move. It reports `Ready: False` with reason `VersionSkipRefused` and keeps the version its brokers run. To recover, set the release to the next minor. Wait until every cluster runs the new minor before you raise the release again. [Upgrade](../crds/camundacluster.md#upgrade) says how long to wait.
 
 A `DatabaseServer` refuses a PostgreSQL major other than the one its data directory runs, higher or lower. It reports `Ready: False` with reason `VersionChangeRefused` and keeps the major it has. No annotation lets that change through. To run a later major, create a server on it and move the data over. The [DatabaseServer page](../crds/databaseserver.md#the-postgresql-version) states the rule.
 

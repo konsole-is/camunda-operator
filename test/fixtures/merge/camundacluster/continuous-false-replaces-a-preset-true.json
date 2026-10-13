@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "name": "a cluster continuous false replaces a preset continuous true",
+  "rule": "`backup.primaryStorage`",
+  "preset": {
+    "cluster": {
+      "backup": {
+        "primaryStorage": {
+          "continuous": true,
+          "schedule": "0 2 * * *"
+        }
+      }
+    }
+  },
+  "spec": {
+    "backup": {
+      "primaryStorage": {
+        "continuous": false
+      }
+    }
+  },
+  "merged": {
+    "backup": {
+      "primaryStorage": {
+        "continuous": false,
+        "schedule": "0 2 * * *"
+      }
+    }
+  }
+}

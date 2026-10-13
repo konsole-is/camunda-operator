@@ -42,6 +42,8 @@ spec:
     name: default
     podTemplate:
       metadata:
+        annotations:
+          camunda.io/service-account-hash: 5b93f81606ac7cf1
         labels:
           camunda.io/component: elasticsearch
           camunda.io/elasticsearch-cluster: my-cluster-es

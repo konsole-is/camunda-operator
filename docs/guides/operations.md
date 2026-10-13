@@ -120,7 +120,7 @@ The reasons that you see most often:
 | `InvalidReference` | A referenced resource does not exist, or the merged spec is not valid. The message names it. | Create the resource, or fix the field that the message names. |
 | `MissingSecret` | A referenced Secret or one of its keys does not exist. The message names it. | Create the Secret with the keys that the reference names. |
 
-`Ready` can also report `SuspensionHeld`, `StorageAlreadyAttached`, `WaitingForHandover`, or `VersionDowngradeRefused`. The [CamundaCluster](../crds/camundacluster.md#status) page lists every reason.
+`Ready` can also report `SuspensionHeld`, `StorageAlreadyAttached`, `WaitingForHandover`, `VersionDowngradeRefused`, or `VersionSkipRefused`. The [CamundaCluster](../crds/camundacluster.md#status) page lists every reason.
 
 `Disabled` shows on these conditions:
 
@@ -139,7 +139,7 @@ The other status fields in the example above:
 - `volumes` lists every bound broker volume with its name and capacity.
 - `observedGeneration` is the last generation of the spec that the operator processed. If it is lower than `metadata.generation`, the operator has not processed your last edit yet.
 
-When you set `spec.serviceAccount`, or a bucket uses workload identity, `serviceAccountName` names the ServiceAccount that the pods run under.
+When you set `spec.serviceAccount`, or a bucket uses workload identity, `serviceAccountName` names the ServiceAccount that the pods run under, except the connectors. When you set `spec.connectors.serviceAccount`, `connectorsServiceAccountName` names the ServiceAccount of the connectors.
 
 An `ElasticsearchCluster` uses the same reason vocabulary. Read the [ElasticsearchCluster](../crds/elasticsearchcluster.md) page for its condition types.
 
@@ -179,6 +179,7 @@ The Services stay stable, so clients find the cluster this way:
 | Service | Ports | Serves |
 | --- | --- | --- |
 | `<name>-gateway`, or `<name>-zeebe` when the gateway is `Embedded` | `26500` gRPC, `8080` HTTP | The gRPC API, the REST API under `/v2/`, and the embedded web applications under `/operate/`, `/tasklist/`, and `/admin/`. |
+| `<name>-zeebe-client`, only when the gateway is `Embedded` | `26500` gRPC, `8080` HTTP | The same APIs as `<name>-zeebe`, from ready brokers only. Route traffic from outside the cluster to this Service. |
 | `<name>-operate`, `<name>-tasklist`, `<name>-admin` | `8080` | The standalone web application. |
 | `<name>-connectors` | `8080` | The connectors runtime. |
 | Every Service of a unified process | `9600` | The management API: health, metrics, and backups. |
@@ -517,7 +518,7 @@ spec:
 
 ## Find the resources of a cluster
 
-Every resource that the operator creates carries labels that name its owner and its role:
+These labels name the owner and the role of an object:
 
 | Label | Value |
 | --- | --- |
@@ -526,7 +527,9 @@ Every resource that the operator creates carries labels that name its owner and 
 | `camunda.io/database` | The name of the owning `Database`. |
 | `camunda.io/database-server` | The name of the owning `DatabaseServer`. |
 | `camunda.io/component` | The role, for example `zeebe`, `gateway`, `operate`, `tasklist`, `admin`, `connectors`, `elasticsearch`, `elasticsearch-exporter`, or `postgres`. |
-| `app.kubernetes.io/managed-by` | `camunda-operator`. The pods and volume claims carry the two labels above, not this one. |
+| `app.kubernetes.io/managed-by` | `camunda-operator`. Not every pod and volume claim carries it, so select them by the labels above. |
+
+[Discovery labels](../architecture.md#discovery-labels) lists the stable values of these labels and the objects that the promise covers.
 
 Three examples:
 
@@ -547,7 +550,7 @@ kubectl get pod,pvc -n my-cluster-ns -l camunda.io/cluster=my-cluster,camunda.io
 kubectl delete camundacluster my-cluster -n my-cluster-ns
 ```
 
-Kubernetes garbage-collects everything that the cluster owns: the workloads, the Services, the admin Secret, the copied Secrets, and the ServiceMonitors. A ServiceAccount that the operator created goes too. The broker volumes follow the retention policy of the cluster. With `Delete`, the default, they go with the cluster. With `Retain`, they stay, and a later cluster with the same name attaches them again. Set the policy before you delete:
+Kubernetes garbage-collects everything that the cluster owns: the workloads, the Services, the admin Secret, the copied Secrets, and the ServiceMonitors. A ServiceAccount that the operator created goes too, unless you switched its `create` to `false`. The broker volumes follow the retention policy of the cluster. With `Delete`, the default, they go with the cluster. With `Retain`, they stay, and a later cluster with the same name attaches them again. Set the policy before you delete:
 
 ```yaml
 apiVersion: core.camunda.io/v1

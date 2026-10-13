@@ -294,6 +294,76 @@ func TestServiceMonitorScrapesPrometheusEndpoint(t *testing.T) {
 	assert.Equal(t, 3, seen)
 }
 
+// zeebeServices returns the Services that the zeebe component renders, by
+// name.
+func zeebeServices(t *testing.T, in Input) map[string]*corev1.Service {
+	t.Helper()
+
+	comps, err := Build(in)
+	require.NoError(t, err)
+
+	services := map[string]*corev1.Service{}
+	for _, obj := range previewObjects(t, comps[0].Component) {
+		if svc, ok := obj.(*corev1.Service); ok {
+			services[svc.Name] = svc
+		}
+	}
+	return services
+}
+
+// With an embedded gateway, a route needs a Service that sends traffic only
+// to brokers that are ready. The headless broker Service cannot be that
+// Service, because the brokers find each other through its not-ready
+// addresses. The client Service carries no management port, so the
+// ServiceMonitor that selects it by the zeebe labels gets no second target.
+func TestClientServiceRoutesToReadyBrokersWithAnEmbeddedGateway(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureAllInOne(t)
+	svc := zeebeServices(t, in)["my-cluster-zeebe-client"]
+	require.NotNil(t, svc, "an embedded gateway renders the client Service")
+
+	assert.Equal(t, corev1.ServiceTypeClusterIP, svc.Spec.Type)
+	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "the client Service is not headless")
+	assert.False(t, svc.Spec.PublishNotReadyAddresses)
+	assert.Equal(t, brokerStatefulSet(t, in).Spec.Selector.MatchLabels, svc.Spec.Selector)
+
+	ports := map[string]int32{}
+	for _, port := range svc.Spec.Ports {
+		ports[port.Name] = port.Port
+	}
+	assert.Equal(t, map[string]int32{"grpc": 26500, "http": 8080}, ports)
+}
+
+// A standalone gateway serves the routes itself, so the brokers get no
+// client Service, and a cluster that moves its gateway out deletes it.
+func TestClientServiceOnlyWithAnEmbeddedGateway(t *testing.T) {
+	t.Parallel()
+
+	for name, in := range map[string]Input{
+		"minimal":   fixtureMinimal(t),
+		"separated": fixtureSeparated(t),
+		"suspended": fixtureSuspended(t),
+	} {
+		assert.NotContains(t, zeebeServices(t, in), "my-cluster-zeebe-client", name)
+	}
+}
+
+// The client Service is for routes only. The brokers keep their headless
+// Service, and status.gateway keeps naming it, so no client and no pod
+// changes its address.
+func TestEmbeddedGatewayKeepsTheHeadlessBrokerService(t *testing.T) {
+	t.Parallel()
+
+	in := fixtureAllInOne(t)
+	broker := zeebeServices(t, in)["my-cluster-zeebe"]
+	require.NotNil(t, broker)
+
+	assert.Equal(t, corev1.ClusterIPNone, broker.Spec.ClusterIP)
+	assert.True(t, broker.Spec.PublishNotReadyAddresses)
+	assert.Equal(t, "my-cluster-zeebe", GatewayHost(in.Cluster, in.Effective))
+}
+
 // Connectors gets no liveness probe, because the liveness group of the
 // runtime holds the zeebeClient indicator alone. A probe on that group
 // restarts a working container for the whole time the gateway is away, and
@@ -361,7 +431,7 @@ func TestEveryProcessHasAStartupProbe(t *testing.T) {
 }
 
 // The service account is rendered by the first component only when the spec
-// asks for it, and every pod template names it.
+// asks for it, and every pod template except the connectors names it.
 func TestServiceAccount(t *testing.T) {
 	t.Parallel()
 
@@ -376,8 +446,14 @@ func TestServiceAccount(t *testing.T) {
 	}
 	assert.True(t, hasAccount)
 	for _, pc := range comps {
+		want := "my-cluster-camunda"
+		if pc.Process.Component == ComponentConnectors {
+			// The connectors never run under the account of the cluster.
+			want = defaultServiceAccountName
+		}
 		assert.Equal(
-			t, "my-cluster-camunda", previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
+			t, want, previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
+			pc.Process.Component,
 		)
 	}
 
@@ -388,7 +464,14 @@ func TestServiceAccount(t *testing.T) {
 			_, isAccount := obj.(*corev1.ServiceAccount)
 			assert.False(t, isAccount, pc.Process.Component)
 		}
-		assert.Empty(t, previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName)
+		want := ""
+		if pc.Process.Component == ComponentConnectors {
+			want = defaultServiceAccountName
+		}
+		assert.Equal(
+			t, want, previewedPodTemplate(t, previewObjects(t, pc.Component)).Spec.ServiceAccountName,
+			pc.Process.Component,
+		)
 	}
 }
 
