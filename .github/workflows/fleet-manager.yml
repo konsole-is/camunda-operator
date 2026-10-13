@@ -6,10 +6,16 @@ on:
     paths:
       - fleet-manager/**
       - .github/workflows/fleet-manager.yml
+      - config/crd/bases/**
+      - config/samples/**
+      - docs/crds/api-reference.md
   pull_request:
     paths:
       - fleet-manager/**
       - .github/workflows/fleet-manager.yml
+      - config/crd/bases/**
+      - config/samples/**
+      - docs/crds/api-reference.md
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
