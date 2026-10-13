@@ -1,15 +1,23 @@
 "use client";
 
 import * as React from "react";
-import { cn } from "cn";
+import { cn } from "@/lib/utils";
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+/**
+ * Give label to a table that can be wider than its box. The box is then a
+ * named region that takes focus, so a keyboard user can scroll it.
+ */
+function Table({
+  className,
+  label,
+  ...props
+}: React.ComponentProps<"table"> & { label?: string }) {
   return (
-    // A keyboard user scrolls a table that is wider than its box through this
-    // container, so the container takes focus.
     <div
       data-slot="table-container"
-      tabIndex={0}
+      role={label ? "region" : undefined}
+      aria-label={label}
+      tabIndex={label ? 0 : undefined}
       className="relative w-full overflow-x-auto rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <table

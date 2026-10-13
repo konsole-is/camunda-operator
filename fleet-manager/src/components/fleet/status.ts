@@ -1,5 +1,6 @@
-/** The fields of a Kubernetes condition that the status components read. */
 export type ConditionStatus = "True" | "False" | "Unknown";
+
+/** The fields of a Kubernetes condition that the status components read. */
 export type ConditionLike = {
   status: ConditionStatus;
   reason?: string;

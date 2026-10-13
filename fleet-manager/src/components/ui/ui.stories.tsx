@@ -232,7 +232,7 @@ export const uiStories: Story[] = [
     component: "Table",
     name: "Wide",
     render: () => (
-      <Table>
+      <Table label="Clusters">
         <TableHeader>
           <TableRow>
             <TableHead>Cluster</TableHead>

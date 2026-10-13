@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 
 const dir = import.meta.dirname;
 const primitives = readdirSync(dir).filter(
-  (file) => file.endsWith(".tsx") && !file.endsWith(".stories.tsx"),
+  (file) =>
+    file.endsWith(".tsx") &&
+    !file.endsWith(".stories.tsx") &&
+    !file.endsWith(".test.tsx"),
 );
 
 // shadcn color classes whose names the tokens use for something else, and

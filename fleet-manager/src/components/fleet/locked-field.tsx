@@ -25,7 +25,7 @@ export function LockedField({
       <span id={`${id}-label`} className="text-sm font-medium text-muted">
         {label}
       </span>
-      <div className="flex min-h-10 cursor-default items-center text-sm break-all text-text-2 select-none">
+      <div className="flex min-h-10 cursor-default items-center text-sm break-all text-text-2">
         {value}
       </div>
       <p
