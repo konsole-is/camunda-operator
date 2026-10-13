@@ -36,5 +36,9 @@ export default defineConfig([
     "next-env.d.ts",
     "test/fixtures/**",
     "src/generated/**",
+    ".next-gallery/**",
+    "ui-gallery/**",
+    "test-results/**",
+    "playwright-report/**",
   ]),
 ]);

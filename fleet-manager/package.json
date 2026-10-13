@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:gallery": "FLEET_DEV_GALLERY=1 next build",
     "start": "next start",
     "lint": "eslint --max-warnings 0 . && prettier --check . && next typegen && tsc --noEmit",
     "format": "prettier --write .",
