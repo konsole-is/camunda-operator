@@ -129,6 +129,26 @@ func TestGenerateGivesReadyToAKindOfAGroupThatDoesNotDeclareIt(t *testing.T) {
 	assert.Equal(t, []string{"BeltReady"}, set(t, out, "otherSharedConditionTypes"))
 }
 
+func TestGenerateGivesTwoKindsTheTypeThatBothDeclareUnderOtherNames(t *testing.T) {
+	api := writeAPI(t, map[string]map[string]string{
+		"v1": {
+			"groupversion_info.go": exampleGroupInfo,
+			"widget_types.go": widgetTypes +
+				"\nconst ConditionWidgetRequestsReady = \"RequestsReady\"\n",
+			"gadget_types.go": gadgetTypes +
+				"\nconst (\n\tConditionGadgetRequestsReady = \"RequestsReady\"\n" +
+				"\tConditionGadgetRequestsReadyAlias = \"RequestsReady\"\n)\n",
+		},
+	})
+
+	out, err := generate(api)
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"BeltReady", "GearsReady", "Ready", "RequestsReady"},
+		set(t, out, "exampleWidgetConditionTypes"))
+	assert.Equal(t, []string{"Ready", "RequestsReady"}, set(t, out, "exampleGadgetConditionTypes"))
+}
+
 func TestGenerateLeavesOutListTypesReasonsAndTestFiles(t *testing.T) {
 	api := exampleAPI(t)
 	require.NoError(t, os.WriteFile(
