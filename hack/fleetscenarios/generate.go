@@ -101,14 +101,15 @@ func generate(ctx context.Context, sc *scenario) (map[string][]unstructured.Unst
 
 	outputs := map[string][]unstructured.Unstructured{}
 	overlays := slices.Clone(sc.Overlays)
-	objs, err := settleAndList(ctx, cfg, scheme, c, sim, sco, overlays)
+	ips := newServiceIPs()
+	objs, err := settleAndList(ctx, cfg, scheme, c, sim, sco, ips, overlays)
 	if err != nil {
 		return nil, err
 	}
 	outputs[objectsFile] = objs
 
 	for _, st := range sc.States {
-		objs, err := runState(ctx, cfg, scheme, c, sim, sco, st, &overlays)
+		objs, err := runState(ctx, cfg, scheme, c, sim, sco, ips, st, &overlays)
 		if err != nil {
 			return nil, fmt.Errorf("state %q: %w", st.Name, err)
 		}
@@ -186,6 +187,7 @@ func settleAndList(
 	c client.Client,
 	sim *simulator,
 	sco *scope,
+	ips *serviceIPs,
 	overlays []overlay,
 ) ([]unstructured.Unstructured, error) {
 	before, _, err := controllerActivity()
@@ -209,7 +211,7 @@ func settleAndList(
 	if err != nil {
 		return nil, err
 	}
-	return normalize(objs)
+	return normalize(ips, objs)
 }
 
 // runReconcilers runs every reconciler of the operator against cfg while
@@ -345,6 +347,7 @@ func runState(
 	c client.Client,
 	sim *simulator,
 	sco *scope,
+	ips *serviceIPs,
 	st state,
 	overlays *[]overlay,
 ) ([]unstructured.Unstructured, error) {
@@ -370,7 +373,7 @@ func runState(
 	sim.add(st.Workload)
 	*overlays = append(*overlays, st.Overlays...)
 
-	objs, err := settleAndList(ctx, cfg, scheme, c, sim, sco, *overlays)
+	objs, err := settleAndList(ctx, cfg, scheme, c, sim, sco, ips, *overlays)
 	if err != nil {
 		return nil, err
 	}

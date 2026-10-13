@@ -98,7 +98,7 @@ func TestNormalizeDerivesEveryUIDFromKindNamespaceAndName(t *testing.T) {
 		child.SetManagedFields([]metav1.ManagedFieldsEntry{{
 			Manager: "CamundaCluster/zeebe/" + ownerUID, Operation: metav1.ManagedFieldsOperationApply,
 		}})
-		out, err := normalize([]unstructured.Unstructured{child, owner})
+		out, err := normalize(newServiceIPs(), []unstructured.Unstructured{child, owner})
 		require.NoError(t, err)
 		return out
 	}
@@ -116,7 +116,7 @@ func TestNormalizeDerivesEveryUIDFromKindNamespaceAndName(t *testing.T) {
 }
 
 func TestNormalizeRemovesTheResourceVersion(t *testing.T) {
-	out, err := normalize([]unstructured.Unstructured{object("v1", "Namespace", "", "team-a", "u")})
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{object("v1", "Namespace", "", "team-a", "u")})
 	require.NoError(t, err)
 	assert.Empty(t, out[0].GetResourceVersion())
 	_, found, _ := unstructured.NestedFieldNoCopy(out[0].Object, "metadata", "resourceVersion")
@@ -134,7 +134,7 @@ func TestNormalizeSetsEveryTimestampToTheScenarioTime(t *testing.T) {
 	lease := object("coordination.k8s.io/v1", "Lease", "camunda-system", "claim", "u2")
 	require.NoError(t, unstructured.SetNestedField(lease.Object, "2026-10-13T08:15:42.123456Z", "spec", "renewTime"))
 
-	out, err := normalize([]unstructured.Unstructured{cluster, lease})
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{cluster, lease})
 	require.NoError(t, err)
 
 	got := find(t, out, "CamundaCluster", "team-a", "orders")
@@ -152,7 +152,7 @@ func TestNormalizeSetsEverySecretValue(t *testing.T) {
 	secret := object("v1", "Secret", "team-a", "credentials", "u")
 	secret.Object["data"] = map[string]any{"username": "Y2FtdW5kYQ==", "password": "c2VjcmV0"}
 
-	out, err := normalize([]unstructured.Unstructured{secret})
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{secret})
 	require.NoError(t, err)
 
 	data, _, _ := unstructured.NestedStringMap(out[0].Object, "data")
@@ -168,7 +168,7 @@ func TestNormalizeSortsManagedFields(t *testing.T) {
 		{Manager: "kubectl", Operation: metav1.ManagedFieldsOperationApply},
 	})
 
-	out, err := normalize([]unstructured.Unstructured{obj})
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{obj})
 	require.NoError(t, err)
 
 	got := make([]string, 0, len(out[0].GetManagedFields()))
@@ -191,7 +191,7 @@ func TestNormalizeSetsTheGenerationToOne(t *testing.T) {
 		"type": "Ready", "status": "True", "observedGeneration": int64(4),
 	}}, "status", "conditions"))
 
-	out, err := normalize([]unstructured.Unstructured{obj})
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{obj})
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(1), out[0].GetGeneration())
@@ -207,7 +207,7 @@ func TestNormalizeKeepsAnObservedGenerationThatIsBehindBehind(t *testing.T) {
 		obj.SetGeneration(4)
 		require.NoError(t, unstructured.SetNestedField(obj.Object, observedBefore, "status", "observedGeneration"))
 
-		out, err := normalize([]unstructured.Unstructured{obj})
+		out, err := normalize(newServiceIPs(), []unstructured.Unstructured{obj})
 		require.NoError(t, err)
 
 		assert.Equal(t, int64(1), out[0].GetGeneration())
@@ -223,7 +223,7 @@ func TestNormalizeGivesEachServiceAClusterIPOfTheEnvtestRange(t *testing.T) {
 		return svc
 	}
 	run := func(gatewayIP, connectorsIP string) []unstructured.Unstructured {
-		out, err := normalize([]unstructured.Unstructured{
+		out, err := normalize(newServiceIPs(), []unstructured.Unstructured{
 			service("orders-gateway", gatewayIP),
 			service("orders-connectors", connectorsIP),
 			service("orders-zeebe", "None"),
@@ -249,8 +249,29 @@ func TestNormalizeGivesEachServiceAClusterIPOfTheEnvtestRange(t *testing.T) {
 	assert.Equal(t, "None", ip("orders-zeebe"), "a headless Service keeps None")
 }
 
+func TestNormalizeKeepsTheIPOfAServiceInALaterOutput(t *testing.T) {
+	service := func(name string) unstructured.Unstructured {
+		svc := object("v1", "Service", "team-a", name, name)
+		svc.Object["spec"] = map[string]any{"clusterIP": "10.0.0.42"}
+		return svc
+	}
+	ip := func(objs []unstructured.Unstructured, name string) string {
+		value, _, _ := unstructured.NestedString(find(t, objs, "Service", "team-a", name).Object, "spec", "clusterIP")
+		return value
+	}
+	ips := newServiceIPs()
+
+	first, err := normalize(ips, []unstructured.Unstructured{service("orders-gateway")})
+	require.NoError(t, err)
+	later, err := normalize(ips, []unstructured.Unstructured{service("orders-gateway"), service("orders-api")})
+	require.NoError(t, err)
+
+	assert.Equal(t, ip(first, "orders-gateway"), ip(later, "orders-gateway"), "spec.clusterIP is immutable")
+	assert.NotEqual(t, ip(later, "orders-gateway"), ip(later, "orders-api"))
+}
+
 func TestNormalizeSortsTheObjects(t *testing.T) {
-	out, err := normalize([]unstructured.Unstructured{
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{
 		object("v1", "Secret", "team-b", "a", "u1"),
 		object("apps/v1", "StatefulSet", "team-a", "b", "u2"),
 		object("v1", "Secret", "team-a", "b", "u3"),
@@ -275,7 +296,7 @@ func TestNormalizeSortsTheObjects(t *testing.T) {
 func TestNormalizeGivesAnEventANameFromWhatItIsAbout(t *testing.T) {
 	run := func(eventName, clusterUID string) unstructured.Unstructured {
 		cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", clusterUID)
-		out, err := normalize([]unstructured.Unstructured{
+		out, err := normalize(newServiceIPs(), []unstructured.Unstructured{
 			cluster, event(eventName, cluster, "Created", "Created StatefulSet orders-zeebe"),
 		})
 		require.NoError(t, err)
@@ -292,7 +313,10 @@ func TestNormalizeGivesAnEventANameFromWhatItIsAbout(t *testing.T) {
 func TestNormalizeGivesAnEventAboutALongNameAValidName(t *testing.T) {
 	long := strings.Repeat("a", 235) + "-" + strings.Repeat("b", 17)
 	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", long, "u")
-	out, err := normalize([]unstructured.Unstructured{cluster, event("long.a", cluster, "Created", "Created")})
+	out, err := normalize(
+		newServiceIPs(),
+		[]unstructured.Unstructured{cluster, event("long.a", cluster, "Created", "Created")},
+	)
 	require.NoError(t, err)
 
 	for _, obj := range out {
@@ -304,7 +328,7 @@ func TestNormalizeGivesAnEventAboutALongNameAValidName(t *testing.T) {
 
 func TestNormalizeWritesEachEventOnce(t *testing.T) {
 	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "u")
-	out, err := normalize([]unstructured.Unstructured{
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{
 		cluster,
 		event("orders.a", cluster, "Created", "Created StatefulSet orders-zeebe"),
 		event("orders.b", cluster, "Created", "Created StatefulSet orders-zeebe"),
@@ -324,7 +348,10 @@ func TestNormalizeWritesEachEventOnce(t *testing.T) {
 
 func TestNormalizeWritesNoCountAndNoHostOfAnEvent(t *testing.T) {
 	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "u")
-	out, err := normalize([]unstructured.Unstructured{cluster, event("orders.a", cluster, "Created", "Created")})
+	out, err := normalize(
+		newServiceIPs(),
+		[]unstructured.Unstructured{cluster, event("orders.a", cluster, "Created", "Created")},
+	)
 	require.NoError(t, err)
 
 	e := find(t, out, "Event", "team-a", out[1].GetName())
@@ -339,7 +366,10 @@ func TestNormalizeWritesNoCountAndNoHostOfAnEvent(t *testing.T) {
 func TestNormalizeLeavesOutAnEventAboutAnObjectOutsideTheScenario(t *testing.T) {
 	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "u")
 	gone := object("v1", "Pod", "team-a", "orders-zeebe-0", "u2")
-	out, err := normalize([]unstructured.Unstructured{cluster, event("pod.a", gone, "Killing", "Stopping")})
+	out, err := normalize(
+		newServiceIPs(),
+		[]unstructured.Unstructured{cluster, event("pod.a", gone, "Killing", "Stopping")},
+	)
 	require.NoError(t, err)
 
 	assert.Len(t, out, 1)

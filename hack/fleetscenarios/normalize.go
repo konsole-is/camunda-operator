@@ -73,10 +73,10 @@ const (
 //     subresource.
 //  7. metadata.generation becomes 1, and so does each observedGeneration in
 //     status that equals the generation. One that is behind becomes 0.
-//  8. Each v1 Service with a cluster IP gets an IP of 10.0.0.0/24, the
-//     Service range of envtest. The API server picks a free IP at random.
+//  8. Each v1 Service with a cluster IP gets its IP of 10.0.0.0/24 from
+//     addresses. The API server picks a free IP at random.
 //  9. The objects are sorted by apiVersion, kind, namespace, and name.
-func normalize(objs []unstructured.Unstructured) ([]unstructured.Unstructured, error) {
+func normalize(addresses *serviceIPs, objs []unstructured.Unstructured) ([]unstructured.Unstructured, error) {
 	objs = normalizeEvents(objs)
 
 	uids := map[string]string{}
@@ -86,7 +86,7 @@ func normalize(objs []unstructured.Unstructured) ([]unstructured.Unstructured, e
 		}
 	}
 
-	ips, err := serviceIPs(objs)
+	ips, err := addresses.assign(objs)
 	if err != nil {
 		return nil, err
 	}
@@ -183,10 +183,27 @@ func isEvent(obj *unstructured.Unstructured) bool {
 	return obj.GetAPIVersion() == eventAPIVersion && obj.GetKind() == kindEvent
 }
 
-// serviceIPs returns the scenario IP of each v1 Service of objs that has a
-// cluster IP, keyed by namespace and name. It fails when objs holds more
-// Services than the range has free IPs.
-func serviceIPs(objs []unstructured.Unstructured) (map[string]string, error) {
+// serviceIPs gives each v1 Service with a cluster IP an IP of 10.0.0.0/24,
+// the Service range of envtest, and keeps that IP for the Service in each
+// later output of one scenario.
+// The loader of the scenarios cannot move a Service to another IP, because
+// spec.clusterIP is immutable.
+type serviceIPs struct {
+	assigned map[string]string
+	next     int
+}
+
+// newServiceIPs returns the IPs of one scenario, with none given yet.
+func newServiceIPs() *serviceIPs {
+	return &serviceIPs{assigned: map[string]string{}, next: firstServiceIP}
+}
+
+// The API server of envtest serves its own Service at 10.0.0.1.
+const firstServiceIP, lastServiceIP = 10, 254
+
+// assign returns the IP of each v1 Service of objs that has a cluster IP,
+// keyed by namespace and name. It fails when the range has no free IP left.
+func (s *serviceIPs) assign(objs []unstructured.Unstructured) (map[string]string, error) {
 	var keys []string
 	for i := range objs {
 		isService := objs[i].GetAPIVersion() == "v1" && objs[i].GetKind() == "Service"
@@ -197,16 +214,16 @@ func serviceIPs(objs []unstructured.Unstructured) (map[string]string, error) {
 	}
 	slices.Sort(keys)
 
-	// The API server of envtest serves its own Service at 10.0.0.1.
-	const first, last = 10, 254
-	if len(keys) > last-first+1 {
-		return nil, fmt.Errorf(
-			"%d Services have a cluster IP, and 10.0.0.0/24 has room for %d", len(keys), last-first+1,
-		)
-	}
 	ips := make(map[string]string, len(keys))
-	for i, key := range keys {
-		ips[key] = fmt.Sprintf("10.0.0.%d", first+i)
+	for _, key := range keys {
+		if _, ok := s.assigned[key]; !ok {
+			if s.next > lastServiceIP {
+				return nil, fmt.Errorf("the Service %s needs a cluster IP, and 10.0.0.0/24 has none left", key)
+			}
+			s.assigned[key] = fmt.Sprintf("10.0.0.%d", s.next)
+			s.next++
+		}
+		ips[key] = s.assigned[key]
 	}
 	return ips, nil
 }
