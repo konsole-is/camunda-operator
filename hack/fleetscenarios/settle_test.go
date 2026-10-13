@@ -88,6 +88,25 @@ func keepChanging(ctx context.Context, c client.Client, obj *corev1.ConfigMap) {
 	}
 }
 
+func TestUpdateRetryingKeepsAControllerWhoseLastReconcileFailed(t *testing.T) {
+	retrying := map[string]bool{}
+
+	updateRetrying(retrying, []string{"camundacluster error", "database success"})
+	assert.Equal(t, map[string]bool{"camundacluster": true}, retrying, "an error leaves a retry queued")
+
+	updateRetrying(retrying, []string{"database requeue_after"})
+	assert.Equal(t, map[string]bool{"camundacluster": true}, retrying, "another controller does not clear it")
+
+	updateRetrying(retrying, []string{"camundacluster error", "camundacluster success"})
+	assert.Equal(t, map[string]bool{"camundacluster": true}, retrying, "an order that is not known keeps it")
+
+	updateRetrying(retrying, []string{"camundacluster success"})
+	assert.Empty(t, retrying, "a later success clears it")
+
+	updateRetrying(retrying, []string{"database requeue"})
+	assert.Equal(t, map[string]bool{"database": true}, retrying, "a requeue without a delay leaves a retry queued")
+}
+
 func TestSettleTimeoutIsOneMinute(t *testing.T) {
 	assert.Equal(t, time.Minute, settleTimeout, "the issue bounds a settle at 60 seconds")
 }

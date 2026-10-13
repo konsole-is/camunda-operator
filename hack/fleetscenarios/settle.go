@@ -37,13 +37,13 @@ const (
 
 // settle runs the simulator until the scenario is quiet, and returns nil
 // then. A scenario is quiet when, for settleQuiet without a break, no
-// controller runs a reconcile or finishes one, no object of the scope
-// changes, the simulator has nothing to write, and each object that must
-// observe its generation has observed it. A reconcile that a controller
-// queued for later with RequeueAfter does not keep a scenario busy. When the
-// scenario is not quiet within timeout, settle returns an error that names
-// each object that changed in the last settleQuiet, each object that did not
-// observe its generation, and each controller that reconciled in that time.
+// controller runs a reconcile or finishes one, the last reconcile that each
+// controller finished did not fail, no object of the scope changes, the
+// simulator has nothing to write, and each object that must observe its
+// generation has observed it. A reconcile
+// that a controller queued for later with RequeueAfter does not keep a
+// scenario busy. When the scenario is not quiet within timeout, settle
+// returns an error.
 func settle(ctx context.Context, sim *simulator, sc *scope, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	quietSince := time.Now()
@@ -52,6 +52,7 @@ func settle(ctx context.Context, sim *simulator, sc *scope, timeout time.Duratio
 	var versions map[string]string
 	var totals map[string]float64
 	var unobserved []string
+	retrying := map[string]bool{}
 
 	for {
 		now := time.Now()
@@ -79,14 +80,22 @@ func settle(ctx context.Context, sim *simulator, sc *scope, timeout time.Duratio
 		if err != nil {
 			return err
 		}
-		for _, name := range changedKeys(totals, reconciles) {
+		changed := changedKeys(totals, reconciles)
+		for _, key := range changed {
+			name, _, _ := strings.Cut(key, " ")
 			controllerChanged[name] = now
 			busy = true
+		}
+		// The counters live as long as the process, so the first tick only
+		// takes the counts that earlier runs left.
+		if totals != nil {
+			updateRetrying(retrying, changed)
 		}
 		totals = reconciles
 
 		unobserved = sc.unobserved(objs)
-		if busy || active > 0 || len(unobserved) > 0 {
+		failing := slices.Sorted(maps.Keys(retrying))
+		if busy || active > 0 || len(unobserved) > 0 || len(failing) > 0 {
 			quietSince = now
 		} else if now.Sub(quietSince) >= settleQuiet {
 			return nil
@@ -95,11 +104,13 @@ func settle(ctx context.Context, sim *simulator, sc *scope, timeout time.Duratio
 		if now.After(deadline) {
 			return fmt.Errorf(
 				"the scenario did not settle within %s: objects that kept changing: %s; "+
-					"objects that did not observe their generation: %s; controllers that kept reconciling: %s",
+					"objects that did not observe their generation: %s; controllers that kept reconciling: %s; "+
+					"controllers whose last reconcile failed: %s",
 				timeout,
 				listOrNone(recentlyChanged(objectChanged, now), true),
 				listOrNone(unobserved, false),
 				listOrNone(recentlyChanged(controllerChanged, now), false),
+				listOrNone(failing, false),
 			)
 		}
 
@@ -128,9 +139,39 @@ func changedKeys[V comparable](before, after map[string]V) []string {
 	return keys
 }
 
-// controllerActivity returns, for each controller of this process, the
-// number of reconciles it finished, and the number of reconciles that run
-// now across all controllers.
+// updateRetrying records in retrying each controller whose last reconcile
+// left a rate-limited retry in its queue: an error, or a requeue without a
+// delay. changed holds the keys of controllerActivity whose count rose since
+// the last tick. When a retry and another result rose in one tick, their
+// order is not known, and the controller stays as it was.
+func updateRetrying(retrying map[string]bool, changed []string) {
+	retried, finished := map[string]bool{}, map[string]bool{}
+	for _, key := range changed {
+		name, result, _ := strings.Cut(key, " ")
+		switch result {
+		case "error", "requeue":
+			retried[name] = true
+		default:
+			finished[name] = true
+		}
+	}
+
+	for name := range retried {
+		if !finished[name] {
+			retrying[name] = true
+		}
+	}
+	for name := range finished {
+		if !retried[name] {
+			delete(retrying, name)
+		}
+	}
+}
+
+// controllerActivity returns, for each controller of this process and each
+// result, the number of reconciles that the controller finished with that
+// result, keyed by "<controller> <result>". It also returns the number of
+// reconciles that run now across all controllers.
 func controllerActivity() (map[string]float64, float64, error) {
 	families, err := ctrlmetrics.Registry.Gather()
 	if err != nil {
@@ -143,11 +184,16 @@ func controllerActivity() (map[string]float64, float64, error) {
 		for _, metric := range family.GetMetric() {
 			switch family.GetName() {
 			case "controller_runtime_reconcile_total":
+				var name, result string
 				for _, label := range metric.GetLabel() {
-					if label.GetName() == "controller" {
-						totals[label.GetValue()] += metric.GetCounter().GetValue()
+					switch label.GetName() {
+					case "controller":
+						name = label.GetValue()
+					case "result":
+						result = label.GetValue()
 					}
 				}
+				totals[name+" "+result] += metric.GetCounter().GetValue()
 			case "controller_runtime_active_workers":
 				active += metric.GetGauge().GetValue()
 			}

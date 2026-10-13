@@ -97,7 +97,8 @@ limitations under the License.
 // # Settle
 //
 // The reconcilers and the simulator run until the scenario is quiet for 2
-// seconds: no controller reconciles, no object changes, the simulator has
+// seconds: no controller reconciles, the last reconcile that each
+// controller finished did not fail, no object changes, the simulator has
 // nothing to write, and each object of the operator and each StatefulSet,
 // Deployment, and ReplicaSet has observed its generation. A reconcile that
 // waits for a later time does not keep a scenario busy. A scenario that is
