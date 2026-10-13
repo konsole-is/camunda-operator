@@ -20,6 +20,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,16 +41,8 @@ func TestEveryControllerRecordsMetricsUnderItsControllerName(t *testing.T) {
 	t.Parallel()
 
 	controllerDir := ".."
-	entries, err := os.ReadDir(controllerDir)
+	packages, err := controllerPackages(controllerDir)
 	require.NoError(t, err)
-
-	var packages []string
-	for _, entry := range entries {
-		// This package holds tests only and runs no controller.
-		if entry.IsDir() && entry.Name() != "conformance" {
-			packages = append(packages, entry.Name())
-		}
-	}
 	require.NotEmpty(t, packages, "no controller package found under %s", controllerDir)
 
 	for _, pkg := range packages {
@@ -74,6 +67,41 @@ func TestEveryControllerRecordsMetricsUnderItsControllerName(t *testing.T) {
 			)
 		})
 	}
+}
+
+// controllerPackages returns, relative to root, every directory under root
+// that holds a Go file other than a test. Such a directory is a controller
+// package. A directory without one, such as a group directory or a package
+// of schema specs, is walked into and not returned.
+func controllerPackages(root string) ([]string, error) {
+	var packages []string
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || !entry.IsDir() {
+			return err
+		}
+
+		sources, err := filepath.Glob(filepath.Join(path, "*.go"))
+		if err != nil {
+			return err
+		}
+
+		for _, source := range sources {
+			if strings.HasSuffix(source, "_test.go") {
+				continue
+			}
+
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+
+			packages = append(packages, rel)
+			break
+		}
+		return nil
+	})
+
+	return packages, err
 }
 
 // wiring is what one controller package says about its metrics.
@@ -188,4 +216,29 @@ func distinct(names map[string][]string) []string {
 		out = append(out, name)
 	}
 	return out
+}
+
+// A group directory such as fleet holds no source of its own, and a package of
+// schema specs holds tests only. Neither runs a controller, and a controller
+// package below either of them must still be checked.
+func TestControllerPackagesWalksIntoDirectoriesWithoutSource(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	for _, file := range []string{
+		"database/controller.go",
+		"database/withoutcnpg/suite_test.go",
+		"fleet/environment/controller.go",
+		"fleet/schema/suite_test.go",
+		"conformance/suite_test.go",
+	} {
+		path := filepath.Join(root, file)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
+		require.NoError(t, os.WriteFile(path, []byte("package x\n"), 0o600))
+	}
+
+	packages, err := controllerPackages(root)
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []string{"database", filepath.Join("fleet", "environment")}, packages)
 }
