@@ -267,6 +267,8 @@ type TargetRef struct {
 	Name string `json:"name"`
 	// ServiceAccountName is the ServiceAccount that the pods of the resource
 	// run under.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 	// AdditionalServiceAccounts are the names of more ServiceAccounts that
