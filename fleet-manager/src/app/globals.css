@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* The data-open, data-checked, and other variants of the primitives. */
+@import "shadcn/tailwind.css";
 
 /* The app has one theme, dark. The layout puts the class dark on <html>, so
    the dark: variants of the shadcn primitives always apply. */
