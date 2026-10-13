@@ -7,8 +7,6 @@ metadata:
   labels:
     {{- include "fleet-manager.labels" . | nindent 4 }}
 spec:
-  # The app keeps one watch for each kind in its process. A second replica
-  # doubles the load on the API server.
   replicas: 1
   selector:
     matchLabels:

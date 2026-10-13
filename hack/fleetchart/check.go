@@ -37,8 +37,7 @@ const (
 	// componentLabel and componentValue mark each object of the app.
 	componentLabel = "app.kubernetes.io/component"
 	componentValue = "fleet-manager"
-	// settingsConfigMap is the ConfigMap that the app creates at its first
-	// start (contract 6.1, CL9).
+	// settingsConfigMap holds the settings of the app (contract 6.1, CL9).
 	settingsConfigMap = "fleet-manager-settings"
 )
 

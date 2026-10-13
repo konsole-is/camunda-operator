@@ -1,6 +1,6 @@
 {{- if .Values.fleetManager.enabled }}
-# The app creates the settings ConfigMap at its first start. A create rule
-# cannot name one object, so create covers each ConfigMap of this namespace.
+# The settings of the app go in the ConfigMap fleet-manager-settings. A create
+# rule cannot name one object, so create covers each ConfigMap of this namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
