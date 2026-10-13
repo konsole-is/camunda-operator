@@ -15,7 +15,7 @@ helm upgrade --install camunda-operator \
   --set fleetManager.enabled=true
 ```
 
-If the release already has other values, add `--reset-then-reuse-values`, or give your values files and `--set` options again. Without one of them, `helm upgrade` sets those values back to their defaults. Do not use `--reuse-values`. It keeps the defaults of the old chart, which do not have the values of the fleet manager.
+Each `helm upgrade` on this page sets each value that it does not name back to the default of the chart. If your release has other values, add your values files and `--set` options to each command. Do not use `--reuse-values`. It keeps the defaults of the old chart, which do not have the values of the fleet manager.
 
 The chart adds the Deployment and the Service `camunda-operator-fleet-manager` to the release namespace. Wait until the Deployment is ready:
 
@@ -51,7 +51,7 @@ helm upgrade camunda-operator \
   oci://ghcr.io/konsole-is/charts/camunda-operator \
   --version <version> \
   --namespace camunda-operator-system \
-  --reset-then-reuse-values \
+  --set fleetManager.enabled=true \
   --set fleetManager.resources.limits.memory=1Gi
 ```
 
@@ -64,7 +64,6 @@ helm upgrade camunda-operator \
   oci://ghcr.io/konsole-is/charts/camunda-operator \
   --version <version> \
   --namespace camunda-operator-system \
-  --reset-then-reuse-values \
   --set fleetManager.enabled=false
 ```
 
