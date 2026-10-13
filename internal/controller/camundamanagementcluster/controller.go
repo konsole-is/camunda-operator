@@ -299,6 +299,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, stepBuildComponents.stop(&mc, err)
 	}
 	comps = built.Components
+	// The routes describe Services, which outlive a suspension. A pass that
+	// stops before the build keeps the routes of the last one.
+	mc.Status.Endpoints = components.Endpoints(&mc)
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
 	claimRefusal, claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)
