@@ -68,7 +68,8 @@ jobs:
               or . == "docs/crds/api-reference.md"
               or . == "pkg/images/table.json"
               or (test("^fleet-manager/e2e/scenarios/[^/]+/[^/]+\\.yaml$")
-                and (endswith("/scenario.yaml") | not)))
+                and (endswith("/scenario.yaml") | not)
+                and (endswith("/observe.yaml") | not)))
             and (contains("..") | not))' additions.json deletions.json > /dev/null
           tip=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha)
           if [ "$tip" != "$HEAD_SHA" ]; then

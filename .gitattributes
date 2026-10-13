@@ -4,6 +4,7 @@ api/v1/zz_generated.deepcopy.go linguist-generated=true
 dist/chart/** linguist-generated=true
 go.sum linguist-generated=true
 # Page scenarios: make fleet-scenarios writes every .yaml beside a
-# scenario.yaml. scenario.yaml is the input, written by hand.
+# scenario.yaml. scenario.yaml and observe.yaml are written by hand.
 fleet-manager/e2e/scenarios/*/*.yaml linguist-generated=true
 fleet-manager/e2e/scenarios/*/scenario.yaml -linguist-generated
+fleet-manager/e2e/scenarios/*/observe.yaml -linguist-generated

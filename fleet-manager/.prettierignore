@@ -1,6 +1,8 @@
 pnpm-lock.yaml
 # The quote style of the fixtures is part of the cases they test.
 test/fixtures/
-# Written by make fleet-scenarios. scenario.yaml is written by hand.
+# Written by make fleet-scenarios. scenario.yaml and observe.yaml are
+# written by hand.
 e2e/scenarios/*/*.yaml
 !e2e/scenarios/*/scenario.yaml
+!e2e/scenarios/*/observe.yaml
