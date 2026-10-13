@@ -173,6 +173,13 @@ func normalizeEvents(objs []unstructured.Unstructured) []unstructured.Unstructur
 		}
 		unstructured.RemoveNestedField(e.Object, "regarding", "resourceVersion")
 		unstructured.RemoveNestedField(e.Object, "related", "resourceVersion")
+		// The related object can be gone, and then no object holds its UID.
+		if related, ok := e.Object["related"].(map[string]any); ok {
+			relatedKind, _ := related["kind"].(string)
+			relatedNamespace, _ := related["namespace"].(string)
+			relatedName, _ := related["name"].(string)
+			related["uid"] = scenarioUID(relatedKind, relatedNamespace, relatedName)
+		}
 		out = append(out, *e)
 	}
 
@@ -254,16 +261,6 @@ func normalizeObject(
 		}
 	}
 
-	fields := obj.GetManagedFields()
-	slices.SortFunc(fields, func(a, b metav1.ManagedFieldsEntry) int {
-		return cmp.Or(
-			cmp.Compare(a.Manager, b.Manager),
-			cmp.Compare(a.Operation, b.Operation),
-			cmp.Compare(a.Subresource, b.Subresource),
-		)
-	})
-	obj.SetManagedFields(fields)
-
 	if generation := obj.GetGeneration(); generation != 0 {
 		if status, ok := obj.Object["status"]; ok {
 			setObservedGeneration(status, generation)
@@ -283,6 +280,18 @@ func normalizeObject(
 	if err := out.UnmarshalJSON(data); err != nil {
 		return nil, err
 	}
+
+	// The names of the managers hold UIDs, so they sort only once the UIDs
+	// are the scenario UIDs.
+	fields := out.GetManagedFields()
+	slices.SortFunc(fields, func(a, b metav1.ManagedFieldsEntry) int {
+		return cmp.Or(
+			cmp.Compare(a.Manager, b.Manager),
+			cmp.Compare(a.Operation, b.Operation),
+			cmp.Compare(a.Subresource, b.Subresource),
+		)
+	})
+	out.SetManagedFields(fields)
 	fixTimes(out.Object)
 
 	return out, nil

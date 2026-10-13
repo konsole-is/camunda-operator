@@ -326,6 +326,52 @@ func TestNormalizeGivesAnEventAboutALongNameAValidName(t *testing.T) {
 	}
 }
 
+func TestNormalizeGivesTheRelatedObjectOfAnEventItsScenarioUID(t *testing.T) {
+	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "u")
+	e := event("orders.a", cluster, "Deleted", "Deleted StatefulSet orders-zeebe")
+	e.Object["related"] = map[string]any{
+		"apiVersion": "apps/v1", "kind": "StatefulSet", "namespace": "team-a", "name": "orders-zeebe",
+		"uid": "5a1e3c2b-0000-4000-8000-000000000001",
+	}
+
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{cluster, e})
+	require.NoError(t, err)
+
+	for _, obj := range out {
+		if isEvent(&obj) {
+			uid, _, _ := unstructured.NestedString(obj.Object, "related", "uid")
+			assert.Equal(t, scenarioUID("StatefulSet", "team-a", "orders-zeebe"), uid, "the StatefulSet is gone")
+		}
+	}
+}
+
+func TestNormalizeSortsManagedFieldsByTheirScenarioUID(t *testing.T) {
+	run := func(ordersUID, billingUID string) []string {
+		orders := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", ordersUID)
+		billing := object("core.camunda.io/v1", "CamundaCluster", "team-a", "billing", billingUID)
+		child := object("v1", "ConfigMap", "team-a", "shared", "c")
+		child.SetManagedFields([]metav1.ManagedFieldsEntry{
+			{Manager: "CamundaCluster/zeebe/" + ordersUID, Operation: metav1.ManagedFieldsOperationApply},
+			{Manager: "CamundaCluster/zeebe/" + billingUID, Operation: metav1.ManagedFieldsOperationApply},
+		})
+		out, err := normalize(newServiceIPs(), []unstructured.Unstructured{orders, billing, child})
+		require.NoError(t, err)
+
+		shared := find(t, out, "ConfigMap", "team-a", "shared")
+		managers := make([]string, 0, 2)
+		for _, f := range shared.GetManagedFields() {
+			managers = append(managers, f.Manager)
+		}
+		return managers
+	}
+
+	assert.Equal(t,
+		run("00000000-0000-4000-8000-000000000001", "ffffffff-0000-4000-8000-000000000002"),
+		run("ffffffff-0000-4000-8000-000000000003", "00000000-0000-4000-8000-000000000004"),
+		"the order of the managers depends on the scenario UIDs only",
+	)
+}
+
 func TestNormalizeWritesEachEventOnce(t *testing.T) {
 	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "u")
 	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{
