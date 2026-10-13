@@ -4508,6 +4508,7 @@ metadata:
                 f:name: {}
         f:dnsPolicy: {}
         f:enableServiceLinks: {}
+        f:hostname: {}
         f:nodeName: {}
         f:restartPolicy: {}
         f:schedulerName: {}
@@ -4519,6 +4520,7 @@ metadata:
           f:runAsUser: {}
         f:serviceAccount: {}
         f:serviceAccountName: {}
+        f:subdomain: {}
         f:terminationGracePeriodSeconds: {}
         f:volumes:
           .: {}
@@ -4693,6 +4695,7 @@ spec:
       name: data
   dnsPolicy: ClusterFirst
   enableServiceLinks: true
+  hostname: camundacluster-sample-zeebe-0
   nodeName: scenario-node
   preemptionPolicy: PreemptLowerPriority
   priority: 0
@@ -4705,6 +4708,7 @@ spec:
     runAsUser: 1001
   serviceAccount: camundacluster-sample-camunda
   serviceAccountName: camundacluster-sample-camunda
+  subdomain: camundacluster-sample-zeebe
   terminationGracePeriodSeconds: 30
   tolerations:
   - effect: NoExecute
@@ -4965,6 +4969,7 @@ metadata:
                 f:name: {}
         f:dnsPolicy: {}
         f:enableServiceLinks: {}
+        f:hostname: {}
         f:nodeName: {}
         f:restartPolicy: {}
         f:schedulerName: {}
@@ -4976,6 +4981,7 @@ metadata:
           f:runAsUser: {}
         f:serviceAccount: {}
         f:serviceAccountName: {}
+        f:subdomain: {}
         f:terminationGracePeriodSeconds: {}
         f:volumes:
           .: {}
@@ -5150,6 +5156,7 @@ spec:
       name: data
   dnsPolicy: ClusterFirst
   enableServiceLinks: true
+  hostname: camundacluster-sample-zeebe-1
   nodeName: scenario-node
   preemptionPolicy: PreemptLowerPriority
   priority: 0
@@ -5162,6 +5169,7 @@ spec:
     runAsUser: 1001
   serviceAccount: camundacluster-sample-camunda
   serviceAccountName: camundacluster-sample-camunda
+  subdomain: camundacluster-sample-zeebe
   terminationGracePeriodSeconds: 30
   tolerations:
   - effect: NoExecute
@@ -5422,6 +5430,7 @@ metadata:
                 f:name: {}
         f:dnsPolicy: {}
         f:enableServiceLinks: {}
+        f:hostname: {}
         f:nodeName: {}
         f:restartPolicy: {}
         f:schedulerName: {}
@@ -5433,6 +5442,7 @@ metadata:
           f:runAsUser: {}
         f:serviceAccount: {}
         f:serviceAccountName: {}
+        f:subdomain: {}
         f:terminationGracePeriodSeconds: {}
         f:volumes:
           .: {}
@@ -5607,6 +5617,7 @@ spec:
       name: data
   dnsPolicy: ClusterFirst
   enableServiceLinks: true
+  hostname: camundacluster-sample-zeebe-2
   nodeName: scenario-node
   preemptionPolicy: PreemptLowerPriority
   priority: 0
@@ -5619,6 +5630,7 @@ spec:
     runAsUser: 1001
   serviceAccount: camundacluster-sample-camunda
   serviceAccountName: camundacluster-sample-camunda
+  subdomain: camundacluster-sample-zeebe
   terminationGracePeriodSeconds: 30
   tolerations:
   - effect: NoExecute

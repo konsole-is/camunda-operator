@@ -166,6 +166,41 @@ func TestSimulatorMakesAStatefulSetReady(t *testing.T) {
 	assert.Zero(t, writes, "a second pass over a ready StatefulSet writes nothing")
 }
 
+func TestSimulatorGivesTheBrokerPodsTheirStableNetworkIdentity(t *testing.T) {
+	sts := brokers()
+	sts.Spec.ServiceName = "orders-zeebe"
+	c := fakeClient(t, sts)
+	sim := newSimulator(c)
+	sim.watch("team-a")
+
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err)
+
+	pod := getPod(t, c, "orders-zeebe-1")
+	assert.Equal(t, "orders-zeebe-1", pod.Spec.Hostname)
+	assert.Equal(t, "orders-zeebe", pod.Spec.Subdomain)
+}
+
+func TestSimulatorReportsTheInitContainersOfAJobAsDone(t *testing.T) {
+	job := backupJob()
+	job.Spec.Template.Spec.InitContainers = []corev1.Container{{Name: "dump", Image: "postgres:17"}}
+	c := fakeClient(t, job)
+	sim := newSimulator(c)
+	sim.watch("team-a")
+
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err)
+
+	var pods corev1.PodList
+	require.NoError(t, c.List(context.Background(), &pods, client.InNamespace("team-a")))
+	require.Len(t, pods.Items, 1)
+	statuses := pods.Items[0].Status.InitContainerStatuses
+	require.Len(t, statuses, 1)
+	assert.Equal(t, "dump", statuses[0].Name)
+	require.NotNil(t, statuses[0].State.Terminated)
+	assert.Zero(t, statuses[0].State.Terminated.ExitCode)
+}
+
 func TestSimulatorAppliesAReadyReplicasStep(t *testing.T) {
 	c := fakeClient(t, brokers())
 	sim := newSimulator(c)

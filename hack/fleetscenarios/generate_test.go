@@ -119,6 +119,27 @@ func TestGenerate(t *testing.T) {
 	})
 }
 
+func TestGenerateRefusesAFieldThatTheSchemaDoesNotHold(t *testing.T) {
+	t.Run("in the seed", func(t *testing.T) {
+		sc, err := readScenario("testdata/one-broker/scenario.yaml")
+		require.NoError(t, err)
+		cluster := sc.Seed[len(sc.Seed)-1]
+		cluster["spec"].(map[string]any)["zeebe"].(map[string]any)["replicaz"] = 3
+
+		_, err = generate(t.Context(), sc)
+		assert.ErrorContains(t, err, "replicaz")
+	})
+
+	t.Run("in an overlay", func(t *testing.T) {
+		sc, err := readScenario("testdata/one-broker/scenario.yaml")
+		require.NoError(t, err)
+		sc.Overlays[0].Status = map[string]any{"adminPassword": map[string]any{"rotatoin": "2026-01"}}
+
+		_, err = generate(t.Context(), sc)
+		assert.ErrorContains(t, err, "rotatoin")
+	})
+}
+
 func TestApplyOverlaysNamesAMissingObject(t *testing.T) {
 	s := runtime.NewScheme()
 	require.NoError(t, manager.AddToScheme(s))

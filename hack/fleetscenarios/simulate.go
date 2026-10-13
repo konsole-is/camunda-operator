@@ -283,6 +283,8 @@ func statefulSetPodFor(sts *appsv1.StatefulSet, revision string, ordinal int32) 
 	pod.Labels[appsv1.ControllerRevisionHashLabelKey] = revision
 	pod.Labels[appsv1.StatefulSetPodNameLabel] = name
 	pod.Labels[appsv1.PodIndexLabel] = strconv.Itoa(int(ordinal))
+	pod.Spec.Hostname = name
+	pod.Spec.Subdomain = sts.Spec.ServiceName
 	pod.OwnerReferences = []metav1.OwnerReference{
 		*metav1.NewControllerRef(sts, appsv1.SchemeGroupVersion.WithKind("StatefulSet")),
 	}
@@ -880,6 +882,7 @@ func (s *simulator) runPod(ctx context.Context, pod *corev1.Pod, ready bool) (in
 	status.Phase = corev1.PodRunning
 	status.StartTime = &scenarioTime
 	status.Conditions = podConditions(corev1.ConditionTrue, readiness)
+	status.InitContainerStatuses = initContainerStatuses(pod)
 	status.ContainerStatuses = nil
 	for _, c := range pod.Spec.Containers {
 		status.ContainerStatuses = append(status.ContainerStatuses, corev1.ContainerStatus{
@@ -905,6 +908,7 @@ func (s *simulator) finishPod(ctx context.Context, pod *corev1.Pod, succeeded bo
 	status.Phase = phase
 	status.StartTime = &scenarioTime
 	status.Conditions = podConditions(corev1.ConditionTrue, corev1.ConditionFalse)
+	status.InitContainerStatuses = initContainerStatuses(pod)
 	status.ContainerStatuses = nil
 	for _, c := range pod.Spec.Containers {
 		status.ContainerStatuses = append(status.ContainerStatuses, corev1.ContainerStatus{
@@ -920,6 +924,29 @@ func (s *simulator) finishPod(ctx context.Context, pod *corev1.Pod, succeeded bo
 		})
 	}
 	return s.writePodStatus(ctx, pod, status)
+}
+
+// initContainerStatuses returns the statuses of the init containers of pod,
+// each ended with exit code 0, as the kubelet reports them once the Pod is
+// initialized.
+func initContainerStatuses(pod *corev1.Pod) []corev1.ContainerStatus {
+	if len(pod.Spec.InitContainers) == 0 {
+		return nil
+	}
+	statuses := make([]corev1.ContainerStatus, 0, len(pod.Spec.InitContainers))
+	for _, c := range pod.Spec.InitContainers {
+		statuses = append(statuses, corev1.ContainerStatus{
+			Name:    c.Name,
+			Image:   c.Image,
+			Started: new(false),
+			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+				Reason:     "Completed",
+				StartedAt:  scenarioTime,
+				FinishedAt: scenarioTime,
+			}},
+		})
+	}
+	return statuses
 }
 
 // podConditions returns the conditions of a Pod that is scheduled and
