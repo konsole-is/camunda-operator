@@ -78,6 +78,30 @@ describe("parseImagesTable", () => {
       }),
     ).toThrow("minors.8.9.camunda has no version");
   });
+
+  it("refuses an empty version", () => {
+    expect(() =>
+      parseImagesTable({
+        schemaVersion: 1,
+        minors: { "8.9": { camunda: { version: "" } } },
+      }),
+    ).toThrow("minors.8.9.camunda has no version");
+  });
+
+  it("refuses a repository or a tag prefix that is not a string", () => {
+    expect(() =>
+      parseImagesTable({
+        schemaVersion: 1,
+        minors: { "8.9": { camunda: { repository: 1, version: "8.9.0" } } },
+      }),
+    ).toThrow("minors.8.9.camunda.repository is not a string");
+    expect(() =>
+      parseImagesTable({
+        schemaVersion: 1,
+        minors: { "8.9": { keycloak: { tagPrefix: [], version: "26.4" } } },
+      }),
+    ).toThrow("minors.8.9.keycloak.tagPrefix is not a string");
+  });
 });
 
 describe("parseCatalog", () => {

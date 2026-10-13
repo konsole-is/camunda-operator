@@ -108,10 +108,15 @@ export function parseImagesTable(data: unknown): ImagesTable {
     for (const [name, entry] of Object.entries(
       record(images, `minors.${minor}`),
     )) {
-      if (
-        typeof record(entry, `minors.${minor}.${name}`).version !== "string"
-      ) {
-        throw new Error(`minors.${minor}.${name} has no version`);
+      const where = `minors.${minor}.${name}`;
+      const image = record(entry, where);
+      if (typeof image.version !== "string" || image.version === "") {
+        throw new Error(`${where} has no version`);
+      }
+      for (const field of ["repository", "tagPrefix"]) {
+        if (field in image && typeof image[field] !== "string") {
+          throw new Error(`${where}.${field} is not a string`);
+        }
       }
     }
   }
