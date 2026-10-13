@@ -160,12 +160,17 @@ jobs:
           tag=$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)
           ref="ghcr.io/${GITHUB_REPOSITORY}${SUFFIX}:${tag#v}"
           echo "REF=${ref}" >> "${GITHUB_ENV}"
-          if [[ "${OPTIONAL}" == "true" ]] && ! docker manifest inspect "${ref}" > /dev/null; then
+          scan=true
+          if [[ "${OPTIONAL}" == "true" ]] && ! out=$(docker manifest inspect "${ref}" 2>&1); then
+            # ghcr answers "manifest unknown" for a tag that does not exist.
+            if [[ "${out}" != *"manifest unknown"* ]]; then
+              echo "${out}" >&2
+              exit 1
+            fi
             echo "Release ${tag} has no ${IMAGE} image ${ref}, so the scan is skipped."
-            echo "scan=false" >> "${GITHUB_OUTPUT}"
-          else
-            echo "scan=true" >> "${GITHUB_OUTPUT}"
+            scan=false
           fi
+          echo "scan=${scan}" >> "${GITHUB_OUTPUT}"
 
       - name: Write the Trivy report
         if: steps.find.outputs.scan == 'true'
