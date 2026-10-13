@@ -43,14 +43,21 @@ const (
 // generation has observed it. A reconcile
 // that a controller queued for later with RequeueAfter does not keep a
 // scenario busy. When the scenario is not quiet within timeout, settle
-// returns an error.
-func settle(ctx context.Context, sim *simulator, sc *scope, timeout time.Duration) error {
+// returns an error. before holds the counts of controllerActivity from before
+// the reconcilers started, because the counts live as long as the process.
+func settle(
+	ctx context.Context,
+	sim *simulator,
+	sc *scope,
+	timeout time.Duration,
+	before map[string]float64,
+) error {
 	deadline := time.Now().Add(timeout)
 	quietSince := time.Now()
 	objectChanged := map[string]time.Time{}
 	controllerChanged := map[string]time.Time{}
 	var versions map[string]string
-	var totals map[string]float64
+	totals := before
 	var unobserved []string
 	retrying := map[string]bool{}
 
@@ -86,11 +93,7 @@ func settle(ctx context.Context, sim *simulator, sc *scope, timeout time.Duratio
 			controllerChanged[name] = now
 			busy = true
 		}
-		// The counters live as long as the process, so the first tick only
-		// takes the counts that earlier runs left.
-		if totals != nil {
-			updateRetrying(retrying, changed)
-		}
+		updateRetrying(retrying, changed)
 		totals = reconciles
 
 		unobserved = sc.unobserved(objs)

@@ -187,8 +187,12 @@ func settleAndList(
 	sco *scope,
 	overlays []overlay,
 ) ([]unstructured.Unstructured, error) {
-	err := runReconcilers(ctx, cfg, scheme, func(ctx context.Context) error {
-		return settle(ctx, sim, sco, settleTimeout)
+	before, _, err := controllerActivity()
+	if err != nil {
+		return nil, err
+	}
+	err = runReconcilers(ctx, cfg, scheme, func(ctx context.Context) error {
+		return settle(ctx, sim, sco, settleTimeout, before)
 	})
 	if err != nil {
 		return nil, err

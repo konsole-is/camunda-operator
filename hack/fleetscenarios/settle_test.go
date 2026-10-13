@@ -47,10 +47,12 @@ func TestSettle(t *testing.T) {
 	sc.add("fight")
 	sim := newSimulator(c)
 	sim.watch("fight")
+	before, _, err := controllerActivity()
+	require.NoError(t, err)
 
 	t.Run("returns once the scenario is quiet", func(t *testing.T) {
 		start := time.Now()
-		require.NoError(t, settle(ctx, sim, sc, 10*time.Second))
+		require.NoError(t, settle(ctx, sim, sc, 10*time.Second, before))
 		assert.Less(t, time.Since(start), 10*time.Second)
 	})
 
@@ -63,7 +65,7 @@ func TestSettle(t *testing.T) {
 
 		const timeout = 3 * time.Second
 		start := time.Now()
-		err := settle(ctx, sim, sc, timeout)
+		err := settle(ctx, sim, sc, timeout, before)
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "ConfigMap fight/flapping")
 		assert.Less(t, time.Since(start), timeout+time.Second)
