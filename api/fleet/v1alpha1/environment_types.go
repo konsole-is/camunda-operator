@@ -166,7 +166,8 @@ type EnvironmentStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Namespaces is the number of namespaces that carry the label of this
-	// environment.
+	// environment. It is unset until the environment controller counts the
+	// namespaces.
 	// +optional
 	Namespaces *int32 `json:"namespaces,omitempty"`
 }
