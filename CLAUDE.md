@@ -139,12 +139,11 @@ make fleet-lint             # fleet-manager/ only: eslint, prettier --check, tsc
 make fleet-test             # fleet-manager/ only: vitest
 make fleet-build            # fleet-manager/ only: next build
 make fleet-generate         # then `git status --porcelain fleet-manager/src/generated` prints nothing
+make fleet-gallery          # fleet-manager/ only: screenshots of each gallery story into fleet-manager/ui-gallery, axe check
 ```
 
 Run the `fleet-*` gates when a change touches `fleet-manager/`. Run `make fleet-generate` also
 when a change touches a CRD or a condition type of `api/`. They need the Node.js
-make fleet-gallery          # fleet-manager/ only: screenshots of each gallery story into fleet-manager/ui-gallery, axe check
-Run the four `fleet-*` gates when a change touches `fleet-manager/`. They need the Node.js
 of `fleet-manager/.node-version`, which `.tool-versions` pins too. pnpm refuses any other version.
 
 Two traps that cost time before:

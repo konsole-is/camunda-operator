@@ -608,6 +608,7 @@ fleet-generate: fleet-install ## Write fleet-manager/src/generated from the CRDs
 	go run ./hack/tsconditions -api api -out $(FLEET_DIR)/src/generated/conditions.ts
 	go run ./hack/tsfielddocs -crds config/crd/bases -out $(FLEET_DIR)/src/generated/fielddocs.ts
 	$(FLEET_PNPM) run generate
+
 # CI passes --with-deps, so Playwright also installs the system libraries of
 # the browser. On a workstation they are usually there.
 FLEET_PLAYWRIGHT_FLAGS ?=

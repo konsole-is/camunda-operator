@@ -14,7 +14,7 @@
     "lint": "eslint --max-warnings 0 . && prettier --check . && next typegen && tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "gallery": "rm -rf ui-gallery test-results && playwright test"
+    "gallery": "rm -rf ui-gallery test-results && playwright test",
     "generate": "node scripts/generate-crd-types.mts ../config/crd/bases src/generated/crds"
   },
   "dependencies": {
