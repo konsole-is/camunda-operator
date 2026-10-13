@@ -48,6 +48,9 @@ const (
 	kubelet               = "kubelet"
 )
 
+// pvcProtectionFinalizer keeps a claim that a Pod uses from being deleted.
+const pvcProtectionFinalizer = "kubernetes.io/pvc-protection"
+
 // objectKey names the object of a workload step.
 type objectKey struct {
 	Kind, Namespace, Name string
@@ -668,6 +671,14 @@ func (s *simulator) claims(ctx context.Context, ns string) (int, error) {
 	writes := 0
 	for i := range list.Items {
 		claim := &list.Items[i]
+		if claim.DeletionTimestamp != nil {
+			n, err := s.releaseClaim(ctx, claim)
+			writes += n
+			if err != nil {
+				return writes, err
+			}
+			continue
+		}
 		if claim.Status.Phase == corev1.ClaimBound {
 			continue
 		}
@@ -692,6 +703,32 @@ func (s *simulator) claims(ctx context.Context, ns string) (int, error) {
 		writes++
 	}
 	return writes, nil
+}
+
+// releaseClaim removes the protection finalizer from claim, which is being
+// deleted, once no Pod uses it, as kube-controller-manager does.
+func (s *simulator) releaseClaim(ctx context.Context, claim *corev1.PersistentVolumeClaim) (int, error) {
+	if !slices.Contains(claim.Finalizers, pvcProtectionFinalizer) {
+		return 0, nil
+	}
+
+	var pods corev1.PodList
+	if err := s.client.List(ctx, &pods, client.InNamespace(claim.Namespace)); err != nil {
+		return 0, fmt.Errorf("listing the Pods of %s: %w", claim.Namespace, err)
+	}
+	for _, pod := range pods.Items {
+		for _, v := range pod.Spec.Volumes {
+			if v.PersistentVolumeClaim != nil && v.PersistentVolumeClaim.ClaimName == claim.Name {
+				return 0, nil
+			}
+		}
+	}
+
+	claim.Finalizers = slices.DeleteFunc(claim.Finalizers, func(f string) bool { return f == pvcProtectionFinalizer })
+	if err := s.client.Update(ctx, claim, client.FieldOwner(kubeControllerManager)); err != nil {
+		return 0, fmt.Errorf("releasing PersistentVolumeClaim %s/%s: %w", claim.Namespace, claim.Name, err)
+	}
+	return 1, nil
 }
 
 // createIfMissing creates obj unless an object of its name exists. It

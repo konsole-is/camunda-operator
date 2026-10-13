@@ -26,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -348,6 +349,39 @@ func TestSimulatorBindsAPendingClaim(t *testing.T) {
 	assert.Equal(t, corev1.ClaimBound, claim.Status.Phase)
 	assert.True(t, resource.MustParse("5Gi").Equal(claim.Status.Capacity[corev1.ResourceStorage]))
 	assert.NotEmpty(t, claim.Spec.VolumeName)
+}
+
+func TestSimulatorReleasesADeletedClaimOnceNoPodUsesIt(t *testing.T) {
+	claim := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:  "team-a",
+			Name:       "data",
+			Finalizers: []string{pvcProtectionFinalizer},
+		},
+	}
+	user := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "user"},
+		Spec: corev1.PodSpec{Volumes: []corev1.Volume{{
+			Name: "data",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "data"},
+			},
+		}}},
+	}
+	c := fakeClient(t, claim, user)
+	sim := newSimulator(c)
+	sim.watch("team-a")
+	require.NoError(t, c.Delete(context.Background(), claim))
+
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err)
+	assert.NotNil(t, getClaim(t, c, "team-a", "data").DeletionTimestamp, "a Pod still uses the claim")
+
+	require.NoError(t, c.Delete(context.Background(), user))
+	_, err = sim.pass(context.Background())
+	require.NoError(t, err)
+	err = c.Get(context.Background(), client.ObjectKeyFromObject(claim), &corev1.PersistentVolumeClaim{})
+	assert.True(t, apierrors.IsNotFound(err), "the claim is gone once no Pod uses it")
 }
 
 func TestSimulatorNamesAStepWhoseObjectIsMissing(t *testing.T) {
