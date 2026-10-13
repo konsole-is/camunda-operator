@@ -3,7 +3,8 @@
 // the 1st and the 15th, grouped so that one pull request carries what has to
 // land together, and a major update arrives when it is published. Go modules,
 // .tool-versions, GitHub Actions, the Dockerfiles, and requirements-docs.txt
-// go through the standard managers.
+// go through the standard managers. The fleet manager under fleet-manager/
+// goes through the npm and nodenv managers.
 //
 // The image pins of the e2e suite are the env files under test/e2e/matrix/
 // (one per supported Camunda minor), Go constants, YAML image fields of the
@@ -257,6 +258,53 @@
       ],
       versioning: "semver",
       allowedVersions: "<8.10.0",
+    },
+    {
+      // The fleet manager pins one Node.js release in fleet-manager/.node-version,
+      // in engines of fleet-manager/package.json, and in .tool-versions. Each
+      // manager names the dependency node, so one pull request moves all of
+      // them. A new major is a change by hand. The node-version datasource
+      // writes its versions with a leading v.
+      matchFileNames: ["fleet-manager/**", ".tool-versions"],
+      matchDepNames: ["node"],
+      groupName: "fleet-manager-node",
+      allowedVersions: "/^v?26\\./",
+    },
+    {
+      // packageManager in fleet-manager/package.json pins pnpm, and the fleet-*
+      // Make targets install that release. A new major of pnpm is a change by
+      // hand.
+      matchFileNames: ["fleet-manager/package.json"],
+      matchDepNames: ["pnpm"],
+      allowedVersions: "/^12\\./",
+    },
+    {
+      // eslint-config-next carries the release number of next.
+      matchPackageNames: ["next", "react", "react-dom", "eslint-config-next"],
+      groupName: "next-and-react",
+    },
+    {
+      matchPackageNames: ["@types/**"],
+      groupName: "type-definitions",
+    },
+    {
+      // The plugins inside eslint-config-next have peer ranges that stop at
+      // ESLint 9. Lift this when they accept ESLint 10.
+      matchFileNames: ["fleet-manager/package.json"],
+      matchPackageNames: ["eslint"],
+      allowedVersions: "<10.0.0",
+    },
+    {
+      // typescript-eslint has the peer range <6.1.0 for TypeScript. Lift this
+      // when its range accepts a newer release.
+      matchFileNames: ["fleet-manager/package.json"],
+      matchPackageNames: ["typescript"],
+      allowedVersions: "<6.1.0",
+    },
+    {
+      // @types/node follows the Node.js major of the fleet manager.
+      matchPackageNames: ["@types/node"],
+      allowedVersions: "/^26\\./",
     },
   ],
 }

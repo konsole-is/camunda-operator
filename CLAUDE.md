@@ -109,7 +109,7 @@ change the doc in the same change.
 
 - Commit subjects and PR titles use `<type>(<area>): <imperative summary>`. The types are `feat`,
   `fix`, `refactor`, `test`, `chore`, and `docs`. The area is the package or subsystem, as in
-  `git log`: `camundacluster`, `e2e`, `makefile`.
+  `git log`: `camundacluster`, `e2e`, `makefile`, `fleet-manager`.
 - Branches use `<type>/<slug>`, with the same type as the PR title.
 - `docs/superpowers/` is gitignored. The planning skills write the spec, the plan, and the state
   file there, but they stay local: do not commit them, and skip the teardown commit that deletes
@@ -135,7 +135,13 @@ make merge-fixtures         # then `git status --porcelain test/fixtures` prints
 make test-version-stamp     # a stamped build reports its version, and the image builds pass it on
 go vet -tags=e2e ./test/e2e/  # go test ./... never compiles this package
 mkdocs build --strict       # catches a broken link or a missing nav entry
+make fleet-lint             # fleet-manager/ only: eslint, prettier --check, tsc --noEmit
+make fleet-test             # fleet-manager/ only: vitest
+make fleet-build            # fleet-manager/ only: next build
 ```
+
+Run the three `fleet-*` gates when a change touches `fleet-manager/`. They need the Node.js
+of `fleet-manager/.node-version`, which `.tool-versions` pins too. pnpm refuses any other version.
 
 Two traps that cost time before:
 

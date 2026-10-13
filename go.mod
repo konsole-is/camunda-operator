@@ -225,3 +225,5 @@ require (
 tool github.com/sourcehawk/operator-component-framework/cmd/ocf
 
 replace github.com/konsole-is/camunda-operator/api => ./api
+
+ignore ./fleet-manager

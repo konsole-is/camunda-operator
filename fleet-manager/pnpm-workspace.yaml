@@ -1,0 +1,5 @@
+# Without engineStrict, pnpm only warns when the Node.js release does not
+# match engines.node of package.json, and the gates fail later with odd errors.
+engineStrict: true
+allowBuilds:
+  unrs-resolver: false

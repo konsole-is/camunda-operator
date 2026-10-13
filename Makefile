@@ -574,6 +574,34 @@ helm-history: ## Show Helm release history.
 helm-rollback: ## Rollback to previous Helm release.
 	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
 
+##@ Fleet manager
+
+FLEET_DIR := fleet-manager
+# packageManager in the package.json of FLEET_DIR is the only pin of pnpm.
+# Node.js 26 has no corepack, so npm installs that release into LOCALBIN.
+FLEET_PNPM_VERSION := $(shell sed -n 's/.*"packageManager": *"pnpm@\([^"]*\)".*/\1/p' $(FLEET_DIR)/package.json)
+FLEET_PNPM_BIN := $(LOCALBIN)/pnpm-$(FLEET_PNPM_VERSION)/bin/pnpm
+FLEET_PNPM := cd $(FLEET_DIR) && NEXT_TELEMETRY_DISABLED=1 "$(FLEET_PNPM_BIN)"
+
+$(FLEET_PNPM_BIN): | $(LOCALBIN)
+	npm install --global --allow-scripts=pnpm --prefix "$(LOCALBIN)/pnpm-$(FLEET_PNPM_VERSION)" pnpm@$(FLEET_PNPM_VERSION)
+
+.PHONY: fleet-install
+fleet-install: $(FLEET_PNPM_BIN) ## Install the fleet manager dependencies from the lockfile.
+	$(FLEET_PNPM) install --frozen-lockfile
+
+.PHONY: fleet-lint
+fleet-lint: fleet-install ## Run eslint, prettier --check, and tsc --noEmit on the fleet manager.
+	$(FLEET_PNPM) run lint
+
+.PHONY: fleet-test
+fleet-test: fleet-install ## Run the fleet manager tests with Vitest.
+	$(FLEET_PNPM) run test
+
+.PHONY: fleet-build
+fleet-build: fleet-install ## Build the fleet manager with next build.
+	$(FLEET_PNPM) run build
+
 ##@ Documentation
 
 .PHONY: docs-serve
