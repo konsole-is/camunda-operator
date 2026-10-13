@@ -1,0 +1,91 @@
+{{- if .Values.fleetManager.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fleet-manager.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fleet-manager.labels" . | nindent 4 }}
+spec:
+  # The app keeps one watch for each kind in its process. A second replica
+  # doubles the load on the API server.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fleet-manager.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fleet-manager.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "fleet-manager.name" . }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fleet-manager
+          image: "{{ .Values.fleetManager.image.repository }}:{{ .Values.fleetManager.image.tag }}"
+          imagePullPolicy: {{ .Values.fleetManager.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            # The kubelet sets HOSTNAME to the pod name, and the server binds
+            # to HOSTNAME. kubectl port-forward connects to localhost.
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: FLEET_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: FLEET_SETTINGS_KUBERNETES_CLUSTER_NAME
+              value: {{ .Values.fleetManager.settings.kubernetesClusterName | quote }}
+            - name: FLEET_SETTINGS_GIT_REPOSITORY
+              value: {{ .Values.fleetManager.settings.git.repository | quote }}
+            - name: FLEET_SETTINGS_GIT_BRANCH
+              value: {{ .Values.fleetManager.settings.git.branch | quote }}
+            - name: FLEET_SETTINGS_GIT_PATH
+              value: {{ .Values.fleetManager.settings.git.path | quote }}
+            - name: FLEET_SETTINGS_GIT_CREDENTIALS_SECRET_REF
+              value: {{ .Values.fleetManager.settings.git.credentialsSecretRef | quote }}
+            - name: FLEET_SETTINGS_SECRET_STORE_KIND
+              value: {{ .Values.fleetManager.settings.secretStore.kind | quote }}
+            - name: FLEET_SETTINGS_SECRET_STORE_NAME
+              value: {{ .Values.fleetManager.settings.secretStore.name | quote }}
+            - name: FLEET_SETTINGS_PROMETHEUS_URL
+              value: {{ .Values.fleetManager.settings.prometheus.url | quote }}
+            - name: FLEET_SETTINGS_PROMETHEUS_CREDENTIALS_SECRET_REF
+              value: {{ .Values.fleetManager.settings.prometheus.credentialsSecretRef | quote }}
+          readinessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.fleetManager.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            # Next.js writes its cache here, and the root file system is
+            # read-only.
+            - name: next-cache
+              mountPath: /app/.next/cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: next-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+{{- end }}

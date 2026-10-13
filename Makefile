@@ -5,6 +5,9 @@ IMG ?= controller:latest
 # build-installer and deploy stamp it into the manifests, helm-deploy into
 # the chart values.
 CLI_IMG ?= ghcr.io/konsole-is/camunda-operator-cli:latest
+# Image URL of the fleet manager, the web app of the chart value
+# fleetManager.enabled. helm-generate stamps it into the chart values.
+FLEET_IMG ?= ghcr.io/konsole-is/camunda-operator-fleet-manager:latest
 # OPERATOR_VERSION is the version that the manager reports, without the v of
 # the tag. The release workflow sets it from the tag. Without it the manager
 # reports 0.0.0-dev.
@@ -25,6 +28,7 @@ OPERATOR_NAMESPACE ?= camunda-operator-system
 # localhost:5000/img:tag correct, since ${IMG%:*} strips only the final colon.
 export IMG
 export CLI_IMG
+export FLEET_IMG
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -479,9 +483,10 @@ install-helm: ## Install the pinned version of Helm if it is missing.
 	}
 
 .PHONY: helm-generate
-helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify images with IMG and CLI_IMG.
+helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify images with IMG, CLI_IMG, and FLEET_IMG.
 	kubebuilder edit --plugins=helm/v2-alpha --force
 	go run ./hack/helmcli "$(HELM_CHART_DIR)"
+	go run ./hack/helmfleet -image "$(FLEET_IMG)" "$(HELM_CHART_DIR)"
 	go run ./hack/helmschema "$(HELM_CHART_DIR)"
 
 ## Maximum gzipped rendered chart size in bytes before helm-verify fails.
@@ -500,7 +505,7 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		echo "$(HELM_CHART_DIR)/values.schema.json not found; run 'make helm-generate' first." >&2; exit 1; }
 	$(HELM) lint "$(HELM_CHART_DIR)"
 	@# The schema must reject an unknown key and a value of the wrong type.
-	@for opts in "--set prometheus.enabeld=true" "--set prometheus.enabled=yes"; do \
+	@for opts in "--set prometheus.enabeld=true" "--set prometheus.enabled=yes" "--set fleetManager.enabeld=true"; do \
 		err="$$($(HELM) template verify "$(HELM_CHART_DIR)" $$opts 2>&1 >/dev/null || true)"; \
 		case "$$err" in *"meet the specifications of the schema"*) ;; *) \
 			echo "ERROR: the values schema did not reject: helm template $$opts" >&2; exit 1 ;; \
@@ -517,6 +522,15 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 	@# helm-deploy passes the image tags like this, and a tag can be a number.
 	$(HELM) template verify "$(HELM_CHART_DIR)" \
 		--set-string manager.image.tag=8 --set-string manager.cliImage.tag=8 > /dev/null
+	$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		--set-string fleetManager.image.tag=8 > /dev/null
+	@# The fleet manager renders only when fleetManager.enabled is true. Then it
+	@# renders with the RBAC list of the app and a NetworkPolicy that refuses
+	@# all ingress. dist/install.yaml never holds it.
+	$(HELM) template verify "$(HELM_CHART_DIR)" | go run ./hack/fleetchart -enabled=false
+	$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		| go run ./hack/fleetchart -enabled=true -crds config/crd/bases
+	go run ./hack/fleetchart -enabled=false < dist/install.yaml
 	@set -e; \
 	max=0; worst=""; \
 	for opts in \
@@ -525,8 +539,9 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		"--set rbac.helpers.enabled=true" \
 		"--set prometheus.enabled=true" \
 		"--set certManager.enabled=true" \
-		"--set crd.enabled=false --set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true" \
-		"--set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true" \
+		"--set fleetManager.enabled=true" \
+		"--set crd.enabled=false --set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true --set fleetManager.enabled=true" \
+		"--set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true --set fleetManager.enabled=true" \
 	; do \
 		label="$${opts:-<defaults>}"; \
 		tmp="$$(mktemp)"; \
@@ -546,7 +561,7 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 	fi
 
 .PHONY: helm-deploy
-helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify images with IMG and CLI_IMG.
+helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify images with IMG, CLI_IMG, and FLEET_IMG.
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
 		--create-namespace \
@@ -554,6 +569,8 @@ helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify
 		--set-string manager.image.tag=$${IMG##*:} \
 		--set-string manager.cliImage.repository=$${CLI_IMG%:*} \
 		--set-string manager.cliImage.tag=$${CLI_IMG##*:} \
+		--set-string fleetManager.image.repository=$${FLEET_IMG%:*} \
+		--set-string fleetManager.image.tag=$${FLEET_IMG##*:} \
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)

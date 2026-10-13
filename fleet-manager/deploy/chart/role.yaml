@@ -1,0 +1,19 @@
+{{- if .Values.fleetManager.enabled }}
+# The app creates the settings ConfigMap at its first start. A create rule
+# cannot name one object, so create covers each ConfigMap of this namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fleet-manager.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fleet-manager.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [fleet-manager-settings]
+    verbs: [get, update]
+{{- end }}

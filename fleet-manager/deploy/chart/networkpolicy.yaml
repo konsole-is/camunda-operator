@@ -1,0 +1,17 @@
+{{- if .Values.fleetManager.enabled }}
+# The app has no login. No pod in the cluster can call it. kubectl
+# port-forward still works, because it reaches the pod through the kubelet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fleet-manager.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fleet-manager.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fleet-manager.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+{{- end }}
