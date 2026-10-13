@@ -275,9 +275,10 @@ type ElasticsearchClusterSpec struct {
 const ReasonECKNotInstalled = "ECKNotInstalled"
 
 // The component conditions of an ElasticsearchCluster. Ready is True only
-// when CredentialsReady, ElasticsearchReady, StorageContractReady,
-// KeystoreReady, and a present SnapshotRepositoryReady are True.
-// MetricsReady never affects Ready.
+// when CredentialsReady, ElasticsearchReady, StorageContractReady, and
+// KeystoreReady are True. A SnapshotRepositoryReady that is not True makes
+// Ready False, except on a suspended cluster. MetricsReady never affects
+// Ready.
 const (
 	// ConditionCredentialsReady reports whether the file-realm user Secret and
 	// the roles Secret of the cluster are applied.
