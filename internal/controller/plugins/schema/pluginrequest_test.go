@@ -84,6 +84,25 @@ var _ = Describe("PluginRequest schema", func() {
 		),
 	)
 
+	It("admits ServiceAccount names in target.additionalServiceAccounts", func() {
+		request := newRequest()
+		request.Spec.Target.AdditionalServiceAccounts = []string{"orders-es-es", "orders-pg-postgres"}
+
+		Expect(createRequest(request)).To(Succeed())
+	})
+
+	// A reader looks up each name in the namespace of the request, so a
+	// name of another namespace must never reach it.
+	It("refuses a name with a namespace in target.additionalServiceAccounts", func() {
+		request := newRequest()
+		request.Spec.Target.AdditionalServiceAccounts = []string{"other-team/orders-es-es"}
+
+		err := createRequest(request)
+
+		Expect(err).To(MatchError(ContainSubstring("spec.target.additionalServiceAccounts[0]")))
+		Expect(err).To(MatchError(ContainSubstring("should match")))
+	})
+
 	// The claim controller applies the whole spec again on each reconcile,
 	// so the fields that may change must stay writable.
 	It("admits an update of the inputs, the parameters, and the target ServiceAccount", func() {
