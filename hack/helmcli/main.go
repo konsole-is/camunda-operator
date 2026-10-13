@@ -44,6 +44,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/konsole-is/camunda-operator/hack/internal/imageref"
 )
 
 // envName is the environment variable that the plugin projected from
@@ -113,7 +115,7 @@ func rewriteValues(values string) (string, string, error) {
 	if !ok {
 		return "", "", fmt.Errorf("the %s entry has no value line, found %q", envName, valueLine)
 	}
-	repository, tag, err := splitImage(strings.TrimSpace(image))
+	repository, tag, err := imageref.Split(strings.TrimSpace(image))
 	if err != nil {
 		return "", "", err
 	}
@@ -167,23 +169,6 @@ func rewriteTemplate(template string) (string, error) {
 	lines = append(lines[:anchor+1], append([]string{flag}, lines[anchor+1:]...)...)
 
 	return strings.Join(lines, "\n"), nil
-}
-
-// splitImage separates repository and tag. It rejects a digest reference, a
-// tagless image, and an empty repository or tag. The chart exposes exactly
-// repository and tag, like the manager image. "repo:" or ":tag" renders an
-// invalid image, and the generation must fail instead.
-func splitImage(image string) (string, string, error) {
-	colon := strings.LastIndex(image, ":")
-	if colon < 0 || strings.Contains(image[colon:], "/") || strings.Contains(image, "@") {
-		return "", "", fmt.Errorf("image %q must be <repository>:<tag>", image)
-	}
-	repository, tag := image[:colon], image[colon+1:]
-	if repository == "" || tag == "" {
-		return "", "", fmt.Errorf("image %q must be <repository>:<tag>, both non-empty", image)
-	}
-
-	return repository, tag, nil
 }
 
 // indexOf returns the first line that starts with prefix. A prefix without
