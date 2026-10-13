@@ -362,8 +362,9 @@ func (r *Reconciler) gateOnStorageClaim(
 // resolveEffective merges the preset and the release of the cluster under
 // its spec and checks the version gate. Camunda supports Optimize only on a
 // matching minor, so the major and the minor of spec.version must equal
-// those of the effective version of the cluster. The patch levels may
-// differ: Optimize has its own patch line.
+// those of the effective version of the cluster. The gate checks no patch,
+// so a patch upgrade of the cluster does not stop Optimize before
+// spec.version follows it.
 func (res *resolver) resolveEffective(
 	ctx context.Context,
 	cluster *v1.CamundaCluster,

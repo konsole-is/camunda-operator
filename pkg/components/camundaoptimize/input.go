@@ -85,9 +85,9 @@ type Input struct {
 	GracePeriod time.Duration
 }
 
-// Image returns the container image of both workloads. Optimize has its own
-// patch line, so the tag comes from the CamundaOptimize and not from the
-// cluster. The platform config governs the repository and the registry.
+// Image returns the container image of both workloads. The tag is
+// spec.version of the CamundaOptimize. The platform config governs the
+// repository and the registry.
 func Image(in Input) string {
 	return images.Resolve(&in.Platform, images.Optimize, in.Optimize.Spec.Version)
 }
