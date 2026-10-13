@@ -90,6 +90,13 @@ func keepChanging(ctx context.Context, c client.Client, obj *corev1.ConfigMap) {
 	}
 }
 
+func TestRoseIgnoresACounterThatAControllerAddsAtZero(t *testing.T) {
+	before := map[string]float64{"database success": 2}
+	after := map[string]float64{"database success": 2, "camundacluster error": 0, "camundacluster success": 1}
+
+	assert.Equal(t, []string{"camundacluster success"}, rose(before, after))
+}
+
 func TestUpdateRetryingKeepsAControllerWhoseLastReconcileFailed(t *testing.T) {
 	retrying := map[string]bool{}
 

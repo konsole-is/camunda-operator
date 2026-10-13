@@ -87,7 +87,7 @@ func settle(
 		if err != nil {
 			return err
 		}
-		changed := changedKeys(totals, reconciles)
+		changed := rose(totals, reconciles)
 		for _, key := range changed {
 			name, _, _ := strings.Cut(key, " ")
 			controllerChanged[name] = now
@@ -127,7 +127,7 @@ func settle(
 
 // changedKeys returns each key that is in only one of before and after, or
 // whose value differs.
-func changedKeys[V comparable](before, after map[string]V) []string {
+func changedKeys(before, after map[string]string) []string {
 	var keys []string
 	for key, value := range after {
 		if old, ok := before[key]; !ok || old != value {
@@ -136,6 +136,19 @@ func changedKeys[V comparable](before, after map[string]V) []string {
 	}
 	for key := range before {
 		if _, ok := after[key]; !ok {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+// rose returns each key whose count in after is higher than in before. A key
+// that before does not hold counts from 0, because controller-runtime adds the
+// counters of a controller at 0 when the controller starts.
+func rose(before, after map[string]float64) []string {
+	var keys []string
+	for key, value := range after {
+		if value > before[key] {
 			keys = append(keys, key)
 		}
 	}

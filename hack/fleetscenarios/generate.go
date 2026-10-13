@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -212,9 +213,12 @@ func settleAndList(
 }
 
 // runReconcilers runs every reconciler of the operator against cfg while
-// during runs, then stops them and waits for the manager to return. The
-// manager skips the check of unique controller names, because one process
-// starts the same controllers again for each state and each scenario.
+// during runs, then stops them and waits for the manager to return. during
+// starts once a reconciler has finished a reconcile. runReconcilers fails
+// when no reconciler finishes one within settleTimeout, or when the manager
+// stops first. The manager skips the check of unique controller names,
+// because one process starts the same controllers again for each state and
+// each scenario.
 func runReconcilers(
 	ctx context.Context,
 	cfg *rest.Config,
@@ -242,14 +246,53 @@ func runReconcilers(
 		return err
 	}
 
+	before, _, err := controllerActivity()
+	if err != nil {
+		return err
+	}
+
 	mgrCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
-	go func() { done <- mgr.Start(mgrCtx) }()
+	stopped := make(chan struct{})
+	go func() {
+		done <- mgr.Start(mgrCtx)
+		close(stopped)
+	}()
 
-	err = during(ctx)
+	err = waitForReconcile(ctx, before, stopped)
+	if err == nil {
+		err = during(ctx)
+	}
 	cancel()
 
 	return errors.Join(err, <-done)
+}
+
+// waitForReconcile returns nil once a controller has finished a reconcile
+// since the counts before were read. A settle that starts before the
+// controllers could find a scenario quiet that they have not seen yet.
+func waitForReconcile(ctx context.Context, before map[string]float64, stopped <-chan struct{}) error {
+	deadline := time.Now().Add(settleTimeout)
+	for {
+		reconciles, _, err := controllerActivity()
+		if err != nil {
+			return err
+		}
+		if len(rose(before, reconciles)) > 0 {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("no reconciler finished a reconcile within %s", settleTimeout)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-stopped:
+			return errors.New("the manager stopped before a reconciler finished a reconcile")
+		case <-time.After(settleTick):
+		}
+	}
 }
 
 // applyOverlays writes the status of each overlay as a JSON merge patch on
@@ -293,7 +336,8 @@ func refObject(ref objectRef) *unstructured.Unstructured {
 
 // runState applies the changes of st, runs the reconcilers until the
 // scenario settles, and returns the normalized objects of the scope. It
-// appends the overlays of st to overlays.
+// appends the overlays of st to overlays. It fails when an object that st
+// deletes still exists after the settle.
 func runState(
 	ctx context.Context,
 	cfg *rest.Config,
@@ -326,5 +370,26 @@ func runState(
 	sim.add(st.Workload)
 	*overlays = append(*overlays, st.Overlays...)
 
-	return settleAndList(ctx, cfg, scheme, c, sim, sco, *overlays)
+	objs, err := settleAndList(ctx, cfg, scheme, c, sim, sco, *overlays)
+	if err != nil {
+		return nil, err
+	}
+
+	// envtest runs no controller that removes the finalizers of Kubernetes,
+	// such as the one on each Namespace, so a deleted object can stay.
+	for _, ref := range st.Delete {
+		obj := refObject(ref)
+		err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj)
+		if err == nil {
+			return nil, fmt.Errorf(
+				"delete names %s, which still exists after the settle, with the finalizers %v",
+				describe(obj), obj.GetFinalizers(),
+			)
+		}
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("reading %s: %w", describe(obj), err)
+		}
+	}
+
+	return objs, nil
 }
