@@ -25,6 +25,7 @@ import (
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -322,8 +323,8 @@ func waitForReconcile(
 
 // applyOverlays writes the status of each overlay as a JSON merge patch on
 // the status subresource, as overlayManager. A list in the patch replaces
-// the whole list. An overlay that names an object that does not exist is an
-// error that names the object.
+// the whole list. An overlay that names an object that does not exist, or a
+// field that its schema does not hold, is an error.
 func applyOverlays(ctx context.Context, c client.Client, overlays []overlay) error {
 	for _, o := range overlays {
 		obj := refObject(o.Object)
@@ -337,6 +338,7 @@ func applyOverlays(ctx context.Context, c client.Client, overlays []overlay) err
 			obj,
 			client.RawPatch(types.MergePatchType, patch),
 			client.FieldOwner(overlayManager),
+			client.FieldValidation(metav1.FieldValidationStrict),
 		)
 		if apierrors.IsNotFound(err) {
 			return fmt.Errorf("overlay names %s, which does not exist", describe(obj))
