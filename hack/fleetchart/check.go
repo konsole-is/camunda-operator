@@ -168,7 +168,12 @@ func checkBindings(c chart) []string {
 	if ref := c.clusterRoleBinding.RoleRef; ref.Kind != "ClusterRole" || ref.Name != c.clusterRole.Name {
 		problems = append(
 			problems,
-			fmt.Sprintf("the ClusterRoleBinding refers to %s %q, want ClusterRole %q", ref.Kind, ref.Name, c.clusterRole.Name),
+			fmt.Sprintf(
+				"the ClusterRoleBinding refers to %s %q, want ClusterRole %q",
+				ref.Kind,
+				ref.Name,
+				c.clusterRole.Name,
+			),
 		)
 	}
 	if !slices.Contains(c.clusterRoleBinding.Subjects, account) {
@@ -192,7 +197,12 @@ func checkBindings(c chart) []string {
 		if namespace != c.deployment.Namespace {
 			problems = append(
 				problems,
-				fmt.Sprintf("the %s is in namespace %q, want the app namespace %q", kind, namespace, c.deployment.Namespace),
+				fmt.Sprintf(
+					"the %s is in namespace %q, want the app namespace %q",
+					kind,
+					namespace,
+					c.deployment.Namespace,
+				),
 			)
 		}
 	}
@@ -233,7 +243,10 @@ func checkClusterRole(rules []rbacv1.PolicyRule, kinds []groupResource) []string
 		if allows(rules, "external-secrets.io", "externalsecrets", verb, "") {
 			problems = append(
 				problems,
-				fmt.Sprintf("the ClusterRole allows %s on externalsecrets.external-secrets.io, which the app only reads", verb),
+				fmt.Sprintf(
+					"the ClusterRole allows %s on externalsecrets.external-secrets.io, which the app only reads",
+					verb,
+				),
 			)
 		}
 	}
@@ -272,10 +285,16 @@ func checkSettingsRole(rules []rbacv1.PolicyRule) []string {
 	}
 	for _, verb := range []string{"get", "update"} {
 		if !allows(rules, "", "configmaps", verb, settingsConfigMap) {
-			problems = append(problems, fmt.Sprintf("the Role does not allow %s on the ConfigMap %s", verb, settingsConfigMap))
+			problems = append(
+				problems,
+				fmt.Sprintf("the Role does not allow %s on the ConfigMap %s", verb, settingsConfigMap),
+			)
 		}
 		if allows(rules, "", "configmaps", verb, "") {
-			problems = append(problems, fmt.Sprintf("the Role allows %s on every ConfigMap, want only %s", verb, settingsConfigMap))
+			problems = append(
+				problems,
+				fmt.Sprintf("the Role allows %s on every ConfigMap, want only %s", verb, settingsConfigMap),
+			)
 		}
 	}
 
@@ -305,7 +324,10 @@ func checkDisabled(objects []*unstructured.Unstructured) []string {
 	var problems []string
 	for _, o := range objects {
 		if isApp(o) || strings.Contains(o.GetName(), componentValue) {
-			problems = append(problems, fmt.Sprintf("%s %s renders with fleetManager.enabled=false", o.GetKind(), o.GetName()))
+			problems = append(
+				problems,
+				fmt.Sprintf("%s %s renders with fleetManager.enabled=false", o.GetKind(), o.GetName()),
+			)
 		}
 	}
 

@@ -109,11 +109,16 @@ func TestCopyTemplatesReplacesTheTargetDirectory(t *testing.T) {
 	assert.Equal(t, 2, copied)
 	entries, err := os.ReadDir(target)
 	require.NoError(t, err)
-	var names []string
+	names := make([]string, 0, len(entries))
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
-	assert.ElementsMatch(t, []string{"deployment.yaml", "_helpers.tpl"}, names, "a template deleted from the source does not stay")
+	assert.ElementsMatch(
+		t,
+		[]string{"deployment.yaml", "_helpers.tpl"},
+		names,
+		"a template deleted from the source does not stay",
+	)
 	content, err := os.ReadFile(filepath.Join(target, "deployment.yaml"))
 	require.NoError(t, err)
 	assert.Equal(t, "kind: Deployment\n", string(content))

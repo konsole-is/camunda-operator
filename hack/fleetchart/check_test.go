@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/ptr"
 )
 
 const (
@@ -48,7 +47,10 @@ var appLabels = map[string]string{
 func rulesFor(grants []grant) []rbacv1.PolicyRule {
 	rules := make([]rbacv1.PolicyRule, 0, len(grants))
 	for _, g := range grants {
-		rules = append(rules, rbacv1.PolicyRule{APIGroups: []string{g.group}, Resources: []string{g.resource}, Verbs: g.verbs})
+		rules = append(
+			rules,
+			rbacv1.PolicyRule{APIGroups: []string{g.group}, Resources: []string{g.resource}, Verbs: g.verbs},
+		)
 	}
 
 	return rules
@@ -70,11 +72,11 @@ func validChart() chart {
 					ObjectMeta: metav1.ObjectMeta{Labels: appLabels},
 					Spec: corev1.PodSpec{
 						ServiceAccountName: testName,
-						SecurityContext:    &corev1.PodSecurityContext{RunAsNonRoot: ptr.To(true)},
+						SecurityContext:    &corev1.PodSecurityContext{RunAsNonRoot: new(true)},
 						Containers: []corev1.Container{{
 							Name:            "fleet-manager",
 							Env:             []corev1.EnvVar{{Name: "HOSTNAME", Value: "0.0.0.0"}},
-							SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: ptr.To(true)},
+							SecurityContext: &corev1.SecurityContext{ReadOnlyRootFilesystem: new(true)},
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "next-cache", MountPath: "/app/.next/cache"},
 								{Name: "tmp", MountPath: "/tmp"},
@@ -96,7 +98,9 @@ func validChart() chart {
 		clusterRole: rbacv1.ClusterRole{
 			TypeMeta:   metav1.TypeMeta{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "ClusterRole"},
 			ObjectMeta: cluster,
-			Rules:      append(rulesFor(appRules), rulesFor([]grant{{"core.camunda.io", "camundaclusters", readVerbs}})...),
+			Rules: append(
+				rulesFor(appRules),
+				rulesFor([]grant{{"core.camunda.io", "camundaclusters", readVerbs}})...),
 		},
 		clusterRoleBinding: rbacv1.ClusterRoleBinding{
 			TypeMeta:   metav1.TypeMeta{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "ClusterRoleBinding"},
@@ -224,7 +228,11 @@ func TestCheckEnabledRefusesWildcardsAndExternalSecretWrites(t *testing.T) {
 	problems := checkEnabled(render(t, c), testKinds)
 
 	assert.Len(t, problems, 2)
-	assert.Contains(t, problems, "the ClusterRole allows create on externalsecrets.external-secrets.io, which the app only reads")
+	assert.Contains(
+		t,
+		problems,
+		"the ClusterRole allows create on externalsecrets.external-secrets.io, which the app only reads",
+	)
 }
 
 func TestCheckEnabledRequiresTheSettingsRoleToNameTheConfigMap(t *testing.T) {
@@ -269,8 +277,11 @@ func TestCheckEnabledRefusesARenderedSettingsConfigMap(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: settingsConfigMap, Namespace: testNamespace},
 	}
 
-	assert.Contains(t, checkEnabled(render(t, validChart(), settings), testKinds),
-		"the chart renders the ConfigMap fleet-manager-settings, so an upgrade would overwrite the settings of the admin")
+	assert.Contains(
+		t,
+		checkEnabled(render(t, validChart(), settings), testKinds),
+		"the chart renders the ConfigMap fleet-manager-settings, so an upgrade would overwrite the settings of the admin",
+	)
 }
 
 func TestCheckEnabledRequiresAPolicyThatRefusesAllIngress(t *testing.T) {
@@ -308,7 +319,11 @@ func TestCheckEnabledRequiresANonRootPod(t *testing.T) {
 	c := validChart()
 	c.deployment.Spec.Template.Spec.SecurityContext.RunAsNonRoot = nil
 
-	assert.Equal(t, []string{"the fleet manager pod does not set runAsNonRoot: true"}, checkEnabled(render(t, c), testKinds))
+	assert.Equal(
+		t,
+		[]string{"the fleet manager pod does not set runAsNonRoot: true"},
+		checkEnabled(render(t, c), testKinds),
+	)
 }
 
 func TestCheckEnabledRequiresTheServerToListenOnEveryAddress(t *testing.T) {

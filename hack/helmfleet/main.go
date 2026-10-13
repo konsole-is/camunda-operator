@@ -140,7 +140,9 @@ func run(chartDir, templatesDir, image string) error {
 func appendValues(values, repository, tag string) (string, error) {
 	for line := range strings.SplitSeq(values, "\n") {
 		if line == valuesKey {
-			return "", errors.New("values.yaml already has fleetManager, so the helm plugin did not run before helmfleet")
+			return "", errors.New(
+				"values.yaml already has fleetManager, so the helm plugin did not run before helmfleet",
+			)
 		}
 	}
 	block := fmt.Sprintf(valuesBlock, strconv.Quote(repository), strconv.Quote(tag))
