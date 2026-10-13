@@ -22,4 +22,5 @@ resources:
 - core_v1_databaseserver.yaml
 - core_v1_databaseserverpreset.yaml
 - core_v1_camundarelease.yaml
+- plugins_v1alpha1_pluginsection.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
