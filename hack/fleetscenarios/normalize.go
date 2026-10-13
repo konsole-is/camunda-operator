@@ -72,7 +72,7 @@ const (
 //  6. metadata.managedFields are sorted by manager, operation, and
 //     subresource.
 //  7. metadata.generation becomes 1, and so does each observedGeneration in
-//     status that equals the generation. One that is behind stays.
+//     status that equals the generation. One that is behind becomes 0.
 //  8. Each v1 Service with a cluster IP gets an IP of 10.0.0.0/24, the
 //     Service range of envtest. The API server picks a free IP at random.
 //  9. The objects are sorted by apiVersion, kind, namespace, and name.
@@ -266,14 +266,17 @@ func normalizeObject(
 	return out, nil
 }
 
-// setObservedGeneration sets each observedGeneration under v that equals
-// generation to 1.
+// setObservedGeneration sets each observedGeneration under v to 1 when it
+// equals generation, and to 0 when it does not.
 func setObservedGeneration(v any, generation int64) {
 	switch value := v.(type) {
 	case map[string]any:
 		for k, e := range value {
-			if observed, ok := e.(int64); ok && k == "observedGeneration" && observed == generation {
-				value[k] = int64(1)
+			if observed, ok := e.(int64); ok && k == "observedGeneration" {
+				value[k] = int64(0)
+				if observed == generation {
+					value[k] = int64(1)
+				}
 				continue
 			}
 			setObservedGeneration(e, generation)

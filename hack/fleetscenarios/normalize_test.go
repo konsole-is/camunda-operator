@@ -199,17 +199,19 @@ func TestNormalizeSetsTheGenerationToOne(t *testing.T) {
 	assert.Equal(t, int64(1), conditions[0].(map[string]any)["observedGeneration"])
 }
 
-func TestNormalizeKeepsAnObservedGenerationThatIsBehind(t *testing.T) {
-	obj := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "u")
-	obj.SetGeneration(4)
-	require.NoError(t, unstructured.SetNestedField(obj.Object, int64(3), "status", "observedGeneration"))
+func TestNormalizeKeepsAnObservedGenerationThatIsBehindBehind(t *testing.T) {
+	for _, observedBefore := range []int64{1, 3} {
+		obj := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "u")
+		obj.SetGeneration(4)
+		require.NoError(t, unstructured.SetNestedField(obj.Object, observedBefore, "status", "observedGeneration"))
 
-	out, err := normalize([]unstructured.Unstructured{obj})
-	require.NoError(t, err)
+		out, err := normalize([]unstructured.Unstructured{obj})
+		require.NoError(t, err)
 
-	assert.Equal(t, int64(1), out[0].GetGeneration())
-	observed, _, _ := unstructured.NestedInt64(out[0].Object, "status", "observedGeneration")
-	assert.Equal(t, int64(3), observed)
+		assert.Equal(t, int64(1), out[0].GetGeneration())
+		observed, _, _ := unstructured.NestedInt64(out[0].Object, "status", "observedGeneration")
+		assert.Equal(t, int64(0), observed, "an observed generation of %d is behind 4", observedBefore)
+	}
 }
 
 func TestNormalizeGivesEachServiceAClusterIPOfTheEnvtestRange(t *testing.T) {
