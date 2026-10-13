@@ -286,7 +286,8 @@ const (
 	// resource is ready.
 	ConditionElasticsearchReady = "ElasticsearchReady"
 	// ConditionStorageContractReady reports whether the SecondaryStorageConfig
-	// that the cluster publishes is applied.
+	// that the cluster publishes is applied and the user Secret behind it
+	// exists.
 	ConditionStorageContractReady = "StorageContractReady"
 	// ConditionKeystoreReady reports whether the keystore entries that the
 	// bucket of spec.snapshotStorageRef needs are applied. It reads Disabled
