@@ -91,4 +91,15 @@ describe("design tokens", () => {
     expect(background).toBeDefined();
     expect(contrast(foreground!, background!)).toBeGreaterThanOrEqual(4.5);
   });
+
+  it.each(SURFACE_TOKENS)(
+    "gives the border of a form control on %s a contrast of at least 3:1",
+    (surface) => {
+      const input = /--color-input:\s*var\((--[\w-]+)\)/.exec(css)?.[1];
+      expect(input).toBeDefined();
+      const border = tokenValue(input!);
+      expect(border).toBeDefined();
+      expect(contrast(border!, tokenValue(surface)!)).toBeGreaterThanOrEqual(3);
+    },
+  );
 });

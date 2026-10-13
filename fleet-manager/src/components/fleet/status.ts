@@ -44,6 +44,6 @@ export const DOT_TONE: Record<StatusTone, string> = {
   ok: "bg-ok shadow-[0_0_6px_var(--ok)]",
   warn: "bg-warn shadow-[0_0_6px_var(--warn)]",
   bad: "bg-bad shadow-[0_0_6px_var(--bad)]",
-  off: "bg-off",
+  off: "bg-off ring-1 ring-faint",
   muted: "bg-faint",
 };

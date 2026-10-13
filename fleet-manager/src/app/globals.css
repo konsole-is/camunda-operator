@@ -65,7 +65,7 @@
   --color-muted-foreground: var(--muted);
   --color-destructive: var(--bad);
   --color-destructive-foreground: var(--bg);
-  --color-input: var(--border);
+  --color-input: var(--faint);
   --color-ring: var(--info);
 
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
