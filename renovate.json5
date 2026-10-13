@@ -261,10 +261,11 @@
     },
     {
       // The fleet manager pins one Node.js release in fleet-manager/.node-version,
-      // in engines of fleet-manager/package.json, and in .tool-versions. Each
-      // manager names the dependency node, so one pull request moves all of
-      // them. A new major is a change by hand. The node-version datasource
-      // writes its versions with a leading v.
+      // in engines of fleet-manager/package.json, in the build stage of
+      // fleet-manager/Dockerfile, and in .tool-versions. Each manager names the
+      // dependency node, so one pull request moves all of them. A new major is
+      // a change by hand, also of the distroless runtime image nodejs<major>.
+      // The node-version datasource writes its versions with a leading v.
       matchFileNames: ["fleet-manager/**", ".tool-versions"],
       matchDepNames: ["node"],
       groupName: "fleet-manager-node",
