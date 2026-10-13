@@ -300,9 +300,48 @@ func TestSimulatorFailsAJobOnAFailedStep(t *testing.T) {
 
 	var job batchv1.Job
 	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: "team-a", Name: "backup"}, &job))
-	assert.Equal(t, int32(1), job.Status.Failed)
+	assert.Equal(t, int32(7), job.Status.Failed, "the default backoff limit of 6 allows 7 tries")
 	assert.True(t, hasJobCondition(&job, batchv1.JobFailed))
 	assert.False(t, hasJobCondition(&job, batchv1.JobComplete))
+
+	var pods corev1.PodList
+	require.NoError(t, c.List(context.Background(), &pods, client.InNamespace("team-a")))
+	assert.Len(t, pods.Items, 7)
+	for i := range pods.Items {
+		assert.Equal(t, corev1.PodFailed, pods.Items[i].Status.Phase)
+	}
+}
+
+func TestSimulatorTriesAFailingJobAsOftenAsItsBackoffLimitAllows(t *testing.T) {
+	job := backupJob()
+	job.Spec.BackoffLimit = new(int32(3))
+	c := fakeClient(t, job)
+	sim := newSimulator(c)
+	sim.watch("team-a")
+	sim.add([]workloadStep{{Kind: kindJob, Namespace: "team-a", Name: "backup", JobOutcome: jobFailed}})
+
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err)
+
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(job), job))
+	assert.Equal(t, int32(4), job.Status.Failed)
+}
+
+func TestSimulatorCompletesEachCompletionOfAJob(t *testing.T) {
+	job := backupJob()
+	job.Spec.Completions = new(int32(3))
+	c := fakeClient(t, job)
+	sim := newSimulator(c)
+	sim.watch("team-a")
+
+	_, err := sim.pass(context.Background())
+	require.NoError(t, err)
+
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(job), job))
+	assert.Equal(t, int32(3), job.Status.Succeeded)
+	var pods corev1.PodList
+	require.NoError(t, c.List(context.Background(), &pods, client.InNamespace("team-a")))
+	assert.Len(t, pods.Items, 3)
 }
 
 func TestSimulatorRefusesAStepThatChangesTheOutcomeOfAFinishedJob(t *testing.T) {

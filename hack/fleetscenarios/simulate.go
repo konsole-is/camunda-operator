@@ -599,31 +599,40 @@ func finishedOutcome(job *batchv1.Job) string {
 	return ""
 }
 
-// runJob makes the Pod of job, finishes it with outcome, and writes the
+// runJob makes the Pods of job, finishes them with outcome, and writes the
 // status of job.
 func (s *simulator) runJob(ctx context.Context, job *batchv1.Job, outcome string) (int, error) {
-	writes := 0
-	name := job.Name + "-" + podSuffix(job.Name+"/0")
-	var pod corev1.Pod
-	err := s.client.Get(ctx, client.ObjectKey{Namespace: job.Namespace, Name: name}, &pod)
-	if apierrors.IsNotFound(err) {
-		pod = *podFromTemplate(job.Spec.Template, job.Namespace, name)
-		pod.Labels[batchv1.JobNameLabel] = job.Name
-		pod.OwnerReferences = []metav1.OwnerReference{
-			*metav1.NewControllerRef(job, batchv1.SchemeGroupVersion.WithKind("Job")),
-		}
-		if err := s.client.Create(ctx, &pod, client.FieldOwner(kubeControllerManager)); err != nil {
-			return writes, fmt.Errorf("creating Pod %s: %w", name, err)
-		}
-		writes++
-	} else if err != nil {
-		return writes, fmt.Errorf("reading Pod %s: %w", name, err)
+	// The defaults of the API server for spec.completions and
+	// spec.backoffLimit.
+	pods := ptr.Deref(job.Spec.Completions, 1)
+	if outcome == jobFailed {
+		pods = ptr.Deref(job.Spec.BackoffLimit, 6) + 1
 	}
 
-	n, err := s.finishPod(ctx, &pod, outcome == jobComplete)
-	writes += n
-	if err != nil {
-		return writes, err
+	writes := 0
+	for i := range pods {
+		name := job.Name + "-" + podSuffix(job.Name+"/"+strconv.Itoa(int(i)))
+		var pod corev1.Pod
+		err := s.client.Get(ctx, client.ObjectKey{Namespace: job.Namespace, Name: name}, &pod)
+		if apierrors.IsNotFound(err) {
+			pod = *podFromTemplate(job.Spec.Template, job.Namespace, name)
+			pod.Labels[batchv1.JobNameLabel] = job.Name
+			pod.OwnerReferences = []metav1.OwnerReference{
+				*metav1.NewControllerRef(job, batchv1.SchemeGroupVersion.WithKind("Job")),
+			}
+			if err := s.client.Create(ctx, &pod, client.FieldOwner(kubeControllerManager)); err != nil {
+				return writes, fmt.Errorf("creating Pod %s: %w", name, err)
+			}
+			writes++
+		} else if err != nil {
+			return writes, fmt.Errorf("reading Pod %s: %w", name, err)
+		}
+
+		n, err := s.finishPod(ctx, &pod, outcome == jobComplete)
+		writes += n
+		if err != nil {
+			return writes, err
+		}
 	}
 
 	job.Status.StartTime = &scenarioTime
@@ -640,7 +649,7 @@ func (s *simulator) runJob(ctx context.Context, job *batchv1.Job, outcome string
 	if outcome == jobComplete {
 		const message = "Reached expected number of succeeded pods"
 		job.Status.CompletionTime = &scenarioTime
-		job.Status.Succeeded = 1
+		job.Status.Succeeded = pods
 		job.Status.Conditions = append(
 			job.Status.Conditions,
 			condition(batchv1.JobSuccessCriteriaMet, batchv1.JobReasonCompletionsReached, message),
@@ -648,7 +657,7 @@ func (s *simulator) runJob(ctx context.Context, job *batchv1.Job, outcome string
 		)
 	} else {
 		const message = "Job has reached the specified backoff limit"
-		job.Status.Failed = 1
+		job.Status.Failed = pods
 		job.Status.Conditions = append(
 			job.Status.Conditions,
 			condition(batchv1.JobFailureTarget, batchv1.JobReasonBackoffLimitExceeded, message),
