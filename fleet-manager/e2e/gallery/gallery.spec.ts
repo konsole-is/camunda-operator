@@ -35,6 +35,8 @@ for (const width of WIDTHS) {
     expect(stories.length).toBeGreaterThan(0);
 
     const shots: Shot[] = [];
+    const manifest = path.join(OUT, `manifest-${width}.json`);
+    await mkdir(OUT, { recursive: true });
     for (const story of stories) {
       await test.step(story.id, async () => {
         await page.goto(`/dev/gallery/${story.id}`);
@@ -63,14 +65,12 @@ for (const width of WIDTHS) {
         const file = `${story.id}-${width}.png`;
         await page.screenshot({ path: path.join(OUT, file), fullPage: true });
         shots.push({ ...story, width, file });
+        // A later story can throw. The index teardown then still lists every
+        // screenshot that was taken.
+        await writeFile(manifest, JSON.stringify(shots, null, 2));
       });
     }
 
-    await mkdir(OUT, { recursive: true });
-    await writeFile(
-      path.join(OUT, `manifest-${width}.json`),
-      JSON.stringify(shots, null, 2),
-    );
     expect(foreign, "requests to a host other than the app").toEqual([]);
   });
 }
