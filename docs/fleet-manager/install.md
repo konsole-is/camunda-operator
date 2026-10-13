@@ -37,8 +37,8 @@ Then open <http://localhost:3000> in a browser.
 
 ## Who can reach it
 
-!!! warning "Give `pods/portforward` only to the people who manage the fleet"
-    A person who can create `pods/portforward` in the release namespace can use every right of the fleet manager. The fleet manager can create and change the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets of the Kubernetes cluster.
+!!! warning "Give `pods/portforward`, `pods/proxy`, and `services/proxy` only to the people who manage the fleet"
+    A person who has one of these rights in the release namespace can reach the fleet manager and use every right of it. Do not count on the NetworkPolicy of the chart to stop this traffic. The fleet manager can create and change the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets of the Kubernetes cluster.
 
 The chart adds a NetworkPolicy that allows no traffic from other pods to the pod of the fleet manager. This includes the operator and your monitoring. Kubernetes adds up the traffic that each NetworkPolicy allows. So another policy that selects this pod, such as a policy that allows all traffic in the namespace, still lets other pods in. Make sure that no other NetworkPolicy of the release namespace selects the pod of the fleet manager. A NetworkPolicy takes effect only with a network plugin that enforces it. `kubectl port-forward` still works, because it does not go through the pod network.
 
