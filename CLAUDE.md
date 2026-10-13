@@ -139,6 +139,7 @@ make fleet-lint             # fleet-manager/ only: eslint, prettier --check, tsc
 make fleet-test             # fleet-manager/ only: vitest
 make fleet-build            # fleet-manager/ only: next build
 make fleet-generate         # then `git status --porcelain fleet-manager/src/generated` prints nothing
+make fleet-gallery          # fleet-manager/ only: screenshots of each gallery story into fleet-manager/ui-gallery, axe check
 ```
 
 Run the `fleet-*` gates when a change touches `fleet-manager/`. Run `make fleet-generate` also
