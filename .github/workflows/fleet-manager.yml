@@ -6,7 +6,6 @@ on:
     paths:
       - fleet-manager/**
       - pkg/images/table.json
-      - Makefile
       - .github/workflows/fleet-manager.yml
       - config/crd/bases/**
       - config/samples/**
@@ -15,7 +14,6 @@ on:
     paths:
       - fleet-manager/**
       - pkg/images/table.json
-      - Makefile
       - .github/workflows/fleet-manager.yml
       - config/crd/bases/**
       - config/samples/**
