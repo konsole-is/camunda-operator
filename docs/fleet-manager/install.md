@@ -11,6 +11,7 @@ helm upgrade --install camunda-operator \
   oci://ghcr.io/konsole-is/charts/camunda-operator \
   --version <version> \
   --namespace camunda-operator-system \
+  --create-namespace \
   --set fleetManager.enabled=true
 ```
 
