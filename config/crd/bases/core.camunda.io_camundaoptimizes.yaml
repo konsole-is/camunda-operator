@@ -2094,7 +2094,9 @@ spec:
                   the path prefix /, the webapp Service, and its HTTP port. An access
                   extension reads it and does not derive the Service name. The entry
                   stays while the workloads are at zero with the cluster, because the
-                  Service stays. It is empty while no webapp Service exists.
+                  Service stays. It is empty before the first render, and while another
+                  CamundaOptimize holds the cluster or the cluster is gone, because the
+                  operator then deletes the webapp Service.
                 items:
                   description: |-
                     Endpoint is one route that a resource needs: a path on the external URL

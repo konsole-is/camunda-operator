@@ -272,12 +272,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 	comps = built.all
 
-	failed, reconcileErr := reconcileComponents(ctx, rec, built.all)
+	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
-	// Only a webapp apply without error proves that the webapp Service exists.
-	if failed[built.webapp] == nil {
-		optimize.Status.Endpoints = components.Endpoints(&optimize)
-	}
+	optimize.Status.Endpoints = components.Endpoints(&optimize)
 	r.recordSuspensionChange(&optimize, prior, suspendedBy(res))
 
 	if reconcileErr != nil {
@@ -313,9 +310,8 @@ func (r *Reconciler) retryInterval() time.Duration {
 // optimizeComponents are the components of one CamundaOptimize: all of them
 // are reconciled in order, and the ready ones make up Ready.
 type optimizeComponents struct {
-	all    []*component.Component
-	ready  []*component.Component
-	webapp *component.Component
+	all   []*component.Component
+	ready []*component.Component
 }
 
 // buildComponents builds every component in reconcile order: the copies of
@@ -333,10 +329,7 @@ func (r *Reconciler) buildComponents(res resolved) (optimizeComponents, error) {
 		return optimizeComponents{}, fmt.Errorf("building workload components: %w", err)
 	}
 
-	comps := optimizeComponents{
-		all:    append([]*component.Component{mirrored}, workloads...),
-		webapp: workloads[0],
-	}
+	comps := optimizeComponents{all: append([]*component.Component{mirrored}, workloads...)}
 	comps.ready = workloads
 	if len(res.Mirrors) > 0 {
 		comps.ready = append([]*component.Component{mirrored}, workloads...)
@@ -346,28 +339,17 @@ func (r *Reconciler) buildComponents(res resolved) (optimizeComponents, error) {
 }
 
 // reconcileComponents reconciles comps in order. It continues past a failing
-// component, so one failure does not stall the rest. It returns the error of
-// each component that failed, and the first error.
-func reconcileComponents(
-	ctx context.Context,
-	rec component.ReconcileContext,
-	comps []*component.Component,
-) (map[*component.Component]error, error) {
-	failed := map[*component.Component]error{}
+// component, so one failure does not stall the rest, and returns the first
+// error.
+func reconcileComponents(ctx context.Context, rec component.ReconcileContext, comps []*component.Component) error {
 	var firstErr error
 	for _, comp := range comps {
-		err := comp.Reconcile(ctx, rec)
-		if err == nil {
-			continue
-		}
-
-		failed[comp] = err
-		if firstErr == nil {
+		if err := comp.Reconcile(ctx, rec); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
 
-	return failed, firstErr
+	return firstErr
 }
 
 // serviceMonitorSupported reports whether the Kubernetes cluster serves the

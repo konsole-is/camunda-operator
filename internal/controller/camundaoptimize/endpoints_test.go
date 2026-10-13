@@ -20,7 +20,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,24 +44,6 @@ func readyReason(o *v1.CamundaOptimize) string {
 		return ready.Reason
 	}
 	return ""
-}
-
-// blockDeployment creates a Deployment with a selector that the operator does
-// not render. A selector is immutable, so every apply of the workload of that
-// name fails before its Service exists.
-func blockDeployment(namespace, name string) {
-	GinkgoHelper()
-	selector := map[string]string{"app": "not-optimize"}
-	Expect(k8sClient.Create(ctx, &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
-		Spec: appsv1.DeploymentSpec{
-			Selector: &metav1.LabelSelector{MatchLabels: selector},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: selector},
-				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "busybox"}}},
-			},
-		},
-	})).To(Succeed())
 }
 
 var _ = Describe("CamundaOptimize endpoints", func() {
@@ -130,35 +111,6 @@ var _ = Describe("CamundaOptimize endpoints", func() {
 		expectNotReady(s.optimize, v1.ReasonVersionMismatch)
 		expectOptimize(s.optimize, func(g Gomega, latest *v1.CamundaOptimize) {
 			g.Expect(latest.Status.Endpoints).To(BeEmpty())
-		})
-	})
-
-	It("publishes no route while its webapp cannot be applied", func() {
-		ns := newNamespace()
-		cluster := createCluster(ns, createBinding(ns))
-		blockDeployment(ns, "co-blocked-webapp")
-
-		optimize := createNamedOptimize("co-blocked", ns, cluster, createAuth(ns, true), "8.9.4")
-
-		expectClusterEnv(cluster, ContainElement("CAMUNDA_DATA_EXPORTERS_ELASTICSEARCH_CLASSNAME"))
-		Consistently(func(g Gomega) {
-			var latest v1.CamundaOptimize
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(optimize), &latest)).To(Succeed())
-			g.Expect(latest.Status.Endpoints).To(BeEmpty())
-		}, "3s", interval).Should(Succeed())
-	})
-
-	It("publishes its route while only its importer cannot be applied", func() {
-		ns := newNamespace()
-		cluster := createCluster(ns, createBinding(ns))
-		blockDeployment(ns, "co-blocked-importer")
-
-		optimize := createNamedOptimize("co-blocked", ns, cluster, createAuth(ns, true), "8.9.4")
-
-		expectOptimize(optimize, func(g Gomega, latest *v1.CamundaOptimize) {
-			g.Expect(latest.Status.Endpoints).To(HaveExactElements(
-				HaveField("Service", "co-blocked-webapp"),
-			))
 		})
 	})
 

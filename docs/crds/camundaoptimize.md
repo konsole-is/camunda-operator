@@ -309,7 +309,7 @@ status:
 
 The importer serves no browser traffic and has no route.
 
-The entry stays while the workloads are at zero with the cluster, and while a check fails. The Service stays too, so the route answers again when Optimize starts. There is no entry until the operator creates the webapp Service. There is also no entry when another `CamundaOptimize` parks this one, or when the cluster is gone, because the operator then deletes the Service.
+The entry stays while the workloads are at zero with the cluster, and while a check fails. The Service stays too, so the route answers again when Optimize starts. There is no entry when another `CamundaOptimize` parks this one, or when the cluster is gone, because the operator then deletes the Service. A new `CamundaOptimize` whose first check fails has no entry yet.
 
 ## Spec reference
 
