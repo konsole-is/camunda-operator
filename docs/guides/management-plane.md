@@ -117,6 +117,8 @@ Route each URL to its Service:
 | `https://identity.camunda.example.com` | `my-management-identity`, port 80 |
 | `https://console.camunda.example.com` | `my-management-console`, port 80 |
 
+`status.endpoints` of the resource lists the same routes. See [Routes](../crds/camundamanagementcluster.md#routes).
+
 Wait for the resource:
 
 ```bash
