@@ -28,16 +28,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
-// The manager reads, watches, and applies every kind below through typed
-// objects. A kind the scheme does not recognize fails at runtime only, on a
-// Kubernetes cluster that serves it. The envtest suites register into the
-// global client-go scheme, which knows the built-in kinds already, so a
-// missing built-in kind passes every suite.
+// Each kind below is a kind of this operator, or a kind that the manager
+// reads, watches, or applies through typed objects. A kind the scheme does not
+// recognize fails at runtime only, on a Kubernetes cluster that serves it. The
+// envtest suites register into the global client-go scheme, which knows the
+// built-in kinds already, so a missing built-in kind passes every suite.
 func TestSchemeRecognizesEveryKindTheManagerReconciles(t *testing.T) {
 	t.Parallel()
 
@@ -47,6 +48,7 @@ func TestSchemeRecognizesEveryKindTheManagerReconciles(t *testing.T) {
 	for _, gvk := range []schema.GroupVersionKind{
 		corev1.SchemeGroupVersion.WithKind("Secret"),
 		v1.GroupVersion.WithKind("CamundaManagementCluster"),
+		fleetv1alpha1.GroupVersion.WithKind("Environment"),
 		esv1.GroupVersion.WithKind("Elasticsearch"),
 		monitoringv1.SchemeGroupVersion.WithKind(monitoringv1.PodMonitorsKind),
 		keycloak.GroupVersion.WithKind("Keycloak"),

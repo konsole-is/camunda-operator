@@ -49,6 +49,7 @@ var implementedKindSamples = []string{
 	"core_v1_pointintimerestore.yaml",
 	"core_v1_logicalrestoreelasticsearch.yaml",
 	"core_v1_logicalrestorerdbms.yaml",
+	"fleet_v1alpha1_environment.yaml",
 }
 
 var _ = Describe("config/samples", func() {

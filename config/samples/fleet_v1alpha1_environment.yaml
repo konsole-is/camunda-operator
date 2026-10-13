@@ -1,0 +1,37 @@
+apiVersion: fleet.camunda.io/v1alpha1
+kind: Environment
+metadata:
+  name: production
+spec:
+  displayName: Production
+  color: "#2E7D32"
+  platformConfigRef: production
+  presets:
+    camundaCluster:
+      - small
+      - large
+  releases:
+    allowed:
+      - camunda-8-9
+    default: camunda-8-9
+  sections:
+    backup-storage:
+      required: true
+      default: s3-backups
+      allowed:
+        - s3-backups
+  parameters:
+    aws-connectors:
+      policies:
+        claimEditable: true
+        allowed:
+          - name: sqs
+            label: SQS access
+            value: arn:aws:iam::aws:policy/AmazonSQSFullAccess
+  deletionPolicy: Delete
+  namespaceCreation:
+    allowed: true
+    labels:
+      owner: platform
+    requiredLabelKeys:
+      - team
