@@ -107,13 +107,17 @@ func TestUpdateRetryingKeepsAControllerWhoseLastReconcileFailed(t *testing.T) {
 	assert.Equal(t, map[string]bool{"camundacluster": true}, retrying, "another controller does not clear it")
 
 	updateRetrying(retrying, []string{"camundacluster error", "camundacluster success"})
-	assert.Equal(t, map[string]bool{"camundacluster": true}, retrying, "an order that is not known keeps it")
+	assert.Equal(t, map[string]bool{"camundacluster": true}, retrying, "a success can be of another object")
 
 	updateRetrying(retrying, []string{"camundacluster success"})
 	assert.Empty(t, retrying, "a later success clears it")
 
 	updateRetrying(retrying, []string{"database requeue"})
 	assert.Equal(t, map[string]bool{"database": true}, retrying, "a requeue without a delay leaves a retry queued")
+
+	mixed := map[string]bool{}
+	updateRetrying(mixed, []string{"logicalbackupelasticsearch error", "logicalbackupelasticsearch success"})
+	assert.Equal(t, map[string]bool{"logicalbackupelasticsearch": true}, mixed, "a first tick with both results")
 }
 
 func TestSettleTimeoutIsOneMinute(t *testing.T) {

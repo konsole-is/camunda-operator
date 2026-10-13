@@ -164,8 +164,8 @@ func rose(before, after map[string]float64) []string {
 // updateRetrying records in retrying each controller whose last reconcile
 // left a rate-limited retry in its queue: an error, or a requeue without a
 // delay. changed holds the keys of controllerActivity whose count rose since
-// the last tick. When a retry and another result rose in one tick, their
-// order is not known, and the controller stays as it was.
+// the last tick. A controller whose retry and another result rose in one
+// tick counts as retrying, because the two can be of different objects.
 func updateRetrying(retrying map[string]bool, changed []string) {
 	retried, finished := map[string]bool{}, map[string]bool{}
 	for _, key := range changed {
@@ -179,9 +179,7 @@ func updateRetrying(retrying map[string]bool, changed []string) {
 	}
 
 	for name := range retried {
-		if !finished[name] {
-			retrying[name] = true
-		}
+		retrying[name] = true
 	}
 	for name := range finished {
 		if !retried[name] {
