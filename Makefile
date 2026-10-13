@@ -609,6 +609,19 @@ fleet-generate: fleet-install ## Write fleet-manager/src/generated from the CRDs
 	go run ./hack/tsfielddocs -crds config/crd/bases -out $(FLEET_DIR)/src/generated/fielddocs.ts
 	$(FLEET_PNPM) run generate
 
+# CI passes --with-deps, so Playwright also installs the system libraries of
+# the browser. On a workstation they are usually there.
+FLEET_PLAYWRIGHT_FLAGS ?=
+
+.PHONY: fleet-playwright
+fleet-playwright: fleet-install ## Install the Chromium browser that the fleet manager Playwright tests use.
+	$(FLEET_PNPM) exec playwright install chromium $(FLEET_PLAYWRIGHT_FLAGS)
+
+.PHONY: fleet-gallery
+fleet-gallery: fleet-build fleet-playwright ## Screenshot each fleet manager gallery story at 1440 px and 390 px into fleet-manager/ui-gallery, and fail on a serious or critical axe violation.
+	$(FLEET_PNPM) run build:gallery
+	$(FLEET_PNPM) run gallery
+
 .PHONY: fleet-scenarios
 fleet-scenarios: setup-envtest ## Regenerate the page scenarios of the fleet manager with the reconcilers on envtest.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" \

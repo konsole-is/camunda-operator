@@ -1,3 +1,5 @@
-export default function FleetPage() {
-  return <main className="p-6 text-2xl font-semibold">Fleet</main>;
+import { redirect } from "next/navigation";
+
+export default function Home() {
+  redirect("/fleet");
 }
