@@ -7,6 +7,7 @@ A release has one version for everything it publishes. The release tag is `v` an
 - The release tag `v0.2.0`, which is also the Go tag of the root module, and the Go tag `api/v0.2.0` of the api module.
 - The manager image `ghcr.io/konsole-is/camunda-operator:0.2.0`.
 - The CLI image `ghcr.io/konsole-is/camunda-operator-cli:0.2.0`.
+- The fleet manager image `ghcr.io/konsole-is/camunda-operator-fleet-manager:0.2.0`.
 - The chart `oci://ghcr.io/konsole-is/charts/camunda-operator` at version `0.2.0`.
 - The release assets `install.yaml`, `crds.yaml`, and `camunda-operator-0.2.0.tgz`.
 - The docs version `0.2` at <https://konsole-is.github.io/camunda-operator/>, with the alias `latest`, for a release that is not a prerelease.
@@ -33,12 +34,12 @@ The Prepare release workflow pins the version of the api module in the root `go.
 
 When you publish the release, `.github/workflows/release.yml` starts. It does these steps:
 
-1. It builds the manager and CLI images for amd64 and arm64, and scans each image with Trivy. It stops on a HIGH or CRITICAL finding that has a fix. The next steps start only when every scan passes.
+1. It builds the manager, CLI, and fleet manager images for amd64 and arm64, and scans each image with Trivy. It also starts the fleet manager image of each platform. It stops on a HIGH or CRITICAL finding that has a fix. The next steps start only when every scan passes.
 2. It pushes the Go tag `api/vX.Y.Z` of the api module at the release commit.
 3. It builds the chart, sets the release version in it, and lints it.
-4. It builds the manager and CLI images for amd64 and arm64, and pushes them to GHCR.
+4. It builds the manager, CLI, and fleet manager images for amd64 and arm64, and pushes them to GHCR.
 5. It pushes the chart and the Artifact Hub metadata to GHCR.
-6. It signs the two images and the chart by digest with cosign.
+6. It signs the three images and the chart by digest with cosign.
 7. It attaches `install.yaml`, `crds.yaml`, and the packaged chart to the release.
 
 When these steps pass, a second job deploys the docs version of the minor release, such as `0.2`, to the `gh-pages` branch. It moves the alias `latest` to that version, and the site root opens `latest`. A patch release replaces the docs of its minor. A prerelease does not change the docs site.
@@ -82,6 +83,7 @@ Do these steps one time. Do steps 1 and 2 before the first release, and the othe
 3. In the GHCR package settings of the organization, make these packages public:
     - `camunda-operator`
     - `camunda-operator-cli`
+    - `camunda-operator-fleet-manager`
     - `charts/camunda-operator`
 4. In the [Artifact Hub control panel](https://artifacthub.io/control-panel), add a Helm chart repository. Use the name `camunda-operator` and the URL `oci://ghcr.io/konsole-is/charts/camunda-operator`.
 5. Copy the repository ID from Artifact Hub into `repositoryID` in `.github/artifacthub-repo.yml`. Artifact Hub then shows the verified publisher badge after the next release.

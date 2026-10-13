@@ -59,6 +59,7 @@ import (
 // valid there, such as resources.requests.ephemeral-storage or an integer
 // maxSurge.
 var openPaths = []string{
+	"fleetManager.resources",
 	"manager.podSecurityContext",
 	"manager.resources",
 	"manager.securityContext",

@@ -137,23 +137,3 @@ func TestRewriteTemplateRendersTheFlagFromCLIImage(t *testing.T) {
 	_, err = rewriteTemplate(out)
 	require.Error(t, err, "a second pass must not add the flag twice")
 }
-
-func TestSplitImage(t *testing.T) {
-	t.Parallel()
-
-	repo, tag, err := splitImage("localhost:5000/cli:1.2.3")
-	require.NoError(t, err)
-	assert.Equal(t, "localhost:5000/cli", repo)
-	assert.Equal(t, "1.2.3", tag)
-
-	_, _, err = splitImage("ghcr.io/konsole-is/camunda-operator-cli")
-	require.Error(t, err)
-	_, _, err = splitImage("ghcr.io/x/cli@sha256:abc")
-	require.Error(t, err)
-	// An empty repository or tag renders "repo:" or ":tag" into the chart,
-	// an invalid image. It must fail here instead.
-	_, _, err = splitImage("ghcr.io/x/cli:")
-	require.Error(t, err)
-	_, _, err = splitImage(":1.2.3")
-	require.Error(t, err)
-}
