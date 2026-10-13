@@ -49,6 +49,11 @@ const (
 	cliImage          = "ghcr.io/konsole-is/camunda-operator-cli:scenario"
 	seedManager       = "kubectl"
 	overlayManager    = "fleetscenarios-overlay"
+	// deployedManager is the field manager of a write of the operator that
+	// names none. The API server takes it from the user agent, which starts
+	// with the name of the binary, and the image of the operator runs
+	// /manager.
+	deployedManager = "manager"
 )
 
 // objectsFile is the output file of the state after the seed.
@@ -247,7 +252,9 @@ func runReconcilers(
 	deadline time.Time,
 	during func(context.Context) error,
 ) error {
-	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+	managerCfg := rest.CopyConfig(cfg)
+	managerCfg.UserAgent = deployedManager
+	mgr, err := ctrl.NewManager(managerCfg, ctrl.Options{
 		Scheme:                 scheme,
 		Cache:                  manager.CacheOptions(),
 		Metrics:                metricsserver.Options{BindAddress: "0"},

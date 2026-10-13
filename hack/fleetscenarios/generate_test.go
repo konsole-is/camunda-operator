@@ -93,6 +93,7 @@ func TestGenerate(t *testing.T) {
 
 		cluster := find(t, first[objectsFile], "CamundaCluster", "team-b", "orders")
 		assert.Contains(t, managers(cluster), seedManager)
+		assert.Contains(t, managers(cluster), deployedManager, "a status write names no field manager")
 	})
 
 	t.Run("writes one value for every key of a Secret", func(t *testing.T) {
