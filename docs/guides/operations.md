@@ -475,9 +475,12 @@ metadata:
 spec:
   # ... the rest of your cluster
   zeebe:
+    resources:
+      limits:
+        memory: "4Gi"
     extraEnv:
       - name: JAVA_TOOL_OPTIONS
-        value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
+        value: "-XX:+ExitOnOutOfMemoryError -Xmx1g"
 ```
 
 Keep `-XX:+ExitOnOutOfMemoryError` in the value. The operator sets it on every process except connectors, and your entry replaces the value of the operator. When the cluster trusts a certificate authority, the operator adds its trust store options after your value.

@@ -111,7 +111,7 @@ spec:
   zeebe:
     extraEnv:
       - name: JAVA_OPTS
-        value: "-Xmx8g"
+        value: "-Xmx1g"
 ```
 
 ## Deletion
@@ -201,7 +201,7 @@ spec:
   zeebe:
     extraEnv:
       - name: JAVA_OPTS
-        value: "-Xmx8g"
+        value: "-Xmx1g"
 ```
 
 ## Related
