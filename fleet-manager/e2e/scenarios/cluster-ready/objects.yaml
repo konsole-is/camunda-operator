@@ -1766,6 +1766,9 @@ metadata:
   finalizers:
   - core.camunda.io/storage-claim
   generation: 1
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: camunda-operator
   managedFields:
   - apiVersion: core.camunda.io/v1
     fieldsType: FieldsV1
@@ -1941,6 +1944,10 @@ metadata:
   - apiVersion: core.camunda.io/v1
     fieldsType: FieldsV1
     fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:app.kubernetes.io/name: {}
       f:spec:
         f:connectors:
           f:enabled: {}
@@ -2084,10 +2091,17 @@ kind: CamundaClusterPreset
 metadata:
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: camunda-operator
   managedFields:
   - apiVersion: core.camunda.io/v1
     fieldsType: FieldsV1
     fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:app.kubernetes.io/name: {}
       f:spec:
         f:cluster:
           f:admin:
@@ -2185,6 +2199,9 @@ kind: CamundaPlatformConfig
 metadata:
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: camunda-operator
   managedFields:
   - apiVersion: core.camunda.io/v1
     fieldsType: FieldsV1
@@ -2209,6 +2226,10 @@ metadata:
   - apiVersion: core.camunda.io/v1
     fieldsType: FieldsV1
     fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:app.kubernetes.io/name: {}
       f:spec:
         f:auth:
           f:method: {}
@@ -2265,10 +2286,17 @@ kind: CamundaRelease
 metadata:
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: camunda-operator
   managedFields:
   - apiVersion: core.camunda.io/v1
     fieldsType: FieldsV1
     fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:app.kubernetes.io/name: {}
       f:spec:
         f:connectors:
           f:version: {}
@@ -2304,6 +2332,9 @@ kind: SecondaryStorageConfig
 metadata:
   creationTimestamp: "2026-01-01T00:00:00Z"
   generation: 1
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: camunda-operator
   managedFields:
   - apiVersion: core.camunda.io/v1
     fieldsType: FieldsV1
@@ -2328,6 +2359,10 @@ metadata:
   - apiVersion: core.camunda.io/v1
     fieldsType: FieldsV1
     fieldsV1:
+      f:metadata:
+        f:labels:
+          f:app.kubernetes.io/managed-by: {}
+          f:app.kubernetes.io/name: {}
       f:spec:
         f:elasticsearch:
           f:credentialsSecretRef:

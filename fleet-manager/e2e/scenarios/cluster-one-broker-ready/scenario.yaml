@@ -26,6 +26,9 @@ seed:
   - apiVersion: core.camunda.io/v1
     kind: CamundaPlatformConfig
     metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
       name: camundaplatformconfig-sample
     spec:
       auth:
@@ -48,6 +51,9 @@ seed:
   - apiVersion: core.camunda.io/v1
     kind: CamundaClusterPreset
     metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
       name: medium
     spec:
       cluster:
@@ -86,6 +92,9 @@ seed:
   - apiVersion: core.camunda.io/v1
     kind: CamundaRelease
     metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
       name: camunda-8-9-0
     spec:
       version: "8.9.0"
@@ -109,6 +118,9 @@ seed:
   - apiVersion: core.camunda.io/v1
     kind: SecondaryStorageConfig
     metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
       name: camundacluster-sample-storage
       namespace: team-a
     spec:
@@ -122,6 +134,9 @@ seed:
   - apiVersion: core.camunda.io/v1
     kind: CamundaCluster
     metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
       name: camundacluster-sample
       namespace: team-a
     spec:
