@@ -225,14 +225,18 @@ func podLabels(in Input, comp string) map[string]string {
 // container renders the Optimize container of a component. Only the importer
 // imports the exported records of the cluster.
 func container(in Input, comp string) corev1.Container {
+	// The readiness endpoint is on the HTTP port, which serves under the
+	// context path.
+	ready := contextPath(in, comp) + readinessPath
+
 	return corev1.Container{
 		Name:           optimizeContainer,
 		Image:          Image(in),
-		Env:            baseEnv(in, comp == ComponentImporter),
+		Env:            baseEnv(in, comp),
 		Ports:          containerPorts(),
 		VolumeMounts:   caMounts(in),
-		StartupProbe:   probe(portNameHTTP, readinessPath, startupPeriodSeconds, startupFailureThreshold),
-		ReadinessProbe: probe(portNameHTTP, readinessPath, readinessPeriodSeconds, 0),
+		StartupProbe:   probe(portNameHTTP, ready, startupPeriodSeconds, startupFailureThreshold),
+		ReadinessProbe: probe(portNameHTTP, ready, readinessPeriodSeconds, 0),
 		LivenessProbe:  probe(portNameManagement, livenessPath, livenessPeriodSeconds, 0),
 	}
 }

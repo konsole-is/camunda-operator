@@ -50,8 +50,8 @@ const (
 
 // The names of the entries of status.endpoints of a CamundaOptimize.
 const (
-	// EndpointOptimize routes every path of the Optimize webapp. The operator
-	// serves Optimize at the root of its own host.
+	// EndpointOptimize routes the Optimize webapp: the path of
+	// spec.externalUrl, or every path when the URL has no path.
 	EndpointOptimize = "optimize"
 )
 
@@ -76,8 +76,10 @@ type CamundaOptimizeSpec struct {
 	// auth of the orchestration cluster.
 	// +kubebuilder:validation:MinLength=1
 	ManagementAuthRef string `json:"managementAuthRef"`
-	// ExternalURL is the URL where browsers reach this Optimize. It has no
-	// path, because the operator serves Optimize at the root of its own host.
+	// ExternalURL is the URL where browsers reach this Optimize. With a path,
+	// such as https://camunda.example.com/optimize, Optimize serves under that
+	// path, and status.endpoints routes that path. Without a path, Optimize
+	// serves at the root of the host.
 	//
 	// In the two Keycloak modes, the management plane of managementAuthRef
 	// registers <externalUrl>/api/authentication/callback on the optimize
@@ -86,11 +88,10 @@ type CamundaOptimizeSpec struct {
 	// the return. The exception is a callback that somebody added to the
 	// realm manually.
 	//
-	// In the oidc mode, the field has no effect. The identity provider of the
-	// platform config holds the callback URLs, so add
+	// In the oidc mode, the operator registers no callback. The identity
+	// provider of the platform config holds the callback URLs, so add
 	// <externalUrl>/api/authentication/callback there.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
-	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getEscapedPath() in ['', '/']",message="externalUrl must carry no path: the operator serves Optimize at the root of its own host"
 	// +kubebuilder:validation:XValidation:rule="!self.contains(',')",message="externalUrl must carry no comma: Management Identity reads the callback list as comma-separated"
 	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/')",message="externalUrl must not end with a slash: the login callback is appended to it"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="externalUrl must carry no query and no fragment: the login callback is appended to it"

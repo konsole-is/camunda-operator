@@ -326,6 +326,68 @@ func TestProbesUseTheReadinessEndpoint(t *testing.T) {
 	}
 }
 
+// With a path in the external URL, the webapp serves under it: it gets the
+// context path, and its startup and readiness probes ask under that path. The
+// importer serves no browser traffic, so it stays at the root. The liveness
+// probe stays on the management port, which ignores the context path.
+func TestAPathInTheExternalURLMovesTheWebappUnderIt(t *testing.T) {
+	t.Parallel()
+
+	comps, err := Build(newInput(t, func(in *Input) {
+		in.Optimize.Spec.ExternalURL = fixturePathURL
+	}))
+	require.NoError(t, err)
+
+	webapp := previewedPodTemplate(t, previewObjects(t, comps[0])).Spec.Containers[0]
+	assert.Equal(t, "/optimize", envValueNamed(t, webapp.Env, envContextPath))
+	assert.Equal(t, "/optimize/api/readyz", webapp.StartupProbe.HTTPGet.Path)
+	assert.Equal(t, "/optimize/api/readyz", webapp.ReadinessProbe.HTTPGet.Path)
+	assert.Equal(t, "/actuator/health", webapp.LivenessProbe.HTTPGet.Path)
+
+	importer := previewedPodTemplate(t, previewObjects(t, comps[1])).Spec.Containers[0]
+	assertNoEnv(t, importer.Env, envContextPath)
+	assert.Equal(t, "/api/readyz", importer.StartupProbe.HTTPGet.Path)
+	assert.Equal(t, "/api/readyz", importer.ReadinessProbe.HTTPGet.Path)
+}
+
+// A URL without a path, or no URL, sets no context path, so Optimize keeps
+// its own default: the root.
+func TestNoPathInTheExternalURLSetsNoContextPath(t *testing.T) {
+	t.Parallel()
+
+	for _, externalURL := range []string{"", "https://optimize.example.com", "http://optimize.example.com:8080"} {
+		comps, err := Build(newInput(t, func(in *Input) { in.Optimize.Spec.ExternalURL = externalURL }))
+		require.NoError(t, err)
+
+		for _, comp := range comps {
+			container := previewedPodTemplate(t, previewObjects(t, comp)).Spec.Containers[0]
+			assertNoEnv(t, container.Env, envContextPath)
+			assert.Equal(t, "/api/readyz", container.ReadinessProbe.HTTPGet.Path, externalURL)
+		}
+	}
+}
+
+// A change of the path rolls the webapp, which must restart to serve under the
+// new one, and leaves the importer alone.
+func TestConfigHashOfTheWebappFollowsThePath(t *testing.T) {
+	t.Parallel()
+
+	root := newInput(t, func(in *Input) { in.Optimize.Spec.ExternalURL = "https://optimize.example.com" })
+	path := newInput(t, func(in *Input) { in.Optimize.Spec.ExternalURL = fixturePathURL })
+
+	assert.NotEqual(t, ConfigHash(root, ComponentWebapp), ConfigHash(path, ComponentWebapp))
+	assert.Equal(t, ConfigHash(root, ComponentImporter), ConfigHash(path, ComponentImporter))
+}
+
+// assertNoEnv fails when the rendered environment carries the named variable.
+func assertNoEnv(t *testing.T, env []corev1.EnvVar, name string) {
+	t.Helper()
+
+	for _, e := range env {
+		assert.NotEqual(t, name, e.Name, "%s is in the rendered environment", name)
+	}
+}
+
 // The liveness probe must not depend on Elasticsearch. /api/readyz answers 503
 // while Optimize cannot reach its database, so using it for liveness restarts
 // every pod in a loop for the length of an Elasticsearch outage.

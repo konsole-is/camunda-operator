@@ -81,8 +81,10 @@ spec:
                   rule: self == oldSelf
               externalUrl:
                 description: |-
-                  ExternalURL is the URL where browsers reach this Optimize. It has no
-                  path, because the operator serves Optimize at the root of its own host.
+                  ExternalURL is the URL where browsers reach this Optimize. With a path,
+                  such as https://camunda.example.com/optimize, Optimize serves under that
+                  path, and status.endpoints routes that path. Without a path, Optimize
+                  serves at the root of the host.
 
                   In the two Keycloak modes, the management plane of managementAuthRef
                   registers <externalUrl>/api/authentication/callback on the optimize
@@ -91,17 +93,14 @@ spec:
                   the return. The exception is a callback that somebody added to the
                   realm manually.
 
-                  In the oidc mode, the field has no effect. The identity provider of the
-                  platform config holds the callback URLs, so add
+                  In the oidc mode, the operator registers no callback. The identity
+                  provider of the platform config holds the callback URLs, so add
                   <externalUrl>/api/authentication/callback there.
                 type: string
                 x-kubernetes-validations:
                 - message: externalUrl must be a valid http or https URL
                   rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                     == 'https') && url(self).getHostname() != ''
-                - message: 'externalUrl must carry no path: the operator serves Optimize
-                    at the root of its own host'
-                  rule: '!isURL(self) || url(self).getEscapedPath() in ['''', ''/'']'
                 - message: 'externalUrl must carry no comma: Management Identity reads
                     the callback list as comma-separated'
                   rule: '!self.contains('','')'

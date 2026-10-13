@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/konsole-is/camunda-operator/pkg/camundaconfig"
+	"github.com/konsole-is/camunda-operator/pkg/externalurl"
 )
 
 // The environment variables of the Optimize container. Optimize does not read
@@ -66,6 +67,10 @@ const (
 	envElasticsearchSelfSigned = "CAMUNDA_OPTIMIZE_ELASTICSEARCH_SECURITY_SSL_SELF_SIGNED"
 	// envElasticsearchReplicas is es.settings.index.number_of_replicas.
 	envElasticsearchReplicas = "CAMUNDA_OPTIMIZE_ELASTICSEARCH_SETTINGS_INDEX_NUMBER_OF_REPLICAS"
+	// envContextPath is container.contextPath: the path that the HTTP port
+	// serves under. It must start with a slash. The management port ignores
+	// it and keeps the root.
+	envContextPath = "CAMUNDA_OPTIMIZE_CONTEXT_PATH"
 	// envZeebeEnabled is zeebe.enabled: whether this instance imports the
 	// exported records of the cluster.
 	envZeebeEnabled = "CAMUNDA_OPTIMIZE_ZEEBE_ENABLED"
@@ -104,10 +109,11 @@ const (
 	// Elasticsearch-backed Optimize (ConfigurationServiceConstants
 	// .ELASTICSEARCH_DATABASE_PROPERTY).
 	databaseElasticsearch = "elasticsearch"
-	// readinessPath is the readiness endpoint on the HTTP port
-	// (HealthRestService.java: the REST API path plus /readyz). It answers 200
-	// only while Optimize is connected to its database, so it also gates the
-	// startup probe: the first start builds the Optimize index schema.
+	// readinessPath is the readiness endpoint on the HTTP port, under the
+	// context path (HealthRestService.java: the REST API path plus /readyz).
+	// It answers 200 only while Optimize is connected to its database, so it
+	// also gates the startup probe: the first start builds the Optimize index
+	// schema.
 	readinessPath = "/api/readyz"
 	// livenessPath is the Spring Boot health endpoint on the management port.
 	// Optimize exposes it (management.endpoints.web.exposure.include in
@@ -129,18 +135,21 @@ const (
 	defaultHTTPPort  = "80"
 )
 
-// baseEnv renders the environment of one Optimize container: the profile and
-// the database, the Elasticsearch connection, the Zeebe import, the Management
-// Identity connection, and the license. importEnabled turns the import of the
-// exported cluster records on; the importer runs with it on and the webapp
-// with it off, so only one instance imports.
-func baseEnv(in Input, importEnabled bool) []corev1.EnvVar {
+// baseEnv renders the environment of the Optimize container of a component:
+// the profile and the database, the context path, the Elasticsearch
+// connection, the Zeebe import, the Management Identity connection, and the
+// license. Only the importer imports the exported cluster records, so only one
+// instance imports.
+func baseEnv(in Input, comp string) []corev1.EnvVar {
 	env := []corev1.EnvVar{
 		{Name: camundaconfig.EnvSpringProfilesActive, Value: profileCCSM},
 		{Name: envDatabase, Value: databaseElasticsearch},
 	}
+	if path := contextPath(in, comp); path != "" {
+		env = append(env, corev1.EnvVar{Name: envContextPath, Value: path})
+	}
 	env = append(env, elasticsearchEnv(in)...)
-	env = append(env, zeebeEnv(in, importEnabled)...)
+	env = append(env, zeebeEnv(in, comp == ComponentImporter)...)
 	env = append(env, identityEnv(in)...)
 
 	if ref := in.Platform.LicenseSecretRef; ref != nil {
@@ -151,6 +160,18 @@ func baseEnv(in Input, importEnabled bool) []corev1.EnvVar {
 	}
 
 	return env
+}
+
+// contextPath returns the path that the HTTP port of a component serves under:
+// the path of spec.externalUrl for the webapp, and empty for the root. The
+// importer serves no browser traffic, so it stays at the root, and a change of
+// the path does not stop the import.
+func contextPath(in Input, comp string) string {
+	if comp != ComponentWebapp {
+		return ""
+	}
+
+	return externalurl.ContextPath(externalurl.Parse(in.Optimize.Spec.ExternalURL))
 }
 
 // elasticsearchEnv renders the Elasticsearch connection: the host and the port

@@ -43,6 +43,7 @@ const applicationProperties = "optimize/backend/src/main/resources/application.p
 // serviceConfigEnv lists every variable that this package sets and that
 // service-config.yaml declares.
 var serviceConfigEnv = []string{
+	envContextPath,
 	envElasticsearchHost,
 	envElasticsearchPort,
 	envElasticsearchUsername,
