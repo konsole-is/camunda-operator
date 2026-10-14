@@ -8,6 +8,8 @@ on:
     paths:
       - fleet-manager/Dockerfile
       - fleet-manager/deploy/**
+      - fleet-manager/package.json
+      - fleet-manager/pnpm-lock.yaml
       - .github/workflows/fleet-manager-arm64.yml
   workflow_dispatch:
 

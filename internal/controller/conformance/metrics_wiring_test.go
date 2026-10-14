@@ -82,9 +82,6 @@ func TestControllerPackagesWalksIntoDirectoriesWithoutSource(t *testing.T) {
 		"plugins/schema/suite_test.go":             "package schema\n",
 		"plugins/pluginregistration/controller.go": "package pluginregistration\n",
 		"plugins/pluginregistration/suite_test.go": "package pluginregistration\n",
-		"fleet/schema/suite_test.go":               "package schema\n",
-		"fleet/environment/controller.go":          "package environment\n",
-		"fleet/environment/suite_test.go":          "package environment\n",
 	} {
 		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, path)), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, path), []byte(content), 0o600))
@@ -93,11 +90,7 @@ func TestControllerPackagesWalksIntoDirectoriesWithoutSource(t *testing.T) {
 	packages, err := controllerPackages(root)
 	require.NoError(t, err)
 
-	assert.ElementsMatch(
-		t,
-		[]string{"database", filepath.Join("plugins", "pluginregistration"), filepath.Join("fleet", "environment")},
-		packages,
-	)
+	assert.ElementsMatch(t, []string{"database", filepath.Join("plugins", "pluginregistration")}, packages)
 }
 
 // controllerPackages returns, relative to root, each directory under root that

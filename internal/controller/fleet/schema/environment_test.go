@@ -109,13 +109,8 @@ var _ = Describe("Environment schema", func() {
 		func(mutate func(*fleetv1alpha1.Environment), wantErr string) {
 			obj := validEnvironment()
 			mutate(obj)
-			err := k8sClient.Create(ctx, obj)
-			if wantErr == "" {
-				Expect(err).NotTo(HaveOccurred())
-				DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
-			} else {
-				Expect(err).To(MatchError(ContainSubstring(wantErr)))
-			}
+
+			expectAdmission(obj, wantErr)
 		},
 		Entry("admits an environment that sets every rule", func(*fleetv1alpha1.Environment) {}, ""),
 		Entry(
@@ -270,14 +265,7 @@ var _ = Describe("Environment schema", func() {
 	DescribeTable(
 		"admission of an explicit empty allowed list",
 		func(value map[string]any, path []string, wantErr string) {
-			obj := unstructuredEnvironment(value, path...)
-			err := k8sClient.Create(ctx, obj)
-			if wantErr == "" {
-				Expect(err).NotTo(HaveOccurred())
-				DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
-			} else {
-				Expect(err).To(MatchError(ContainSubstring(wantErr)))
-			}
+			expectAdmission(unstructuredEnvironment(value, path...), wantErr)
 		},
 		Entry(
 			"admits a parameter policy with an empty allowed list and without claimEditable",
@@ -295,8 +283,7 @@ var _ = Describe("Environment schema", func() {
 
 	It("defaults the deletion policy to Delete", func() {
 		obj := validEnvironment()
-		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+		expectAdmission(obj, "")
 
 		var got fleetv1alpha1.Environment
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), &got)).To(Succeed())
@@ -305,8 +292,7 @@ var _ = Describe("Environment schema", func() {
 
 	It("keeps a namespace count of zero in the status", func() {
 		obj := validEnvironment()
-		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+		expectAdmission(obj, "")
 
 		obj.Status.Namespaces = ptr.To[int32](0)
 		Expect(k8sClient.Status().Update(ctx, obj)).To(Succeed())
