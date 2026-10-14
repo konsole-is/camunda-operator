@@ -77,6 +77,11 @@ var _ = Describe("PluginRequest schema", func() {
 			"claimRef is immutable",
 		),
 		Entry(
+			"target.kind",
+			func(r *pluginsv1alpha1.PluginRequest) { r.Spec.Target.Kind = "CamundaManagementCluster" },
+			"target.kind is immutable",
+		),
+		Entry(
 			"target.name",
 			func(r *pluginsv1alpha1.PluginRequest) { r.Spec.Target.Name = "payments" },
 			"target.name is immutable",

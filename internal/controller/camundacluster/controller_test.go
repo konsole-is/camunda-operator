@@ -872,9 +872,7 @@ var _ = Describe("CamundaCluster controller", func() {
 		// The cluster does not claim readiness again until the workloads it
 		// brought back are healthy.
 		expectReady(cluster, metav1.ConditionFalse, Equal(string(component.AliveUpdating)), Not(BeEmpty()))
-		stampStatefulSetReady(zeebeKey)
-		stampDeploymentReady(gatewayKey)
-		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+		expectHealthyOnceWorkloadsAreReady(cluster)
 	})
 
 	// A hold written by hand proves that the cluster needs to know no holder
@@ -923,8 +921,6 @@ var _ = Describe("CamundaCluster controller", func() {
 
 	It("refuses a version below the one the brokers run, and applies a sanctioned one", func() {
 		cluster := createDefaultCluster()
-		zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
-		gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
 		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.9.9"))
 
 		By("lowering spec.version")
@@ -963,9 +959,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
 			g.Expect(latest.Annotations).NotTo(HaveKey(components.AllowVersionDowngradeAnnotation))
 		}, timeout, interval).Should(Succeed())
-		stampStatefulSetReady(zeebeKey)
-		stampDeploymentReady(gatewayKey)
-		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+		expectHealthyOnceWorkloadsAreReady(cluster)
 	})
 
 	It("stops the workloads of a suspended cluster whose downgrade is refused", func() {
@@ -1111,8 +1105,6 @@ var _ = Describe("CamundaCluster controller", func() {
 
 	It("applies a patch move and a one-minor move", func() {
 		cluster := createDefaultCluster()
-		zeebeKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-zeebe"}
-		gatewayKey := client.ObjectKey{Namespace: cluster.Namespace, Name: cluster.Name + "-gateway"}
 		Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":" + runningVersion))
 
 		By("moving one patch")
@@ -1127,9 +1119,7 @@ var _ = Describe("CamundaCluster controller", func() {
 			g.Expect(zeebeContainer(cluster).Image).To(HaveSuffix(":8.10.0"))
 		}, timeout, interval).Should(Succeed())
 
-		stampStatefulSetReady(zeebeKey)
-		stampDeploymentReady(gatewayKey)
-		expectReady(cluster, metav1.ConditionTrue, Equal(v1.ReasonHealthy), Not(BeEmpty()))
+		expectHealthyOnceWorkloadsAreReady(cluster)
 		Expect(countEvents(Default, cluster, v1.ReasonVersionSkipRefused)).To(BeZero())
 	})
 
