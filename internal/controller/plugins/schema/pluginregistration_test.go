@@ -145,6 +145,13 @@ var _ = Describe("PluginRegistration schema", func() {
 			"spec.grantTemplates[1]: Duplicate value",
 		),
 		Entry(
+			"refuses a grant template that is a JSON array",
+			func(o *pluginsv1alpha1.PluginRegistration) {
+				o.Spec.GrantTemplates[0].Template = &apiextensionsv1.JSON{Raw: []byte(`[{"Effect":"Allow"}]`)}
+			},
+			"spec.grantTemplates[0].template in body must be of type object",
+		),
+		Entry(
 			"admits a ServiceAccount namespace of 63 characters and a name of 253 characters",
 			func(o *pluginsv1alpha1.PluginRegistration) {
 				o.Spec.ServiceAccount.Namespace = nameOfLength(63)

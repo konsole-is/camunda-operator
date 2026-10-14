@@ -193,7 +193,9 @@ spec:
                     template:
                       description: |-
                         Template is the statement, with Go template placeholders such as
-                        {{ .parameters.x }} and {{ .outputs.x }}.
+                        {{ .parameters.x }} and {{ .outputs.x }}. It is a JSON object, like
+                        the fragment of a Grant.
+                      type: object
                       x-kubernetes-preserve-unknown-fields: true
                   required:
                   - format
