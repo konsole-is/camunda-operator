@@ -141,8 +141,8 @@ Optimize reads tenants and users from `spec.baseUrl` of the contract. That URL i
 
 After a person signs in, the identity provider sends the browser back to Optimize. The provider accepts only the callback URLs that its Optimize client lists.
 
-- In the two Keycloak modes of a [CamundaManagementCluster](camundamanagementcluster.md), set `spec.externalUrl` to the URL of this Optimize in a browser. The operator serves Optimize at the root of its own host, so the URL has no path. The management plane registers the callback for you. See [Optimize](camundamanagementcluster.md#optimize) on that page.
-- In the `oidc` mode, the operator registers nothing, and `spec.externalUrl` has no effect. Add the callback of each Optimize to the Optimize application at your provider. Camunda names the path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
+- In the two Keycloak modes of a [CamundaManagementCluster](camundamanagementcluster.md), set `spec.externalUrl` to the URL of this Optimize in a browser. The management plane registers the callback for you. See [Optimize](camundamanagementcluster.md#optimize) on that page.
+- In the `oidc` mode, the operator registers no callback. Add the callback of each Optimize to the Optimize application at your provider. Camunda names the path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -300,7 +300,7 @@ A `CamundaOptimize` that never held the cluster removes nothing from it.
 status:
   endpoints:
   - name: optimize
-    # The operator serves Optimize at the root of its own host.
+    # The path of spec.externalUrl, or / for a URL without a path.
     pathPrefix: /
     port: 8090
     protocol: HTTP
@@ -308,6 +308,35 @@ status:
 ```
 
 The importer serves no browser traffic and has no route.
+
+To put Optimize under a path of a host that other apps share, give `spec.externalUrl` that path:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaOptimize
+metadata:
+  name: my-cluster-optimize
+  namespace: my-cluster-ns
+spec:
+  externalUrl: "https://camunda.example.com/optimize"
+  # ... the rest of your Optimize
+```
+
+The webapp then serves under `/optimize`, and the route carries that path:
+
+```yaml
+status:
+  endpoints:
+  - name: optimize
+    pathPrefix: /optimize
+    port: 8090
+    protocol: HTTP
+    service: my-cluster-optimize-webapp
+```
+
+Send the requests under `/optimize` to the Service with the path as it is. Do not strip the prefix, because Optimize expects it. The login callback is under the path too: `https://camunda.example.com/optimize/api/authentication/callback`. Camunda describes the setting in [Container](https://docs.camunda.io/docs/self-managed/components/optimize/configuration/system-configuration/#container). The metrics on the management port stay at the root.
+
+A change of the path restarts the webapp, and `status.endpoints` shows the new path. The importer keeps running. In the two Keycloak modes, the management plane registers the new callback. In the `oidc` mode, change the callback at your provider.
 
 The entry stays while the workloads are at zero with the cluster, and while a check fails. The Service stays too, so the route answers again when Optimize starts. There is no entry while another `CamundaOptimize` holds the cluster, or when the cluster is gone, because the operator then deletes the Service. A new `CamundaOptimize` whose first check fails has no entry yet.
 
@@ -326,7 +355,7 @@ spec:
   version: "8.9.0"
   # string. Required. Name of the cluster-scoped ManagementAuthConfig that Optimize signs in against.
   managementAuthRef: management-auth
-  # string. Optional. The URL a browser reaches this Optimize at. In the two Keycloak modes the management plane registers the login callback under it. Unused in the oidc mode.
+  # string. Optional. The URL a browser reaches this Optimize at. A path in it, such as /optimize, makes Optimize serve under that path. In the two Keycloak modes the management plane registers the login callback under it.
   externalUrl: "https://optimize.camunda.example.com"
   # object. Required. The CamundaCluster this Optimize instance attaches to. Immutable.
   clusterRef:
@@ -396,7 +425,7 @@ The API server enforces these at admission:
 
 - `spec.version` must be a full semantic version such as `8.9.0`. A two-segment version is rejected.
 - `spec.managementAuthRef` must not be empty.
-- `spec.externalUrl` must be an `http` or `https` URL with a host and no path. The operator serves Optimize at the root of its own host, so a URL such as `https://camunda.example.com/optimize` is refused. The URL carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash.
+- `spec.externalUrl` must be an `http` or `https` URL with a host. It can have a path, such as `https://camunda.example.com/optimize`. It carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash. It carries no percent-encoded character and no backslash. Its path has no `.` or `..` segment.
 - `spec.importer.replicas` must be `0` or `1`.
 - `spec.clusterRef` is immutable.
 

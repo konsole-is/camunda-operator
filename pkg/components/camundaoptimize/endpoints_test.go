@@ -29,22 +29,30 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
-// The operator serves Optimize at the root of its host, so one route takes
-// every path to the webapp. The importer serves no browser traffic.
-func TestEndpointsRouteEveryPathToTheWebapp(t *testing.T) {
+// One route takes the path of the external URL to the webapp, and / when the
+// URL has no path or there is no URL. The importer serves no browser traffic.
+func TestEndpointsRouteThePathOfTheExternalURLToTheWebapp(t *testing.T) {
 	t.Parallel()
 
-	o := &v1.CamundaOptimize{}
-	o.Name = "my-optimize"
+	for externalURL, prefix := range map[string]string{
+		"":                                       "/",
+		"https://optimize.example.com":           "/",
+		"https://camunda.example.com/optimize":   "/optimize",
+		"https://camunda.example.com/a/optimize": "/a/optimize",
+	} {
+		o := &v1.CamundaOptimize{}
+		o.Name = "my-optimize"
+		o.Spec.ExternalURL = externalURL
 
-	want := []v1.Endpoint{{
-		Name:       "optimize",
-		Service:    "my-optimize-webapp",
-		Port:       8090,
-		PathPrefix: "/",
-		Protocol:   v1.EndpointProtocolHTTP,
-	}}
-	assert.Equal(t, want, Endpoints(o))
+		want := []v1.Endpoint{{
+			Name:       "optimize",
+			Service:    "my-optimize-webapp",
+			Port:       8090,
+			PathPrefix: prefix,
+			Protocol:   v1.EndpointProtocolHTTP,
+		}}
+		assert.Equal(t, want, Endpoints(o), externalURL)
+	}
 }
 
 // A long name truncates in the Service name. The route must name the Service

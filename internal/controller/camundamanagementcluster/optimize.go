@@ -68,8 +68,8 @@ const rollingOut = "Management Identity is rolling out, and it owns the Optimize
 // input.
 //
 // The oidc mode discovers none. The identity provider of the platform config
-// holds the callback URLs there, so spec.externalUrl of a CamundaOptimize has
-// no effect and a row would say the management plane did something with it.
+// holds the callback URLs there, so the management plane does nothing with
+// spec.externalUrl of a CamundaOptimize, and a row would say that it did.
 func (r *Reconciler) discoverOptimizes(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,

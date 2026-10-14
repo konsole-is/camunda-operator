@@ -55,7 +55,7 @@ func envNames(env []corev1.EnvVar) []string {
 func TestBaseEnvImporterEnablesImport(t *testing.T) {
 	t.Parallel()
 
-	env := baseEnv(newInput(t, func(in *Input) { in.Partitions = 3 }), true)
+	env := baseEnv(newInput(t, func(in *Input) { in.Partitions = 3 }), ComponentImporter)
 
 	assert.Equal(t, "true", envValueNamed(t, env, envZeebeEnabled))
 	assert.Equal(t, "zeebe-record", envValueNamed(t, env, envZeebeName))
@@ -67,7 +67,7 @@ func TestBaseEnvImporterEnablesImport(t *testing.T) {
 func TestBaseEnvWebappDisablesImport(t *testing.T) {
 	t.Parallel()
 
-	env := baseEnv(fixtureMinimal(t), false)
+	env := baseEnv(fixtureMinimal(t), ComponentWebapp)
 
 	assert.Equal(t, "false", envValueNamed(t, env, envZeebeEnabled))
 	assert.Equal(t, "ccsm", envValueNamed(t, env, "SPRING_PROFILES_ACTIVE"))
@@ -94,7 +94,7 @@ func TestBaseEnvSplitsTheElasticsearchEndpoint(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			env := baseEnv(newInput(t, func(in *Input) { in.Storage.Endpoint = tc.endpoint }), false)
+			env := baseEnv(newInput(t, func(in *Input) { in.Storage.Endpoint = tc.endpoint }), ComponentWebapp)
 			assert.Equal(t, tc.host, envValueNamed(t, env, envElasticsearchHost))
 			assert.Equal(t, tc.port, envValueNamed(t, env, envElasticsearchPort))
 			assert.Equal(t, tc.ssl, envValueNamed(t, env, envElasticsearchSSLEnabled))
@@ -108,7 +108,7 @@ func TestBaseEnvTrustsTheMountedCA(t *testing.T) {
 	t.Parallel()
 
 	in := fixtureRealistic(t)
-	env := baseEnv(in, false)
+	env := baseEnv(in, ComponentWebapp)
 	assert.Equal(t, "/etc/camunda/es-ca/ca.crt", envValueNamed(t, env, envElasticsearchCAs))
 	assert.Equal(t, "false", envValueNamed(t, env, envElasticsearchSelfSigned))
 	require.Len(t, caVolumes(in), 1)
@@ -117,7 +117,7 @@ func TestBaseEnvTrustsTheMountedCA(t *testing.T) {
 	assert.Equal(t, "/etc/camunda/es-ca", caMounts(in)[0].MountPath)
 
 	minimal := fixtureMinimal(t)
-	assert.NotContains(t, envNames(baseEnv(minimal, false)), envElasticsearchCAs)
+	assert.NotContains(t, envNames(baseEnv(minimal, ComponentWebapp)), envElasticsearchCAs)
 	assert.Empty(t, caVolumes(minimal))
 	assert.Empty(t, caMounts(minimal))
 }
@@ -142,7 +142,7 @@ func TestBaseEnvIndexReplicas(t *testing.T) {
 			env := baseEnv(newInput(t, func(in *Input) {
 				in.Storage.NodeCount = tc.nodeCount
 				in.Optimize.Spec.IndexReplicas = tc.requested
-			}), false)
+			}), ComponentWebapp)
 
 			if tc.want == "" {
 				assert.NotContains(t, envNames(env), envElasticsearchReplicas)
@@ -158,12 +158,12 @@ func TestBaseEnvIndexReplicas(t *testing.T) {
 func TestIssuerBackendURLDefaultsToIssuer(t *testing.T) {
 	t.Parallel()
 
-	env := baseEnv(fixtureMinimal(t), false)
+	env := baseEnv(fixtureMinimal(t), ComponentWebapp)
 	assert.Equal(
 		t, "https://identity.example.com/realms/camunda", envValueNamed(t, env, envIdentityIssuerBackendURL),
 	)
 
-	env = baseEnv(fixtureRealistic(t), false)
+	env = baseEnv(fixtureRealistic(t), ComponentWebapp)
 	assert.Equal(
 		t, "http://identity.camunda.svc:8080/realms/camunda", envValueNamed(t, env, envIdentityIssuerBackendURL),
 	)
@@ -173,7 +173,7 @@ func TestIssuerBackendURLDefaultsToIssuer(t *testing.T) {
 func TestBaseEnvReadsCredentialsFromSecrets(t *testing.T) {
 	t.Parallel()
 
-	env := baseEnv(fixtureRealistic(t), false)
+	env := baseEnv(fixtureRealistic(t), ComponentWebapp)
 	sources := map[string]*corev1.SecretKeySelector{}
 	for _, e := range env {
 		if e.ValueFrom != nil {
@@ -210,7 +210,7 @@ func TestImageUsesTheImagesRename(t *testing.T) {
 	t.Parallel()
 
 	assert.Equal(t, "camunda/optimize:8.9.4", Image(fixtureMinimal(t)))
-	assert.NotContains(t, envNames(baseEnv(fixtureMinimal(t), false)), "CAMUNDA_LICENSE_KEY")
+	assert.NotContains(t, envNames(baseEnv(fixtureMinimal(t), ComponentWebapp)), "CAMUNDA_LICENSE_KEY")
 
 	assert.Equal(t, "registry.example.com/mirror/camunda/optimize:8.9.4", Image(fixtureRealistic(t)))
 

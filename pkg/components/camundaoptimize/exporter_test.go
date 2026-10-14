@@ -112,7 +112,7 @@ func TestExporterEnvPrefixMatchesTheOptimizeImportPrefix(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, envValueNamed(t, baseEnv(fixtureMinimal(t), true), envZeebeName), prefix)
+	assert.Equal(t, envValueNamed(t, baseEnv(fixtureMinimal(t), ComponentImporter), envZeebeName), prefix)
 }
 
 // The patch object carries the identity of the cluster and its exporter

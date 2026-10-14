@@ -124,6 +124,15 @@ spec:
                     - message: externalUrl must be a valid http or https URL
                       rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                         == 'https') && url(self).getHostname() != ''
+                    - message: 'externalUrl must carry no percent-encoded character:
+                        the operator passes the decoded path to Console'
+                      rule: '!self.contains(''%'')'
+                    - message: 'externalUrl must carry no backslash: browsers read
+                        one in the path as a slash, and the operator does not'
+                      rule: '!self.contains(''\\'')'
+                    - message: 'externalUrl must carry no . or .. path segment: browsers
+                        remove them, and the operator does not'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                   extraEnv:
                     description: |-
                       ExtraEnv are extra environment variables of the container of this
@@ -1138,6 +1147,15 @@ spec:
                         serves under a path only over https
                       rule: '!isURL(self) || url(self).getScheme() != ''http'' ||
                         url(self).getEscapedPath() in ['''', ''/'']'
+                    - message: 'externalUrl must carry no percent-encoded character:
+                        the operator passes the decoded path to Management Identity'
+                      rule: '!self.contains(''%'')'
+                    - message: 'externalUrl must carry no backslash: browsers read
+                        one in the path as a slash, and the operator does not'
+                      rule: '!self.contains(''\\'')'
+                    - message: 'externalUrl must carry no . or .. path segment: browsers
+                        remove them, and the operator does not'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                   extraEnv:
                     description: |-
                       ExtraEnv are extra environment variables of the container of this
@@ -2989,6 +3007,15 @@ spec:
                     - message: externalUrl must be a valid http or https URL
                       rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                         == 'https') && url(self).getHostname() != ''
+                    - message: 'externalUrl must carry no percent-encoded character:
+                        the operator passes the decoded path to Web Modeler'
+                      rule: '!self.contains(''%'')'
+                    - message: 'externalUrl must carry no backslash: browsers read
+                        one in the path as a slash, and the operator does not'
+                      rule: '!self.contains(''\\'')'
+                    - message: 'externalUrl must carry no . or .. path segment: browsers
+                        remove them, and the operator does not'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                   mail:
                     description: |-
                       Mail configures the SMTP server that Web Modeler sends notifications
@@ -4910,6 +4937,15 @@ spec:
                         URL
                       rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                         == 'https') && url(self).getHostname() != ''
+                    - message: 'websocketsExternalUrl must carry no percent-encoded
+                        character: the operator passes the decoded path to Web Modeler'
+                      rule: '!self.contains(''%'')'
+                    - message: 'websocketsExternalUrl must carry no backslash: browsers
+                        read one in the path as a slash, and the operator does not'
+                      rule: '!self.contains(''\\'')'
+                    - message: 'websocketsExternalUrl must carry no . or .. path segment:
+                        browsers remove them, and the operator does not'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                 required:
                 - databaseConfigRef
                 - externalUrl

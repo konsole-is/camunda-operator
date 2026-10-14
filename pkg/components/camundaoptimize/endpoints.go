@@ -18,11 +18,13 @@ package camundaoptimize
 
 import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/externalurl"
 )
 
 // Endpoints returns the routes of an Optimize for status.endpoints: one
-// entry that takes every path to the webapp Service. The importer serves no
-// browser traffic and has no route.
+// entry that takes the path of spec.externalUrl, or / for a URL without one,
+// to the webapp Service. The webapp serves under that path. The importer
+// serves no browser traffic and has no route.
 //
 // The route ignores a suspension. It describes the Service, and the Service
 // stays while the pods are at zero.
@@ -31,7 +33,7 @@ func Endpoints(o *v1.CamundaOptimize) []v1.Endpoint {
 		Name:       v1.EndpointOptimize,
 		Service:    WorkloadName(o, ComponentWebapp),
 		Port:       PortHTTP,
-		PathPrefix: "/",
+		PathPrefix: externalurl.RoutePrefix(o.Spec.ExternalURL),
 		Protocol:   v1.EndpointProtocolHTTP,
 	}}
 }

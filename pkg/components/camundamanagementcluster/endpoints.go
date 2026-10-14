@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/externalurl"
 )
 
 // Endpoints returns the routes of a management plane for status.endpoints,
@@ -35,7 +36,10 @@ import (
 func Endpoints(mc *v1.CamundaManagementCluster) []v1.Endpoint {
 	endpoints := []v1.Endpoint{
 		httpEndpoint(
-			v1.EndpointIdentity, IdentityName(mc), IdentityServicePortHTTP, routePath(mc.Spec.Identity.ExternalURL),
+			v1.EndpointIdentity,
+			IdentityName(mc),
+			IdentityServicePortHTTP,
+			externalurl.RoutePrefix(mc.Spec.Identity.ExternalURL),
 		),
 	}
 	if Mode(mc) == ModeKeycloak {
@@ -47,7 +51,12 @@ func Endpoints(mc *v1.CamundaManagementCluster) []v1.Endpoint {
 	if console := mc.Spec.Console; console != nil {
 		endpoints = append(
 			endpoints,
-			httpEndpoint(v1.EndpointConsole, ConsoleName(mc), ConsoleServicePortHTTP, routePath(console.ExternalURL)),
+			httpEndpoint(
+				v1.EndpointConsole,
+				ConsoleName(mc),
+				ConsoleServicePortHTTP,
+				externalurl.RoutePrefix(console.ExternalURL),
+			),
 		)
 	}
 	if modeler := mc.Spec.WebModeler; modeler != nil {
@@ -57,13 +66,13 @@ func Endpoints(mc *v1.CamundaManagementCluster) []v1.Endpoint {
 				v1.EndpointWebModeler,
 				WebModelerRestapiName(mc),
 				WebModelerRestapiServicePortHTTP,
-				routePath(modeler.ExternalURL),
+				externalurl.RoutePrefix(modeler.ExternalURL),
 			),
 			httpEndpoint(
 				v1.EndpointWebModelerWebsockets,
 				WebModelerWebsocketsName(mc),
 				WebModelerWebsocketsServicePortHTTP,
-				routePath(modeler.WebsocketsExternalURL),
+				externalurl.RoutePrefix(modeler.WebsocketsExternalURL),
 			),
 		)
 	}
@@ -82,15 +91,4 @@ func httpEndpoint(name, service string, port int32, pathPrefix string) v1.Endpoi
 		PathPrefix: pathPrefix,
 		Protocol:   v1.EndpointProtocolHTTP,
 	}
-}
-
-// routePath returns the path that an app with this external URL serves
-// under: the path that its context path setting gets, or / at the root of
-// the host.
-func routePath(externalURL string) string {
-	if path := externalPath(parseURL(externalURL)); path != "" {
-		return path
-	}
-
-	return "/"
 }
