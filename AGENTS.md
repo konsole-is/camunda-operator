@@ -57,11 +57,15 @@ Fix three things by hand after each `kubebuilder create api`:
    at the `+kubebuilder:scaffold:*` markers. Remove both, and add the
    group to `internal/manager.AddToScheme` once. Keep the markers.
 3. The install. Kubebuilder adds the CRD base to
-   `config/crd/kustomization.yaml` and the roles to
-   `config/rbac/kustomization.yaml`. Remove those entries. A new CRD joins
-   `config/crd/kustomization.yaml`, and its roles join
-   `config/rbac/kustomization.yaml`, with the first controller that acts
-   on the kind. The sample stays in `config/samples/kustomization.yaml`.
+   `config/crd/kustomization.yaml`, the roles to
+   `config/rbac/kustomization.yaml`, and the sample to
+   `config/samples/kustomization.yaml`. Remove those entries. A new CRD joins
+   `config/crd/kustomization.yaml`, its roles join
+   `config/rbac/kustomization.yaml`, and its sample joins
+   `config/samples/kustomization.yaml`, with the first controller that acts
+   on the kind. `kubectl apply -k config/samples/` fails on a kind whose CRD
+   is not installed. The sample file stays in `config/samples/`, and the
+   tests read it directly.
 
 In the multigroup layout, `kubebuilder create webhook --group core`
 scaffolds under `api/core/v1`, not `api/v1`. No core webhook is planned.

@@ -18,9 +18,11 @@ spec:
     resources:
       requests:
         memory: "8Gi"
+      limits:
+        memory: "8Gi"
     extraEnv:
       - name: JAVA_TOOL_OPTIONS
-        value: "-XX:+ExitOnOutOfMemoryError -Xmx6g"
+        value: "-XX:+ExitOnOutOfMemoryError -Xmx2g"
   connectors:
     enabled: true
   storageRef: "camundacluster-sample-storage"

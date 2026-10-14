@@ -1,0 +1,171 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: pluginsections.plugins.camunda.io
+spec:
+  group: plugins.camunda.io
+  names:
+    kind: PluginSection
+    listKind: PluginSectionList
+    plural: pluginsections
+    singular: pluginsection
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.label
+      name: Label
+      type: string
+    - jsonPath: .spec.slot
+      name: Slot
+      type: string
+    - jsonPath: .spec.order
+      name: Order
+      priority: 1
+      type: integer
+    - jsonPath: .spec.selection
+      name: Selection
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          PluginSection is one section of the create flow of a claim, such as
+          "Backup storage" or "Access". The operator writes the core sections, and a
+          plugin chart writes a section that it brings. The name is at most 63
+          characters, because other objects carry it in a label value.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the section
+            properties:
+              appliesTo:
+                description: AppliesTo lists the claim kinds whose create flow shows
+                  the section.
+                items:
+                  description: ClaimKind names a claim kind of the fleet.camunda.io
+                    group.
+                  enum:
+                  - CamundaClusterClaim
+                  - CamundaManagementClusterClaim
+                  type: string
+                type: array
+                x-kubernetes-validations:
+                - message: appliesTo must list at least one claim kind
+                  rule: self.size() >= 1
+              description:
+                description: |-
+                  Description says what the section is for. Display only. No controller
+                  reads it.
+                type: string
+              emptyOptionLabel:
+                description: |-
+                  EmptyOptionLabel is the label of the option that selects nothing, for
+                  example "No backups". When it is empty, the section has no empty
+                  option. Display only. No controller reads it.
+                type: string
+                x-kubernetes-validations:
+                - message: emptyOptionLabel must be at most 64 characters
+                  rule: self.size() <= 64
+              label:
+                description: |-
+                  Label is the name of the section in the fleet manager, for example
+                  "Backup storage". Display only. No controller reads it.
+                minLength: 1
+                type: string
+              order:
+                description: |-
+                  Order is the position of the section in the create flow. A section
+                  with a lower value comes first. Display only. No controller reads it.
+                format: int32
+                type: integer
+              outputs:
+                description: |-
+                  Outputs declares the outputs that every registration of the section
+                  writes.
+                items:
+                  description: OutputDecl declares a value that a plugin writes to
+                    the status of a request.
+                  properties:
+                    description:
+                      description: Description says what the value is.
+                      type: string
+                    format:
+                      description: Format is the format of the value, for example
+                        aws-kms-arn.
+                      type: string
+                    key:
+                      description: |-
+                        Key is the key of the output in the status of the request. It starts
+                        with a letter and holds only letters and digits.
+                      pattern: ^[A-Za-z][A-Za-z0-9]*$
+                      type: string
+                  required:
+                  - key
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - key
+                x-kubernetes-list-type: map
+              selection:
+                description: Selection says how many options of the section one claim
+                  can select.
+                enum:
+                - One
+                - Many
+                type: string
+              slot:
+                description: |-
+                  Slot names the fields of the generated resource that the outputs of
+                  the section fill. When it is empty, the outputs are only inputs of
+                  other registrations.
+                enum:
+                - workloadIdentity
+                - volumeEncryption
+                - backupStorage
+                - secondaryStorage
+                - externalAccess
+                - managementDatabases
+                - connectorsIdentity
+                type: string
+            required:
+            - appliesTo
+            - label
+            - selection
+            type: object
+            x-kubernetes-validations:
+            - message: a section with a slot must have selection One, because a slot
+                fills one field
+              rule: '!has(self.slot) || self.selection == ''One'''
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be at most 63 characters, because it is used
+            as a label value
+          rule: self.metadata.name.size() <= 63
+    served: true
+    storage: true
+    subresources: {}

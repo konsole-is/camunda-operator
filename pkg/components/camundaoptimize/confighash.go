@@ -41,7 +41,7 @@ const configHashLength = 16
 func ConfigHash(in Input, comp string) string {
 	var b strings.Builder
 	b.WriteString("component=" + comp + "\n")
-	for _, e := range baseEnv(in, comp == ComponentImporter) {
+	for _, e := range baseEnv(in, comp) {
 		b.WriteString(e.Name + "=" + envValue(e) + "\n")
 	}
 	for _, mount := range caMounts(in) {

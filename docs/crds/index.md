@@ -66,6 +66,17 @@ A contract is a resource that carries connection details and credential referenc
 | [LogicalRestoreRDBMS](logicalrestorerdbms.md) | Namespaced | Restore one relational logical backup into a suspended cluster. |
 | [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
 
+## Planned kinds
+
+The kinds below are an alpha API in the group `plugins.camunda.io/v1alpha1`. No controller acts on them yet. The install does not include their CRDs, and their fields can change in a later release.
+
+| Kind | Scope | What it is |
+| --- | --- | --- |
+| `PluginSection` | Cluster | One section of the create flow in the fleet manager, for example "Backup storage". |
+| `PluginRegistration` | Cluster | One option that a plugin offers in one or more sections, with the permissions that the option asks for. |
+| `PluginRequest` | Namespaced | A request to a plugin for the resources of one section. |
+| `Grant` | Namespaced | One permission that a plugin asks for, on behalf of a `PluginRequest`. |
+
 ## How the kinds relate
 
 Each diagram below shows one concern: which kind needs which other kind.

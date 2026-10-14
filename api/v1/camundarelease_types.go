@@ -100,9 +100,9 @@ type ReleaseEnvSpec struct {
 // ReleaseConnectorsSpec is the connectors runtime of a release.
 type ReleaseConnectorsSpec struct {
 	// Version is the version of the connectors bundle image, as a full
-	// semantic version. The bundle has its own patch line, so it does not
-	// follow the cluster version. A cluster that runs connectors needs it
-	// from the release or from its own spec.
+	// semantic version. Use the same minor as the Camunda version of the
+	// release. The patch does not follow the Camunda patch. A cluster that
+	// runs connectors needs it from the release or from its own spec.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version        string `json:"version,omitempty"`

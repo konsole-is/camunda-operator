@@ -54,7 +54,7 @@ In the `keycloak` mode the operator also creates a `Keycloak` resource named `my
 
 A component runs while its block is set. Remove `spec.console` or `spec.webModeler` to remove its workloads.
 
-The operator creates no Ingress. Route traffic to each Service yourself. The `externalUrl` fields tell each component the address that a browser uses.
+The operator creates no Ingress. Route traffic to each Service yourself. The `externalUrl` fields tell each component the address that a browser uses. `status.endpoints` lists the Service, the port, and the path of each route. See [Routes](#routes).
 
 A long resource name is shortened in the derived names. Read the names back:
 
@@ -269,6 +269,8 @@ spec:
 ```
 
 Route `/identity` to the Service `my-management-identity` on port 80, and `/console` to `my-management-console` on port 80. Keep the path in each request, because Identity and Console expect every request under their paths. Camunda shows the same layout in the [combined Ingress setup](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/ingress/ingress-setup/#configuration).
+
+`status.endpoints` lists these routes with the paths of your URLs. See [Routes](#routes).
 
 An Identity URL with a path other than `/` must use `https`. Camunda requires https for Identity under a path, as [Identity `contextPath`](https://docs.camunda.io/docs/self-managed/operational-guides/troubleshooting/#identity-contextpath) says. The API server refuses an `http` Identity URL with such a path. It accepts `http://identity.example.com/`, because `/` is the root of the host.
 
@@ -603,6 +605,8 @@ Every image of the management plane comes from the default Camunda repository, u
 
 The `ManagementAuthConfig`, the annotations on the orchestration clusters, the claim on the Keycloak realm, and the Console settings stay. `Ready` reads `True` with reason `Suspended`.
 
+`status.endpoints` stays, and so do the Services. A route answers again when the management plane resumes. See [Routes](#routes).
+
 Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is suspended, because all three authenticate through Management Identity. The orchestration clusters continue to run.
 
 ## Deletion
@@ -706,6 +710,51 @@ status:
       reason: InvalidReference
       message: CamundaPlatformConfig "my-platform-config" declares no spec.auth.oidc.management.clients.console; register an application for that component at your identity provider and name it there
 ```
+
+### Routes
+
+`status.endpoints` lists the routes of the management plane, sorted by name. Each entry is a path on an external URL, with the Service and the port that serve it. Read this list to route traffic to the management plane. The example below is a plane in the `keycloak` mode that runs every app on the host `camunda.example.com`. Keycloak is at `https://camunda.example.com/auth`. Identity is at `/identity`, Console at `/console`, and Web Modeler at `/modeler` and `/modeler-ws`. This plane publishes:
+
+```yaml
+status:
+  endpoints:
+  - name: console
+    # Only while spec.console is set.
+    pathPrefix: /console
+    port: 80
+    protocol: HTTP
+    service: my-management-console
+  - name: identity
+    pathPrefix: /identity
+    port: 80
+    protocol: HTTP
+    service: my-management-identity
+  - name: keycloak
+    # Only in the keycloak mode. Keycloak always serves under /auth.
+    pathPrefix: /auth
+    port: 8080
+    protocol: HTTP
+    service: my-management-keycloak-service
+  - name: web-modeler
+    # Only while spec.webModeler is set, like web-modeler-websockets.
+    pathPrefix: /modeler
+    port: 80
+    protocol: HTTP
+    service: my-management-web-modeler-restapi
+  - name: web-modeler-websockets
+    pathPrefix: /modeler-ws
+    port: 80
+    protocol: HTTP
+    service: my-management-web-modeler-websockets
+```
+
+`identity` is always present. `keycloak` is present only in the `keycloak` mode. The `externalKeycloak` and `oidc` modes run no Keycloak, so they have no `keycloak` entry. `console` is present while `spec.console` is set, and the two Web Modeler entries while `spec.webModeler` is set.
+
+The `pathPrefix` of an entry is the path of the URL of its app: `spec.identity.externalUrl`, `spec.console.externalUrl`, `spec.webModeler.externalUrl`, or `spec.webModeler.websocketsExternalUrl`. A trailing slash is dropped, so `https://camunda.example.com/console/` gives `/console`. The `pathPrefix` is `/` for a URL without a path. Each app serves under that path, so keep the path in each request.
+
+An entry has no host. It belongs to the host of the URL of its app, and the `keycloak` entry belongs to the host of `spec.identityProvider.keycloak.externalUrl`. When the apps have hosts of their own, route each host to its entry. When they share a host, match the longest `pathPrefix` first. `protocol` is the protocol between the router and the Service. The Services serve plain HTTP, also for an `https` URL.
+
+The entries stay while the management plane is suspended, and while a check of the spec fails. The Services stay too, so a route answers again when the plane resumes.
 
 ## Spec reference
 
@@ -882,6 +931,7 @@ The API server refuses an apply that breaks one of these:
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL with a host.
 - The path of `spec.identityProvider.keycloak.externalUrl` is exactly `/auth`.
 - `spec.identity.externalUrl` uses `https` when it has a path other than `/`.
+- The `externalUrl` of Identity, Console, and Web Modeler, and `spec.webModeler.websocketsExternalUrl`, carry no percent-encoded character and no backslash. Their paths have no `.` or `..` segment.
 - `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
 - `spec.identityProvider.externalKeycloak.url` carries no user and no password.
 - `spec.identityProvider.externalKeycloak.caBundleSecretRef` requires an `https` url.

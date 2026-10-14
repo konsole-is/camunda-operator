@@ -2,13 +2,13 @@
 
 `CamundaOptimize` runs Camunda Optimize for one orchestration cluster. You create it, or another tool creates it for you.
 
-Optimize reads the Zeebe records that the cluster exports to Elasticsearch, and it writes its own analytics indices to the same Elasticsearch. It is not part of the orchestration cluster. It has its own version, and it signs in against Management Identity instead of the built-in authentication of the cluster.
+Optimize reads the Zeebe records that the cluster exports to Elasticsearch, and it writes its own analytics indices to the same Elasticsearch. It is not part of the orchestration cluster. It runs the version of the cluster, and it signs in against Management Identity instead of the built-in authentication of the cluster.
 
 Before you create one, make sure that these exist:
 
 - A [CamundaCluster](camundacluster.md) in the same namespace, on a [SecondaryStorageConfig](secondarystorageconfig.md) of type `elasticsearch`. Optimize does not read an RDBMS secondary storage.
 - A [ManagementAuthConfig](managementauthconfig.md). A [CamundaManagementCluster](camundamanagementcluster.md) writes one for you.
-- An Optimize version on the same minor as the cluster.
+- The version of the cluster, for `spec.version`.
 - If your own Elasticsearch uses a certificate from a private authority, the CA Secret on the storage contract. A [contract](index.md#contracts) is a resource that publishes the address and the credentials of a service for other resources to reference. See [Secondary storage over TLS](camundacluster.md#secondary-storage-over-tls). Without it, the exporter writes no records for Optimize.
 
 The smallest manifest names the cluster, the authentication contract, and the version:
@@ -142,7 +142,7 @@ Optimize reads tenants and users from `spec.baseUrl` of the contract. That URL i
 After a person signs in, the identity provider sends the browser back to Optimize. The provider accepts only the callback URLs that its Optimize client lists.
 
 - In the two Keycloak modes of a [CamundaManagementCluster](camundamanagementcluster.md), set `spec.externalUrl` to the URL of this Optimize in a browser. The management plane registers the callback for you. See [Optimize](camundamanagementcluster.md#optimize) on that page.
-- In the `oidc` mode, the operator registers nothing, and `spec.externalUrl` has no effect. Add the callback of each Optimize to the Optimize application at your provider. Camunda names the path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
+- In the `oidc` mode, the operator registers no callback. Add the callback of each Optimize to the Optimize application at your provider. Camunda names the path in [component-specific configuration](https://docs.camunda.io/docs/self-managed/components/management-identity/configuration/connect-to-an-oidc-provider/#component-specific-configuration).
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -160,15 +160,15 @@ A missing callback does not change the status of this resource. The sign-in fail
 
 ## Versions
 
-`spec.version` is the Optimize version, as a full semantic version such as `8.9.0`. Optimize has its own patch line, so it does not follow the version of the cluster.
+`spec.version` is the Optimize version, as a full semantic version such as `8.9.0`. Camunda releases Optimize with the minor and the patch of the orchestration cluster. See the [component version matrix](https://docs.camunda.io/docs/reference/supported-environments/#component-version-matrix). Set it to the version of the cluster.
 
-The major and the minor must match the effective version of the cluster. That is `spec.version` of the `CamundaCluster`, or the version of its release. Camunda supports Optimize only on a matching minor. A difference reports `VersionMismatch`:
+The major and the minor must match the effective version of the cluster. That is `spec.version` of the `CamundaCluster`, or the version of its release. The operator does not refuse a different patch, but Camunda does not support it. A different major or minor reports `VersionMismatch`:
 
 ```
 spec.version "8.9.0" is on minor 8.9; CamundaCluster "my-cluster" runs 8.10.0, on minor 8.10
 ```
 
-To upgrade Optimize, raise `spec.version` to a release on the minor of the cluster. The importer stops for one restart, and the webapp rolls, see [Rollouts](#rollouts). When you upgrade the cluster to a new minor, Optimize reports `VersionMismatch` until you raise `spec.version` too. Both workloads keep running on the previous version in that time.
+To upgrade Optimize, set `spec.version` to the version of the cluster. The importer stops for one restart, and the webapp rolls, see [Rollouts](#rollouts). When you upgrade the cluster to a new minor, Optimize reports `VersionMismatch` until you raise `spec.version` too. Both workloads keep running on the previous version in that time.
 
 ## Suspension
 
@@ -282,7 +282,7 @@ A `CamundaOptimize` that never held the cluster removes nothing from it.
 | `Ready` | `WaitingForHandover` | This resource now holds the cluster, and the importer Deployment of the previous one still exists. The message names it. The pods of that importer are a separate wait, under `Suspended`. | Wait. It clears on its own. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist: the cluster, the `ManagementAuthConfig`, or a resource that the cluster references. It also reports a cluster whose effective spec is invalid, such as a version below `8.9.0`. | Read the message. Create the missing resource, or correct the field it names. |
 | `Ready` | `StorageTypeMismatch` | The secondary storage of the cluster is of type `rdbms`. | Attach Optimize to a cluster on Elasticsearch. |
-| `Ready` | `VersionMismatch` | The minor of `spec.version` differs from the minor of the cluster. | Set `spec.version` to a release on the minor of the cluster. |
+| `Ready` | `VersionMismatch` | The minor of `spec.version` differs from the minor of the cluster. | Set `spec.version` to the version of the cluster. |
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. | Create the Secret with the named key. |
 | `Ready` | `ExporterConflict` | The cluster already carries an exporter entry with the other kind of value. | Remove the named entries from the cluster. |
 
@@ -291,6 +291,54 @@ A `CamundaOptimize` that never held the cluster removes nothing from it.
 `status.suspendedBy` is described under [Suspension](#suspension).
 
 `status.observedGeneration` is the last generation the operator reconciled.
+
+### Routes
+
+`status.endpoints` lists the route to this Optimize: the path on its external URL, with the Service and the port that serve it. Read it to route traffic to Optimize. You do not have to work out the Service name, which is shortened for a long resource name.
+
+```yaml
+status:
+  endpoints:
+  - name: optimize
+    # The path of spec.externalUrl, or / for a URL without a path.
+    pathPrefix: /
+    port: 8090
+    protocol: HTTP
+    service: my-cluster-optimize-webapp
+```
+
+The importer serves no browser traffic and has no route.
+
+To put Optimize under a path of a host that other apps share, give `spec.externalUrl` that path:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaOptimize
+metadata:
+  name: my-cluster-optimize
+  namespace: my-cluster-ns
+spec:
+  externalUrl: "https://camunda.example.com/optimize"
+  # ... the rest of your Optimize
+```
+
+The webapp then serves under `/optimize`, and the route carries that path:
+
+```yaml
+status:
+  endpoints:
+  - name: optimize
+    pathPrefix: /optimize
+    port: 8090
+    protocol: HTTP
+    service: my-cluster-optimize-webapp
+```
+
+Send the requests under `/optimize` to the Service with the path as it is. Do not strip the prefix, because Optimize expects it. The login callback is under the path too: `https://camunda.example.com/optimize/api/authentication/callback`. Camunda describes the setting in [Container](https://docs.camunda.io/docs/self-managed/components/optimize/configuration/system-configuration/#container). The metrics on the management port stay at the root.
+
+A change of the path restarts the webapp, and `status.endpoints` shows the new path. The importer keeps running. In the two Keycloak modes, the management plane registers the new callback. In the `oidc` mode, change the callback at your provider.
+
+The entry stays while the workloads are at zero with the cluster, and while a check fails. The Service stays too, so the route answers again when Optimize starts. There is no entry while another `CamundaOptimize` holds the cluster, or when the cluster is gone, because the operator then deletes the Service. A new `CamundaOptimize` whose first check fails has no entry yet.
 
 ## Spec reference
 
@@ -303,11 +351,11 @@ metadata:
   name: my-cluster-optimize
   namespace: my-cluster-ns
 spec:
-  # string. Required. Optimize version, as a full semantic version. Its minor must match the minor of the cluster.
+  # string. Required. Optimize version, as a full semantic version. Set it to the version of the cluster. A different minor is refused.
   version: "8.9.0"
   # string. Required. Name of the cluster-scoped ManagementAuthConfig that Optimize signs in against.
   managementAuthRef: management-auth
-  # string. Optional. The URL a browser reaches this Optimize at. In the two Keycloak modes the management plane registers the login callback under it. Unused in the oidc mode.
+  # string. Optional. The URL a browser reaches this Optimize at. A path in it, such as /optimize, makes Optimize serve under that path. In the two Keycloak modes the management plane registers the login callback under it.
   externalUrl: "https://optimize.camunda.example.com"
   # object. Required. The CamundaCluster this Optimize instance attaches to. Immutable.
   clusterRef:
@@ -377,7 +425,7 @@ The API server enforces these at admission:
 
 - `spec.version` must be a full semantic version such as `8.9.0`. A two-segment version is rejected.
 - `spec.managementAuthRef` must not be empty.
-- `spec.externalUrl` must be an `http` or `https` URL with a host. It carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash.
+- `spec.externalUrl` must be an `http` or `https` URL with a host. It can have a path, such as `https://camunda.example.com/optimize`. It carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash. It carries no percent-encoded character and no backslash. Its path has no `.` or `..` segment.
 - `spec.importer.replicas` must be `0` or `1`.
 - `spec.clusterRef` is immutable.
 

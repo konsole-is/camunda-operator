@@ -12,7 +12,7 @@
 # fails when any version here and the matrix entry differ.
 #
 # connectors.version is here for a cluster that turns connectors on. The
-# bundle has a patch line of its own, so it does not follow spec.version. No
+# bundle uses the same minor as spec.version, with a patch of its own. No
 # inventory here enables connectors.
 #
 # elasticsearch.version and databaseServer.version are what the storage of

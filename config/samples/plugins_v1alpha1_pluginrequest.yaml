@@ -1,0 +1,21 @@
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    plugins.camunda.io/section: backup-storage
+    plugins.camunda.io/registration: s3-backup-bucket
+    fleet.camunda.io/claim: orders
+  name: orders-backup-storage
+spec:
+  section: backup-storage
+  registration: s3-backup-bucket
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda
+  parameters:
+    retentionDays: 30
+  deletionPolicy: Delete

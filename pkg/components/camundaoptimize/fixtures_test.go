@@ -36,6 +36,7 @@ const (
 	fixtureClusterUID = "my-cluster-uid"
 	fixtureVersion    = "8.9.4"
 	fixtureBackend    = "elasticsearch|http://elasticsearch.camunda.svc:9200"
+	fixturePathURL    = "https://camunda.example.com/optimize"
 )
 
 // newInput returns the minimal render input, with mutate applied to it.
@@ -113,6 +114,7 @@ func fixtureRealistic(t *testing.T) Input {
 		}
 		in.Storage.NodeCount = new(int32(3))
 		in.Auth.Spec.IssuerBackendURL = "http://identity.camunda.svc:8080/realms/camunda"
+		in.Optimize.Spec.ExternalURL = "https://optimize.example.com"
 		in.Optimize.Spec.Webapp = &v1.WorkloadSpec{
 			Replicas: new(int32(2)),
 			Resources: &corev1.ResourceRequirements{
@@ -142,13 +144,23 @@ func fixtureRealistic(t *testing.T) Input {
 	})
 }
 
+// fixtureUnderPath is a minimal CamundaOptimize under a path of a shared host.
+func fixtureUnderPath(t *testing.T) Input {
+	t.Helper()
+
+	return newInput(t, func(in *Input) {
+		in.Optimize.Spec.ExternalURL = fixturePathURL
+	})
+}
+
 // goldenFixtures are the fixtures that the golden test renders, by directory
 // name.
 func goldenFixtures(t *testing.T) map[string]Input {
 	t.Helper()
 
 	return map[string]Input{
-		"minimal":   fixtureMinimal(t),
-		"realistic": fixtureRealistic(t),
+		"minimal":    fixtureMinimal(t),
+		"realistic":  fixtureRealistic(t),
+		"under-path": fixtureUnderPath(t),
 	}
 }

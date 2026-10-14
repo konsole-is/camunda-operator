@@ -48,6 +48,13 @@ const (
 	ReasonExporterConflict = "ExporterConflict"
 )
 
+// The names of the entries of status.endpoints of a CamundaOptimize.
+const (
+	// EndpointOptimize routes the Optimize webapp: the path of
+	// spec.externalUrl, or every path when the URL has no path.
+	EndpointOptimize = "optimize"
+)
+
 // CamundaOptimizeSpec is the desired state of one Optimize instance. It
 // attaches to one CamundaCluster and reads the data of that cluster from
 // Elasticsearch.
@@ -57,9 +64,9 @@ const (
 // the cluster cannot have different values.
 type CamundaOptimizeSpec struct {
 	// Version is the Optimize version to deploy, as a full semantic version.
-	// Optimize has its own patch line, so it does not follow the version of
-	// the cluster. The major and the minor must match the effective version
-	// of the referenced cluster. If they differ, Ready reports
+	// Camunda releases Optimize with the minor and the patch of the
+	// orchestration cluster, so set it to the effective version of the
+	// referenced cluster. If the major or the minor differs, Ready reports
 	// VersionMismatch.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	Version string `json:"version"`
@@ -69,7 +76,10 @@ type CamundaOptimizeSpec struct {
 	// auth of the orchestration cluster.
 	// +kubebuilder:validation:MinLength=1
 	ManagementAuthRef string `json:"managementAuthRef"`
-	// ExternalURL is the URL where browsers reach this Optimize.
+	// ExternalURL is the URL where browsers reach this Optimize. With a path,
+	// such as https://camunda.example.com/optimize, Optimize serves under that
+	// path, and status.endpoints routes that path. Without a path, Optimize
+	// serves at the root of the host.
 	//
 	// In the two Keycloak modes, the management plane of managementAuthRef
 	// registers <externalUrl>/api/authentication/callback on the optimize
@@ -78,11 +88,14 @@ type CamundaOptimizeSpec struct {
 	// the return. The exception is a callback that somebody added to the
 	// realm manually.
 	//
-	// In the oidc mode, the field has no effect. The identity provider of the
-	// platform config holds the callback URLs, so add
+	// In the oidc mode, the operator registers no callback. The identity
+	// provider of the platform config holds the callback URLs, so add
 	// <externalUrl>/api/authentication/callback there.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains(',')",message="externalUrl must carry no comma: Management Identity reads the callback list as comma-separated"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Optimize"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="externalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/')",message="externalUrl must not end with a slash: the login callback is appended to it"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="externalUrl must carry no query and no fragment: the login callback is appended to it"
 	// +kubebuilder:validation:XValidation:rule="!self.matches('[[:space:]]')",message="externalUrl must carry no whitespace: Management Identity deletes whitespace from every root URL and the operator does not, so the two would register different callbacks"
@@ -158,6 +171,18 @@ type CamundaOptimizeStatus struct {
 	// set while a failed check keeps them at zero after the cluster resumed.
 	// +optional
 	SuspendedBy OptimizeSuspension `json:"suspendedBy,omitempty"`
+	// Endpoints lists the routes of this Optimize: one entry, optimize, with
+	// the webapp Service and its HTTP port. Its path prefix is the path of
+	// spec.externalUrl without a trailing slash, or / when that path is empty.
+	// An access extension reads it and does not derive the Service name. The entry
+	// stays while the workloads are at zero with the cluster, because the
+	// Service stays. It is empty before the first render. It is also empty
+	// while another CamundaOptimize holds the cluster or the cluster is gone,
+	// because the operator then deletes the webapp Service.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
 }
 
 // OptimizeSuspension names why the Optimize workloads are at zero with the

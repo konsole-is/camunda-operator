@@ -211,6 +211,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			// what it used to render.
 			removeComponentConditions(&optimize)
 			optimize.Status.SuspendedBy = ""
+			// The release deletes the webapp Service, so no route is left.
+			optimize.Status.Endpoints = nil
 
 			return ctrl.Result{}, r.releaseWorkloads(ctx, &optimize)
 		}
@@ -272,6 +274,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
+	optimize.Status.Endpoints = components.Endpoints(&optimize)
 	r.recordSuspensionChange(&optimize, prior, suspendedBy(res))
 
 	if reconcileErr != nil {

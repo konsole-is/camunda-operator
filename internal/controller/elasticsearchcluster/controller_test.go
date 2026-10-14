@@ -419,7 +419,7 @@ func expectRepositoryRegistered(cluster *v1.ElasticsearchCluster) {
 		var fetched v1.ElasticsearchCluster
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 		condition := meta.FindStatusCondition(
-			fetched.Status.Conditions, components.ConditionSnapshotRepository,
+			fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 		)
 		g.Expect(condition).NotTo(BeNil())
 		g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
@@ -741,7 +741,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 			condition := meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
@@ -765,7 +765,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 			condition := meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Reason).To(Equal(v1.ReasonConnectionFailed))
@@ -784,7 +784,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 			condition := meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
@@ -813,7 +813,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 			condition := meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
@@ -853,7 +853,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 			condition := meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.ObservedGeneration).To(Equal(generation))
@@ -1069,7 +1069,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 			g.Expect(fetched.Status.Conditions).NotTo(BeEmpty())
 			g.Expect(meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
@@ -1089,7 +1089,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 			g.Expect(meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
@@ -1104,7 +1104,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			var after v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &after)).To(Succeed())
 			g.Expect(meta.FindStatusCondition(
-				after.Status.Conditions, components.ConditionSnapshotRepository,
+				after.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
@@ -1173,7 +1173,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			var fetched v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 			condition := meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
@@ -1189,7 +1189,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 			g.Expect(ready.Reason).To(Equal(v1.ReasonInvalidReference))
 			g.Expect(meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
@@ -1340,7 +1340,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &fetched)).To(Succeed())
 			g.Expect(fetched.Status.Conditions).NotTo(BeEmpty())
 			g.Expect(meta.FindStatusCondition(
-				fetched.Status.Conditions, components.ConditionSnapshotRepository,
+				fetched.Status.Conditions, v1.ConditionSnapshotRepositoryReady,
 			)).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
@@ -1874,7 +1874,7 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, metricsKey, &corev1.Service{}))).To(BeTrue())
 			var latest v1.ElasticsearchCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
-			metricsCond := meta.FindStatusCondition(latest.Status.Conditions, components.ConditionMetrics)
+			metricsCond := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionMetricsReady)
 			g.Expect(metricsCond).NotTo(BeNil())
 			g.Expect(metricsCond.Reason).To(Equal(string(component.Disabled)))
 			ready := meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionReady)

@@ -215,6 +215,108 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "",
 		),
 		Entry(
+			"rejects an identity externalUrl with a percent-encoded character",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = "https://camunda.example.com/identity%2F"
+			}, "externalUrl must carry no percent-encoded character",
+		),
+		Entry(
+			"rejects an identity externalUrl with a backslash",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = `https://camunda.example.com/..\identity`
+			}, "externalUrl must carry no backslash",
+		),
+		Entry(
+			"rejects an identity externalUrl with a dot segment",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = "https://camunda.example.com/a/../identity"
+			}, "externalUrl must carry no . or .. path segment",
+		),
+		Entry(
+			"accepts an identity externalUrl with dots inside a segment",
+			validManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Identity.ExternalURL = "https://camunda.example.com/v1.2/.identity"
+			}, "",
+		),
+		Entry(
+			"rejects a Console externalUrl with a percent-encoded character",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Console.ExternalURL = "https://camunda.example.com/console%2F"
+			}, "externalUrl must carry no percent-encoded character",
+		),
+		Entry(
+			"rejects a Console externalUrl with a backslash",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Console.ExternalURL = `https://camunda.example.com/..\console`
+			}, "externalUrl must carry no backslash",
+		),
+		Entry(
+			"rejects a Console externalUrl with a dot segment",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Console.ExternalURL = "https://camunda.example.com/console/.?tab=1"
+			}, "externalUrl must carry no . or .. path segment",
+		),
+		Entry(
+			"accepts a Console externalUrl with dots inside a segment",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Console.ExternalURL = "https://camunda.example.com/v1.2/.console"
+			}, "",
+		),
+		Entry(
+			"rejects a Web Modeler externalUrl with a percent-encoded character",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler.ExternalURL = "https://camunda.example.com/modeler%2F"
+			}, "externalUrl must carry no percent-encoded character",
+		),
+		Entry(
+			"rejects a Web Modeler externalUrl with a backslash",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler.ExternalURL = `https://camunda.example.com/..\modeler`
+			}, "externalUrl must carry no backslash",
+		),
+		Entry(
+			"rejects a Web Modeler externalUrl with a dot segment",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler.ExternalURL = "https://camunda.example.com/a/../modeler"
+			}, "externalUrl must carry no . or .. path segment",
+		),
+		Entry(
+			"accepts a Web Modeler externalUrl with dots inside a segment",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler.ExternalURL = "https://camunda.example.com/v1.2/.modeler"
+			}, "",
+		),
+		Entry(
+			"rejects a websocketsExternalUrl with a percent-encoded character",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler.WebsocketsExternalURL = "https://camunda.example.com/modeler-ws%2F"
+			}, "websocketsExternalUrl must carry no percent-encoded character",
+		),
+		Entry(
+			"rejects a websocketsExternalUrl with a backslash",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler.WebsocketsExternalURL = `https://camunda.example.com/..\modeler-ws`
+			}, "websocketsExternalUrl must carry no backslash",
+		),
+		Entry(
+			"rejects a websocketsExternalUrl with a dot segment",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler.WebsocketsExternalURL = "https://camunda.example.com/a/../modeler-ws"
+			}, "websocketsExternalUrl must carry no . or .. path segment",
+		),
+		Entry(
+			"accepts a websocketsExternalUrl with dots inside a segment",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.WebModeler.WebsocketsExternalURL = "https://camunda.example.com/v1.2/.modeler-ws"
+			}, "",
+		),
+		Entry(
+			"accepts a Console externalUrl with a dot segment in its query",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Console.ExternalURL = "https://camunda.example.com/console?next=/../home"
+			}, "",
+		),
+		Entry(
 			"rejects an identity extraEnv that sets the Keycloak URL",
 			validManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.Identity.ExtraEnv = []corev1.EnvVar{

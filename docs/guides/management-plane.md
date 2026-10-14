@@ -117,6 +117,8 @@ Route each URL to its Service:
 | `https://identity.camunda.example.com` | `my-management-identity`, port 80 |
 | `https://console.camunda.example.com` | `my-management-console`, port 80 |
 
+`status.endpoints` of the resource lists the same routes. See [Routes](../crds/camundamanagementcluster.md#routes).
+
 Wait for the resource:
 
 ```bash
@@ -387,7 +389,7 @@ kubectl wait camundamanagementcluster/my-management -n my-management-ns \
   --timeout=5m
 ```
 
-In the `oidc` mode, `externalUrl` has no effect. Add `https://optimize.camunda.example.com/api/authentication/callback` to the Optimize application at your provider yourself.
+In the `oidc` mode, the operator registers no callback. Add `https://optimize.camunda.example.com/api/authentication/callback` to the Optimize application at your provider yourself.
 
 ## Check the result
 

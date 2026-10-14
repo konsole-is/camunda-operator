@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/externalurl"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
@@ -286,7 +287,7 @@ func IdentityServiceURL(mc *v1.CamundaManagementCluster) string {
 // API over: the Service, under the path of spec.identity.externalUrl. It works
 // while no browser can reach the external URL.
 func identityInternalURL(mc *v1.CamundaManagementCluster) string {
-	return IdentityServiceURL(mc) + externalPath(parseURL(mc.Spec.Identity.ExternalURL))
+	return IdentityServiceURL(mc) + externalurl.ContextPath(externalurl.Parse(mc.Spec.Identity.ExternalURL))
 }
 
 // IdentityName returns the name of the Management Identity Deployment and

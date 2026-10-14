@@ -1,0 +1,493 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: pluginregistrations.plugins.camunda.io
+spec:
+  group: plugins.camunda.io
+  names:
+    kind: PluginRegistration
+    listKind: PluginRegistrationList
+    plural: pluginregistrations
+    singular: pluginregistration
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Accepted")].status
+      name: Accepted
+      type: string
+    - jsonPath: .spec.sections
+      name: Sections
+      priority: 1
+      type: string
+    - jsonPath: .spec.mode
+      name: Mode
+      priority: 1
+      type: string
+    - jsonPath: .spec.controller.name
+      name: Controller
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          PluginRegistration is one option that a plugin offers to the sections of
+          the create flow of a claim. The plugin controller writes it at startup from
+          its chart values, and the operator writes the built-in registrations. The
+          name is at most 63 characters, because other objects carry it in a label
+          value.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the option
+            properties:
+              choices:
+                description: |-
+                  Choices are the presets or existing resources that a claim can pick
+                  for a parameter. The claim stores the name of the pick in its
+                  parameters. Display only. No controller reads it.
+                items:
+                  description: |-
+                    Choice is a preset or an existing resource that a claim can pick for a
+                    parameter of a registration.
+                  properties:
+                    name:
+                      description: Name is the value that the claim stores when it
+                        picks the choice.
+                      minLength: 1
+                      type: string
+                    specs:
+                      description: |-
+                        Specs are the facts that the fleet manager shows for the choice, for
+                        example the version, the node count, or the memory.
+                      items:
+                        description: ChoiceSpec is one fact of a choice.
+                        properties:
+                          label:
+                            description: Label names the fact.
+                            minLength: 1
+                            type: string
+                          value:
+                            description: Value is the value of the fact.
+                            type: string
+                        required:
+                        - label
+                        - value
+                        type: object
+                      type: array
+                  required:
+                  - name
+                  type: object
+                type: array
+              claimEditable:
+                description: |-
+                  ClaimEditable lists the parameters that a claim can change when no
+                  Environment says otherwise.
+                items:
+                  type: string
+                type: array
+              controller:
+                description: |-
+                  Controller names the plugin controller that serves the option and its
+                  version. Display only. No controller reads it.
+                properties:
+                  name:
+                    description: Name is the name of the plugin controller.
+                    minLength: 1
+                    type: string
+                  version:
+                    description: Version is the version of the plugin controller,
+                      from its build info.
+                    type: string
+                required:
+                - name
+                type: object
+              deletionPolicies:
+                description: |-
+                  DeletionPolicies lists the deletion policies that the plugin supports.
+                  Every plugin supports Delete.
+                items:
+                  description: |-
+                    DeletionPolicy says what happens to the resources of a request when the
+                    request is deleted.
+                  enum:
+                  - Delete
+                  - Orphan
+                  type: string
+                maxItems: 2
+                type: array
+                x-kubernetes-list-type: set
+                x-kubernetes-validations:
+                - message: deletionPolicies must contain Delete
+                  rule: self.exists(p, p == 'Delete')
+              description:
+                description: |-
+                  Description says what the option does. Display only. No controller
+                  reads it.
+                type: string
+              docsUrl:
+                description: |-
+                  DocsURL is the address of the documentation of the option. Display
+                  only. No controller reads it.
+                type: string
+              grantTemplates:
+                description: |-
+                  GrantTemplates are the permission statements that the option asks for,
+                  one Grant for each template. Each name is unique.
+                items:
+                  description: |-
+                    GrantTemplate is one permission statement that a registration asks for,
+                    with placeholders that the plugin fills for each request.
+                  properties:
+                    description:
+                      description: Description says what the permission is for.
+                      type: string
+                    format:
+                      description: Format is the format of the statement.
+                      enum:
+                      - aws-iam-statement
+                      type: string
+                    name:
+                      description: |-
+                        Name is the name of the template. A Grant names the template it was
+                        rendered from.
+                      minLength: 1
+                      type: string
+                    requiresInputs:
+                      description: |-
+                        RequiresInputs names the inputs that must have a value before the
+                        plugin writes the grant.
+                      items:
+                        maxLength: 63
+                        type: string
+                      maxItems: 32
+                      type: array
+                    template:
+                      description: |-
+                        Template is the statement, with Go template placeholders such as
+                        {{ .parameters.x }} and {{ .outputs.x }}. It is a JSON object, like
+                        the fragment of a Grant.
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                  required:
+                  - format
+                  - name
+                  - template
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              inputs:
+                description: |-
+                  Inputs declares the values that the option reads from the outputs of
+                  other sections. Each name is unique.
+                items:
+                  description: |-
+                    InputDecl declares a value that a registration reads from the output of
+                    another section.
+                  properties:
+                    formats:
+                      description: |-
+                        Formats lists the formats of the value that the registration accepts,
+                        for example aws-kms-arn. Empty accepts every format.
+                      items:
+                        type: string
+                      type: array
+                    from:
+                      description: |-
+                        From names the output that gives the value, in the form
+                        <section>/<output>.
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/[A-Za-z][A-Za-z0-9]*$
+                      type: string
+                    name:
+                      description: |-
+                        Name is the name of the input. The request carries its value under
+                        this name.
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                    required:
+                      description: Required refuses a selection of the option when
+                        the input has no value.
+                      type: boolean
+                  required:
+                  - from
+                  - name
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              label:
+                description: |-
+                  Label is the name of the option in the fleet manager. It names the
+                  outcome, for example "New S3 bucket". Display only. No controller reads
+                  it.
+                minLength: 1
+                type: string
+              limits:
+                description: |-
+                  Limits are the values that the plugin chart fixes, which no
+                  Environment and no claim can change, for example a permissions
+                  boundary. The plugin enforces them from its chart. Display only. No
+                  controller reads it.
+                items:
+                  description: |-
+                    Limit is a value that the plugin chart fixes, which no Environment and no
+                    claim can change.
+                  properties:
+                    description:
+                      description: Description says what the limit means for a claim.
+                      type: string
+                    label:
+                      description: Label names the limit.
+                      minLength: 1
+                      type: string
+                    value:
+                      description: Value is the value of the limit.
+                      type: string
+                  required:
+                  - label
+                  - value
+                  type: object
+                type: array
+              metricQueries:
+                description: |-
+                  MetricQueries are the Prometheus queries that the fleet manager shows
+                  for a request of the option. Display only. No controller reads it.
+                items:
+                  description: |-
+                    MetricQuery is a Prometheus query that the fleet manager shows for a
+                    request of the registration.
+                  properties:
+                    label:
+                      description: Label names the metric.
+                      minLength: 1
+                      type: string
+                    query:
+                      description: |-
+                        Query is PromQL with Go template placeholders, for example
+                        {{ .namespace }} and {{ .pods }}.
+                      minLength: 1
+                      type: string
+                    unit:
+                      description: Unit is the unit of the value, for example bytes.
+                      type: string
+                  required:
+                  - label
+                  - query
+                  type: object
+                type: array
+              mode:
+                description: |-
+                  Mode says whether a new claim selects the option when no Environment
+                  exists.
+                enum:
+                - Default
+                - Optional
+                type: string
+              operatorVersions:
+                description: |-
+                  OperatorVersions is the semver range of the operator versions that the
+                  plugin supports, for example ">=0.3.0 <1.0.0". The operator reports a
+                  range that does not hold its version, or that is not a valid range.
+                type: string
+              outputs:
+                description: |-
+                  Outputs declares the values that the plugin writes to the status of a
+                  request. It includes the outputs of each section that the option
+                  serves. Each key is unique.
+                items:
+                  description: OutputDecl declares a value that a plugin writes to
+                    the status of a request.
+                  properties:
+                    description:
+                      description: Description says what the value is.
+                      type: string
+                    format:
+                      description: Format is the format of the value, for example
+                        aws-kms-arn.
+                      type: string
+                    key:
+                      description: |-
+                        Key is the key of the output in the status of the request. It starts
+                        with a letter and holds only letters and digits.
+                      pattern: ^[A-Za-z][A-Za-z0-9]*$
+                      type: string
+                  required:
+                  - key
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - key
+                x-kubernetes-list-type: map
+              parameterValues:
+                description: |-
+                  ParameterValues are the parameter values that the admin set in the
+                  plugin chart. An Environment can override them.
+                x-kubernetes-preserve-unknown-fields: true
+              parameters:
+                description: |-
+                  Parameters is the OpenAPI v3 schema of the parameters of a request for
+                  the option.
+                x-kubernetes-preserve-unknown-fields: true
+              sections:
+                description: Sections lists the names of the PluginSections that the
+                  option serves.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-validations:
+                - message: sections must list at least one section
+                  rule: self.size() >= 1
+              serviceAccount:
+                description: |-
+                  ServiceAccount is the ServiceAccount of the plugin controller. Only this
+                  ServiceAccount can write a Grant for the option.
+                properties:
+                  name:
+                    description: Name is the name of the ServiceAccount.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the ServiceAccount.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+            required:
+            - deletionPolicies
+            - label
+            - mode
+            - sections
+            - serviceAccount
+            type: object
+            x-kubernetes-validations:
+            - message: each requiresInputs item of a grant template must name an input
+                of the registration
+              rule: '!has(self.grantTemplates) || self.grantTemplates.all(t, !has(t.requiresInputs)
+                || t.requiresInputs.all(r, has(self.inputs) && self.inputs.exists(i,
+                i.name == r)))'
+          status:
+            description: status defines the observed state of PluginRegistration
+            properties:
+              conditions:
+                description: |-
+                  Conditions holds Accepted and Ready. The operator sets Accepted. Its
+                  False reasons are SectionMissing, OperatorVersionUnsupported, and
+                  DefaultConflict. The plugin controller sets Ready from its health and
+                  its credentials. The fleet manager offers the option only when both
+                  are True.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the last generation that a controller of the
+                  registration processed.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be at most 63 characters, because it is used
+            as a label value
+          rule: self.metadata.name.size() <= 63
+    served: true
+    storage: true
+    subresources:
+      status: {}

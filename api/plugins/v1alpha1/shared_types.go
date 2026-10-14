@@ -159,6 +159,7 @@ type InputDecl struct {
 	// Name is the name of the input. The request carries its value under
 	// this name.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
 	Name string `json:"name"`
 	// From names the output that gives the value, in the form
 	// <section>/<output>.
@@ -197,13 +198,17 @@ type GrantTemplate struct {
 	// Format is the format of the statement.
 	Format GrantFormat `json:"format"`
 	// Template is the statement, with Go template placeholders such as
-	// {{ .parameters.x }} and {{ .outputs.x }}.
+	// {{ .parameters.x }} and {{ .outputs.x }}. It is a JSON object, like
+	// the fragment of a Grant.
+	// +kubebuilder:validation:Type=object
 	Template *apiextensionsv1.JSON `json:"template"`
 	// Description says what the permission is for.
 	// +optional
 	Description string `json:"description,omitempty"`
 	// RequiresInputs names the inputs that must have a value before the
 	// plugin writes the grant.
+	// +kubebuilder:validation:MaxItems=32
+	// +kubebuilder:validation:items:MaxLength=63
 	// +optional
 	RequiresInputs []string `json:"requiresInputs,omitempty"`
 }
@@ -264,11 +269,18 @@ type TargetRef struct {
 	Name string `json:"name"`
 	// ServiceAccountName is the ServiceAccount that the pods of the resource
 	// run under.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-	// AdditionalServiceAccounts are the names of more ServiceAccounts that the
-	// identity of the request trusts, for example those of the built-in
-	// storage.
+	// AdditionalServiceAccounts are the names of more ServiceAccounts that
+	// the cloud identity of the request also trusts. Examples are the
+	// ServiceAccounts of the built-in storage that takes the backup storage
+	// input. Each name is a ServiceAccount in the namespace of the request.
+	// A name with a namespace part is refused, so that a request never makes
+	// a cloud identity trust a ServiceAccount of another namespace.
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:items:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	// +optional
 	AdditionalServiceAccounts []string `json:"additionalServiceAccounts,omitempty"`
 }

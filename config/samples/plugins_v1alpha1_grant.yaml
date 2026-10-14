@@ -1,0 +1,22 @@
+apiVersion: plugins.camunda.io/v1alpha1
+kind: Grant
+metadata:
+  labels:
+    plugins.camunda.io/registration: s3-backup-bucket
+    plugins.camunda.io/request: orders-backup-storage
+    plugins.camunda.io/cluster: orders
+  name: orders-backup-storage-bucket-access
+spec:
+  cluster:
+    name: orders
+  template: bucket-access
+  format: aws-iam-statement
+  fragment:
+    Effect: Allow
+    Action:
+      - s3:GetObject
+      - s3:PutObject
+      - s3:ListBucket
+    Resource:
+      - arn:aws:s3:::orders-backup-storage
+      - arn:aws:s3:::orders-backup-storage/*

@@ -43,7 +43,7 @@ Each version in the table below moves on its own. The connectors, Elasticsearch,
 | `spec.elasticsearch.version` | The Elasticsearch nodes | [ElasticsearchCluster](elasticsearchcluster.md) |
 | `spec.databaseServer.version` | The PostgreSQL instances, as a major such as `17` | [DatabaseServer](databaseserver.md) |
 
-A cluster that runs connectors needs the bundle version from the release or from its own spec.
+A cluster that runs connectors needs the bundle version from the release or from its own spec. The bundle has the same minor as Camunda, but its own patch: a release can pair Camunda 8.9.23 with connectors 8.9.14.
 
 One release names the whole set:
 
@@ -111,7 +111,7 @@ spec:
   zeebe:
     extraEnv:
       - name: JAVA_OPTS
-        value: "-Xmx8g"
+        value: "-Xmx1g"
 ```
 
 ## Deletion
@@ -139,7 +139,7 @@ spec:
   version: "8.9.4"
   # object. Optional. The connectors runtime of this release.
   connectors:
-    # string. Optional. Version of the connectors bundle as x.y.z. Required for clusters that enable connectors, unless each cluster sets its own.
+    # string. Optional. Version of the connectors bundle as x.y.z, with the same minor as the release. Required for clusters that enable connectors, unless each cluster sets its own.
     version: "8.9.7"
     # []EnvVar. Optional. Environment variables of the connectors runtime.
     extraEnv: []
@@ -201,7 +201,7 @@ spec:
   zeebe:
     extraEnv:
       - name: JAVA_OPTS
-        value: "-Xmx8g"
+        value: "-Xmx1g"
 ```
 
 ## Related

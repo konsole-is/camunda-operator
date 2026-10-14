@@ -124,6 +124,15 @@ spec:
                     - message: externalUrl must be a valid http or https URL
                       rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                         == 'https') && url(self).getHostname() != ''
+                    - message: 'externalUrl must carry no percent-encoded character:
+                        the operator passes the decoded path to Console'
+                      rule: '!self.contains(''%'')'
+                    - message: 'externalUrl must carry no backslash: browsers read
+                        one in the path as a slash, and the operator does not'
+                      rule: '!self.contains(''\\'')'
+                    - message: 'externalUrl must carry no . or .. path segment: browsers
+                        remove them, and the operator does not'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                   extraEnv:
                     description: |-
                       ExtraEnv are extra environment variables of the container of this
@@ -1138,6 +1147,15 @@ spec:
                         serves under a path only over https
                       rule: '!isURL(self) || url(self).getScheme() != ''http'' ||
                         url(self).getEscapedPath() in ['''', ''/'']'
+                    - message: 'externalUrl must carry no percent-encoded character:
+                        the operator passes the decoded path to Management Identity'
+                      rule: '!self.contains(''%'')'
+                    - message: 'externalUrl must carry no backslash: browsers read
+                        one in the path as a slash, and the operator does not'
+                      rule: '!self.contains(''\\'')'
+                    - message: 'externalUrl must carry no . or .. path segment: browsers
+                        remove them, and the operator does not'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                   extraEnv:
                     description: |-
                       ExtraEnv are extra environment variables of the container of this
@@ -2989,6 +3007,15 @@ spec:
                     - message: externalUrl must be a valid http or https URL
                       rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                         == 'https') && url(self).getHostname() != ''
+                    - message: 'externalUrl must carry no percent-encoded character:
+                        the operator passes the decoded path to Web Modeler'
+                      rule: '!self.contains(''%'')'
+                    - message: 'externalUrl must carry no backslash: browsers read
+                        one in the path as a slash, and the operator does not'
+                      rule: '!self.contains(''\\'')'
+                    - message: 'externalUrl must carry no . or .. path segment: browsers
+                        remove them, and the operator does not'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                   mail:
                     description: |-
                       Mail configures the SMTP server that Web Modeler sends notifications
@@ -4910,6 +4937,15 @@ spec:
                         URL
                       rule: isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme()
                         == 'https') && url(self).getHostname() != ''
+                    - message: 'websocketsExternalUrl must carry no percent-encoded
+                        character: the operator passes the decoded path to Web Modeler'
+                      rule: '!self.contains(''%'')'
+                    - message: 'websocketsExternalUrl must carry no backslash: browsers
+                        read one in the path as a slash, and the operator does not'
+                      rule: '!self.contains(''\\'')'
+                    - message: 'websocketsExternalUrl must carry no . or .. path segment:
+                        browsers remove them, and the operator does not'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                 required:
                 - databaseConfigRef
                 - externalUrl
@@ -5140,6 +5176,55 @@ spec:
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
+                x-kubernetes-list-type: map
+              endpoints:
+                description: |-
+                  Endpoints lists the routes of this management plane, sorted by name.
+                  Each entry is a path on an external URL, with the Service and the port
+                  that serve it. An access extension reads it and does not derive a
+                  Service from the mode fields. The path of an entry is the path of the
+                  external URL of its app, or / for a URL without a path. The entry
+                  belongs to the host of that URL. keycloak is present in the keycloak
+                  mode, console while spec.console is set, and web-modeler and
+                  web-modeler-websockets while spec.webModeler is set. The longest
+                  matching path prefix wins. The entries stay while the management plane
+                  is suspended, because the Services stay.
+                items:
+                  description: |-
+                    Endpoint is one route that a resource needs: a path on the external URL
+                    and the Service and port that serve it.
+                  properties:
+                    name:
+                      description: Name identifies the route, for example operate
+                        or grpc.
+                      type: string
+                    pathPrefix:
+                      description: PathPrefix is the path that the route matches.
+                        It is empty for gRPC.
+                      type: string
+                    port:
+                      description: Port is the port of the Service.
+                      format: int32
+                      type: integer
+                    protocol:
+                      description: Protocol is HTTP or GRPC.
+                      enum:
+                      - HTTP
+                      - GRPC
+                      type: string
+                    service:
+                      description: Service is the name of a Service in the namespace
+                        of the resource.
+                      type: string
+                  required:
+                  - name
+                  - port
+                  - protocol
+                  - service
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
                 x-kubernetes-list-type: map
               managementAuthConfig:
                 description: |-
