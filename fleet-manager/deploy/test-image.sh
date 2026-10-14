@@ -31,12 +31,16 @@ node="$("$tool" run --rm --entrypoint /nodejs/bin/node "$image" -p process.versi
   -p 127.0.0.1::3000 "$image" >/dev/null
 port="$("$tool" port "$name" 3000/tcp | head -n 1 | sed 's/.*://')"
 started=$SECONDS
-for _ in $(seq "$timeout_s"); do
-  curl -fsS "http://127.0.0.1:${port}/api/healthz" >/dev/null 2>&1 && break
+answered=false
+while ((SECONDS - started < timeout_s)); do
+  if curl -fsS --max-time 2 "http://127.0.0.1:${port}/api/healthz" >/dev/null 2>&1; then
+    answered=true
+    break
+  fi
   sleep 1
 done
 logs="$("$tool" logs "$name" 2>&1)"
-curl -fsS "http://127.0.0.1:${port}/api/healthz" >/dev/null ||
+$answered ||
   fail "the server did not answer on /api/healthz in ${timeout_s}s. Its log:"$'\n'"$logs"
 echo "test-image: the server answered on /api/healthz after $((SECONDS - started))s"
 grep -q '^Read the images table /app/data/images-table.json' <<<"$logs" ||
