@@ -145,6 +145,39 @@ var _ = Describe("PluginRegistration schema", func() {
 			"spec.grantTemplates[1]: Duplicate value",
 		),
 		Entry(
+			"admits a ServiceAccount namespace of 63 characters and a name of 253 characters",
+			func(o *pluginsv1alpha1.PluginRegistration) {
+				o.Spec.ServiceAccount.Namespace = nameOfLength(63)
+				o.Spec.ServiceAccount.Name = nameOfLength(63) + "." + nameOfLength(63) + "." +
+					nameOfLength(63) + "." + nameOfLength(61)
+			}, "",
+		),
+		Entry(
+			"refuses a ServiceAccount namespace of 64 characters",
+			func(o *pluginsv1alpha1.PluginRegistration) { o.Spec.ServiceAccount.Namespace = nameOfLength(64) },
+			"spec.serviceAccount.namespace: Too long",
+		),
+		Entry(
+			"refuses a ServiceAccount namespace with a dot",
+			func(o *pluginsv1alpha1.PluginRegistration) { o.Spec.ServiceAccount.Namespace = "camunda.plugins" },
+			"spec.serviceAccount.namespace in body should match",
+		),
+		Entry(
+			"refuses a ServiceAccount name of 254 characters",
+			func(o *pluginsv1alpha1.PluginRegistration) {
+				o.Spec.ServiceAccount.Name = nameOfLength(63) + "." + nameOfLength(63) + "." +
+					nameOfLength(63) + "." + nameOfLength(62)
+			},
+			"spec.serviceAccount.name: Too long",
+		),
+		Entry(
+			"refuses a ServiceAccount name with a namespace part",
+			func(o *pluginsv1alpha1.PluginRegistration) {
+				o.Spec.ServiceAccount.Name = "camunda-plugins/s3-backup-bucket-controller"
+			},
+			"spec.serviceAccount.name in body should match",
+		),
+		Entry(
 			"refuses requiresInputs with an unknown input",
 			func(o *pluginsv1alpha1.PluginRegistration) {
 				o.Spec.GrantTemplates[0].RequiresInputs = []string{"roleArn"}

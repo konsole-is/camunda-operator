@@ -130,9 +130,13 @@ type Limit struct {
 type ServiceAccountRef struct {
 	// Namespace is the namespace of the ServiceAccount.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	Namespace string `json:"namespace"`
 	// Name is the name of the ServiceAccount.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	Name string `json:"name"`
 }
 

@@ -42,8 +42,9 @@ type PluginRequestSpec struct {
 	ClaimRef ClaimRef `json:"claimRef"`
 
 	// Target names the resource that the request serves, before the
-	// resource exists. target.name cannot change after the request is
-	// created.
+	// resource exists. target.kind and target.name cannot change after the
+	// request is created.
+	// +kubebuilder:validation:XValidation:rule="self.kind == oldSelf.kind",message="target.kind is immutable: delete the request and create a new one"
 	// +kubebuilder:validation:XValidation:rule="self.name == oldSelf.name",message="target.name is immutable: delete the request and create a new one"
 	Target TargetRef `json:"target"`
 

@@ -138,8 +138,8 @@ spec:
               target:
                 description: |-
                   Target names the resource that the request serves, before the
-                  resource exists. target.name cannot change after the request is
-                  created.
+                  resource exists. target.kind and target.name cannot change after the
+                  request is created.
                 properties:
                   additionalServiceAccounts:
                     description: |-
@@ -175,6 +175,9 @@ spec:
                 - name
                 type: object
                 x-kubernetes-validations:
+                - message: 'target.kind is immutable: delete the request and create
+                    a new one'
+                  rule: self.kind == oldSelf.kind
                 - message: 'target.name is immutable: delete the request and create
                     a new one'
                   rule: self.name == oldSelf.name
