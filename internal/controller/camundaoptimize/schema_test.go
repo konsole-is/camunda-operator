@@ -181,6 +181,15 @@ var _ = Describe("CamundaOptimize schema", func() {
 		)
 	})
 
+	It("rejects an externalUrl with a backslash", func() {
+		optimize := minimalCamundaOptimize()
+		optimize.Spec.ExternalURL = `https://camunda.example.com/..\optimize`
+
+		Expect(k8sClient.Create(ctx, optimize)).To(
+			MatchError(ContainSubstring("externalUrl must carry no backslash")),
+		)
+	})
+
 	It("rejects an externalUrl with a dot segment", func() {
 		for _, url := range []string{
 			"https://camunda.example.com/a/../optimize",

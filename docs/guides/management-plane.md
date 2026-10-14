@@ -389,7 +389,7 @@ kubectl wait camundamanagementcluster/my-management -n my-management-ns \
   --timeout=5m
 ```
 
-In the `oidc` mode, `externalUrl` has no effect. Add `https://optimize.camunda.example.com/api/authentication/callback` to the Optimize application at your provider yourself.
+In the `oidc` mode, the operator registers no callback. Add `https://optimize.camunda.example.com/api/authentication/callback` to the Optimize application at your provider yourself.
 
 ## Check the result
 

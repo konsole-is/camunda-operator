@@ -425,7 +425,7 @@ The API server enforces these at admission:
 
 - `spec.version` must be a full semantic version such as `8.9.0`. A two-segment version is rejected.
 - `spec.managementAuthRef` must not be empty.
-- `spec.externalUrl` must be an `http` or `https` URL with a host. It can have a path, such as `https://camunda.example.com/optimize`. It carries no comma, no percent-encoded character, no whitespace, no query, and no fragment. It has no `.` or `..` path segment, and it does not end with a slash.
+- `spec.externalUrl` must be an `http` or `https` URL with a host. It can have a path, such as `https://camunda.example.com/optimize`. It carries no comma, no whitespace, no query, and no fragment, and it does not end with a slash. Its path has no percent-encoded character, no backslash, and no `.` or `..` segment.
 - `spec.importer.replicas` must be `0` or `1`.
 - `spec.clusterRef` is immutable.
 

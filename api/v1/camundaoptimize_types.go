@@ -93,6 +93,7 @@ type CamundaOptimizeSpec struct {
 	// <externalUrl>/api/authentication/callback there.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains(',')",message="externalUrl must carry no comma: Management Identity reads the callback list as comma-separated"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="externalUrl must carry no backslash: browsers read it as a slash, and the operator does not"
 	// +kubebuilder:validation:XValidation:rule="!self.matches('/[.][.]?(/|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Optimize"
 	// +kubebuilder:validation:XValidation:rule="!self.endsWith('/')",message="externalUrl must not end with a slash: the login callback is appended to it"
@@ -171,9 +172,9 @@ type CamundaOptimizeStatus struct {
 	// +optional
 	SuspendedBy OptimizeSuspension `json:"suspendedBy,omitempty"`
 	// Endpoints lists the routes of this Optimize: one entry, optimize, with
-	// the path of spec.externalUrl as its path prefix (/ for a URL without a
-	// path), the webapp Service, and its HTTP port. An access
-	// extension reads it and does not derive the Service name. The entry
+	// the webapp Service and its HTTP port. Its path prefix is the path of
+	// spec.externalUrl without a trailing slash, or / when that path is empty.
+	// An access extension reads it and does not derive the Service name. The entry
 	// stays while the workloads are at zero with the cluster, because the
 	// Service stays. It is empty before the first render. It is also empty
 	// while another CamundaOptimize holds the cluster or the cluster is gone,

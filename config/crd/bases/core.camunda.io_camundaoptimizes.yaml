@@ -104,6 +104,9 @@ spec:
                 - message: 'externalUrl must carry no comma: Management Identity reads
                     the callback list as comma-separated'
                   rule: '!self.contains('','')'
+                - message: 'externalUrl must carry no backslash: browsers read it
+                    as a slash, and the operator does not'
+                  rule: '!self.contains(''\\'')'
                 - message: 'externalUrl must carry no . or .. path segment: browsers
                     remove them, and the operator does not'
                   rule: '!self.matches(''/[.][.]?(/|$)'')'
@@ -2100,9 +2103,9 @@ spec:
               endpoints:
                 description: |-
                   Endpoints lists the routes of this Optimize: one entry, optimize, with
-                  the path of spec.externalUrl as its path prefix (/ for a URL without a
-                  path), the webapp Service, and its HTTP port. An access
-                  extension reads it and does not derive the Service name. The entry
+                  the webapp Service and its HTTP port. Its path prefix is the path of
+                  spec.externalUrl without a trailing slash, or / when that path is empty.
+                  An access extension reads it and does not derive the Service name. The entry
                   stays while the workloads are at zero with the cluster, because the
                   Service stays. It is empty before the first render. It is also empty
                   while another CamundaOptimize holds the cluster or the cluster is gone,
