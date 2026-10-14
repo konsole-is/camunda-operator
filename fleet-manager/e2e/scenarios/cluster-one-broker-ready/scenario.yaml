@@ -1,9 +1,9 @@
 schemaVersion: 1
 description: >-
-  The cluster of the cluster-ready scenario with 1 of its 3 brokers ready.
+  The cluster of the cluster-ready scenario with 1 of its 5 brokers ready.
   It is the CamundaCluster of config/samples, applied with kubectl, with no
-  backup storage, no ServiceMonitor, and no zeebe block. The
-  cluster-ready scenario says why.
+  backup storage and no ServiceMonitor. The cluster-ready scenario says
+  why.
 seed:
   - apiVersion: v1
     kind: Namespace
@@ -72,7 +72,7 @@ seed:
           storageSize: "32Gi"
           extraEnv:
             - name: JAVA_TOOL_OPTIONS
-              value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
+              value: "-XX:+ExitOnOutOfMemoryError -Xmx1g"
         gateway:
           mode: Standalone
           replicas: 2
@@ -147,6 +147,16 @@ seed:
       serviceAccount:
         annotations:
           eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
+      zeebe:
+        replicas: 5
+        resources:
+          requests:
+            memory: "8Gi"
+          limits:
+            memory: "8Gi"
+        extraEnv:
+          - name: JAVA_TOOL_OPTIONS
+            value: "-XX:+ExitOnOutOfMemoryError -Xmx2g"
       connectors:
         enabled: true
       storageRef: camundacluster-sample-storage

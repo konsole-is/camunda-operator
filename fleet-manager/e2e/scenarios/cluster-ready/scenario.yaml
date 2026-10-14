@@ -3,10 +3,7 @@ description: >-
   The CamundaCluster of config/samples, applied with kubectl, with every
   workload ready. The cluster has no backup storage and no ServiceMonitor,
   because envtest cannot reach a bucket and does not serve the
-  ServiceMonitor kind. It has no zeebe block, so the brokers take their
-  count, resources, and Java options from the medium preset. The memory
-  request of 8Gi in the sample is above the limit of 4Gi of the preset,
-  and the API server refuses that StatefulSet.
+  ServiceMonitor kind.
 seed:
   - apiVersion: v1
     kind: Namespace
@@ -75,7 +72,7 @@ seed:
           storageSize: "32Gi"
           extraEnv:
             - name: JAVA_TOOL_OPTIONS
-              value: "-XX:+ExitOnOutOfMemoryError -Xmx4g"
+              value: "-XX:+ExitOnOutOfMemoryError -Xmx1g"
         gateway:
           mode: Standalone
           replicas: 2
@@ -150,6 +147,16 @@ seed:
       serviceAccount:
         annotations:
           eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
+      zeebe:
+        replicas: 5
+        resources:
+          requests:
+            memory: "8Gi"
+          limits:
+            memory: "8Gi"
+        extraEnv:
+          - name: JAVA_TOOL_OPTIONS
+            value: "-XX:+ExitOnOutOfMemoryError -Xmx2g"
       connectors:
         enabled: true
       storageRef: camundacluster-sample-storage

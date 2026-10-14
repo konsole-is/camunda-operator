@@ -65,6 +65,6 @@ func TestTheOneBrokerScenarioHoldsOneReadyBroker(t *testing.T) {
 	cluster := find(t, objs, "CamundaCluster", "team-a", "camundacluster-sample")
 	zeebe := condition(t, cluster, "ZeebeReady")
 	assert.Equal(t, "False", zeebe["status"])
-	assert.Contains(t, zeebe["message"], "1/3 ready")
+	assert.Contains(t, zeebe["message"], "1/5 ready")
 	assert.Equal(t, "False", condition(t, cluster, "Ready")["status"])
 }
