@@ -345,7 +345,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.connectors.version": {
-        "description": "Version is the version of the connectors bundle image, as a full\nsemantic version. The bundle has its own patch line, so it does not\nfollow the cluster version. Required when connectors are enabled,\nunless the resolved release provides it. Forbidden in a preset.",
+        "description": "Version is the version of the connectors bundle image, as a full\nsemantic version. Use the same minor as the cluster, such as 8.9.x for\na cluster on 8.9. The patch does not follow the cluster patch. Required\nwhen connectors are enabled, unless the resolved release provides it.\nForbidden in a preset.",
         "anchor": "#connectorsspec"
       },
       "spec.documentStorageRef": {
@@ -1071,7 +1071,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.connectors.version": {
-        "description": "Version is the version of the connectors bundle image, as a full\nsemantic version. The bundle has its own patch line, so it does not\nfollow the cluster version. Required when connectors are enabled,\nunless the resolved release provides it. Forbidden in a preset.",
+        "description": "Version is the version of the connectors bundle image, as a full\nsemantic version. Use the same minor as the cluster, such as 8.9.x for\na cluster on 8.9. The patch does not follow the cluster patch. Required\nwhen connectors are enabled, unless the resolved release provides it.\nForbidden in a preset.",
         "anchor": "#connectorsspec"
       },
       "spec.cluster.documentStorageRef": {
@@ -1868,6 +1868,30 @@ export const fieldDocs: FieldDocs = {
         "description": "Conditions represent the current state. Ready holds the reason of a\nfailed pre-check, or StepFailed for a failed step. When the write of\nthe ManagementAuthConfig is the first failed step, Ready holds\nWriteFailed instead. In the oidc mode it holds ImmutableAfterStart when\nspec.identity.admin changed after Management Identity first started.\nOtherwise it follows the conditions of the deployed components. When\nall of them are True, a failed OptimizeCallbacksReady makes Ready False\nwith its reason. The per-component conditions (KeycloakReady,\nIdentityReady, ConsoleReady, WebModelerReady, ManagementAuthReady,\nSecretsReady, MirroredSecretsReady) and OptimizeCallbacksReady also\nappear here.",
         "anchor": "#camundamanagementclusterstatus"
       },
+      "status.endpoints": {
+        "description": "Endpoints lists the routes of this management plane, sorted by name.\nEach entry is a path on an external URL, with the Service and the port\nthat serve it. An access extension reads it and does not derive a\nService from the mode fields. The path of an entry is the path of the\nexternal URL of its app, or / for a URL without a path. The entry\nbelongs to the host of that URL. keycloak is present in the keycloak\nmode, console while spec.console is set, and web-modeler and\nweb-modeler-websockets while spec.webModeler is set. The longest\nmatching path prefix wins. The entries stay while the management plane\nis suspended, because the Services stay.",
+        "anchor": "#camundamanagementclusterstatus"
+      },
+      "status.endpoints.name": {
+        "description": "Name identifies the route, for example operate or grpc.",
+        "anchor": "#endpoint"
+      },
+      "status.endpoints.pathPrefix": {
+        "description": "PathPrefix is the path that the route matches. It is empty for gRPC.",
+        "anchor": "#endpoint"
+      },
+      "status.endpoints.port": {
+        "description": "Port is the port of the Service.",
+        "anchor": "#endpoint"
+      },
+      "status.endpoints.protocol": {
+        "description": "Protocol is HTTP or GRPC.",
+        "anchor": "#endpoint"
+      },
+      "status.endpoints.service": {
+        "description": "Service is the name of a Service in the namespace of the resource.",
+        "anchor": "#endpoint"
+      },
       "status.managementAuthConfig": {
         "description": "ManagementAuthConfig is the name of the ManagementAuthConfig that this\nmanagement cluster writes. A CamundaOptimize reads it through its\nmanagementAuthRef.",
         "anchor": "#camundamanagementclusterstatus"
@@ -1907,7 +1931,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#clusterref"
       },
       "spec.externalUrl": {
-        "description": "ExternalURL is the URL where browsers reach this Optimize.\n\nIn the two Keycloak modes, the management plane of managementAuthRef\nregisters <externalUrl>/api/authentication/callback on the optimize\nclient of the realm. Thus a person who signs in here comes back here.\nWithout a URL, the plane registers no callback, and Keycloak refuses\nthe return. The exception is a callback that somebody added to the\nrealm manually.\n\nIn the oidc mode, the field has no effect. The identity provider of the\nplatform config holds the callback URLs, so add\n<externalUrl>/api/authentication/callback there.",
+        "description": "ExternalURL is the URL where browsers reach this Optimize. With a path,\nsuch as https://camunda.example.com/optimize, Optimize serves under that\npath, and status.endpoints routes that path. Without a path, Optimize\nserves at the root of the host.\n\nIn the two Keycloak modes, the management plane of managementAuthRef\nregisters <externalUrl>/api/authentication/callback on the optimize\nclient of the realm. Thus a person who signs in here comes back here.\nWithout a URL, the plane registers no callback, and Keycloak refuses\nthe return. The exception is a callback that somebody added to the\nrealm manually.\n\nIn the oidc mode, the operator registers no callback. The identity\nprovider of the platform config holds the callback URLs, so add\n<externalUrl>/api/authentication/callback there.",
         "anchor": "#camundaoptimizespec"
       },
       "spec.importer": {
@@ -1983,7 +2007,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#servicemonitorspec"
       },
       "spec.version": {
-        "description": "Version is the Optimize version to deploy, as a full semantic version.\nOptimize has its own patch line, so it does not follow the version of\nthe cluster. The major and the minor must match the effective version\nof the referenced cluster. If they differ, Ready reports\nVersionMismatch.",
+        "description": "Version is the Optimize version to deploy, as a full semantic version.\nCamunda releases Optimize with the minor and the patch of the\norchestration cluster, so set it to the effective version of the\nreferenced cluster. If the major or the minor differs, Ready reports\nVersionMismatch.",
         "anchor": "#camundaoptimizespec"
       },
       "spec.webapp": {
@@ -2037,6 +2061,30 @@ export const fieldDocs: FieldDocs = {
       "status.conditions": {
         "description": "Conditions represent the current state. Ready holds the reason of a\nfailed pre-check. Otherwise it follows the conditions of the two\nworkloads, and MirroredSecretsReady when the Optimize references a\nSecret in another namespace. The per-workload conditions (WebappReady,\nImporterReady) and MirroredSecretsReady also appear here.",
         "anchor": "#camundaoptimizestatus"
+      },
+      "status.endpoints": {
+        "description": "Endpoints lists the routes of this Optimize: one entry, optimize, with\nthe webapp Service and its HTTP port. Its path prefix is the path of\nspec.externalUrl without a trailing slash, or / when that path is empty.\nAn access extension reads it and does not derive the Service name. The entry\nstays while the workloads are at zero with the cluster, because the\nService stays. It is empty before the first render. It is also empty\nwhile another CamundaOptimize holds the cluster or the cluster is gone,\nbecause the operator then deletes the webapp Service.",
+        "anchor": "#camundaoptimizestatus"
+      },
+      "status.endpoints.name": {
+        "description": "Name identifies the route, for example operate or grpc.",
+        "anchor": "#endpoint"
+      },
+      "status.endpoints.pathPrefix": {
+        "description": "PathPrefix is the path that the route matches. It is empty for gRPC.",
+        "anchor": "#endpoint"
+      },
+      "status.endpoints.port": {
+        "description": "Port is the port of the Service.",
+        "anchor": "#endpoint"
+      },
+      "status.endpoints.protocol": {
+        "description": "Protocol is HTTP or GRPC.",
+        "anchor": "#endpoint"
+      },
+      "status.endpoints.service": {
+        "description": "Service is the name of a Service in the namespace of the resource.",
+        "anchor": "#endpoint"
       },
       "status.observedGeneration": {
         "description": "ObservedGeneration is the last generation that the operator processed.",
@@ -2335,7 +2383,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#releaseconnectorsspec"
       },
       "spec.connectors.version": {
-        "description": "Version is the version of the connectors bundle image, as a full\nsemantic version. The bundle has its own patch line, so it does not\nfollow the cluster version. A cluster that runs connectors needs it\nfrom the release or from its own spec.",
+        "description": "Version is the version of the connectors bundle image, as a full\nsemantic version. Use the same minor as the Camunda version of the\nrelease. The patch does not follow the Camunda patch. A cluster that\nruns connectors needs it from the release or from its own spec.",
         "anchor": "#releaseconnectorsspec"
       },
       "spec.databaseServer": {
@@ -4491,6 +4539,424 @@ export const fieldDocs: FieldDocs = {
       "status.observedGeneration": {
         "description": "ObservedGeneration is the last generation that the environment\ncontroller processed.",
         "anchor": "#environmentstatus"
+      }
+    }
+  },
+  "plugins.camunda.io": {
+    "Grant": {
+      "spec": {
+        "description": "spec defines the desired state of Grant",
+        "anchor": "#grant"
+      },
+      "spec.cluster": {
+        "description": "Cluster names the CamundaCluster whose identity gets the permission,\nin the namespace of the grant. It cannot change after the grant is\ncreated.",
+        "anchor": "#grantspec"
+      },
+      "spec.cluster.name": {
+        "description": "Name is the name of the CamundaCluster, in the namespace of this\nobject.",
+        "anchor": "#clusterref"
+      },
+      "spec.format": {
+        "description": "Format is the format of the fragment. It cannot change after the\ngrant is created.",
+        "anchor": "#grantspec"
+      },
+      "spec.fragment": {
+        "description": "Fragment is one permission statement, filled in from the template. It\nis a JSON object.",
+        "anchor": "#grantspec"
+      },
+      "spec.template": {
+        "description": "Template is the name of the grant template in the registration that\nthe fragment is rendered from. It cannot change after the grant is\ncreated.",
+        "anchor": "#grantspec"
+      },
+      "status": {
+        "description": "status defines the observed state of Grant",
+        "anchor": "#grant"
+      },
+      "status.conditions": {
+        "description": "Conditions are Applied, MatchesTemplate, and Ready. Applied is False\nwith reason OverCeiling, OverSizeLimit, or Rejected when the identity\nextension refuses the fragment. MatchesTemplate is False with reason\nTemplateChanged when the fragment no longer matches its template.\nReady is True with reason Healthy when both are True. Otherwise Ready\nhas the reason and the message of the first of them that is False.",
+        "anchor": "#grantstatus"
+      }
+    },
+    "PluginRegistration": {
+      "spec": {
+        "description": "spec defines the option",
+        "anchor": "#pluginregistration"
+      },
+      "spec.choices": {
+        "description": "Choices are the presets or existing resources that a claim can pick\nfor a parameter. The claim stores the name of the pick in its\nparameters. Display only. No controller reads it.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.choices.name": {
+        "description": "Name is the value that the claim stores when it picks the choice.",
+        "anchor": "#choice"
+      },
+      "spec.choices.specs": {
+        "description": "Specs are the facts that the fleet manager shows for the choice, for\nexample the version, the node count, or the memory.",
+        "anchor": "#choice"
+      },
+      "spec.choices.specs.label": {
+        "description": "Label names the fact.",
+        "anchor": "#choicespec"
+      },
+      "spec.choices.specs.value": {
+        "description": "Value is the value of the fact.",
+        "anchor": "#choicespec"
+      },
+      "spec.claimEditable": {
+        "description": "ClaimEditable lists the parameters that a claim can change when no\nEnvironment says otherwise.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.controller": {
+        "description": "Controller names the plugin controller that serves the option and its\nversion. Display only. No controller reads it.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.controller.name": {
+        "description": "Name is the name of the plugin controller.",
+        "anchor": "#controllerinfo"
+      },
+      "spec.controller.version": {
+        "description": "Version is the version of the plugin controller, from its build info.",
+        "anchor": "#controllerinfo"
+      },
+      "spec.deletionPolicies": {
+        "description": "DeletionPolicies lists the deletion policies that the plugin supports.\nEvery plugin supports Delete.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.description": {
+        "description": "Description says what the option does. Display only. No controller\nreads it.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.docsUrl": {
+        "description": "DocsURL is the address of the documentation of the option. Display\nonly. No controller reads it.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.grantTemplates": {
+        "description": "GrantTemplates are the permission statements that the option asks for,\none Grant for each template. Each name is unique.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.grantTemplates.description": {
+        "description": "Description says what the permission is for.",
+        "anchor": "#granttemplate"
+      },
+      "spec.grantTemplates.format": {
+        "description": "Format is the format of the statement.",
+        "anchor": "#granttemplate"
+      },
+      "spec.grantTemplates.name": {
+        "description": "Name is the name of the template. A Grant names the template it was\nrendered from.",
+        "anchor": "#granttemplate"
+      },
+      "spec.grantTemplates.requiresInputs": {
+        "description": "RequiresInputs names the inputs that must have a value before the\nplugin writes the grant.",
+        "anchor": "#granttemplate"
+      },
+      "spec.grantTemplates.template": {
+        "description": "Template is the statement, with Go template placeholders such as\n{{ .parameters.x }} and {{ .outputs.x }}. It is a JSON object, like\nthe fragment of a Grant.",
+        "anchor": "#granttemplate"
+      },
+      "spec.inputs": {
+        "description": "Inputs declares the values that the option reads from the outputs of\nother sections. Each name is unique.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.inputs.formats": {
+        "description": "Formats lists the formats of the value that the registration accepts,\nfor example aws-kms-arn. Empty accepts every format.",
+        "anchor": "#inputdecl"
+      },
+      "spec.inputs.from": {
+        "description": "From names the output that gives the value, in the form\n<section>/<output>.",
+        "anchor": "#inputdecl"
+      },
+      "spec.inputs.name": {
+        "description": "Name is the name of the input. The request carries its value under\nthis name.",
+        "anchor": "#inputdecl"
+      },
+      "spec.inputs.required": {
+        "description": "Required refuses a selection of the option when the input has no value.",
+        "anchor": "#inputdecl"
+      },
+      "spec.label": {
+        "description": "Label is the name of the option in the fleet manager. It names the\noutcome, for example \"New S3 bucket\". Display only. No controller reads\nit.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.limits": {
+        "description": "Limits are the values that the plugin chart fixes, which no\nEnvironment and no claim can change, for example a permissions\nboundary. The plugin enforces them from its chart. Display only. No\ncontroller reads it.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.limits.description": {
+        "description": "Description says what the limit means for a claim.",
+        "anchor": "#limit"
+      },
+      "spec.limits.label": {
+        "description": "Label names the limit.",
+        "anchor": "#limit"
+      },
+      "spec.limits.value": {
+        "description": "Value is the value of the limit.",
+        "anchor": "#limit"
+      },
+      "spec.metricQueries": {
+        "description": "MetricQueries are the Prometheus queries that the fleet manager shows\nfor a request of the option. Display only. No controller reads it.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.metricQueries.label": {
+        "description": "Label names the metric.",
+        "anchor": "#metricquery"
+      },
+      "spec.metricQueries.query": {
+        "description": "Query is PromQL with Go template placeholders, for example\n{{ .namespace }} and {{ .pods }}.",
+        "anchor": "#metricquery"
+      },
+      "spec.metricQueries.unit": {
+        "description": "Unit is the unit of the value, for example bytes.",
+        "anchor": "#metricquery"
+      },
+      "spec.mode": {
+        "description": "Mode says whether a new claim selects the option when no Environment\nexists.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.operatorVersions": {
+        "description": "OperatorVersions is the semver range of the operator versions that the\nplugin supports, for example \">=0.3.0 <1.0.0\". The operator reports a\nrange that does not hold its version, or that is not a valid range.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.outputs": {
+        "description": "Outputs declares the values that the plugin writes to the status of a\nrequest. It includes the outputs of each section that the option\nserves. Each key is unique.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.outputs.description": {
+        "description": "Description says what the value is.",
+        "anchor": "#outputdecl"
+      },
+      "spec.outputs.format": {
+        "description": "Format is the format of the value, for example aws-kms-arn.",
+        "anchor": "#outputdecl"
+      },
+      "spec.outputs.key": {
+        "description": "Key is the key of the output in the status of the request. It starts\nwith a letter and holds only letters and digits.",
+        "anchor": "#outputdecl"
+      },
+      "spec.parameterValues": {
+        "description": "ParameterValues are the parameter values that the admin set in the\nplugin chart. An Environment can override them.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.parameters": {
+        "description": "Parameters is the OpenAPI v3 schema of the parameters of a request for\nthe option.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.sections": {
+        "description": "Sections lists the names of the PluginSections that the option serves.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.serviceAccount": {
+        "description": "ServiceAccount is the ServiceAccount of the plugin controller. Only this\nServiceAccount can write a Grant for the option.",
+        "anchor": "#pluginregistrationspec"
+      },
+      "spec.serviceAccount.name": {
+        "description": "Name is the name of the ServiceAccount.",
+        "anchor": "#serviceaccountref"
+      },
+      "spec.serviceAccount.namespace": {
+        "description": "Namespace is the namespace of the ServiceAccount.",
+        "anchor": "#serviceaccountref"
+      },
+      "status": {
+        "description": "status defines the observed state of PluginRegistration",
+        "anchor": "#pluginregistration"
+      },
+      "status.conditions": {
+        "description": "Conditions holds Accepted and Ready. The operator sets Accepted. Its\nFalse reasons are SectionMissing, OperatorVersionUnsupported, and\nDefaultConflict. The plugin controller sets Ready from its health and\nits credentials. The fleet manager offers the option only when both\nare True.",
+        "anchor": "#pluginregistrationstatus"
+      },
+      "status.observedGeneration": {
+        "description": "ObservedGeneration is the last generation that a controller of the\nregistration processed.",
+        "anchor": "#pluginregistrationstatus"
+      }
+    },
+    "PluginRequest": {
+      "spec": {
+        "description": "spec defines the desired state of PluginRequest",
+        "anchor": "#pluginrequest"
+      },
+      "spec.claimRef": {
+        "description": "ClaimRef names the claim that wrote the request. It cannot change\nafter the request is created.",
+        "anchor": "#pluginrequestspec"
+      },
+      "spec.claimRef.kind": {
+        "description": "Kind is the kind of the claim.",
+        "anchor": "#claimref"
+      },
+      "spec.claimRef.name": {
+        "description": "Name is the name of the claim, in the namespace of the request.",
+        "anchor": "#claimref"
+      },
+      "spec.deletionPolicy": {
+        "description": "DeletionPolicy says what the plugin does with the resources of the\nrequest when the request is deleted. The claim controller copies it\nfrom the claim before it deletes the request.",
+        "anchor": "#pluginrequestspec"
+      },
+      "spec.inputs": {
+        "description": "Inputs are the values of the inputs of the registration, by input\nname. The claim controller resolves them from the outputs of other\nrequests of the same claim.",
+        "anchor": "#pluginrequestspec"
+      },
+      "spec.parameters": {
+        "description": "Parameters are the settings of the request, as free-form JSON. The\nplugin checks them against the parameter schema of the registration.",
+        "anchor": "#pluginrequestspec"
+      },
+      "spec.registration": {
+        "description": "Registration is the name of the PluginRegistration that serves the\nrequest. It cannot change after the request is created.",
+        "anchor": "#pluginrequestspec"
+      },
+      "spec.section": {
+        "description": "Section is the name of the PluginSection that the request fills. It\ncannot change after the request is created.",
+        "anchor": "#pluginrequestspec"
+      },
+      "spec.target": {
+        "description": "Target names the resource that the request serves, before the\nresource exists. target.kind and target.name cannot change after the\nrequest is created.",
+        "anchor": "#pluginrequestspec"
+      },
+      "spec.target.additionalServiceAccounts": {
+        "description": "AdditionalServiceAccounts are the names of more ServiceAccounts that\nthe cloud identity of the request also trusts. Examples are the\nServiceAccounts of the built-in storage that takes the backup storage\ninput. Each name is a ServiceAccount in the namespace of the request.\nA name with a namespace part is refused, so that a request never makes\na cloud identity trust a ServiceAccount of another namespace.",
+        "anchor": "#targetref"
+      },
+      "spec.target.kind": {
+        "description": "Kind is the kind of the resource, for example CamundaCluster.",
+        "anchor": "#targetref"
+      },
+      "spec.target.name": {
+        "description": "Name is the name of the resource, in the namespace of the request.",
+        "anchor": "#targetref"
+      },
+      "spec.target.serviceAccountName": {
+        "description": "ServiceAccountName is the ServiceAccount that the pods of the resource\nrun under.",
+        "anchor": "#targetref"
+      },
+      "status": {
+        "description": "status defines the observed state of PluginRequest",
+        "anchor": "#pluginrequest"
+      },
+      "status.conditions": {
+        "description": "Conditions are OutputsReady and Ready. OutputsReady is True when the\noutputs are written for the current generation. Ready is False with\nreason GrantRejected while a Grant of the request is not Ready. Ready\nis False with reason WaitingForEndpoints while an access request waits\nfor the endpoints of its target. Ready is False with reason\nInvalidParameters when the parameters do not pass the registration.\nThe plugin sets the other reasons.",
+        "anchor": "#pluginrequeststatus"
+      },
+      "status.links": {
+        "description": "Links are named URLs about the request, for example the console page\nof a bucket, for display only.",
+        "anchor": "#pluginrequeststatus"
+      },
+      "status.links.name": {
+        "description": "Name names the link.",
+        "anchor": "#link"
+      },
+      "status.links.url": {
+        "description": "URL is the address of the link.",
+        "anchor": "#link"
+      },
+      "status.observedGeneration": {
+        "description": "ObservedGeneration is the generation of the spec that the plugin\nprocessed last.",
+        "anchor": "#pluginrequeststatus"
+      },
+      "status.outputs": {
+        "description": "Outputs are the values that the plugin publishes for the request, by\noutput key. A reader trusts them only while OutputsReady is True and\nthe observedGeneration of that condition equals metadata.generation.",
+        "anchor": "#pluginrequeststatus"
+      },
+      "status.podSelector": {
+        "description": "PodSelector selects the pods that the plugin runs for the request, for\ndisplay only.",
+        "anchor": "#pluginrequeststatus"
+      },
+      "status.resources": {
+        "description": "Resources are the resources that the plugin made for the request, in\nthe cluster or in a cloud, for display only.",
+        "anchor": "#pluginrequeststatus"
+      },
+      "status.resources.id": {
+        "description": "ID is the identifier of the resource in its system, for example an ARN.",
+        "anchor": "#resourceref"
+      },
+      "status.resources.kind": {
+        "description": "Kind is the kind of the resource, for example S3Bucket or StorageClass.",
+        "anchor": "#resourceref"
+      },
+      "status.resources.location": {
+        "description": "Location is where the resource is, for example a cloud region.",
+        "anchor": "#resourceref"
+      },
+      "status.resources.name": {
+        "description": "Name is the name of the resource.",
+        "anchor": "#resourceref"
+      },
+      "status.resources.onOrphan": {
+        "description": "OnOrphan says what happens to the resource with the deletion policy\nOrphan.",
+        "anchor": "#resourceref"
+      },
+      "status.resources.role": {
+        "description": "Role says what the resource does for the request.",
+        "anchor": "#resourceref"
+      },
+      "status.summary": {
+        "description": "Summary is a list of facts about the request, for display only. No\ncontroller reads it. The first item is the headline.",
+        "anchor": "#pluginrequeststatus"
+      },
+      "status.summary.label": {
+        "description": "Label names the fact.",
+        "anchor": "#summaryitem"
+      },
+      "status.summary.severity": {
+        "description": "Severity is the weight of the fact. The fleet manager lists Warning\nand Error items as warnings.",
+        "anchor": "#summaryitem"
+      },
+      "status.summary.value": {
+        "description": "Value is the value of the fact.",
+        "anchor": "#summaryitem"
+      },
+      "status.summaryTime": {
+        "description": "SummaryTime is when the plugin wrote the summary last, for display\nonly.",
+        "anchor": "#pluginrequeststatus"
+      }
+    },
+    "PluginSection": {
+      "spec": {
+        "description": "spec defines the section",
+        "anchor": "#pluginsection"
+      },
+      "spec.appliesTo": {
+        "description": "AppliesTo lists the claim kinds whose create flow shows the section.",
+        "anchor": "#pluginsectionspec"
+      },
+      "spec.description": {
+        "description": "Description says what the section is for. Display only. No controller\nreads it.",
+        "anchor": "#pluginsectionspec"
+      },
+      "spec.emptyOptionLabel": {
+        "description": "EmptyOptionLabel is the label of the option that selects nothing, for\nexample \"No backups\". When it is empty, the section has no empty\noption. Display only. No controller reads it.",
+        "anchor": "#pluginsectionspec"
+      },
+      "spec.label": {
+        "description": "Label is the name of the section in the fleet manager, for example\n\"Backup storage\". Display only. No controller reads it.",
+        "anchor": "#pluginsectionspec"
+      },
+      "spec.order": {
+        "description": "Order is the position of the section in the create flow. A section\nwith a lower value comes first. Display only. No controller reads it.",
+        "anchor": "#pluginsectionspec"
+      },
+      "spec.outputs": {
+        "description": "Outputs declares the outputs that every registration of the section\nwrites.",
+        "anchor": "#pluginsectionspec"
+      },
+      "spec.outputs.description": {
+        "description": "Description says what the value is.",
+        "anchor": "#outputdecl"
+      },
+      "spec.outputs.format": {
+        "description": "Format is the format of the value, for example aws-kms-arn.",
+        "anchor": "#outputdecl"
+      },
+      "spec.outputs.key": {
+        "description": "Key is the key of the output in the status of the request. It starts\nwith a letter and holds only letters and digits.",
+        "anchor": "#outputdecl"
+      },
+      "spec.selection": {
+        "description": "Selection says how many options of the section one claim can select.",
+        "anchor": "#pluginsectionspec"
+      },
+      "spec.slot": {
+        "description": "Slot names the fields of the generated resource that the outputs of\nthe section fill. When it is empty, the outputs are only inputs of\nother registrations.",
+        "anchor": "#pluginsectionspec"
       }
     }
   }

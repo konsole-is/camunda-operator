@@ -69,6 +69,7 @@ export const coreCamundaReleaseConditionTypes = [
 export type CoreCamundaReleaseConditionType = (typeof coreCamundaReleaseConditionTypes)[number];
 
 export const coreDatabaseConditionTypes = [
+  "BindingsReady",
   "MirroredSecretsReady",
   "Ready",
 ] as const;
@@ -103,8 +104,14 @@ export const coreDatabaseServerPresetConditionTypes = [
 export type CoreDatabaseServerPresetConditionType = (typeof coreDatabaseServerPresetConditionTypes)[number];
 
 export const coreElasticsearchClusterConditionTypes = [
+  "CredentialsReady",
+  "ElasticsearchReady",
+  "KeystoreReady",
+  "MetricsReady",
   "MirroredSecretsReady",
   "Ready",
+  "SnapshotRepositoryReady",
+  "StorageContractReady",
 ] as const;
 export type CoreElasticsearchClusterConditionType = (typeof coreElasticsearchClusterConditionTypes)[number];
 
@@ -178,3 +185,39 @@ export const pluginsSharedConditionTypes = [
   "OutputsReady",
 ] as const;
 export type PluginsSharedConditionType = (typeof pluginsSharedConditionTypes)[number];
+
+export const pluginsGrantConditionTypes = [
+  "Accepted",
+  "Applied",
+  "MatchesTemplate",
+  "OutputsReady",
+  "Ready",
+] as const;
+export type PluginsGrantConditionType = (typeof pluginsGrantConditionTypes)[number];
+
+export const pluginsPluginRegistrationConditionTypes = [
+  "Accepted",
+  "Applied",
+  "MatchesTemplate",
+  "OutputsReady",
+  "Ready",
+] as const;
+export type PluginsPluginRegistrationConditionType = (typeof pluginsPluginRegistrationConditionTypes)[number];
+
+export const pluginsPluginRequestConditionTypes = [
+  "Accepted",
+  "Applied",
+  "MatchesTemplate",
+  "OutputsReady",
+  "Ready",
+] as const;
+export type PluginsPluginRequestConditionType = (typeof pluginsPluginRequestConditionTypes)[number];
+
+export const pluginsPluginSectionConditionTypes = [
+  "Accepted",
+  "Applied",
+  "MatchesTemplate",
+  "OutputsReady",
+  "Ready",
+] as const;
+export type PluginsPluginSectionConditionType = (typeof pluginsPluginSectionConditionTypes)[number];

@@ -4029,6 +4029,43 @@ export interface CamundaManagementClusterStatus {
     type: string;
   }[];
   /**
+   * Endpoints lists the routes of this management plane, sorted by name.
+   * Each entry is a path on an external URL, with the Service and the port
+   * that serve it. An access extension reads it and does not derive a
+   * Service from the mode fields. The path of an entry is the path of the
+   * external URL of its app, or / for a URL without a path. The entry
+   * belongs to the host of that URL. keycloak is present in the keycloak
+   * mode, console while spec.console is set, and web-modeler and
+   * web-modeler-websockets while spec.webModeler is set. The longest
+   * matching path prefix wins. The entries stay while the management plane
+   * is suspended, because the Services stay.
+   *
+   * Items: Endpoint is one route that a resource needs: a path on the external URL
+   * and the Service and port that serve it.
+   */
+  endpoints?: {
+    /**
+     * Name identifies the route, for example operate or grpc.
+     */
+    name: string;
+    /**
+     * PathPrefix is the path that the route matches. It is empty for gRPC.
+     */
+    pathPrefix?: string;
+    /**
+     * Port is the port of the Service.
+     */
+    port: number;
+    /**
+     * Protocol is HTTP or GRPC.
+     */
+    protocol: "HTTP" | "GRPC";
+    /**
+     * Service is the name of a Service in the namespace of the resource.
+     */
+    service: string;
+  }[];
+  /**
    * ManagementAuthConfig is the name of the ManagementAuthConfig that this
    * management cluster writes. A CamundaOptimize reads it through its
    * managementAuthRef.

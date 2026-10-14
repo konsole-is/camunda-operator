@@ -37,7 +37,10 @@ export interface CamundaOptimizeSpec {
     name: string;
   };
   /**
-   * ExternalURL is the URL where browsers reach this Optimize.
+   * ExternalURL is the URL where browsers reach this Optimize. With a path,
+   * such as https://camunda.example.com/optimize, Optimize serves under that
+   * path, and status.endpoints routes that path. Without a path, Optimize
+   * serves at the root of the host.
    *
    * In the two Keycloak modes, the management plane of managementAuthRef
    * registers <externalUrl>/api/authentication/callback on the optimize
@@ -46,8 +49,8 @@ export interface CamundaOptimizeSpec {
    * the return. The exception is a callback that somebody added to the
    * realm manually.
    *
-   * In the oidc mode, the field has no effect. The identity provider of the
-   * platform config holds the callback URLs, so add
+   * In the oidc mode, the operator registers no callback. The identity
+   * provider of the platform config holds the callback URLs, so add
    * <externalUrl>/api/authentication/callback there.
    */
   externalUrl?: string;
@@ -848,9 +851,9 @@ export interface CamundaOptimizeSpec {
   };
   /**
    * Version is the Optimize version to deploy, as a full semantic version.
-   * Optimize has its own patch line, so it does not follow the version of
-   * the cluster. The major and the minor must match the effective version
-   * of the referenced cluster. If they differ, Ready reports
+   * Camunda releases Optimize with the minor and the patch of the
+   * orchestration cluster, so set it to the effective version of the
+   * referenced cluster. If the major or the minor differs, Ready reports
    * VersionMismatch.
    */
   version: string;
@@ -1642,6 +1645,41 @@ export interface CamundaOptimizeStatus {
      * type of condition in CamelCase or in foo.example.com/CamelCase.
      */
     type: string;
+  }[];
+  /**
+   * Endpoints lists the routes of this Optimize: one entry, optimize, with
+   * the webapp Service and its HTTP port. Its path prefix is the path of
+   * spec.externalUrl without a trailing slash, or / when that path is empty.
+   * An access extension reads it and does not derive the Service name. The entry
+   * stays while the workloads are at zero with the cluster, because the
+   * Service stays. It is empty before the first render. It is also empty
+   * while another CamundaOptimize holds the cluster or the cluster is gone,
+   * because the operator then deletes the webapp Service.
+   *
+   * Items: Endpoint is one route that a resource needs: a path on the external URL
+   * and the Service and port that serve it.
+   */
+  endpoints?: {
+    /**
+     * Name identifies the route, for example operate or grpc.
+     */
+    name: string;
+    /**
+     * PathPrefix is the path that the route matches. It is empty for gRPC.
+     */
+    pathPrefix?: string;
+    /**
+     * Port is the port of the Service.
+     */
+    port: number;
+    /**
+     * Protocol is HTTP or GRPC.
+     */
+    protocol: "HTTP" | "GRPC";
+    /**
+     * Service is the name of a Service in the namespace of the resource.
+     */
+    service: string;
   }[];
   /**
    * ObservedGeneration is the last generation that the operator processed.
