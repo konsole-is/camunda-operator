@@ -77,9 +77,10 @@ limitations under the License.
 // that says it is generated, and holds every object of the namespaces of
 // the scenario and of the operator namespace camunda-system, with its
 // status and its managed fields, and every cluster-scoped object of the
-// operator. Events are of the events.k8s.io API. The generator removes a
-// generated file of a state that is gone, and never a file that a person
-// wrote. A scenario writes its files only after each of its states settled.
+// operator. Events are of the events.k8s.io API, without an Event that has
+// the field manager kube-apiserver. The generator removes a generated file
+// of a state that is gone, and never a file that a person wrote. A scenario
+// writes its files only after each of its states settled.
 //
 // The outputs are normalized, so the same input always writes the same
 // bytes: UIDs come from the kind, namespace, and name of an object, there is
