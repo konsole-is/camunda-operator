@@ -65,4 +65,9 @@ describe("shadcn primitives", () => {
       }
     },
   );
+
+  it.each(primitives)("%s keeps the invalid border opaque", (file) => {
+    const source = readFileSync(path.join(dir, file), "utf8");
+    expect(source).not.toMatch(/aria-invalid:border-destructive\//);
+  });
 });
