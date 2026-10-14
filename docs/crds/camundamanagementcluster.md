@@ -931,6 +931,7 @@ The API server refuses an apply that breaks one of these:
 - Every `externalUrl`, `websocketsExternalUrl`, and `url` is an `http` or `https` URL with a host.
 - The path of `spec.identityProvider.keycloak.externalUrl` is exactly `/auth`.
 - `spec.identity.externalUrl` uses `https` when it has a path other than `/`.
+- The `externalUrl` of Identity, Console, and Web Modeler, and `spec.webModeler.websocketsExternalUrl`, carry no percent-encoded character and no backslash. Their paths have no `.` or `..` segment.
 - `spec.identityProvider.keycloak.externalUrl` and `spec.identityProvider.externalKeycloak.url` carry no query and no fragment.
 - `spec.identityProvider.externalKeycloak.url` carries no user and no password.
 - `spec.identityProvider.externalKeycloak.caBundleSecretRef` requires an `https` url.

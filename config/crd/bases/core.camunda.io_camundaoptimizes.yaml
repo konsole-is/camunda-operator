@@ -109,7 +109,7 @@ spec:
                   rule: '!self.contains(''\\'')'
                 - message: 'externalUrl must carry no . or .. path segment: browsers
                     remove them, and the operator does not'
-                  rule: '!self.matches(''/[.][.]?(/|$)'')'
+                  rule: '!self.matches(''/[.][.]?([/?#]|$)'')'
                 - message: 'externalUrl must carry no percent-encoded character: the
                     operator passes the decoded path to Optimize'
                   rule: '!self.contains(''%'')'
