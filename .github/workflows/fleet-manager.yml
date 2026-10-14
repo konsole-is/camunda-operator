@@ -18,6 +18,7 @@ on:
       - config/crd/bases/**
       - config/samples/**
       - docs/crds/api-reference.md
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

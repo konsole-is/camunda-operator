@@ -1,9 +1,9 @@
 name: Renovate commit
 
 # Commits the files that the Renovate regenerate workflow uploaded to the
-# Renovate branch, then starts Lint, Tests, and Chart on that commit.
-# GitHub runs a workflow_run workflow from the default branch, so a Renovate
-# branch cannot change the steps that hold the write token.
+# Renovate branch, then starts Lint, Tests, Chart, and Fleet manager on
+# that commit. GitHub runs a workflow_run workflow from the default branch,
+# so a Renovate branch cannot change the steps that hold the write token.
 on:
   workflow_run:
     workflows: ["Renovate regenerate"]
@@ -109,6 +109,6 @@ jobs:
       - name: Run the checks on the new commit
         if: steps.commit.outputs.dispatch == 'true'
         run: |
-          for workflow in lint.yml test.yml chart.yml; do
+          for workflow in lint.yml test.yml chart.yml fleet-manager.yml; do
             gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
           done
