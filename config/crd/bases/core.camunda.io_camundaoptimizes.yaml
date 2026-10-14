@@ -112,7 +112,7 @@ spec:
                   rule: '!self.contains(''\\'')'
                 - message: 'externalUrl must carry no . or .. path segment: browsers
                     remove them, and the operator does not'
-                  rule: '!self.matches(''/[.][.]?([/?#]|$)'')'
+                  rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                 - message: 'externalUrl must not end with a slash: the login callback
                     is appended to it'
                   rule: '!self.endsWith(''/'')'

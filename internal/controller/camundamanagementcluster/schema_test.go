@@ -311,6 +311,12 @@ var _ = Describe("CamundaManagementCluster schema", func() {
 			}, "",
 		),
 		Entry(
+			"accepts a Console externalUrl with a dot segment in its query",
+			realisticManagementCluster, func(o *v1.CamundaManagementCluster) {
+				o.Spec.Console.ExternalURL = "https://camunda.example.com/console?next=/../home"
+			}, "",
+		),
+		Entry(
 			"rejects an identity extraEnv that sets the Keycloak URL",
 			validManagementCluster, func(o *v1.CamundaManagementCluster) {
 				o.Spec.Identity.ExtraEnv = []corev1.EnvVar{

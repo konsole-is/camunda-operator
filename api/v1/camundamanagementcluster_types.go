@@ -341,7 +341,7 @@ type IdentitySpec struct {
 	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getScheme() != 'http' || url(self).getEscapedPath() in ['', '/']",message="externalUrl with a path needs https. Management Identity serves under a path only over https"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Management Identity"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="externalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
-	// +kubebuilder:validation:XValidation:rule="!self.matches('/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	ExternalURL string `json:"externalUrl"`
 	// DatabaseConfigRef names the DatabaseConfig of the Management Identity
 	// database, in the namespace of this resource. Identity needs its own
@@ -411,7 +411,7 @@ type ConsoleSpec struct {
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Console"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="externalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
-	// +kubebuilder:validation:XValidation:rule="!self.matches('/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	ExternalURL  string `json:"externalUrl"`
 	WorkloadSpec `json:",inline"`
 }
@@ -427,14 +427,14 @@ type WebModelerSpec struct {
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Web Modeler"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="externalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
-	// +kubebuilder:validation:XValidation:rule="!self.matches('/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	ExternalURL string `json:"externalUrl"`
 	// WebsocketsExternalURL is the URL where browsers reach the websockets
 	// process. Web Modeler sends live updates through it.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="websocketsExternalUrl must be a valid http or https URL"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="websocketsExternalUrl must carry no percent-encoded character: the operator passes the decoded path to Web Modeler"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="websocketsExternalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
-	// +kubebuilder:validation:XValidation:rule="!self.matches('/[.][.]?([/?#]|$)')",message="websocketsExternalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="websocketsExternalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	WebsocketsExternalURL string `json:"websocketsExternalUrl"`
 	// DatabaseConfigRef names the DatabaseConfig of the Web Modeler database,
 	// in the namespace of this resource. Web Modeler needs its own PostgreSQL

@@ -132,7 +132,7 @@ spec:
                       rule: '!self.contains(''\\'')'
                     - message: 'externalUrl must carry no . or .. path segment: browsers
                         remove them, and the operator does not'
-                      rule: '!self.matches(''/[.][.]?([/?#]|$)'')'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                   extraEnv:
                     description: |-
                       ExtraEnv are extra environment variables of the container of this
@@ -1155,7 +1155,7 @@ spec:
                       rule: '!self.contains(''\\'')'
                     - message: 'externalUrl must carry no . or .. path segment: browsers
                         remove them, and the operator does not'
-                      rule: '!self.matches(''/[.][.]?([/?#]|$)'')'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                   extraEnv:
                     description: |-
                       ExtraEnv are extra environment variables of the container of this
@@ -3015,7 +3015,7 @@ spec:
                       rule: '!self.contains(''\\'')'
                     - message: 'externalUrl must carry no . or .. path segment: browsers
                         remove them, and the operator does not'
-                      rule: '!self.matches(''/[.][.]?([/?#]|$)'')'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                   mail:
                     description: |-
                       Mail configures the SMTP server that Web Modeler sends notifications
@@ -4945,7 +4945,7 @@ spec:
                       rule: '!self.contains(''\\'')'
                     - message: 'websocketsExternalUrl must carry no . or .. path segment:
                         browsers remove them, and the operator does not'
-                      rule: '!self.matches(''/[.][.]?([/?#]|$)'')'
+                      rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                 required:
                 - databaseConfigRef
                 - externalUrl
