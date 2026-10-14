@@ -432,3 +432,16 @@ func TestNormalizeLeavesOutAnEventAboutAnObjectOutsideTheScenario(t *testing.T) 
 
 	assert.Len(t, out, 1)
 }
+
+func TestNormalizeLeavesOutAnEventThatTheAPIServerWrote(t *testing.T) {
+	service := object("v1", "Service", "team-b", "orders-gateway", "u")
+	repair := event("orders-gateway.a", service, "ClusterIPNotAllocated", "Cluster IP is not allocated; repairing")
+	repair.Object["reportingController"] = "ipallocator-repair-controller"
+	repair.SetManagedFields([]metav1.ManagedFieldsEntry{
+		{Manager: "kube-apiserver", Operation: metav1.ManagedFieldsOperationUpdate},
+	})
+	out, err := normalize(newServiceIPs(), []unstructured.Unstructured{service, repair})
+	require.NoError(t, err)
+
+	assert.Len(t, out, 1, "the repair loop of the API server writes this Event at a time that no scenario sets")
+}
