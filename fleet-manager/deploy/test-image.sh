@@ -31,14 +31,10 @@ node="$("$tool" run --rm --entrypoint /nodejs/bin/node "$image" -p process.versi
   -p 127.0.0.1::3000 "$image" >/dev/null
 port="$("$tool" port "$name" 3000/tcp | head -n 1 | sed 's/.*://')"
 started=$SECONDS
-answered=false
-while ((SECONDS - started < timeout_s)); do
-  if curl -fsS --max-time 2 "http://127.0.0.1:${port}/api/healthz" >/dev/null 2>&1; then
-    answered=true
-    break
-  fi
-  sleep 1
-done
+answered=true
+timeout "$timeout_s" sh -c "until curl -fsS --max-time 2 \
+  http://127.0.0.1:${port}/api/healthz >/dev/null 2>&1; do sleep 1; done" ||
+  answered=false
 logs="$("$tool" logs "$name" 2>&1)"
 $answered ||
   fail "the server did not answer on /api/healthz in ${timeout_s}s. Its log:"$'\n'"$logs"
