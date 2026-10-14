@@ -132,4 +132,29 @@ describe("design tokens", () => {
       );
     },
   );
+
+  it.each(
+    ["badge.tsx", "button.tsx"].flatMap((file) =>
+      SURFACE_TOKENS.map((surface) => [file, surface]),
+    ),
+  )(
+    "gives --bad text on each destructive fill of %s on %s a contrast of at least 4.5:1",
+    (file, surface) => {
+      const source = readFileSync(
+        path.join(import.meta.dirname, "..", "components", "ui", file),
+        "utf8",
+      );
+      const alphas = [...source.matchAll(/bg-destructive\/(\d+)/g)].map(
+        (match) => Number(match[1]) / 100,
+      );
+      expect(alphas).not.toHaveLength(0);
+      const bad = tokenValue("--bad")!;
+      for (const alpha of alphas) {
+        const fill = over(bad, alpha, tokenValue(surface)!);
+        expect(contrast(bad, fill), `fill at ${alpha}`).toBeGreaterThanOrEqual(
+          4.5,
+        );
+      }
+    },
+  );
 });
