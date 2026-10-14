@@ -87,11 +87,11 @@ The [authentication guide](../guides/authentication.md) explains both methods, t
 
 ## Version
 
-The effective version is `spec.version`, or the version of the [CamundaRelease](camundarelease.md) of `releaseRef` when the field is absent. A release can also pin the image to pull, but the rules below read the version, not the image. `spec.connectors.version` does not follow the Camunda version. Set it on its own.
+The effective version is `spec.version`, or the version of the [CamundaRelease](camundarelease.md) of `releaseRef` when the field is absent. A release can also pin the image to pull, but the rules below read the version, not the image. `spec.connectors.version` uses the same minor as the Camunda version, but its own patch. Set it on its own.
 
 ### Upgrade
 
-To upgrade, raise `spec.version`, or raise the version of the release that `releaseRef` names. The operator rolls every workload to the new version, except Connectors, which follows `spec.connectors.version`. `kubectl get camundacluster` shows the new version at once, and `Ready` reads `Updating` until every process is healthy again.
+To upgrade, raise `spec.version`, or raise the version of the release that `releaseRef` names. The operator rolls every workload to the new version, except Connectors, which follows `spec.connectors.version`. When you move to a new minor, raise `spec.connectors.version` to that minor too. `kubectl get camundacluster` shows the new version at once, and `Ready` reads `Updating` until every process is healthy again.
 
 Move one minor at a time, and move to the latest patch of your minor first. Camunda blocks the start after a skipped minor, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/#required-upgrade-procedure). The operator refuses a version that skips a minor before it rolls a pod, see [A skipped minor is refused](#a-skipped-minor-is-refused). [Prepare for upgrade](https://docs.camunda.io/docs/self-managed/upgrade/prepare-for-upgrade/) lists what changes in each minor. An attached [CamundaOptimize](camundaoptimize.md#versions) reports `VersionMismatch` until you raise its version to the same minor.
 
