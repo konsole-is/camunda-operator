@@ -55,7 +55,7 @@ version below each one.
 - **`version`** is the Camunda version of the orchestration cluster processes.
   A cluster that names this release runs it and leaves `spec.version` unset.
 - **`connectors.version`** is the version of the connectors bundle image. The
-  bundle has a patch line of its own, so it does not follow `version`. No
+  bundle uses the same minor as `version`, with a patch of its own. No
   inventory here enables connectors, and a cluster that turns them on in a
   preset gets the bundle version from here.
 - **`elasticsearch.version`** is the Elasticsearch version. An

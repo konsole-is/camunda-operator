@@ -247,9 +247,10 @@ type ConnectorsSpec struct {
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
 	// Version is the version of the connectors bundle image, as a full
-	// semantic version. The bundle has its own patch line, so it does not
-	// follow the cluster version. Required when connectors are enabled,
-	// unless the resolved release provides it. Forbidden in a preset.
+	// semantic version. Use the same minor as the cluster, such as 8.9.x for
+	// a cluster on 8.9. The patch does not follow the cluster patch. Required
+	// when connectors are enabled, unless the resolved release provides it.
+	// Forbidden in a preset.
 	// +kubebuilder:validation:Pattern=`^\d+\.\d+\.\d+$`
 	// +optional
 	Version string `json:"version,omitempty"`
