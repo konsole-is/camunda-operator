@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2434,6 +2434,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 </tbody>
 </table>
+<p><code>status.endpoints</code> of the resource lists the same routes. See <a href="../../crds/camundamanagementcluster/#routes">Routes</a>.</p>
 <p>Wait for the resource:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span>Ready<span class="w"> </span>--timeout<span class="o">=</span>10m<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>camundamanagementcluster/my-management<span class="w"> </span>-n<span class="w"> </span>my-management-ns
@@ -2636,7 +2637,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">  </span>--for<span class="o">=</span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="OptimizeCallbacksReady")].reason}'</span><span class="o">=</span>Healthy<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="w">  </span>--timeout<span class="o">=</span>5m
 </span></code></pre></div>
-<p>In the <code>oidc</code> mode, <code>externalUrl</code> has no effect. Add <code>https://optimize.camunda.example.com/api/authentication/callback</code> to the Optimize application at your provider yourself.</p>
+<p>In the <code>oidc</code> mode, the operator registers no callback. Add <code>https://optimize.camunda.example.com/api/authentication/callback</code> to the Optimize application at your provider yourself.</p>
 <h2 id="check-the-result">Check the result<a class="headerlink" href="#check-the-result" title="Permanent link">&para;</a></h2>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>camundamanagementcluster<span class="w"> </span>-A
 </span></code></pre></div>

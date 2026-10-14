@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -1965,6 +1965,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#planned-kinds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Planned kinds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#how-the-kinds-relate" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2286,6 +2297,39 @@ Each page opens with what the kind is and a minimal manifest. Then it covers one
 <td><a href="pointintimerestore/">PointInTimeRestore</a></td>
 <td>Namespaced</td>
 <td>Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="planned-kinds">Planned kinds<a class="headerlink" href="#planned-kinds" title="Permanent link">&para;</a></h2>
+<p>The kinds below are an alpha API in the group <code>plugins.camunda.io/v1alpha1</code>. No controller acts on them yet. The install does not include their CRDs, and their fields can change in a later release.</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Scope</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PluginSection</code></td>
+<td>Cluster</td>
+<td>One section of the create flow in the fleet manager, for example "Backup storage".</td>
+</tr>
+<tr>
+<td><code>PluginRegistration</code></td>
+<td>Cluster</td>
+<td>One option that a plugin offers in one or more sections, with the permissions that the option asks for.</td>
+</tr>
+<tr>
+<td><code>PluginRequest</code></td>
+<td>Namespaced</td>
+<td>A request to a plugin for the resources of one section.</td>
+</tr>
+<tr>
+<td><code>Grant</code></td>
+<td>Namespaced</td>
+<td>One permission that a plugin asks for, on behalf of a <code>PluginRequest</code>.</td>
 </tr>
 </tbody>
 </table>

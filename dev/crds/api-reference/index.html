@@ -60,7 +60,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -6454,13 +6454,13 @@ of the cluster.</p>
 </tr>
 <tr>
 <td><code>extraEnv</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#envvar-v1-core">EnvVar</a> array</em></td>
-<td>ExtraEnv are extra environment variables of the dump pod.<br />In the spec.dump of a LogicalBackupRDBMS, every name that starts with<br />PG or UPLOAD_ is reserved, and the API server refuses it. A PG<em> name is<br />connection policy, because libpq reads PGHOSTADDR, PGSERVICE,<br />PGOPTIONS, and more. UPLOAD_</em> is the upload contract. The variables of<br />a backup reach only the dump container, never the upload container.<br />Cloud SDKs read endpoint, proxy, and configuration variables from the<br />environment, and the author of a backup must not change where the dump<br />goes.<br />In the spec.backup.dump of the cluster, no name is reserved, and the<br />variables reach every container. The cluster owner sets the connection<br />policy, PGSSLMODE included.<br />Unlike the extraEnv of a workload, this list is atomic. One field<br />manager owns the whole list, because no extension adds entries to a<br />dump pod.</td>
+<td>ExtraEnv are extra environment variables of the dump pod.<br />In the spec.dump of a LogicalBackupRDBMS, every name that starts with<br />PG or UPLOAD_ is reserved, and the API server refuses it. A PG* name is<br />connection policy, because libpq reads PGHOSTADDR, PGSERVICE,<br />PGOPTIONS, and more. UPLOAD_* is the upload contract. The variables of<br />a backup reach only the dump container, never the upload container.<br />Cloud SDKs read endpoint, proxy, and configuration variables from the<br />environment, and the author of a backup must not change where the dump<br />goes.<br />In the spec.backup.dump of the cluster, no name is reserved, and the<br />variables reach every container. The cluster owner sets the connection<br />policy, PGSSLMODE included.<br />Unlike the extraEnv of a workload, this list is atomic. One field<br />manager owns the whole list, because no extension adds entries to a<br />dump pod.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
 <td><code>extraEnvFrom</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#envfromsource-v1-core">EnvFromSource</a> array</em></td>
-<td>ExtraEnvFrom are extra environment sources of the dump pod. In the<br />spec.dump of a LogicalBackupRDBMS, every source needs a prefix that<br />cannot make a PG<em> or UPLOAD_</em> name. The writer of the referenced object<br />chooses its keys. As with ExtraEnv, the sources of a<br />backup reach only the dump container. The block of the cluster needs no<br />prefix, and its sources reach every container.</td>
+<td>ExtraEnvFrom are extra environment sources of the dump pod. In the<br />spec.dump of a LogicalBackupRDBMS, every source needs a prefix that<br />cannot make a PG* or UPLOAD_* name. The writer of the referenced object<br />chooses its keys. As with ExtraEnv, the sources of a<br />backup reach only the dump container. The block of the cluster needs no<br />prefix, and its sources reach every container.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -7232,6 +7232,12 @@ CamundaManagementCluster.</p>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
+<td><code>endpoints</code> <em><a href="#endpoint">Endpoint</a> array</em></td>
+<td>Endpoints lists the routes of this management plane, sorted by name.<br />Each entry is a path on an external URL, with the Service and the port<br />that serve it. An access extension reads it and does not derive a<br />Service from the mode fields. The path of an entry is the path of the<br />external URL of its app, or / for a URL without a path. The entry<br />belongs to the host of that URL. keycloak is present in the keycloak<br />mode, console while spec.console is set, and web-modeler and<br />web-modeler-websockets while spec.webModeler is set. The longest<br />matching path prefix wins. The entries stay while the management plane<br />is suspended, because the Services stay.</td>
+<td></td>
+<td>Optional: {} <br /></td>
+</tr>
+<tr>
 <td><code>clusters</code> <em><a href="#attachedclusterstatus">AttachedClusterStatus</a> array</em></td>
 <td>Clusters lists every CamundaCluster that clusterSelector matched, and<br />shows whether the management plane serves it.</td>
 <td></td>
@@ -7325,7 +7331,7 @@ the cluster cannot have different values.</p>
 <tbody>
 <tr>
 <td><code>version</code> <em>string</em></td>
-<td>Version is the Optimize version to deploy, as a full semantic version.<br />Optimize has its own patch line, so it does not follow the version of<br />the cluster. The major and the minor must match the effective version<br />of the referenced cluster. If they differ, Ready reports<br />VersionMismatch.</td>
+<td>Version is the Optimize version to deploy, as a full semantic version.<br />Camunda releases Optimize with the minor and the patch of the<br />orchestration cluster, so set it to the effective version of the<br />referenced cluster. If the major or the minor differs, Ready reports<br />VersionMismatch.</td>
 <td></td>
 <td>Pattern: <code>^\d+\.\d+\.\d+$</code> <br /></td>
 </tr>
@@ -7337,7 +7343,7 @@ the cluster cannot have different values.</p>
 </tr>
 <tr>
 <td><code>externalUrl</code> <em>string</em></td>
-<td>ExternalURL is the URL where browsers reach this Optimize.<br />In the two Keycloak modes, the management plane of managementAuthRef<br />registers <externalUrl>/api/authentication/callback on the optimize<br />client of the realm. Thus a person who signs in here comes back here.<br />Without a URL, the plane registers no callback, and Keycloak refuses<br />the return. The exception is a callback that somebody added to the<br />realm manually.<br />In the oidc mode, the field has no effect. The identity provider of the<br />platform config holds the callback URLs, so add<br /><externalUrl>/api/authentication/callback there.</td>
+<td>ExternalURL is the URL where browsers reach this Optimize. With a path,<br />such as https://camunda.example.com/optimize, Optimize serves under that<br />path, and status.endpoints routes that path. Without a path, Optimize<br />serves at the root of the host.<br />In the two Keycloak modes, the management plane of managementAuthRef<br />registers <externalUrl>/api/authentication/callback on the optimize<br />client of the realm. Thus a person who signs in here comes back here.<br />Without a URL, the plane registers no callback, and Keycloak refuses<br />the return. The exception is a callback that somebody added to the<br />realm manually.<br />In the oidc mode, the operator registers no callback. The identity<br />provider of the platform config holds the callback URLs, so add<br /><externalUrl>/api/authentication/callback there.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -7404,6 +7410,12 @@ the cluster cannot have different values.</p>
 <td>SuspendedBy tells why the Optimize workloads are at zero with the<br />referenced cluster. It is empty while they follow their spec. It stays<br />set while a failed check keeps them at zero after the cluster resumed.</td>
 <td></td>
 <td>Enum: [Cluster StorageClaim] <br />Optional: {} <br /></td>
+</tr>
+<tr>
+<td><code>endpoints</code> <em><a href="#endpoint">Endpoint</a> array</em></td>
+<td>Endpoints lists the routes of this Optimize: one entry, optimize, with<br />the webapp Service and its HTTP port. Its path prefix is the path of<br />spec.externalUrl without a trailing slash, or / when that path is empty.<br />An access extension reads it and does not derive the Service name. The entry<br />stays while the workloads are at zero with the cluster, because the<br />Service stays. It is empty before the first render. It is also empty<br />while another CamundaOptimize holds the cluster or the cluster is gone,<br />because the operator then deletes the webapp Service.</td>
+<td></td>
+<td>Optional: {} <br /></td>
 </tr>
 </tbody>
 </table>
@@ -7915,7 +7927,7 @@ Deployment.</p>
 </tr>
 <tr>
 <td><code>version</code> <em>string</em></td>
-<td>Version is the version of the connectors bundle image, as a full<br />semantic version. The bundle has its own patch line, so it does not<br />follow the cluster version. Required when connectors are enabled,<br />unless the resolved release provides it. Forbidden in a preset.</td>
+<td>Version is the version of the connectors bundle image, as a full<br />semantic version. Use the same minor as the cluster, such as 8.9.x for<br />a cluster on 8.9. The patch does not follow the cluster patch. Required<br />when connectors are enabled, unless the resolved release provides it.<br />Forbidden in a preset.</td>
 <td></td>
 <td>Pattern: <code>^\d+\.\d+\.\d+$</code> <br />Optional: {} <br /></td>
 </tr>
@@ -9051,13 +9063,13 @@ image. BackupDumpSpec gives the reason.</p>
 </tr>
 <tr>
 <td><code>extraEnv</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#envvar-v1-core">EnvVar</a> array</em></td>
-<td>ExtraEnv are extra environment variables of the dump pod.<br />In the spec.dump of a LogicalBackupRDBMS, every name that starts with<br />PG or UPLOAD_ is reserved, and the API server refuses it. A PG<em> name is<br />connection policy, because libpq reads PGHOSTADDR, PGSERVICE,<br />PGOPTIONS, and more. UPLOAD_</em> is the upload contract. The variables of<br />a backup reach only the dump container, never the upload container.<br />Cloud SDKs read endpoint, proxy, and configuration variables from the<br />environment, and the author of a backup must not change where the dump<br />goes.<br />In the spec.backup.dump of the cluster, no name is reserved, and the<br />variables reach every container. The cluster owner sets the connection<br />policy, PGSSLMODE included.<br />Unlike the extraEnv of a workload, this list is atomic. One field<br />manager owns the whole list, because no extension adds entries to a<br />dump pod.</td>
+<td>ExtraEnv are extra environment variables of the dump pod.<br />In the spec.dump of a LogicalBackupRDBMS, every name that starts with<br />PG or UPLOAD_ is reserved, and the API server refuses it. A PG* name is<br />connection policy, because libpq reads PGHOSTADDR, PGSERVICE,<br />PGOPTIONS, and more. UPLOAD_* is the upload contract. The variables of<br />a backup reach only the dump container, never the upload container.<br />Cloud SDKs read endpoint, proxy, and configuration variables from the<br />environment, and the author of a backup must not change where the dump<br />goes.<br />In the spec.backup.dump of the cluster, no name is reserved, and the<br />variables reach every container. The cluster owner sets the connection<br />policy, PGSSLMODE included.<br />Unlike the extraEnv of a workload, this list is atomic. One field<br />manager owns the whole list, because no extension adds entries to a<br />dump pod.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
 <td><code>extraEnvFrom</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#envfromsource-v1-core">EnvFromSource</a> array</em></td>
-<td>ExtraEnvFrom are extra environment sources of the dump pod. In the<br />spec.dump of a LogicalBackupRDBMS, every source needs a prefix that<br />cannot make a PG<em> or UPLOAD_</em> name. The writer of the referenced object<br />chooses its keys. As with ExtraEnv, the sources of a<br />backup reach only the dump container. The block of the cluster needs no<br />prefix, and its sources reach every container.</td>
+<td>ExtraEnvFrom are extra environment sources of the dump pod. In the<br />spec.dump of a LogicalBackupRDBMS, every source needs a prefix that<br />cannot make a PG* or UPLOAD_* name. The writer of the referenced object<br />chooses its keys. As with ExtraEnv, the sources of a<br />backup reach only the dump container. The block of the cluster needs no<br />prefix, and its sources reach every container.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -9435,7 +9447,9 @@ CamundaRelease.</p>
 <p>Endpoint is one route that a resource needs: a path on the external URL
 and the Service and port that serve it.</p>
 <p><em>Appears in:</em>
-- <a href="#camundaclusterstatus">CamundaClusterStatus</a></p>
+- <a href="#camundaclusterstatus">CamundaClusterStatus</a>
+- <a href="#camundamanagementclusterstatus">CamundaManagementClusterStatus</a>
+- <a href="#camundaoptimizestatus">CamundaOptimizeStatus</a></p>
 <table>
 <thead>
 <tr>
@@ -12927,7 +12941,7 @@ never conflict.</p>
 <tbody>
 <tr>
 <td><code>version</code> <em>string</em></td>
-<td>Version is the version of the connectors bundle image, as a full<br />semantic version. The bundle has its own patch line, so it does not<br />follow the cluster version. A cluster that runs connectors needs it<br />from the release or from its own spec.</td>
+<td>Version is the version of the connectors bundle image, as a full<br />semantic version. Use the same minor as the Camunda version of the<br />release. The patch does not follow the Camunda patch. A cluster that<br />runs connectors needs it from the release or from its own spec.</td>
 <td></td>
 <td>Pattern: <code>^\d+\.\d+\.\d+$</code> <br />Optional: {} <br /></td>
 </tr>
