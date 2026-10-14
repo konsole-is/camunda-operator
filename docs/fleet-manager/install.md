@@ -35,6 +35,8 @@ kubectl -n camunda-operator-system port-forward service/camunda-operator-fleet-m
 
 Then open <http://localhost:3000> in a browser.
 
+In this version, the Fleet page and the Setup page show only their title. This is expected, and the install works.
+
 ## Who can reach it
 
 !!! warning "Give `pods/portforward`, `pods/proxy`, and `services/proxy` only to the people who manage the fleet"
