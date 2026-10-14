@@ -98,7 +98,7 @@ make docs-serve     # preview the documentation site
 
 `dist/chart/values.yaml`, `dist/chart/values.schema.json`, and `dist/chart/templates/` are generated. Change the defaults in `config/` and run `make helm-generate`. The templates of the fleet manager come from `fleet-manager/deploy/chart/`.
 
-A Renovate update can change the input of a file that the Lint workflow checks for drift, such as `pkg/images/table.json` or `docs/crds/api-reference.md`. The Renovate regenerate workflow runs those generators on each push to a `renovate/**` branch. When a file changes, the Renovate commit workflow commits the result to the branch and starts Lint, Tests, and Chart on that commit. GitHub also shows the `pull_request` runs of that commit as waiting for approval. You do not have to approve them. The two workflows use the token of the workflow run and need no secret.
+A Renovate update can change the input of a file that the Lint workflow checks for drift, such as `pkg/images/table.json` or `docs/crds/api-reference.md`. The Renovate regenerate workflow runs those generators on each push to a `renovate/**` branch. When a file changes, the Renovate commit workflow commits the result to the branch and starts Lint, Tests, Chart, and Fleet manager on that commit. GitHub also shows the `pull_request` runs of that commit as waiting for approval. You do not have to approve them. The two workflows use the token of the workflow run and need no secret.
 
 Issues and pull requests are welcome at [github.com/konsole-is/camunda-operator](https://github.com/konsole-is/camunda-operator).
 
