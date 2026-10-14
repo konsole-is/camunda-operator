@@ -198,7 +198,9 @@ type GrantTemplate struct {
 	// Format is the format of the statement.
 	Format GrantFormat `json:"format"`
 	// Template is the statement, with Go template placeholders such as
-	// {{ .parameters.x }} and {{ .outputs.x }}.
+	// {{ .parameters.x }} and {{ .outputs.x }}. It is a JSON object, like
+	// the fragment of a Grant.
+	// +kubebuilder:validation:Type=object
 	Template *apiextensionsv1.JSON `json:"template"`
 	// Description says what the permission is for.
 	// +optional
