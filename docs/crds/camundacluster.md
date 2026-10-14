@@ -802,7 +802,7 @@ spec:
   connectors:
     # boolean. Optional, default: false. Runs the connectors runtime when true.
     enabled: true
-    # string. Required when enabled, unless the release provides it. Version of the connectors bundle image as x.y.z.
+    # string. Required when enabled, unless the release provides it. Version of the connectors bundle image as x.y.z, with the same minor as the cluster.
     version: "8.9.7"
     # object. Optional. ServiceAccount of the connectors pods. Without it, they run under the default ServiceAccount of the namespace. See Workload identity.
     serviceAccount:
