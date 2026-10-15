@@ -18,7 +18,7 @@ require (
 	github.com/konsole-is/camunda-operator/api v0.2.0
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.44.0
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.93.1
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sourcehawk/go-crd-condition-metrics v1.1.0
@@ -102,7 +102,7 @@ require (
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.0 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.2 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
@@ -215,7 +215,7 @@ require (
 	k8s.io/apiserver v0.37.1 // indirect
 	k8s.io/component-base v0.37.1 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
-	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
+	k8s.io/kube-openapi v0.0.0-20260821135717-be32def86098 // indirect
 	k8s.io/streaming v0.37.1 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.36.0 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
