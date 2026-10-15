@@ -98,7 +98,18 @@ export function SectionCards({
     onChange?.(selections, errors);
   });
 
-  const pick = setSelected;
+  // An option that leaves the selection loses its YAML drafts, so their
+  // errors go too.
+  const pick = (next: string[]) => {
+    setSelected(next);
+    setParseErrors(
+      Object.fromEntries(
+        Object.entries(parseErrors).filter(([key]) =>
+          next.some((registration) => key.startsWith(`${registration}.`)),
+        ),
+      ),
+    );
+  };
   const setParameter = (
     registration: string,
     name: string,

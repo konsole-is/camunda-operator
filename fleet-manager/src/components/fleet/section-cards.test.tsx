@@ -193,6 +193,34 @@ describe("SectionCards", () => {
     expect(locked.textContent).toContain("Set by your admin");
   });
 
+  it("forgets a YAML error when its option is chosen again", async () => {
+    const onChange = vi.fn();
+    const option: OptionView = {
+      registration: "tuning",
+      label: "Tuning",
+      isDefault: true,
+      parameters: [
+        {
+          name: "overrides",
+          label: "Overrides",
+          schema: { type: "object" },
+          claimEditable: true,
+        },
+      ],
+    };
+    render(<SectionCards section={section({}, option)} onChange={onChange} />);
+    // user-event reads "[" as the start of a key name, so "[[" types one "[".
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Overrides" }),
+      "a: [[",
+    );
+    await userEvent.click(
+      screen.getByRole("radio", { name: /No cloud permissions/ }),
+    );
+    await userEvent.click(screen.getByRole("radio", { name: /Tuning/ }));
+    expect(onChange.mock.lastCall![1]).toEqual([]);
+  });
+
   it("reports a YAML parameter that does not parse", async () => {
     const onChange = vi.fn();
     const option: OptionView = {
