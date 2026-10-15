@@ -4747,7 +4747,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pluginregistrationspec"
       },
       "spec.serviceAccount": {
-        "description": "ServiceAccount is the ServiceAccount of the plugin controller. Only this\nServiceAccount can write a Grant for the option.",
+        "description": "ServiceAccount is the ServiceAccount of the plugin controller. The app\nshows it. The API server admits a Grant for the option only from a\nrequester that has the RBAC verb serve on this registration.",
         "anchor": "#pluginregistrationspec"
       },
       "spec.serviceAccount.name": {
