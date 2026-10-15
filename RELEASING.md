@@ -65,7 +65,7 @@ If the cause is in the code, correct it on main. Then look for the api module ta
 
 The **Security** workflow scans the code and the images:
 
-- On each pull request, on each push to main, every Monday, and when you run it by hand, it runs `govulncheck` on both Go modules and Trivy on the manager and CLI images that it builds.
+- On each pull request, on each push to main, every Monday, and when you run it by hand, it runs `govulncheck` on every Go module and Trivy on the manager and CLI images that it builds.
 - Every Monday, and when you run it by hand, it also scans the amd64 and arm64 images of the latest release.
 
 `govulncheck` fails its job on a known vulnerability that the code can reach. Trivy fails a job on a HIGH or CRITICAL finding that has a fix. The **Security** tab of the repository shows all Trivy findings under code scanning. If the weekly scan of the latest release fails, fix the finding on main, then publish a patch release.
