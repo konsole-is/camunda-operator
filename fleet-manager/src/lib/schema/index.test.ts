@@ -76,6 +76,27 @@ describe("validate", () => {
     expect(validate(quantity, 2)).toEqual({ ok: true });
   });
 
+  it("reads the boolean exclusive bounds of OpenAPI 3.0, also when nested", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        ratio: {
+          type: "number",
+          minimum: 0,
+          exclusiveMinimum: true,
+          maximum: 1,
+          exclusiveMaximum: false,
+        },
+      },
+    };
+    expect(validate(schema, { ratio: 1 })).toEqual({ ok: true });
+    expect(validate(schema, { ratio: 0.5 })).toEqual({ ok: true });
+    expect(validate(schema, { ratio: 0 })).toEqual({
+      ok: false,
+      errors: [{ path: "ratio", message: "must be > 0" }],
+    });
+  });
+
   it("reports a schema that cannot compile as one error at the empty path", () => {
     const result = validate({ type: "nope" }, "x");
     expect(result.ok).toBe(false);

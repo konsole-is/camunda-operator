@@ -41,13 +41,36 @@ function compile(schema: OpenAPISchema): ValidateFunction | Error {
   let check = compiled.get(schema);
   if (!check) {
     try {
-      check = ajv.compile(schema);
+      check = ajv.compile(withNumericBounds(schema) as OpenAPISchema);
     } catch (error) {
       check = error instanceof Error ? error : new Error(String(error));
     }
     compiled.set(schema, check);
   }
   return check;
+}
+
+// OpenAPI 3.0, as a CRD writes it, marks an exclusive bound with a boolean
+// beside minimum or maximum. Ajv reads only the numeric form of JSON Schema.
+function withNumericBounds(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(withNumericBounds);
+  if (node === null || typeof node !== "object") return node;
+  const result: Record<string, unknown> = Object.fromEntries(
+    Object.entries(node).map(([key, value]) => [key, withNumericBounds(value)]),
+  );
+  for (const [exclusive, bound] of [
+    ["exclusiveMinimum", "minimum"],
+    ["exclusiveMaximum", "maximum"],
+  ]) {
+    if (typeof result[exclusive] !== "boolean") continue;
+    if (result[exclusive] && typeof result[bound] === "number") {
+      result[exclusive] = result[bound];
+      delete result[bound];
+    } else {
+      delete result[exclusive];
+    }
+  }
+  return result;
 }
 
 function toError(error: ErrorObject): ValidationError {
