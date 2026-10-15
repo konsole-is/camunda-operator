@@ -136,6 +136,38 @@ describe("EnvEditor", () => {
     );
   });
 
+  it("drops the references of two rows that lose the same Secret", () => {
+    const onChange = vi.fn();
+    const ref = (name: string) => ({
+      name,
+      valueFrom: { secretKeyRef: { name: "db", key: "password" } },
+    });
+    const entries = [ref("A"), ref("B")];
+    const { rerender } = render(
+      <EnvEditor
+        label="Env"
+        secrets={secrets}
+        defaultValue={entries}
+        onChange={onChange}
+      />,
+    );
+    rerender(
+      <EnvEditor
+        label="Env"
+        secrets={[{ name: "smtp", keys: ["token"] }]}
+        defaultValue={entries}
+        onChange={onChange}
+      />,
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      [{ name: "A" }, { name: "B" }],
+      [
+        { path: "0.secret", message: "Pick a Secret and a key" },
+        { path: "1.secret", message: "Pick a Secret and a key" },
+      ],
+    );
+  });
+
   it("reports an empty name, a repeated name, and a Secret entry without a key", async () => {
     const onChange = vi.fn();
     render(

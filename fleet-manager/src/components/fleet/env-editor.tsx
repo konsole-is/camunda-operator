@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -52,13 +52,19 @@ export function EnvEditor({
     defaultValue.map((entry, index) => toRow(entry, index)),
   );
   const errors = rowErrors(rows);
+  const env = rows.map(toEnv);
+  const report = JSON.stringify([env, errors]);
+  const reported = useRef(report);
+  useEffect(() => {
+    if (reported.current === report) return;
+    reported.current = report;
+    onChange?.(env, errors);
+  });
 
-  const update = (changed: Row[]) => {
-    setRows(changed);
-    onChange?.(changed.map(toEnv), rowErrors(changed));
-  };
+  const update = setRows;
+  // Pickers can report in the same commit, so each one changes the latest rows.
   const replace = (row: Row) =>
-    update(rows.map((r) => (r.id === row.id ? row : r)));
+    setRows((current) => current.map((r) => (r.id === row.id ? row : r)));
 
   return (
     <fieldset className="flex min-w-0 flex-col gap-3">
