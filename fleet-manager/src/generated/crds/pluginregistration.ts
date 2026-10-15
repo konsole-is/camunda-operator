@@ -258,8 +258,9 @@ export interface PluginRegistrationSpec {
    */
   sections: string[];
   /**
-   * ServiceAccount is the ServiceAccount of the plugin controller. Only this
-   * ServiceAccount can write a Grant for the option.
+   * ServiceAccount is the ServiceAccount of the plugin controller. The app
+   * shows it. The API server admits a Grant for the option only from a
+   * requester that has the RBAC verb serve on this registration.
    */
   serviceAccount: {
     /**
