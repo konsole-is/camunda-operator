@@ -144,6 +144,26 @@ describe("ResourceCache", () => {
     expect(watch.calls[1].params.resourceVersion).toBe("20");
   });
 
+  it("keeps reconnecting quickly after each timeout of the watch", async () => {
+    const list = vi.fn(async () => listOf([item("a")], "10"));
+    const { cache, watch } = newCache({ list, timeoutReconnectMs: 1 });
+    await cache.objects("Environment");
+
+    // The client ends each watch after a request timeout, also when nothing
+    // changed. The default delay of ListWatch doubles up to 30 seconds.
+    for (let closes = 1; closes <= 6; closes++) {
+      const timeout = Object.assign(new Error("timed out"), {
+        name: "TimeoutError",
+      });
+      watch.calls[closes - 1].done(timeout);
+      await vi.waitFor(() => expect(watch.calls).toHaveLength(closes + 1), {
+        timeout: 500,
+      });
+    }
+    expect(watch.calls.at(-1)!.params.resourceVersion).toBe("10");
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
   it("watches again from the last resourceVersion after a watch error", async () => {
     const list = vi.fn(async () => listOf([item("a")], "10"));
     const { cache, watch } = newCache({ list });
