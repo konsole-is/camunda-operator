@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, parseAllDocuments } from "yaml";
-import { describe, expect, it } from "vitest";
-import { KindMap, collectionPath, type KindName } from "./kinds";
+import { describe, expect, expectTypeOf, it } from "vitest";
+import { KindMap, collectionPath, type KindName, type Resource } from "./kinds";
 
 const appDir = fileURLToPath(new URL("../../..", import.meta.url));
 const crdDir = path.join(appDir, "..", "config", "crd", "bases");
@@ -79,5 +79,16 @@ describe("KindMap", () => {
     expect(collectionPath(KindMap.Environment)).toBe(
       "/apis/fleet.camunda.io/v1alpha1/environments",
     );
+  });
+});
+
+describe("Resource", () => {
+  it("types a timestamp as the string that the JSON holds", () => {
+    expectTypeOf<
+      NonNullable<Resource<"Pod">["metadata"]>["creationTimestamp"]
+    >().toEqualTypeOf<string | undefined>();
+    expectTypeOf<
+      Resource<"Environment">["metadata"]["creationTimestamp"]
+    >().toEqualTypeOf<string | undefined>();
   });
 });

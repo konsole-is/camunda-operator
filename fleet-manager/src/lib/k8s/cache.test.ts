@@ -70,7 +70,7 @@ afterEach(async () => {
   await Promise.all(caches.splice(0).map((c) => c.stop()));
 });
 
-const names = (objects: readonly KubernetesObject[]) =>
+const names = (objects: readonly { metadata?: { name?: string } }[]) =>
   objects.map((o) => o.metadata?.name).sort();
 
 describe("ResourceCache", () => {

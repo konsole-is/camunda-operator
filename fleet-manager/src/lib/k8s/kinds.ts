@@ -95,7 +95,21 @@ export interface KindTypes {
 }
 
 export type KindName = keyof KindTypes;
-export type Resource<K extends KindName> = KindTypes[K];
+
+/**
+ * Resource is an object of kind as the cache and /api/watch give it: plain
+ * JSON, so a timestamp such as metadata.creationTimestamp is a string, not
+ * the Date of the client models.
+ */
+export type Resource<K extends KindName> = JSONValue<KindTypes[K]>;
+
+type JSONValue<T> = T extends Date
+  ? string
+  : T extends (infer U)[]
+    ? JSONValue<U>[]
+    : T extends object
+      ? { [P in keyof T]: JSONValue<T[P]> }
+      : T;
 
 const core = "core.camunda.io";
 const plugins = "plugins.camunda.io";
