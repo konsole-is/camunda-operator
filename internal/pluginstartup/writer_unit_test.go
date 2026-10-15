@@ -28,6 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
 // The interceptors never call through, so the fake client needs no plugin
@@ -52,6 +54,33 @@ func TestStartTriesAgainAfterAFailedApply(t *testing.T) {
 
 	// One failed call, then one call for each object.
 	assert.Equal(t, 1+len(Sections())+len(Registrations("0.3.0", testServiceAccount)), calls)
+}
+
+func TestStartDoesNotApplyTheResponseOfOneRegistrationToAnother(t *testing.T) {
+	sent := map[string][]pluginsv1alpha1.OutputDecl{}
+	c := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithInterceptorFuncs(interceptor.Funcs{
+		Patch: func(_ context.Context, _ client.WithWatch, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			registration, ok := obj.(*pluginsv1alpha1.PluginRegistration)
+			if !ok {
+				return nil
+			}
+			sent[registration.Name] = registration.DeepCopy().Spec.Outputs
+
+			// The client decodes the response into obj. Another manager
+			// set a format on the output of the first registration.
+			if registration.Name == RegistrationElasticsearch {
+				registration.Spec.Outputs[0].Format = "set-by-another-manager"
+			}
+			return nil
+		},
+	}).Build()
+
+	require.NoError(t, New(c, "0.3.0", testServiceAccount).Start(t.Context()))
+
+	for _, name := range []string{RegistrationDatabaseServer, RegistrationExistingSecondaryStorage} {
+		require.Contains(t, sent, name)
+		assert.Empty(t, sent[name][0].Format, name)
+	}
 }
 
 func TestStartReturnsWhenTheContextEnds(t *testing.T) {

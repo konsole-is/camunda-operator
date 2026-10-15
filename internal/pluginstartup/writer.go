@@ -98,11 +98,13 @@ func (w *Writer) apply(ctx context.Context) error {
 	sections := Sections()
 	registrations := Registrations(w.operatorVersion, w.serviceAccount)
 	objs := make([]client.Object, 0, len(sections)+len(registrations))
+	// Patch decodes the server response into its argument, and the built-in
+	// registrations share their input and output slices.
 	for _, s := range sections {
-		objs = append(objs, &s)
+		objs = append(objs, s.DeepCopy())
 	}
 	for _, r := range registrations {
-		objs = append(objs, &r)
+		objs = append(objs, r.DeepCopy())
 	}
 
 	for _, obj := range objs {
