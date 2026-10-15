@@ -13,20 +13,25 @@ import {
  * YamlEditor edits a value as YAML text. It is for fields without a
  * structured editor: affinity and extraEnvFrom. Empty text is no value. A
  * YAML error names its line. With a schema, the parsed value is validated
- * against it. onChange gets the value, or undefined while the text does not
- * parse, and the errors when an edit or a new schema changes them.
+ * against it. onChange gets the value and its schema errors, or undefined
+ * and the errors while the text has an error that is not of the schema. It
+ * is called when the value or the errors change, not at mount. error
+ * is an error of the parent, such as a missing value, and shows while the
+ * text has no error of its own.
  */
 export function YamlEditor({
   label,
   defaultValue,
   schema,
   rows = 8,
+  error,
   onChange,
 }: {
   label: string;
   defaultValue?: unknown;
   schema?: OpenAPISchema;
   rows?: number;
+  error?: string;
   onChange?: (value: unknown, errors: ValidationError[]) => void;
 }) {
   const id = useId();
@@ -42,6 +47,12 @@ export function YamlEditor({
     onChange?.(value, errors);
   });
 
+  const shown = errors.length
+    ? errors.map((e) => (e.path ? `${e.path}: ${e.message}` : e.message))
+    : error
+      ? [error]
+      : [];
+
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <label htmlFor={id} className="text-sm font-medium text-muted">
@@ -53,19 +64,19 @@ export function YamlEditor({
         spellCheck={false}
         value={text}
         className="font-mono text-xs"
-        aria-invalid={errors.length ? true : undefined}
-        aria-describedby={errors.length ? `${id}-errors` : undefined}
+        aria-invalid={shown.length ? true : undefined}
+        aria-describedby={shown.length ? `${id}-errors` : undefined}
         onChange={(event) => {
           setText(event.target.value);
         }}
       />
-      {errors.length > 0 && (
+      {shown.length > 0 && (
         <ul
           id={`${id}-errors`}
           className="flex flex-col gap-0.5 text-xs text-bad"
         >
-          {errors.map((e, i) => (
-            <li key={i}>{e.path ? `${e.path}: ${e.message}` : e.message}</li>
+          {shown.map((message, i) => (
+            <li key={i}>{message}</li>
           ))}
         </ul>
       )}
