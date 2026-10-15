@@ -92,12 +92,11 @@ func realisticPlaneClaim() *planeClaim {
 	return claim
 }
 
-// nameBoundMessage is the message of the name rule of both claim kinds.
-const nameBoundMessage = "metadata.name must be a DNS-1035 label of at most 40 characters"
+// planeNameMessage is the message of the rule on metadata.name.
+const planeNameMessage = "metadata.name must be a DNS-1035 label of at most 40 characters"
 
-// fixedSectionsMessage is the message of the rule that keeps the selections of
-// a claim.
-const fixedSectionsMessage = "sections and their registrations are fixed after creation"
+// planeSectionsMessage is the message of the rule on spec.plugins.
+const planeSectionsMessage = "sections and their registrations are fixed after creation"
 
 var _ = Describe("CamundaManagementClusterClaim schema", func() {
 	DescribeTable(
@@ -249,7 +248,7 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 		Entry(
 			"refuses a claim name of 41 characters",
 			validPlaneClaim, func(c *planeClaim) { c.Name = "p" + strings.Repeat("a", 40) },
-			nameBoundMessage,
+			planeNameMessage,
 		),
 		Entry(
 			"admits a claim name of 40 characters",
@@ -258,7 +257,7 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 		Entry(
 			"refuses a claim name that starts with a digit",
 			validPlaneClaim, func(c *planeClaim) { c.Name = "1" + utilrand.String(8) },
-			nameBoundMessage,
+			planeNameMessage,
 		),
 
 		Entry(
@@ -307,7 +306,7 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 		Entry(
 			"refuses a change of a registration",
 			withSelections, func(c *planeClaim) { c.Spec.Plugins[0].Registration = "other-access" },
-			fixedSectionsMessage,
+			planeSectionsMessage,
 		),
 		Entry(
 			"refuses a new selection",
@@ -316,17 +315,17 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 					Section:      "cloud-identity",
 					Registration: "aws-identity",
 				})
-			}, fixedSectionsMessage,
+			}, planeSectionsMessage,
 		),
 		Entry(
 			"refuses the removal of a selection",
 			withSelections, func(c *planeClaim) { c.Spec.Plugins = c.Spec.Plugins[:1] },
-			fixedSectionsMessage,
+			planeSectionsMessage,
 		),
 		Entry(
 			"refuses the removal of every selection",
 			withSelections, func(c *planeClaim) { c.Spec.Plugins = nil },
-			fixedSectionsMessage,
+			planeSectionsMessage,
 		),
 		Entry(
 			"admits a change of the parameters only",
@@ -336,7 +335,7 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 		),
 		Entry(
 			"refuses a first selection on a claim created without one",
-			validPlaneClaim, func(c *planeClaim) { c.Spec.Plugins = selections(1) }, fixedSectionsMessage,
+			validPlaneClaim, func(c *planeClaim) { c.Spec.Plugins = selections(1) }, planeSectionsMessage,
 		),
 		Entry(
 			"admits a move from the keycloak mode to the oidc mode with a claim admin",
