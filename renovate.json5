@@ -1,7 +1,7 @@
 // Renovate keeps the dependencies of this repository current in batches, the
 // way operator-component-framework does: minor and patch updates arrive on
 // the 1st and the 15th, grouped so that one pull request carries what has to
-// land together, and a major update arrives when it is published. Go modules,
+// land together, and a major update arrives when it is 7 days old. Go modules,
 // .tool-versions, GitHub Actions, the Dockerfiles, and requirements-docs.txt
 // go through the standard managers. The fleet manager under fleet-manager/
 // goes through the npm and nodenv managers.
@@ -28,6 +28,17 @@
   ignorePaths: [],
   // An alpha or snapshot tag of the next Camunda minor never lands.
   ignoreUnstable: true,
+  // A release must be 7 days old before Renovate proposes it. A broken or
+  // hijacked release is usually found and pulled in that time. A security
+  // update does not wait, because the default of vulnerabilityAlerts below
+  // sets no minimum age. The npm releases of the fleet manager also have to
+  // pass the 1-day minimum age of pnpm, which this covers.
+  minimumReleaseAge: "7 days",
+  // Some registries give no release date, for example quay.io,
+  // docker.elastic.co, and the tags of amazon/aws-cli and node on Docker Hub.
+  // Without this, Renovate holds their updates forever. With it, they arrive
+  // without the wait.
+  minimumReleaseAgeBehaviour: "timestamp-optional",
   // Without a tidy, a Go update leaves the replaced versions in go.sum, and
   // the tidy check of the Tests workflow fails.
   postUpdateOptions: ["gomodTidy"],
@@ -89,7 +100,7 @@
   packageRules: [
     {
       // Minor and patch updates arrive twice a month. A major update arrives
-      // when it is published.
+      // when it is 7 days old.
       matchUpdateTypes: ["minor", "patch"],
       schedule: ["* * 1,15 * *"],
     },
