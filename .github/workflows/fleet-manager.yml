@@ -42,6 +42,14 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version-file: fleet-manager/.node-version
+      # make fleet-test runs make setup-envtest, which installs setup-envtest
+      # with Go and downloads the envtest binaries.
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Download the envtest binaries
+        run: make setup-envtest
 
       - name: Run the fleet manager linters
         run: make fleet-lint

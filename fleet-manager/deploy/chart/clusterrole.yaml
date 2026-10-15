@@ -32,10 +32,11 @@ rules:
   - apiGroups: [""]
     resources: [namespaces]
     verbs: [get, list, watch, create, patch]
-  # The app writes Secret values and shows only their names and keys.
+  # The app writes Secret values and shows only their names and keys. The
+  # cache watches Secrets and drops their values before it keeps them.
   - apiGroups: [""]
     resources: [secrets]
-    verbs: [get, list, create, update]
+    verbs: [get, list, watch, create, update]
   # The kinds that the app reads.
   - apiGroups: [core.camunda.io]
     resources:

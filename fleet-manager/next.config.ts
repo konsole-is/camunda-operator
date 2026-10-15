@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
     ? ["gallery.tsx", "tsx", "ts", "jsx", "js"]
     : ["tsx", "ts", "jsx", "js"],
   distDir: galleryBuild ? ".next-gallery" : ".next",
+  // The Kubernetes client loads optional modules and files at run time, so
+  // the server loads it from node_modules instead of the bundle.
+  serverExternalPackages: ["@kubernetes/client-node"],
 };
 
 export default nextConfig;
