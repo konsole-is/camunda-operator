@@ -71,6 +71,13 @@ spec:
           # manager image above.
           - name: CAMUNDA_OPERATOR_CLI_IMAGE
             value: ghcr.io/konsole-is/camunda-operator-cli:latest
+          # The ServiceAccount of the Pod, which the built-in
+          # PluginRegistrations name. The manager reads it as the default of
+          # --service-account.
+          - name: CAMUNDA_OPERATOR_SERVICE_ACCOUNT
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.serviceAccountName
         name: manager
         ports: []
         securityContext:

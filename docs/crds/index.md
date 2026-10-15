@@ -1,9 +1,9 @@
 # CRD reference
 
-The operator defines the custom resources below in the API group `core.camunda.io/v1`.
+The operator defines the custom resources below in the API groups `core.camunda.io/v1` and `plugins.camunda.io/v1alpha1`.
 Each page opens with what the kind is and a minimal manifest. Then it covers one topic per section, and it ends with the status conditions and the full spec reference.
 
-The [API reference](api-reference.md) lists every type and field of the API group on one page, with its default and its validation. The page is generated from the API types, so it matches the CRDs of the same release.
+The [API reference](api-reference.md) lists every type and field of these API groups on one page, with its default and its validation. The page is generated from the API types, so it matches the CRDs of the same release.
 
 Some kinds need an operator that this operator does not install. `ElasticsearchCluster` needs the ECK operator. `DatabaseServer` needs the CloudNativePG operator, and `spec.archive` also needs the Barman Cloud plugin and cert-manager. `CamundaManagementCluster` with `spec.identityProvider.keycloak` needs the Keycloak Operator. Install what you use before the manager starts, or restart the manager after. See [Installation](../installation.md#requirements).
 
@@ -66,16 +66,23 @@ A contract is a resource that carries connection details and credential referenc
 | [LogicalRestoreRDBMS](logicalrestorerdbms.md) | Namespaced | Restore one relational logical backup into a suspended cluster. |
 | [PointInTimeRestore](pointintimerestore.md) | Namespaced | Align the Zeebe primary storage of a PostgreSQL cluster with a database restored to a timestamp. |
 
-## Planned kinds
+## Plugins
 
-The kinds below are an alpha API in the groups `plugins.camunda.io/v1alpha1` and `fleet.camunda.io/v1alpha1`. No controller acts on them yet. The install does not include their CRDs, and their fields can change in a later release.
+These kinds are an alpha API in the group `plugins.camunda.io/v1alpha1`. Their fields can change in a later release.
 
 | Kind | Scope | What it is |
 | --- | --- | --- |
-| `PluginSection` | Cluster | One section of the create flow in the fleet manager, for example "Backup storage". |
-| `PluginRegistration` | Cluster | One option that a plugin offers in one or more sections, with the permissions that the option asks for. |
-| `PluginRequest` | Namespaced | A request to a plugin for the resources of one section. |
-| `Grant` | Namespaced | One permission that a plugin asks for, on behalf of a `PluginRequest`. |
+| [PluginSection](pluginsection.md) | Cluster | One section of the create flow in the fleet manager, for example "Backup storage". The operator writes the core sections. |
+| [PluginRegistration](pluginregistration.md) | Cluster | One option that a plugin offers in one or more sections, with the permissions that the option asks for. The operator writes the built-in options. |
+| [PluginRequest](pluginrequest.md) | Namespaced | A request to a plugin for the resources of one section. |
+| [Grant](grant.md) | Namespaced | One permission that a plugin asks for, on behalf of a `PluginRequest`. |
+
+## Planned kinds
+
+The kind below is an alpha API in the group `fleet.camunda.io/v1alpha1`. No controller acts on it yet. The install does not include its CRD, and its fields can change in a later release.
+
+| Kind | Scope | What it is |
+| --- | --- | --- |
 | `Environment` | Cluster | The policy for the claims in the namespaces whose label `fleet.camunda.io/environment` names it. |
 
 ## How the kinds relate
