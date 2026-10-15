@@ -79,6 +79,23 @@ describe("ResourcesEditor", () => {
     );
   });
 
+  it("accepts a limit equal to its request in another unit", async () => {
+    const onChange = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={{ requests: { cpu: "700m" } }}
+        onChange={onChange}
+      />,
+    );
+    const limit = screen.getByRole("group", { name: "CPU limit" });
+    await userEvent.type(
+      within(limit).getByRole("textbox", { name: "Amount" }),
+      "0.7",
+    );
+    expect(onChange.mock.lastCall![1]).toEqual([]);
+  });
+
   it("compares a limit with a request in a unit that the list does not hold", async () => {
     const onChange = vi.fn();
     render(

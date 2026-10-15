@@ -192,7 +192,13 @@ function amountErrors(amounts: Record<string, Amount>): ValidationError[] {
   for (const resource of ["cpu", "memory"] as const) {
     const request = base(amounts[`requests.${resource}`]);
     const limit = base(amounts[`limits.${resource}`]);
-    if (request !== undefined && limit !== undefined && limit < request)
+    // Float scales make equal quantities differ in the last digit, such as
+    // 700m and 0.7.
+    if (
+      request !== undefined &&
+      limit !== undefined &&
+      limit < request * (1 - 1e-12)
+    )
       errors.push({
         path: `limits.${resource}`,
         message: "The limit is below the request",
