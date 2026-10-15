@@ -59,6 +59,45 @@ describe("ResourcesEditor", () => {
     );
   });
 
+  it("keeps quantities with a fraction or an exponent when another field changes", async () => {
+    const onChange = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={{ requests: { cpu: ".5", memory: "1e9" } }}
+        onChange={onChange}
+      />,
+    );
+    const limit = screen.getByRole("group", { name: "CPU limit" });
+    await userEvent.type(
+      within(limit).getByRole("textbox", { name: "Amount" }),
+      "1",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      { requests: { cpu: ".5", memory: "1e9" }, limits: { cpu: "1" } },
+      [],
+    );
+  });
+
+  it("compares a limit with a request in exponent notation", async () => {
+    const onChange = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={{ requests: { memory: "2e9" } }}
+        onChange={onChange}
+      />,
+    );
+    const limit = screen.getByRole("group", { name: "Memory limit" });
+    await userEvent.type(
+      within(limit).getByRole("textbox", { name: "Amount" }),
+      "1",
+    );
+    expect(onChange.mock.lastCall![1]).toEqual([
+      { path: "limits.memory", message: "The limit is below the request" },
+    ]);
+  });
+
   it("refuses a limit below its request and an amount that is not a number", async () => {
     const onChange = vi.fn();
     render(

@@ -41,6 +41,8 @@ const SCALE: Record<string, number> = {
   Gi: 2 ** 30,
   Ti: 2 ** 40,
 };
+// The number part of a Kubernetes quantity.
+const NUMBER = /^(\d+\.?\d*|\.\d+)$/;
 const FIELDS: [Side, Resource, string][] = [
   ["requests", "cpu", "CPU request"],
   ["limits", "cpu", "CPU limit"],
@@ -149,7 +151,9 @@ function parse(
 ): Amount {
   if (quantity === undefined)
     return { amount: "", unit: DEFAULT_UNIT[resource] };
-  const match = /^(\d+(?:\.\d+)?)([A-Za-z]*)$/.exec(String(quantity));
+  const match = /^(\d+\.?\d*|\.\d+)([eE][-+]?\d+|[A-Za-z]*)$/.exec(
+    String(quantity),
+  );
   return match
     ? { amount: match[1], unit: match[2] }
     : { amount: String(quantity), unit: "" };
@@ -176,7 +180,7 @@ function toResources(
 function amountErrors(amounts: Record<string, Amount>): ValidationError[] {
   const errors: ValidationError[] = [];
   for (const [path, value] of Object.entries(amounts)) {
-    if (value.amount !== "" && !/^\d+(\.\d+)?$/.test(value.amount))
+    if (value.amount !== "" && !NUMBER.test(value.amount))
       errors.push({ path, message: "Enter a number" });
   }
   for (const resource of ["cpu", "memory"] as const) {
@@ -192,7 +196,12 @@ function amountErrors(amounts: Record<string, Amount>): ValidationError[] {
 }
 
 function base(value: Amount): number | undefined {
-  if (!/^\d+(\.\d+)?$/.test(value.amount) || !(value.unit in SCALE))
-    return undefined;
-  return Number(value.amount) * SCALE[value.unit];
+  if (!NUMBER.test(value.amount)) return undefined;
+  const exponent = /^[eE]([-+]?\d+)$/.exec(value.unit);
+  const scale = exponent
+    ? 10 ** Number(exponent[1])
+    : Object.hasOwn(SCALE, value.unit)
+      ? SCALE[value.unit]
+      : undefined;
+  return scale === undefined ? undefined : Number(value.amount) * scale;
 }
