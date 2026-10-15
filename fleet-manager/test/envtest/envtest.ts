@@ -38,6 +38,8 @@ interface Running {
   child: ChildProcess;
   name: string;
   stderr: string[];
+  /** spawnError is set when the binary could not start, such as a missing file. */
+  spawnError?: Error;
 }
 
 /**
@@ -154,12 +156,15 @@ export async function startEnvtest(
 
 function run(binary: string, name: string, args: string[]): Running {
   const child = spawn(binary, args, { stdio: ["ignore", "ignore", "pipe"] });
-  const stderr: string[] = [];
-  child.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
-    stderr.push(...chunk.split("\n"));
-    stderr.splice(0, Math.max(0, stderr.length - 20));
+  const running: Running = { child, name, stderr: [] };
+  child.on("error", (error) => {
+    running.spawnError = error;
   });
-  return { child, name, stderr };
+  child.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
+    running.stderr.push(...chunk.split("\n"));
+    running.stderr.splice(0, Math.max(0, running.stderr.length - 20));
+  });
+  return running;
 }
 
 async function waitUntil(
@@ -169,6 +174,11 @@ async function waitUntil(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    if (running.spawnError) {
+      throw new Error(
+        `${running.name} could not start: ${running.spawnError.message}`,
+      );
+    }
     if (running.child.exitCode !== null || running.child.signalCode !== null) {
       throw new Error(
         `${running.name} exited during the start of envtest:\n${running.stderr.join("\n")}`,
@@ -321,7 +331,13 @@ function kubeconfig(server: string, token: string): string {
 // process that does not exit within ten seconds of SIGTERM gets SIGKILL.
 async function stopAll(running: Running[]): Promise<void> {
   for (const r of [...running].reverse()) {
-    if (r.child.exitCode !== null || r.child.signalCode !== null) continue;
+    if (
+      r.spawnError ||
+      r.child.exitCode !== null ||
+      r.child.signalCode !== null
+    ) {
+      continue;
+    }
     const exited = new Promise((resolve) => r.child.once("exit", resolve));
     r.child.kill("SIGTERM");
     const timer = setTimeout(() => r.child.kill("SIGKILL"), 10_000);

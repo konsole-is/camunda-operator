@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { ApiextensionsV1Api, KubeConfig } from "@kubernetes/client-node";
 import { parseAllDocuments } from "yaml";
@@ -33,5 +34,16 @@ describe("the envtest API server", () => {
     await expect(startEnvtest({ assetsDir: "" })).rejects.toThrow(
       /KUBEBUILDER_ASSETS is not set.*make setup-envtest/,
     );
+  });
+
+  it("rejects and names the binary when KUBEBUILDER_ASSETS has no envtest binaries", async () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), "no-envtest-"));
+    try {
+      await expect(startEnvtest({ assetsDir: empty })).rejects.toThrow(
+        /etcd could not start/,
+      );
+    } finally {
+      fs.rmSync(empty, { recursive: true, force: true });
+    }
   });
 });
