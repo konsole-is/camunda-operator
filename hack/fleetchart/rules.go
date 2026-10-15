@@ -52,7 +52,7 @@ var appRules = []grant{
 	{"core.camunda.io", "pointintimerestores", writeVerbs},
 	{"core.camunda.io", "backupschedules", writeVerbs},
 	{"", "namespaces", []string{"get", "list", "watch", "create", "patch"}},
-	{"", "secrets", []string{"get", "list", "create", "update"}},
+	{"", "secrets", []string{"get", "list", "watch", "create", "update"}},
 	{"external-secrets.io", "externalsecrets", readVerbs},
 	{"plugins.camunda.io", "pluginsections", readVerbs},
 	{"plugins.camunda.io", "pluginregistrations", readVerbs},
