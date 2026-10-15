@@ -74,79 +74,13 @@ Deleting a preset removes no cluster. Each `ElasticsearchCluster` that reference
 
 A preset has no status. It reports no conditions and no `status.observedGeneration`. A problem with a preset shows on the `Ready` condition of the `ElasticsearchCluster` that references it. Examples are a `presetRef` that names no preset, or a merge that lacks a required field.
 
-## Spec reference
+## Fields
+
+The [API reference](api-reference.md#elasticsearchclusterpreset) lists every field of `ElasticsearchClusterPreset`, with its type, whether it is required, its default, and its validation.
 
 `spec.cluster` has the same type as the spec of `ElasticsearchCluster`. The fields `presetRef`, `releaseRef`, `secondaryStorageConfig`, and `suspend` belong to one cluster and must stay unset in a preset. [Validation rules](#validation-rules) has the rule for `version`. Every other field is inheritable.
 
-Every field, with its type, whether it is required, and its default:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: ElasticsearchClusterPreset
-metadata:
-  name: standard
-spec:
-  # object (ElasticsearchCluster spec type). Required. The baseline that clusters inherit.
-  cluster:
-    # integer. Optional. Number of Elasticsearch nodes, at least 1.
-    replicas: 3
-    # object (corev1.ResourceRequirements). Optional. CPU and memory of each Elasticsearch node.
-    resources:
-      requests: { cpu: "1", memory: "2Gi" }
-      limits: { memory: "2Gi" }
-    # string (resource quantity). Optional. Size of the data volume of each node.
-    storageSize: "64Gi"
-    # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the data volumes.
-    storageClassName: "ssd"
-    # string. Optional. Name of an ObjectStorageConfig in the namespace of each cluster that holds the snapshot bucket. See ElasticsearchCluster.
-    snapshotStorageRef: "my-backup-bucket"
-    # list of objects. Optional. Secrets that ECK loads into the keystore of every node. See ElasticsearchCluster.
-    secureSettings: []
-    # list (corev1.EnvVar). Optional. Extra environment variables for every Elasticsearch node.
-    extraEnv: []
-    # list (corev1.EnvFromSource). Optional. Extra environment sources (ConfigMaps, Secrets) for every node.
-    extraEnvFrom: []
-    # map[string]string. Optional. Extra labels on the Elasticsearch pods.
-    podLabels: {}
-    # map[string]string. Optional. Extra annotations on the Elasticsearch pods.
-    podAnnotations: {}
-    # object. Optional. Scheduling constraints. A cluster that sets its own scheduling block replaces this one as a whole.
-    scheduling:
-      # object (corev1.NodeAffinity). Optional. Node affinity rules.
-      nodeAffinity: {}
-      # object (corev1.PodAffinity). Optional. Pod affinity rules.
-      podAffinity: {}
-      # list (corev1.Toleration). Optional. Tolerations of the pods.
-      tolerations: []
-    # object. Optional. ServiceAccount of the Elasticsearch pods. See ElasticsearchCluster.
-    serviceAccount:
-      # string. Optional, default: <cluster name>-es. Name of the ServiceAccount.
-      name: ""
-      # boolean. Optional, default: true. With false, you manage the ServiceAccount.
-      create: true
-      # map[string]string. Optional. Annotations for workload identity.
-      annotations: {}
-    # object. Optional. Prometheus scraping. A cluster that sets its own monitoring block replaces this one as a whole.
-    monitoring:
-      serviceMonitor:
-        # boolean. Optional, default: false. Runs the elasticsearch_exporter and creates a ServiceMonitor.
-        enabled: false
-        # map[string]string. Optional. Extra labels on the ServiceMonitor.
-        labels: {}
-        # map[string]string. Optional. Extra annotations on the ServiceMonitor.
-        annotations: {}
-      exporter:
-        # string. Optional, default: the exporter image that the operator pins. Exporter image.
-        image: ""
-        # object (corev1.ResourceRequirements). Optional. CPU and memory of the exporter container.
-        resources: {}
-    # object. Optional. What happens to the data volumes when the cluster is deleted.
-    persistentVolumeClaimRetentionPolicy:
-      # string (Retain | Delete). Optional, default: Delete. Delete removes the data volumes with the cluster. Retain keeps them.
-      whenDeleted: Delete
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.cluster` must not set `presetRef`, `releaseRef`, `secondaryStorageConfig`, or `suspend`. An empty `presetRef`, an empty `releaseRef`, and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `secondaryStorageConfig` is rejected by the name pattern. Omit the field instead.
 - `version` is rejected in `spec.cluster` with `version belongs to a CamundaRelease and must not be set in a preset`. Move the version to a [CamundaRelease](camundarelease.md), and point every cluster at it with `releaseRef`. An empty `version` is rejected by the three-segment pattern. Omit the field instead.
@@ -154,7 +88,7 @@ spec:
 - Whether the merged configuration is complete is checked on the `ElasticsearchCluster`, not on the preset.
 - Every other rule of the `ElasticsearchCluster` schema applies to `spec.cluster`: `replicas` at least 1, and valid resource names.
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

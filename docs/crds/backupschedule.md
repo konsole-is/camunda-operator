@@ -203,39 +203,18 @@ status:
       lastTransitionTime: "2026-08-20T02:00:00Z"
 ```
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#backupschedule) lists every field of `BackupSchedule`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: BackupSchedule
-metadata:
-  name: my-cluster-schedule
-  namespace: my-cluster-ns
-spec:
-  # object. Required. The CamundaCluster to back up, in the namespace of this resource. It needs a storageRef and a backupStorageRef.
-  clusterRef:
-    # string. Required. Name of the CamundaCluster.
-    name: my-cluster
-  # string. Required. Five-field cron expression (minute, hour, day of month, month, day of week), evaluated in UTC.
-  schedule: "0 2 * * *"
-  # object. Optional. How many backups of this schedule are kept. The defaults below apply when you set nothing.
-  retained:
-    # integer. Optional, default: 7. How many completed backups the schedule keeps. Minimum 1.
-    completed: 7
-    # integer. Optional, default: 3. How many failed backups the schedule keeps. Minimum 0. Zero deletes a failed backup at the first look after it fails.
-    failed: 3
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.clusterRef.name` is required and must not be empty. The cluster must live in the namespace of the schedule.
 - `spec.schedule` is required. The API server checks the shape only: five fields, separated by whitespace, of the cron characters. A value out of range, for example the minute `99`, passes admission. The operator then reports `InvalidReference` on `Ready`. Seconds fields and `@daily` style descriptors are rejected at admission.
 - `spec.retained.completed` must be 1 or more. `spec.retained.failed` must be 0 or more.
 - The spec is mutable. Every field can be changed on a live schedule.
 
-### A production-shaped example
+## A production-shaped example
 
 A nightly schedule that keeps two weeks of backups and only the last failure:
 

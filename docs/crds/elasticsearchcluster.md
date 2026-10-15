@@ -203,95 +203,11 @@ status:
 
 `status.observedGeneration` is the last generation that the operator reconciled.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#elasticsearchcluster) lists every field of `ElasticsearchCluster`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: ElasticsearchCluster
-metadata:
-  name: my-cluster-es
-  namespace: my-cluster-ns
-spec:
-  # string. Optional. Name of a cluster-scoped ElasticsearchClusterPreset that is the baseline. A field set here replaces the value of the preset.
-  presetRef: "standard"
-  # string. Optional. Name of a cluster-scoped CamundaRelease that supplies the version. It wins over the preset and loses to this spec.
-  releaseRef: "camunda-8-9-4"
-  # string. Required unless the release provides it. Elasticsearch version as three segments. Camunda 8.9 supports 8.19+ and 9.2+. Rejected in a preset.
-  version: "9.2.4"
-  # integer. Required unless the preset provides it. Number of Elasticsearch nodes, at least 1.
-  replicas: 3
-  # object (corev1.ResourceRequirements). Optional. CPU and memory of each Elasticsearch node.
-  resources:
-    requests: { cpu: "1", memory: "2Gi" }
-    limits: { memory: "2Gi" }
-  # string (resource quantity). Required unless the preset provides it. Size of the data volume of each node. It can grow but not shrink.
-  storageSize: "64Gi"
-  # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the data volumes. A change after the ECK resource exists is ignored.
-  storageClassName: "ssd"
-  # string. Optional. Name of an ObjectStorageConfig in this namespace that holds the snapshot bucket. Set it to take part in backups. It must be the bucket that the CamundaCluster references.
-  snapshotStorageRef: "my-backup-bucket"
-  # object. Optional. ServiceAccount of the Elasticsearch pods. The operator creates one when this block is set, or when the snapshot bucket uses workload identity.
-  serviceAccount:
-    # string. Optional, default: <name>-es. Name of the ServiceAccount. A workload identity without an annotation binds the principal system:serviceaccount:<namespace>:<name>. The name <name>-es belongs to the operator. While neither the cluster nor its preset sets serviceAccount and the snapshot bucket does not use workload identity, the operator deletes an account of that name. It deletes one that you created too.
-    name: "my-cluster-es"
-    # boolean. Optional, default: true. With false, you manage the ServiceAccount. The operator does not create, annotate, or own it, and a missing one fails Ready. A switch to false removes the owner reference from the account that the operator created, so it stays when you delete the cluster. A switch back to true owns and annotates it again.
-    create: true
-    # map[string]string. Optional. Annotations for workload identity (IRSA, GCP Workload Identity). A value set here wins over the one the operator derives from the bucket.
-    annotations:
-      eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-es-snapshot-role"
-  # list of objects. Optional. Secrets that ECK loads into the keystore of every node. The bucket credentials are added by the operator, so this is for other keystore entries.
-  secureSettings:
-    - # string. Required. Name of the Secret, in the namespace of this resource.
-      secretName: extra-keystore-entries
-      # list of objects. Optional. Maps single keys to keystore entries. An empty list loads every key under its own name.
-      entries:
-        - # string. Required. Key in the Secret.
-          key: someKey
-          # string. Required. Keystore entry that the key becomes.
-          path: some.secure.setting
-  # list (corev1.EnvVar). Optional. Extra environment variables for every Elasticsearch node.
-  extraEnv: []
-  # list (corev1.EnvFromSource). Optional. Extra environment sources (ConfigMaps, Secrets) for every node.
-  extraEnvFrom: []
-  # map[string]string. Optional. Extra labels on the Elasticsearch pods.
-  podLabels: {}
-  # map[string]string. Optional. Extra annotations on the Elasticsearch pods. The key `camunda.io/service-account-hash` belongs to the operator, and a value for it does not reach the pods.
-  podAnnotations: {}
-  # object. Optional. Scheduling constraints of the Elasticsearch pods. When set, it replaces the whole scheduling block of the preset.
-  scheduling:
-    # object (corev1.NodeAffinity). Optional. Node affinity rules.
-    nodeAffinity: {}
-    # object (corev1.PodAffinity). Optional. Pod affinity rules.
-    podAffinity: {}
-    # list (corev1.Toleration). Optional. Tolerations of the pods.
-    tolerations: []
-  # string. Required. Name of the SecondaryStorageConfig that the operator creates in this namespace.
-  secondaryStorageConfig: "my-storage-config"
-  # object. Optional. Prometheus scraping. A block set here replaces the whole monitoring block of the preset.
-  monitoring:
-    serviceMonitor:
-      # boolean. Optional, default: false. Runs the elasticsearch_exporter and creates a ServiceMonitor. Without the prometheus-operator CRD the exporter still runs and the ServiceMonitor is omitted.
-      enabled: true
-      # map[string]string. Optional. Extra labels on the ServiceMonitor.
-      labels: {}
-      # map[string]string. Optional. Extra annotations on the ServiceMonitor.
-      annotations: {}
-    exporter:
-      # string. Optional, default: the quay.io/prometheuscommunity/elasticsearch-exporter release that the operator pins. Exporter image.
-      image: ""
-      # object (corev1.ResourceRequirements). Optional. CPU and memory of the exporter container.
-      resources: {}
-  # object. Optional. What happens to the data volumes when this resource is deleted. Suspension always keeps them.
-  persistentVolumeClaimRetentionPolicy:
-    # string (Retain | Delete). Optional, default: Delete. Delete removes the data volumes with the cluster. Retain keeps them, and a later cluster with the same name reattaches them.
-    whenDeleted: Delete
-  # boolean. Optional, default: false. Stops the cluster and keeps its data volumes. Set it back to false to start the cluster again.
-  suspend: false
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.secondaryStorageConfig` is required.
 - `spec.storageSize` cannot shrink. The API server rejects a value that is lower than the previous inline value.
@@ -301,7 +217,7 @@ spec:
 - `spec.secondaryStorageConfig`, `spec.snapshotStorageRef`, and `spec.serviceAccount.name` must be valid resource names.
 - `spec.persistentVolumeClaimRetentionPolicy.whenDeleted` must be `Retain` or `Delete`.
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

@@ -124,63 +124,18 @@ A release reports no status. `kubectl get camundarelease` shows the Camunda vers
 
 Problems appear on the resource that references the release. A missing release gives `Ready: False` with reason `InvalidReference`.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#camundarelease) lists every field of `CamundaRelease`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaRelease
-metadata:
-  # Cluster-scoped: no namespace.
-  name: camunda-8-9-4
-spec:
-  # string. Required. Camunda version as x.y.z. The referencing cluster requires 8.9.0 or later.
-  version: "8.9.4"
-  # object. Optional. The connectors runtime of this release.
-  connectors:
-    # string. Optional. Version of the connectors bundle as x.y.z, with the same minor as the release. Required for clusters that enable connectors, unless each cluster sets its own.
-    version: "8.9.7"
-    # []EnvVar. Optional. Environment variables of the connectors runtime.
-    extraEnv: []
-    # []EnvFromSource. Optional. Environment sources of the connectors runtime.
-    extraEnvFrom: []
-  # object. Optional. The Elasticsearch of this release.
-  elasticsearch:
-    # string. Optional. Elasticsearch version as x.y.z. The referencing cluster requires 8.19 or later on major 8, and 9.2 or later on major 9.
-    version: "9.2.8"
-  # object. Optional. The PostgreSQL server of this release.
-  databaseServer:
-    # string. Optional. PostgreSQL major version as a bare number. The referencing server requires 14 or later.
-    version: "17"
-  # object. Optional. Complete image references, pulled as they are. A pin applies only while the version of the release is the effective one, and the version stays what the operator believes the process runs.
-  images:
-    # string. Optional. Image of every orchestration cluster process.
-    camunda: "mirror.example.com/camunda/camunda@sha256:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730"
-    # string. Optional. Image of the connectors runtime.
-    connectors: "mirror.example.com/camunda/connectors-bundle:8.9.7"
-  # []EnvVar. Optional. Environment variables of every workload. An entry replaces a preset entry with the same name, and a cluster entry replaces it.
-  extraEnv:
-    - name: CAMUNDA_SOME_NEW_FLAG
-      value: "true"
-  # []EnvFromSource. Optional. Environment sources of every workload. They come after the preset sources and before the cluster sources.
-  extraEnvFrom: []
-  # object. Optional. Environment of the brokers. The same shape as zeebe applies to gateway, operate, tasklist, and admin.
-  zeebe:
-    # []EnvVar. Optional. Environment variables of this process. An entry here wins over a top-level entry with the same name.
-    extraEnv: []
-    # []EnvFromSource. Optional. Environment sources of this process.
-    extraEnvFrom: []
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.version` is required and must be of the form `x.y.z`. The referencing cluster requires 8.9.0 or later on the merged spec.
 - `spec.connectors.version` and `spec.elasticsearch.version` must be of the form `x.y.z`.
 - `spec.databaseServer.version` must be a bare number.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

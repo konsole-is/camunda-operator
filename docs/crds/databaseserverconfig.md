@@ -176,64 +176,11 @@ A completed rollback changes `spec.host`, so the record of the last probe clears
 | `status.probedSecretVersion` | The `resourceVersion` of the admin credentials Secret that the last probe read. |
 | `status.observedGeneration` | The last generation of the contract that the operator checked. |
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#databaseserverconfig) lists every field of `DatabaseServerConfig`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: DatabaseServerConfig
-metadata:
-  name: my-db-server
-  namespace: my-cluster-ns
-spec:
-  # string enum: postgres. Required. Database engine of the server. Only postgres is supported.
-  engine: postgres
-  # string. Required. Host name at which the server is reachable.
-  host: "my-db-server.abc123.us-east-1.rds.amazonaws.com"
-  # integer. Required. Port the server listens on, from 1 to 65535.
-  port: 5432
-  # object. Required. Admin user that can create databases and roles. A Database uses it to create logical databases.
-  adminCredentialsSecretRef:
-    # string. Required. Name of the Secret that holds the admin credentials, in the namespace of this contract.
-    name: my-db-server-admin-credentials
-    # string. Optional, default: username. Key in the Secret that holds the username.
-    usernameKey: username
-    # string. Optional, default: password. Key in the Secret that holds the password.
-    passwordKey: password
-  # object. Optional. Point-in-time-recovery capability of the server, read by PointInTimeRestore.
-  pitr:
-    # boolean. Optional, default: false. Whether the server archives its write-ahead log for point-in-time recovery.
-    enabled: true
-    # integer. Required when enabled is true, from 1 to 36500. How many days into the past a point-in-time restore can target.
-    retentionPeriodDays: 7
-    # string enum: operator, external. Optional, default: external. Who rolls the server back to a point in time.
-    recovery: operator
-    # object. Optional. How the last recovery request ended. The producer of the contract writes it.
-    lastRecovery:
-      # string. Required. The requestID of the request this outcome answers.
-      requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
-      # string. Required. The requestedBy of the request this outcome answers.
-      requestedBy: my-cluster-ns/my-restore
-      # string. Required. The targetTime of the request this outcome answers, RFC 3339 with a zone.
-      targetTime: "2026-08-20T14:30:00Z"
-      # string. Required. When the request ended, as RFC 3339.
-      completedAt: "2026-08-20T15:02:11Z"
-      # string enum: Completed, Failed, Unavailable. Required. How the request ended.
-      result: Completed
-      # string. Optional. What happened. Empty for a result of Completed.
-      message: ""
-  # object. Optional. Asks for a rollback to a point in time. A consumer writes it.
-  recovery:
-    # string. Required. A UUID that belongs to this request alone, usually the uid of the resource that asks.
-    requestID: 3f2b1c4d-5e6a-4b7c-8d9e-0f1a2b3c4d5e
-    # string. Required. The resource that asks, as <namespace>/<name>.
-    requestedBy: my-cluster-ns/my-restore
-    # string. Required. The point to roll back to, as RFC 3339 with a zone.
-    targetTime: "2026-08-20T14:30:00Z"
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.engine` must be `postgres`.
 - `spec.host` and `spec.adminCredentialsSecretRef.name` must not be empty.
@@ -245,7 +192,7 @@ spec:
 - `spec.recovery.requestID` and `spec.pitr.lastRecovery.requestID` must be a UUID.
 - No field is immutable.
 
-### A production-shaped example
+## A production-shaped example
 
 A managed PostgreSQL server that archives its write-ahead log for 7 days:
 

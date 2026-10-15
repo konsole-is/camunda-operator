@@ -254,6 +254,8 @@ spec:
 
 If the Kubernetes cluster does not serve the `PodMonitor` kind, the operator creates nothing and the server stays ready.
 
+A `monitoring` block on the server replaces the `monitoring` block of the preset as a whole. The two blocks do not merge.
+
 ## Suspend
 
 `spec.suspend: true` stops the instances and keeps their volumes. `ClusterReady` reports `Suspending`, then `Suspended`. `Ready` stays `True` with reason `Suspended`.
@@ -429,79 +431,11 @@ status:
 
 `status.observedGeneration` is the last generation that the operator reconciled.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#databaseserver) lists every field of `DatabaseServer`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: DatabaseServer
-metadata:
-  name: my-db
-  namespace: my-cluster-ns
-spec:
-  # string. Optional. Name of a cluster-scoped DatabaseServerPreset used as the baseline.
-  presetRef: "standard"
-  # string. Optional. Name of a cluster-scoped CamundaRelease that supplies the version. It wins over the preset and loses to this spec.
-  releaseRef: "camunda-8-9-4"
-  # string. Optional. Name of a cluster-scoped CamundaPlatformConfig. Only its image settings are read.
-  platformConfigRef: "my-platform-config"
-  # string. Required, unless the release provides it. PostgreSQL major, 14 or later, fixed once the server runs.
-  version: "17"
-  # integer. Optional, default: 1. Number of PostgreSQL instances, at least 1.
-  instances: 3
-  # object (corev1.ResourceRequirements). Optional. CPU and memory of each instance.
-  resources:
-    requests: { cpu: "2", memory: "4Gi" }
-    limits: { memory: "4Gi" }
-  # string (resource quantity). Required, unless the preset provides it. Size of the data volume of each instance.
-  storageSize: "256Gi"
-  # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the volumes.
-  storageClassName: "ssd"
-  # string (resource quantity). Optional. Size of a separate volume for the write-ahead log. It cannot be cleared.
-  walStorageSize: "32Gi"
-  # object. Optional. The ServiceAccount <name>-postgres of the instance pods, which the operator creates.
-  serviceAccount:
-    # map[string]string. Optional. Annotations for workload identity. A value here wins over the one derived from the bucket.
-    annotations: {}
-  # object. Optional. Scheduling constraints of the instance pods. A server that sets it replaces the block of the preset as a whole.
-  scheduling:
-    # object (corev1.NodeAffinity). Optional. Node affinity rules.
-    nodeAffinity: {}
-    # object (corev1.PodAffinity). Optional. Pod affinity rules.
-    podAffinity: {}
-    # list (corev1.Toleration). Optional. Tolerations of the pods.
-    tolerations: []
-  # map[string]string. Optional. Extra labels on the instance pods.
-  podLabels: {}
-  # map[string]string. Optional. Extra annotations on the instance pods.
-  podAnnotations: {}
-  # object. Optional. Prometheus scraping. A server that sets it replaces the block of the preset as a whole.
-  monitoring:
-    podMonitor:
-      # boolean. Optional, default: false. Creates a PodMonitor over the instance pods.
-      enabled: true
-      # map[string]string. Optional. Extra labels on the PodMonitor.
-      labels: {}
-      # map[string]string. Optional. Extra annotations on the PodMonitor.
-      annotations: {}
-      # string. Optional, default: the Prometheus setting. Scrape interval, as a Prometheus duration.
-      interval: "30s"
-  # string. Required. Name of the DatabaseServerConfig the operator publishes in this namespace.
-  databaseServerConfig: my-db-server
-  # object. Optional. The continuous archive of the server. Without it no point-in-time restore can reach the server.
-  archive:
-    # string. Required in this block. Name of an ObjectStorageConfig in this namespace.
-    objectStorageRef: my-backup-bucket
-    # integer. Required in this block. How many days into the past a restore can reach, from 1 to 36500.
-    retentionPeriodDays: 30
-    # string. Optional, default: "0 0 2 * * *". Six-field cron in UTC, seconds first, for the base backups.
-    baseBackupSchedule: "0 0 2 * * *"
-  # boolean. Optional, default: false. Stops the instances and keeps their volumes.
-  suspend: false
-```
-
-### Validation rules
+## Validation rules
 
 - `metadata.name` must be a DNS-1035 label of 46 characters or fewer: lowercase letters, digits, and `-`, starting with a letter.
 - `databaseServerConfig` is required on a `DatabaseServer` and must not be set in a preset.
@@ -512,7 +446,7 @@ spec:
 - `archive.baseBackupSchedule` must be a six-field cron or a descriptor. See [Schedule](#schedule).
 - `version` and `storageSize` must be present after the merge. Set them inline, or take `storageSize` from a preset and `version` from a release. A missing field is reported on `Ready` with reason `InvalidReference`.
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

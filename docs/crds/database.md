@@ -100,44 +100,17 @@ Deletion removes the `DatabaseConfig`, the `SecondaryStorageConfig`, and the cre
 | `status.collisionKey` | The logical database that this `Database` last resolved, as `<system identifier>/<database name>`. While the server of the spec is missing or not probed, it keeps the value from before. It does not show who holds the name. |
 | `status.observedGeneration` | The last generation that the operator reconciled. |
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#database) lists every field of `Database`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: Database
-metadata:
-  name: my-camunda-db
-  namespace: my-cluster-ns
-spec:
-  # string. Required. Name of the DatabaseServerConfig of this namespace that describes the server.
-  serverRef: "my-db-server"
-  # string. Required. Name of the logical database to create. It must be unique per server, across all namespaces.
-  databaseName: "camunda"
-  # object. Optional. The application credentials Secret (keys: username, password). It is always created.
-  applicationCredentials:
-    # string. Optional, default: <name>-credentials. Name of the Secret, in the namespace of this resource.
-    secretName: "my-camunda-db-app"
-  # object. Optional. The backup credentials Secret (keys: username, password). It is created unless disabled.
-  backupCredentials:
-    # boolean. Optional, default: false. With true, the operator creates no backup user and no backup Secret.
-    disabled: false
-    # string. Optional, default: <name>-backup-credentials. Name of the Secret, in the namespace of this resource.
-    secretName: "my-camunda-db-backup"
-  # string. Optional, default: the name of this resource. Name of the DatabaseConfig that the operator creates in the namespace of this resource.
-  databaseConfig: "my-camunda-db"
-  # string. Optional. When set, the operator creates a SecondaryStorageConfig of type rdbms with this name in the namespace of this resource. Omit it for a database that is not secondary storage.
-  secondaryStorageConfig: "my-storage-config"
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.databaseName` must match `^[a-z_][a-z0-9_]{0,62}$`: a lowercase PostgreSQL identifier of at most 63 characters.
 - `spec.databaseConfig` and `spec.secondaryStorageConfig` must be valid resource names.
 - The API server does not check that the logical database name is unique per server. The operator does. See [Uniqueness](#uniqueness).
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

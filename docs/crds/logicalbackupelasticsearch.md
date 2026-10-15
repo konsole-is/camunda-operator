@@ -94,29 +94,16 @@ A restore needs these fields:
 
 `status.history`, `status.records`, and `status.runtime` report the state of each part: `Pending`, `InProgress`, `Completed`, or `Failed`. `status.workloadConfigHash` is the config hash of Zeebe when the backup started. `status.failureMessage` names the step that failed. `status.resumeFailureMessage` says why exporting did not resume. `status.completionTime` is when the backup ended. `status.observedGeneration` is the last generation that the operator reconciled.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#logicalbackupelasticsearch) lists every field of `LogicalBackupElasticsearch`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: LogicalBackupElasticsearch
-metadata:
-  name: my-cluster-backup
-  namespace: my-cluster-ns
-spec:
-  # object. Required. The CamundaCluster to back up, in the namespace of this resource. Its secondary storage must be Elasticsearch.
-  clusterRef:
-    # string. Required. Name of the CamundaCluster.
-    name: my-cluster
-```
-
-### Validation rules
+## Validation rules
 
 - The whole `spec` is immutable. To retry, create a new resource.
 - `spec.clusterRef.name` is required and must not be empty. The cluster must live in the namespace of the backup.
 
-### A production-shaped example
+## A production-shaped example
 
 A backup with a name that carries the date:
 
