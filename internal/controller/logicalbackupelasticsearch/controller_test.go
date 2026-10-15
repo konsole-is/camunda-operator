@@ -556,8 +556,8 @@ func expectPhase(backup *v1.LogicalBackupElasticsearch, phase v1.LogicalBackupPh
 // failing and ends with ResumeFailed. The deadline counts each wait between
 // two attempts as one poll interval at most, so a slow reconcile adds
 // attempts, not time against the deadline. Each Eventually therefore waits
-// for one more attempt, and the loop fails if the backup still runs after
-// its attempts used up the deadline.
+// for one more step or attempt, and the loop fails if the backup still runs
+// after its attempts used up the deadline.
 func expectResumeFailed(backup *v1.LogicalBackupElasticsearch) {
 	GinkgoHelper()
 	for {
@@ -578,8 +578,10 @@ func expectResumeFailed(backup *v1.LogicalBackupElasticsearch) {
 
 		Eventually(func(g Gomega) {
 			next := currentBackup(backup)
-			g.Expect(next.Status.Phase == v1.LogicalBackupFailed ||
-				!next.Status.LastResumeAttemptTime.Equal(last)).To(BeTrue(), "resume is attempted again")
+			moved := next.Status.Phase == v1.LogicalBackupFailed ||
+				next.Status.Step != current.Status.Step ||
+				!next.Status.LastResumeAttemptTime.Equal(last)
+			g.Expect(moved).To(BeTrue(), "the backup moves to a new step or attempt")
 		}, timeout, interval).Should(Succeed())
 	}
 
@@ -1766,12 +1768,27 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		backup := r.newBackup()
 		id := backupID(backup)
+		Eventually(func() v1.LogicalBackupElasticsearchStep {
+			return currentBackup(backup).Status.Step
+		}, timeout, interval).Should(Equal(v1.StepResumeExporting))
+
+		// Each Eventually waits for one more attempt, so that a slow
+		// reconcile does not use up the bound.
+		nextAttempt := func() {
+			GinkgoHelper()
+			attempts := r.management.ResumeAttempts()
+			Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">", attempts))
+		}
 		// The window under test starts once resume attempts are under way.
 		// No probe of an earlier step is still in flight then. The window
 		// spans five more attempts.
-		Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", 3))
-		before, attempts := r.search.StatsCalls(), r.management.ResumeAttempts()
-		Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", attempts+5))
+		for range 3 {
+			nextAttempt()
+		}
+		before := r.search.StatsCalls()
+		for range 5 {
+			nextAttempt()
+		}
 		Expect(r.search.StatsCalls()).To(Equal(before), "no size probe between resume attempts")
 		Expect(currentBackup(backup).Status.Step).To(Equal(v1.StepResumeExporting))
 		Expect(r.management.HistoryStarts(id)).To(BeZero())
