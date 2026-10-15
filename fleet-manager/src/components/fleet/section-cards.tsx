@@ -533,6 +533,7 @@ function ParameterField({
       label={rule.label}
       defaultValue={value}
       schema={rule.schema}
+      error={error}
       onChange={(v, found) => onValue(v, v === undefined ? found : [])}
     />
   );
@@ -693,11 +694,7 @@ function sectionErrors(
         continue;
       }
       const emptyList = Array.isArray(value) && value.length === 0;
-      if (
-        value === undefined ||
-        value === "" ||
-        (emptyList && (rule.required || rule.allowed))
-      ) {
+      if (value === undefined || value === "" || (emptyList && rule.required)) {
         if (rule.required) errors.push({ path, message: "is required" });
         continue;
       }
@@ -717,6 +714,21 @@ function sectionErrors(
               path,
               message: `${picked} is not an allowed choice`,
             });
+        // The schema checks only the count: its items are the names, and
+        // the values of the choices stay on the server.
+        const { minItems, maxItems } = rule.schema ?? {};
+        if (
+          Array.isArray(value) &&
+          typeof minItems === "number" &&
+          value.length < minItems
+        )
+          errors.push({ path, message: `Choose at least ${minItems}` });
+        if (
+          Array.isArray(value) &&
+          typeof maxItems === "number" &&
+          value.length > maxItems
+        )
+          errors.push({ path, message: `Choose at most ${maxItems}` });
         continue;
       }
       if (!rule.schema) continue;

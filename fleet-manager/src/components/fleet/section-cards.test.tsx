@@ -366,6 +366,63 @@ describe("SectionCards", () => {
     ).toBe("a: 2\n");
   });
 
+  it("shows the required error of a cleared YAML parameter at its field", async () => {
+    const option: OptionView = {
+      registration: "tuning",
+      label: "Tuning",
+      isDefault: true,
+      parameters: [
+        {
+          name: "overrides",
+          label: "Overrides",
+          schema: { type: "object" },
+          required: true,
+          claimEditable: true,
+          value: { a: 1 },
+        },
+      ],
+    };
+    render(<SectionCards section={section({}, option)} />);
+    const box = screen.getByRole("textbox", { name: "Overrides" });
+    await userEvent.clear(box);
+    expect(box.getAttribute("aria-invalid")).toBe("true");
+    expect(
+      document.getElementById(box.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe("is required");
+  });
+
+  it.each([
+    [
+      "more than maxItems",
+      { maxItems: 1 },
+      ["S3 read", "SQS access"],
+      "Choose at most 1",
+    ],
+    ["fewer than minItems", { minItems: 1 }, [], "Choose at least 1"],
+  ])("reports an allowed list with %s", async (_, bounds, clicks, message) => {
+    const onChange = vi.fn();
+    const option = awsRole(["s3"]);
+    option.parameters = option.parameters.map((rule) =>
+      rule.name === "policies"
+        ? {
+            ...rule,
+            schema: { type: "array", items: { type: "string" }, ...bounds },
+          }
+        : rule,
+    );
+    render(<SectionCards section={section({}, option)} onChange={onChange} />);
+    const group = screen.getByRole("group", { name: "Policies" });
+    await userEvent.click(
+      within(group).getByRole("checkbox", { name: "S3 read" }),
+    );
+    for (const name of clicks)
+      await userEvent.click(within(group).getByRole("checkbox", { name }));
+    expect(onChange.mock.lastCall![1]).toEqual([
+      { path: "aws-connectors-role.policies", message },
+    ]);
+  });
+
   it("checks an empty list against the schema of an optional parameter", async () => {
     const onChange = vi.fn();
     const option: OptionView = {
