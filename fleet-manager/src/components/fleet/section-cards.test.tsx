@@ -46,11 +46,7 @@ const awsRole = (value?: unknown): OptionView => ({
       name: "boundaryPolicies",
       label: "Admin policies",
       claimEditable: false,
-      value: [
-        "arn:aws:iam::123456789012:policy/a",
-        "arn:aws:iam::123456789012:policy/b",
-        "arn:aws:iam::123456789012:policy/c",
-      ],
+      summary: "3 policies",
     },
     {
       name: "retentionDays",
@@ -190,14 +186,74 @@ describe("SectionCards", () => {
     ]);
   });
 
-  it("shows a locked parameter as a summary set by the admin, never its value", () => {
-    const { container } = render(<SectionCards section={section()} />);
+  it("shows a locked parameter as its summary, set by the admin", () => {
+    render(<SectionCards section={section()} />);
     const locked = screen.getByRole("group", { name: "Admin policies" });
-    expect(locked.textContent).toContain("3 values");
+    expect(locked.textContent).toContain("3 policies");
     expect(locked.textContent).toContain("Set by your admin");
-    expect(container.innerHTML).not.toContain(
-      "arn:aws:iam::123456789012:policy/a",
+  });
+
+  it("reports a YAML parameter that does not parse", async () => {
+    const onChange = vi.fn();
+    const option: OptionView = {
+      registration: "tuning",
+      label: "Tuning",
+      isDefault: true,
+      parameters: [
+        {
+          name: "overrides",
+          label: "Overrides",
+          schema: { type: "object" },
+          claimEditable: true,
+        },
+      ],
+    };
+    render(<SectionCards section={section({}, option)} onChange={onChange} />);
+    // user-event reads "[" as the start of a key name, so "[[" types one "[".
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Overrides" }),
+      "a: [[",
     );
+    const [, errors] = onChange.mock.lastCall!;
+    expect(errors).toEqual([
+      { path: "tuning.overrides", message: expect.stringMatching(/^Line 1: /) },
+    ]);
+  });
+
+  it("drops a selected option that the new options no longer hold", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SectionCards section={section()} onChange={onChange} />,
+    );
+    expect(onChange.mock.lastCall![0]).toEqual([
+      {
+        section: "connectors-permissions",
+        registration: "aws-connectors-role",
+      },
+    ]);
+    rerender(
+      <SectionCards
+        section={section({
+          options: [
+            {
+              registration: "other",
+              label: "Other",
+              isDefault: false,
+              parameters: [],
+            },
+          ],
+        })}
+        onChange={onChange}
+      />,
+    );
+    expect(onChange).toHaveBeenLastCalledWith([], []);
+    expect(
+      (
+        screen.getByRole("radio", {
+          name: /No cloud permissions/,
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
   });
 
   it("greys an option that cannot be chosen and says why", () => {

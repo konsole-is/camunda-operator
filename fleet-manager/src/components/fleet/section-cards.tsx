@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, type ReactNode, useEffect, useId, useState } from "react";
+import {
+  Fragment,
+  type ReactNode,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -9,6 +16,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import type {
+  EditableParameter,
   OptionView,
   ParameterRule,
   SectionSelection,
@@ -22,17 +30,20 @@ import { YamlEditor } from "./yaml-editor";
 /** Values holds the parameter values that the form edits, by registration and parameter. */
 type Values = Record<string, Record<string, unknown>>;
 
+/** ParseErrors holds the errors of YAML that does not parse, by "<registration>.<parameter>". */
+type ParseErrors = Record<string, ValidationError[]>;
+
 /**
  * SectionCards is one section of a create flow: a card for each allowed
  * option, the empty option unless the section is required, the Default label
  * on the option that the environment preselects, and, under each selected
- * option, its parameters. A locked parameter shows a summary and "Set by
- * your admin", never its value. A claim-editable parameter is a field that
+ * option, its parameters. A claim-editable parameter is a field that
  * is checked against its schema, or, with an allowed list, a select or a
  * checkbox group for an array that shows the labels and submits the names.
  * Nothing is preselected in an allowed list unless the environment value is
  * one of its names. A selection holds only the parameters that differ from
- * the policy. onChange gets the initial selections and errors once, then
+ * the policy. A selected option that new options no longer hold leaves the
+ * selection. onChange gets the initial selections and errors once, then
  * each change.
  */
 export function SectionCards({
@@ -55,30 +66,39 @@ export function SectionCards({
     initialValues(section, defaultValue),
   );
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
-  const errors = sectionErrors(section, selected, values);
+  const [parseErrors, setParseErrors] = useState<ParseErrors>({});
+  const [seenSection, setSeenSection] = useState(section);
 
+  if (section !== seenSection) {
+    setSeenSection(section);
+    setSelected(selected.filter((r) => findOption(section, r)));
+    setValues({ ...initialValues(section), ...values });
+  }
+
+  const selections = selectionsOf(section, selected, values);
+  const errors = sectionErrors(section, selected, values, parseErrors);
+  const report = JSON.stringify([selections, errors]);
+  const reported = useRef<string | undefined>(undefined);
   useEffect(() => {
-    onChange?.(selectionsOf(section, selected, values), errors);
-    // Only the initial state: later changes call onChange from their handlers.
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (reported.current === report) return;
+    reported.current = report;
+    onChange?.(selections, errors);
+  });
 
-  const emit = (nextSelected: string[], nextValues: Values) =>
-    onChange?.(
-      selectionsOf(section, nextSelected, nextValues),
-      sectionErrors(section, nextSelected, nextValues),
-    );
-  const pick = (next: string[]) => {
-    setSelected(next);
-    emit(next, values);
-  };
-  const setParameter = (registration: string, name: string, value: unknown) => {
-    const next = {
+  const pick = setSelected;
+  const setParameter = (
+    registration: string,
+    name: string,
+    value: unknown,
+    parse: ValidationError[] = [],
+  ) => {
+    const key = `${registration}.${name}`;
+    setValues({
       ...values,
       [registration]: { ...values[registration], [name]: value },
-    };
-    setValues(next);
-    setTouched(new Set(touched).add(`${registration}.${name}`));
-    emit(selected, next);
+    });
+    setParseErrors({ ...parseErrors, [key]: parse });
+    setTouched(new Set(touched).add(key));
   };
 
   const many = section.selection === "Many";
@@ -135,8 +155,8 @@ export function SectionCards({
                       (key) => e.path === key || e.path.startsWith(`${key}.`),
                     ),
                   )}
-                  onValue={(name, value) =>
-                    setParameter(option.registration, name, value)
+                  onValue={(name, value, parse) =>
+                    setParameter(option.registration, name, value, parse)
                   }
                 />
               )}
@@ -229,11 +249,14 @@ function OptionParameters({
   option: OptionView;
   values: Record<string, unknown>;
   errors: ValidationError[];
-  onValue: (name: string, value: unknown) => void;
+  onValue: (name: string, value: unknown, parse?: ValidationError[]) => void;
 }) {
-  const choices = option.choices;
   const choiceRule =
-    choices && option.parameters.find((r) => r.name === choices.parameter);
+    option.choices &&
+    option.parameters.find((r) => r.name === option.choices!.parameter);
+  // A locked pick shows as a locked field, because it has no value to mark.
+  const choices =
+    choiceRule?.claimEditable === false ? undefined : option.choices;
   const errorOf = (name: string) => {
     const key = `${option.registration}.${name}`;
     return errors.find((e) => e.path === key || e.path.startsWith(`${key}.`))
@@ -250,7 +273,7 @@ function OptionParameters({
           </legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {choices.items.map((item) => {
-              const current = values[choices.parameter] ?? choiceRule?.value;
+              const current = values[choices.parameter];
               return (
                 <label
                   key={item.name}
@@ -263,7 +286,6 @@ function OptionParameters({
                     type="radio"
                     name={`${idPrefix}-choice`}
                     checked={current === item.name}
-                    disabled={choiceRule ? !choiceRule.claimEditable : false}
                     onChange={() => onValue(choices.parameter, item.name)}
                     className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
                   />
@@ -293,7 +315,7 @@ function OptionParameters({
           rule={rule}
           value={values[rule.name]}
           error={errorOf(rule.name)}
-          onValue={(v) => onValue(rule.name, v)}
+          onValue={(v, parse) => onValue(rule.name, v, parse)}
         />
       ))}
     </div>
@@ -316,7 +338,7 @@ function ParameterField({
   rule: ParameterRule;
   value: unknown;
   error?: string;
-  onValue: (value: unknown) => void;
+  onValue: (value: unknown, parse?: ValidationError[]) => void;
 }) {
   const schema = rule.schema ?? {};
   const describedBy = error ? `${id}-error` : undefined;
@@ -337,7 +359,7 @@ function ParameterField({
       <div className="flex flex-col gap-1">
         <LockedField
           label={rule.label}
-          value={lockedSummary(rule.value)}
+          value={rule.summary}
           reason="Set by your admin"
         />
         {rule.note && <p className="text-xs text-muted">{rule.note}</p>}
@@ -437,6 +459,7 @@ function ParameterField({
           type="number"
           min={min}
           max={max}
+          step={schema.type === "integer" ? 1 : "any"}
           value={value === undefined ? "" : String(value)}
           aria-invalid={invalid}
           aria-describedby={describedBy}
@@ -473,7 +496,7 @@ function ParameterField({
       label={rule.label}
       defaultValue={value}
       schema={rule.schema}
-      onChange={(v) => onValue(v)}
+      onChange={(v, found) => onValue(v, v === undefined ? found : [])}
     />
   );
 }
@@ -487,6 +510,17 @@ function initialSelection(
     return defaultValue.map((s) => s.registration).filter(usable);
   const preset = section.options.find((o) => o.isDefault && !o.disabledReason);
   return preset ? [preset.registration] : [];
+}
+
+function findOption(
+  section: SectionView,
+  registration: string,
+): OptionView | undefined {
+  return section.options.find((o) => o.registration === registration);
+}
+
+function isEditable(rule: ParameterRule): rule is EditableParameter {
+  return rule.claimEditable;
 }
 
 function initialValues(
@@ -515,6 +549,7 @@ function initialValues(
 
 /** The start value of a field. An allowed list keeps only the names it holds. */
 function startValue(rule: ParameterRule): unknown {
+  if (!isEditable(rule)) return undefined;
   if (!rule.allowed) return rule.value;
   const names = rule.allowed.map((a) => a.name);
   if (rule.schema?.type === "array")
@@ -531,13 +566,12 @@ function selectionsOf(
   selected: string[],
   values: Values,
 ): SectionSelection[] {
-  return selected.map((registration) => {
-    const option = section.options.find(
-      (o) => o.registration === registration,
-    ) as OptionView;
+  return selected.flatMap((registration) => {
+    const option = findOption(section, registration);
+    if (!option) return [];
     const parameters = Object.fromEntries(
       option.parameters
-        .filter((rule) => rule.claimEditable)
+        .filter(isEditable)
         .map((rule) => [rule.name, values[registration]?.[rule.name]] as const)
         .filter(
           ([name, value]) =>
@@ -559,17 +593,21 @@ function sectionErrors(
   section: SectionView,
   selected: string[],
   values: Values,
+  parseErrors: ParseErrors,
 ): ValidationError[] {
   const errors: ValidationError[] = [];
   if (section.required && selected.length === 0)
     errors.push({ path: section.name, message: "Choose an option" });
   for (const registration of selected) {
-    const option = section.options.find(
-      (o) => o.registration === registration,
-    ) as OptionView;
-    for (const rule of option.parameters.filter((r) => r.claimEditable)) {
+    const option = findOption(section, registration);
+    if (!option) continue;
+    for (const rule of option.parameters.filter(isEditable)) {
       const value = values[registration]?.[rule.name];
       const path = `${registration}.${rule.name}`;
+      if (parseErrors[path]?.length) {
+        errors.push(...parseErrors[path].map((e) => ({ ...e, path })));
+        continue;
+      }
       if (
         value === undefined ||
         value === "" ||
@@ -589,17 +627,6 @@ function sectionErrors(
     }
   }
   return errors;
-}
-
-/** lockedSummary says what a locked value holds without showing it. */
-function lockedSummary(value: unknown): string {
-  if (Array.isArray(value))
-    return value.length === 1 ? "1 value" : `${value.length} values`;
-  if (value !== null && typeof value === "object") {
-    const n = Object.keys(value).length;
-    return n === 1 ? "1 setting" : `${n} settings`;
-  }
-  return value === undefined ? "Not set" : "Set";
 }
 
 function same(a: unknown, b: unknown): boolean {

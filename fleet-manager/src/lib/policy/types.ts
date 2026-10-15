@@ -38,22 +38,33 @@ export type OptionView = {
 };
 
 /**
- * ParameterRule is one parameter of a registration under the policy. value
- * is the value that the environment or the registration gives it.
- * claimEditable says whether a claim can change it. allowed, with
- * claimEditable only, lists the choices by name and label. It holds no
- * value: the values of the choices stay with the claim controller (contract
- * CL40). note is a line under a locked parameter, for example the pattern of
- * a hostname.
+ * ParameterRule is one parameter of a registration under the policy.
+ * claimEditable says whether a claim can change it. An editable parameter
+ * can have value, the value that the environment or the registration gives
+ * it, and allowed, which lists the choices by name and label. allowed holds
+ * no value: the values of the choices stay with the claim controller
+ * (contract CL40). A locked parameter has no value: summary says what it
+ * holds, for example "3 policies". note is a line under a locked parameter,
+ * for example the pattern of a hostname.
  */
-export type ParameterRule = {
+export type ParameterRule = EditableParameter | LockedParameter;
+
+type ParameterBase = {
   name: string;
   label: string;
   schema?: OpenAPISchema;
   required?: boolean;
+};
+
+export type EditableParameter = ParameterBase & {
+  claimEditable: true;
   value?: unknown;
-  claimEditable: boolean;
   allowed?: { name: string; label: string }[];
+};
+
+export type LockedParameter = ParameterBase & {
+  claimEditable: false;
+  summary: string;
   note?: string;
 };
 

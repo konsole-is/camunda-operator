@@ -26,7 +26,7 @@ const backupStorage: SectionView = {
           name: "bucketName",
           label: "Bucket name",
           claimEditable: false,
-          value: "team-orders-orders-backups",
+          summary: "team-orders-orders-backups",
           note: "Named <namespace>-<claim>-backups",
         },
         {
@@ -76,7 +76,7 @@ const connectorsPermissions: SectionView = {
           name: "boundaryPolicies",
           label: "Admin policies",
           claimEditable: false,
-          value: ["a", "b", "c"],
+          summary: "3 policies",
         },
       ],
     },
