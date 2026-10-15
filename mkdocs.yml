@@ -131,4 +131,9 @@ nav:
           - LogicalRestoreElasticsearch: crds/logicalrestoreelasticsearch.md
           - LogicalRestoreRDBMS: crds/logicalrestorerdbms.md
           - PointInTimeRestore: crds/pointintimerestore.md
+      - Plugins:
+          - PluginSection: crds/pluginsection.md
+          - PluginRegistration: crds/pluginregistration.md
+          - PluginRequest: crds/pluginrequest.md
+          - Grant: crds/grant.md
       - API reference: crds/api-reference.md
