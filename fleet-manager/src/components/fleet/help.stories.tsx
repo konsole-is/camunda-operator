@@ -30,6 +30,11 @@ export const helpStories: Story[] = [
     render: () => <div className="pb-48">{label(true)}</div>,
   },
   {
+    component: "FieldHelp",
+    name: "Open at the right edge",
+    render: () => <div className="flex justify-end pb-48">{label(true)}</div>,
+  },
+  {
     component: "ConditionsTable",
     name: "Not ready condition",
     render: () => (

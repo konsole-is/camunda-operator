@@ -59,7 +59,21 @@ export function FieldHelp({
       {open && (
         // Padding, not a margin: a gap outside the box ends the hover
         // before the pointer reaches the link.
-        <span className="absolute top-full left-0 z-20 pt-1">
+        <span
+          className="absolute top-full left-0 z-20 pt-1"
+          ref={(box) => {
+            // Near the right edge of the window, open to the left of the
+            // (?), so the box stays inside the window.
+            if (
+              box &&
+              box.getBoundingClientRect().right >
+                document.documentElement.clientWidth
+            ) {
+              box.style.left = "auto";
+              box.style.right = "0";
+            }
+          }}
+        >
           <span
             id={id}
             role="note"
