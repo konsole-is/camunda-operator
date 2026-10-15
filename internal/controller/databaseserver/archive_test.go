@@ -445,6 +445,26 @@ func TestAdvanceArchiveFloor(t *testing.T) {
 			name: "writes no floor for a server that archives nothing",
 			now:  archiveOpenedAt,
 		},
+		{
+			name: "records the floor in whole minutes",
+			spec: &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 7},
+			now:  metav1.NewTime(archiveOpenedAt.Add(59 * time.Second)),
+			want: floorAt(-7 * day),
+		},
+		{
+			name:   "keeps the floor through the rest of its minute",
+			spec:   &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 7},
+			status: &v1.DatabaseServerArchiveStatus{ReachableFrom: floorAt(-7 * day)},
+			now:    metav1.NewTime(archiveOpenedAt.Add(30 * time.Second)),
+			want:   floorAt(-7 * day),
+		},
+		{
+			name:   "moves the floor once the next minute starts",
+			spec:   &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 7},
+			status: &v1.DatabaseServerArchiveStatus{ReachableFrom: floorAt(-7 * day)},
+			now:    metav1.NewTime(archiveOpenedAt.Add(time.Minute)),
+			want:   floorAt(-7*day + time.Minute),
+		},
 	}
 
 	for _, tt := range tests {
