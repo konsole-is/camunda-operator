@@ -40,6 +40,15 @@ func objectWith(status metav1.ConditionStatus, reason, message string) Object {
 	return o
 }
 
+// olderReady returns objectWith a Ready=True condition of generation 1 beside a
+// status that observed generation 2.
+func olderReady(reason string) Object {
+	o := objectWith(metav1.ConditionTrue, reason, "")
+	o.Conditions[0].ObservedGeneration = 1
+
+	return o
+}
+
 func TestConverging(t *testing.T) {
 	t.Parallel()
 
@@ -140,6 +149,13 @@ func TestConverging(t *testing.T) {
 			want:           concepts.AliveConvergingStatusUpdating,
 			reasonContains: "has not observed generation 2 of the ElasticsearchCluster",
 		},
+		{
+			name:           "Ready=True of an older generation beside a current status is Updating",
+			op:             concepts.ConvergingOperationUpdated,
+			object:         olderReady(string(component.Healthy)),
+			want:           concepts.AliveConvergingStatusUpdating,
+			reasonContains: "has not observed generation 2 of the ElasticsearchCluster",
+		},
 	}
 
 	for _, tt := range tests {
@@ -210,6 +226,11 @@ func TestOperational(t *testing.T) {
 			object: stale,
 			want:   concepts.OperationalStatusPending,
 		},
+		{
+			name:   "Ready=True of an older generation beside a current status is pending",
+			object: olderReady(string(component.Healthy)),
+			want:   concepts.OperationalStatusPending,
+		},
 	}
 
 	for _, tt := range tests {
@@ -267,6 +288,11 @@ func TestGrace(t *testing.T) {
 			object: stale,
 			want:   concepts.GraceStatusDown,
 		},
+		{
+			name:   "Ready=True of an older generation beside a current status is Down",
+			object: olderReady(string(component.Healthy)),
+			want:   concepts.GraceStatusDown,
+		},
 	}
 
 	for _, tt := range tests {
@@ -298,6 +324,12 @@ func TestSuspension(t *testing.T) {
 		{
 			name:      "requested and not observed is suspending",
 			object:    stale,
+			requested: true,
+			want:      concepts.SuspensionStatusSuspending,
+		},
+		{
+			name:      "requested and Suspended of an older generation is suspending",
+			object:    olderReady(string(component.Suspended)),
 			requested: true,
 			want:      concepts.SuspensionStatusSuspending,
 		},

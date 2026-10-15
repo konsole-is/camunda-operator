@@ -37,8 +37,19 @@ func optimizeWithReady(observed int64, status metav1.ConditionStatus, reason str
 		Status:     apiv1.CamundaOptimizeStatus{ObservedGeneration: observed},
 	}
 	if status != "" {
-		optimize.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: status, Reason: reason}}
+		optimize.Status.Conditions = []metav1.Condition{{
+			Type: apiv1.ConditionReady, Status: status, Reason: reason, ObservedGeneration: observed,
+		}}
 	}
+
+	return optimize
+}
+
+// olderReady returns a CamundaOptimize with Ready=True of generation 1 beside a
+// status that observed generation 2.
+func olderReady() *apiv1.CamundaOptimize {
+	optimize := optimizeWithReady(2, metav1.ConditionTrue, string(component.Healthy))
+	optimize.Status.Conditions[0].ObservedGeneration = 1
 
 	return optimize
 }
@@ -71,6 +82,11 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 			optimize: optimizeWithReady(1, metav1.ConditionTrue, string(component.Healthy)),
 			want:     concepts.AliveConvergingStatusUpdating,
 		},
+		{
+			name:     "Ready=True of an older generation beside a current status is Updating",
+			optimize: olderReady(),
+			want:     concepts.AliveConvergingStatusUpdating,
+		},
 	}
 
 	for _, tt := range tests {
@@ -96,6 +112,10 @@ func TestDefaultGraceStatusHandler(t *testing.T) {
 	down, err := DefaultGraceStatusHandler(optimizeWithReady(2, metav1.ConditionFalse, apiv1.ReasonInvalidReference))
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GraceStatusDown, down.Status)
+
+	older, err := DefaultGraceStatusHandler(olderReady())
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GraceStatusDown, older.Status)
 }
 
 // Optimize follows the suspension of its cluster. The suspension of the

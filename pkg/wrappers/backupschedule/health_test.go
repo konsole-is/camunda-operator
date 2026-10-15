@@ -37,8 +37,19 @@ func scheduleWithReady(observed int64, status metav1.ConditionStatus, reason str
 		Status:     apiv1.BackupScheduleStatus{ObservedGeneration: observed},
 	}
 	if status != "" {
-		schedule.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: status, Reason: reason}}
+		schedule.Status.Conditions = []metav1.Condition{{
+			Type: apiv1.ConditionReady, Status: status, Reason: reason, ObservedGeneration: observed,
+		}}
 	}
+
+	return schedule
+}
+
+// olderReady returns a BackupSchedule with Ready=True of generation 1 beside a
+// status that observed generation 2.
+func olderReady() *apiv1.BackupSchedule {
+	schedule := scheduleWithReady(2, metav1.ConditionTrue, string(component.Healthy))
+	schedule.Status.Conditions[0].ObservedGeneration = 1
 
 	return schedule
 }
@@ -71,6 +82,11 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 			schedule: scheduleWithReady(1, metav1.ConditionTrue, string(component.Healthy)),
 			want:     concepts.AliveConvergingStatusUpdating,
 		},
+		{
+			name:     "Ready=True of an older generation beside a current status is Updating",
+			schedule: olderReady(),
+			want:     concepts.AliveConvergingStatusUpdating,
+		},
 	}
 
 	for _, tt := range tests {
@@ -96,6 +112,10 @@ func TestDefaultGraceStatusHandler(t *testing.T) {
 	down, err := DefaultGraceStatusHandler(scheduleWithReady(2, metav1.ConditionFalse, apiv1.ReasonInvalidReference))
 	require.NoError(t, err)
 	assert.Equal(t, concepts.GraceStatusDown, down.Status)
+
+	older, err := DefaultGraceStatusHandler(olderReady())
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GraceStatusDown, older.Status)
 }
 
 // The suspension of the

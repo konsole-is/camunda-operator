@@ -35,7 +35,9 @@ func clusterWithReady(status metav1.ConditionStatus, reason string) *apiv1.Elast
 		Status:     apiv1.ElasticsearchClusterStatus{ObservedGeneration: 1},
 	}
 	if status != "" {
-		esc.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: status, Reason: reason}}
+		esc.Status.Conditions = []metav1.Condition{{
+			Type: apiv1.ConditionReady, Status: status, Reason: reason, ObservedGeneration: 1,
+		}}
 	}
 
 	return esc
