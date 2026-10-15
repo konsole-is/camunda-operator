@@ -114,50 +114,11 @@ status:
 
 `summary` lists facts about the request, and the first item is the headline. `severity` is `Info`, `Warning`, or `Error`. `links` are named URLs about the request. `podSelector` selects the pods that the plugin runs for the request. `resources` lists what the plugin made, in the cluster or in a cloud.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#pluginrequest) lists every field of `PluginRequest`, with its type and its validation.
 
-```yaml
-apiVersion: plugins.camunda.io/v1alpha1
-kind: PluginRequest
-metadata:
-  # string. Required. The claim names a request <claim>-<section>. At most 63 characters.
-  name: orders-backup-storage
-  namespace: my-cluster-ns
-spec:
-  # string. Required. The name of the PluginSection that the request fills. Immutable.
-  section: backup-storage
-  # string. Required. The name of the PluginRegistration that serves the request. Immutable.
-  registration: s3-backup-bucket
-  # object. Required. The claim that wrote the request. Immutable.
-  claimRef:
-    # CamundaClusterClaim or CamundaManagementClusterClaim. Required.
-    kind: CamundaClusterClaim
-    # string. Required. The name of the claim, in this namespace.
-    name: orders
-  # object. Required. The resource that the request serves. The claim names it before it exists.
-  target:
-    # string. Required. The kind of the resource. Immutable.
-    kind: CamundaCluster
-    # string. Required. The name of the resource, in this namespace. Immutable.
-    name: orders
-    # string. Optional. The ServiceAccount that the pods of the resource run as.
-    serviceAccountName: orders-camunda
-    # list of strings. Optional. More ServiceAccounts of this namespace that the cloud identity of the request also trusts.
-    additionalServiceAccounts:
-      - orders-es
-  # map of strings. Optional. The values of the inputs of the registration, by input name.
-  inputs:
-    kmsKey: arn:aws:kms:eu-west-1:111122223333:key/example
-  # object. Optional. The parameters of the request. The plugin checks them against the schema of the registration.
-  parameters:
-    retentionDays: 30
-  # Delete or Orphan. Required. See "Deletion".
-  deletionPolicy: Delete
-```
-
-### Validation rules
+## Validation rules
 
 The API server refuses a change of these fields after the request is created:
 
@@ -168,6 +129,35 @@ The API server refuses a change of these fields after the request is created:
 - `target.name`: `target.name is immutable: delete the request and create a new one`.
 
 It also refuses a name longer than 63 characters: `metadata.name must be at most 63 characters, because it is used as a label value`.
+
+## A request with inputs and parameters
+
+The claim `orders` writes this request for the option `s3-backup-bucket`. It carries the key of the section `encryption-key` as the input `kmsKey`, and the retention that the claim selected:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: orders-backup-storage
+  namespace: my-cluster-ns
+spec:
+  section: backup-storage
+  registration: s3-backup-bucket
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda
+    additionalServiceAccounts:
+      - orders-es
+  inputs:
+    kmsKey: arn:aws:kms:eu-west-1:111122223333:key/example
+  parameters:
+    retentionDays: 30
+  deletionPolicy: Delete
+```
 
 ## Related
 

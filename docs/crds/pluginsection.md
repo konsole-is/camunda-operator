@@ -23,6 +23,24 @@ graph LR
     PR[PluginRegistration] -.->|sections| PS[PluginSection]
 ```
 
+## Slots
+
+A claim generates a `CamundaCluster` or a `CamundaManagementCluster`. A slot is the place in that generated resource that the outputs of the selected option fill. For example, the core section `backup-storage` has the slot `backupStorage`. A claim selects an option of `backup-storage`, and the plugin writes the output `objectStorageConfig`. The value of this output becomes `spec.backupStorageRef` of the generated `CamundaCluster`.
+
+| Slot | Outputs | What the outputs fill |
+| --- | --- | --- |
+| `workloadIdentity` | `principal`, `serviceAccountAnnotations` | The ServiceAccount annotations of the `CamundaCluster`, from `serviceAccountAnnotations`. |
+| `volumeEncryption` | `storageClassName` | The StorageClass of the Zeebe volumes. |
+| `backupStorage` | `objectStorageConfig` | `spec.backupStorageRef` of the `CamundaCluster`. |
+| `secondaryStorage` | `secondaryStorageConfig` | `spec.storageRef` of the `CamundaCluster`. |
+| `externalAccess` | `externalUrl`, `grpcHost`, `optimizeUrl`, `managementHost` | The external URLs of the `CamundaCluster` and of its `CamundaOptimize`, or the host of the `CamundaManagementCluster`. |
+| `managementDatabases` | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig` | The database references of Keycloak, Management Identity, and Web Modeler in the `CamundaManagementCluster`. |
+| `connectorsIdentity` | `principal`, `serviceAccountAnnotations` | The ServiceAccount annotations of the Connectors, from `serviceAccountAnnotations`. |
+
+The set of slots is closed, and only core sections use them. A section that a plugin brings has no slot. Its outputs fill nothing in the generated resource. They are only inputs of other registrations, as in [A section that a plugin brings](#a-section-that-a-plugin-brings). The core section `encryption-key` has no slot either. Other sections read its key as an input.
+
+A slot takes the outputs of one option only, so a section with a slot must have `selection: One`. A section without a slot can have `selection: One` or `selection: Many`.
+
 ## Core sections
 
 The operator writes eight core sections:
@@ -49,65 +67,15 @@ The operator writes the core sections each time the manager starts:
 
 The operator writes these fields with the field manager `camunda-operator-builtins`. A GitOps tool that writes the same fields of a core section shows this name in its conflict message.
 
-## Slots
-
-A slot names the fields of the generated resource that the outputs of a section fill. The set of slots is closed. A section without a slot has outputs that only other registrations read as inputs, for example the key of `encryption-key`.
-
-| Slot | Outputs | What the outputs fill |
-| --- | --- | --- |
-| `workloadIdentity` | `principal`, `serviceAccountAnnotations` | The ServiceAccount annotations of the `CamundaCluster`, from `serviceAccountAnnotations`. |
-| `volumeEncryption` | `storageClassName` | The StorageClass of the Zeebe volumes. |
-| `backupStorage` | `objectStorageConfig` | `spec.backupStorageRef` of the `CamundaCluster`. |
-| `secondaryStorage` | `secondaryStorageConfig` | `spec.storageRef` of the `CamundaCluster`. |
-| `externalAccess` | `externalUrl`, `grpcHost`, `optimizeUrl`, `managementHost` | The external URLs of the `CamundaCluster` and of its `CamundaOptimize`, or the host of the `CamundaManagementCluster`. |
-| `managementDatabases` | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig` | The database references of Keycloak, Management Identity, and Web Modeler in the `CamundaManagementCluster`. |
-| `connectorsIdentity` | `principal`, `serviceAccountAnnotations` | The ServiceAccount annotations of the Connectors, from `serviceAccountAnnotations`. |
-
-A slot fills one field, so a section with a slot must have `selection: One`.
-
 ## Status
 
 `PluginSection` has no status.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#pluginsection) lists every field of `PluginSection`, with its type and its validation. The `label`, `description`, `order`, and `emptyOptionLabel` fields change only what the fleet manager shows.
 
-```yaml
-apiVersion: plugins.camunda.io/v1alpha1
-kind: PluginSection
-metadata:
-  # string. Required. The name of the section. At most 63 characters.
-  name: dns-zone
-spec:
-  # string. Required. The name of the section in the fleet manager.
-  label: DNS zone
-  # string. Optional. What the section is for.
-  description: The DNS zone that holds the records of the cluster.
-  # integer. Optional, default: 0. The position in the create flow. A lower value comes first.
-  order: 65
-  # One or Many. Required. How many options of the section one claim can select.
-  selection: One
-  # string. Optional. The label of the option that selects nothing. Without it, the section has no empty option.
-  emptyOptionLabel: No DNS records
-  # string. Optional. The slot that the outputs fill. See "Slots". This section has none.
-  # slot: volumeEncryption
-  # list of CamundaClusterClaim or CamundaManagementClusterClaim. Required. The claim kinds whose create flow shows the section.
-  appliesTo:
-    - CamundaClusterClaim
-  # list. Optional. The outputs that every registration of the section writes.
-  outputs:
-      # string. Required. The key of the output. A letter, then letters and digits.
-    - key: zoneId
-      # string. Optional. What the value is.
-      description: The ID of the DNS zone.
-      # string. Optional. The format of the value, for example aws-kms-arn.
-      # format: aws-route53-zone-id
-```
-
-The `label`, `description`, `order`, and `emptyOptionLabel` fields change only what the fleet manager shows.
-
-### Validation rules
+## Validation rules
 
 The API server refuses a section when:
 
@@ -117,9 +85,9 @@ The API server refuses a section when:
 - The name is longer than 63 characters: `metadata.name must be at most 63 characters, because it is used as a label value`.
 - `label` is empty, or two outputs have the same `key`.
 
-### A section that a plugin brings
+## A section that a plugin brings
 
-A DNS plugin adds a section without a slot. Its output is an input of other registrations, for example an option of `access` that writes the DNS records of the cluster:
+A DNS plugin adds a section without a slot. Its output is an input of other registrations, for example of an option of `access` that writes the DNS records of the cluster:
 
 ```yaml
 apiVersion: plugins.camunda.io/v1alpha1
@@ -137,7 +105,27 @@ spec:
   outputs:
     - key: zoneId
       description: The ID of the DNS zone.
+      format: aws-route53-zone-id
 ```
+
+An option of `access` reads the zone as an input, in the form `<section>/<output>`:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  name: route53-ingress
+spec:
+  sections:
+    - access
+  inputs:
+    - name: zoneId
+      from: dns-zone/zoneId
+      required: true
+  # ... the rest of your registration
+```
+
+The output `zoneId` fills no field of the generated `CamundaCluster`. Only the option `route53-ingress` reads it.
 
 ## Related
 

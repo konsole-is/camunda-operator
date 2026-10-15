@@ -44,6 +44,8 @@ Each grant carries three labels that you can select on:
 | `plugins.camunda.io/request` | The name of the request that the grant belongs to. |
 | `plugins.camunda.io/cluster` | The name of the `CamundaCluster` whose identity gets the permission. |
 
+The plugin sets all three labels. The API server refuses a grant without the label `plugins.camunda.io/registration`. See [Who can write a grant](#who-can-write-a-grant).
+
 To list the permissions of one cluster:
 
 ```bash
@@ -122,41 +124,11 @@ A user with the verb `*` on `pluginregistrations`, for example through the Clust
 
 A grant that is not `Ready` makes the `Ready` condition of its request `False` with reason `GrantRejected`. The outputs of the request stay usable.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#grant) lists every field of `Grant`, with its type and its validation. It does not list the labels. [Labels](#labels) describes them.
 
-```yaml
-apiVersion: plugins.camunda.io/v1alpha1
-kind: Grant
-metadata:
-  # string. Required. At most 63 characters.
-  name: orders-backup-storage-bucket-access
-  namespace: my-cluster-ns
-  labels:
-    # string. Required. The registration that holds the template. The API server refuses a grant without it.
-    plugins.camunda.io/registration: s3-backup-bucket
-    # string. The request that the grant belongs to. The plugin sets it.
-    plugins.camunda.io/request: orders-backup-storage
-    # string. The CamundaCluster whose identity gets the permission. The plugin sets it.
-    plugins.camunda.io/cluster: orders
-spec:
-  # object. Required. The CamundaCluster whose identity gets the permission. Immutable.
-  cluster:
-    # string. Required. The name of the cluster, in this namespace.
-    name: orders
-  # string. Required. The name of the grant template in the registration. Immutable.
-  template: bucket-access
-  # aws-iam-statement. Required. The format of the fragment. Immutable.
-  format: aws-iam-statement
-  # object. Required. One permission statement, filled in from the template.
-  fragment:
-    Effect: Allow
-    Action: ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
-    Resource: ["arn:aws:s3:::orders-backup-storage", "arn:aws:s3:::orders-backup-storage/*"]
-```
-
-### Validation rules
+## Validation rules
 
 The API server refuses a change of these fields after the grant is created:
 
