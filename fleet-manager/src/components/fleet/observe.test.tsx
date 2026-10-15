@@ -29,6 +29,16 @@ describe("MetricChart", () => {
 });
 
 describe("UsageBars", () => {
+  it.each([
+    ["a request of 0", { usedCores: 0.5, requestCores: 0 }, "0.5", "0.5"],
+    ["no use and no limit", { usedCores: 0 }, "0", "1"],
+  ])("keeps a valid meter range with %s", (_, cpu, now, max) => {
+    render(<UsageBars usage={{ pod: "x", cpu, memory: { usedBytes: 0 } }} />);
+    const meter = screen.getByRole("meter", { name: "CPU" });
+    expect(meter.getAttribute("aria-valuenow")).toBe(now);
+    expect(meter.getAttribute("aria-valuemax")).toBe(max);
+  });
+
   it("keeps the meter value in range when the use passes the request", () => {
     render(
       <UsageBars
