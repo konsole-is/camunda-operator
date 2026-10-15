@@ -182,6 +182,39 @@ describe("SchedulingEditor", () => {
     ]);
   });
 
+  it("keeps the operators Lt, Gt, and one that it does not know", async () => {
+    const onChange = vi.fn();
+    const kept = [
+      { key: "gpu-count", operator: "Lt", value: "4" },
+      { key: "zone", operator: "Gt", value: "2" },
+      { key: "new", operator: "Matches", value: "x" },
+    ];
+    render(
+      <SchedulingEditor
+        label="Tolerations"
+        defaultValue={[...kept, { key: "a", operator: "Equal", value: "1" }]}
+        onChange={onChange}
+      />,
+    );
+    const last = screen.getByRole("group", { name: "Toleration 4" });
+    await userEvent.type(
+      within(last).getByRole("textbox", { name: "Value" }),
+      "2",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      [...kept, { key: "a", operator: "Equal", value: "12" }],
+      [],
+    );
+    const first = screen.getByRole("group", { name: "Toleration 1" });
+    expect(
+      (
+        within(first).getByRole("combobox", {
+          name: "Operator",
+        }) as HTMLSelectElement
+      ).value,
+    ).toBe("Lt");
+  });
+
   it("refuses Equal without a key", async () => {
     const onChange = vi.fn();
     render(<SchedulingEditor label="Tolerations" onChange={onChange} />);

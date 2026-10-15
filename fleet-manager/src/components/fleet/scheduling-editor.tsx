@@ -18,10 +18,12 @@ export type Toleration = NonNullable<
   NonNullable<CamundaClusterSpec["scheduling"]>["tolerations"]
 >[number];
 
+const OPERATORS = ["Equal", "Exists", "Lt", "Gt"];
+
 type Row = {
   id: number;
   key: string;
-  operator: "Equal" | "Exists";
+  operator: string;
   value: string;
   effect: string;
   seconds: string;
@@ -29,10 +31,9 @@ type Row = {
 
 /**
  * SchedulingEditor edits the tolerations of the pods as rows of key,
- * operator, value, effect, and seconds. The value shows only for Equal, and
- * the seconds only for NoExecute. A field that the row does not use is not
- * written. onChange gets the tolerations and the errors after each edit: an
- * Equal row needs a key, and the seconds must be a whole number.
+ * operator, value, effect, and seconds. A field that the row does not use
+ * is not written. onChange gets the tolerations and the errors after each
+ * edit.
  */
 export function SchedulingEditor({
   label,
@@ -49,7 +50,7 @@ export function SchedulingEditor({
     defaultValue.map((t, index) => ({
       id: index,
       key: t.key ?? "",
-      operator: t.operator === "Exists" ? "Exists" : "Equal",
+      operator: t.operator ?? "Equal",
       value: t.value ?? "",
       effect: t.effect ?? "",
       seconds:
@@ -136,18 +137,18 @@ export function SchedulingEditor({
                 "operator",
                 "Operator",
                 row.operator,
-                [
-                  ["Equal", "Equal"],
-                  ["Exists", "Exists"],
-                ],
+                (OPERATORS.includes(row.operator)
+                  ? OPERATORS
+                  : [...OPERATORS, row.operator]
+                ).map((o): [string, string] => [o, o]),
                 (v) =>
                   replace({
                     ...row,
-                    operator: v as Row["operator"],
-                    value: "",
+                    operator: v,
+                    value: v === "Exists" ? "" : row.value,
                   }),
               )}
-              {row.operator === "Equal" &&
+              {row.operator !== "Exists" &&
                 text("value", "Value", row.value, (v) =>
                   replace({ ...row, value: v }),
                 )}
@@ -220,7 +221,7 @@ function toToleration(row: Row): Toleration {
   return {
     ...(row.key && { key: row.key }),
     operator: row.operator,
-    ...(row.operator === "Equal" && row.value && { value: row.value }),
+    ...(row.operator !== "Exists" && row.value && { value: row.value }),
     ...(row.effect && { effect: row.effect }),
     ...(row.effect === "NoExecute" &&
       /^\d+$/.test(row.seconds) && { tolerationSeconds: Number(row.seconds) }),
@@ -230,7 +231,7 @@ function toToleration(row: Row): Toleration {
 function rowErrors(rows: Row[]): ValidationError[] {
   const errors: ValidationError[] = [];
   rows.forEach((row, index) => {
-    if (row.operator === "Equal" && row.key === "")
+    if (row.operator !== "Exists" && row.key === "")
       errors.push({
         path: `${index}.key`,
         message: "Enter a key, or use the operator Exists",
