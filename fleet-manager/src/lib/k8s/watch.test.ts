@@ -39,6 +39,47 @@ describe("parseWatchRequest", () => {
 });
 
 describe("watchStream", () => {
+  it("releases the subscription when the request aborts after the snapshot", async () => {
+    const unsubscribe = vi.fn();
+    const cache = {
+      subscribe: async () => ({ snapshot: [], unsubscribe }),
+    } as unknown as ResourceCache;
+    const abort = new AbortController();
+
+    const reader = watchStream(
+      cache,
+      { kinds: ["Pod"] },
+      abort.signal,
+    ).getReader();
+    const first = new TextDecoder().decode((await reader.read()).value);
+    expect(first).toContain("event: snapshot");
+    abort.abort();
+
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it("releases the subscription when the request aborts while subscribe waits", async () => {
+    const unsubscribe = vi.fn();
+    let answer: (s: { snapshot: never[]; unsubscribe: () => void }) => void;
+    const cache = {
+      subscribe: () => new Promise((resolve) => (answer = resolve)),
+    } as unknown as ResourceCache;
+    const abort = new AbortController();
+
+    const reader = watchStream(
+      cache,
+      { kinds: ["Pod"] },
+      abort.signal,
+    ).getReader();
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    abort.abort();
+    answer!({ snapshot: [], unsubscribe });
+
+    await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalledOnce());
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it("ends at once for a signal that has already aborted", async () => {
     const controller = new AbortController();
     controller.abort();
