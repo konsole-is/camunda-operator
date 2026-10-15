@@ -31,12 +31,13 @@ export function LogViewer({
   label?: string;
 }) {
   const id = useId();
-  const [pausedAt, setPausedAt] = useState<number | undefined>();
+  const [paused, setPaused] = useState<LogLine[] | undefined>();
   const [level, setLevel] = useState("");
   const [text, setText] = useState("");
   const box = useRef<HTMLDivElement>(null);
 
-  const kept = pausedAt === undefined ? lines : lines.slice(0, pausedAt);
+  const kept = paused ?? lines;
+  const newLines = paused ? countAfter(paused, lines) : 0;
   const shown = kept.filter(
     (l) =>
       (!level || l.level?.toLowerCase() === level) &&
@@ -49,26 +50,22 @@ export function LogViewer({
   ];
 
   useEffect(() => {
-    if (pausedAt === undefined && box.current)
+    if (paused === undefined && box.current)
       box.current.scrollTop = box.current.scrollHeight;
-  }, [lines, pausedAt]);
+  }, [lines, paused]);
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-end gap-2">
-        {pausedAt === undefined ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPausedAt(lines.length)}
-          >
+        {paused === undefined ? (
+          <Button variant="outline" size="sm" onClick={() => setPaused(lines)}>
             Pause
           </Button>
         ) : (
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setPausedAt(undefined)}
+            onClick={() => setPaused(undefined)}
           >
             Follow
           </Button>
@@ -102,8 +99,10 @@ export function LogViewer({
             onChange={(e) => setText(e.target.value)}
           />
         </div>
-        {pausedAt !== undefined && lines.length > pausedAt && (
-          <span className="text-xs text-info">{`${lines.length - pausedAt} new lines`}</span>
+        {newLines > 0 && (
+          <span className="text-xs text-info">
+            {newLines === 1 ? "1 new line" : `${newLines} new lines`}
+          </span>
         )}
       </div>
       <div
@@ -155,4 +154,13 @@ export function LogViewer({
       </div>
     </div>
   );
+}
+
+// A buffer can drop its oldest lines, so a count by length is wrong.
+function countAfter(shown: LogLine[], lines: LogLine[]): number {
+  const last = shown.at(-1);
+  if (!last) return lines.length;
+  const key = (l: LogLine) => `${l.time}\n${l.raw}\n${l.message}`;
+  const index = lines.findLastIndex((l) => key(l) === key(last));
+  return index === -1 ? lines.length : lines.length - 1 - index;
 }

@@ -119,6 +119,15 @@ describe("LogViewer", () => {
     expect(screen.getByText("d")).toBeTruthy();
   });
 
+  it("keeps the shown lines while paused when the buffer drops old lines", async () => {
+    const { rerender } = render(<LogViewer lines={[line("a"), line("b")]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Pause" }));
+    rerender(<LogViewer lines={[line("b"), line("c")]} />);
+    expect(screen.getByText("a")).toBeTruthy();
+    expect(screen.queryByText("c")).toBeNull();
+    expect(screen.getByText("1 new line")).toBeTruthy();
+  });
+
   it("filters by level and by text", async () => {
     render(
       <LogViewer
