@@ -286,7 +286,7 @@ func ownedSpecFields(t *testing.T, obj client.Object) []string {
 		}
 
 		var fields map[string]map[string]any
-		require.NoError(t, json.Unmarshal(entry.FieldsV1.Raw, &fields))
+		require.NoError(t, json.Unmarshal(entry.FieldsV1.GetRawBytes(), &fields))
 		assert.NotContains(t, fields, "f:status")
 
 		owned := make([]string, 0, len(fields["f:spec"]))
