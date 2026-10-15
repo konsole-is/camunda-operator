@@ -33,7 +33,7 @@ jobs:
       - name: Check that go.mod and go.sum are tidy in every module
         run: |
           hack/ci-retry.sh make tidy
-          git diff --exit-code -- go.mod go.sum api/go.mod api/go.sum
+          git diff --exit-code -- go.mod go.sum api/go.mod api/go.sum conformance/go.mod conformance/go.sum
 
       # Four test packages start this image through testcontainers. The pull
       # of testcontainers ignores an error in the pull stream, so a failed

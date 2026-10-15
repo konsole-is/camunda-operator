@@ -70,11 +70,12 @@ help: ## Display this help.
 
 ##@ Development
 
-# The repository holds two Go modules: the operator at the root and the API
-# types in ./api, which consumers import without the operator's dependencies.
-# A `./...` pattern never crosses a module boundary, so every Go tool below
-# runs once per module.
-MODULES := . ./api
+# The repository holds three Go modules: the operator at the root, the API
+# types in ./api, and the plugin conformance suite in ./conformance. Programs
+# and plugin repositories import the last two without the operator's
+# dependencies. A `./...` pattern never crosses a module boundary, so each Go
+# tool below loops over MODULES or has one line for each module.
+MODULES := . ./api ./conformance
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
@@ -108,7 +109,7 @@ api-version: ## Pin the api module version in the root go.mod: make api-version 
 
 .PHONY: fmt
 fmt: golangci-lint ## Format code: callsplit, then the formatters configured in .golangci.yml.
-	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
+	go run ./hack/callsplit ./api ./cmd ./conformance ./internal ./pkg ./test
 	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" fmt) || exit 1; done
 
 .PHONY: vet
@@ -118,6 +119,7 @@ vet: ## Run go vet against code.
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	cd api && go test ./...
+	cd conformance && go test ./...
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
@@ -204,12 +206,12 @@ lint-examples: ## Check the version pins of config/example against the matrix en
 
 .PHONY: lint
 lint: golangci-lint lint-examples ## Check the example version pins and run callsplit, then golangci-lint.
-	go run ./hack/callsplit -check ./api ./cmd ./internal ./pkg ./test
+	go run ./hack/callsplit -check ./api ./cmd ./conformance ./internal ./pkg ./test
 	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" run) || exit 1; done
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
-	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
+	go run ./hack/callsplit ./api ./cmd ./conformance ./internal ./pkg ./test
 	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" fmt && "$(GOLANGCI_LINT)" run --fix) || exit 1; done
 
 .PHONY: lint-config
