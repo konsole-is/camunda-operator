@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -786,6 +786,8 @@
       
         
           
+        
+      
         
       
         
@@ -1918,6 +1920,183 @@
   
   
   
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_10_9" id="__nav_10_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Plugins
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="pluginsection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PluginSection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="pluginregistration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PluginRegistration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="pluginrequest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PluginRequest
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="grant/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Grant
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="api-reference/" class="md-nav__link">
         
@@ -2044,6 +2223,17 @@
     <span class="md-ellipsis">
       
         Restore
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugins
       
     </span>
   </a>
@@ -2187,9 +2377,9 @@
 
 
 <h1 id="crd-reference">CRD reference<a class="headerlink" href="#crd-reference" title="Permanent link">&para;</a></h1>
-<p>The operator defines the custom resources below in the API group <code>core.camunda.io/v1</code>.
+<p>The operator defines the custom resources below in the API groups <code>core.camunda.io/v1</code> and <code>plugins.camunda.io/v1alpha1</code>.
 Each page opens with what the kind is and a minimal manifest. Then it covers one topic per section. It ends with the status conditions, the validation rules, and examples.</p>
-<p>The <a href="api-reference/">API reference</a> lists every type and field of the API group on one page, with its default and its validation. Each kind page links its entry there. The page is generated from the API types, so it matches the CRDs of the same release.</p>
+<p>The <a href="api-reference/">API reference</a> lists every type and field of these API groups on one page, with its default and its validation. Each kind page links its entry there. The page is generated from the API types, so it matches the CRDs of the same release.</p>
 <p>Some kinds need an operator that this operator does not install. <code>ElasticsearchCluster</code> needs the ECK operator. <code>DatabaseServer</code> needs the CloudNativePG operator, and <code>spec.archive</code> also needs the Barman Cloud plugin and cert-manager. <code>CamundaManagementCluster</code> with <code>spec.identityProvider.keycloak</code> needs the Keycloak Operator. Install what you use before the manager starts, or restart the manager after. See <a href="../installation/#requirements">Installation</a>.</p>
 <h2 id="cluster">Cluster<a class="headerlink" href="#cluster" title="Permanent link">&para;</a></h2>
 <table>
@@ -2386,8 +2576,8 @@ Each page opens with what the kind is and a minimal manifest. Then it covers one
 </tr>
 </tbody>
 </table>
-<h2 id="planned-kinds">Planned kinds<a class="headerlink" href="#planned-kinds" title="Permanent link">&para;</a></h2>
-<p>The kinds below are an alpha API in the groups <code>plugins.camunda.io/v1alpha1</code> and <code>fleet.camunda.io/v1alpha1</code>. No controller acts on them yet. The install does not include their CRDs, and their fields can change in a later release.</p>
+<h2 id="plugins">Plugins<a class="headerlink" href="#plugins" title="Permanent link">&para;</a></h2>
+<p>These kinds are an alpha API in the group <code>plugins.camunda.io/v1alpha1</code>. Their fields can change in a later release.</p>
 <table>
 <thead>
 <tr>
@@ -2398,25 +2588,38 @@ Each page opens with what the kind is and a minimal manifest. Then it covers one
 </thead>
 <tbody>
 <tr>
-<td><code>PluginSection</code></td>
+<td><a href="pluginsection/">PluginSection</a></td>
 <td>Cluster</td>
-<td>One section of the create flow in the fleet manager, for example "Backup storage".</td>
+<td>One section of the create flow in the fleet manager, for example "Backup storage". The operator writes the core sections.</td>
 </tr>
 <tr>
-<td><code>PluginRegistration</code></td>
+<td><a href="pluginregistration/">PluginRegistration</a></td>
 <td>Cluster</td>
-<td>One option that a plugin offers in one or more sections, with the permissions that the option asks for.</td>
+<td>One option that a plugin offers in one or more sections, with the permissions that the option asks for. The operator writes the built-in options.</td>
 </tr>
 <tr>
-<td><code>PluginRequest</code></td>
+<td><a href="pluginrequest/">PluginRequest</a></td>
 <td>Namespaced</td>
 <td>A request to a plugin for the resources of one section.</td>
 </tr>
 <tr>
-<td><code>Grant</code></td>
+<td><a href="grant/">Grant</a></td>
 <td>Namespaced</td>
 <td>One permission that a plugin asks for, on behalf of a <code>PluginRequest</code>.</td>
 </tr>
+</tbody>
+</table>
+<h2 id="planned-kinds">Planned kinds<a class="headerlink" href="#planned-kinds" title="Permanent link">&para;</a></h2>
+<p>The kind below is an alpha API in the group <code>fleet.camunda.io/v1alpha1</code>. No controller acts on it yet. The install does not include its CRD, and its fields can change in a later release.</p>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>Scope</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
 <tr>
 <td><code>Environment</code></td>
 <td>Cluster</td>

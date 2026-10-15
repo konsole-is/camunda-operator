@@ -93,6 +93,10 @@
          <lastmod>2026-10-15</lastmod>
     </url>
     <url>
+         <loc>https://konsole-is.github.io/camunda-operator/dev/crds/grant/</loc>
+         <lastmod>2026-10-15</lastmod>
+    </url>
+    <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/logicalbackupelasticsearch/</loc>
          <lastmod>2026-10-15</lastmod>
     </url>
@@ -114,6 +118,18 @@
     </url>
     <url>
          <loc>https://konsole-is.github.io/camunda-operator/dev/crds/objectstorageconfig/</loc>
+         <lastmod>2026-10-15</lastmod>
+    </url>
+    <url>
+         <loc>https://konsole-is.github.io/camunda-operator/dev/crds/pluginregistration/</loc>
+         <lastmod>2026-10-15</lastmod>
+    </url>
+    <url>
+         <loc>https://konsole-is.github.io/camunda-operator/dev/crds/pluginrequest/</loc>
+         <lastmod>2026-10-15</lastmod>
+    </url>
+    <url>
+         <loc>https://konsole-is.github.io/camunda-operator/dev/crds/pluginsection/</loc>
          <lastmod>2026-10-15</lastmod>
     </url>
     <url>
