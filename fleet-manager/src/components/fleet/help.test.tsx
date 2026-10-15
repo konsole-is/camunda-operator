@@ -56,6 +56,21 @@ describe("FieldHelp", () => {
     );
   });
 
+  it("stays open when the pointer leaves while the focus is inside", async () => {
+    render(
+      <FieldHelp label="Partitions" doc={partitions} operatorVersion="0.2.3" />,
+    );
+    const button = screen.getByRole("button", { name: "About Partitions" });
+    await userEvent.hover(button);
+    await userEvent.tab();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole("link", { name: "API reference" }),
+    );
+    await userEvent.unhover(button);
+    expect(screen.getByRole("note")).toBeTruthy();
+  });
+
   it("renders nothing for a path without a description", () => {
     const { container } = render(
       <FieldHelp

@@ -31,7 +31,10 @@ export function FieldHelp({
     <span
       className="relative inline-flex align-middle"
       onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseLeave={(event) => {
+        if (!event.currentTarget.contains(document.activeElement))
+          setOpen(false);
+      }}
       onFocus={() => setOpen(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null))
