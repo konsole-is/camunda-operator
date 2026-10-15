@@ -97,6 +97,31 @@ describe("validate", () => {
     });
   });
 
+  it("leaves literal values in a schema as they are", () => {
+    const schema = {
+      type: "object",
+      enum: [{ exclusiveMinimum: false }],
+      default: { exclusiveMaximum: true, maximum: 3 },
+    };
+    expect(validate(schema, { exclusiveMinimum: false })).toEqual({ ok: true });
+    expect(validate(schema, {}).ok).toBe(false);
+  });
+
+  it("reads a property that has the name of a bound keyword", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        exclusiveMinimum: {
+          type: "integer",
+          minimum: 1,
+          exclusiveMinimum: true,
+        },
+      },
+    };
+    expect(validate(schema, { exclusiveMinimum: 2 })).toEqual({ ok: true });
+    expect(validate(schema, { exclusiveMinimum: 1 }).ok).toBe(false);
+  });
+
   it("reports a schema that cannot compile as one error at the empty path", () => {
     const result = validate({ type: "nope" }, "x");
     expect(result.ok).toBe(false);

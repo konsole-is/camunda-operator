@@ -50,14 +50,39 @@ function compile(schema: OpenAPISchema): ValidateFunction | Error {
   return check;
 }
 
+// Only these keywords hold schemas. enum, default, and example hold data,
+// which must stay as it is.
+const SCHEMA_KEYWORDS = [
+  "items",
+  "additionalProperties",
+  "additionalItems",
+  "not",
+  "allOf",
+  "anyOf",
+  "oneOf",
+];
+const SCHEMA_MAP_KEYWORDS = ["properties", "patternProperties", "definitions"];
+
 // OpenAPI 3.0, as a CRD writes it, marks an exclusive bound with a boolean
 // beside minimum or maximum. Ajv reads only the numeric form of JSON Schema.
-function withNumericBounds(node: unknown): unknown {
-  if (Array.isArray(node)) return node.map(withNumericBounds);
-  if (node === null || typeof node !== "object") return node;
-  const result: Record<string, unknown> = Object.fromEntries(
-    Object.entries(node).map(([key, value]) => [key, withNumericBounds(value)]),
-  );
+function withNumericBounds(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(withNumericBounds);
+  if (schema === null || typeof schema !== "object") return schema;
+  const result: Record<string, unknown> = { ...schema };
+  for (const key of SCHEMA_KEYWORDS) {
+    if (Object.hasOwn(result, key))
+      result[key] = withNumericBounds(result[key]);
+  }
+  for (const key of SCHEMA_MAP_KEYWORDS) {
+    const map = result[key];
+    if (map !== null && typeof map === "object" && !Array.isArray(map))
+      result[key] = Object.fromEntries(
+        Object.entries(map).map(([name, value]) => [
+          name,
+          withNumericBounds(value),
+        ]),
+      );
+  }
   for (const [exclusive, bound] of [
     ["exclusiveMinimum", "minimum"],
     ["exclusiveMaximum", "maximum"],
