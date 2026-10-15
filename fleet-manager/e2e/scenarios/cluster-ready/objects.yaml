@@ -2883,6 +2883,1040 @@ reportingController: camundacluster
 reportingInstance: camundacluster-scenario-node
 type: Normal
 ---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:claimEditable: {}
+        f:controller:
+          f:name: {}
+          f:version: {}
+        f:deletionPolicies:
+          v:"Delete": {}
+          v:"Orphan": {}
+        f:description: {}
+        f:inputs:
+          k:{"name":"objectStorageConfig"}:
+            .: {}
+            f:from: {}
+            f:name: {}
+          k:{"name":"serviceAccountAnnotations"}:
+            .: {}
+            f:from: {}
+            f:name: {}
+          k:{"name":"storageClassName"}:
+            .: {}
+            f:from: {}
+            f:name: {}
+        f:label: {}
+        f:mode: {}
+        f:outputs:
+          k:{"key":"secondaryStorageConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:parameters:
+          f:properties:
+            .: {}
+            f:overrides:
+              .: {}
+              f:description: {}
+              f:properties:
+                .: {}
+                f:instances:
+                  .: {}
+                  f:description: {}
+                  f:format: {}
+                  f:minimum: {}
+                  f:type: {}
+                f:podLabels:
+                  .: {}
+                  f:additionalProperties:
+                    .: {}
+                    f:type: {}
+                  f:description: {}
+                  f:type: {}
+                f:resources:
+                  .: {}
+                  f:description: {}
+                  f:type: {}
+                  f:x-kubernetes-preserve-unknown-fields: {}
+                f:scheduling:
+                  .: {}
+                  f:description: {}
+                  f:type: {}
+                  f:x-kubernetes-preserve-unknown-fields: {}
+                f:storageSize:
+                  .: {}
+                  f:description: {}
+                  f:type: {}
+              f:type: {}
+            f:preset:
+              .: {}
+              f:description: {}
+              f:minLength: {}
+              f:type: {}
+          f:required: {}
+          f:type: {}
+        f:sections: {}
+        f:serviceAccount:
+          f:name: {}
+          f:namespace: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: database-server
+  uid: 924259aa-55ca-503f-b742-f82649fbf8eb
+spec:
+  claimEditable:
+  - overrides
+  controller:
+    name: camunda-operator
+    version: 0.0.0-dev
+  deletionPolicies:
+  - Delete
+  - Orphan
+  description: Runs a PostgreSQL server and a database for the cluster, from a database
+    server preset.
+  inputs:
+  - from: volume-encryption/storageClassName
+    name: storageClassName
+  - from: backup-storage/objectStorageConfig
+    name: objectStorageConfig
+  - from: cloud-identity/serviceAccountAnnotations
+    name: serviceAccountAnnotations
+  label: New PostgreSQL server
+  mode: Optional
+  outputs:
+  - description: The name of the SecondaryStorageConfig that the cluster reads.
+    key: secondaryStorageConfig
+  parameters:
+    properties:
+      overrides:
+        description: The values that replace the values of the preset.
+        properties:
+          instances:
+            description: The number of PostgreSQL instances.
+            format: int32
+            minimum: 1
+            type: integer
+          podLabels:
+            additionalProperties:
+              type: string
+            description: The labels to add to the PostgreSQL pods.
+            type: object
+          resources:
+            description: The CPU and memory of each instance, as spec.resources of
+              a DatabaseServer.
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          scheduling:
+            description: Where the instances run, as spec.scheduling of a DatabaseServer.
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          storageSize:
+            description: The volume size of each instance, for example 20Gi. The size
+              only grows.
+            type: string
+        type: object
+      preset:
+        description: The name of the DatabaseServerPreset that the PostgreSQL server
+          starts from.
+        minLength: 1
+        type: string
+    required:
+    - preset
+    type: object
+  sections:
+  - secondary-storage
+  serviceAccount:
+    name: camunda-operator-controller-manager
+    namespace: camunda-system
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:claimEditable: {}
+        f:controller:
+          f:name: {}
+          f:version: {}
+        f:deletionPolicies:
+          v:"Delete": {}
+          v:"Orphan": {}
+        f:description: {}
+        f:inputs:
+          k:{"name":"objectStorageConfig"}:
+            .: {}
+            f:from: {}
+            f:name: {}
+          k:{"name":"serviceAccountAnnotations"}:
+            .: {}
+            f:from: {}
+            f:name: {}
+          k:{"name":"storageClassName"}:
+            .: {}
+            f:from: {}
+            f:name: {}
+        f:label: {}
+        f:mode: {}
+        f:outputs:
+          k:{"key":"secondaryStorageConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:parameters:
+          f:properties:
+            .: {}
+            f:overrides:
+              .: {}
+              f:description: {}
+              f:properties:
+                .: {}
+                f:podLabels:
+                  .: {}
+                  f:additionalProperties:
+                    .: {}
+                    f:type: {}
+                  f:description: {}
+                  f:type: {}
+                f:replicas:
+                  .: {}
+                  f:description: {}
+                  f:format: {}
+                  f:minimum: {}
+                  f:type: {}
+                f:resources:
+                  .: {}
+                  f:description: {}
+                  f:type: {}
+                  f:x-kubernetes-preserve-unknown-fields: {}
+                f:scheduling:
+                  .: {}
+                  f:description: {}
+                  f:type: {}
+                  f:x-kubernetes-preserve-unknown-fields: {}
+                f:storageSize:
+                  .: {}
+                  f:description: {}
+                  f:type: {}
+              f:type: {}
+            f:preset:
+              .: {}
+              f:description: {}
+              f:minLength: {}
+              f:type: {}
+          f:required: {}
+          f:type: {}
+        f:sections: {}
+        f:serviceAccount:
+          f:name: {}
+          f:namespace: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: elasticsearch
+  uid: 0600f29f-3e87-51e1-a016-357f6ba2ccda
+spec:
+  claimEditable:
+  - overrides
+  controller:
+    name: camunda-operator
+    version: 0.0.0-dev
+  deletionPolicies:
+  - Delete
+  - Orphan
+  description: Runs an Elasticsearch cluster for the cluster, from an Elasticsearch
+    cluster preset.
+  inputs:
+  - from: volume-encryption/storageClassName
+    name: storageClassName
+  - from: backup-storage/objectStorageConfig
+    name: objectStorageConfig
+  - from: cloud-identity/serviceAccountAnnotations
+    name: serviceAccountAnnotations
+  label: New Elasticsearch cluster
+  mode: Default
+  outputs:
+  - description: The name of the SecondaryStorageConfig that the cluster reads.
+    key: secondaryStorageConfig
+  parameters:
+    properties:
+      overrides:
+        description: The values that replace the values of the preset.
+        properties:
+          podLabels:
+            additionalProperties:
+              type: string
+            description: The labels to add to the Elasticsearch pods.
+            type: object
+          replicas:
+            description: The number of Elasticsearch nodes.
+            format: int32
+            minimum: 1
+            type: integer
+          resources:
+            description: The CPU and memory of each node, as spec.resources of an
+              ElasticsearchCluster.
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          scheduling:
+            description: Where the nodes run, as spec.scheduling of an ElasticsearchCluster.
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          storageSize:
+            description: The volume size of each node, for example 50Gi. The size
+              only grows.
+            type: string
+        type: object
+      preset:
+        description: The name of the ElasticsearchClusterPreset that the Elasticsearch
+          cluster starts from.
+        minLength: 1
+        type: string
+    required:
+    - preset
+    type: object
+  sections:
+  - secondary-storage
+  serviceAccount:
+    name: camunda-operator-controller-manager
+    namespace: camunda-system
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:controller:
+          f:name: {}
+          f:version: {}
+        f:deletionPolicies:
+          v:"Delete": {}
+          v:"Orphan": {}
+        f:description: {}
+        f:label: {}
+        f:mode: {}
+        f:outputs:
+          k:{"key":"identityDatabaseConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"keycloakDatabaseConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"webModelerDatabaseConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:parameters:
+          f:properties:
+            .: {}
+            f:identity:
+              .: {}
+              f:description: {}
+              f:minLength: {}
+              f:type: {}
+            f:keycloak:
+              .: {}
+              f:description: {}
+              f:minLength: {}
+              f:type: {}
+            f:webModeler:
+              .: {}
+              f:description: {}
+              f:minLength: {}
+              f:type: {}
+          f:type: {}
+        f:sections: {}
+        f:serviceAccount:
+          f:name: {}
+          f:namespace: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: existing-database-configs
+  uid: f115e14f-f49e-56fb-bf57-c87c5418b6ed
+spec:
+  controller:
+    name: camunda-operator
+    version: 0.0.0-dev
+  deletionPolicies:
+  - Delete
+  - Orphan
+  description: Uses DatabaseConfigs that are already in the namespace, one for each
+    component.
+  label: Existing databases
+  mode: Optional
+  outputs:
+  - description: The name of the DatabaseConfig of Keycloak.
+    key: keycloakDatabaseConfig
+  - description: The name of the DatabaseConfig of Management Identity.
+    key: identityDatabaseConfig
+  - description: The name of the DatabaseConfig of Web Modeler.
+    key: webModelerDatabaseConfig
+  parameters:
+    properties:
+      identity:
+        description: The name of the DatabaseConfig of Management Identity.
+        minLength: 1
+        type: string
+      keycloak:
+        description: The name of the DatabaseConfig of Keycloak.
+        minLength: 1
+        type: string
+      webModeler:
+        description: The name of the DatabaseConfig of Web Modeler.
+        minLength: 1
+        type: string
+    type: object
+  sections:
+  - management-database
+  serviceAccount:
+    name: camunda-operator-controller-manager
+    namespace: camunda-system
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:controller:
+          f:name: {}
+          f:version: {}
+        f:deletionPolicies:
+          v:"Delete": {}
+          v:"Orphan": {}
+        f:description: {}
+        f:label: {}
+        f:mode: {}
+        f:outputs:
+          k:{"key":"objectStorageConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:parameters:
+          f:properties:
+            .: {}
+            f:name:
+              .: {}
+              f:description: {}
+              f:minLength: {}
+              f:type: {}
+          f:required: {}
+          f:type: {}
+        f:sections: {}
+        f:serviceAccount:
+          f:name: {}
+          f:namespace: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: existing-object-storage
+  uid: d144f9a1-73df-5449-99fb-0599c5726668
+spec:
+  controller:
+    name: camunda-operator
+    version: 0.0.0-dev
+  deletionPolicies:
+  - Delete
+  - Orphan
+  description: Uses an ObjectStorageConfig that is already in the namespace.
+  label: Existing bucket
+  mode: Optional
+  outputs:
+  - description: The name of the ObjectStorageConfig that the cluster writes its backups
+      to.
+    key: objectStorageConfig
+  parameters:
+    properties:
+      name:
+        description: The name of an ObjectStorageConfig in the namespace of the claim.
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
+  sections:
+  - backup-storage
+  serviceAccount:
+    name: camunda-operator-controller-manager
+    namespace: camunda-system
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:controller:
+          f:name: {}
+          f:version: {}
+        f:deletionPolicies:
+          v:"Delete": {}
+          v:"Orphan": {}
+        f:description: {}
+        f:label: {}
+        f:mode: {}
+        f:outputs:
+          k:{"key":"secondaryStorageConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:parameters:
+          f:properties:
+            .: {}
+            f:name:
+              .: {}
+              f:description: {}
+              f:minLength: {}
+              f:type: {}
+          f:required: {}
+          f:type: {}
+        f:sections: {}
+        f:serviceAccount:
+          f:name: {}
+          f:namespace: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: existing-secondary-storage
+  uid: c8ca3681-5f5b-5d8e-8d2b-2ec25992661c
+spec:
+  controller:
+    name: camunda-operator
+    version: 0.0.0-dev
+  deletionPolicies:
+  - Delete
+  - Orphan
+  description: Uses a SecondaryStorageConfig that is already in the namespace.
+  label: Existing secondary storage
+  mode: Optional
+  outputs:
+  - description: The name of the SecondaryStorageConfig that the cluster reads.
+    key: secondaryStorageConfig
+  parameters:
+    properties:
+      name:
+        description: The name of a SecondaryStorageConfig in the namespace of the
+          claim.
+        minLength: 1
+        type: string
+    required:
+    - name
+    type: object
+  sections:
+  - secondary-storage
+  serviceAccount:
+    name: camunda-operator-controller-manager
+    namespace: camunda-system
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:controller:
+          f:name: {}
+          f:version: {}
+        f:deletionPolicies:
+          v:"Delete": {}
+          v:"Orphan": {}
+        f:description: {}
+        f:inputs:
+          k:{"name":"storageClassName"}:
+            .: {}
+            f:from: {}
+            f:name: {}
+        f:label: {}
+        f:mode: {}
+        f:outputs:
+          k:{"key":"identityDatabaseConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"keycloakDatabaseConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"webModelerDatabaseConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:parameters:
+          f:properties:
+            .: {}
+            f:databases:
+              .: {}
+              f:description: {}
+              f:items:
+                .: {}
+                f:enum: {}
+                f:type: {}
+              f:type: {}
+            f:preset:
+              .: {}
+              f:description: {}
+              f:minLength: {}
+              f:type: {}
+          f:required: {}
+          f:type: {}
+        f:sections: {}
+        f:serviceAccount:
+          f:name: {}
+          f:namespace: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: management-database-server
+  uid: 7eed5b65-4c02-56a9-8557-7a8c540b63ce
+spec:
+  controller:
+    name: camunda-operator
+    version: 0.0.0-dev
+  deletionPolicies:
+  - Delete
+  - Orphan
+  description: Runs a PostgreSQL server with one database for each component of the
+    management plane.
+  inputs:
+  - from: volume-encryption/storageClassName
+    name: storageClassName
+  label: New PostgreSQL server
+  mode: Default
+  outputs:
+  - description: The name of the DatabaseConfig of Keycloak.
+    key: keycloakDatabaseConfig
+  - description: The name of the DatabaseConfig of Management Identity.
+    key: identityDatabaseConfig
+  - description: The name of the DatabaseConfig of Web Modeler.
+    key: webModelerDatabaseConfig
+  parameters:
+    properties:
+      databases:
+        description: The components that get a database. The management plane claim
+          sets it.
+        items:
+          enum:
+          - keycloak
+          - identity
+          - webModeler
+          type: string
+        type: array
+      preset:
+        description: The name of the DatabaseServerPreset that the PostgreSQL server
+          starts from.
+        minLength: 1
+        type: string
+    required:
+    - preset
+    type: object
+  sections:
+  - management-database
+  serviceAccount:
+    name: camunda-operator-controller-manager
+    namespace: camunda-system
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginSection
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:appliesTo: {}
+        f:description: {}
+        f:emptyOptionLabel: {}
+        f:label: {}
+        f:order: {}
+        f:outputs:
+          k:{"key":"externalUrl"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"grpcHost"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"managementHost"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"optimizeUrl"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:selection: {}
+        f:slot: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: access
+  uid: cb98ade3-1ebe-58a9-9ee8-fd5f82670973
+spec:
+  appliesTo:
+  - CamundaClusterClaim
+  - CamundaManagementClusterClaim
+  description: How users and clients reach the cluster or the management plane from
+    outside.
+  emptyOptionLabel: No access from outside
+  label: Access
+  order: 60
+  outputs:
+  - description: The URL of the web applications and the REST API of a cluster.
+    key: externalUrl
+  - description: The host of the gRPC API of a cluster.
+    key: grpcHost
+  - description: The URL of Optimize of a cluster.
+    key: optimizeUrl
+  - description: The host of a management plane.
+    key: managementHost
+  selection: One
+  slot: externalAccess
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginSection
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:appliesTo: {}
+        f:description: {}
+        f:emptyOptionLabel: {}
+        f:label: {}
+        f:order: {}
+        f:outputs:
+          k:{"key":"objectStorageConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:selection: {}
+        f:slot: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: backup-storage
+  uid: 4460bced-17ab-55d8-a51a-55735b370257
+spec:
+  appliesTo:
+  - CamundaClusterClaim
+  description: Where the cluster keeps its backups.
+  emptyOptionLabel: No backups
+  label: Backup storage
+  order: 40
+  outputs:
+  - description: The name of the ObjectStorageConfig that the cluster writes its backups
+      to.
+    key: objectStorageConfig
+  selection: One
+  slot: backupStorage
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginSection
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:appliesTo: {}
+        f:description: {}
+        f:emptyOptionLabel: {}
+        f:label: {}
+        f:order: {}
+        f:outputs:
+          k:{"key":"principal"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"serviceAccountAnnotations"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:selection: {}
+        f:slot: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: cloud-identity
+  uid: 5944a5d0-dcf8-5905-9677-6488f2cc1cc5
+spec:
+  appliesTo:
+  - CamundaClusterClaim
+  description: The cloud identity that the pods of the cluster run as.
+  emptyOptionLabel: No cloud identity
+  label: Cloud identity
+  order: 10
+  outputs:
+  - description: The cloud identity, for example the ARN of an AWS IAM role.
+    key: principal
+  - description: The annotations, as a JSON object, that bind the ServiceAccount of
+      the cluster to the cloud identity.
+    key: serviceAccountAnnotations
+  selection: One
+  slot: workloadIdentity
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginSection
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:appliesTo: {}
+        f:description: {}
+        f:emptyOptionLabel: {}
+        f:label: {}
+        f:order: {}
+        f:outputs:
+          k:{"key":"principal"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"serviceAccountAnnotations"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:selection: {}
+        f:slot: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: connectors-permissions
+  uid: 6d2250ae-b2d3-576e-a346-e270d2c978f9
+spec:
+  appliesTo:
+  - CamundaClusterClaim
+  description: The cloud permissions of the Connectors, apart from the cloud identity
+    of the cluster.
+  emptyOptionLabel: No cloud permissions
+  label: Connectors permissions
+  order: 70
+  outputs:
+  - description: The cloud identity of the Connectors.
+    key: principal
+  - description: The annotations, as a JSON object, that bind the ServiceAccount of
+      the Connectors to their cloud identity.
+    key: serviceAccountAnnotations
+  selection: One
+  slot: connectorsIdentity
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginSection
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:appliesTo: {}
+        f:description: {}
+        f:emptyOptionLabel: {}
+        f:label: {}
+        f:order: {}
+        f:outputs:
+          k:{"key":"format"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"keyRef"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:selection: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: encryption-key
+  uid: c7fc21e3-c7b2-5b71-a9ce-67c6d16ba986
+spec:
+  appliesTo:
+  - CamundaClusterClaim
+  description: The key that other sections use to encrypt volumes and buckets.
+  emptyOptionLabel: No key
+  label: Encryption key
+  order: 20
+  outputs:
+  - description: The reference of the key, for example the ARN of an AWS KMS key.
+    key: keyRef
+  - description: The format of keyRef, for example aws-kms-arn.
+    key: format
+  selection: One
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginSection
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:appliesTo: {}
+        f:description: {}
+        f:label: {}
+        f:order: {}
+        f:outputs:
+          k:{"key":"identityDatabaseConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"keycloakDatabaseConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+          k:{"key":"webModelerDatabaseConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:selection: {}
+        f:slot: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: management-database
+  uid: a8926c1f-2581-5b8d-b82d-41eab7faa872
+spec:
+  appliesTo:
+  - CamundaManagementClusterClaim
+  description: The databases of Keycloak, Management Identity, and Web Modeler.
+  label: Databases
+  order: 80
+  outputs:
+  - description: The name of the DatabaseConfig of Keycloak.
+    key: keycloakDatabaseConfig
+  - description: The name of the DatabaseConfig of Management Identity.
+    key: identityDatabaseConfig
+  - description: The name of the DatabaseConfig of Web Modeler.
+    key: webModelerDatabaseConfig
+  selection: One
+  slot: managementDatabases
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginSection
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:appliesTo: {}
+        f:description: {}
+        f:label: {}
+        f:order: {}
+        f:outputs:
+          k:{"key":"secondaryStorageConfig"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:selection: {}
+        f:slot: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: secondary-storage
+  uid: 3a45476d-c6c3-56ef-9152-3a1ce44fcaa2
+spec:
+  appliesTo:
+  - CamundaClusterClaim
+  description: The Elasticsearch or PostgreSQL storage of the cluster.
+  label: Secondary storage
+  order: 50
+  outputs:
+  - description: The name of the SecondaryStorageConfig that the cluster reads.
+    key: secondaryStorageConfig
+  selection: One
+  slot: secondaryStorage
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginSection
+metadata:
+  creationTimestamp: "2026-01-01T00:00:00Z"
+  generation: 1
+  managedFields:
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:appliesTo: {}
+        f:description: {}
+        f:emptyOptionLabel: {}
+        f:label: {}
+        f:order: {}
+        f:outputs:
+          k:{"key":"storageClassName"}:
+            .: {}
+            f:description: {}
+            f:key: {}
+        f:selection: {}
+        f:slot: {}
+    manager: camunda-operator-builtins
+    operation: Apply
+    time: "2026-01-01T00:00:00Z"
+  name: volume-encryption
+  uid: 47ef0411-b87e-5924-9a78-824b26b45d31
+spec:
+  appliesTo:
+  - CamundaClusterClaim
+  description: How the volumes of the cluster are encrypted.
+  emptyOptionLabel: Unencrypted volumes
+  label: Volume encryption
+  order: 30
+  outputs:
+  - description: The StorageClass of the Zeebe volumes.
+    key: storageClassName
+  selection: One
+  slot: volumeEncryption
+---
 apiVersion: v1
 kind: Namespace
 metadata:

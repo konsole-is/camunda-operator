@@ -25,7 +25,7 @@ The defaults are the values of a released chart.
 | `manager.cliImage.repository` | `ghcr.io/konsole-is/camunda-operator-cli` | Repository of the CLI image that the Jobs of the operator run. The manager gets it as `--camunda-operator-cli-image`. If you mirror the manager image, mirror this one too. |
 | `manager.cliImage.tag` | the chart version | CLI image tag. |
 | `manager.args` | `["--leader-elect"]` | Arguments of the manager. Keep `--leader-elect` when you run more than one replica. |
-| `manager.env` | `[]` | Environment variables. |
+| `manager.env` | the entry `CAMUNDA_OPERATOR_SERVICE_ACCOUNT` | Environment variables. Helm replaces the list, so keep this entry when you set `manager.env`. |
 | `manager.envOverrides` | `{}` | Environment variables as a map. A name here wins over the same name in `manager.env`. |
 | `manager.imagePullSecrets` | `[]` | Image pull secrets of the manager Pod and of the fleet manager Pod. |
 | `manager.podSecurityContext` | `runAsNonRoot: true`, `seccompProfile.type: RuntimeDefault` | Pod security context. |
@@ -84,6 +84,7 @@ The chart sets some flags from its own values. The column "Set by the chart" nam
 |---|---|---|---|---|
 | `--camunda-operator-cli-image` | `CAMUNDA_OPERATOR_CLI_IMAGE` | none | `manager.cliImage` | The CLI image that the logical backup and restore Jobs of a PostgreSQL database run. The manager does not start without it. The chart always sets the flag, so the environment variable has no effect in a chart install. |
 | `--namespace` | `CAMUNDA_OPERATOR_NAMESPACE` | the namespace of the manager Pod | no | The namespace of the operator. It holds the Leases that make sure that only one resource claims a logical database, a Keycloak realm, or the secondary storage of a cluster. |
+| `--service-account` | `CAMUNDA_OPERATOR_SERVICE_ACCOUNT` | none | no | The name of the ServiceAccount that the manager runs as, in the namespace of the operator. The built-in `PluginRegistration`s name it. The manager does not start without it. The chart sets the environment variable to the ServiceAccount of the manager Pod, in the default of `manager.env`. If you set `manager.env`, copy this entry from the chart defaults into your list. `manager.envOverrides` cannot set it, because the entry reads the Pod. |
 | `--workload-grace-period` | `CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD` | `30m` | no | How long a Camunda, Optimize, Keycloak, or exporter workload can stay not ready before its condition reports `Degraded` or `Down`. See [Grace periods](https://github.com/konsole-is/camunda-operator/blob/main/docs/installation.md#grace-periods). |
 | `--datastore-grace-period` | `CAMUNDA_OPERATOR_DATASTORE_GRACE_PERIOD` | `30m` | no | How long an Elasticsearch or a PostgreSQL cluster can stay not ready before its condition reports `Degraded` or `Down`. See [Grace periods](https://github.com/konsole-is/camunda-operator/blob/main/docs/installation.md#grace-periods). |
 | `--leader-elect` | none | `false` | `manager.args` | Only one replica of the manager acts at a time. The default of `manager.args` turns it on. |
