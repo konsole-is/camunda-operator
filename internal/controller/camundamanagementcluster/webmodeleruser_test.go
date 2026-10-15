@@ -27,6 +27,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -362,14 +363,20 @@ var _ = Describe("Web Modeler", func() {
 			g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
 
-		// The back-off of controller-runtime doubles from 5 ms. After ten
-		// refusals it waits about 5 s, then 10 s, 20 s, and 40 s, so it cannot
-		// make five more calls in 15 s. One call a second makes about 15.
-		Eventually(api.DeleteCalls, time.Minute, interval).Should(BeNumerically(">=", 10))
-		refused := api.DeleteCalls()
-		Eventually(api.DeleteCalls, 15*time.Second, interval).Should(BeNumerically(">=", refused+5))
 		Eventually(func(g Gomega) {
 			g.Expect(eventReasons(g, s.mc)).To(ContainElement(eventReasonUserRemovalFailed))
+		}, timeout, interval).Should(Succeed())
+
+		// A pass that returns an error retries on the back-off of
+		// controller-runtime, which grows with each refusal. A pass that
+		// returns RetryInterval and no error retries on that interval.
+		key := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(s.mc)}
+		Eventually(func(g Gomega) {
+			before := api.DeleteCalls()
+			result, err := reconciler.Reconcile(ctx, key)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(api.DeleteCalls()).To(BeNumerically(">", before))
+			g.Expect(result.RequeueAfter).To(Equal(reconciler.RetryInterval))
 		}, timeout, interval).Should(Succeed())
 		Consistently(func(g Gomega) {
 			g.Expect(conditionOf(g, s.mc, v1.ConditionReady).Reason).NotTo(Equal(v1.ReasonStepFailed))
@@ -379,6 +386,13 @@ var _ = Describe("Web Modeler", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(api.Exists(components.WebModelerClusterUsername)).To(BeFalse())
 			g.Expect(readOrchestrationCluster(g, cluster).Annotations).NotTo(HaveKey(components.ClaimAnnotation))
+		}, timeout, interval).Should(Succeed())
+
+		// Once the cluster removed the user, nothing asks for the retry.
+		Eventually(func(g Gomega) {
+			result, err := reconciler.Reconcile(ctx, key)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(result.RequeueAfter).NotTo(Equal(reconciler.RetryInterval))
 		}, timeout, interval).Should(Succeed())
 	})
 
