@@ -1604,8 +1604,8 @@ export interface CamundaClusterClaimSpec {
    * Cluster holds the overrides of the cluster. It has the shape of the
    * CamundaCluster spec, and it merges over the preset and the release.
    *
-   * The API server refuses these fields here. An explicit zero value, such
-   * as suspend: false, counts as unset.
+   * The API server refuses these fields here. suspend: false and an empty
+   * presetRef, releaseRef, storageRef, or backupStorageRef count as unset.
    *   - presetRef, releaseRef, platformConfigRef, and suspend: the claim
    *     has its own fields for them.
    *   - version and connectors.version: the release sets them. Use

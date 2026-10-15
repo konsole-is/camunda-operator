@@ -368,6 +368,8 @@ var _ = Describe("CamundaClusterClaim schema", func() {
 		Entry("admits suspend: false", false, "suspend"),
 		Entry("admits an empty releaseRef", "", "releaseRef"),
 		Entry("admits an empty presetRef", "", "presetRef"),
+		Entry("admits an empty storageRef", "", "storageRef"),
+		Entry("admits an empty backupStorageRef", "", "backupStorageRef"),
 	)
 
 	DescribeTable(
