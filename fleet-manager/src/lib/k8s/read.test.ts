@@ -96,9 +96,9 @@ describe("getFrom", () => {
     const found = await getFrom(cache, "Secret", "a", "x");
     found!.metadata.labels!.tier = "changed";
 
-    expect(
-      (await getFrom(cache, "Secret", "a", "x"))!.metadata.labels,
-    ).toEqual({ tier: "web" });
+    expect((await getFrom(cache, "Secret", "a", "x"))!.metadata.labels).toEqual(
+      { tier: "web" },
+    );
   });
 
   it("needs a namespace for a namespaced kind", async () => {

@@ -279,7 +279,11 @@ async function installCRDs(
     const version = crd.spec.versions.find((v) => v.served && v.storage)!.name;
     const collection = `${server}/apis/${crd.spec.group}/${version}/${crd.spec.names.plural}?limit=1`;
     await waitUntil(apiserver, timeoutMs, async () => {
-      const answer = await send("GET", `${crdsURL}/${crd.metadata.name}`, token);
+      const answer = await send(
+        "GET",
+        `${crdsURL}/${crd.metadata.name}`,
+        token,
+      );
       if (answer.status !== 200) return false;
       const live = JSON.parse(answer.body) as CRD;
       const established = live.status?.conditions?.some(
