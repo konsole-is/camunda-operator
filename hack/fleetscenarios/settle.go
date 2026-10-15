@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -29,6 +30,9 @@ import (
 
 // settleTimeout bounds each settle of a scenario.
 const settleTimeout = 60 * time.Second
+
+// errNotSettled is the cause of the context of settle when its timeout ends.
+var errNotSettled = errors.New("the scenario did not settle")
 
 const (
 	settleQuiet = 2 * time.Second
@@ -52,7 +56,10 @@ func settle(
 	timeout time.Duration,
 	before map[string]float64,
 ) error {
-	deadline := time.Now().Add(timeout)
+	parent := ctx
+	ctx, cancel := context.WithTimeoutCause(parent, timeout, errNotSettled)
+	defer cancel()
+
 	quietSince := time.Now()
 	objectChanged := map[string]time.Time{}
 	controllerChanged := map[string]time.Time{}
@@ -60,18 +67,38 @@ func settle(
 	totals := before
 	var unobserved []string
 	retrying := map[string]bool{}
+	var failing []string
+	var seen time.Time
+
+	// notSettled reports the state of the last tick that read the whole
+	// scenario, because a tick that the deadline stops read only a part.
+	notSettled := func(err error) error {
+		if !errors.Is(context.Cause(ctx), errNotSettled) || parent.Err() != nil {
+			return err
+		}
+		return fmt.Errorf(
+			"the scenario did not settle within %s: objects that kept changing: %s; "+
+				"objects that did not observe their generation: %s; controllers that kept reconciling: %s; "+
+				"controllers whose last reconcile failed: %s",
+			timeout,
+			listOrNone(recentlyChanged(objectChanged, seen), true),
+			listOrNone(unobserved, false),
+			listOrNone(recentlyChanged(controllerChanged, seen), false),
+			listOrNone(failing, false),
+		)
+	}
 
 	for {
 		now := time.Now()
 		writes, err := sim.pass(ctx)
 		if err != nil {
-			return err
+			return notSettled(err)
 		}
 		busy := writes > 0
 
 		objs, err := sc.list(ctx)
 		if err != nil {
-			return err
+			return notSettled(err)
 		}
 		current := map[string]string{}
 		for i := range objs {
@@ -97,29 +124,20 @@ func settle(
 		totals = reconciles
 
 		unobserved = sc.unobserved(objs)
-		failing := slices.Sorted(maps.Keys(retrying))
+		failing = slices.Sorted(maps.Keys(retrying))
+		seen = now
+		if ctx.Err() != nil {
+			return notSettled(ctx.Err())
+		}
 		if busy || active > 0 || len(unobserved) > 0 || len(failing) > 0 {
 			quietSince = now
 		} else if now.Sub(quietSince) >= settleQuiet {
 			return nil
 		}
 
-		if now.After(deadline) {
-			return fmt.Errorf(
-				"the scenario did not settle within %s: objects that kept changing: %s; "+
-					"objects that did not observe their generation: %s; controllers that kept reconciling: %s; "+
-					"controllers whose last reconcile failed: %s",
-				timeout,
-				listOrNone(recentlyChanged(objectChanged, now), true),
-				listOrNone(unobserved, false),
-				listOrNone(recentlyChanged(controllerChanged, now), false),
-				listOrNone(failing, false),
-			)
-		}
-
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return notSettled(ctx.Err())
 		case <-time.After(settleTick):
 		}
 	}

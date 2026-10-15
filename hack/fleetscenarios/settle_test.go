@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/konsole-is/camunda-operator/test/envtest"
@@ -70,6 +72,42 @@ func TestSettle(t *testing.T) {
 		assert.ErrorContains(t, err, "ConfigMap fight/flapping")
 		assert.Less(t, time.Since(start), timeout+time.Second)
 	})
+
+	t.Run("fails within its timeout when one request is slower than the timeout", func(t *testing.T) {
+		slow := rest.CopyConfig(cfg)
+		slow.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
+			return delayed{next: rt, delay: 5 * time.Second}
+		}
+		// The discovery of the REST mapper takes no context, so it goes
+		// through the client of c.
+		slowClient, err := client.New(slow, client.Options{Mapper: c.RESTMapper()})
+		require.NoError(t, err)
+		slowSim := newSimulator(slowClient)
+		slowSim.watch("fight")
+
+		const timeout = time.Second
+		start := time.Now()
+		err = settle(ctx, slowSim, sc, timeout, before)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "did not settle within 1s")
+		assert.Less(t, time.Since(start), timeout+time.Second)
+	})
+}
+
+// delayed holds each request for delay before it sends it, or until the
+// context of the request ends.
+type delayed struct {
+	next  http.RoundTripper
+	delay time.Duration
+}
+
+func (d delayed) RoundTrip(req *http.Request) (*http.Response, error) {
+	select {
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	case <-time.After(d.delay):
+	}
+	return d.next.RoundTrip(req)
 }
 
 // keepChanging writes a new label value on obj every 100 ms until ctx ends,
