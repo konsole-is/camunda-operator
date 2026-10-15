@@ -23,14 +23,18 @@ describe("parseSelector", () => {
     expect(parseSelector(selector)(labels)).toBe(expected);
   });
 
-  it.each(["=web", "app in prod", "app=web,,env=prod", "a b"])(
-    "refuses %j and quotes it",
-    (selector) => {
-      expect(() => parseSelector(selector)).toThrow(
-        `The label selector "${selector}" is not valid`,
-      );
-    },
-  );
+  it.each([
+    "=web",
+    "app in prod",
+    "app=web,,env=prod",
+    "a b",
+    "tier notin (db prod)",
+    "tier in (db,pr*d)",
+  ])("refuses %j and quotes it", (selector) => {
+    expect(() => parseSelector(selector)).toThrow(
+      `The label selector "${selector}" is not valid`,
+    );
+  });
 
   it("matches an empty value with key=", () => {
     expect(parseSelector("app=")({ app: "" })).toBe(true);

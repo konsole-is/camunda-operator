@@ -7,6 +7,7 @@ export type LabelMatcher = (
 
 const KEY = String.raw`[A-Za-z0-9][-A-Za-z0-9_./]*`;
 const VALUE = String.raw`[-A-Za-z0-9_.]*`;
+const SET_VALUE = new RegExp(String.raw`^${VALUE}$`);
 const SET = new RegExp(String.raw`^(${KEY})\s+(in|notin)\s*\(([^)]*)\)$`);
 const EQUALITY = new RegExp(String.raw`^(${KEY})\s*(==|=|!=)\s*(${VALUE})$`);
 const EXISTS = new RegExp(String.raw`^(!?)\s*(${KEY})$`);
@@ -48,13 +49,13 @@ function requirement(
   part: string,
 ): (labels: Record<string, string>) => boolean {
   const set = SET.exec(part);
-  if (set) {
-    const [, key, op, list] = set;
-    const values = list.split(",").map((v) => v.trim());
+  const values = set?.[3].split(",").map((v) => v.trim());
+  if (set && values!.every((v) => SET_VALUE.test(v))) {
+    const [, key, op] = set;
     return op === "in"
-      ? (labels) => Object.hasOwn(labels, key) && values.includes(labels[key])
+      ? (labels) => Object.hasOwn(labels, key) && values!.includes(labels[key])
       : (labels) =>
-          !Object.hasOwn(labels, key) || !values.includes(labels[key]);
+          !Object.hasOwn(labels, key) || !values!.includes(labels[key]);
   }
   const equality = EQUALITY.exec(part);
   if (equality) {
