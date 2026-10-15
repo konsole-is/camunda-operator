@@ -50,7 +50,7 @@ function requirement(
 ): (labels: Record<string, string>) => boolean {
   const set = SET.exec(part);
   const values = set?.[3].split(",").map((v) => v.trim());
-  if (set && values!.every((v) => SET_VALUE.test(v))) {
+  if (set && set[3].trim() !== "" && values!.every((v) => SET_VALUE.test(v))) {
     const [, key, op] = set;
     return op === "in"
       ? (labels) => Object.hasOwn(labels, key) && values!.includes(labels[key])

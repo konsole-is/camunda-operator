@@ -30,6 +30,8 @@ describe("parseSelector", () => {
     "a b",
     "tier notin (db prod)",
     "tier in (db,pr*d)",
+    "env in ()",
+    "env notin ( )",
   ])("refuses %j and quotes it", (selector) => {
     expect(() => parseSelector(selector)).toThrow(
       `The label selector "${selector}" is not valid`,
