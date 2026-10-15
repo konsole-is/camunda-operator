@@ -175,7 +175,7 @@ export function SchedulingEditor({
                   "Seconds",
                   row.seconds,
                   (v) => replace({ ...row, seconds: v }),
-                  { type: "number", min: 0, step: 1, className: "w-28" },
+                  { type: "number", step: 1, className: "w-28" },
                 )}
               <Button
                 variant="ghost"
@@ -224,7 +224,9 @@ function toToleration(row: Row): Toleration {
     ...(row.operator !== "Exists" && row.value && { value: row.value }),
     ...(row.effect && { effect: row.effect }),
     ...(row.effect === "NoExecute" &&
-      /^\d+$/.test(row.seconds) && { tolerationSeconds: Number(row.seconds) }),
+      /^-?\d+$/.test(row.seconds) && {
+        tolerationSeconds: Number(row.seconds),
+      }),
   };
 }
 
@@ -239,7 +241,7 @@ function rowErrors(rows: Row[]): ValidationError[] {
     if (
       row.effect === "NoExecute" &&
       row.seconds !== "" &&
-      !/^\d+$/.test(row.seconds)
+      !/^-?\d+$/.test(row.seconds)
     )
       errors.push({
         path: `${index}.tolerationSeconds`,

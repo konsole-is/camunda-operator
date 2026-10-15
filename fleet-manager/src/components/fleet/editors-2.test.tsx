@@ -215,6 +215,32 @@ describe("SchedulingEditor", () => {
     ).toBe("Lt");
   });
 
+  it("keeps a negative number of seconds, which evicts at once", async () => {
+    const onChange = vi.fn();
+    const evict = {
+      key: "unreachable",
+      operator: "Exists",
+      effect: "NoExecute",
+      tolerationSeconds: -1,
+    };
+    render(
+      <SchedulingEditor
+        label="Tolerations"
+        defaultValue={[evict, { key: "a", operator: "Equal", value: "1" }]}
+        onChange={onChange}
+      />,
+    );
+    const second = screen.getByRole("group", { name: "Toleration 2" });
+    await userEvent.type(
+      within(second).getByRole("textbox", { name: "Value" }),
+      "2",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      [evict, { key: "a", operator: "Equal", value: "12" }],
+      [],
+    );
+  });
+
   it("refuses Equal without a key", async () => {
     const onChange = vi.fn();
     render(<SchedulingEditor label="Tolerations" onChange={onChange} />);
