@@ -202,17 +202,37 @@ func (s *scope) list(ctx context.Context) ([]unstructured.Unstructured, error) {
 
 // unobserved returns the description of each object of objs that must
 // report an observed generation and does not report its generation. An
-// object without status.observedGeneration has not observed it.
+// object reports it in status.observedGeneration. An object without that
+// field reports it when it has conditions and each of them carries the
+// generation. An object with neither has not observed it.
 func (s *scope) unobserved(objs []unstructured.Unstructured) []string {
 	var names []string
 	for i := range objs {
 		if !s.observed[objs[i].GroupVersionKind().GroupKind()] {
 			continue
 		}
-		observed, found, _ := unstructured.NestedInt64(objs[i].Object, "status", "observedGeneration")
-		if !found || observed != objs[i].GetGeneration() {
+		if !observesGeneration(&objs[i]) {
 			names = append(names, describe(&objs[i]))
 		}
 	}
 	return names
+}
+
+// A PluginRegistration has no status.observedGeneration until the plugin
+// controller writes it, and the operator only writes its Accepted condition.
+func observesGeneration(obj *unstructured.Unstructured) bool {
+	generation := obj.GetGeneration()
+	if observed, found, _ := unstructured.NestedInt64(obj.Object, "status", "observedGeneration"); found {
+		return observed == generation
+	}
+
+	conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+	for _, c := range conditions {
+		condition, _ := c.(map[string]any)
+		observed, _, _ := unstructured.NestedInt64(condition, "observedGeneration")
+		if observed != generation {
+			return false
+		}
+	}
+	return len(conditions) > 0
 }

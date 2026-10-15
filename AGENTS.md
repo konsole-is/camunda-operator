@@ -10,6 +10,7 @@ repository: architecture, project rules, and the skills to load before you write
 cmd/main.go                    Manager entry (flags, manager, webhooks)
 internal/reconcilers/*         Setup registers every reconciler; cmd/main.go and hack/fleetscenarios call it
 api/go.mod                     The api module; consumers import it without the operator's dependencies
+conformance/go.mod             The conformance module; plugin repositories import it without the operator's dependencies
 api/<version>/*_types.go       CRD schemas (+kubebuilder markers)
 api/<version>/zz_generated.*   Auto-generated (DO NOT EDIT)
 internal/controller/*          Reconciliation logic
@@ -362,11 +363,13 @@ hand edits. `dist/chart/Chart.yaml` and
 these two are the only `dist/` files checked into this repository
 (`.gitignore` excludes the rest of `dist/**/*`).
 
-**Two Go modules:** the root module and `api/`. A `./...` pattern never crosses
-a module boundary, so the Makefile runs every Go tool once per module through
-the `MODULES` variable (`vet`, `test`, `lint`, `fmt`, `tidy`, `generate`,
-`manifests`). The root `go.mod` requires the api module and replaces it with
-`./api`, so local builds always use the on-disk copy.
+**Three Go modules:** the root module, `api/`, and `conformance/`. A `./...`
+pattern never crosses a module boundary, so the Makefile runs each Go tool once
+per module. `tidy`, `fmt`, `vet`, `lint`, `lint-fix`, and `vulncheck` loop over
+the `MODULES` variable, and `test` has one line for each module. The root
+`go.mod` requires the api module and replaces it with `./api`, and
+`conformance/go.mod` does the same with `../api`, so local builds always use the
+on-disk copy.
 
 **Releasing:** follow [`RELEASING.md`](RELEASING.md). Run the **Prepare release**
 workflow first. It pins the api module version in the root `go.mod`, and the

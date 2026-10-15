@@ -20,6 +20,9 @@ VERSION_LDFLAGS = -X $(VERSION_PACKAGE).version=$(OPERATOR_VERSION)
 # namespace, because `make install` applies the CRDs alone and every claim
 # would fail against a namespace that is not there.
 OPERATOR_NAMESPACE ?= camunda-operator-system
+# The ServiceAccount that the built-in PluginRegistrations name. A manager in
+# a cluster gets it from its own Pod, so only `make run` needs this default.
+OPERATOR_SERVICE_ACCOUNT ?= camunda-operator-controller-manager
 
 # Recipes below expand IMG in the shell (e.g. $${IMG%:*}), which reads the
 # environment. Make exports command-line variables automatically but not this
@@ -70,11 +73,13 @@ help: ## Display this help.
 
 ##@ Development
 
-# The repository holds two Go modules: the operator at the root and the API
-# types in ./api, which consumers import without the operator's dependencies.
-# A `./...` pattern never crosses a module boundary, so every Go tool below
-# runs once per module.
-MODULES := . ./api
+# The repository holds three Go modules: the operator at the root, the API
+# types in ./api, and the plugin conformance suite in ./conformance. Consumers
+# import ./api, and plugin repositories import ./conformance, without the
+# operator's dependencies. A `./...` pattern never crosses a module boundary,
+# so `go mod tidy`, `go vet`, the linter, and `govulncheck` loop over MODULES,
+# and `go test` has one line for each module.
+MODULES := . ./api ./conformance
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
@@ -108,7 +113,7 @@ api-version: ## Pin the api module version in the root go.mod: make api-version 
 
 .PHONY: fmt
 fmt: golangci-lint ## Format code: callsplit, then the formatters configured in .golangci.yml.
-	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
+	go run ./hack/callsplit ./api ./cmd ./conformance ./internal ./pkg ./test
 	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" fmt) || exit 1; done
 
 .PHONY: vet
@@ -118,6 +123,7 @@ vet: ## Run go vet against code.
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	cd api && go test ./...
+	cd conformance && go test ./...
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
@@ -160,10 +166,13 @@ E2E_LABEL_FILTER ?=
 # Keycloak, a cluster, and two Optimize workloads of its own. The restore specs
 # of both storage paths add two backups, two restores, and two point-in-time
 # restores on top of that. The two management plane flows add a Keycloak, a
-# Management Identity, a Console, and two Web Modeler processes each. Ginkgo
-# has a suite timeout of its own, one hour by default, so the same value goes
-# to -ginkgo.timeout.
+# Management Identity, a Console, and two Web Modeler processes each.
 E2E_TIMEOUT ?= 180m
+
+# E2E_GINKGO_TIMEOUT is the suite timeout of Ginkgo, one hour by default. It
+# ends before E2E_TIMEOUT, so Ginkgo runs the AfterSuite and writes its report
+# of the specs before go test panics.
+E2E_GINKGO_TIMEOUT ?= 165m
 
 # setup-test-e2e ends with an unconditional context switch. The e2e suite
 # drives kubectl through the current context, and only a cluster that kind
@@ -190,7 +199,7 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 test-e2e: setup-test-e2e manifests generate vet ## Run the e2e tests. Expected an isolated environment using Kind.
 	set -a && . ./test/e2e/matrix/$(E2E_CAMUNDA_MINOR).env && set +a && \
 	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) ECK_VERSION=$(ECK_VERSION) \
-		go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TIMEOUT) -ginkgo.timeout $(E2E_TIMEOUT) \
+		go test -tags=e2e ./test/e2e/ -v -ginkgo.v -timeout $(E2E_TIMEOUT) -ginkgo.timeout $(E2E_GINKGO_TIMEOUT) \
 		$(if $(E2E_LABEL_FILTER),-ginkgo.label-filter="$(E2E_LABEL_FILTER)")
 	$(MAKE) cleanup-test-e2e
 
@@ -204,12 +213,12 @@ lint-examples: ## Check the version pins of config/example against the matrix en
 
 .PHONY: lint
 lint: golangci-lint lint-examples ## Check the example version pins and run callsplit, then golangci-lint.
-	go run ./hack/callsplit -check ./api ./cmd ./internal ./pkg ./test
+	go run ./hack/callsplit -check ./api ./cmd ./conformance ./internal ./pkg ./test
 	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" run) || exit 1; done
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
-	go run ./hack/callsplit ./api ./cmd ./internal ./pkg ./test
+	go run ./hack/callsplit ./api ./cmd ./conformance ./internal ./pkg ./test
 	@for m in $(MODULES); do (cd $$m && "$(GOLANGCI_LINT)" fmt && "$(GOLANGCI_LINT)" run --fix) || exit 1; done
 
 .PHONY: lint-config
@@ -241,7 +250,8 @@ build-cli: fmt vet ## Build the camunda-operator-cli binary.
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host. The backup Jobs it renders run CLI_IMG.
 	@"$(KUBECTL)" create namespace "$(OPERATOR_NAMESPACE)" --dry-run=client -o yaml | "$(KUBECTL)" apply -f -
-	go run ./cmd/main.go --camunda-operator-cli-image=${CLI_IMG} --namespace=${OPERATOR_NAMESPACE}
+	go run ./cmd/main.go --camunda-operator-cli-image=${CLI_IMG} --namespace=${OPERATOR_NAMESPACE} \
+		--service-account=${OPERATOR_SERVICE_ACCOUNT}
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -380,7 +390,7 @@ GOLANGCI_LINT_VERSION ?= v2.8.0
 # RENOVATE_VERSION is the Renovate release whose validator lint-renovate runs
 # against renovate.json5.
 # renovate: datasource=npm depName=renovate
-RENOVATE_VERSION ?= 44.148.0
+RENOVATE_VERSION ?= 44.148.1
 # renovate: datasource=go depName=golang.org/x/vuln
 GOVULNCHECK_VERSION ?= v1.8.0
 .PHONY: kustomize
@@ -531,6 +541,14 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 	$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
 		| go run ./hack/fleetchart -enabled=true -crds config/crd/bases
 	go run ./hack/fleetchart -enabled=false < dist/install.yaml
+	@# The install and the chart ship the Grant admission policy and its binding.
+	@for kind in ValidatingAdmissionPolicy ValidatingAdmissionPolicyBinding; do \
+		grep -qx "kind: $$kind" dist/install.yaml || { \
+			echo "ERROR: dist/install.yaml has no $$kind" >&2; exit 1; }; \
+		$(HELM) template verify "$(HELM_CHART_DIR)" --set crd.enabled=false | grep -qx "kind: $$kind" || { \
+			echo "ERROR: the chart does not render a $$kind" >&2; exit 1; }; \
+	done
+	@echo "  the install and the chart ship the Grant admission policy"
 	@$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
 		--set 'manager.imagePullSecrets[0].name=verify-pull' \
 		--show-only templates/fleet-manager/deployment.yaml | grep -q 'name: verify-pull' || { \
@@ -682,10 +700,10 @@ docs-build: ## Build the documentation site in strict mode.
 	mkdocs build --strict
 
 .PHONY: api-docs
-api-docs: crd-ref-docs ## Render the API reference in docs/crds/api-reference.md from the types in api/v1.
+api-docs: crd-ref-docs ## Render the API reference in docs/crds/api-reference.md from the types in api/.
 	{ cat hack/crd-ref-docs/config.yaml; \
 		printf 'render:\n  kubernetesVersion: %s\n' "$(ENVTEST_K8S_VERSION)"; } > "$(LOCALBIN)/crd-ref-docs.yaml"
-	"$(CRD_REF_DOCS)" --source-path=api/v1 --config="$(LOCALBIN)/crd-ref-docs.yaml" \
+	"$(CRD_REF_DOCS)" --source-path=api --config="$(LOCALBIN)/crd-ref-docs.yaml" \
 		--renderer=markdown --output-path=docs/crds/api-reference.md
 
 .PHONY: docs-sentences

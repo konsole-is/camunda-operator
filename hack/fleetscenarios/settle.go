@@ -57,8 +57,12 @@ func settle(
 	before map[string]float64,
 ) error {
 	parent := ctx
-	ctx, cancel := context.WithTimeoutCause(parent, timeout, errNotSettled)
-	defer cancel()
+	// A timer cancels ctx, because a deadline makes the client rate limiter
+	// fail early, with an error that is not the error of ctx.
+	ctx, cancel := context.WithCancelCause(parent)
+	timer := time.AfterFunc(timeout, func() { cancel(errNotSettled) })
+	defer timer.Stop()
+	defer cancel(nil)
 
 	quietSince := time.Now()
 	objectChanged := map[string]time.Time{}
@@ -71,7 +75,7 @@ func settle(
 	var seen time.Time
 
 	// notSettled reports the state of the last tick that read the whole
-	// scenario, because a tick that the deadline stops read only a part.
+	// scenario, because a tick that the timeout stops read only a part.
 	notSettled := func(err error) error {
 		if !errors.Is(context.Cause(ctx), errNotSettled) || parent.Err() != nil {
 			return err

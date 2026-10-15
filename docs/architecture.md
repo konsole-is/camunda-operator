@@ -120,7 +120,7 @@ A few fields cannot change after the resource exists. The API server rejects the
 
 ## Status conventions
 
-Every kind that the operator acts on reports conditions, and every one has an aggregate `Ready` condition. `status.observedGeneration` records the last generation that the operator processed.
+Every kind that the operator acts on reports conditions, and every one has an aggregate `Ready` condition. `status.observedGeneration` records the last generation that the operator processed. A `PluginRegistration` is different. The operator sets only its `Accepted` condition, and the plugin controller sets `Ready` and `status.observedGeneration`.
 
 A kind that runs workloads also reports one condition per component, named `<Component>Ready`, for example `ZeebeReady`. `Ready` takes its reason and message from the component that needs attention. When every component is healthy, the reason is `Healthy`.
 

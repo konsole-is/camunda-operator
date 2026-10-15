@@ -14,17 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package reconcilers registers every reconciler of the operator with a
-// manager. cmd/main.go and hack/fleetscenarios both call Setup, so the page
-// scenarios of the fleet manager run the reconcilers that the manager runs.
-// A new controller registers here, never in cmd/main.go.
+// Package reconcilers registers every reconciler of the operator and the
+// startup writer of the plugin objects with a manager. cmd/main.go and
+// hack/fleetscenarios both call Setup, so the page scenarios of the fleet
+// manager run the reconcilers that the manager runs. A new controller
+// registers here, never in cmd/main.go.
 package reconcilers
 
 import (
+	"errors"
 	"fmt"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/controller/backupschedule"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundacluster"
 	"github.com/konsole-is/camunda-operator/internal/controller/camundamanagementcluster"
@@ -41,8 +44,10 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/pluginregistration"
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
+	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
 )
 
@@ -57,12 +62,27 @@ type Options struct {
 	// GracePeriods are how long a workload or a datastore may take to become
 	// ready before its condition reports Degraded or Down.
 	GracePeriods grace.Periods
+	// OperatorVersion is the version of the operator build, in strict semver.
+	// The built-in PluginRegistrations carry it as the version of their
+	// controller, and the PluginRegistration controller checks it against
+	// spec.operatorVersions.
+	OperatorVersion string
+	// ServiceAccount is the ServiceAccount of the operator. The built-in
+	// PluginRegistrations name it.
+	ServiceAccount pluginsv1alpha1.ServiceAccountRef
 }
 
 // Setup registers every reconciler of the operator with mgr. It stops at the
 // first reconciler that cannot register, and its error names the kind of
-// that reconciler.
+// that reconciler. It also adds the Writer of internal/pluginstartup, which
+// writes the core PluginSections and the built-in PluginRegistrations at
+// each start. Setup refuses an opts.ServiceAccount with an empty namespace
+// or name.
 func Setup(mgr ctrl.Manager, opts Options) error {
+	if opts.ServiceAccount.Namespace == "" || opts.ServiceAccount.Name == "" {
+		return errors.New("setting up the plugin startup writer: the ServiceAccount of the operator is required")
+	}
+
 	c, reader, scheme := mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme()
 
 	registrations := []struct {
@@ -193,12 +213,24 @@ func Setup(mgr ctrl.Manager, opts Options) error {
 				c, reader, scheme, logicalrestorerdbms.Options{CLIImage: opts.CLIImage, ClaimNamespace: opts.Namespace},
 			).SetupWithManager(mgr)
 		}},
+		{"PluginRegistration", func() error {
+			return (&pluginregistration.Reconciler{
+				Client:          c,
+				APIReader:       reader,
+				Scheme:          scheme,
+				OperatorVersion: opts.OperatorVersion,
+			}).SetupWithManager(mgr)
+		}},
 	}
 
 	for _, r := range registrations {
 		if err := r.setup(); err != nil {
 			return fmt.Errorf("setting up the %s controller: %w", r.kind, err)
 		}
+	}
+
+	if err := mgr.Add(pluginstartup.New(c, opts.OperatorVersion, opts.ServiceAccount)); err != nil {
+		return fmt.Errorf("setting up the plugin startup writer: %w", err)
 	}
 
 	return nil
