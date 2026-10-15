@@ -62,16 +62,10 @@ export function FieldHelp({
         <span
           className="absolute top-full left-0 z-20 pt-1"
           ref={(box) => {
-            // Near the right edge of the window, open to the left of the
-            // (?), so the box stays inside the window.
-            if (
-              box &&
-              box.getBoundingClientRect().right >
-                document.documentElement.clientWidth
-            ) {
-              box.style.left = "auto";
-              box.style.right = "0";
-            }
+            if (!box) return;
+            const { left, right } = box.getBoundingClientRect();
+            const over = right - document.documentElement.clientWidth;
+            if (over > 0) box.style.left = `${-Math.min(over, left)}px`;
           }}
         >
           <span

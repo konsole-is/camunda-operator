@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fieldDocFor } from "@/lib/fielddocs";
 import { ConditionsTable } from "./conditions-table";
 import { FieldHelp } from "./field-help";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const partitions = fieldDocFor(
   "core.camunda.io",
@@ -69,6 +72,31 @@ describe("FieldHelp", () => {
     );
     await userEvent.unhover(button);
     expect(screen.getByRole("note")).toBeTruthy();
+  });
+
+  // jsdom has no layout, so these cases give the box its position and the
+  // window its width.
+  it.each([
+    ["near the middle of a phone window", 180, "-78px"],
+    ["so wide that it can only start at the left edge", 20, "-20px"],
+  ])("keeps the box inside the window %s", (_, left, shift) => {
+    const width = left === 20 ? 400 : 288;
+    vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(
+      390,
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(left, 0, width, 100),
+    );
+    render(
+      <FieldHelp
+        label="Partitions"
+        doc={partitions}
+        operatorVersion="0.2.3"
+        defaultOpen
+      />,
+    );
+    const box = screen.getByRole("note").parentElement!;
+    expect(box.style.left).toBe(shift);
   });
 
   it("renders nothing for a path without a description", () => {
