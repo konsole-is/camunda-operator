@@ -119,8 +119,6 @@ func Registrations(
 		spec := s.spec
 		spec.Controller = pluginsv1alpha1.ControllerInfo{Name: ControllerName, Version: operatorVersion}
 		spec.ServiceAccount = serviceAccount
-		// The registrations of existing resources write nothing, so both
-		// policies keep everything in place.
 		spec.DeletionPolicies = []pluginsv1alpha1.DeletionPolicy{
 			pluginsv1alpha1.DeletionPolicyDelete,
 			pluginsv1alpha1.DeletionPolicyOrphan,

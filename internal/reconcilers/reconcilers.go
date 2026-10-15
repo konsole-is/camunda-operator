@@ -15,9 +15,10 @@ limitations under the License.
 */
 
 // Package reconcilers registers every reconciler of the operator and the
-// startup writer of the plugin objects with a manager. cmd/main.go and hack/fleetscenarios both call Setup, so the page
-// scenarios of the fleet manager run the reconcilers that the manager runs.
-// A new controller registers here, never in cmd/main.go.
+// startup writer of the plugin objects with a manager. cmd/main.go and
+// hack/fleetscenarios both call Setup, so the page scenarios of the fleet
+// manager run the reconcilers that the manager runs. A new controller
+// registers here, never in cmd/main.go.
 package reconcilers
 
 import (
