@@ -552,6 +552,43 @@ func expectPhase(backup *v1.LogicalBackupElasticsearch, phase v1.LogicalBackupPh
 	}, timeout, interval).Should(Succeed())
 }
 
+// expectResumeFailed waits until backup gives up on a resume that keeps
+// failing and ends with ResumeFailed. The deadline counts each wait between
+// two attempts as one poll interval at most, so a slow reconcile adds
+// attempts, not time against the deadline.
+func expectResumeFailed(backup *v1.LogicalBackupElasticsearch) {
+	GinkgoHelper()
+	maxWaits := 10 * int(resumeDeadline/pollInterval)
+	for waits := 0; ; waits++ {
+		current := currentBackup(backup)
+		if current.Status.Phase == v1.LogicalBackupFailed {
+			break
+		}
+
+		Expect(waits).To(BeNumerically("<", maxWaits), "the backup still resumes after %d steps and attempts", waits)
+
+		started, last := current.Status.ResumeStartedTime, current.Status.LastResumeAttemptTime
+		if started != nil && last != nil {
+			// The status keeps whole seconds, so the two times can be
+			// one second further apart than the controller measured.
+			Expect(last.Sub(started.Time)).To(
+				BeNumerically("<=", resumeDeadline+time.Second),
+				"the backup still resumes after its attempts used up the deadline",
+			)
+		}
+
+		Eventually(func(g Gomega) {
+			next := currentBackup(backup)
+			moved := next.Status.Phase == v1.LogicalBackupFailed ||
+				next.Status.Step != current.Status.Step ||
+				!next.Status.LastResumeAttemptTime.Equal(last)
+			g.Expect(moved).To(BeTrue(), "the backup moves to a new step or attempt")
+		}, timeout, interval).Should(Succeed())
+	}
+
+	expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+}
+
 // expectEvent polls until an event with the given reason and type exists for
 // the backup.
 func expectEvent(backup *v1.LogicalBackupElasticsearch, reason, eventType string) {
@@ -819,8 +856,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		backup := r.newBackup()
 
-		expectPhase(backup, v1.LogicalBackupFailed)
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		expectResumeFailed(backup)
 		expectEvent(backup, eventReasonResumeFailed, corev1.EventTypeWarning)
 		Expect(r.leaseHolder()).To(
 			Equal(claimant(currentBackup(backup)).String()),
@@ -934,8 +970,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		backup := r.newBackup()
 
-		expectPhase(backup, v1.LogicalBackupFailed)
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		expectResumeFailed(backup)
 		final := currentBackup(backup)
 		Expect(final.Status.FailureMessage).To(ContainSubstring("PauseExporting"))
 		Expect(len(final.Status.FailureMessage)).To(BeNumerically("<", conditions.MaxMessageLength))
@@ -1734,12 +1769,26 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		backup := r.newBackup()
 		id := backupID(backup)
+		Eventually(func() v1.LogicalBackupElasticsearchStep {
+			return currentBackup(backup).Status.Step
+		}, timeout, interval).Should(Equal(v1.StepResumeExporting))
+
+		// Each Eventually waits for one more attempt, so that a slow
+		// reconcile does not use up the bound. If each wait read the count again,
+		// attempts made while it polls would not count, and the deadline could run
+		// out before the spec sees eight attempts.
+		awaitAttempts := func(from, n int) {
+			GinkgoHelper()
+			for want := from + 1; want <= from+n; want++ {
+				Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", want))
+			}
+		}
 		// The window under test starts once resume attempts are under way.
 		// No probe of an earlier step is still in flight then. The window
 		// spans five more attempts.
-		Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", 3))
+		awaitAttempts(0, 3)
 		before, attempts := r.search.StatsCalls(), r.management.ResumeAttempts()
-		Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", attempts+5))
+		awaitAttempts(attempts, 5)
 		Expect(r.search.StatsCalls()).To(Equal(before), "no size probe between resume attempts")
 		Expect(currentBackup(backup).Status.Step).To(Equal(v1.StepResumeExporting))
 		Expect(r.management.HistoryStarts(id)).To(BeZero())
@@ -1819,8 +1868,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("ending as ResumeFailed once the resume deadline passes against the same dead API")
-		expectPhase(backup, v1.LogicalBackupFailed)
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		expectResumeFailed(backup)
 	})
 
 	// Round 12 P1: an accepted runtime or history backup registers
@@ -2372,10 +2420,12 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		backupID(backup)
 
 		By("reaching the failing resume attempts")
-		Eventually(func(g Gomega) {
-			g.Expect(currentBackup(backup).Status.Step).To(Equal(v1.StepResumeExporting))
-			g.Expect(currentBackup(backup).Status.LastResumeAttemptTime).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
+		Eventually(func() v1.LogicalBackupElasticsearchStep {
+			return currentBackup(backup).Status.Step
+		}, timeout, interval).Should(Equal(v1.StepResumeExporting))
+		Eventually(func() *metav1.Time {
+			return currentBackup(backup).Status.LastResumeAttemptTime
+		}, timeout, interval).ShouldNot(BeNil())
 
 		By("parking longer than the whole deadline")
 		Eventually(func(g Gomega) {
@@ -2406,8 +2456,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		backup := r.newBackup()
 		backupID(backup)
 
-		expectPhase(backup, v1.LogicalBackupFailed)
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		expectResumeFailed(backup)
 		Expect(r.management.Exporting()).To(Equal("softPaused"))
 
 		By("holding the Lease after the terminal phase: the cluster is still paused")
