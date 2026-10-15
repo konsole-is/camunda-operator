@@ -35,6 +35,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/manager"
 	"github.com/konsole-is/camunda-operator/internal/reconcilers"
 	"github.com/konsole-is/camunda-operator/internal/version"
@@ -59,6 +60,11 @@ const cliImageEnv = "CAMUNDA_OPERATOR_CLI_IMAGE"
 // namespaceEnv is the environment variable that defaults --namespace.
 const namespaceEnv = "CAMUNDA_OPERATOR_NAMESPACE"
 
+// serviceAccountEnv is the environment variable that defaults
+// --service-account. config/manager/manager.yaml sets it to the
+// ServiceAccount of the Pod.
+const serviceAccountEnv = "CAMUNDA_OPERATOR_SERVICE_ACCOUNT"
+
 // serviceAccountNamespaceFile holds the namespace of the Pod that the manager
 // runs in. Kubernetes mounts it with the service account token, so a manager
 // in a cluster needs neither the flag nor the environment variable.
@@ -69,6 +75,7 @@ const serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccou
 type settings struct {
 	cliImage             string
 	namespace            string
+	serviceAccount       string
 	metricsAddr          string
 	metricsCertPath      string
 	metricsCertName      string
@@ -124,6 +131,18 @@ func main() {
 			nil,
 			"The namespace of the operator is required: set --namespace or the "+
 				namespaceEnv+" environment variable",
+		)
+		os.Exit(1)
+	}
+
+	// The built-in PluginRegistrations name the ServiceAccount of the
+	// operator, and their CRD requires it, so the manager refuses to start
+	// without it.
+	if s.serviceAccount == "" {
+		setupLog.Error(
+			nil,
+			"The ServiceAccount of the operator is required: set --service-account or the "+
+				serviceAccountEnv+" environment variable",
 		)
 		os.Exit(1)
 	}
@@ -236,9 +255,14 @@ func main() {
 	}
 
 	if err := reconcilers.Setup(mgr, reconcilers.Options{
-		Namespace:    s.namespace,
-		CLIImage:     s.cliImage,
-		GracePeriods: s.gracePeriods,
+		Namespace:       s.namespace,
+		CLIImage:        s.cliImage,
+		GracePeriods:    s.gracePeriods,
+		OperatorVersion: version.Version(),
+		ServiceAccount: pluginsv1alpha1.ServiceAccountRef{
+			Namespace: s.namespace,
+			Name:      s.serviceAccount,
+		},
 	}); err != nil {
 		setupLog.Error(err, "Failed to create the controllers")
 		os.Exit(1)
@@ -309,6 +333,12 @@ func bindFlags(fs *flag.FlagSet, getenv func(string) string) *settings {
 			"cross-namespace claims: of a logical database, of a Keycloak realm, and of the "+
 			"secondary storage backend of a cluster. Defaults to the "+namespaceEnv+
 			" environment variable, and then to the namespace of the Pod.",
+	)
+	fs.StringVar(
+		&s.serviceAccount, "service-account", getenv(serviceAccountEnv),
+		"The name of the ServiceAccount that the operator runs as, in the namespace of the "+
+			"operator. The built-in PluginRegistrations name it. Required. Defaults to the "+
+			serviceAccountEnv+" environment variable.",
 	)
 	s.checkGracePeriods = s.gracePeriods.BindFlags(fs, getenv)
 	s.zapOptions.BindFlags(fs)

@@ -24,8 +24,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
+	"github.com/konsole-is/camunda-operator/internal/reconcilers"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
@@ -39,6 +45,26 @@ var _ = Describe("Setup", func() {
 		Expect(want).NotTo(BeEmpty())
 
 		Eventually(startedControllers, time.Minute, envtest.Interval).Should(ConsistOf(want))
+	})
+
+	It("starts the plugin startup writer with the version and the ServiceAccount of the options", func() {
+		Eventually(func(g Gomega) {
+			var r pluginsv1alpha1.PluginRegistration
+			g.Expect(env.Client.Get(env.Ctx, client.ObjectKey{Name: pluginstartup.RegistrationElasticsearch}, &r)).To(Succeed())
+			g.Expect(r.Spec.Controller.Version).To(Equal(suiteVersion))
+			g.Expect(r.Spec.ServiceAccount).To(Equal(suiteServiceAccount))
+		}, envtest.Timeout, envtest.Interval).Should(Succeed())
+	})
+
+	It("refuses options without the ServiceAccount of the operator", func() {
+		mgr, err := ctrl.NewManager(env.Cfg, ctrl.Options{Metrics: metricsserver.Options{BindAddress: "0"}})
+		Expect(err).NotTo(HaveOccurred())
+
+		err = reconcilers.Setup(mgr, reconcilers.Options{
+			Namespace:      "default",
+			ServiceAccount: pluginsv1alpha1.ServiceAccountRef{Namespace: "default"},
+		})
+		Expect(err).To(MatchError(ContainSubstring("the ServiceAccount of the operator is required")))
 	})
 })
 
