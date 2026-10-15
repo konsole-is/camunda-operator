@@ -34,10 +34,10 @@
   // sets no minimum age. The npm releases of the fleet manager also have to
   // pass the 1-day minimum age of pnpm, which this covers.
   minimumReleaseAge: "7 days",
-  // Some registries give no release date, for example quay.io,
-  // docker.elastic.co, and the tags of amazon/aws-cli and node on Docker Hub.
-  // Without this, Renovate holds their updates forever. With it, they arrive
-  // without the wait.
+  // Some registries give no release date. A package rule below names each
+  // image that has none, so it skips the wait. For any other image without a
+  // date, Renovate proposes the update without the wait and writes a warning
+  // on the Dependency Dashboard. Add that image to the package rule.
   minimumReleaseAgeBehaviour: "timestamp-optional",
   // Without a tidy, a Go update leaves the replaced versions in go.sum, and
   // the tidy check of the Tests workflow fails.
@@ -103,6 +103,20 @@
       // when it is 7 days old.
       matchUpdateTypes: ["minor", "patch"],
       schedule: ["* * 1,15 * *"],
+    },
+    {
+      // The api module of this repository. Each go.mod that requires it
+      // replaces it with the copy on disk, so a new digest changes no build.
+      // The Prepare release workflow sets the version for a release.
+      matchPackageNames: ["github.com/konsole-is/camunda-operator/api"],
+      enabled: false,
+    },
+    {
+      // These images give no release date, so the minimum release age cannot
+      // apply to them.
+      matchDatasources: ["docker"],
+      matchDepNames: ["amazon/aws-cli", "docker.elastic.co/elasticsearch/elasticsearch", "node"],
+      minimumReleaseAge: null,
     },
     {
       matchFileNames: [".tool-versions"],
