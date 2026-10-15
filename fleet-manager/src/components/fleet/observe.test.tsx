@@ -172,6 +172,13 @@ describe("LogViewer", () => {
     expect(screen.getByRole("option", { name: "warn" })).toBeTruthy();
   });
 
+  it("takes the keyboard focus, so a keyboard user can scroll it", () => {
+    render(<LogViewer lines={[line("a")]} />);
+    const log = screen.getByRole("log");
+    log.focus();
+    expect(document.activeElement).toBe(log);
+  });
+
   it("filters by level and by text", async () => {
     render(
       <LogViewer

@@ -112,7 +112,8 @@ export function LogViewer({
         role="log"
         aria-label={label}
         aria-live="off"
-        className="h-80 overflow-auto rounded-md border border-border bg-panel py-1 font-mono text-xs leading-5"
+        tabIndex={0}
+        className="h-80 overflow-auto rounded-md border border-border bg-panel py-1 font-mono text-xs leading-5 outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       >
         {shown.length === 0 && (
           <p className="px-3 py-2 font-sans text-muted">No lines</p>

@@ -23,7 +23,8 @@ export function DiffView({
   return (
     <figure
       aria-label={label}
-      className="min-w-0 overflow-x-auto rounded-md border border-border bg-panel"
+      tabIndex={0}
+      className="min-w-0 overflow-x-auto rounded-md border border-border bg-panel outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       <div className="min-w-max py-2 font-mono text-xs leading-5">
         {chunks(lines).map((chunk, index) =>

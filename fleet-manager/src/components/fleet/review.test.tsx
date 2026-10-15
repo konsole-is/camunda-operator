@@ -35,6 +35,13 @@ describe("DiffView", () => {
     expect(screen.getByText("16 unchanged lines")).toBeTruthy();
   });
 
+  it("takes the keyboard focus, so a keyboard user can scroll it", () => {
+    render(<DiffView label="Claim orders" lines={lines} />);
+    const diff = screen.getByRole("figure", { name: "Claim orders" });
+    diff.focus();
+    expect(document.activeElement).toBe(diff);
+  });
+
   it("says so when nothing changed", () => {
     render(<DiffView label="Claim" lines={objectDiff({ a: 1 }, { a: 1 })} />);
     expect(screen.getByText("No changes")).toBeTruthy();
