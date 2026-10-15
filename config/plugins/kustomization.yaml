@@ -1,0 +1,4 @@
+# The admission policy that guards Grant. The default install includes it.
+resources:
+- grant_admission_policy.yaml
+- grant_admission_policy_binding.yaml

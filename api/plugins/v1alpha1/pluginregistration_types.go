@@ -49,8 +49,9 @@ type PluginRegistrationSpec struct {
 	// version. Display only. No controller reads it.
 	// +optional
 	Controller ControllerInfo `json:"controller,omitzero"`
-	// ServiceAccount is the ServiceAccount of the plugin controller. Only this
-	// ServiceAccount can write a Grant for the option.
+	// ServiceAccount is the ServiceAccount of the plugin controller. The app
+	// shows it. The API server admits a Grant for the option only from a
+	// requester that has the RBAC verb serve on this registration.
 	ServiceAccount ServiceAccountRef `json:"serviceAccount"`
 	// OperatorVersions is the semver range of the operator versions that the
 	// plugin supports, for example ">=0.3.0 <1.0.0". The operator reports a
@@ -189,6 +190,14 @@ type PluginRegistration struct {
 	// +optional
 	Status PluginRegistrationStatus `json:"status,omitzero"`
 }
+
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *PluginRegistration) GetStatusConditions() *[]metav1.Condition { return &in.Status.Conditions }
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *PluginRegistration) GetKind() string { return "PluginRegistration" }
 
 // +kubebuilder:object:root=true
 

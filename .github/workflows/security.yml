@@ -42,6 +42,7 @@ jobs:
         run: |
           hack/ci-retry.sh go mod download
           hack/ci-retry.sh go -C api mod download
+          hack/ci-retry.sh go -C conformance mod download
           hack/ci-retry.sh make govulncheck
 
       - name: Run govulncheck on each module

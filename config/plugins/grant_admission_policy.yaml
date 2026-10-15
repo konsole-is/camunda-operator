@@ -1,0 +1,62 @@
+# Admits a Grant only from a requester that has the RBAC verb serve on the
+# PluginRegistration named in the label plugins.camunda.io/registration.
+# Each plugin chart gives its controller that verb on its own registrations.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: plugins.camunda.io-grant-author
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["plugins.camunda.io"]
+      apiVersions: ["*"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["grants"]
+  # The garbage collector removes an owner reference with an update that
+  # changes neither the spec nor the labels. Such an update gives no new
+  # permission, so the policy skips it.
+  matchConditions:
+  - name: changes-spec-or-labels
+    expression: >-
+      request.operation == 'CREATE' ||
+      object.spec != oldObject.spec ||
+      object.metadata.?labels != oldObject.metadata.?labels
+  variables:
+  - name: registration
+    expression: >-
+      has(object.metadata.labels) && 'plugins.camunda.io/registration' in object.metadata.labels
+      ? object.metadata.labels['plugins.camunda.io/registration'] : ''
+  - name: oldRegistration
+    expression: >-
+      request.operation == 'UPDATE' && has(oldObject.metadata.labels) &&
+      'plugins.camunda.io/registration' in oldObject.metadata.labels
+      ? oldObject.metadata.labels['plugins.camunda.io/registration'] : ''
+  validations:
+  - expression: "variables.registration != ''"
+    message: >-
+      a Grant must carry the label plugins.camunda.io/registration with the name
+      of the PluginRegistration that it belongs to
+  - expression: >-
+      variables.registration == '' ||
+      authorizer.group('plugins.camunda.io').resource('pluginregistrations')
+      .name(variables.registration).check('serve').allowed()
+    messageExpression: >-
+      'the requester ' + request.userInfo.username +
+      ' does not have the verb serve on the PluginRegistration ' + variables.registration +
+      ', so it cannot write a Grant for it'
+    reason: Forbidden
+  # Without this rule, the controller of one registration could move the
+  # label of a Grant of another registration to its own and take the Grant.
+  - expression: >-
+      variables.oldRegistration == '' || variables.oldRegistration == variables.registration ||
+      authorizer.group('plugins.camunda.io').resource('pluginregistrations')
+      .name(variables.oldRegistration).check('serve').allowed()
+    messageExpression: >-
+      'the requester ' + request.userInfo.username +
+      ' does not have the verb serve on the PluginRegistration ' + variables.oldRegistration +
+      ', so it cannot change a Grant of it'
+    reason: Forbidden
+  - expression: "object.spec.format == 'aws-iam-statement'"
+    messageExpression: >-
+      'the format ' + object.spec.format + ' is not supported. Use aws-iam-statement'

@@ -33,6 +33,7 @@ jobs:
         run: |
           hack/ci-retry.sh go mod download
           hack/ci-retry.sh go -C api mod download
+          hack/ci-retry.sh go -C conformance mod download
 
       - name: Check linter configuration
         run: make lint-config

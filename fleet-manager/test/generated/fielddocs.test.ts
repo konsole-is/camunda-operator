@@ -29,25 +29,29 @@ describe("fieldDocs", { timeout: 60_000 }, () => {
     expect(description).toMatch(/^Partitions is the number of partitions\./);
   });
 
-  it("links every core.camunda.io field to a type of the API reference", () => {
-    const reference = fs.readFileSync(
-      path.join(repoDir, "docs/crds/api-reference.md"),
-      "utf8",
-    );
-    const anchors = new Set(
-      [...reference.matchAll(/^#### (\w+)$/gm)].map(
-        (m) => `#${m[1].toLowerCase()}`,
-      ),
-    );
+  it.each(["core.camunda.io", "plugins.camunda.io"] as const)(
+    "links every %s field to a type of the API reference",
+    (group) => {
+      const reference = fs.readFileSync(
+        path.join(repoDir, "docs/crds/api-reference.md"),
+        "utf8",
+      );
+      const anchors = new Set(
+        [...reference.matchAll(/^#### (\w+)$/gm)].map(
+          (m) => `#${m[1].toLowerCase()}`,
+        ),
+      );
 
-    const missing = Object.entries(fieldDocs["core.camunda.io"] ?? {}).flatMap(
-      ([kind, paths]) =>
+      const kinds = Object.entries(fieldDocs[group] ?? {});
+      expect(kinds).not.toEqual([]);
+      const missing = kinds.flatMap(([kind, paths]) =>
         Object.entries(paths ?? {})
           .filter(([, doc]) => !anchors.has(doc?.anchor ?? ""))
           .map(([field, doc]) => `${kind} ${field} ${doc?.anchor}`),
-    );
-    expect(missing).toEqual([]);
-  });
+      );
+      expect(missing).toEqual([]);
+    },
+  );
 
   it("makes a caller handle a group, a kind, or a path without an entry", () => {
     const name = "test/generated/__virtual__/lookup.ts";

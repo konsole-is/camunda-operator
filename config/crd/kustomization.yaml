@@ -24,6 +24,10 @@ resources:
 - bases/core.camunda.io_databaseservers.yaml
 - bases/core.camunda.io_databaseserverpresets.yaml
 - bases/core.camunda.io_camundareleases.yaml
+- bases/plugins.camunda.io_pluginsections.yaml
+- bases/plugins.camunda.io_pluginregistrations.yaml
+- bases/plugins.camunda.io_pluginrequests.yaml
+- bases/plugins.camunda.io_grants.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

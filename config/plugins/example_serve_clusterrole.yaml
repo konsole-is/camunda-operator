@@ -1,0 +1,29 @@
+# A plugin chart ships a ClusterRole like this one and binds it to the
+# ServiceAccount of its controller. The verb serve on its own
+# PluginRegistration lets the controller write a Grant for it. The chart
+# ships no admission binding: the operator installs the one policy.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: s3-backup-bucket-controller
+rules:
+- apiGroups: ["plugins.camunda.io"]
+  resources: ["pluginregistrations"]
+  resourceNames: ["s3-backup-bucket"]
+  verbs: ["serve"]
+- apiGroups: ["plugins.camunda.io"]
+  resources: ["grants"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: s3-backup-bucket-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: s3-backup-bucket-controller
+subjects:
+- kind: ServiceAccount
+  namespace: camunda-plugins
+  name: s3-backup-bucket-controller
