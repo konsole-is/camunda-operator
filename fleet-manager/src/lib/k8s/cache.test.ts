@@ -183,6 +183,24 @@ describe("ResourceCache", () => {
     );
   });
 
+  it("starts a new first list on the next read after a list that does not answer", async () => {
+    const answers = [
+      new Promise<never>(() => {}),
+      Promise.resolve(listOf([item("prod")], "1")),
+    ];
+    const list = vi.fn(() => answers.shift()!);
+    const { cache } = newCache({ list, syncTimeoutMs: 20 });
+
+    await expect(cache.objects("Environment")).rejects.toThrow(
+      /waited 0\.02 seconds/,
+    );
+
+    await vi.waitFor(async () =>
+      expect(names(await cache.objects("Environment"))).toEqual(["prod"]),
+    );
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
   it("gives a subscriber the objects at subscribe time, then each change", async () => {
     const { cache, watch } = newCache({
       list: async () => listOf([item("a")], "1"),

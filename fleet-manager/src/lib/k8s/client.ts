@@ -31,9 +31,14 @@ export class KubernetesRequestError extends Error {
 /**
  * getJSON sends a GET of path to the API server of kc and returns the body
  * as plain JSON. It rejects with KubernetesRequestError, which carries the
- * message of the Status of the API server, when the status is not 2xx.
+ * message of the Status of the API server, when the status is not 2xx. It
+ * rejects when the answer does not end within timeoutMs, if given.
  */
-export async function getJSON<T>(kc: KubeConfig, path: string): Promise<T> {
+export async function getJSON<T>(
+  kc: KubeConfig,
+  path: string,
+  timeoutMs?: number,
+): Promise<T> {
   const cluster = kc.getCurrentCluster();
   if (!cluster) {
     throw new Error(
@@ -73,6 +78,16 @@ export async function getJSON<T>(kc: KubeConfig, path: string): Promise<T> {
       });
     });
     request.on("error", reject);
+    if (timeoutMs !== undefined) {
+      const timer = setTimeout(
+        () =>
+          request.destroy(
+            new Error(`The API server did not answer ${path} in time`),
+          ),
+        timeoutMs,
+      );
+      request.on("close", () => clearTimeout(timer));
+    }
     request.end();
   });
 }

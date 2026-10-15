@@ -128,8 +128,12 @@ class KindInformer {
     this.retryDelay = deps.retryDelayMs;
 
     // The items of a list have no apiVersion and kind. Watch events have them.
+    // A list that does not answer fails, so that the next read starts a new
+    // one instead of waiting on it.
     const listFn = async () => {
-      const list = await deps.list(path);
+      const list = await withTimeout(deps.list(path), deps.syncTimeoutMs, () =>
+        this.syncTimeout(),
+      );
       this.listed = true;
       this.retryDelay = deps.retryDelayMs;
       return {
@@ -172,14 +176,15 @@ class KindInformer {
   synced(): Promise<void> {
     if (this.hasSynced) return Promise.resolve();
     this.starting ??= this.start();
+    return withTimeout(this.starting, this.deps.syncTimeoutMs, () =>
+      this.syncTimeout(),
+    );
+  }
+
+  private syncTimeout(): SyncTimeoutError {
     const seconds = this.deps.syncTimeoutMs / 1000;
-    return withTimeout(
-      this.starting,
-      this.deps.syncTimeoutMs,
-      () =>
-        new Error(
-          `The fleet manager waited ${seconds} seconds for the first list of ${this.kind} from the API server and got no answer`,
-        ),
+    return new SyncTimeoutError(
+      `The fleet manager waited ${seconds} seconds for the first list of ${this.kind} from the API server and got no answer`,
     );
   }
 
@@ -244,7 +249,10 @@ class KindInformer {
   }
 }
 
+class SyncTimeoutError extends Error {}
+
 function listFailure(kind: KindName, err: unknown): Error {
+  if (err instanceof SyncTimeoutError) return err;
   const info = KindMap[kind];
   const where = `${apiVersionOf(info)}, resource ${info.plural}`;
   if (err instanceof KubernetesRequestError && err.statusCode === 404) {
@@ -283,7 +291,7 @@ export function defaultCache(): ResourceCache {
     [CACHE_KEY]?: ResourceCache;
   };
   store[CACHE_KEY] ??= new ResourceCache({
-    list: (path) => getJSON(kubeConfig(), path),
+    list: (path) => getJSON(kubeConfig(), path, SYNC_TIMEOUT_MS),
     watch: new Watch(kubeConfig()),
   });
   return store[CACHE_KEY];
