@@ -388,6 +388,29 @@ describe("SectionCards", () => {
     ]);
   });
 
+  it("drops a selected option that new options disable", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SectionCards
+        section={section({ required: true })}
+        onChange={onChange}
+      />,
+    );
+    rerender(
+      <SectionCards
+        section={section(
+          { required: true },
+          { ...awsRole(), disabledReason: "Needs an IAM role" },
+        )}
+        onChange={onChange}
+      />,
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      [],
+      [{ path: "connectors-permissions", message: "Choose an option" }],
+    );
+  });
+
   it("drops a selected option that the new options no longer hold", () => {
     const onChange = vi.fn();
     const { rerender } = render(

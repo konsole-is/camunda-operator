@@ -42,9 +42,9 @@ type ParseErrors = Record<string, ValidationError[]>;
  * checkbox group for an array that shows the labels and submits the names.
  * Nothing is preselected in an allowed list unless the environment value is
  * one of its names. A selection holds only the parameters that differ from
- * the policy. A selected option that new options no longer hold leaves the
- * selection. onChange gets the initial selections and errors once, then
- * each change.
+ * the policy. A selected option that new options no longer hold, or
+ * disable, leaves the selection. onChange gets the initial selections and
+ * errors once, then each change.
  */
 export function SectionCards({
   section,
@@ -83,7 +83,12 @@ export function SectionCards({
 
   if (section !== seenSection) {
     setSeenSection(section);
-    setSelected(selected.filter((r) => findOption(section, r)));
+    setSelected(
+      selected.filter((r) => {
+        const option = findOption(section, r);
+        return !!option && !option.disabledReason;
+      }),
+    );
     setValues(withPolicy(section, values, touched));
     setGenerations(nextGenerations(section, generations, touched));
   }
