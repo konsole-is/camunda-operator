@@ -17,6 +17,7 @@ const namespace = `watch-${randomUUID().slice(0, 8)}`;
 
 interface Frame {
   event: string;
+  retry?: number;
   data: {
     type?: string;
     kind: string;
@@ -49,7 +50,9 @@ class Stream {
           const text = buffer.slice(0, end);
           buffer = buffer.slice(end + 2);
           if (text.startsWith(":")) continue;
+          const retry = /^retry: (\d+)$/m.exec(text)?.[1];
           this.frames.push({
+            retry: retry === undefined ? undefined : Number(retry),
             event: /^event: (.*)$/m.exec(text)![1],
             data: JSON.parse(/^data: (.*)$/m.exec(text)![1]),
           });
@@ -252,13 +255,16 @@ describe("GET /api/watch against envtest", () => {
     );
   });
 
-  it("sends a failure frame that names a kind that the API server does not serve", async () => {
-    const { stream, abort } = open(`kind=HTTPRoute&namespace=${namespace}`);
+  it("names a kind that the API server does not serve, then ends the stream so EventSource connects again", async () => {
+    const { stream } = open(
+      `kind=Secret&kind=HTTPRoute&namespace=${namespace}`,
+    );
 
     const frame = await stream.next((f) => f.event === "failure", 15_000);
+    await stream.closed;
 
     expect(frame.data.kind).toBe("HTTPRoute");
     expect(JSON.stringify(frame.data)).toMatch(/does not serve HTTPRoute/);
-    abort();
+    expect(frame.retry).toBe(5_000);
   });
 });

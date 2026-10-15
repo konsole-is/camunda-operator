@@ -57,15 +57,17 @@ export function parseWatchRequest(params: URLSearchParams): WatchRequest {
  * watchStream returns the SSE body of one connection. For each kind it sends
  * a frame "snapshot" with the matching objects, then a frame "delta" for each
  * change that a subscriber of the filter sees (see deltaType). A kind that
- * does not sync gets a frame "failure" with the message. A comment line goes
- * out every heartbeatMs, so idle proxies keep the connection. The stream ends
- * when signal aborts.
+ * does not sync gets a frame "failure" with the message, and then the stream
+ * ends. The frame sets the retry time of EventSource to retryMs. A comment
+ * line goes out every heartbeatMs, so idle proxies keep the connection. The
+ * stream also ends when signal aborts.
  */
 export function watchStream(
   cache: ResourceCache,
   request: WatchRequest,
   signal: AbortSignal,
   heartbeatMs = 25_000,
+  retryMs = 5_000,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const matchesLabels = parseSelector(request.labelSelector ?? "");
@@ -88,20 +90,17 @@ export function watchStream(
       const write = (text: string) => {
         if (!closed) controller.enqueue(encoder.encode(text));
       };
-      const send = (event: string, data: unknown) =>
-        write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-      signal.addEventListener(
-        "abort",
-        () => {
-          close();
-          try {
-            controller.close();
-          } catch {
-            // cancel already closed the stream.
-          }
-        },
-        { once: true },
-      );
+      const send = (event: string, data: unknown, fields = "") =>
+        write(`${fields}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      const end = () => {
+        close();
+        try {
+          controller.close();
+        } catch {
+          // cancel already closed the stream.
+        }
+      };
+      signal.addEventListener("abort", end, { once: true });
       if (signal.aborted) return;
 
       for (const kind of request.kinds) {
@@ -138,10 +137,16 @@ export function watchStream(
           queue = undefined;
           waiting.forEach(([change, object]) => deliver(change, object));
         } catch (error) {
-          send("failure", {
-            kind,
-            message: error instanceof Error ? error.message : String(error),
-          });
+          send(
+            "failure",
+            {
+              kind,
+              message: error instanceof Error ? error.message : String(error),
+            },
+            `retry: ${retryMs}\n`,
+          );
+          end();
+          return;
         }
       }
       if (!closed) {
