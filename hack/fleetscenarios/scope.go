@@ -30,7 +30,6 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
-
 )
 
 // camundaGroupSuffix ends the name of each API group of the operator.
