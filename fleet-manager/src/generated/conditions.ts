@@ -181,6 +181,13 @@ export const fleetCamundaClusterClaimConditionTypes = [
 ] as const;
 export type FleetCamundaClusterClaimConditionType = (typeof fleetCamundaClusterClaimConditionTypes)[number];
 
+export const fleetCamundaManagementClusterClaimConditionTypes = [
+  "ManagementClusterReady",
+  "Ready",
+  "RequestsReady",
+] as const;
+export type FleetCamundaManagementClusterClaimConditionType = (typeof fleetCamundaManagementClusterClaimConditionTypes)[number];
+
 export const fleetEnvironmentConditionTypes = [
   "Ready",
 ] as const;
