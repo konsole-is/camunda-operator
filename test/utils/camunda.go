@@ -247,8 +247,11 @@ func SecretEnv(envName, name, key string) corev1.EnvVar {
 func BackupPositions(body []byte) (map[int]int64, error) {
 	var state struct {
 		BackupStates []struct {
-			PartitionID int   `json:"partitionId"`
-			Position    int64 `json:"checkpointPosition"`
+			PartitionID int `json:"partitionId"`
+			// Not checkpointTimestamp: Camunda 8.9.23 writes the time that
+			// the backup was confirmed there, not created as its docs say,
+			// and that time can come after the exporter passed the checkpoint.
+			Position int64 `json:"checkpointPosition"`
 		} `json:"backupStates"`
 	}
 	if err := json.Unmarshal(body, &state); err != nil {

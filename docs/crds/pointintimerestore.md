@@ -83,7 +83,7 @@ kubectl exec -n my-cluster-ns my-cluster-zeebe-0 -- \
   curl -s localhost:9600/actuator/backupRuntime/state
 ```
 
-In that answer, the `checkpointTimestamp` of a backup is the time that the backup finished, not the time that it started. A backup that finished after the point can have started before it, and then it does not cover the point.
+In that answer, the `checkpointTimestamp` of a backup is the time that the backup finished. The [Camunda API reference](https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/zeebe-backup-and-restore/#request-runtime-state) says that it is the time that the checkpoint was created. A backup covers the point when its `checkpointPosition` is at or past the exporter position that the database holds at the point. So a backup that finished after the point can fail to cover it.
 
 The point must also lie within the retention period that the `DatabaseServerConfig` declares, and not in the future.
 

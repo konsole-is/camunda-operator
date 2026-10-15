@@ -993,16 +993,13 @@ func exporterPositionsAfter(cluster *v1.CamundaCluster, server string, at time.T
 	return exported
 }
 
-// latestBackupPositions returns the checkpoint position of the newest
-// primary-storage backup that each partition of cluster holds, by partition
-// id. Camunda serves it on the runtime state endpoint of the broker
-// management port:
+// latestBackupPositions returns the checkpoint position of the newest backup
+// that each partition of cluster holds, by partition id. Camunda serves it on
+// the runtime state endpoint of the broker management port:
 // https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/zeebe-backup-and-restore/#request-runtime-state
 //
 // The checkpoint position is what a restore compares with the exporter
-// position. The timestamp of a backup in that answer is not: Camunda 8.9
-// writes the time that the backup was confirmed there, which can come after
-// the exporter passed the checkpoint.
+// position. A partition that holds no backup is absent from the map.
 func latestBackupPositions(cluster *v1.CamundaCluster) (map[int]int64, error) {
 	url := fmt.Sprintf(
 		"http://%s.%s.svc:%d/actuator/backupRuntime/state",
