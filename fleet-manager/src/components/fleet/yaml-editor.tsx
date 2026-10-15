@@ -34,7 +34,7 @@ export function YamlEditor({
     defaultValue === undefined ? "" : stringify(defaultValue),
   );
   const [value, errors] = check(text, schema);
-  const report = JSON.stringify([value ?? null, errors]);
+  const report = JSON.stringify([value === undefined, value ?? null, errors]);
   const reported = useRef(report);
   useEffect(() => {
     if (reported.current === report) return;
@@ -89,6 +89,15 @@ function check(
     return [
       undefined,
       [{ path: "", message: line ? `Line ${line}: ${message}` : message }],
+    ];
+  }
+  // The change report serializes the value, which fails on a cyclic alias.
+  try {
+    JSON.stringify(value);
+  } catch {
+    return [
+      undefined,
+      [{ path: "", message: "An alias refers to the value that holds it" }],
     ];
   }
   if (!schema) return [value, []];

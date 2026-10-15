@@ -324,6 +324,30 @@ describe("YamlEditor", () => {
     expect(screen.getByText("replicas: must be integer")).toBeTruthy();
   });
 
+  it("reports an alias that refers to its own value as an error", async () => {
+    const onChange = vi.fn();
+    render(<YamlEditor label="Overrides" onChange={onChange} />);
+    // user-event reads "[" as the start of a key name, so "[[" types one "[".
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Overrides" }),
+      "&a [[*a]",
+    );
+    const [value, errors] = onChange.mock.lastCall!;
+    expect(value).toBeUndefined();
+    expect(errors).toEqual([
+      { path: "", message: "An alias refers to the value that holds it" },
+    ]);
+  });
+
+  it("reports a cleared null value as no value", async () => {
+    const onChange = vi.fn();
+    render(
+      <YamlEditor label="Overrides" defaultValue={null} onChange={onChange} />,
+    );
+    await userEvent.clear(screen.getByRole("textbox", { name: "Overrides" }));
+    expect(onChange).toHaveBeenLastCalledWith(undefined, []);
+  });
+
   it("reports the errors of a new schema to onChange", async () => {
     const onChange = vi.fn();
     const { rerender } = render(
