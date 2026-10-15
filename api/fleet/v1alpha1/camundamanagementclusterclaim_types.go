@@ -40,6 +40,10 @@ const (
 // CamundaManagementClusterClaimSpec is the management plane that a team asks
 // for. The claim controller writes one PluginRequest for each selected
 // section and one CamundaManagementCluster with the name of the claim.
+// +kubebuilder:validation:XValidation:rule="(has(self.plugins) ? size(self.plugins) : 0) == (has(oldSelf.plugins) ? size(oldSelf.plugins) : 0) && (!has(oldSelf.plugins) || oldSelf.plugins.all(o, self.plugins.exists(n, n.section == o.section && n.registration == o.registration)))",message="sections and their registrations are fixed after creation"
+// +kubebuilder:validation:XValidation:rule="!has(self.management.identityProvider.keycloak) || has(self.versions.keycloak)",message="versions.keycloak is required with the keycloak identity provider"
+// +kubebuilder:validation:XValidation:rule="!has(self.management.console) || has(self.versions.console)",message="versions.console is required when management.console is set"
+// +kubebuilder:validation:XValidation:rule="!has(self.management.webModeler) || has(self.versions.webModeler)",message="versions.webModeler is required when management.webModeler is set"
 type CamundaManagementClusterClaimSpec struct {
 	// Environments are the names of the Environments that the plane serves.
 	// The plane serves the CamundaClusters in the namespaces of these
@@ -113,6 +117,7 @@ type CamundaManagementClusterClaimSpec struct {
 type ManagementOverrides struct {
 	// IdentityProvider selects where users sign in. Exactly one of keycloak,
 	// externalKeycloak, or oidc is set. The mode can change after creation.
+	// +kubebuilder:validation:XValidation:rule="[has(self.keycloak), has(self.externalKeycloak), has(self.oidc)].filter(x, x).size() == 1",message="exactly one identity provider: keycloak, externalKeycloak, or oidc"
 	IdentityProvider ManagementIdentityProvider `json:"identityProvider"`
 	// Identity configures Management Identity. The plane always runs it.
 	Identity IdentityOverrides `json:"identity"`
@@ -152,6 +157,9 @@ type KeycloakOverrides struct {
 	// field with the reason SlotConflict when the access section has a
 	// selection, because the access section then gives the URL. Without a
 	// selection, set it here.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getEscapedPath() == '/auth'",message="externalUrl must carry the /auth path, for example https://keycloak.example.com/auth"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('?') && !self.contains('#')",message="externalUrl must carry no query and no fragment"
 	// +optional
 	ExternalURL string `json:"externalUrl,omitempty"`
 	// Replicas is the number of Keycloak instances. Defaults to 1.
@@ -167,12 +175,18 @@ type KeycloakOverrides struct {
 }
 
 // IdentityOverrides configures Management Identity for a plane claim.
+// +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, e.name != 'KEYCLOAK_URL' && e.name != 'KEYCLOAK_REALM')",message="extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM. Both follow from spec.identityProvider, and in a Keycloak mode this management plane claims the realm they name"
 type IdentityOverrides struct {
 	// ExternalURL is the URL where browsers reach Management Identity. A URL
 	// with a path other than / must use https. The claim controller refuses
 	// this field with the reason SlotConflict when the access section has a
 	// selection, because the access section then gives the URL. Without a
 	// selection, set it here.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	// +kubebuilder:validation:XValidation:rule="!isURL(self) || url(self).getScheme() != 'http' || url(self).getEscapedPath() in ['', '/']",message="externalUrl with a path needs https. Management Identity serves under a path only over https"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Management Identity"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="externalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	// +optional
 	ExternalURL string `json:"externalUrl,omitempty"`
 	// Admin names the first administrator of the plane. Set claimName and
@@ -189,6 +203,10 @@ type ConsoleOverrides struct {
 	// controller refuses this field with the reason SlotConflict when the
 	// access section has a selection, because the access section then gives
 	// the URL. Without a selection, set it here.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Console"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="externalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	// +optional
 	ExternalURL     string `json:"externalUrl,omitempty"`
 	v1.WorkloadSpec `json:",inline"`
@@ -201,6 +219,10 @@ type WebModelerOverrides struct {
 	// controller refuses this field with the reason SlotConflict when the
 	// access section has a selection, because the access section then gives
 	// the URL. Without a selection, set it here.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="externalUrl must be a valid http or https URL"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Web Modeler"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="externalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	// +optional
 	ExternalURL string `json:"externalUrl,omitempty"`
 	// WebsocketsExternalURL is the URL where browsers get the live updates
@@ -208,6 +230,10 @@ type WebModelerOverrides struct {
 	// reason SlotConflict when the access section has a selection, because
 	// the access section then gives the URL. Without a selection, set it
 	// here.
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (url(self).getScheme() == 'http' || url(self).getScheme() == 'https') && url(self).getHostname() != ''",message="websocketsExternalUrl must be a valid http or https URL"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="websocketsExternalUrl must carry no percent-encoded character: the operator passes the decoded path to Web Modeler"
+	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="websocketsExternalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="websocketsExternalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
 	// +optional
 	WebsocketsExternalURL string `json:"websocketsExternalUrl,omitempty"`
 	// Mail configures the SMTP server that Web Modeler sends notifications
@@ -299,6 +325,7 @@ type ManagementClusterRef struct {
 // +kubebuilder:printcolumn:name="Plane",type=string,JSONPath=`.status.managementCluster.name`
 // +kubebuilder:printcolumn:name="Environments",type=string,JSONPath=`.spec.environments`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 40)",message="metadata.name must be a DNS-1035 label of at most 40 characters, because the claim adds a suffix to it in the names of the resources that it writes",optionalOldSelf=true
 
 // CamundaManagementClusterClaim asks for a management plane that serves the
 // clusters of one or more environments. The claim controller writes a

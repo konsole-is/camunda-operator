@@ -156,6 +156,21 @@ spec:
                           access section has a selection, because the access section then gives
                           the URL. Without a selection, set it here.
                         type: string
+                        x-kubernetes-validations:
+                        - message: externalUrl must be a valid http or https URL
+                          rule: isURL(self) && (url(self).getScheme() == 'http' ||
+                            url(self).getScheme() == 'https') && url(self).getHostname()
+                            != ''
+                        - message: 'externalUrl must carry no percent-encoded character:
+                            the operator passes the decoded path to Console'
+                          rule: '!self.contains(''%'')'
+                        - message: 'externalUrl must carry no backslash: browsers
+                            read one in the path as a slash, and the operator does
+                            not'
+                          rule: '!self.contains(''\\'')'
+                        - message: 'externalUrl must carry no . or .. path segment:
+                            browsers remove them, and the operator does not'
+                          rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                       extraEnv:
                         description: |-
                           ExtraEnv are extra environment variables of the container of this
@@ -1153,6 +1168,25 @@ spec:
                           selection, because the access section then gives the URL. Without a
                           selection, set it here.
                         type: string
+                        x-kubernetes-validations:
+                        - message: externalUrl must be a valid http or https URL
+                          rule: isURL(self) && (url(self).getScheme() == 'http' ||
+                            url(self).getScheme() == 'https') && url(self).getHostname()
+                            != ''
+                        - message: externalUrl with a path needs https. Management
+                            Identity serves under a path only over https
+                          rule: '!isURL(self) || url(self).getScheme() != ''http''
+                            || url(self).getEscapedPath() in ['''', ''/'']'
+                        - message: 'externalUrl must carry no percent-encoded character:
+                            the operator passes the decoded path to Management Identity'
+                          rule: '!self.contains(''%'')'
+                        - message: 'externalUrl must carry no backslash: browsers
+                            read one in the path as a slash, and the operator does
+                            not'
+                          rule: '!self.contains(''\\'')'
+                        - message: 'externalUrl must carry no . or .. path segment:
+                            browsers remove them, and the operator does not'
+                          rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                       extraEnv:
                         description: |-
                           ExtraEnv are extra environment variables of the container of this
@@ -2075,6 +2109,12 @@ spec:
                     required:
                     - admin
                     type: object
+                    x-kubernetes-validations:
+                    - message: extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM.
+                        Both follow from spec.identityProvider, and in a Keycloak
+                        mode this management plane claims the realm they name
+                      rule: '!has(self.extraEnv) || self.extraEnv.all(e, e.name !=
+                        ''KEYCLOAK_URL'' && e.name != ''KEYCLOAK_REALM'')'
                   identityProvider:
                     description: |-
                       IdentityProvider selects where users sign in. Exactly one of keycloak,
@@ -2196,6 +2236,17 @@ spec:
                               selection, because the access section then gives the URL. Without a
                               selection, set it here.
                             type: string
+                            x-kubernetes-validations:
+                            - message: externalUrl must be a valid http or https URL
+                              rule: isURL(self) && (url(self).getScheme() == 'http'
+                                || url(self).getScheme() == 'https') && url(self).getHostname()
+                                != ''
+                            - message: externalUrl must carry the /auth path, for
+                                example https://keycloak.example.com/auth
+                              rule: '!isURL(self) || url(self).getEscapedPath() ==
+                                ''/auth'''
+                            - message: externalUrl must carry no query and no fragment
+                              rule: '!self.contains(''?'') && !self.contains(''#'')'
                           replicas:
                             description: Replicas is the number of Keycloak instances.
                               Defaults to 1.
@@ -2873,6 +2924,11 @@ spec:
                           CamundaPlatformConfig of the plane.
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: 'exactly one identity provider: keycloak, externalKeycloak,
+                        or oidc'
+                      rule: '[has(self.keycloak), has(self.externalKeycloak), has(self.oidc)].filter(x,
+                        x).size() == 1'
                   webModeler:
                     description: |-
                       WebModeler configures Web Modeler. While it is unset, the plane has no
@@ -2885,6 +2941,21 @@ spec:
                           access section has a selection, because the access section then gives
                           the URL. Without a selection, set it here.
                         type: string
+                        x-kubernetes-validations:
+                        - message: externalUrl must be a valid http or https URL
+                          rule: isURL(self) && (url(self).getScheme() == 'http' ||
+                            url(self).getScheme() == 'https') && url(self).getHostname()
+                            != ''
+                        - message: 'externalUrl must carry no percent-encoded character:
+                            the operator passes the decoded path to Web Modeler'
+                          rule: '!self.contains(''%'')'
+                        - message: 'externalUrl must carry no backslash: browsers
+                            read one in the path as a slash, and the operator does
+                            not'
+                          rule: '!self.contains(''\\'')'
+                        - message: 'externalUrl must carry no . or .. path segment:
+                            browsers remove them, and the operator does not'
+                          rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                       mail:
                         description: |-
                           Mail configures the SMTP server that Web Modeler sends notifications
@@ -4807,6 +4878,23 @@ spec:
                           the access section then gives the URL. Without a selection, set it
                           here.
                         type: string
+                        x-kubernetes-validations:
+                        - message: websocketsExternalUrl must be a valid http or https
+                            URL
+                          rule: isURL(self) && (url(self).getScheme() == 'http' ||
+                            url(self).getScheme() == 'https') && url(self).getHostname()
+                            != ''
+                        - message: 'websocketsExternalUrl must carry no percent-encoded
+                            character: the operator passes the decoded path to Web
+                            Modeler'
+                          rule: '!self.contains(''%'')'
+                        - message: 'websocketsExternalUrl must carry no backslash:
+                            browsers read one in the path as a slash, and the operator
+                            does not'
+                          rule: '!self.contains(''\\'')'
+                        - message: 'websocketsExternalUrl must carry no . or .. path
+                            segment: browsers remove them, and the operator does not'
+                          rule: '!self.matches(''^[^?#]*/[.][.]?([/?#]|$)'')'
                     required:
                     - mail
                     type: object
@@ -4921,6 +5009,19 @@ spec:
             - management
             - versions
             type: object
+            x-kubernetes-validations:
+            - message: sections and their registrations are fixed after creation
+              rule: '(has(self.plugins) ? size(self.plugins) : 0) == (has(oldSelf.plugins)
+                ? size(oldSelf.plugins) : 0) && (!has(oldSelf.plugins) || oldSelf.plugins.all(o,
+                self.plugins.exists(n, n.section == o.section && n.registration ==
+                o.registration)))'
+            - message: versions.keycloak is required with the keycloak identity provider
+              rule: '!has(self.management.identityProvider.keycloak) || has(self.versions.keycloak)'
+            - message: versions.console is required when management.console is set
+              rule: '!has(self.management.console) || has(self.versions.console)'
+            - message: versions.webModeler is required when management.webModeler
+                is set
+              rule: '!has(self.management.webModeler) || has(self.versions.webModeler)'
           status:
             description: status is the state of the claim
             properties:
@@ -5180,6 +5281,13 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be a DNS-1035 label of at most 40 characters,
+            because the claim adds a suffix to it in the names of the resources that
+            it writes
+          optionalOldSelf: true
+          rule: oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
+            && self.metadata.name.size() <= 40)
     served: true
     storage: true
     subresources:
