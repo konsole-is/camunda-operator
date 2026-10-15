@@ -220,6 +220,89 @@ describe("SectionCards", () => {
     ]);
   });
 
+  it("takes a new policy default and keeps a value that the user set", async () => {
+    const onChange = vi.fn();
+    const policy = (retention: number, bucket: string): OptionView => ({
+      registration: "aws-s3",
+      label: "New bucket",
+      isDefault: true,
+      parameters: [
+        {
+          name: "retentionDays",
+          label: "Retention in days",
+          schema: { type: "integer" },
+          claimEditable: true,
+          value: retention,
+        },
+        {
+          name: "bucketClass",
+          label: "Bucket class",
+          schema: { type: "string" },
+          claimEditable: true,
+          value: bucket,
+        },
+      ],
+    });
+    const { rerender } = render(
+      <SectionCards
+        section={section({}, policy(30, "standard"))}
+        onChange={onChange}
+      />,
+    );
+    const bucket = screen.getByRole("textbox", { name: "Bucket class" });
+    await userEvent.clear(bucket);
+    await userEvent.type(bucket, "cold");
+    rerender(
+      <SectionCards
+        section={section({}, policy(60, "archive"))}
+        onChange={onChange}
+      />,
+    );
+    expect(
+      (
+        screen.getByRole("spinbutton", {
+          name: "Retention in days",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("60");
+    expect(onChange).toHaveBeenLastCalledWith(
+      [
+        {
+          section: "connectors-permissions",
+          registration: "aws-s3",
+          parameters: { bucketClass: "cold" },
+        },
+      ],
+      [],
+    );
+  });
+
+  it("checks an empty list against the schema of an optional parameter", async () => {
+    const onChange = vi.fn();
+    const option: OptionView = {
+      registration: "tuning",
+      label: "Tuning",
+      isDefault: true,
+      parameters: [
+        {
+          name: "zones",
+          label: "Zones",
+          schema: { type: "array", items: { type: "string" }, minItems: 1 },
+          claimEditable: true,
+          value: ["a"],
+        },
+      ],
+    };
+    render(<SectionCards section={section({}, option)} onChange={onChange} />);
+    const zones = screen.getByRole("textbox", { name: "Zones" });
+    await userEvent.clear(zones);
+    // user-event reads "[" as the start of a key name, so "[[" types one "[".
+    await userEvent.type(zones, "[[]");
+    expect(onChange.mock.lastCall![1]).toEqual([
+      { path: "tuning.zones", message: "must NOT have fewer than 1 items" },
+    ]);
+  });
+
   it("drops a selected option that the new options no longer hold", () => {
     const onChange = vi.fn();
     const { rerender } = render(

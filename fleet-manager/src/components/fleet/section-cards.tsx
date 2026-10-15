@@ -65,14 +65,24 @@ export function SectionCards({
   const [values, setValues] = useState<Values>(() =>
     initialValues(section, defaultValue),
   );
-  const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
+  // A parameter that the claim or the user set. The others follow the policy.
+  const [touched, setTouched] = useState<ReadonlySet<string>>(
+    () =>
+      new Set(
+        (defaultValue ?? []).flatMap((s) =>
+          Object.keys(s.parameters ?? {}).map(
+            (name) => `${s.registration}.${name}`,
+          ),
+        ),
+      ),
+  );
   const [parseErrors, setParseErrors] = useState<ParseErrors>({});
   const [seenSection, setSeenSection] = useState(section);
 
   if (section !== seenSection) {
     setSeenSection(section);
     setSelected(selected.filter((r) => findOption(section, r)));
-    setValues({ ...initialValues(section), ...values });
+    setValues(withPolicy(section, values, touched));
   }
 
   const selections = selectionsOf(section, selected, values);
@@ -547,6 +557,27 @@ function initialValues(
   );
 }
 
+function withPolicy(
+  section: SectionView,
+  values: Values,
+  touched: ReadonlySet<string>,
+): Values {
+  return Object.fromEntries(
+    Object.entries(initialValues(section)).map(([registration, starts]) => [
+      registration,
+      Object.fromEntries(
+        Object.entries(starts).map(([name, start]) => [
+          name,
+          touched.has(`${registration}.${name}`) &&
+          Object.hasOwn(values[registration] ?? {}, name)
+            ? values[registration][name]
+            : start,
+        ]),
+      ),
+    ]),
+  );
+}
+
 /** The start value of a field. An allowed list keeps only the names it holds. */
 function startValue(rule: ParameterRule): unknown {
   if (!isEditable(rule)) return undefined;
@@ -608,10 +639,11 @@ function sectionErrors(
         errors.push(...parseErrors[path].map((e) => ({ ...e, path })));
         continue;
       }
+      const emptyList = Array.isArray(value) && value.length === 0;
       if (
         value === undefined ||
         value === "" ||
-        (Array.isArray(value) && value.length === 0)
+        (emptyList && (rule.required || rule.allowed))
       ) {
         if (rule.required) errors.push({ path, message: "is required" });
         continue;
