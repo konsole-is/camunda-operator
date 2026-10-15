@@ -95,11 +95,13 @@ func (w *Writer) NeedLeaderElection() bool {
 }
 
 func (w *Writer) apply(ctx context.Context) error {
-	var objs []client.Object
-	for _, s := range Sections() {
+	sections := Sections()
+	registrations := Registrations(w.operatorVersion, w.serviceAccount)
+	objs := make([]client.Object, 0, len(sections)+len(registrations))
+	for _, s := range sections {
 		objs = append(objs, &s)
 	}
-	for _, r := range Registrations(w.operatorVersion, w.serviceAccount) {
+	for _, r := range registrations {
 		objs = append(objs, &r)
 	}
 

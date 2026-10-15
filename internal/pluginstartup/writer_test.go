@@ -280,7 +280,7 @@ func sectionNames() []string {
 func registrationNames() []string {
 	var list pluginsv1alpha1.PluginRegistrationList
 	Expect(env.Client.List(env.Ctx, &list)).To(Succeed())
-	names := []string{}
+	names := make([]string, 0, len(list.Items))
 	for _, r := range list.Items {
 		names = append(names, r.Name)
 	}
@@ -288,7 +288,7 @@ func registrationNames() []string {
 }
 
 func keys(outputs []pluginsv1alpha1.OutputDecl) []string {
-	out := []string{}
+	out := make([]string, 0, len(outputs))
 	for _, o := range outputs {
 		out = append(out, o.Key)
 	}
