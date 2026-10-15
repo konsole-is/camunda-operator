@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
@@ -34,8 +34,8 @@ const DNS_LABEL = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
  * environment allows it, a new one. A new namespace gets the fixed labels
  * of the environment, a value for each required label key that they do
  * not set, and the environment label, which always wins. Without an
- * environment, it lists
- * every namespace and cannot create one. onChange gets the choice and no
+ * environment, it lists every namespace and cannot create one. A choice
+ * that new props no longer allow is dropped. onChange gets the choice and no
  * errors, or undefined and the errors: a name that is taken or not a DNS
  * label, and a required key without a valid label value.
  */
@@ -124,13 +124,16 @@ export function NamespacePicker({
       [],
     ];
   };
-  const emit = (
-    m: typeof mode,
-    ex: string,
-    n: string,
-    v: Record<string, string>,
-  ) => onChange?.(...evaluate(m, ex, n, v));
-  const [, errors] = evaluate(mode, existing, name, values);
+  const activeMode = mode === "new" && canCreate ? "new" : "existing";
+  const activeExisting = own.some((ns) => ns.name === existing) ? existing : "";
+  const [choice, errors] = evaluate(activeMode, activeExisting, name, values);
+  const report = JSON.stringify([choice, errors]);
+  const reported = useRef(report);
+  useEffect(() => {
+    if (reported.current === report) return;
+    reported.current = report;
+    onChange?.(choice, errors);
+  });
   const errorAt = (path: string) =>
     touched.has(path)
       ? errors.find((e) => e.path === path)?.message
@@ -146,16 +149,15 @@ export function NamespacePicker({
         <input
           type="radio"
           name={`${id}-mode`}
-          checked={mode === "existing"}
+          checked={activeMode === "existing"}
           className="accent-[var(--accent)]"
           onChange={() => {
             setMode("existing");
-            emit("existing", existing, name, values);
           }}
         />
         Use an existing namespace
       </label>
-      {mode === "existing" && (
+      {activeMode === "existing" && (
         <div className="flex flex-col gap-1 pl-6">
           <label htmlFor={`${id}-existing`} className="sr-only">
             Namespace
@@ -165,10 +167,9 @@ export function NamespacePicker({
           ) : (
             <NativeSelect
               id={`${id}-existing`}
-              value={existing}
+              value={activeExisting}
               onChange={(e) => {
                 setExisting(e.target.value);
-                emit("existing", e.target.value, name, values);
               }}
             >
               <NativeSelectOption value="">Pick a namespace</NativeSelectOption>
@@ -186,17 +187,16 @@ export function NamespacePicker({
           <input
             type="radio"
             name={`${id}-mode`}
-            checked={mode === "new"}
+            checked={activeMode === "new"}
             className="accent-[var(--accent)]"
             onChange={() => {
               setMode("new");
-              emit("new", existing, name, values);
             }}
           />
           Create a namespace
         </label>
       )}
-      {canCreate && mode === "new" && (
+      {activeMode === "new" && (
         <div className="flex flex-col gap-3 pl-6">
           <Field
             id={`${id}-name`}
@@ -206,7 +206,6 @@ export function NamespacePicker({
             onValue={(v) => {
               setName(v);
               touch("name");
-              emit("new", existing, v, values);
             }}
           />
           {askedKeys.map((key) => (
@@ -220,7 +219,6 @@ export function NamespacePicker({
                 const next = { ...values, [key]: v };
                 setValues(next);
                 touch(`labels.${key}`);
-                emit("new", existing, name, next);
               }}
             />
           ))}

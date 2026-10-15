@@ -232,6 +232,64 @@ describe("NamespacePicker", () => {
     expect(options).not.toContain("sandbox");
   });
 
+  it("drops an existing namespace that the new environment does not hold", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <NamespacePicker
+        namespaces={namespaces}
+        environment={environment}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Namespace" }),
+      "team-payments",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      { kind: "existing", name: "team-payments" },
+      [],
+    );
+    rerender(
+      <NamespacePicker
+        namespaces={namespaces}
+        environment={{ name: "dev" }}
+        onChange={onChange}
+      />,
+    );
+    expect(onChange).toHaveBeenLastCalledWith(undefined, [
+      { path: "name", message: "Pick a namespace" },
+    ]);
+  });
+
+  it("drops a new namespace when the environment goes away", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <NamespacePicker
+        namespaces={namespaces}
+        environment={environment}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Create a namespace" }),
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Name" }),
+      "team-orders",
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "team" }),
+      "orders",
+    );
+    rerender(<NamespacePicker namespaces={namespaces} onChange={onChange} />);
+    expect(onChange).toHaveBeenLastCalledWith(undefined, [
+      { path: "name", message: "Pick a namespace" },
+    ]);
+    expect(
+      screen.queryByRole("radio", { name: "Create a namespace" }),
+    ).toBeNull();
+  });
+
   it("offers no new namespace when the environment does not allow it", () => {
     render(
       <NamespacePicker
