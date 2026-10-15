@@ -150,6 +150,54 @@ describe("DataTable", () => {
     ]);
   });
 
+  it("shows the last page that is left when rows go away", async () => {
+    const { rerender } = render(
+      <DataTable label="Clusters" columns={columns} rows={rows} pageSize={2} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    rerender(
+      <DataTable
+        label="Clusters"
+        columns={columns}
+        rows={rows.slice(0, 2)}
+        pageSize={2}
+      />,
+    );
+    expect(screen.getAllByRole("link").map((a) => a.textContent)).toEqual([
+      "orders",
+      "billing",
+    ]);
+  });
+
+  it("drops a selected row that goes away or can no longer be selected", async () => {
+    const onChange = vi.fn();
+    const props = {
+      label: "Clusters",
+      columns,
+      selection: { applicableLabel: "clusters that can upgrade", onChange },
+    };
+    const { rerender } = render(<DataTable {...props} rows={rows} />);
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Select all clusters that can upgrade",
+      }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith(["orders", "payments"]);
+
+    rerender(
+      <DataTable
+        {...props}
+        rows={[{ ...rows[0], applicable: false }, rows[1], rows[2]]}
+      />,
+    );
+    expect(onChange).toHaveBeenLastCalledWith(["payments"]);
+    expect(checked()).toEqual(["Select payments"]);
+
+    rerender(<DataTable {...props} rows={rows.slice(0, 2)} />);
+    expect(onChange).toHaveBeenLastCalledWith([]);
+    expect(checked()).toEqual([]);
+  });
+
   it("says so when no row matches", async () => {
     table();
     await userEvent.type(

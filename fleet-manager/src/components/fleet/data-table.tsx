@@ -2,7 +2,7 @@
 
 import { ArrowDown, ArrowUp } from "lucide-react";
 import Link from "next/link";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -54,7 +54,8 @@ type Sort = { key: string; direction: "ascending" | "descending" };
  * of a row with href links to it. With selection, each row has a checkbox
  * and a button "Select all <applicableLabel>" selects every applicable row
  * that the search and the filters show, on every page. Nothing is selected
- * at first. A row that a new search or filter hides leaves the selection.
+ * at first. A row that a new search or filter hides, that new rows drop,
+ * or that new rows mark as not applicable leaves the selection.
  * onChange gets the selected ids in row order after each change.
  */
 export function DataTable({
@@ -80,6 +81,7 @@ export function DataTable({
   const [sort, setSort] = useState<Sort | undefined>();
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [seenRows, setSeenRows] = useState(rows);
 
   const matches = (q: string, values: Record<string, string>) =>
     rows.filter(
@@ -91,15 +93,11 @@ export function DataTable({
     );
   const visible = sorted(matches(query, filterValues), sort);
   const pages = Math.max(1, Math.ceil(visible.length / pageSize));
-  const shown = visible.slice(page * pageSize, (page + 1) * pageSize);
+  const current = Math.min(page, pages - 1);
+  const shown = visible.slice(current * pageSize, (current + 1) * pageSize);
   const applicable = (row: DataTableRow) => row.applicable !== false;
 
-  const select = (next: ReadonlySet<string>) => {
-    setSelected(next);
-    selection?.onChange?.(
-      rows.filter((row) => next.has(row.id)).map((row) => row.id),
-    );
-  };
+  const select = setSelected;
   const narrow = (q: string, values: Record<string, string>) => {
     setPage(0);
     const keep = new Set(matches(q, values).map((row) => row.id));
@@ -107,6 +105,25 @@ export function DataTable({
       select(new Set([...selected].filter((id) => keep.has(id))));
     }
   };
+
+  if (rows !== seenRows) {
+    setSeenRows(rows);
+    const keep = new Set(visible.filter(applicable).map((row) => row.id));
+    if ([...selected].some((id) => !keep.has(id))) {
+      setSelected(new Set([...selected].filter((id) => keep.has(id))));
+    }
+  }
+  const reported = useRef<string | undefined>(undefined);
+  const selectedIds = rows
+    .filter((row) => selected.has(row.id))
+    .map((row) => row.id);
+  useEffect(() => {
+    const key = selectedIds.join("\n");
+    if (reported.current !== undefined && reported.current !== key) {
+      selection?.onChange?.(selectedIds);
+    }
+    reported.current = key;
+  });
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -275,18 +292,18 @@ export function DataTable({
             variant="ghost"
             size="sm"
             aria-label="Previous page"
-            disabled={page === 0}
-            onClick={() => setPage(page - 1)}
+            disabled={current === 0}
+            onClick={() => setPage(current - 1)}
           >
             Previous
           </Button>
-          <span>{`Page ${page + 1} of ${pages}`}</span>
+          <span>{`Page ${current + 1} of ${pages}`}</span>
           <Button
             variant="ghost"
             size="sm"
             aria-label="Next page"
-            disabled={page >= pages - 1}
-            onClick={() => setPage(page + 1)}
+            disabled={current >= pages - 1}
+            onClick={() => setPage(current + 1)}
           >
             Next
           </Button>
