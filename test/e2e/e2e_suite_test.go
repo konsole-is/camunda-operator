@@ -20,10 +20,12 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	"github.com/onsi/ginkgo/v2/types"
@@ -130,14 +132,20 @@ var _ = BeforeSuite(func() {
 	setupRustFS()
 })
 
-var _ = AfterSuite(func() {
+// teardownTimeout bounds the AfterSuite. A teardown takes less than a minute.
+// A custom resource that a failed spec left with a finalizer holds the
+// deletion of its CRD for good once the manager is gone, and without a bound
+// the suite waits for it until the timeout of go test.
+const teardownTimeout = 10 * time.Minute
+
+var _ = AfterSuite(func(ctx SpecContext) {
 	teardownRustFS()
-	undeployManager()
+	undeployManager(ctx)
 	teardownKeycloakCRDs()
 	teardownECK()
 	teardownCNPG()
 	teardownCertManager()
-})
+}, NodeTimeout(teardownTimeout))
 
 // A spec without a label never runs under a label filter, so a container
 // that forgot its Label would drop its flow from every matrix entry that
@@ -183,19 +191,16 @@ func deployManager() {
 }
 
 // undeployManager removes the controller-manager, the CRDs, and the manager
-// namespace.
-func undeployManager() {
+// namespace. A step that still runs when ctx ends is killed.
+func undeployManager(ctx context.Context) {
 	By("undeploying the controller-manager")
-	cmd := exec.Command("make", "undeploy")
-	_, _ = utils.Run(cmd)
+	_, _ = utils.RunContext(ctx, "make", "undeploy")
 
 	By("uninstalling CRDs")
-	cmd = exec.Command("make", "uninstall")
-	_, _ = utils.Run(cmd)
+	_, _ = utils.RunContext(ctx, "make", "uninstall")
 
 	By("removing manager namespace")
-	cmd = exec.Command("kubectl", "delete", "ns", namespace)
-	_, _ = utils.Run(cmd)
+	_, _ = utils.RunContext(ctx, "kubectl", "delete", "ns", namespace)
 }
 
 // setupRustFS deploys the object store of the backup flows. Each flow creates
