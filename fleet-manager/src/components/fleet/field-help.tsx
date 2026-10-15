@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleHelp } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { FieldDoc } from "@/generated/fielddocs";
 import { apiReferenceUrl } from "@/lib/fielddocs";
 
@@ -25,6 +25,7 @@ export function FieldHelp({
 }) {
   const id = useId();
   const [open, setOpen] = useState(defaultOpen);
+  const trigger = useRef<HTMLButtonElement>(null);
   if (!doc?.description) return null;
   return (
     <span
@@ -37,10 +38,13 @@ export function FieldHelp({
           setOpen(false);
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape") setOpen(false);
+        if (event.key !== "Escape") return;
+        trigger.current?.focus();
+        setOpen(false);
       }}
     >
       <button
+        ref={trigger}
         type="button"
         aria-label={`About ${label}`}
         aria-expanded={open}

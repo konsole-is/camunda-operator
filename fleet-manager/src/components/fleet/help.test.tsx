@@ -51,6 +51,9 @@ describe("FieldHelp", () => {
     );
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("note")).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "About Partitions" }),
+    );
   });
 
   it("renders nothing for a path without a description", () => {
