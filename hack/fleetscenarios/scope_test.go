@@ -52,12 +52,16 @@ func TestUnobserved(t *testing.T) {
 		withStatus("a-condition-behind", map[string]any{
 			"conditions": []any{condition("Accepted", 2), condition("Ready", 1)},
 		}),
+		withStatus("a-condition-not-an-object", map[string]any{
+			"conditions": []any{condition("Accepted", 2), "Ready"},
+		}),
 	}
 
 	got := sc.unobserved(objs)
 
-	assert.Len(t, got, 3)
+	assert.Len(t, got, 4)
 	assert.Contains(t, got[0], "no-status")
 	assert.Contains(t, got[1], "behind-field")
 	assert.Contains(t, got[2], "a-condition-behind")
+	assert.Contains(t, got[3], "a-condition-not-an-object")
 }

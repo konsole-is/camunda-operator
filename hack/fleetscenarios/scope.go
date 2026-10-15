@@ -227,7 +227,8 @@ func observesGeneration(obj *unstructured.Unstructured) bool {
 
 	conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
 	for _, c := range conditions {
-		observed, _, _ := unstructured.NestedInt64(c.(map[string]any), "observedGeneration")
+		condition, _ := c.(map[string]any)
+		observed, _, _ := unstructured.NestedInt64(condition, "observedGeneration")
 		if observed != generation {
 			return false
 		}
