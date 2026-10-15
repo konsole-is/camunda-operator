@@ -107,6 +107,9 @@ type CamundaManagementClusterClaimSpec struct {
 // ManagementOverrides holds the settings of a management plane that a plane
 // claim can set. The claim controller writes them to the
 // CamundaManagementCluster.
+// +kubebuilder:validation:XValidation:rule="has(self.identityProvider.oidc) ? has(self.identity.admin.claimName) : has(self.identity.admin.username)",message="identity.admin: set claimName and claimValue in oidc mode, username in the keycloak modes"
+// +kubebuilder:validation:XValidation:rule="!has(self.identityProvider.oidc) || !has(self.identity.admin.passwordSecretRef)",message="identity.admin.passwordSecretRef applies to the keycloak modes only"
+// +kubebuilder:validation:XValidation:rule="!has(self.webModeler) || has(self.identityProvider.oidc) || has(self.identity.admin.email)",message="identity.admin.email is required when webModeler is set in a keycloak mode"
 type ManagementOverrides struct {
 	// IdentityProvider selects where users sign in. Exactly one of keycloak,
 	// externalKeycloak, or oidc is set. The mode can change after creation.
