@@ -2,7 +2,21 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadMergeFixtures, sourceProblems, type MergeKind } from "./fixtures";
+import type { DatabaseServerSpec } from "@/generated/crds/databaseserver";
+import type { DatabaseServerPresetSpec } from "@/generated/crds/databaseserverpreset";
+import type { ElasticsearchClusterSpec } from "@/generated/crds/elasticsearchcluster";
+import type { ElasticsearchClusterPresetSpec } from "@/generated/crds/elasticsearchclusterpreset";
+import {
+  mergeDatabaseServer,
+  mergeElasticsearch,
+  type Merged,
+} from "@/lib/merge";
+import {
+  loadMergeFixtures,
+  sourceProblems,
+  type MergeFixture,
+  type MergeKind,
+} from "./fixtures";
 
 async function fixtureDir(
   kind: MergeKind,
@@ -101,4 +115,49 @@ describe("sourceProblems", () => {
       "spec.version has a source but no value",
     ]);
   });
+});
+
+type MergeRun = (f: MergeFixture) => Merged<object>;
+
+// Each kind of the operator, with the merge of the app that its cases test.
+const runs: Array<[MergeKind, MergeRun]> = [
+  [
+    "elasticsearchcluster",
+    (f) =>
+      mergeElasticsearch(
+        f.preset as unknown as ElasticsearchClusterPresetSpec | undefined,
+        f.spec as unknown as ElasticsearchClusterSpec,
+      ),
+  ],
+  [
+    "databaseserver",
+    (f) =>
+      mergeDatabaseServer(
+        f.preset as unknown as DatabaseServerPresetSpec | undefined,
+        f.spec as unknown as DatabaseServerSpec,
+      ),
+  ],
+];
+
+describe.each(runs)("the %s merge", (kind, merge) => {
+  const fixtures = loadMergeFixtures(kind);
+
+  it("has cases", () => {
+    expect(fixtures.length).toBeGreaterThan(0);
+  });
+
+  it.each(fixtures.map((f) => [path.basename(f.file), f] as const))(
+    "returns the merged spec of %s",
+    (_, f) => {
+      const { spec, source } = merge(f);
+
+      expect(spec, f.name).toEqual(f.merged);
+      expect(sourceProblems(spec as Record<string, unknown>, source)).toEqual(
+        [],
+      );
+      if (kind !== "camundacluster") {
+        expect(Object.values(source)).not.toContain("release");
+      }
+    },
+  );
 });
