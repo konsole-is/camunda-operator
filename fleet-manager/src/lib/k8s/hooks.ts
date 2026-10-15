@@ -61,7 +61,11 @@ export function useResource<K extends KindName>(
     { namespace: ref.namespace, name: ref.name },
     initial ? [initial] : [],
   );
-  return list.find((o) => (o as NamedObject).metadata?.name === ref.name);
+  return list.find(
+    (o) =>
+      (o as NamedObject).metadata?.name === ref.name &&
+      (o as NamedObject).metadata?.namespace === ref.namespace,
+  );
 }
 
 function queryKey(kind: KindName, filter: Filter) {

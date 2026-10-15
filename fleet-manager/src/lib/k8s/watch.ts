@@ -20,8 +20,8 @@ export class WatchRequestError extends Error {}
 /**
  * parseWatchRequest reads the parameters kind (one or more), namespace,
  * labelSelector, and name. It throws WatchRequestError with the problem for
- * no kind, an unknown kind, a namespace for a cluster-scoped kind, or a
- * selector that is not valid.
+ * no kind, an unknown kind, a namespace for a cluster-scoped kind, a name of
+ * a namespaced kind without a namespace, or a selector that is not valid.
  */
 export function parseWatchRequest(params: URLSearchParams): WatchRequest {
   const kinds = params.getAll("kind");
@@ -42,6 +42,11 @@ export function parseWatchRequest(params: URLSearchParams): WatchRequest {
     if (namespace && KindMap[kind].scope === "Cluster") {
       throw new WatchRequestError(
         `${kind} is cluster-scoped, so a watch of it takes no namespace`,
+      );
+    }
+    if (name && !namespace && KindMap[kind].scope === "Namespaced") {
+      throw new WatchRequestError(
+        `${kind} is namespaced, so a watch of one name needs a namespace`,
       );
     }
   }

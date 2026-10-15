@@ -29,6 +29,10 @@ describe("parseWatchRequest", () => {
       "Environment is cluster-scoped, so a watch of it takes no namespace",
     ],
     ["kind=Pod&labelSelector=a%20b", 'The label selector "a b" is not valid'],
+    [
+      "kind=Pod&name=worker",
+      "Pod is namespaced, so a watch of one name needs a namespace",
+    ],
   ])("refuses %j with a message that names the problem", (query, message) => {
     expect(() => parseWatchRequest(params(query))).toThrow(message);
   });
