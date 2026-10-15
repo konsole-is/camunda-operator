@@ -72,7 +72,12 @@ func (w *Writer) Start(ctx context.Context) error {
 			log.Info("Applied the core PluginSections and the built-in PluginRegistrations")
 			return nil
 		}
-		log.Error(err, "Failed to apply the core PluginSections and the built-in PluginRegistrations", "retryAfter", delay)
+		log.Error(
+			err,
+			"Failed to apply the core PluginSections and the built-in PluginRegistrations",
+			"retryAfter",
+			delay,
+		)
 
 		select {
 		case <-ctx.Done():

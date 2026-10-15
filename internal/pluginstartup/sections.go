@@ -135,7 +135,10 @@ func Sections() []pluginsv1alpha1.PluginSection {
 			AppliesTo:   plane,
 			Outputs: []pluginsv1alpha1.OutputDecl{
 				{Key: OutputKeycloakDatabaseConfig, Description: "The name of the DatabaseConfig of Keycloak."},
-				{Key: OutputIdentityDatabaseConfig, Description: "The name of the DatabaseConfig of Management Identity."},
+				{
+					Key:         OutputIdentityDatabaseConfig,
+					Description: "The name of the DatabaseConfig of Management Identity.",
+				},
 				{Key: OutputWebModelerDatabaseConfig, Description: "The name of the DatabaseConfig of Web Modeler."},
 			},
 		}),

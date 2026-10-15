@@ -37,7 +37,10 @@ func Registrations(
 		{Name: OutputServiceAccountAnnotations, From: SectionCloudIdentity + "/" + OutputServiceAccountAnnotations},
 	}
 	secondaryStorageOutputs := []pluginsv1alpha1.OutputDecl{
-		{Key: OutputSecondaryStorageConfig, Description: "The name of the SecondaryStorageConfig that the cluster reads."},
+		{
+			Key:         OutputSecondaryStorageConfig,
+			Description: "The name of the SecondaryStorageConfig that the cluster reads.",
+		},
 	}
 	databaseOutputs := []pluginsv1alpha1.OutputDecl{
 		{Key: OutputKeycloakDatabaseConfig, Description: "The name of the DatabaseConfig of Keycloak."},

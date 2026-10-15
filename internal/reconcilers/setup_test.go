@@ -50,7 +50,8 @@ var _ = Describe("Setup", func() {
 	It("starts the plugin startup writer with the version and the ServiceAccount of the options", func() {
 		Eventually(func(g Gomega) {
 			var r pluginsv1alpha1.PluginRegistration
-			g.Expect(env.Client.Get(env.Ctx, client.ObjectKey{Name: pluginstartup.RegistrationElasticsearch}, &r)).To(Succeed())
+			g.Expect(env.Client.Get(env.Ctx, client.ObjectKey{Name: pluginstartup.RegistrationElasticsearch}, &r)).
+				To(Succeed())
 			g.Expect(r.Spec.Controller.Version).To(Equal(suiteVersion))
 			g.Expect(r.Spec.ServiceAccount).To(Equal(suiteServiceAccount))
 		}, envtest.Timeout, envtest.Interval).Should(Succeed())

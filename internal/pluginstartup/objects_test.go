@@ -35,7 +35,12 @@ var testServiceAccount = pluginsv1alpha1.ServiceAccountRef{
 
 func TestRegistrationsCarryTheControllerAndServiceAccount(t *testing.T) {
 	for _, r := range Registrations("0.3.0", testServiceAccount) {
-		assert.Equal(t, pluginsv1alpha1.ControllerInfo{Name: "camunda-operator", Version: "0.3.0"}, r.Spec.Controller, r.Name)
+		assert.Equal(
+			t,
+			pluginsv1alpha1.ControllerInfo{Name: "camunda-operator", Version: "0.3.0"},
+			r.Spec.Controller,
+			r.Name,
+		)
 		assert.Equal(t, testServiceAccount, r.Spec.ServiceAccount, r.Name)
 		assert.Equal(t, "PluginRegistration", r.Kind, r.Name)
 		assert.Equal(t, pluginsv1alpha1.GroupVersion.String(), r.APIVersion, r.Name)
@@ -53,10 +58,12 @@ func TestEachSectionHasAtMostOneDefaultBuiltIn(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, map[string][]string{
-		"secondary-storage":   {"elasticsearch"},
-		"management-database": {"management-database-server"},
-	}, defaults)
+	assert.Equal(
+		t, map[string][]string{
+			"secondary-storage":   {"elasticsearch"},
+			"management-database": {"management-database-server"},
+		}, defaults,
+	)
 }
 
 func TestRegistrationsServeCoreSectionsAndListTheirOutputs(t *testing.T) {
@@ -87,7 +94,14 @@ func TestInputsNameAnOutputOfACoreSection(t *testing.T) {
 
 	for _, r := range Registrations("0.3.0", testServiceAccount) {
 		for _, in := range r.Spec.Inputs {
-			assert.True(t, outputs[in.From], "%s input %s reads %s, which no core section declares", r.Name, in.Name, in.From)
+			assert.True(
+				t,
+				outputs[in.From],
+				"%s input %s reads %s, which no core section declares",
+				r.Name,
+				in.Name,
+				in.From,
+			)
 		}
 	}
 }
@@ -103,7 +117,14 @@ func TestParameterSchemasAreOpenAPIAndCoverClaimEditable(t *testing.T) {
 
 		assert.Equal(t, "object", schema.Type, r.Name)
 		for _, editable := range r.Spec.ClaimEditable {
-			assert.Contains(t, schema.Properties, editable, "%s: claim-editable %s is not a parameter", r.Name, editable)
+			assert.Contains(
+				t,
+				schema.Properties,
+				editable,
+				"%s: claim-editable %s is not a parameter",
+				r.Name,
+				editable,
+			)
 		}
 	}
 }

@@ -55,8 +55,11 @@ type wantRegistration struct {
 var (
 	clusterClaim = []pluginsv1alpha1.ClaimKind{pluginsv1alpha1.ClaimKindCamundaClusterClaim}
 	planeClaim   = []pluginsv1alpha1.ClaimKind{pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim}
-	bothPolicies = []pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan}
-	storageIn    = map[string]string{
+	bothPolicies = []pluginsv1alpha1.DeletionPolicy{
+		pluginsv1alpha1.DeletionPolicyDelete,
+		pluginsv1alpha1.DeletionPolicyOrphan,
+	}
+	storageIn = map[string]string{
 		"storageClassName":          "volume-encryption/storageClassName",
 		"objectStorageConfig":       "backup-storage/objectStorageConfig",
 		"serviceAccountAnnotations": "cloud-identity/serviceAccountAnnotations",
@@ -76,7 +79,8 @@ var _ = Describe("Writer", Ordered, func() {
 		))
 	})
 
-	DescribeTable("writes each core section as the contract gives it",
+	DescribeTable(
+		"writes each core section as the contract gives it",
 		func(name string, want wantSection) {
 			var s pluginsv1alpha1.PluginSection
 			Expect(env.Client.Get(env.Ctx, client.ObjectKey{Name: name}, &s)).To(Succeed())
@@ -122,14 +126,17 @@ var _ = Describe("Writer", Ordered, func() {
 		}),
 	)
 
-	DescribeTable("writes each built-in registration as the contract gives it",
+	DescribeTable(
+		"writes each built-in registration as the contract gives it",
 		func(name string, want wantRegistration) {
 			var r pluginsv1alpha1.PluginRegistration
 			Expect(env.Client.Get(env.Ctx, client.ObjectKey{Name: name}, &r)).To(Succeed())
 
 			Expect(r.Spec.Sections).To(Equal(want.sections))
 			Expect(r.Spec.Mode).To(Equal(want.mode))
-			Expect(r.Spec.Controller).To(Equal(pluginsv1alpha1.ControllerInfo{Name: "camunda-operator", Version: suiteVersion}))
+			Expect(
+				r.Spec.Controller,
+			).To(Equal(pluginsv1alpha1.ControllerInfo{Name: "camunda-operator", Version: suiteVersion}))
 			Expect(r.Spec.ServiceAccount).To(Equal(serviceAccount))
 			Expect(r.Spec.ClaimEditable).To(ConsistOf(want.claimEditable))
 			Expect(r.Spec.DeletionPolicies).To(ConsistOf(want.deletionPolicies))
@@ -197,7 +204,9 @@ var _ = Describe("Writer", Ordered, func() {
 		before := r.DeepCopy()
 		r.Spec.DocsURL = "https://example.com/docs/elasticsearch"
 		r.Labels = map[string]string{"team": "data"}
-		Expect(env.Client.Patch(env.Ctx, &r, client.MergeFrom(before), client.FieldOwner("fleet-manager"))).To(Succeed())
+		Expect(
+			env.Client.Patch(env.Ctx, &r, client.MergeFrom(before), client.FieldOwner("fleet-manager")),
+		).To(Succeed())
 
 		Expect(pluginstartup.New(env.Client, "0.4.0", serviceAccount).Start(env.Ctx)).To(Succeed())
 
