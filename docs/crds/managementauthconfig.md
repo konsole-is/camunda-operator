@@ -76,50 +76,17 @@ The operator makes sure that the Secret in `clientSecretRef` exists and holds th
 
 `status.observedGeneration` is the last generation of the contract that the operator checked.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#managementauthconfig) lists every field of `ManagementAuthConfig`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: ManagementAuthConfig
-# Cluster-scoped: metadata has no namespace.
-metadata:
-  name: my-management-auth
-spec:
-  # string. Required. Base URL of Management Identity.
-  baseUrl: "https://identity.camunda.example.com"
-  # string. Required. OIDC issuer URL that Optimize uses to validate tokens.
-  issuerUrl: "https://camunda.example.com/auth/realms/camunda-platform"
-  # string. Optional, default: the value of issuerUrl. Issuer URL for traffic inside the Kubernetes cluster.
-  issuerBackendUrl: "http://my-management-keycloak-service.my-management-ns.svc:8080/auth/realms/camunda-platform"
-  # string. Required. OIDC authorization endpoint for browser login redirects.
-  authUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/auth"
-  # string. Required. OIDC token endpoint for machine-to-machine tokens.
-  tokenUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/token"
-  # string. Required. JWKS endpoint that serves the token signing keys.
-  jwksUrl: "https://camunda.example.com/auth/realms/camunda-platform/protocol/openid-connect/certs"
-  # string. Required. ID of the client that Optimize signs in with.
-  clientId: optimize
-  # string. Required. Audience expected in access tokens issued for this client.
-  audience: optimize-api
-  # object. Required. Client secret of that client.
-  clientSecretRef:
-    # string. Required. Name of the Secret that holds the client secret.
-    name: my-optimize-client
-    # string. Required. Namespace of the Secret. This kind is cluster-scoped, so there is no default.
-    namespace: my-management-ns
-    # string. Required. Key in the Secret that holds the client secret.
-    key: client-secret
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.baseUrl`, `spec.issuerUrl`, `spec.issuerBackendUrl`, `spec.authUrl`, `spec.tokenUrl`, and `spec.jwksUrl` must be valid `http` or `https` URLs.
 - `spec.clientId`, `spec.audience`, and every field of `spec.clientSecretRef` must not be empty.
 - No field is immutable.
 
-### A production-shaped example
+## A production-shaped example
 
 A contract with a separate issuer URL for traffic inside the Kubernetes cluster:
 

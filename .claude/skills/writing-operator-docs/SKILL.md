@@ -23,12 +23,12 @@ A draft written before step 1 is a draft you rewrite. Do not patch it.
 
 | Surface | What goes there |
 | --- | --- |
-| `docs/crds/<kind>.md` | The reference for one kind. Follow `docs/crds/TEMPLATE.md` and the rules in its comment block. |
+| `docs/crds/<kind>.md` | The reference for one kind. Follow `docs/crds/TEMPLATE.md` and the rules in its comment block. The page links the entry of the kind in `docs/crds/api-reference.md` for the fields. It does not repeat their types, required flags, or defaults. |
 | `docs/guides/*.md` | Tasks that span kinds, and narrative: presets, storage, auth, backup, operations. |
 | `docs/index.md`, `getting-started.md`, `installation.md`, `architecture.md`, `go-api.md` | Entry, first cluster, install, the rules the operator follows, the Go module. |
 | `README.md` | What the operator is, install, one taste, pointers into `docs/`. No depth. |
 | `dist/chart/README.md` | The Helm values. Hand-maintained, the plugin preserves it. |
-| GoDoc on spec and status fields in `api/v1` | Shows in `kubectl explain` and in the CRD. Same reader, same rules. |
+| GoDoc on spec and status fields in `api/v1` | Shows in `kubectl explain`, in the CRD, and in `docs/crds/api-reference.md` through `make api-docs`. Same reader, same rules. |
 
 `docs/superpowers/` is internal working material. mkdocs excludes it. This skill does not apply there.
 

@@ -319,9 +319,11 @@ If your `extraEnv` or `extraEnvFrom` sets `CAMUNDA_DATABASE_INDEX_NUMBEROFREPLIC
 
 Without `spec.backupStorageRef` the cluster takes no backups. With it, the brokers write primary-storage backups to the referenced bucket. On S3 and GCS, each cluster writes under its own prefix, so clusters can share a bucket. On Azure Blob, give each cluster its own container. A second cluster on the same Azure contract reports `InvalidReference`.
 
-On the Elasticsearch path the storage contract must carry `elasticsearch.snapshotRepository`, or the cluster reports `InvalidReference`. On the RDBMS path `spec.backup.primaryStorage` configures the backup scheduler of Zeebe. The [spec reference](#spec-reference) lists its defaults.
+On the Elasticsearch path the storage contract must carry `elasticsearch.snapshotRepository`, or the cluster reports `InvalidReference`. On the RDBMS path `spec.backup.primaryStorage` configures the backup scheduler of Zeebe. The [API reference](api-reference.md#primarystoragebackupspec) lists its defaults. With a `schedule` of `none`, `continuous` defaults to false.
 
 On the RDBMS path, the backup credentials of the `DatabaseConfig` feed the dump Job. When they do not resolve, the cluster keeps running and records the Warning event `DumpCredentialsUnresolved`. The backups of the cluster then wait. The [backup guide](../guides/backup.md) covers the backup kinds.
+
+The dump Job runs the image `postgres:<major>`, with the PostgreSQL major of the database server. Set `spec.backup.dump.postgresImage` to use another image, for example in an air-gapped installation.
 
 ## Workload identity
 
@@ -330,6 +332,8 @@ The pods of the cluster, except the connectors, run under the default ServiceAcc
 The name `<name>-camunda` belongs to the operator. While neither the cluster nor its preset sets `spec.serviceAccount` and no referenced bucket uses workload identity, the operator deletes a ServiceAccount of that name. It deletes one that you created too. Give an account of your own another name. Connectors that name the account with `create: false` are refused, and the account stays, see [Connectors](#connectors).
 
 When a referenced bucket names a workload identity, the operator puts the matching annotation on the ServiceAccount. [ObjectStorageConfig](objectstorageconfig.md#authentication) lists the annotations. An annotation in `spec.serviceAccount.annotations` wins over the derived one. A bucket without an identity block adds no annotation, and you bind the principal `system:serviceaccount:<namespace>:<name>-camunda` on the cloud side. Two buckets that name different identities of one cloud report `InvalidReference`.
+
+`spec.documentStorageRef` names a bucket for document storage. The operator uses only the workload identity of that bucket, as for the backup bucket. It does not configure the document store of Camunda.
 
 The cloud reads the annotations of the ServiceAccount when a pod starts. So when the annotations that the operator puts on the ServiceAccount change, the pods that run under it restart. These are the brokers, the gateway, and the web applications. This holds for an edit of `spec.serviceAccount.annotations` and for a referenced bucket that names another identity. These changes do not restart the connectors. Any other change to a referenced bucket restarts the same pods, see [Changes and referenced Secrets](#changes-and-referenced-secrets). A backup Job that starts after the change runs with the new annotations.
 
@@ -665,229 +669,11 @@ Camunda serves the inbound webhooks of connectors under `/inbound/<webhook ID>`.
 
 The entries stay while the cluster is suspended, and while a reference check fails. The Services stay too, so a route answers again when the cluster resumes. `status.gateway` and `status.management` are empty while the cluster is suspended.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#camundacluster) lists every field of `CamundaCluster`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaCluster
-metadata:
-  name: my-cluster
-  namespace: my-cluster-ns
-spec:
-  # string. Required. Name of the cluster-scoped CamundaPlatformConfig.
-  platformConfigRef: "my-platform-config"
-  # string. Optional. Name of a cluster-scoped CamundaClusterPreset.
-  presetRef: "medium"
-  # string. Optional. Name of a cluster-scoped CamundaRelease.
-  releaseRef: "camunda-8-9-4"
-  # string. Required unless the release provides it. Camunda version as x.y.z, 8.9.0 or later. It wins over the release.
-  version: "8.9.0"
-  # string. Optional. External base URL of the cluster, for OIDC redirect URLs and web application links.
-  externalUrl: "https://my-cluster.camunda.example.com"
-  # object. Optional. ServiceAccount of every workload pod except the connectors. See Workload identity.
-  serviceAccount:
-    # string. Optional, default: <name>-camunda. Name of the ServiceAccount.
-    name: "camunda-prod"
-    # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false removes the owner reference of the operator from an account that it created, see Workload identity.
-    create: true
-    # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods.
-    annotations:
-      eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/my-cluster-role"
-  # object. Optional. OIDC client of this cluster and its administrators. Overrides the platform config and the preset.
-  auth:
-    # string. Optional. OIDC client ID of this cluster. The audience and the secret then come from this block only, never from the preset or the platform config.
-    clientId: "my-cluster-client"
-    # string. Optional, default: the clientId. Audience that access tokens must carry.
-    audience: "my-cluster-client"
-    # object. Optional, required when clientId is set. Secret key that holds the OIDC client secret of this cluster.
-    clientSecretRef:
-      # string. Required. Name of the Secret.
-      name: "my-cluster-oidc-secret"
-      # string. Required. Key in the Secret.
-      key: "client-secret"
-    # object. Optional. Identities that get the admin role. OIDC only.
-    admin:
-      # []string. Optional. Values of the username claim.
-      users:
-        - "ada@example.com"
-      # []string. Optional. Values of the client id claim. Needs clientIdClaim on the platform config.
-      clients:
-        - "my-cluster-client"
-      # []object. Optional. Each rule matches a claim value. All three fields are required.
-      mappingRules:
-        # string. Name of the rule in the Admin web application. 1 to 256 characters.
-        - id: "platform-admins"
-          # string. Name of a claim, or a JSONPath expression that points at one.
-          claimName: "groups"
-          # string. Value that the claim must hold.
-          claimValue: "camunda-admins"
-    # object. Optional. The admin user. Basic authentication only.
-    basic:
-      # string. Optional, default: admin@example.com, max 253 characters. Email of the admin user.
-      adminEmail: "platform-team@example.com"
-      # string. Optional, max 253 characters. A changed value rotates the admin password once.
-      passwordRotation: "2026-08"
-  # object. Optional. The brokers. Always a StatefulSet.
-  zeebe:
-    # integer. Optional, default: 1, minimum 0. Number of brokers.
-    replicas: 3
-    # integer. Optional, default: 1, minimum 1. Number of partitions. Cannot be decreased or removed once set.
-    partitions: 3
-    # integer. Optional, default: 1, minimum 1. Copies of each partition. Must not exceed replicas.
-    replicationFactor: 3
-    # object. Optional. CPU and memory of the broker container.
-    resources:
-      requests: { cpu: "1", memory: "2Gi" }
-    # string. Optional, default: the default StorageClass. StorageClass of the broker volumes. Immutable once set.
-    storageClassName: "ssd"
-    # quantity. Optional, default: 10Gi. Size of the data volume of each broker. Can only grow.
-    storageSize: "32Gi"
-    # object. Optional. What happens to the broker volumes when the cluster is deleted.
-    persistentVolumeClaimRetentionPolicy:
-      # string (Retain | Delete). Optional, default: Delete.
-      whenDeleted: Delete
-    # []EnvVar. Optional. Extra environment variables of the broker container.
-    extraEnv:
-      - name: JAVA_TOOL_OPTIONS
-        value: "-XX:+ExitOnOutOfMemoryError -Xmx1g"
-    # []EnvFromSource. Optional. Extra environment sources (ConfigMaps, Secrets) of the broker container.
-    extraEnvFrom:
-      - configMapRef:
-          name: "zeebe-overrides"
-    # map[string]string. Optional. Extra labels of the broker pods.
-    podLabels: {}
-    # map[string]string. Optional. Extra annotations of the broker pods. The keys `camunda.io/config-hash` and `camunda.io/service-account-hash` belong to the operator, and a value for them does not reach the pods.
-    podAnnotations: {}
-    # object. Optional. Scheduling constraints of the broker pods. Replaces the top-level block and the preset block entirely.
-    scheduling:
-      # object. Optional. Standard Kubernetes node affinity.
-      nodeAffinity: {}
-      # object. Optional. Standard Kubernetes pod affinity.
-      podAffinity: {}
-      # []Toleration. Optional. Standard Kubernetes tolerations.
-      tolerations: []
-  # object. Optional. The gateway.
-  gateway:
-    # string (Standalone | Embedded). Optional, default: Standalone.
-    mode: Standalone
-    # integer. Optional, default: 1. Replicas. Standalone only.
-    replicas: 2
-    # object. Optional. CPU and memory. Standalone only.
-    resources: {}
-    # []EnvVar. Optional. Extra environment variables. Applied to the brokers when Embedded.
-    extraEnv: []
-    # []EnvFromSource. Optional. Extra environment sources. Applied to the brokers when Embedded.
-    extraEnvFrom: []
-    # map[string]string. Optional. Extra pod labels. Standalone only.
-    podLabels: {}
-    # map[string]string. Optional. Extra pod annotations. Standalone only.
-    podAnnotations: {}
-    # object. Optional. Scheduling constraints, same shape as zeebe.scheduling. Standalone only.
-    scheduling: {}
-  # object. Optional. The Operate web application. The other fields are those of gateway. An embedded Operate applies its extraEnv and extraEnvFrom to the host process.
-  operate:
-    # string (Standalone | Embedded). Optional, default: Embedded.
-    mode: Embedded
-  # object. Optional. The Tasklist web application. Same fields as operate.
-  tasklist:
-    # string (Standalone | Embedded). Optional, default: Embedded.
-    mode: Embedded
-  # object. Optional. The Admin web application (Orchestration Cluster Identity before Camunda 8.9). Same fields as operate.
-  admin:
-    # string (Standalone | Embedded). Optional, default: Embedded.
-    mode: Embedded
-  # object. Optional. The connectors runtime, always its own Deployment. It has no mode. The other fields are those of gateway.
-  connectors:
-    # boolean. Optional, default: false. Runs the connectors runtime when true.
-    enabled: true
-    # string. Required when enabled, unless the release provides it. Version of the connectors bundle image as x.y.z, with the same minor as the cluster.
-    version: "8.9.7"
-    # object. Optional. ServiceAccount of the connectors pods. Without it, they run under the default ServiceAccount of the namespace. See Workload identity.
-    serviceAccount:
-      # string. Optional, default when the block is set: <name>-connectors. Name of the ServiceAccount. Must differ from serviceAccount.name. The name default needs create: false. With create: false, the name <name>-camunda is refused while neither the cluster nor its preset sets serviceAccount and no referenced bucket uses workload identity.
-      name: "my-cluster-connectors"
-      # boolean. Optional, default: true. When false, the ServiceAccount must already exist, and the operator does not change it. A switch to false removes the owner reference of the operator from an account that it created, see Workload identity.
-      create: true
-      # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the pods. The identities of the buckets are never added.
-      annotations: {}
-  # []EnvVar. Optional. Extra environment variables of every workload. A per-component entry with the same name wins.
-  extraEnv: []
-  # []EnvFromSource. Optional. Extra environment sources of every workload.
-  extraEnvFrom: []
-  # map[string]string. Optional. Extra labels of every workload pod.
-  podLabels: {}
-  # map[string]string. Optional. Extra annotations of every workload pod. The keys `camunda.io/config-hash` and `camunda.io/service-account-hash` belong to the operator, and a value for them does not reach the pods.
-  podAnnotations: {}
-  # object. Optional. Scheduling constraints of every workload, unless a component sets its own. Replaces the preset block entirely.
-  scheduling: {}
-  # string. Required. Name of the SecondaryStorageConfig in the namespace of this cluster.
-  storageRef: "my-storage-config"
-  # integer. Optional, minimum 0. Replicas of each index in an Elasticsearch secondary storage. Default: from the node count, see Index replicas.
-  indexReplicas: 1
-  # string. Optional. Name of an ObjectStorageConfig in this namespace, for backups.
-  backupStorageRef: "my-backup-bucket"
-  # string. Optional. Name of an ObjectStorageConfig in this namespace, for document storage. Only its workload identity is wired.
-  documentStorageRef: "my-document-bucket"
-  # object. Optional. How backups of an RDBMS cluster with a backupStorageRef behave. Allowed in a preset.
-  backup:
-    # object. Optional. The backups that Zeebe takes of its own primary storage.
-    primaryStorage:
-      # boolean. Optional, default: true unless schedule is "none". Keeps every log segment until it is backed up.
-      continuous: true
-      # string. Optional, default: PT1H. How often Zeebe takes a backup: an ISO 8601 duration, a CRON expression, or "none".
-      schedule: "PT1H"
-      # string. Optional, default: PT15M. How often Zeebe writes a checkpoint, the granularity of a point-in-time restore.
-      checkpointInterval: "PT15M"
-      # object. Optional. How long Zeebe keeps its primary-storage backups.
-      retention:
-        # string. Optional, default: P7D. The restore window.
-        window: "P7D"
-        # string. Optional, default: PT1H. How often Zeebe removes backups outside the window: a duration, a CRON expression, or "none".
-        cleanupSchedule: "PT1H"
-    # object. Optional. The Job that dumps the database. A LogicalBackupRDBMS can replace the pod settings as a whole, but never the image.
-    dump:
-      # object. Optional. CPU and memory of the dump pod.
-      resources: {}
-      # integer. Optional, default: 86400. Seconds the dump Job can run before it fails.
-      activeDeadlineSeconds: 7200
-      # string. Optional, default: postgres:<major version of the database server>. Image that runs pg_dump.
-      postgresImage: ""
-      # []EnvVar. Optional. Extra environment variables of every container of the dump pod.
-      extraEnv: []
-      # []EnvFromSource. Optional. Extra environment sources of every container of the dump pod. At most 8.
-      extraEnvFrom: []
-      # map[string]string. Optional. Extra labels of the dump pod.
-      podLabels: {}
-      # map[string]string. Optional. Extra annotations of the dump pod. Turn a service-mesh sidecar off here, or the Job never completes.
-      podAnnotations:
-        sidecar.istio.io/inject: "false"
-      # object. Optional. Scheduling constraints of the dump pod. Replaces the preset block entirely.
-      scheduling: {}
-      # object. Optional. Where the dump is written before the upload. Replaces the preset block entirely. Unset means node-local storage.
-      scratchVolume:
-        # quantity. Optional. Size of the scratch volume.
-        sizeLimit: 50Gi
-        # string. Optional. When set, the scratch volume is a PersistentVolumeClaim of this class. Requires sizeLimit.
-        storageClassName: "fast"
-  # object. Optional. Monitoring integrations.
-  monitoring:
-    # object. Optional. Prometheus ServiceMonitors.
-    serviceMonitor:
-      # boolean. Optional, default: false. Creates one ServiceMonitor per process when true.
-      enabled: true
-      # map[string]string. Optional. Extra labels of every ServiceMonitor.
-      labels: {}
-      # map[string]string. Optional. Extra annotations of every ServiceMonitor.
-      annotations: {}
-  # boolean. Optional, default: false. Scales every workload to zero and keeps the data.
-  suspend: false
-  # boolean. Optional, default: false. The operator changes nothing for this cluster and writes no status.
-  pause: false
-```
-
-### Validation rules
+## Validation rules
 
 The API server enforces these rules at admission:
 
@@ -916,7 +702,7 @@ The operator checks these rules on the merged spec after the preset and the rele
 
 Two separate rules compare the effective version with the version that the brokers run. A lower version is refused with reason `VersionDowngradeRefused`, see [A lower version is refused](#a-lower-version-is-refused). A version that skips a minor is refused with reason `VersionSkipRefused`, see [A skipped minor is refused](#a-skipped-minor-is-refused).
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

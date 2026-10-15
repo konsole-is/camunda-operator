@@ -576,7 +576,7 @@ The `ElasticsearchCluster`, the `DatabaseServer`, and the `Database` are separat
 
 ## Related
 
-- [CamundaCluster](../crds/camundacluster.md): every field, condition, and validation rule of the orchestration cluster.
+- [CamundaCluster](../crds/camundacluster.md): every condition and validation rule of the orchestration cluster, with a link to every field.
 - [ElasticsearchCluster](../crds/elasticsearchcluster.md): the Elasticsearch secondary storage, its conditions, and its snapshot repository.
 - [DatabaseServer](../crds/databaseserver.md): the PostgreSQL server, its archive, and the rollback it performs.
 - [Database](../crds/database.md): the logical database and its credential Secrets.

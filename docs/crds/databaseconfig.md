@@ -64,46 +64,17 @@ A `LogicalBackupRDBMS` dumps the database with the user in `backupCredentialsSec
 
 `status.observedGeneration` is the last generation of the contract that the operator validated.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#databaseconfig) lists every field of `DatabaseConfig`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: DatabaseConfig
-metadata:
-  name: my-camunda-db
-  namespace: my-cluster-ns
-spec:
-  # string. Required. Name of the DatabaseServerConfig of this namespace that describes the server of this database.
-  serverRef: my-db-server
-  # string. Required. Name of the logical database on the server.
-  databaseName: camunda
-  # object. Required. Application user with read and write access to the database.
-  credentialsSecretRef:
-    # string. Required. Name of the Secret that holds the application credentials, in the namespace of this contract.
-    name: my-camunda-db-credentials
-    # string. Optional, default: username. Key in the Secret that holds the username.
-    usernameKey: username
-    # string. Optional, default: password. Key in the Secret that holds the password.
-    passwordKey: password
-  # object. Optional. Separate user with dump privileges. A LogicalBackupRDBMS needs it. A restore uses credentialsSecretRef.
-  backupCredentialsSecretRef:
-    # string. Required. Name of the Secret that holds the backup credentials, in the namespace of this contract.
-    name: my-camunda-db-backup-credentials
-    # string. Optional, default: username. Key in the Secret that holds the username.
-    usernameKey: username
-    # string. Optional, default: password. Key in the Secret that holds the password.
-    passwordKey: password
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.serverRef` and `spec.databaseName` must not be empty.
 - Every field of a Secret reference must not be empty.
 - No field is immutable.
 
-### A production-shaped example
+## A production-shaped example
 
 A contract with a separate backup user for database dumps:
 

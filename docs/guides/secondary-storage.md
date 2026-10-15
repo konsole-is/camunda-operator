@@ -97,7 +97,7 @@ graph LR
     CC[CamundaCluster] -.->|storageRef| SSC
 ```
 
-The contract carries the endpoint, the user Secret `my-cluster-es-es-user`, and the CA of the self-signed certificate. For backups, also set `spec.snapshotStorageRef`, see [Backup](./backup.md). [ElasticsearchCluster](../crds/elasticsearchcluster.md) has every field, the credentials, and the status.
+The contract carries the endpoint, the user Secret `my-cluster-es-es-user`, and the CA of the self-signed certificate. For backups, also set `spec.snapshotStorageRef`, see [Backup](./backup.md). [ElasticsearchCluster](../crds/elasticsearchcluster.md) has the credentials and the status, and links every field.
 
 ## PostgreSQL
 
@@ -292,7 +292,7 @@ graph LR
 
 The `Database` also creates the database, its roles, and their credential Secrets. [Database](../crds/database.md) names them, and says how to rotate a password and what deletion keeps.
 
-For all fields, see [DatabaseServerConfig](../crds/databaseserverconfig.md), [Database](../crds/database.md), [DatabaseConfig](../crds/databaseconfig.md), and [SecondaryStorageConfig](../crds/secondarystorageconfig.md).
+For each kind, see [DatabaseServerConfig](../crds/databaseserverconfig.md), [Database](../crds/database.md), [DatabaseConfig](../crds/databaseconfig.md), and [SecondaryStorageConfig](../crds/secondarystorageconfig.md).
 
 ## Bring your own backend
 
@@ -353,7 +353,7 @@ spec:
     databaseConfigRef: my-camunda-db
 ```
 
-The reference pages list every field: [SecondaryStorageConfig](../crds/secondarystorageconfig.md), [DatabaseConfig](../crds/databaseconfig.md), and [DatabaseServerConfig](../crds/databaseserverconfig.md). A backup of a hand-written Elasticsearch contract needs `elasticsearch.snapshotRepository` set by hand, after you register the repository yourself. A backup of a hand-written `DatabaseConfig` needs `backupCredentialsSecretRef`. The [backup guide](./backup.md) shows both.
+The reference pages describe each contract: [SecondaryStorageConfig](../crds/secondarystorageconfig.md), [DatabaseConfig](../crds/databaseconfig.md), and [DatabaseServerConfig](../crds/databaseserverconfig.md). A backup of a hand-written Elasticsearch contract needs `elasticsearch.snapshotRepository` set by hand, after you register the repository yourself. A backup of a hand-written `DatabaseConfig` needs `backupCredentialsSecretRef`. The [backup guide](./backup.md) shows both.
 
 ## Related
 

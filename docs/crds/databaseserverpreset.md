@@ -61,72 +61,13 @@ Deleting a preset removes no server. Each `DatabaseServer` that references it re
 
 A preset has no status. It reports no conditions and no `status.observedGeneration`. A problem with a preset shows on the `Ready` condition of the `DatabaseServer` that references it. Examples are a `presetRef` that names no preset, or a merge that lacks `version` or `storageSize`.
 
-## Spec reference
+## Fields
+
+The [API reference](api-reference.md#databaseserverpreset) lists every field of `DatabaseServerPreset`, with its type, whether it is required, its default, and its validation.
 
 `spec.server` has the same type as the spec of `DatabaseServer`. The fields `presetRef`, `releaseRef`, `databaseServerConfig`, and `suspend` belong to one server and must stay unset in a preset. [Validation rules](#validation-rules) has the rule for `version`. Every other field is inheritable.
 
-Every field, with its type, whether it is required, and its default:
-
-```yaml
-apiVersion: core.camunda.io/v1
-kind: DatabaseServerPreset
-metadata:
-  name: standard
-spec:
-  # object (DatabaseServer spec type). Required. The baseline that servers inherit.
-  server:
-    # string. Optional. Name of a cluster-scoped CamundaPlatformConfig. Only its image settings are read.
-    platformConfigRef: "my-platform-config"
-    # integer. Optional, default: 1. Number of PostgreSQL instances, at least 1.
-    instances: 2
-    # object (corev1.ResourceRequirements). Optional. CPU and memory of each instance.
-    resources:
-      requests: { cpu: "1", memory: "2Gi" }
-      limits: { memory: "2Gi" }
-    # string (resource quantity). Optional. Size of the data volume of each instance.
-    storageSize: "64Gi"
-    # string. Optional, default: the default StorageClass of the Kubernetes cluster. StorageClass of the volumes.
-    storageClassName: "ssd"
-    # string (resource quantity). Optional. Size of a separate volume for the write-ahead log.
-    walStorageSize: "8Gi"
-    # object. Optional. The ServiceAccount <name>-postgres of the instance pods, which the operator creates. See DatabaseServer.
-    serviceAccount:
-      # map[string]string. Optional. Annotations for workload identity.
-      annotations: {}
-    # object. Optional. Scheduling constraints. A server that sets its own scheduling block replaces this one as a whole.
-    scheduling:
-      # object (corev1.NodeAffinity). Optional. Node affinity rules.
-      nodeAffinity: {}
-      # object (corev1.PodAffinity). Optional. Pod affinity rules.
-      podAffinity: {}
-      # list (corev1.Toleration). Optional. Tolerations of the pods.
-      tolerations: []
-    # map[string]string. Optional. Extra labels on the instance pods.
-    podLabels: {}
-    # map[string]string. Optional. Extra annotations on the instance pods.
-    podAnnotations: {}
-    # object. Optional. Prometheus scraping. A server that sets its own monitoring block replaces this one as a whole.
-    monitoring:
-      podMonitor:
-        # boolean. Optional, default: false. Creates a PodMonitor over the instance pods.
-        enabled: false
-        # map[string]string. Optional. Extra labels on the PodMonitor.
-        labels: {}
-        # map[string]string. Optional. Extra annotations on the PodMonitor.
-        annotations: {}
-        # string. Optional, default: the Prometheus setting. Scrape interval, as a Prometheus duration.
-        interval: "30s"
-    # object. Optional. The continuous archive. See DatabaseServer.
-    archive:
-      # string. Required in this block. Name of an ObjectStorageConfig in the namespace of each server.
-      objectStorageRef: my-backup-bucket
-      # integer. Required in this block. How many days into the past a restore can reach, from 1 to 36500.
-      retentionPeriodDays: 30
-      # string. Optional, default: "0 0 2 * * *". Six-field cron in UTC, seconds first, or a descriptor such as "@daily". A five-field cron is rejected.
-      baseBackupSchedule: "0 0 2 * * *"
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.server` must not set `presetRef`, `releaseRef`, `databaseServerConfig`, or `suspend`. An empty `presetRef`, an empty `releaseRef`, and `suspend: false` count as unset, so templated YAML that renders zero values still applies. An empty `databaseServerConfig` is rejected by the name pattern. Omit the field instead.
 - `version` is rejected in `spec.server` with `version belongs to a CamundaRelease and must not be set in a preset`. Move the version to a [CamundaRelease](camundarelease.md), and point every server at it with `releaseRef`. An empty `version` is rejected by the bare-major pattern. Omit the field instead.
@@ -134,7 +75,7 @@ spec:
 - The `DatabaseServer` checks that the merged configuration is complete, not the preset.
 - Every other rule of the `DatabaseServer` schema applies to `spec.server`. `instances` must be at least 1, and `archive.retentionPeriodDays` must be from 1 to 36500. `archive.baseBackupSchedule` must be a six-field cron or a descriptor, as on the [DatabaseServer](databaseserver.md#schedule).
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

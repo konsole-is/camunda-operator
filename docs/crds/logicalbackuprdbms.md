@@ -90,49 +90,11 @@ A restore needs these fields:
 
 `status.jobName` names the dump Job while it exists. `status.bucketRef` and `status.bucketLocation` record the bucket that holds the dump. `status.failureMessage` says why a `Failed` backup failed. `status.completionTime` is when the backup ended. `status.observedGeneration` is the last generation that the operator reconciled.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#logicalbackuprdbms) lists every field of `LogicalBackupRDBMS`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: LogicalBackupRDBMS
-metadata:
-  name: my-cluster-backup
-  namespace: my-cluster-ns
-spec:
-  # object. Required. The CamundaCluster to back up, in the namespace of this resource. It must store its data in a relational database and have a backupStorageRef.
-  clusterRef:
-    # string. Required. Name of the CamundaCluster.
-    name: my-cluster
-  # object. Optional. Replaces the spec.backup.dump block of the cluster as a whole for this backup. The image is not part of it.
-  dump:
-    # object. Optional. CPU and memory of the dump pod.
-    resources:
-      requests:
-        cpu: "500m"
-        memory: "1Gi"
-    # list. Optional. Extra environment variables of the dump container. A name must not start with PG or UPLOAD_.
-    extraEnv: []
-    # list. Optional. Extra environment sources of the dump container. A source without a prefix, or with a prefix that can spell a PG* or UPLOAD_* name, keeps the backup in Pending.
-    extraEnvFrom: []
-    # map. Optional. Extra labels of the dump pod.
-    podLabels: {}
-    # map. Optional. Extra annotations of the dump pod. Set the injection annotation of a service mesh to false here.
-    podAnnotations: {}
-    # object. Optional. Scheduling constraints of the dump pod.
-    scheduling: {}
-    # object. Optional. The volume that holds the dump before the upload. Unset is an emptyDir that the node bounds.
-    scratchVolume:
-      # quantity. Optional. Size of the scratch volume.
-      sizeLimit: "20Gi"
-      # string. Optional. Storage class of a PersistentVolumeClaim that replaces the emptyDir. Needs sizeLimit.
-      storageClassName: "standard"
-    # integer. Optional, default: 86400. Seconds that the Job can run before it fails. Minimum 1.
-    activeDeadlineSeconds: 86400
-```
-
-### Validation rules
+## Validation rules
 
 - The whole `spec` is immutable. To retry, create a new resource.
 - `spec.clusterRef.name` is required and must not be empty. The cluster must live in the namespace of the backup.
@@ -141,7 +103,7 @@ spec:
 - `spec.dump.activeDeadlineSeconds` must be 1 or more.
 - The API server accepts a `spec.dump.extraEnvFrom` source without a safe `prefix`. A safe prefix is not empty and does not start with `PG` or `UPLOAD_`. It is also not the start of one of these names, such as `P` or `UPLOAD`. For example, the prefix `P` and the key `GHOST` spell `PGHOST`. With an unsafe prefix, the backup stays in `Pending` with reason `InvalidReference`. Create a new backup with a safe prefix, such as `MY_`.
 
-### A production-shaped example
+## A production-shaped example
 
 A backup with a larger scratch volume and a shorter deadline for this run:
 

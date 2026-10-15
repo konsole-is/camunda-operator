@@ -123,7 +123,22 @@ var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearch
 		_, _ = utils.Kubectl("delete", "ns", esNamespace, "--wait=false")
 	})
 
+	// The AfterEach dumps before the AfterAll deletes the namespace. A
+	// DeferCleanup of a spec runs after every AfterEach, so the cleanup that
+	// a BeforeEach registers dumps a failure of such a cleanup, and only when
+	// the AfterEach did not dump already.
+	var dumped bool
+	BeforeEach(func() {
+		dumped = false
+		DeferCleanup(func() {
+			if !dumped {
+				dumpDiagnostics(esNamespace)
+			}
+		})
+	})
+
 	AfterEach(func() {
+		dumped = CurrentSpecReport().Failed()
 		dumpDiagnostics(esNamespace)
 	})
 

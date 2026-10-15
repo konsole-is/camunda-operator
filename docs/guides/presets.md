@@ -155,7 +155,7 @@ The backup policy of the preset takes effect on a cluster that sets `spec.backup
 
 A `DatabaseServerPreset` carries the shape of a PostgreSQL server under `spec.server`, and its instance-bound fields are `presetRef`, `releaseRef`, `databaseServerConfig`, and `suspend`. Its `archive` block is inheritable, because one bucket serves a fleet and every server writes under a prefix of its own.
 
-The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md), and [DatabaseServerPreset](../crds/databaseserverpreset.md) pages list every field.
+The [CamundaClusterPreset](../crds/camundaclusterpreset.md), [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md), and [DatabaseServerPreset](../crds/databaseserverpreset.md) pages give the merge rules and the fields that a preset must not set.
 
 Three ready-to-apply presets are in [`config/example/presets`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/presets), and the release that the example clusters and their storage name is in [`config/example/releases`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/releases). The [example inventories](https://github.com/konsole-is/camunda-operator/tree/main/config/example) next to them name both. A `CamundaCluster` there keeps its references and the fields that belong to that one cluster. The example release is `camunda-8-9`, a release that you edit in place, see [Change a fleet](#change-a-fleet).
 
@@ -204,7 +204,7 @@ A resource that references a preset or a release that does not exist reports `Re
 
 - [Authentication](authentication.md): the auth defaults and the administrators that a preset carries, with a complete example.
 - [Operations](operations.md): how a preset change reaches the pods, and how storage grows.
-- [CamundaClusterPreset](../crds/camundaclusterpreset.md): every field and the merge rules.
+- [CamundaClusterPreset](../crds/camundaclusterpreset.md): the merge rules and the validation rules.
 - [CamundaRelease](../crds/camundarelease.md): the versions, the pinned images, and the environment of a rollout.
-- [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md): every field and the merge rules.
-- [DatabaseServerPreset](../crds/databaseserverpreset.md): every field and the merge rules.
+- [ElasticsearchClusterPreset](../crds/elasticsearchclusterpreset.md): the merge rules and the validation rules.
+- [DatabaseServerPreset](../crds/databaseserverpreset.md): the merge rules and the validation rules.

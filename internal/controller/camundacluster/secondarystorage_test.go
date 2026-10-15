@@ -1196,6 +1196,51 @@ var _ = Describe("CamundaCluster secondary storage contract", func() {
 		expectClaimedBy(recreated, second)
 	})
 
+	// The e2e journey of the storage claim ends on a cluster that took the
+	// backend over and then lost its contract. Its deletion must still give the
+	// backend back and let the cluster go.
+	It("releases the claim and goes when a cluster whose contract is gone is deleted", func() {
+		ns := newNamespace()
+		address := "https://handover.es:9200"
+		holder := newNamedCluster("cc-a-", ns, createPlatformConfig(), createBindingAt(ns, address))
+		createCluster(holder)
+		expectHolds(holder)
+		holderPod := createStoragePod(holder, createBindingAt(ns, address))
+
+		binding := createBindingAt(ns, address)
+		next := newNamedCluster("cc-b-", ns, createPlatformConfig(), binding)
+		createCluster(next)
+		expectParked(next, holder)
+
+		By("deleting the holder and its pod")
+		Expect(k8sClient.Delete(ctx, holder)).To(Succeed())
+		expectWaitingForHandover(next, binding, holderPod)
+		Expect(k8sClient.Delete(ctx, holderPod)).To(Succeed())
+		expectHolds(next)
+		createStoragePod(next, binding)
+
+		By("deleting the contract of the cluster that took the backend over")
+		Expect(k8sClient.Delete(ctx, binding)).To(Succeed())
+		expectReady(
+			next,
+			metav1.ConditionFalse,
+			Equal(v1.ReasonInvalidReference),
+			ContainSubstring(binding.Name),
+		)
+
+		By("deleting that cluster")
+		Expect(k8sClient.Delete(ctx, next)).To(Succeed())
+		claim := client.ObjectKey{
+			Namespace: testClaimNamespace,
+			Name:      components.StorageClaimSchema().LeaseName(storageKeyOf(binding)),
+		}
+		Eventually(func(g Gomega) {
+			g.Expect(apierrors.IsNotFound(k8sClient.Get(ctx, claim, &coordinationv1.Lease{}))).To(BeTrue())
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(next), &v1.CamundaCluster{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
+
 	// A running cluster that repoints into a backend whose previous holder
 	// left pods behind must stop. It holds the claim of that backend, and its
 	// own workloads still write the backend it left.

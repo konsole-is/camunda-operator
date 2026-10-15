@@ -291,7 +291,7 @@ func psql(namespace, name string, ref v1.LocalCredentialsSecretRef, sql string) 
 	}, podTimeout)
 }
 
-// dumpDiagnostics writes the controller-manager logs and the events,
+// dumpDiagnostics writes the controller-manager logs and pod, and the events,
 // resources, pod descriptions, and CamundaCluster workload logs of
 // testNamespace to the Ginkgo writer when the current spec failed.
 //
@@ -314,6 +314,11 @@ func dumpDiagnostics(testNamespace string) {
 	for name, args := range map[string][]string{
 		"controller-manager logs": {
 			"logs", "-l", "control-plane=controller-manager", "-n", namespace, "--tail=-1",
+		},
+		// The logs do not say why a manager container ended. The pod
+		// description does, OOMKilled included, with the restart count.
+		"controller-manager pod": {
+			"describe", "pods", "-l", "control-plane=controller-manager", "-n", namespace,
 		},
 		"events": {"get", "events", "-n", testNamespace, "--sort-by=.lastTimestamp"},
 		"resources": {

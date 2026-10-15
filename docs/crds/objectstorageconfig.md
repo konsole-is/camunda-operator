@@ -91,100 +91,11 @@ status:
 
 `status.observedGeneration` is the last generation of the contract that the operator validated.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#objectstorageconfig) lists every field of `ObjectStorageConfig`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: ObjectStorageConfig
-metadata:
-  name: my-backup-bucket
-  namespace: my-cluster-ns
-spec:
-  # string enum: S3 | GCS | AzureBlob. Required. Storage API of the bucket. Exactly the block of the same name must be set.
-  type: S3
-
-  # object. Required when type is S3, forbidden otherwise. An S3 or S3-compatible bucket.
-  s3:
-    # string. Required. Bucket name as the storage client SDK uses it.
-    bucketName: my-cluster-backup-bucket
-    # string. Optional. Key prefix under which consumers write objects, without leading or trailing slashes. Omit it to write to the bucket root.
-    basePath: backups
-    # string. Required unless endpoint is set. Region of the bucket. With an endpoint and no region, consumers send the placeholder region us-east-1.
-    region: eu-west-1
-    # string. Optional. URL of an S3-compatible store. Empty means AWS S3, addressed through region.
-    endpoint: "http://minio.minio.svc:9000"
-    # boolean. Optional, default: false. Forces path-style bucket addressing, which S3-compatible stores often need.
-    forcePathStyle: true
-    # object. Optional, default: {type: workloadIdentity}. How consumers authenticate.
-    auth:
-      # string enum: workloadIdentity | credentials. Optional, default: workloadIdentity.
-      type: workloadIdentity
-      # object. Optional, only valid with type workloadIdentity. Absent means that no annotation is added.
-      workloadIdentity:
-        # string. Optional. IAM role that the bucket trusts. It becomes the eks.amazonaws.com/role-arn annotation on the ServiceAccount of the consumer.
-        roleArn: "arn:aws:iam::123456789012:role/my-cluster-workload-role"
-      # object. Required with type credentials, forbidden otherwise. A static access key pair.
-      credentials:
-        secretRef:
-          # string. Required. Name of the Secret that holds the key pair.
-          name: minio-credentials
-          # string. Required. Key in the Secret that holds the access key ID.
-          accessKeyIdKey: accessKeyId
-          # string. Required. Key in the Secret that holds the secret access key.
-          secretAccessKeyKey: secretAccessKey
-
-  # object. Required when type is GCS, forbidden otherwise. A Google Cloud Storage bucket.
-  gcs:
-    # string. Required. Bucket name as the storage client SDK uses it.
-    bucketName: my-cluster-documents
-    # string. Optional. Key prefix under which consumers write objects, without leading or trailing slashes. Omit it to write to the bucket root.
-    basePath: documents
-    # object. Optional, default: {type: workloadIdentity}. How consumers authenticate.
-    auth:
-      # string enum: workloadIdentity | credentials. Optional, default: workloadIdentity.
-      type: workloadIdentity
-      # object. Optional, only valid with type workloadIdentity. Absent means that no annotation is added.
-      workloadIdentity:
-        # string. Optional. Google service account that the bucket trusts. It becomes the iam.gke.io/gcp-service-account annotation.
-        serviceAccountEmail: "my-cluster-workload@my-project.iam.gserviceaccount.com"
-      # object. Required with type credentials, forbidden otherwise. A static service-account JSON key.
-      credentials:
-        secretRef:
-          # string. Required. Name of the Secret that holds the JSON key.
-          name: gcs-key
-          # string. Required. Key in the Secret that holds the JSON key.
-          key: key.json
-
-  # object. Required when type is AzureBlob, forbidden otherwise. An Azure Blob Storage container.
-  azureBlob:
-    # string. Required. Storage account that holds the container.
-    accountName: camundabackups
-    # string. Required. Blob container that consumers write to.
-    container: backups
-    # string. Optional. Blob prefix under which consumers write objects, without leading or trailing slashes. Omit it to write to the container root.
-    basePath: clusters
-    # string. Optional. URL of the blob service. Empty means the public Azure endpoint of the account. Set it for Azurite and sovereign clouds.
-    endpoint: "https://camundabackups.blob.core.windows.net"
-    # object. Optional, default: {type: workloadIdentity}. How consumers authenticate.
-    auth:
-      # string enum: workloadIdentity | credentials. Optional, default: workloadIdentity.
-      type: workloadIdentity
-      # object. Optional, only valid with type workloadIdentity. Absent means that no annotation is added.
-      workloadIdentity:
-        # string. Optional. Managed identity that the container trusts. It becomes the azure.workload.identity/client-id annotation.
-        clientId: "11111111-2222-3333-4444-555555555555"
-      # object. Required with type credentials, forbidden otherwise. A static storage account key.
-      credentials:
-        secretRef:
-          # string. Required. Name of the Secret that holds the account key.
-          name: azure-key
-          # string. Required. Key in the Secret that holds the account key.
-          key: accountKey
-```
-
-### Validation rules
+## Validation rules
 
 - Exactly the block that matches `spec.type` must be set: `S3` with `s3`, `GCS` with `gcs`, and `AzureBlob` with `azureBlob`.
 - In every `auth` block, `credentials` is required when `auth.type` is `credentials`, and forbidden otherwise.
@@ -196,7 +107,7 @@ spec:
 - The API server accepts a contract whose `auth.credentials` Secret does not exist yet, so you can create the Secret after the contract. The contract reports the missing Secret on `Ready`.
 - No field is immutable.
 
-### S3 with EKS Pod Identity
+## S3 with EKS Pod Identity
 
 A bucket bound through EKS Pod Identity, which needs no annotation. Bind the principal `system:serviceaccount:my-cluster-ns:my-cluster-camunda` on the cloud side:
 
@@ -215,7 +126,7 @@ spec:
       type: workloadIdentity
 ```
 
-### S3-compatible storage with static credentials
+## S3-compatible storage with static credentials
 
 S3-compatible storage with static keys, the shape that MinIO and Ceph need:
 
@@ -241,7 +152,7 @@ spec:
           secretAccessKeyKey: secretAccessKey
 ```
 
-### GCS for document storage
+## GCS for document storage
 
 A document storage bucket on Google Cloud, scoped to a key prefix:
 
