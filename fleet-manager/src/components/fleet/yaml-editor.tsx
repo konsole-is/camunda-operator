@@ -33,7 +33,7 @@ export function YamlEditor({
   const [text, setText] = useState(() =>
     defaultValue === undefined ? "" : stringify(defaultValue),
   );
-  const [errors, setErrors] = useState<ValidationError[]>([]);
+  const [, errors] = check(text, schema);
 
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -51,7 +51,6 @@ export function YamlEditor({
         onChange={(event) => {
           setText(event.target.value);
           const [value, found] = check(event.target.value, schema);
-          setErrors(found);
           onChange?.(value, found);
         }}
       />

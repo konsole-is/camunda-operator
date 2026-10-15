@@ -301,6 +301,28 @@ describe("YamlEditor", () => {
     expect(screen.getByText("replicas: must be integer")).toBeTruthy();
   });
 
+  it("checks the text again when the schema changes", () => {
+    const { rerender } = render(
+      <YamlEditor
+        label="Overrides"
+        defaultValue={{ replicas: "two" }}
+        schema={{ type: "object" }}
+      />,
+    );
+    expect(screen.queryByText(/must be integer/)).toBeNull();
+    rerender(
+      <YamlEditor
+        label="Overrides"
+        defaultValue={{ replicas: "two" }}
+        schema={{
+          type: "object",
+          properties: { replicas: { type: "integer" } },
+        }}
+      />,
+    );
+    expect(screen.getByText("replicas: must be integer")).toBeTruthy();
+  });
+
   it("treats empty text as no value", async () => {
     const onChange = vi.fn();
     render(
