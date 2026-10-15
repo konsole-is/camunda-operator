@@ -200,7 +200,8 @@ interface Answer {
 }
 
 // The serving certificate of the API server is self-signed, so send does not
-// verify it. A connection error gives status 0.
+// verify it. A connection error, or no answer within ten seconds, gives
+// status 0.
 function send(
   method: string,
   url: string,
@@ -222,6 +223,7 @@ function send(
       (response) => {
         const chunks: Buffer[] = [];
         response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("error", () => resolve({ status: 0, body: "" }));
         response.on("end", () =>
           resolve({
             status: response.statusCode ?? 0,
@@ -231,6 +233,7 @@ function send(
       },
     );
     request.on("error", () => resolve({ status: 0, body: "" }));
+    request.setTimeout(10_000, () => request.destroy());
     request.end(body);
   });
 }
