@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2188,8 +2188,8 @@
 
 <h1 id="crd-reference">CRD reference<a class="headerlink" href="#crd-reference" title="Permanent link">&para;</a></h1>
 <p>The operator defines the custom resources below in the API group <code>core.camunda.io/v1</code>.
-Each page opens with what the kind is and a minimal manifest. Then it covers one topic per section, and it ends with the status conditions and the full spec reference.</p>
-<p>The <a href="api-reference/">API reference</a> lists every type and field of the API group on one page, with its default and its validation. The page is generated from the API types, so it matches the CRDs of the same release.</p>
+Each page opens with what the kind is and a minimal manifest. Then it covers one topic per section. It ends with the status conditions, the validation rules, and examples.</p>
+<p>The <a href="api-reference/">API reference</a> lists every type and field of the API group on one page, with its default and its validation. Each kind page links its entry there. The page is generated from the API types, so it matches the CRDs of the same release.</p>
 <p>Some kinds need an operator that this operator does not install. <code>ElasticsearchCluster</code> needs the ECK operator. <code>DatabaseServer</code> needs the CloudNativePG operator, and <code>spec.archive</code> also needs the Barman Cloud plugin and cert-manager. <code>CamundaManagementCluster</code> with <code>spec.identityProvider.keycloak</code> needs the Keycloak Operator. Install what you use before the manager starts, or restart the manager after. See <a href="../installation/#requirements">Installation</a>.</p>
 <h2 id="cluster">Cluster<a class="headerlink" href="#cluster" title="Permanent link">&para;</a></h2>
 <table>

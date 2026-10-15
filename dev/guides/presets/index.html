@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2373,7 +2373,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span></code></pre></div>
 <p>The backup policy of the preset takes effect on a cluster that sets <code>spec.backupStorageRef</code>. A cluster without a bucket takes no backups and ignores the policy. See the <a href="../backup/">backup guide</a>.</p>
 <p>A <code>DatabaseServerPreset</code> carries the shape of a PostgreSQL server under <code>spec.server</code>, and its instance-bound fields are <code>presetRef</code>, <code>releaseRef</code>, <code>databaseServerConfig</code>, and <code>suspend</code>. Its <code>archive</code> block is inheritable, because one bucket serves a fleet and every server writes under a prefix of its own.</p>
-<p>The <a href="../../crds/camundaclusterpreset/">CamundaClusterPreset</a>, <a href="../../crds/elasticsearchclusterpreset/">ElasticsearchClusterPreset</a>, and <a href="../../crds/databaseserverpreset/">DatabaseServerPreset</a> pages list every field.</p>
+<p>The <a href="../../crds/camundaclusterpreset/">CamundaClusterPreset</a>, <a href="../../crds/elasticsearchclusterpreset/">ElasticsearchClusterPreset</a>, and <a href="../../crds/databaseserverpreset/">DatabaseServerPreset</a> pages give the merge rules and the fields that a preset must not set.</p>
 <p>Three ready-to-apply presets are in <a href="https://github.com/konsole-is/camunda-operator/tree/main/config/example/presets"><code>config/example/presets</code></a>, and the release that the example clusters and their storage name is in <a href="https://github.com/konsole-is/camunda-operator/tree/main/config/example/releases"><code>config/example/releases</code></a>. The <a href="https://github.com/konsole-is/camunda-operator/tree/main/config/example">example inventories</a> next to them name both. A <code>CamundaCluster</code> there keeps its references and the fields that belong to that one cluster. The example release is <code>camunda-8-9</code>, a release that you edit in place, see <a href="#change-a-fleet">Change a fleet</a>.</p>
 <h2 id="override-one-field">Override one field<a class="headerlink" href="#override-one-field" title="Permanent link">&para;</a></h2>
 <p>A cluster overrides a field of the preset by setting it. The other fields of the preset stay, except where the <a href="../../crds/camundaclusterpreset/#merge-rules">merge rules</a> say otherwise, for example for <code>auth.clientId</code>. A cluster that needs more brokers than <code>medium</code> gives, and nothing else:</p>
@@ -2408,10 +2408,10 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <ul>
 <li><a href="../authentication/">Authentication</a>: the auth defaults and the administrators that a preset carries, with a complete example.</li>
 <li><a href="../operations/">Operations</a>: how a preset change reaches the pods, and how storage grows.</li>
-<li><a href="../../crds/camundaclusterpreset/">CamundaClusterPreset</a>: every field and the merge rules.</li>
+<li><a href="../../crds/camundaclusterpreset/">CamundaClusterPreset</a>: the merge rules and the validation rules.</li>
 <li><a href="../../crds/camundarelease/">CamundaRelease</a>: the versions, the pinned images, and the environment of a rollout.</li>
-<li><a href="../../crds/elasticsearchclusterpreset/">ElasticsearchClusterPreset</a>: every field and the merge rules.</li>
-<li><a href="../../crds/databaseserverpreset/">DatabaseServerPreset</a>: every field and the merge rules.</li>
+<li><a href="../../crds/elasticsearchclusterpreset/">ElasticsearchClusterPreset</a>: the merge rules and the validation rules.</li>
+<li><a href="../../crds/databaseserverpreset/">DatabaseServerPreset</a>: the merge rules and the validation rules.</li>
 </ul>
 
 

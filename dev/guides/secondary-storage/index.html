@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2402,7 +2402,7 @@
 Hold "Alt" / "Option" to enable pan &amp; zoom
 </div>
 </div>
-<p>The contract carries the endpoint, the user Secret <code>my-cluster-es-es-user</code>, and the CA of the self-signed certificate. For backups, also set <code>spec.snapshotStorageRef</code>, see <a href="../backup/">Backup</a>. <a href="../../crds/elasticsearchcluster/">ElasticsearchCluster</a> has every field, the credentials, and the status.</p>
+<p>The contract carries the endpoint, the user Secret <code>my-cluster-es-es-user</code>, and the CA of the self-signed certificate. For backups, also set <code>spec.snapshotStorageRef</code>, see <a href="../backup/">Backup</a>. <a href="../../crds/elasticsearchcluster/">ElasticsearchCluster</a> has the credentials and the status, and links every field.</p>
 <h2 id="postgresql">PostgreSQL<a class="headerlink" href="#postgresql" title="Permanent link">&para;</a></h2>
 <p>The chain has two halves. The first half is the server, and you get it in one of two ways. The second half is the logical database on that server, and it is the same either way.</p>
 <p><a href="https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-cluster/rdbms"><code>config/example/camunda-cluster/rdbms</code></a> on the main branch is ready to apply. It takes the <code>DatabaseServer</code> route, and it holds the <code>Database</code>, the platform configuration, and the <code>CamundaCluster</code>.</p>
@@ -2614,7 +2614,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </div>
 </div>
 <p>The <code>Database</code> also creates the database, its roles, and their credential Secrets. <a href="../../crds/database/">Database</a> names them, and says how to rotate a password and what deletion keeps.</p>
-<p>For all fields, see <a href="../../crds/databaseserverconfig/">DatabaseServerConfig</a>, <a href="../../crds/database/">Database</a>, <a href="../../crds/databaseconfig/">DatabaseConfig</a>, and <a href="../../crds/secondarystorageconfig/">SecondaryStorageConfig</a>.</p>
+<p>For each kind, see <a href="../../crds/databaseserverconfig/">DatabaseServerConfig</a>, <a href="../../crds/database/">Database</a>, <a href="../../crds/databaseconfig/">DatabaseConfig</a>, and <a href="../../crds/secondarystorageconfig/">SecondaryStorageConfig</a>.</p>
 <h2 id="bring-your-own-backend">Bring your own backend<a class="headerlink" href="#bring-your-own-backend" title="Permanent link">&para;</a></h2>
 <p>If you already run Elasticsearch or a PostgreSQL database that the operator does not manage, write the contracts by hand. The <code>CamundaCluster</code> does not know who created them.</p>
 <p>The rule of <a href="#one-cluster-per-backend">one cluster per backend</a> holds for a hand-written contract. Write one contract per backend.</p>
@@ -2664,7 +2664,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-18-21"><a id="__codelineno-18-21" name="__codelineno-18-21" href="#__codelineno-18-21"></a><span class="w">  </span><span class="nt">rdbms</span><span class="p">:</span>
 </span><span id="__span-18-22"><a id="__codelineno-18-22" name="__codelineno-18-22" href="#__codelineno-18-22"></a><span class="w">    </span><span class="nt">databaseConfigRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-camunda-db</span>
 </span></code></pre></div>
-<p>The reference pages list every field: <a href="../../crds/secondarystorageconfig/">SecondaryStorageConfig</a>, <a href="../../crds/databaseconfig/">DatabaseConfig</a>, and <a href="../../crds/databaseserverconfig/">DatabaseServerConfig</a>. A backup of a hand-written Elasticsearch contract needs <code>elasticsearch.snapshotRepository</code> set by hand, after you register the repository yourself. A backup of a hand-written <code>DatabaseConfig</code> needs <code>backupCredentialsSecretRef</code>. The <a href="../backup/">backup guide</a> shows both.</p>
+<p>The reference pages describe each contract: <a href="../../crds/secondarystorageconfig/">SecondaryStorageConfig</a>, <a href="../../crds/databaseconfig/">DatabaseConfig</a>, and <a href="../../crds/databaseserverconfig/">DatabaseServerConfig</a>. A backup of a hand-written Elasticsearch contract needs <code>elasticsearch.snapshotRepository</code> set by hand, after you register the repository yourself. A backup of a hand-written <code>DatabaseConfig</code> needs <code>backupCredentialsSecretRef</code>. The <a href="../backup/">backup guide</a> shows both.</p>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../getting-started/">Getting started</a>: the full path from an empty namespace to a running orchestration cluster.</li>

@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2563,7 +2563,7 @@
 </span><span id="__span-4-35"><a id="__codelineno-4-35" name="__codelineno-4-35" href="#__codelineno-4-35"></a><span class="w">        </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">client-secret</span>
 </span></code></pre></div>
 <p>The platform config is cluster-scoped, so this Secret can live in any namespace. If it lives outside the namespace of a cluster, the operator copies the key into that namespace as the Secret <code>&lt;name&gt;-camunda-oidc-client</code>. When you change the client secret, the operator updates the copy and restarts the pods that read it.</p>
-<p><a href="../../crds/camundaplatformconfig/">CamundaPlatformConfig</a> lists every field of the block.</p>
+<p>The <a href="../../crds/api-reference/#camundaplatformconfigspec">API reference</a> lists every field of the block.</p>
 <h3 id="how-a-token-becomes-a-person-or-a-client">How a token becomes a person or a client<a class="headerlink" href="#how-a-token-becomes-a-person-or-a-client" title="Permanent link">&para;</a></h3>
 <p><code>usernameClaim</code> and <code>clientIdClaim</code> tell the cluster who is behind a token. The cluster reads a token in this order:</p>
 <ol>
