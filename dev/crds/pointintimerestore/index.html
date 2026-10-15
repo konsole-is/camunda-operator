@@ -2685,7 +2685,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </thead>
 <tbody>
 <tr>
-<td>Zeebe took a backup after the point</td>
+<td>Zeebe started a backup after the point</td>
 <td><code>spec.backup.primaryStorage.schedule</code></td>
 <td><code>PT1H</code></td>
 </tr>
@@ -2701,6 +2701,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>my-cluster-zeebe-0<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>curl<span class="w"> </span>-s<span class="w"> </span>localhost:9600/actuator/backupRuntime/state
 </span></code></pre></div>
+<p>In that answer, the <code>checkpointTimestamp</code> of a backup is the time that the backup finished. The <a href="https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/zeebe-backup-and-restore/#request-runtime-state">Camunda API reference</a> says that it is the time that the checkpoint was created. A backup covers the point when its <code>checkpointPosition</code> is at or past the exporter position that the database holds at the point. So a backup that finished after the point can fail to cover it.</p>
 <p>The point must also lie within the retention period that the <code>DatabaseServerConfig</code> declares, and not in the future.</p>
 <h3 id="what-goes-in-spectimestamp">What goes in spec.timestamp<a class="headerlink" href="#what-goes-in-spectimestamp" title="Permanent link">&para;</a></h3>
 <p><code>spec.timestamp</code> is the point that the database holds after the rollback. The cluster comes back at a Zeebe checkpoint near that point, not at the point itself. <code>spec.backup.primaryStorage.checkpointInterval</code> sets how far apart the checkpoints are, and it defaults to <code>PT15M</code>. A shorter value brings the cluster back closer to the point. Camunda documents the rule in <a href="https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/rdbms/rdbms-restore/#point-in-time-restore">Point-in-time restore</a>.</p>
