@@ -44,6 +44,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/pluginregistration"
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
@@ -61,8 +62,10 @@ type Options struct {
 	// GracePeriods are how long a workload or a datastore may take to become
 	// ready before its condition reports Degraded or Down.
 	GracePeriods grace.Periods
-	// OperatorVersion is the version of the operator build. The built-in
-	// PluginRegistrations carry it as the version of their controller.
+	// OperatorVersion is the version of the operator build, in strict semver.
+	// The built-in PluginRegistrations carry it as the version of their
+	// controller, and the PluginRegistration controller checks it against
+	// spec.operatorVersions.
 	OperatorVersion string
 	// ServiceAccount is the ServiceAccount of the operator. The built-in
 	// PluginRegistrations name it.
@@ -209,6 +212,14 @@ func Setup(mgr ctrl.Manager, opts Options) error {
 			return logicalrestorerdbms.New(
 				c, reader, scheme, logicalrestorerdbms.Options{CLIImage: opts.CLIImage, ClaimNamespace: opts.Namespace},
 			).SetupWithManager(mgr)
+		}},
+		{"PluginRegistration", func() error {
+			return (&pluginregistration.Reconciler{
+				Client:          c,
+				APIReader:       reader,
+				Scheme:          scheme,
+				OperatorVersion: opts.OperatorVersion,
+			}).SetupWithManager(mgr)
 		}},
 	}
 
