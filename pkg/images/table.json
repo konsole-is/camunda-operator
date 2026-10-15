@@ -12,7 +12,7 @@
       },
       "console": {
         "repository": "camunda/console",
-        "version": "8.9.122"
+        "version": "8.9.125"
       },
       "elasticsearch": {
         "version": "9.2.8"
