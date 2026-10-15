@@ -227,6 +227,7 @@ spec:
 ### Validation rules
 
 - `metadata.name` has at most 63 characters.
+- A name in `presets` or `releases.allowed`, and a key of `sections` or `parameters`, is not empty.
 - `releases.default` is empty or one of `releases.allowed`.
 - In each section policy, `default` is empty or one of `allowed`. `required: true` needs at least one name in `allowed`.
 - A parameter policy with `allowed` needs `claimEditable: true`. Each choice has a unique `name` of at most 63 characters and a `label` of at most 64 characters.

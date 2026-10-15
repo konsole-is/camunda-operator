@@ -57,6 +57,7 @@ type EnvironmentSpec struct {
 	// policy of its section allows. A section that is not listed offers
 	// only the empty option. A change applies to new claims only.
 	// +kubebuilder:validation:MaxProperties=64
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k.size() > 0)",message="sections cannot have an empty section name"
 	// +optional
 	Sections map[string]SectionPolicy `json:"sections,omitempty"`
 	// Parameters holds the policy of the parameters of each
@@ -64,6 +65,7 @@ type EnvironmentSpec struct {
 	// A parameter without a policy keeps the value of its registration, and
 	// a claim cannot change it. A change applies to new claims only.
 	// +kubebuilder:validation:MaxProperties=64
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k.size() > 0)",message="parameters cannot have an empty registration name"
 	// +optional
 	Parameters map[string]ParameterPolicies `json:"parameters,omitempty"`
 	// DeletionPolicy is the deletion policy of a claim of the environment
@@ -86,16 +88,19 @@ type EnvironmentPresets struct {
 	// CamundaCluster are the names of the CamundaClusterPresets that a
 	// cluster claim can use.
 	// +listType=set
+	// +kubebuilder:validation:items:MinLength=1
 	// +optional
 	CamundaCluster []string `json:"camundaCluster,omitempty"`
 	// ElasticsearchCluster are the names of the ElasticsearchClusterPresets
 	// that the built-in Elasticsearch of a claim can use.
 	// +listType=set
+	// +kubebuilder:validation:items:MinLength=1
 	// +optional
 	ElasticsearchCluster []string `json:"elasticsearchCluster,omitempty"`
 	// DatabaseServer are the names of the DatabaseServerPresets that the
 	// built-in PostgreSQL of a claim can use.
 	// +listType=set
+	// +kubebuilder:validation:items:MinLength=1
 	// +optional
 	DatabaseServer []string `json:"databaseServer,omitempty"`
 }
