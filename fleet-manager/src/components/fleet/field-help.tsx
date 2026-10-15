@@ -50,22 +50,26 @@ export function FieldHelp({
         <CircleHelp aria-hidden className="size-4" />
       </button>
       {open && (
-        <span
-          id={id}
-          role="note"
-          className="absolute top-full left-0 z-20 mt-1 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-panel-2 p-3 text-sm font-normal text-text-2 shadow-lg"
-        >
-          {paragraphs(doc.description).map((text, i) => (
-            <span key={i}>{text}</span>
-          ))}
-          <a
-            href={apiReferenceUrl(operatorVersion, doc.anchor)}
-            target="_blank"
-            rel="noreferrer"
-            className="text-info underline-offset-4 hover:underline"
+        // Padding, not a margin: a gap outside the box ends the hover
+        // before the pointer reaches the link.
+        <span className="absolute top-full left-0 z-20 pt-1">
+          <span
+            id={id}
+            role="note"
+            className="flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-panel-2 p-3 text-sm font-normal text-text-2 shadow-lg"
           >
-            API reference
-          </a>
+            {paragraphs(doc.description).map((text, i) => (
+              <span key={i}>{text}</span>
+            ))}
+            <a
+              href={apiReferenceUrl(operatorVersion, doc.anchor)}
+              target="_blank"
+              rel="noreferrer"
+              className="text-info underline-offset-4 hover:underline"
+            >
+              API reference
+            </a>
+          </span>
         </span>
       )}
     </span>
