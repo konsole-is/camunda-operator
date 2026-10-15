@@ -93,6 +93,19 @@ describe("ReviewPanel", () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
+  it("goes back inside a form without a submit", async () => {
+    const onSubmit = vi.fn((event: Event) => event.preventDefault());
+    const onCancel = vi.fn();
+    render(
+      <form onSubmit={(event) => onSubmit(event.nativeEvent)}>
+        {panel({ onCancel })}
+      </form>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("blocks the confirm while the write runs", () => {
     render(panel({ pending: true }));
     expect(
