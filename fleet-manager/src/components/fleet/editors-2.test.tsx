@@ -356,6 +356,26 @@ describe("YamlEditor", () => {
     ]);
   });
 
+  it.each([[".nan"], [".inf"], ["-.inf"]])(
+    "reports a nested %s as an error",
+    async (number) => {
+      const onChange = vi.fn();
+      render(
+        <YamlEditor
+          label="Overrides"
+          defaultValue={{ a: { weight: null } }}
+          onChange={onChange}
+        />,
+      );
+      const box = screen.getByRole("textbox", { name: "Overrides" });
+      await userEvent.clear(box);
+      await userEvent.type(box, `a:{enter}  weight: ${number}`);
+      expect(onChange).toHaveBeenLastCalledWith(undefined, [
+        { path: "", message: "Use a finite number, not .nan or .inf" },
+      ]);
+    },
+  );
+
   it("reports a cleared null value as no value", async () => {
     const onChange = vi.fn();
     render(

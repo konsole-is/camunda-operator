@@ -100,7 +100,19 @@ function check(
       [{ path: "", message: "An alias refers to the value that holds it" }],
     ];
   }
+  // A claim travels as JSON, which has no NaN or Infinity.
+  if (!finite(value))
+    return [
+      undefined,
+      [{ path: "", message: "Use a finite number, not .nan or .inf" }],
+    ];
   if (!schema) return [value, []];
   const result = validate(schema, value);
   return [value, result.ok ? [] : result.errors];
+}
+
+function finite(value: unknown): boolean {
+  if (typeof value === "number") return Number.isFinite(value);
+  if (value === null || typeof value !== "object") return true;
+  return Object.values(value).every(finite);
 }
