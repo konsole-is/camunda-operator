@@ -142,125 +142,11 @@ A plugin controller that writes the status of its registration must keep the `Ac
 
 `status.observedGeneration` is the last generation that a controller of the registration processed.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#pluginregistration) lists every field of `PluginRegistration`, with its type and its validation. The `label`, `description`, `docsUrl`, `controller`, `choices`, `limits`, and `metricQueries` fields change only what the fleet manager shows.
 
-```yaml
-apiVersion: plugins.camunda.io/v1alpha1
-kind: PluginRegistration
-metadata:
-  # string. Required. The name of the registration. At most 63 characters.
-  name: s3-backup-bucket
-spec:
-  # list of strings. Required. The names of the sections that the option serves. At least one.
-  sections:
-    - backup-storage
-  # string. Required. The name of the option in the fleet manager. It names the outcome.
-  label: New S3 bucket
-  # string. Optional. What the option does.
-  description: Creates one S3 bucket for the backups of each cluster.
-  # string. Optional. The address of the documentation of the option.
-  docsUrl: https://example.com/docs/s3-backup-bucket
-  # Default or Optional. Required. See "Mode".
-  mode: Optional
-  # object. Optional. The plugin controller that serves the option.
-  controller:
-    # string. Required. The name of the plugin controller.
-    name: s3-backup-bucket-controller
-    # string. Optional. The version of the plugin controller.
-    version: 0.1.0
-  # object. Required. The ServiceAccount of the plugin controller.
-  serviceAccount:
-    # string. Required. A namespace name.
-    namespace: camunda-plugins
-    # string. Required. A ServiceAccount name.
-    name: s3-backup-bucket-controller
-  # string. Optional. The semver range of the operator versions that the plugin supports. Empty accepts every version.
-  operatorVersions: ">=0.3.0 <1.0.0"
-  # object. Optional. The OpenAPI v3 schema of the parameters of a request.
-  parameters:
-    type: object
-    properties:
-      retentionDays:
-        type: integer
-        minimum: 1
-  # object. Optional. The parameter values that the admin set in the plugin chart.
-  parameterValues:
-    retentionDays: 30
-  # list of strings. Optional. The parameters that a claim can change.
-  claimEditable:
-    - retentionDays
-  # list. Optional. The presets or existing resources that a claim can pick for a parameter.
-  choices:
-      # string. Required. The value that the claim stores.
-    - name: standard
-      # list. Optional. The facts that the fleet manager shows for the choice.
-      specs:
-          # string. Required. The name of the fact.
-        - label: Retention
-          # string. Required. The value of the fact.
-          value: 30 days
-  # list. Optional, at most 32. The values that the option reads from other sections.
-  inputs:
-      # string. Required. The name of the input. At most 63 characters.
-    - name: kmsKey
-      # string. Required. The output that gives the value, as <section>/<output>.
-      from: encryption-key/keyRef
-      # boolean. Optional, default: false. Refuse a selection while the input has no value.
-      required: false
-      # list of strings. Optional. The formats that the option accepts. Empty accepts every format.
-      formats:
-        - aws-kms-arn
-  # list. Optional. The values that the plugin writes to the status of a request.
-  outputs:
-      # string. Required. A letter, then letters and digits.
-    - key: objectStorageConfig
-      # string. Optional. What the value is.
-      description: The name of the ObjectStorageConfig that points at the bucket.
-      # string. Optional. The format of the value.
-      # format: aws-kms-arn
-  # list. Optional. The values that the plugin chart fixes, which no Environment and no claim can change.
-  limits:
-      # string. Required. The name of the limit.
-    - label: Region
-      # string. Required. The value of the limit.
-      value: eu-west-1
-      # string. Optional. What the limit means for a claim.
-      description: The chart creates every bucket in this region.
-  # list. Optional, at most 32. The permission statements that the option asks for.
-  grantTemplates:
-      # string. Required. The name of the template.
-    - name: bucket-access
-      # aws-iam-statement. Required. The format of the statement.
-      format: aws-iam-statement
-      # string. Optional. What the permission is for.
-      description: Lets the cluster read and write its backups.
-      # list of strings. Optional, at most 32. The inputs that must have a value first.
-      requiresInputs:
-        - kmsKey
-      # object. Required. The statement, with placeholders.
-      template:
-        Effect: Allow
-        Action: ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
-        Resource: ["arn:aws:s3:::{{ .request }}", "arn:aws:s3:::{{ .request }}/*"]
-  # list of Delete or Orphan. Required. The deletion policies that the plugin supports. It must contain Delete.
-  deletionPolicies:
-    - Delete
-    - Orphan
-  # list. Optional. The Prometheus queries that the fleet manager shows for a request.
-  metricQueries:
-      # string. Required. The name of the metric.
-    - label: Bucket size
-      # string. Required. PromQL with placeholders.
-      query: 'sum(aws_s3_bucket_size_bytes{bucket="{{ .request }}"})'
-      # string. Optional. The unit of the value.
-      unit: bytes
-```
-
-The `label`, `description`, `docsUrl`, `controller`, `choices`, `limits`, and `metricQueries` fields change only what the fleet manager shows.
-
-### Validation rules
+## Validation rules
 
 The API server refuses a registration when:
 
@@ -271,6 +157,76 @@ The API server refuses a registration when:
 - Two inputs have the same `name`, two outputs have the same `key`, or two grant templates have the same `name`.
 - `inputs` or `grantTemplates` has more than 32 items, or `deletionPolicies` has more than 2.
 - The name is longer than 63 characters: `metadata.name must be at most 63 characters, because it is used as a label value`.
+
+## A registration with inputs and grant templates
+
+This option creates one S3 bucket for the backups of each cluster. It reads the key of the section `encryption-key` and asks for access to the bucket:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  name: s3-backup-bucket
+spec:
+  sections:
+    - backup-storage
+  label: New S3 bucket
+  description: Creates one S3 bucket for the backups of each cluster.
+  docsUrl: https://example.com/docs/s3-backup-bucket
+  mode: Optional
+  controller:
+    name: s3-backup-bucket-controller
+    version: 0.1.0
+  serviceAccount:
+    namespace: camunda-plugins
+    name: s3-backup-bucket-controller
+  operatorVersions: ">=0.3.0 <1.0.0"
+  parameters:
+    type: object
+    properties:
+      retentionDays:
+        type: integer
+        minimum: 1
+  parameterValues:
+    retentionDays: 30
+  claimEditable:
+    - retentionDays
+  choices:
+    - name: standard
+      specs:
+        - label: Retention
+          value: 30 days
+  inputs:
+    - name: kmsKey
+      from: encryption-key/keyRef
+      required: false
+      formats:
+        - aws-kms-arn
+  outputs:
+    - key: objectStorageConfig
+      description: The name of the ObjectStorageConfig that points at the bucket.
+  limits:
+    - label: Region
+      value: eu-west-1
+      description: The chart creates every bucket in this region.
+  grantTemplates:
+    - name: bucket-access
+      format: aws-iam-statement
+      description: Lets the cluster read and write its backups.
+      requiresInputs:
+        - kmsKey
+      template:
+        Effect: Allow
+        Action: ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+        Resource: ["arn:aws:s3:::{{ .request }}", "arn:aws:s3:::{{ .request }}/*"]
+  deletionPolicies:
+    - Delete
+    - Orphan
+  metricQueries:
+    - label: Bucket size
+      query: 'sum(aws_s3_bucket_size_bytes{bucket="{{ .request }}"})'
+      unit: bytes
+```
 
 ## Related
 
