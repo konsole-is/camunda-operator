@@ -45,7 +45,9 @@ export function LogViewer({
   );
   const levels = [
     ...new Set(
-      lines.map((l) => l.level?.toLowerCase()).filter((l): l is string => !!l),
+      [...kept.map((l) => l.level?.toLowerCase()), level].filter(
+        (l): l is string => !!l,
+      ),
     ),
   ];
 
@@ -160,7 +162,11 @@ export function LogViewer({
 function countAfter(shown: LogLine[], lines: LogLine[]): number {
   const last = shown.at(-1);
   if (!last) return lines.length;
+  // Identity first, so a repeated line counts. Content for a caller that
+  // builds new line objects for each render.
   const key = (l: LogLine) => `${l.time}\n${l.raw}\n${l.message}`;
-  const index = lines.findLastIndex((l) => key(l) === key(last));
+  const same = lines.lastIndexOf(last);
+  const index =
+    same !== -1 ? same : lines.findLastIndex((l) => key(l) === key(last));
   return index === -1 ? lines.length : lines.length - 1 - index;
 }

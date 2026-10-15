@@ -128,6 +128,22 @@ describe("LogViewer", () => {
     expect(screen.getByText("1 new line")).toBeTruthy();
   });
 
+  it("counts a new line that repeats a shown line", async () => {
+    const shown = line("retrying");
+    const { rerender } = render(<LogViewer lines={[shown]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Pause" }));
+    rerender(<LogViewer lines={[shown, line("retrying")]} />);
+    expect(screen.getByText("1 new line")).toBeTruthy();
+  });
+
+  it("keeps the level of the paused lines in the level list", async () => {
+    const warn = line("slow disk", "warn");
+    const { rerender } = render(<LogViewer lines={[warn]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Pause" }));
+    rerender(<LogViewer lines={[line("started")]} />);
+    expect(screen.getByRole("option", { name: "warn" })).toBeTruthy();
+  });
+
   it("filters by level and by text", async () => {
     render(
       <LogViewer
