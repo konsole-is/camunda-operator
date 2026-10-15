@@ -669,7 +669,17 @@ function sectionErrors(
         if (rule.required) errors.push({ path, message: "is required" });
         continue;
       }
-      if (!rule.schema || rule.allowed) continue;
+      if (rule.allowed) {
+        const names = new Set(rule.allowed.map((a) => a.name));
+        for (const picked of Array.isArray(value) ? value : [value])
+          if (!names.has(picked as string))
+            errors.push({
+              path,
+              message: `${picked} is not an allowed choice`,
+            });
+        continue;
+      }
+      if (!rule.schema) continue;
       const result = validate(rule.schema, value);
       if (!result.ok)
         for (const e of result.errors)

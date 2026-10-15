@@ -331,6 +331,35 @@ describe("SectionCards", () => {
     ]);
   });
 
+  it("reports a picked name that the new allowed list no longer holds", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SectionCards section={section()} onChange={onChange} />,
+    );
+    const group = screen.getByRole("group", { name: "Policies" });
+    await userEvent.click(
+      within(group).getByRole("checkbox", { name: "S3 read" }),
+    );
+    const narrowed = awsRole();
+    narrowed.parameters = narrowed.parameters.map((rule) =>
+      rule.name === "policies" && rule.claimEditable
+        ? {
+            ...rule,
+            allowed: allowedFromEnvironment.filter((a) => a.name !== "s3"),
+          }
+        : rule,
+    );
+    rerender(
+      <SectionCards section={section({}, narrowed)} onChange={onChange} />,
+    );
+    expect(onChange.mock.lastCall![1]).toEqual([
+      {
+        path: "aws-connectors-role.policies",
+        message: "s3 is not an allowed choice",
+      },
+    ]);
+  });
+
   it("drops a selected option that the new options no longer hold", () => {
     const onChange = vi.fn();
     const { rerender } = render(
