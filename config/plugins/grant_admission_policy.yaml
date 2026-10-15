@@ -1,0 +1,37 @@
+# Admits a Grant only from a requester that has the RBAC verb serve on the
+# PluginRegistration named in the label plugins.camunda.io/registration.
+# Each plugin chart gives its controller that verb on its own registrations.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: plugins.camunda.io-grant-author
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["plugins.camunda.io"]
+      apiVersions: ["*"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["grants"]
+  variables:
+  - name: registration
+    expression: >-
+      has(object.metadata.labels) && 'plugins.camunda.io/registration' in object.metadata.labels
+      ? object.metadata.labels['plugins.camunda.io/registration'] : ''
+  validations:
+  - expression: "variables.registration != ''"
+    message: >-
+      a Grant must carry the label plugins.camunda.io/registration with the name
+      of the PluginRegistration that it belongs to
+  - expression: >-
+      variables.registration == '' ||
+      authorizer.group('plugins.camunda.io').resource('pluginregistrations')
+      .name(variables.registration).check('serve').allowed()
+    messageExpression: >-
+      'the requester ' + request.userInfo.username +
+      ' does not have the verb serve on the PluginRegistration ' + variables.registration +
+      ', so it cannot write a Grant for it'
+    reason: Forbidden
+  - expression: "object.spec.format == 'aws-iam-statement'"
+    messageExpression: >-
+      'the format ' + object.spec.format + ' is not supported. Use aws-iam-statement'
