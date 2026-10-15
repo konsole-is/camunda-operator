@@ -261,14 +261,19 @@ func brokerClaims(cluster *v1.CamundaCluster) map[string]corev1.PersistentVolume
 	return claims
 }
 
-// psql runs sql against the logical database of the flow in namespace, as the
-// user whose credentials Secret ref names. It returns the unaligned,
-// tuples-only output.
+// psql runs sql against the logical database of the flow in namespace, on
+// the PostgreSQL Service that the suite deploys, as the user whose
+// credentials Secret ref names. It returns the unaligned, tuples-only output.
+func psql(namespace, name string, ref v1.LocalCredentialsSecretRef, sql string) (string, error) {
+	return psqlOn(namespace, postgresService, name, ref, sql)
+}
+
+// psqlOn is psql against the PostgreSQL server at host.
 //
 // The pod name carries a random suffix. RunPod deletes its pod at the end and
 // swallows the error of that delete, so a fixed name makes the next create
 // fail with AlreadyExists.
-func psql(namespace, name string, ref v1.LocalCredentialsSecretRef, sql string) (string, error) {
+func psqlOn(namespace, host, name string, ref v1.LocalCredentialsSecretRef, sql string) (string, error) {
 	return utils.RunPod(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "psql-" + name + "-" + utilrand.String(5),
@@ -281,7 +286,7 @@ func psql(namespace, name string, ref v1.LocalCredentialsSecretRef, sql string) 
 				Image:   "mirror.gcr.io/library/postgres:17",
 				Command: []string{"psql", "-v", "ON_ERROR_STOP=1", "-tA", "-c", sql},
 				Env: []corev1.EnvVar{
-					{Name: "PGHOST", Value: postgresService},
+					{Name: "PGHOST", Value: host},
 					{Name: "PGDATABASE", Value: dbDatabaseName},
 					utils.SecretEnv("PGUSER", ref.Name, ref.UsernameKey),
 					utils.SecretEnv("PGPASSWORD", ref.Name, ref.PasswordKey),

@@ -92,7 +92,7 @@ const (
 	// two runs ahead.
 	pitrClockGap = 10 * time.Second
 	// pitrBackupCoverage bounds the wait for a primary-storage backup that
-	// reaches past the point. That backup is where the cluster comes back, so
+	// covers the point. That backup is where the cluster comes back, so
 	// the flow waits for it before it writes what must not survive. The worst
 	// case is two minutes for the schedule of the flow, one for its checkpoint
 	// interval, and the duration of one backup. The bound leaves room above
@@ -762,7 +762,7 @@ func itFailsAPointInTimeRestoreAheadOfEveryBackup(cluster *v1.CamundaCluster) {
 // starts the cluster again.
 //
 // The specs write on both sides of one point. A restore brings the cluster
-// back at the first primary-storage backup taken at or after that point. Zeebe
+// back at the first primary-storage backup that covers that point. Zeebe
 // then re-exports every record up to the checkpoint of that backup. kept ran
 // before the point and comes back. lost starts after that backup. It is in
 // neither the recovered database nor the restored Zeebe log, so it never
@@ -798,26 +798,26 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 
 		at = time.Now().UTC().Truncate(time.Second)
 
-		// Two reasons to wait for a backup past the point. The cluster comes
-		// back at the first primary-storage backup taken at or after the
+		// Two reasons to wait for a backup that covers the point. The cluster
+		// comes back at the first primary-storage backup that covers the
 		// point, so lost has to start after that backup to stay gone. A point
-		// that no backup reached yet also fails the restore, after it erased
-		// the broker volumes.
-		By("waiting until every partition holds a backup past the point")
+		// that no backup covers also fails the restore, after it erased the
+		// broker volumes.
+		By("reading the exporter positions that the database holds at the point")
+		exported := exporterPositionsAfter(cluster, server, at)
 		partitions := int(components.NewEffective(cluster.Spec).Partitions())
+		Expect(exported).To(HaveLen(partitions))
+
+		By("waiting until a backup of every partition covers those positions")
 		Eventually(func(g Gomega) {
-			backups, err := latestBackups(cluster)
+			backups, err := latestBackupPositions(cluster)
 			g.Expect(err).NotTo(HaveOccurred())
 
-			var behind []int
-			for partition := 1; partition <= partitions; partition++ {
-				if taken, ok := backups[partition]; !ok || !taken.After(at) {
-					behind = append(behind, partition)
-				}
-			}
-			g.Expect(behind).To(
+			uncovered := utils.UncoveredPartitions(exported, backups)
+			g.Expect(uncovered).To(
 				BeEmpty(),
-				"of the %d partitions, %v hold no backup past the point", partitions, behind,
+				"no backup covers the exporter position of partitions %v: exported %v, backups %v",
+				uncovered, exported, backups,
 			)
 		}, pitrBackupCoverage, 10*time.Second).Should(Succeed())
 
@@ -965,15 +965,42 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 	})
 }
 
-// latestBackups returns the time of the newest primary-storage backup that
-// each partition of cluster holds, by partition id. Camunda serves it on the
-// runtime state endpoint of the broker management port:
+// exporterPositionsAfter returns the exporter position of each partition, by
+// partition id, that the database of server holds after at by the clock of
+// PostgreSQL. The position only grows, so a backup that covers it also covers
+// the position at the point. A recovery stops by the clock of PostgreSQL,
+// which can differ from the clock of the suite.
+func exporterPositionsAfter(cluster *v1.CamundaCluster, server string, at time.Time) map[int]int64 {
+	var contract v1.DatabaseServerConfig
+	Expect(utils.Get(dbServerResource, server, cluster.Namespace, &contract)).To(Succeed())
+
+	credentials := applicationCredentials(cluster)
+	query := fmt.Sprintf(
+		"SELECT partition_id, last_exported_position FROM exporter_position WHERE now() > '%s'",
+		at.Format(time.RFC3339),
+	)
+
+	var exported map[int]int64
+	Eventually(func(g Gomega) {
+		out, err := psqlOn(cluster.Namespace, contract.Spec.Host, "exported", credentials, query)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		exported, err = utils.ExporterPositions(out)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(exported).NotTo(BeEmpty(), "the clock of PostgreSQL has not passed %s", at)
+	}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+	return exported
+}
+
+// latestBackupPositions returns the checkpoint position of the newest backup
+// that each partition of cluster holds, by partition id. Camunda serves it on
+// the runtime state endpoint of the broker management port:
 // https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/zeebe-backup-and-restore/#request-runtime-state
 //
-// Zeebe numbers the partitions from one. The ids come from the answer, so a
-// cluster of any partition count is read the same way, and a partition that
-// holds no backup yet is absent from the map.
-func latestBackups(cluster *v1.CamundaCluster) (map[int]time.Time, error) {
+// The checkpoint position is what a restore compares with the exporter
+// position. A partition that holds no backup is absent from the map.
+func latestBackupPositions(cluster *v1.CamundaCluster) (map[int]int64, error) {
 	url := fmt.Sprintf(
 		"http://%s.%s.svc:%d/actuator/backupRuntime/state",
 		components.WorkloadName(cluster, components.ComponentZeebe),
@@ -998,30 +1025,12 @@ func latestBackups(cluster *v1.CamundaCluster) (map[int]time.Time, error) {
 		return nil, err
 	}
 
-	var state struct {
-		BackupStates []struct {
-			PartitionID int    `json:"partitionId"`
-			Timestamp   string `json:"checkpointTimestamp"`
-		} `json:"backupStates"`
-	}
-	if err := json.Unmarshal([]byte(out), &state); err != nil {
-		return nil, fmt.Errorf(
-			"decoding the backup state of %s/%s: %w", cluster.Namespace, cluster.Name, err,
-		)
+	positions, err := utils.BackupPositions([]byte(out))
+	if err != nil {
+		return nil, fmt.Errorf("reading the backups of %s/%s: %w", cluster.Namespace, cluster.Name, err)
 	}
 
-	backups := map[int]time.Time{}
-	for _, backup := range state.BackupStates {
-		taken, err := utils.ParseCheckpointTime(backup.Timestamp)
-		if err != nil {
-			return nil, err
-		}
-		if current, ok := backups[backup.PartitionID]; !ok || taken.After(current) {
-			backups[backup.PartitionID] = taken
-		}
-	}
-
-	return backups, nil
+	return positions, nil
 }
 
 // applicationCredentials returns the application credentials of the logical
