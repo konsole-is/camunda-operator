@@ -156,30 +156,39 @@ class KindInformer {
           raw?: unknown,
         ) => void,
         done: (err: unknown) => void,
-      ) =>
-        deps.watch.watch(
-          watchPath,
-          params,
-          (phase, object, raw) =>
-            callback(
-              phase,
-              ["ADDED", "MODIFIED", "DELETED"].includes(phase)
-                ? shape(object)
-                : object,
-              raw,
-            ),
-          // done of ListWatch is async and the client does not await it, so
-          // a watch that cannot start again would reject with no handler.
-          (err) => {
-            // A watch that ends with no error or at its request timeout ran.
-            if (!err || (err as Error).name === "TimeoutError") {
-              this.retryDelay = deps.retryDelayMs;
-            }
-            void (done(err) as unknown as Promise<void>).catch((e: unknown) =>
-              this.onError(e),
-            );
-          },
-        ),
+      ) => {
+        // ListWatch does not check that it stopped after the first list or
+        // after the reconnect delay, so a stopped informer opens no watch.
+        if (this.stopped) return Promise.resolve(new AbortController());
+        return deps.watch
+          .watch(
+            watchPath,
+            params,
+            (phase, object, raw) =>
+              callback(
+                phase,
+                ["ADDED", "MODIFIED", "DELETED"].includes(phase)
+                  ? shape(object)
+                  : object,
+                raw,
+              ),
+            // done of ListWatch is async and the client does not await it, so
+            // a watch that cannot start again would reject with no handler.
+            (err) => {
+              // A watch that ends with no error or at its request timeout ran.
+              if (!err || (err as Error).name === "TimeoutError") {
+                this.retryDelay = deps.retryDelayMs;
+              }
+              void (done(err) as unknown as Promise<void>).catch((e: unknown) =>
+                this.onError(e),
+              );
+            },
+          )
+          .then((request) => {
+            if (this.stopped) request.abort();
+            return request;
+          });
+      },
     } as unknown as Watch;
 
     // The client ends each watch after a request timeout of 30 seconds, also

@@ -242,6 +242,42 @@ describe("ResourceCache", () => {
     expect(list).toHaveBeenCalledTimes(1);
   });
 
+  it("opens no watch when it stops while the first list waits", async () => {
+    let answer: (list: KubernetesListObject<KubernetesObject>) => void;
+    const list = () =>
+      new Promise<KubernetesListObject<KubernetesObject>>(
+        (resolve) => (answer = resolve),
+      );
+    const { cache, watch } = newCache({ list });
+
+    const read = cache.objects("Environment").catch(() => []);
+    await vi.waitFor(() => expect(answer).toBeDefined());
+    await cache.stop();
+    answer!(listOf([item("a")], "1"));
+    await read;
+
+    expect(watch.calls).toHaveLength(0);
+  });
+
+  it("opens no watch when it stops while a reconnect waits", async () => {
+    const { cache, watch } = newCache({
+      list: async () => listOf([item("a")], "1"),
+      timeoutReconnectMs: 50,
+    });
+    await cache.objects("Environment");
+    const timeout = () =>
+      Object.assign(new Error("timed out"), { name: "TimeoutError" });
+    // The first reconnect of ListWatch does not wait. The second waits.
+    watch.calls[0].done(timeout());
+    await vi.waitFor(() => expect(watch.calls).toHaveLength(2));
+    watch.calls[1].done(timeout());
+
+    await cache.stop();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(watch.calls).toHaveLength(2);
+  });
+
   it("watches again from the last resourceVersion after a watch error", async () => {
     const list = vi.fn(async () => listOf([item("a")], "10"));
     const { cache, watch } = newCache({ list });
