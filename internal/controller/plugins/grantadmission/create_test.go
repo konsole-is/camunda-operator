@@ -73,9 +73,9 @@ var _ = Describe("Grant admission on create", func() {
 		}, envtest.Timeout, envtest.Interval).Should(MatchError(ContainSubstring(messageMissingLabel)))
 	})
 
-	// The CRD enum refuses the format before the policy runs. The policy rule
-	// acts when the enum gets a format that no identity extension supports.
-	It("refuses a Grant with an unknown format, and names the format", func() {
+	// The format rule of the policy acts only when the enum gets a format that
+	// no identity extension supports.
+	It("refuses a Grant with an unknown format through the CRD schema, and names the format", func() {
 		grant := newGrant(grantLabels(sampleRegistration))
 		grant.Spec.Format = "gcp-iam-binding"
 

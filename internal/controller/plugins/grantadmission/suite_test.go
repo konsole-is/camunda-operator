@@ -60,8 +60,8 @@ var _ = BeforeSuite(func() {
 	By("installing the admission objects that the operator ships")
 	applyKustomization(filepath.Join("config", "plugins"))
 
-	By("installing the sample role of a plugin chart")
-	applyManifests(filepath.Join("config", "samples", "plugins_serve_clusterrole.yaml"))
+	By("installing the example role of a plugin chart")
+	applyManifests(filepath.Join("config", "plugins", "example_serve_clusterrole.yaml"))
 
 	By("giving a second ServiceAccount write access to grants, without serve")
 	bindClusterRole(

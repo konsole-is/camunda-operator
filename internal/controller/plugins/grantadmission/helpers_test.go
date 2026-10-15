@@ -42,7 +42,7 @@ import (
 
 const (
 	// sampleRegistration, pluginNamespace, and pluginServiceAccount are the
-	// names of config/samples/plugins_serve_clusterrole.yaml and of the
+	// names of config/plugins/example_serve_clusterrole.yaml and of the
 	// PluginRegistration sample.
 	sampleRegistration   = "s3-backup-bucket"
 	pluginNamespace      = "camunda-plugins"

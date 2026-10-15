@@ -56,7 +56,7 @@ kubectl get grants -n my-cluster-ns -l plugins.camunda.io/cluster=orders
 
 ## Who can write a grant
 
-A plugin chart gives the ServiceAccount of its controller the RBAC verb `serve` on its own registrations. Put the names of these registrations in `resourceNames`. A `PluginRegistration` is cluster-scoped, so `serve` needs a ClusterRole. The same role gives the controller write access to grants. The repository holds this example as `config/samples/plugins_serve_clusterrole.yaml`:
+A plugin chart gives the ServiceAccount of its controller the RBAC verb `serve` on its own registrations. Put the names of these registrations in `resourceNames`. A `PluginRegistration` is cluster-scoped, so `serve` needs a ClusterRole that a ClusterRoleBinding binds. A RoleBinding of the ClusterRole does not give `serve`. The same role gives the controller write access to grants. The repository holds this example as `config/plugins/example_serve_clusterrole.yaml`:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -86,7 +86,7 @@ subjects:
   name: s3-backup-bucket-controller
 ```
 
-The chart does not ship an admission policy of its own. The operator installs one policy for all plugins. To see it, run `kubectl get validatingadmissionpolicies`. With `install.yaml`, or with a Helm release named `camunda-operator`, its name is `camunda-operator-plugins.camunda.io-grant-author`. A Helm release with another name puts the release name first, for example `my-release-camunda-operator-plugins.camunda.io-grant-author`.
+The chart does not ship an admission policy of its own. The operator installs one policy for all plugins. With `install.yaml`, its name is `camunda-operator-plugins.camunda.io-grant-author`. With a Helm install, the name depends on the release. To find it, run `kubectl get validatingadmissionpolicies`.
 
 The API server admits a grant from a requester that has `serve` on the registration that the label `plugins.camunda.io/registration` names. The grant must have this label, with a value that is not empty. Its `spec.format` must be `aws-iam-statement`. A change of the label needs `serve` on the old registration and on the new registration. Thus the controller of one registration cannot take the grant of another registration.
 

@@ -138,7 +138,7 @@ var _ = Describe("Grant admission on update", func() {
 		}, envtest.Timeout, envtest.Interval).Should(MatchError(ContainSubstring(messageMissingLabel)))
 	})
 
-	It("lets the identity extension write the status without serve", func() {
+	It("admits a status write by a requester without serve", func() {
 		bindClusterRole(
 			"identity-extension",
 			pluginNamespace,
