@@ -90,17 +90,55 @@ Each entry of `grantTemplates` is one permission statement that the option asks 
 
 `requiresInputs` names the inputs that must have a value before the plugin writes the grant. A metric query in `metricQueries` uses the same placeholders, and also `{{ .pods }}`, a regular expression of the pod names of the request.
 
+## Acceptance
+
+The operator checks each registration and reports the result in the `Accepted` condition. The fleet manager offers the option only when `Accepted` and `Ready` are both `True`. The operator sets only `Accepted`. The plugin controller sets `Ready`.
+
+The operator accepts a registration when all of these are true:
+
+- Each name in `spec.sections` names a `PluginSection`.
+- The version of the operator is inside `spec.operatorVersions`.
+- In each section, no other registration has `mode: Default` when this one has it.
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  name: s3-backup-bucket
+spec:
+  sections:
+    - backup-storage
+  mode: Optional
+  operatorVersions: ">=0.3.0 <1.0.0"
+  # ... the rest of your registration
+```
+
+A registration without `operatorVersions` works with every operator version. A prerelease of the operator, such as `0.3.0-rc.1`, is outside a range like `>=0.3.0 <1.0.0`. To include the prereleases, write `>=0.3.0-0 <1.0.0`.
+
+When a check fails, `Accepted` is `False`. The message names the missing sections, the version and the range, or the other `Default` registrations. The checks run in the order of the list above, and the message names the first failure only. The operator checks the registration again when one of its sections, or another registration of one of its sections, is created, changed, or deleted.
+
+```yaml
+status:
+  conditions:
+    - type: Accepted
+      status: "False"
+      reason: DefaultConflict
+      message: "In section backup-storage, these registrations also have mode Default: rustfs-bucket"
+```
+
+When two registrations of one section both have `mode: Default`, both report `DefaultConflict`. Set `mode: Optional` on one of them, and both become `Accepted` again.
+
+A plugin controller that writes the status of its registration must keep the `Accepted` condition that it finds there. For example, when it updates the whole status, it sends the `Accepted` condition back unchanged.
+
 ## Status
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Accepted` | `Healthy` | The operator accepts the registration. | Nothing. |
-| `Accepted` | `SectionMissing` | A section in `sections` does not exist. | Install the plugin chart that brings the section, or fix the name. |
-| `Accepted` | `OperatorVersionUnsupported` | The version of the operator is outside `operatorVersions`, or the range is not valid. | Install a plugin version that supports this operator version. |
-| `Accepted` | `DefaultConflict` | Another registration of the same section also has mode `Default`. | Set one of the two registrations to `Optional`. |
+| `Accepted` | `SectionMissing` | A section in `spec.sections` does not exist. The message names it. | Install the plugin chart that brings the section, or fix the name. |
+| `Accepted` | `OperatorVersionUnsupported` | The version of the operator is outside `spec.operatorVersions`, or the range is not valid. The message names the version and the range. | Install a plugin version that supports this operator, or upgrade the operator. |
+| `Accepted` | `DefaultConflict` | Another registration of the same section also has mode `Default`. The message names it. | Set `mode: Optional` on all but one of them. |
 | `Ready` | set by the plugin | The plugin controller reports its health and its credentials. | Read the message, and the logs of the plugin controller. |
-
-The operator sets `Accepted`. The plugin controller sets `Ready`. The fleet manager offers the option only when both are `True`.
 
 `status.observedGeneration` is the last generation that a controller of the registration processed.
 

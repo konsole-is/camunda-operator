@@ -2971,6 +2971,25 @@ metadata:
     manager: camunda-operator-builtins
     operation: Apply
     time: "2026-01-01T00:00:00Z"
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        .: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Accepted"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+    manager: manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
   name: database-server
   uid: 924259aa-55ca-503f-b742-f82649fbf8eb
 spec:
@@ -3038,6 +3057,14 @@ spec:
   serviceAccount:
     name: camunda-operator-controller-manager
     namespace: camunda-system
+status:
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: All checks passed
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Accepted
 ---
 apiVersion: plugins.camunda.io/v1alpha1
 kind: PluginRegistration
@@ -3127,6 +3154,25 @@ metadata:
     manager: camunda-operator-builtins
     operation: Apply
     time: "2026-01-01T00:00:00Z"
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        .: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Accepted"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+    manager: manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
   name: elasticsearch
   uid: 0600f29f-3e87-51e1-a016-357f6ba2ccda
 spec:
@@ -3194,6 +3240,14 @@ spec:
   serviceAccount:
     name: camunda-operator-controller-manager
     namespace: camunda-system
+status:
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: All checks passed
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Accepted
 ---
 apiVersion: plugins.camunda.io/v1alpha1
 kind: PluginRegistration
@@ -3253,6 +3307,25 @@ metadata:
     manager: camunda-operator-builtins
     operation: Apply
     time: "2026-01-01T00:00:00Z"
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        .: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Accepted"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+    manager: manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
   name: existing-database-configs
   uid: f115e14f-f49e-56fb-bf57-c87c5418b6ed
 spec:
@@ -3293,6 +3366,14 @@ spec:
   serviceAccount:
     name: camunda-operator-controller-manager
     namespace: camunda-system
+status:
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: All checks passed
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Accepted
 ---
 apiVersion: plugins.camunda.io/v1alpha1
 kind: PluginRegistration
@@ -3335,6 +3416,25 @@ metadata:
     manager: camunda-operator-builtins
     operation: Apply
     time: "2026-01-01T00:00:00Z"
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        .: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Accepted"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+    manager: manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
   name: existing-object-storage
   uid: d144f9a1-73df-5449-99fb-0599c5726668
 spec:
@@ -3365,6 +3465,14 @@ spec:
   serviceAccount:
     name: camunda-operator-controller-manager
     namespace: camunda-system
+status:
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: All checks passed
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Accepted
 ---
 apiVersion: plugins.camunda.io/v1alpha1
 kind: PluginRegistration
@@ -3407,6 +3515,25 @@ metadata:
     manager: camunda-operator-builtins
     operation: Apply
     time: "2026-01-01T00:00:00Z"
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        .: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Accepted"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+    manager: manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
   name: existing-secondary-storage
   uid: c8ca3681-5f5b-5d8e-8d2b-2ec25992661c
 spec:
@@ -3437,6 +3564,14 @@ spec:
   serviceAccount:
     name: camunda-operator-controller-manager
     namespace: camunda-system
+status:
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: All checks passed
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Accepted
 ---
 apiVersion: plugins.camunda.io/v1alpha1
 kind: PluginRegistration
@@ -3500,6 +3635,25 @@ metadata:
     manager: camunda-operator-builtins
     operation: Apply
     time: "2026-01-01T00:00:00Z"
+  - apiVersion: plugins.camunda.io/v1alpha1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        .: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Accepted"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+    manager: manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
   name: management-database-server
   uid: 7eed5b65-4c02-56a9-8557-7a8c540b63ce
 spec:
@@ -3548,6 +3702,14 @@ spec:
   serviceAccount:
     name: camunda-operator-controller-manager
     namespace: camunda-system
+status:
+  conditions:
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: All checks passed
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Accepted
 ---
 apiVersion: plugins.camunda.io/v1alpha1
 kind: PluginSection

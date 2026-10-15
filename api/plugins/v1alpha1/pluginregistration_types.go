@@ -191,6 +191,14 @@ type PluginRegistration struct {
 	Status PluginRegistrationStatus `json:"status,omitzero"`
 }
 
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *PluginRegistration) GetStatusConditions() *[]metav1.Condition { return &in.Status.Conditions }
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *PluginRegistration) GetKind() string { return "PluginRegistration" }
+
 // +kubebuilder:object:root=true
 
 // PluginRegistrationList contains a list of PluginRegistration

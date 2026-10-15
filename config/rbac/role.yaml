@@ -245,7 +245,17 @@ rules:
   verbs:
   - create
   - get
+  - list
   - patch
+  - watch
+- apiGroups:
+  - plugins.camunda.io
+  resources:
+  - pluginregistrations/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - postgresql.cnpg.io
   resources:
