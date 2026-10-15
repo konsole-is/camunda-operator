@@ -110,6 +110,14 @@ describe("sourceProblems", () => {
     ).toEqual([]);
   });
 
+  it("reports an empty object without a source", () => {
+    const spec = { connectors: { serviceAccount: {} } };
+
+    expect(sourceProblems(spec, {})).toEqual([
+      "spec.connectors.serviceAccount has no source",
+    ]);
+  });
+
   it("reports a value without a source and a source without a value", () => {
     const spec = { replicas: 3, extraEnv: [{ name: "TZ", value: "UTC" }] };
 

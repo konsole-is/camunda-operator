@@ -190,6 +190,39 @@ describe("mergeCluster", () => {
     });
   });
 
+  it("keeps an empty block, with the layer that set it as its source", () => {
+    const fromOverrides = mergeCluster(undefined, undefined, {
+      connectors: { serviceAccount: {} },
+    });
+    const fromPreset = mergeCluster(
+      { cluster: { connectors: { serviceAccount: {} } } },
+      undefined,
+      {},
+    );
+
+    expect(fromOverrides.spec).toEqual({ connectors: { serviceAccount: {} } });
+    expect(fromOverrides.source).toEqual({
+      "spec.connectors.serviceAccount": "overrides",
+    });
+    expect(fromPreset.spec).toEqual({ connectors: { serviceAccount: {} } });
+    expect(fromPreset.source).toEqual({
+      "spec.connectors.serviceAccount": "preset",
+    });
+  });
+
+  it("drops the source of an empty block once a later layer fills it", () => {
+    const { spec, source } = mergeCluster(
+      { cluster: { connectors: { serviceAccount: {} } } },
+      undefined,
+      { connectors: { serviceAccount: { name: "mine" } } },
+    );
+
+    expect(spec).toEqual({ connectors: { serviceAccount: { name: "mine" } } });
+    expect(source).toEqual({
+      "spec.connectors.serviceAccount.name": "overrides",
+    });
+  });
+
   it("takes the instance-bound fields from the cluster only", () => {
     const { spec, source } = mergeCluster(
       {

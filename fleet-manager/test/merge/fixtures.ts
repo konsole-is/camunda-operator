@@ -101,9 +101,10 @@ function parseFixture(
 
 /**
  * sourceProblems checks a source map against the spec that it describes.
- * Every scalar of spec needs a source on its own path or on the path of an
- * ancestor, and every source needs a value at its path. A list item that has
- * a string name has the path [name=<name>], any other item its index.
+ * Every scalar and every empty object or list below spec needs a source on
+ * its own path or on the path of an ancestor, and every source needs a value
+ * at its path. A list item that has a string name has the path
+ * [name=<name>], any other item its index.
  */
 export function sourceProblems(
   spec: JsonObject,
@@ -115,7 +116,16 @@ export function sourceProblems(
   const visit = (value: unknown, at: string, ancestors: string[]): void => {
     nodes.add(at);
     const chain = [...ancestors, at];
-    if (Array.isArray(value)) {
+    const children = Array.isArray(value)
+      ? value.length
+      : isObject(value)
+        ? Object.keys(value).length
+        : 0;
+    if (children === 0) {
+      if (ancestors.length > 0 && !chain.some((p) => p in source)) {
+        problems.push(`${at} has no source`);
+      }
+    } else if (Array.isArray(value)) {
       value.forEach((item, i) => {
         const name =
           isObject(item) && typeof item.name === "string"
@@ -130,8 +140,6 @@ export function sourceProblems(
     } else if (isObject(value)) {
       for (const [key, item] of Object.entries(value))
         visit(item, child(at, key), chain);
-    } else if (!chain.some((p) => p in source)) {
-      problems.push(`${at} has no source`);
     }
   };
   visit(spec, "spec", []);

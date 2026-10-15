@@ -94,6 +94,28 @@ export function applyLayer(
   }
 }
 
+/**
+ * mergeBlock merges over into the object at target[name] by rules, and puts
+ * an empty object there first when there is none. path is the path of that
+ * object. While the object stays empty, the layer is its source.
+ */
+export function mergeBlock(
+  rules: Rules,
+  target: JsonObject,
+  name: string,
+  over: JsonObject,
+  path: FieldPath,
+  ctx: MergeContext,
+): void {
+  const block = objectField(target, name);
+  applyLayer(rules, block, over, path, ctx);
+  // The operator keeps an empty block, and some are settings: an empty
+  // connectors.serviceAccount still makes the Connectors run under their own
+  // ServiceAccount.
+  if (Object.keys(block).length === 0) ctx.source[path] = ctx.layer;
+  else delete ctx.source[path];
+}
+
 function applyRule(
   rule: Rule,
   target: JsonObject,
@@ -108,7 +130,7 @@ function applyRule(
         applyRule(rule.instance, target, name, over, path, ctx);
     } else if ("fields" in rule) {
       if (isObject(over))
-        applyLayer(rule.fields, objectField(target, name), over, path, ctx);
+        mergeBlock(rule.fields, target, name, over, path, ctx);
     } else {
       rule.merge(target, name, over, path, ctx);
     }

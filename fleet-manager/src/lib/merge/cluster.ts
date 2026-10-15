@@ -2,9 +2,9 @@ import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { CamundaClusterPresetSpec } from "@/generated/crds/camundaclusterpreset";
 import type { CamundaReleaseSpec } from "@/generated/crds/camundarelease";
 import {
-  applyLayer,
   asObject,
   isObject,
+  mergeBlock,
   mergeLayers,
   objectField,
   type CustomMerge,
@@ -62,7 +62,7 @@ const mergeAuth: CustomMerge = (target, name, over, path, ctx) => {
       delete ctx.source[child(path, field)];
     }
   }
-  applyLayer(authRules, auth, over, path, ctx);
+  mergeBlock(authRules, target, name, over, path, ctx);
 };
 
 const clusterRules = {
