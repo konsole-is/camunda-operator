@@ -79,7 +79,8 @@ export function MetricChart({
               {series.map((s, i) => (
                 <Line
                   key={s.name}
-                  dataKey={s.name}
+                  dataKey={seriesKey(i)}
+                  name={s.name}
                   stroke={COLORS[i % COLORS.length]}
                   dot={false}
                   strokeWidth={1.5}
@@ -96,10 +97,18 @@ export function MetricChart({
 
 function toRows(series: Series[]): Record<string, number>[] {
   const byTime = new Map<number, Record<string, number>>();
-  for (const s of series) {
+  series.forEach((s, i) => {
     for (const [time, value] of s.points) {
-      byTime.set(time, { ...(byTime.get(time) ?? { time }), [s.name]: value });
+      byTime.set(time, {
+        ...(byTime.get(time) ?? { time }),
+        [seriesKey(i)]: value,
+      });
     }
-  }
+  });
   return [...byTime.values()].sort((a, b) => a.time - b.time);
+}
+
+// A row key, not the series name: a name such as "time" would replace the time.
+function seriesKey(index: number): string {
+  return `series-${index}`;
 }
