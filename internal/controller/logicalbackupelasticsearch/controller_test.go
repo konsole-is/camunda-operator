@@ -552,6 +552,40 @@ func expectPhase(backup *v1.LogicalBackupElasticsearch, phase v1.LogicalBackupPh
 	}, timeout, interval).Should(Succeed())
 }
 
+// expectResumeFailed waits until backup gives up on a resume that keeps
+// failing and ends with ResumeFailed. The deadline counts each wait between
+// two attempts as one poll interval at most, so a slow reconcile adds
+// attempts, not time against the deadline. Each Eventually therefore waits
+// for one more attempt, and the loop fails if the backup still runs after
+// its attempts used up the deadline.
+func expectResumeFailed(backup *v1.LogicalBackupElasticsearch) {
+	GinkgoHelper()
+	for {
+		current := currentBackup(backup)
+		if current.Status.Phase == v1.LogicalBackupFailed {
+			break
+		}
+
+		started, last := current.Status.ResumeStartedTime, current.Status.LastResumeAttemptTime
+		if started != nil && last != nil {
+			// The status keeps whole seconds, so the two times can be
+			// one second further apart than the controller measured.
+			Expect(last.Sub(started.Time)).To(
+				BeNumerically("<=", resumeDeadline+time.Second),
+				"the backup still resumes after its attempts used up the deadline",
+			)
+		}
+
+		Eventually(func(g Gomega) {
+			next := currentBackup(backup)
+			g.Expect(next.Status.Phase == v1.LogicalBackupFailed ||
+				!next.Status.LastResumeAttemptTime.Equal(last)).To(BeTrue(), "resume is attempted again")
+		}, timeout, interval).Should(Succeed())
+	}
+
+	expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+}
+
 // expectEvent polls until an event with the given reason and type exists for
 // the backup.
 func expectEvent(backup *v1.LogicalBackupElasticsearch, reason, eventType string) {
@@ -819,8 +853,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		backup := r.newBackup()
 
-		expectPhase(backup, v1.LogicalBackupFailed)
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		expectResumeFailed(backup)
 		expectEvent(backup, eventReasonResumeFailed, corev1.EventTypeWarning)
 		Expect(r.leaseHolder()).To(
 			Equal(claimant(currentBackup(backup)).String()),
@@ -934,8 +967,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 
 		backup := r.newBackup()
 
-		expectPhase(backup, v1.LogicalBackupFailed)
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		expectResumeFailed(backup)
 		final := currentBackup(backup)
 		Expect(final.Status.FailureMessage).To(ContainSubstring("PauseExporting"))
 		Expect(len(final.Status.FailureMessage)).To(BeNumerically("<", conditions.MaxMessageLength))
@@ -1819,8 +1851,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		}, timeout, interval).Should(Succeed())
 
 		By("ending as ResumeFailed once the resume deadline passes against the same dead API")
-		expectPhase(backup, v1.LogicalBackupFailed)
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		expectResumeFailed(backup)
 	})
 
 	// Round 12 P1: an accepted runtime or history backup registers
@@ -2406,8 +2437,7 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		backup := r.newBackup()
 		backupID(backup)
 
-		expectPhase(backup, v1.LogicalBackupFailed)
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonResumeFailed)
+		expectResumeFailed(backup)
 		Expect(r.management.Exporting()).To(Equal("softPaused"))
 
 		By("holding the Lease after the terminal phase: the cluster is still paused")
