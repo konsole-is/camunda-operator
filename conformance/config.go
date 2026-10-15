@@ -26,9 +26,8 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
-// Config is the input of a conformance run. Run refuses a config with an
-// empty Registration or Namespace, no Cases, two cases with one name, or a
-// skip that Skip does not allow.
+// Config is the input of a conformance run. Run refuses a config that is not
+// valid, and names each problem.
 type Config struct {
 	// Registration is the name of the PluginRegistration under test.
 	Registration string
@@ -138,13 +137,16 @@ func (t Timeouts) withDefaults() Timeouts {
 
 func (t Timeouts) validate() error {
 	var errs []error
-	for name, d := range map[string]time.Duration{
-		"OutputsReady": t.OutputsReady,
-		"Ready":        t.Ready,
-		"Deletion":     t.Deletion,
+	for _, f := range []struct {
+		name string
+		d    time.Duration
+	}{
+		{"OutputsReady", t.OutputsReady},
+		{"Ready", t.Ready},
+		{"Deletion", t.Deletion},
 	} {
-		if d < 0 {
-			errs = append(errs, fmt.Errorf("timeout %s is negative: %s", name, d))
+		if f.d < 0 {
+			errs = append(errs, fmt.Errorf("timeout %s is negative: %s", f.name, f.d))
 		}
 	}
 

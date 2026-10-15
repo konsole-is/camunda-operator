@@ -46,6 +46,12 @@ func TestTimeoutsWithDefaultsFillsOnlyZeroFields(t *testing.T) {
 	assert.Equal(t, set, set.withDefaults())
 }
 
+func TestTimeoutsValidateNamesNegativeFieldsInAFixedOrder(t *testing.T) {
+	err := Timeouts{OutputsReady: -time.Second, Deletion: -2 * time.Second}.validate()
+
+	assert.EqualError(t, err, "timeout OutputsReady is negative: -1s\ntimeout Deletion is negative: -2s")
+}
+
 func TestConfigAcceptsValidFields(t *testing.T) {
 	cfg := validConfig()
 	cfg.Cases = append(
