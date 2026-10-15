@@ -20,7 +20,41 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"testing"
 )
+
+// Run runs every registered check against cfg, in registry order, each as a
+// subtest of t named by its ID. A check that cfg skips is reported as
+// skipped with its reason. A failed check fails t, and the later checks
+// still run. When cfg is not valid, for example because it skips a
+// mandatory check, Run fails t and runs no check.
+func Run(t *testing.T, cfg Config) {
+	t.Helper()
+	runChecks(t, cfg, checks)
+}
+
+func runChecks(t *testing.T, cfg Config, registry []Check) {
+	t.Helper()
+
+	steps, err := plan(cfg, registry)
+	if err != nil {
+		t.Errorf("conformance: the config of the run is not valid: %v", err)
+		return
+	}
+
+	cfg.Timeouts = cfg.Timeouts.withDefaults()
+	s := &suite{cfg: cfg}
+
+	for _, st := range steps {
+		t.Run(string(st.check.ID), func(t *testing.T) {
+			if st.skipReason != "" {
+				t.Skip("skipped by the config: " + st.skipReason)
+			}
+
+			st.check.run(t, s)
+		})
+	}
+}
 
 // step is one check of a run, with the reason from the config when the run
 // skips it.
