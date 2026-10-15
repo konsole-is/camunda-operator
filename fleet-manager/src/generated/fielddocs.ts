@@ -5309,6 +5309,488 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#resolvedpolicy"
       }
     },
+    "CamundaManagementClusterClaim": {
+      "spec": {
+        "description": "spec is the management plane that the claim asks for",
+        "anchor": "#camundamanagementclusterclaim"
+      },
+      "spec.clusterSelector": {
+        "description": "ClusterSelector selects the CamundaClusters that Console and Web\nModeler serve, in the namespaces of the environments. An unset\nselector selects no cluster. An empty selector ({}) selects every\ncluster.",
+        "anchor": "#camundamanagementclusterclaimspec"
+      },
+      "spec.deletionPolicy": {
+        "description": "DeletionPolicy says what happens to the resources of the\nPluginRequests of the claim when the claim is deleted. Delete deletes\nthem. Orphan keeps them. Empty means the deletion policy of the\nEnvironment. The CamundaManagementCluster is always deleted with the\nclaim.",
+        "anchor": "#camundamanagementclusterclaimspec"
+      },
+      "spec.environments": {
+        "description": "Environments are the names of the Environments that the plane serves.\nThe plane serves the CamundaClusters in the namespaces of these\nenvironments. The claim controller refuses a name that no Environment\nhas, with the reason InvalidReference.",
+        "anchor": "#camundamanagementclusterclaimspec"
+      },
+      "spec.management": {
+        "description": "Management holds the settings of the plane that the claim can set: the\nidentity provider, Management Identity, Console, and Web Modeler. The\nversions are in versions. The database references come from the\nmanagement-database section.",
+        "anchor": "#camundamanagementclusterclaimspec"
+      },
+      "spec.management.console": {
+        "description": "Console configures Console. While it is unset, the plane has no\nConsole.",
+        "anchor": "#managementoverrides"
+      },
+      "spec.management.console.externalUrl": {
+        "description": "ExternalURL is the URL where browsers reach Console. The claim\ncontroller refuses this field with the reason SlotConflict when the\naccess section has a selection, because the access section then gives\nthe URL. Without a selection, set it here.",
+        "anchor": "#consoleoverrides"
+      },
+      "spec.management.console.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#consoleoverrides"
+      },
+      "spec.management.console.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#consoleoverrides"
+      },
+      "spec.management.console.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#consoleoverrides"
+      },
+      "spec.management.console.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#consoleoverrides"
+      },
+      "spec.management.console.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#consoleoverrides"
+      },
+      "spec.management.console.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#consoleoverrides"
+      },
+      "spec.management.console.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#consoleoverrides"
+      },
+      "spec.management.console.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.console.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.console.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.identity": {
+        "description": "Identity configures Management Identity. The plane always runs it.",
+        "anchor": "#managementoverrides"
+      },
+      "spec.management.identity.admin": {
+        "description": "Admin names the first administrator of the plane. Set claimName and\nclaimValue in the oidc mode, and username in the Keycloak modes.\nManagement Identity reads it only on its first start.",
+        "anchor": "#identityoverrides"
+      },
+      "spec.management.identity.admin.claimName": {
+        "description": "ClaimName is the token claim that identifies the administrator, for\nexample oid or sub. Set it in the oidc mode. The operator records the\nclaim as <claimName>=<claimValue> and splits it at the first equals\nsign. Thus the name cannot hold an equals sign.",
+        "anchor": "#identityadminspec"
+      },
+      "spec.management.identity.admin.claimValue": {
+        "description": "ClaimValue is the value of the claim for the administrator.\nSet it in the oidc mode.",
+        "anchor": "#identityadminspec"
+      },
+      "spec.management.identity.admin.email": {
+        "description": "Email is the email address of the first Keycloak user. Web Modeler\nneeds an address for every person who signs in. Thus it is required\nwhen webModeler is set in a Keycloak mode.",
+        "anchor": "#identityadminspec"
+      },
+      "spec.management.identity.admin.passwordSecretRef": {
+        "description": "PasswordSecretRef names the Secret key that holds the password of the\nfirst Keycloak user. The operator generates a password when this is\nunset.",
+        "anchor": "#identityadminspec"
+      },
+      "spec.management.identity.admin.passwordSecretRef.key": {
+        "description": "Key is the key in the Secret that holds the value.",
+        "anchor": "#localsecretkeyref"
+      },
+      "spec.management.identity.admin.passwordSecretRef.name": {
+        "description": "Name is the name of the Secret that holds the value.",
+        "anchor": "#localsecretkeyref"
+      },
+      "spec.management.identity.admin.username": {
+        "description": "Username is the name of the first Keycloak user. Set it in the keycloak\nand the externalKeycloak modes. Management Identity creates the user on\nits first start. A later change of this field creates a second user and\ndoes not rename the first user.",
+        "anchor": "#identityadminspec"
+      },
+      "spec.management.identity.externalUrl": {
+        "description": "ExternalURL is the URL where browsers reach Management Identity. A URL\nwith a path other than / must use https. The claim controller refuses\nthis field with the reason SlotConflict when the access section has a\nselection, because the access section then gives the URL. Without a\nselection, set it here.",
+        "anchor": "#identityoverrides"
+      },
+      "spec.management.identity.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#identityoverrides"
+      },
+      "spec.management.identity.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#identityoverrides"
+      },
+      "spec.management.identity.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#identityoverrides"
+      },
+      "spec.management.identity.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#identityoverrides"
+      },
+      "spec.management.identity.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#identityoverrides"
+      },
+      "spec.management.identity.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#identityoverrides"
+      },
+      "spec.management.identity.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#identityoverrides"
+      },
+      "spec.management.identity.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.identity.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.identity.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.identityProvider": {
+        "description": "IdentityProvider selects where users sign in. Exactly one of keycloak,\nexternalKeycloak, or oidc is set. The mode can change after creation.",
+        "anchor": "#managementoverrides"
+      },
+      "spec.management.identityProvider.externalKeycloak": {
+        "description": "ExternalKeycloak connects Management Identity to a Keycloak that you\nrun.",
+        "anchor": "#managementidentityprovider"
+      },
+      "spec.management.identityProvider.externalKeycloak.adminCredentialsSecretRef": {
+        "description": "AdminCredentialsSecretRef names the Secret with the Keycloak\nadministrator credentials. Management Identity uses them to create the\nrealm, the clients, and the initial administrator.",
+        "anchor": "#externalkeycloakspec"
+      },
+      "spec.management.identityProvider.externalKeycloak.adminCredentialsSecretRef.name": {
+        "description": "Name is the name of the Secret that holds the credentials.",
+        "anchor": "#localcredentialssecretref"
+      },
+      "spec.management.identityProvider.externalKeycloak.adminCredentialsSecretRef.passwordKey": {
+        "description": "PasswordKey is the key in the Secret that holds the plaintext password.",
+        "anchor": "#localcredentialssecretref"
+      },
+      "spec.management.identityProvider.externalKeycloak.adminCredentialsSecretRef.usernameKey": {
+        "description": "UsernameKey is the key in the Secret that holds the plaintext username.",
+        "anchor": "#localcredentialssecretref"
+      },
+      "spec.management.identityProvider.externalKeycloak.caBundleSecretRef": {
+        "description": "CABundleSecretRef names the Secret key that holds the certificate\nauthority of Keycloak, in PEM form. The operator signs in to Keycloak to\nregister the login callbacks of Optimize. It then trusts this authority\nand the trust store of its own image. Set it when a public authority did\nnot sign the certificate of Keycloak. It is valid only with an https\nurl.",
+        "anchor": "#externalkeycloakspec"
+      },
+      "spec.management.identityProvider.externalKeycloak.caBundleSecretRef.key": {
+        "description": "Key is the key in the Secret that holds the value.",
+        "anchor": "#localsecretkeyref"
+      },
+      "spec.management.identityProvider.externalKeycloak.caBundleSecretRef.name": {
+        "description": "Name is the name of the Secret that holds the value.",
+        "anchor": "#localsecretkeyref"
+      },
+      "spec.management.identityProvider.externalKeycloak.realm": {
+        "description": "Realm is the realm that Management Identity creates and uses. Empty\nmeans camunda-platform. The realm is part of the issuer, the token, and\nthe JWKS URLs that Management Identity builds. Thus it holds only\nletters, digits, dots, hyphens, and underscores, and its length has a\nlimit, as the URL has.",
+        "anchor": "#externalkeycloakspec"
+      },
+      "spec.management.identityProvider.externalKeycloak.url": {
+        "description": "URL is the URL of Keycloak, with the /auth path when Keycloak has one.\nManagement Identity uses this URL, so it must resolve from inside the\nKubernetes cluster.\n\nThe operator appends /realms/<realm> to this URL, so the URL has no\nquery and no fragment. The URL is also in the annotations of the Lease\nthat claims the realm, so its length has a limit.\n\nThe URL has no user and no password. The operator does not support a\nKeycloak behind a proxy that needs basic authentication.",
+        "anchor": "#externalkeycloakspec"
+      },
+      "spec.management.identityProvider.keycloak": {
+        "description": "Keycloak runs Keycloak through the Keycloak Operator. The Keycloak\nOperator must be installed on the Kubernetes cluster. versions.keycloak\nis required in this mode.",
+        "anchor": "#managementidentityprovider"
+      },
+      "spec.management.identityProvider.keycloak.externalUrl": {
+        "description": "ExternalURL is the URL where browsers reach Keycloak, with the /auth\npath and no query and no fragment. The claim controller refuses this\nfield with the reason SlotConflict when the access section has a\nselection, because the access section then gives the URL. Without a\nselection, set it here.",
+        "anchor": "#keycloakoverrides"
+      },
+      "spec.management.identityProvider.keycloak.replicas": {
+        "description": "Replicas is the number of Keycloak instances. Defaults to 1.",
+        "anchor": "#keycloakoverrides"
+      },
+      "spec.management.identityProvider.keycloak.resources": {
+        "description": "Resources are the CPU and memory of the Keycloak container.",
+        "anchor": "#keycloakoverrides"
+      },
+      "spec.management.identityProvider.keycloak.scheduling": {
+        "description": "Scheduling constraints of the Keycloak pods.",
+        "anchor": "#keycloakoverrides"
+      },
+      "spec.management.identityProvider.keycloak.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.identityProvider.keycloak.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.identityProvider.keycloak.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.identityProvider.oidc": {
+        "description": "OIDC connects Management Identity to the identity provider of the\nCamundaPlatformConfig of the plane.",
+        "anchor": "#managementidentityprovider"
+      },
+      "spec.management.webModeler": {
+        "description": "WebModeler configures Web Modeler. While it is unset, the plane has no\nWeb Modeler.",
+        "anchor": "#managementoverrides"
+      },
+      "spec.management.webModeler.externalUrl": {
+        "description": "ExternalURL is the URL where browsers reach Web Modeler. The claim\ncontroller refuses this field with the reason SlotConflict when the\naccess section has a selection, because the access section then gives\nthe URL. Without a selection, set it here.",
+        "anchor": "#webmodeleroverrides"
+      },
+      "spec.management.webModeler.mail": {
+        "description": "Mail configures the SMTP server that Web Modeler sends notifications\nthrough. Web Modeler does not start without it.",
+        "anchor": "#webmodeleroverrides"
+      },
+      "spec.management.webModeler.mail.credentialsSecretRef": {
+        "description": "CredentialsSecretRef names the Secret with the user and the password of\nthe SMTP server. Leave it unset for a server that needs no credentials.",
+        "anchor": "#webmodelermailspec"
+      },
+      "spec.management.webModeler.mail.credentialsSecretRef.name": {
+        "description": "Name is the name of the Secret that holds the credentials.",
+        "anchor": "#localcredentialssecretref"
+      },
+      "spec.management.webModeler.mail.credentialsSecretRef.passwordKey": {
+        "description": "PasswordKey is the key in the Secret that holds the plaintext password.",
+        "anchor": "#localcredentialssecretref"
+      },
+      "spec.management.webModeler.mail.credentialsSecretRef.usernameKey": {
+        "description": "UsernameKey is the key in the Secret that holds the plaintext username.",
+        "anchor": "#localcredentialssecretref"
+      },
+      "spec.management.webModeler.mail.fromAddress": {
+        "description": "FromAddress is the address that Web Modeler sends from.",
+        "anchor": "#webmodelermailspec"
+      },
+      "spec.management.webModeler.mail.fromName": {
+        "description": "FromName is the display name of the sender of Web Modeler mail.",
+        "anchor": "#webmodelermailspec"
+      },
+      "spec.management.webModeler.mail.smtpHost": {
+        "description": "SMTPHost is the host name of the SMTP server.",
+        "anchor": "#webmodelermailspec"
+      },
+      "spec.management.webModeler.mail.smtpPort": {
+        "description": "SMTPPort is the port of the SMTP server. Defaults to 587.",
+        "anchor": "#webmodelermailspec"
+      },
+      "spec.management.webModeler.mail.tls": {
+        "description": "TLS turns STARTTLS on. Defaults to true.",
+        "anchor": "#webmodelermailspec"
+      },
+      "spec.management.webModeler.restapi": {
+        "description": "Restapi configures the workload of the restapi process.",
+        "anchor": "#webmodeleroverrides"
+      },
+      "spec.management.webModeler.restapi.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.restapi.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.restapi.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.restapi.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.restapi.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.restapi.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.restapi.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.restapi.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.webModeler.restapi.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.webModeler.restapi.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.webModeler.websockets": {
+        "description": "Websockets configures the workload of the websockets process.",
+        "anchor": "#webmodeleroverrides"
+      },
+      "spec.management.webModeler.websockets.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.websockets.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.websockets.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.websockets.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.websockets.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.websockets.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.websockets.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#workloadspec"
+      },
+      "spec.management.webModeler.websockets.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.webModeler.websockets.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.webModeler.websockets.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.management.webModeler.websocketsExternalUrl": {
+        "description": "WebsocketsExternalURL is the URL where browsers get the live updates\nof Web Modeler. The claim controller refuses this field with the\nreason SlotConflict when the access section has a selection, because\nthe access section then gives the URL. Without a selection, set it\nhere.",
+        "anchor": "#webmodeleroverrides"
+      },
+      "spec.managementAuthConfigName": {
+        "description": "ManagementAuthConfigName is the name of the cluster-scoped\nManagementAuthConfig that the plane writes. A CamundaOptimize reads it\nthrough its managementAuthRef. Empty means the name of the claim.",
+        "anchor": "#camundamanagementclusterclaimspec"
+      },
+      "spec.platformConfigRef": {
+        "description": "PlatformConfigRef names the CamundaPlatformConfig of the plane. Empty\nmeans the platformConfigRef of the Environment of the namespace of the\nclaim.",
+        "anchor": "#camundamanagementclusterclaimspec"
+      },
+      "spec.plugins": {
+        "description": "Plugins holds the registration that the claim selects for each\nsection, for example access and management-database. The sections and\ntheir registrations are fixed after creation. Only the parameters can\nchange.",
+        "anchor": "#camundamanagementclusterclaimspec"
+      },
+      "spec.plugins.parameters": {
+        "description": "Parameters are the parameter values of the selection. Only the\nclaim-editable parameters of the policy can differ from the policy\nvalues. The claim controller refuses another change with NotAllowed.",
+        "anchor": "#pluginselection"
+      },
+      "spec.plugins.registration": {
+        "description": "Registration is the name of the PluginRegistration.",
+        "anchor": "#pluginselection"
+      },
+      "spec.plugins.section": {
+        "description": "Section is the name of the PluginSection.",
+        "anchor": "#pluginselection"
+      },
+      "spec.suspend": {
+        "description": "Suspend scales every workload of the plane to zero. The PluginRequests\ndo not change.",
+        "anchor": "#camundamanagementclusterclaimspec"
+      },
+      "spec.versions": {
+        "description": "Versions holds the version of each component of the plane. The fleet\nmanager fills them from its images table, because Identity, Console,\nand Web Modeler have their own version lines. For example, with\nCamunda 8.9.23, Identity is 8.9.10.",
+        "anchor": "#camundamanagementclusterclaimspec"
+      },
+      "spec.versions.console": {
+        "description": "Console is the Console version. It is required while\nmanagement.console is set.",
+        "anchor": "#managementversions"
+      },
+      "spec.versions.identity": {
+        "description": "Identity is the Management Identity version, for example 8.9.10.",
+        "anchor": "#managementversions"
+      },
+      "spec.versions.keycloak": {
+        "description": "Keycloak is the Keycloak version. It is required in the keycloak mode.\nCamunda 8.9 supports only Keycloak 26.",
+        "anchor": "#managementversions"
+      },
+      "spec.versions.webModeler": {
+        "description": "WebModeler is the Web Modeler version. It is required while\nmanagement.webModeler is set.",
+        "anchor": "#managementversions"
+      },
+      "status": {
+        "description": "status is the state of the claim",
+        "anchor": "#camundamanagementclusterclaim"
+      },
+      "status.conditions": {
+        "description": "Conditions report the state of the claim. Ready is False with the\nreason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when the claim\ncontroller refuses the claim. The message names the cause. Otherwise\nReady follows RequestsReady and ManagementClusterReady.\nManagementClusterReady carries the Ready reason and message of the\nCamundaManagementCluster.",
+        "anchor": "#camundamanagementclusterclaimstatus"
+      },
+      "status.environment": {
+        "description": "Environment is the Environment of the namespace of the claim when the\nclaim was created.",
+        "anchor": "#camundamanagementclusterclaimstatus"
+      },
+      "status.managementCluster": {
+        "description": "ManagementCluster names the CamundaManagementCluster of the claim. It\nhas the name of the claim.",
+        "anchor": "#camundamanagementclusterclaimstatus"
+      },
+      "status.managementCluster.name": {
+        "description": "Name is the name of the CamundaManagementCluster.",
+        "anchor": "#managementclusterref"
+      },
+      "status.observedGeneration": {
+        "description": "ObservedGeneration is the last generation that the claim controller\nprocessed.",
+        "anchor": "#camundamanagementclusterclaimstatus"
+      },
+      "status.requests": {
+        "description": "Requests lists the PluginRequests of the claim, one for each selected\nsection.",
+        "anchor": "#camundamanagementclusterclaimstatus"
+      },
+      "status.requests.name": {
+        "description": "Name is the name of the PluginRequest.",
+        "anchor": "#requeststatus"
+      },
+      "status.requests.outputsReady": {
+        "description": "OutputsReady is the status of the OutputsReady condition of the\nrequest.",
+        "anchor": "#requeststatus"
+      },
+      "status.requests.ready": {
+        "description": "Ready is the status of the Ready condition of the request.",
+        "anchor": "#requeststatus"
+      },
+      "status.requests.registration": {
+        "description": "Registration is the name of the PluginRegistration of the request.",
+        "anchor": "#requeststatus"
+      },
+      "status.requests.section": {
+        "description": "Section is the name of the PluginSection of the request.",
+        "anchor": "#requeststatus"
+      },
+      "status.resolvedPolicy": {
+        "description": "ResolvedPolicy is the policy of the environment when the claim was\ncreated. A later change of the environment does not change it.",
+        "anchor": "#camundamanagementclusterclaimstatus"
+      },
+      "status.resolvedPolicy.deletionPolicy": {
+        "description": "DeletionPolicy is the deletion default of the environment.",
+        "anchor": "#resolvedpolicy"
+      },
+      "status.resolvedPolicy.parameters": {
+        "description": "Parameters holds the parameter values and the claim-editable\nparameters, by registration name.",
+        "anchor": "#resolvedpolicy"
+      },
+      "status.resolvedPolicy.sections": {
+        "description": "Sections holds the policy of each section, by section name.",
+        "anchor": "#resolvedpolicy"
+      }
+    },
     "Environment": {
       "spec": {
         "description": "spec is the policy of the environment",
