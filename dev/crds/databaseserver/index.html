@@ -2701,7 +2701,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <p>The contract of a server with an archive declares <code>pitr.enabled: true</code>, <code>pitr.recovery: operator</code>, and <code>pitr.retentionPeriodDays</code>. A <a href="../pointintimerestore/">PointInTimeRestore</a> reads these values.</p>
 <h3 id="retention">Retention<a class="headerlink" href="#retention" title="Permanent link">&para;</a></h3>
 <p><code>retentionPeriodDays</code> is how far into the past a restore can reach. The bucket keeps the archive for that number of days, and the contract publishes the same number.</p>
-<p>A raised retention period does not bring back what the shorter one already removed. The window grows only as the archive writes new data. <code>status.archive.reachableFrom</code> is the oldest point that the bucket still holds.</p>
+<p>A raised retention period does not bring back what the shorter one already removed. The window grows only as the archive writes new data. <code>status.archive.reachableFrom</code> is the oldest point that the bucket still holds, rounded down to the minute. The bucket can miss up to one minute after it.</p>
 <h3 id="schedule">Schedule<a class="headerlink" href="#schedule" title="Permanent link">&para;</a></h3>
 <p><code>baseBackupSchedule</code> is a six-field cron in UTC, with seconds first: seconds, minutes, hours, day of month, month, day of week. The default <code>0 0 2 * * *</code> runs daily at 02:00. The descriptors <code>@yearly</code>, <code>@annually</code>, <code>@monthly</code>, <code>@weekly</code>, <code>@daily</code>, <code>@midnight</code>, <code>@hourly</code>, and <code>@every &lt;duration&gt;</code> are also accepted. CloudNativePG reads the schedule in the <a href="https://pkg.go.dev/github.com/robfig/cron#hdr-CRON_Expression_Format">robfig/cron format</a>.</p>
 <p>The API server rejects these values:</p>
@@ -2728,7 +2728,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">        </span><span class="nt">objectStorageRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-backup-bucket</span>
 </span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">        </span><span class="nt">location</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)</span>
 </span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">        </span><span class="nt">from</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-08-20T15:20:40Z"</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">    </span><span class="nt">reachableFrom</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-07-25T09:58:04Z"</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">    </span><span class="nt">reachableFrom</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-07-25T09:58:00Z"</span>
 </span></code></pre></div>
 <ul>
 <li><code>serverName</code> is the directory in the bucket that holds the archive.</li>

@@ -8474,7 +8474,7 @@ server.</p>
 </tr>
 <tr>
 <td><code>reachableFrom</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta">Time</a></em></td>
-<td>ReachableFrom is the oldest point that the objects in the bucket still<br />cover. The retention period removes old objects from the bucket. A<br />longer retention period does not bring back what a shorter one already<br />removed. The window grows to the new retention period only as the<br />archive writes past this point. The server refuses a rollback to a<br />point before it. When it is unset, only the retention period limits<br />the window.</td>
+<td>ReachableFrom is the oldest point that the objects in the bucket still<br />cover, rounded down to the minute. The bucket can miss up to one minute<br />after it. The retention period removes old objects from the bucket. A<br />longer retention period does not bring back what a shorter one already<br />removed. The window grows to the new retention period only as the<br />archive writes past this point. The server refuses a rollback to a<br />point before it. When it is unset, only the retention period limits<br />the window.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
