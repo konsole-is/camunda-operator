@@ -89,31 +89,47 @@ var _ = Describe("Environment Ready", func() {
 			expectReady(env, metav1.ConditionTrue, v1.ReasonHealthy, Equal(healthyMessage))
 			Expect(generationOf(env)).To(Equal(generation))
 		},
-		Entry("a release", "CamundaRelease", newRelease,
+		Entry(
+			"a release", "CamundaRelease", newRelease,
 			func(s *fleetv1alpha1.EnvironmentSpec, n string) {
 				s.Releases = &fleetv1alpha1.EnvironmentReleases{Allowed: []string{n}}
-			}),
-		Entry("a cluster preset", "CamundaClusterPreset", newClusterPreset,
-			func(s *fleetv1alpha1.EnvironmentSpec, n string) { s.Presets.CamundaCluster = []string{n} }),
-		Entry("an Elasticsearch preset", "ElasticsearchClusterPreset", newElasticsearchPreset,
-			func(s *fleetv1alpha1.EnvironmentSpec, n string) { s.Presets.ElasticsearchCluster = []string{n} }),
-		Entry("a database server preset", "DatabaseServerPreset", newDatabaseServerPreset,
-			func(s *fleetv1alpha1.EnvironmentSpec, n string) { s.Presets.DatabaseServer = []string{n} }),
-		Entry("a platform config", "CamundaPlatformConfig", newPlatformConfig,
-			func(s *fleetv1alpha1.EnvironmentSpec, n string) { s.PlatformConfigRef = n }),
-		Entry("a section", "PluginSection", newSection,
+			},
+		),
+		Entry(
+			"a cluster preset", "CamundaClusterPreset", newClusterPreset,
+			func(s *fleetv1alpha1.EnvironmentSpec, n string) { s.Presets.CamundaCluster = []string{n} },
+		),
+		Entry(
+			"an Elasticsearch preset", "ElasticsearchClusterPreset", newElasticsearchPreset,
+			func(s *fleetv1alpha1.EnvironmentSpec, n string) { s.Presets.ElasticsearchCluster = []string{n} },
+		),
+		Entry(
+			"a database server preset", "DatabaseServerPreset", newDatabaseServerPreset,
+			func(s *fleetv1alpha1.EnvironmentSpec, n string) { s.Presets.DatabaseServer = []string{n} },
+		),
+		Entry(
+			"a platform config", "CamundaPlatformConfig", newPlatformConfig,
+			func(s *fleetv1alpha1.EnvironmentSpec, n string) { s.PlatformConfigRef = n },
+		),
+		Entry(
+			"a section", "PluginSection", newSection,
 			func(s *fleetv1alpha1.EnvironmentSpec, n string) {
 				s.Sections = map[string]fleetv1alpha1.SectionPolicy{n: {}}
-			}),
-		Entry("a registration of a section policy", "PluginRegistration", newRegistration,
+			},
+		),
+		Entry(
+			"a registration of a section policy", "PluginRegistration", newRegistration,
 			func(s *fleetv1alpha1.EnvironmentSpec, n string) {
 				section := create(newSection(uniqueName("section")))
 				s.Sections = map[string]fleetv1alpha1.SectionPolicy{section.GetName(): {Allowed: []string{n}}}
-			}),
-		Entry("a registration of a parameter policy", "PluginRegistration", newRegistration,
+			},
+		),
+		Entry(
+			"a registration of a parameter policy", "PluginRegistration", newRegistration,
 			func(s *fleetv1alpha1.EnvironmentSpec, n string) {
 				s.Parameters = map[string]fleetv1alpha1.ParameterPolicies{n: {"retentionDays": {ClaimEditable: true}}}
-			}),
+			},
+		),
 	)
 
 	It("names every missing object in one message", func() {

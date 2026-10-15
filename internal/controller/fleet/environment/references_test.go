@@ -42,18 +42,20 @@ func TestReferencesListsEveryNameOfTheSpecInKindOrder(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, []reference{
-		{kindPlatformConfig, "production"},
-		{kindClusterPreset, "large"},
-		{kindClusterPreset, "small"},
-		{kindElasticsearchPreset, "es-small"},
-		{kindDatabaseServerPreset, "pg-small"},
-		{kindRelease, "camunda-8-9"},
-		{kindSection, "access"},
-		{kindSection, "backup-storage"},
-		{kindRegistration, "aws-connectors"},
-		{kindRegistration, "s3-backups"},
-	}, references(&spec))
+	assert.Equal(
+		t, []reference{
+			{kindPlatformConfig, "production"},
+			{kindClusterPreset, "large"},
+			{kindClusterPreset, "small"},
+			{kindElasticsearchPreset, "es-small"},
+			{kindDatabaseServerPreset, "pg-small"},
+			{kindRelease, "camunda-8-9"},
+			{kindSection, "access"},
+			{kindSection, "backup-storage"},
+			{kindRegistration, "aws-connectors"},
+			{kindRegistration, "s3-backups"},
+		}, references(&spec),
+	)
 }
 
 func TestReferencesNamesEachObjectOnce(t *testing.T) {
@@ -67,11 +69,13 @@ func TestReferencesNamesEachObjectOnce(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, []reference{
-		{kindRelease, "camunda-8-9"},
-		{kindSection, "backup-storage"},
-		{kindRegistration, "s3-backups"},
-	}, references(&spec))
+	assert.Equal(
+		t, []reference{
+			{kindRelease, "camunda-8-9"},
+			{kindSection, "backup-storage"},
+			{kindRegistration, "s3-backups"},
+		}, references(&spec),
+	)
 }
 
 func TestReferencesOfAnEmptySpecIsEmpty(t *testing.T) {
