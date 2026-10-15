@@ -2,6 +2,7 @@ export type { FieldSourceMap, Layer, Merged } from "./engine";
 export type { FieldPath } from "./path";
 export { mergeDatabaseServer, mergeElasticsearch } from "./storage";
 export { mergeCluster } from "./cluster";
+export { defaultImages, type ImageRef, type ImageSet } from "./images";
 export {
   APP_FIELD_MANAGER,
   CLUSTER_CLAIM_MANAGER_PREFIX,
