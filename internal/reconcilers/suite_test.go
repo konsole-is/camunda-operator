@@ -26,12 +26,19 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/reconcilers"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
 var env *envtest.Env
+
+// suiteVersion and suiteServiceAccount are the options of the startup
+// writer that Setup adds in this suite.
+const suiteVersion = "0.3.0"
+
+var suiteServiceAccount = pluginsv1alpha1.ServiceAccountRef{Namespace: "default", Name: "camunda-operator"}
 
 func TestReconcilers(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -44,9 +51,11 @@ var _ = BeforeSuite(func() {
 
 	env = envtest.Start(func(mgr ctrl.Manager) error {
 		return reconcilers.Setup(mgr, reconcilers.Options{
-			Namespace:    "default",
-			CLIImage:     "ghcr.io/konsole-is/camunda-operator-cli:test",
-			GracePeriods: grace.Periods{Workload: time.Hour, Datastore: time.Hour},
+			Namespace:       "default",
+			CLIImage:        "ghcr.io/konsole-is/camunda-operator-cli:test",
+			GracePeriods:    grace.Periods{Workload: time.Hour, Datastore: time.Hour},
+			OperatorVersion: suiteVersion,
+			ServiceAccount:  suiteServiceAccount,
 		})
 	})
 })

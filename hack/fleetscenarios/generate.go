@@ -36,8 +36,10 @@ import (
 	crenvtest "sigs.k8s.io/controller-runtime/pkg/envtest"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/manager"
 	"github.com/konsole-is/camunda-operator/internal/reconcilers"
+	"github.com/konsole-is/camunda-operator/internal/version"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
@@ -46,9 +48,12 @@ import (
 // of the writes that do not come from a reconciler or the simulator.
 const (
 	operatorNamespace = "camunda-system"
-	cliImage          = "ghcr.io/konsole-is/camunda-operator-cli:scenario"
-	seedManager       = "kubectl"
-	overlayManager    = "fleetscenarios-overlay"
+	// operatorServiceAccount is the ServiceAccount of the operator in
+	// install.yaml. The built-in PluginRegistrations of a scenario name it.
+	operatorServiceAccount = "camunda-operator-controller-manager"
+	cliImage               = "ghcr.io/konsole-is/camunda-operator-cli:scenario"
+	seedManager            = "kubectl"
+	overlayManager         = "fleetscenarios-overlay"
 	// deployedManager is the field manager of a write of the operator that
 	// names none. The API server takes it from the user agent, which starts
 	// with the name of the binary, and the image of the operator runs
@@ -271,6 +276,13 @@ func runReconcilers(
 		Namespace:    operatorNamespace,
 		CLIImage:     cliImage,
 		GracePeriods: grace.Periods{Workload: grace.DefaultWorkload, Datastore: grace.DefaultDatastore},
+		// A go run build reports version.Dev, so the outputs do not change
+		// with the release.
+		OperatorVersion: version.Version(),
+		ServiceAccount: pluginsv1alpha1.ServiceAccountRef{
+			Namespace: operatorNamespace,
+			Name:      operatorServiceAccount,
+		},
 	}); err != nil {
 		return err
 	}

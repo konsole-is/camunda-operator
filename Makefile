@@ -20,6 +20,9 @@ VERSION_LDFLAGS = -X $(VERSION_PACKAGE).version=$(OPERATOR_VERSION)
 # namespace, because `make install` applies the CRDs alone and every claim
 # would fail against a namespace that is not there.
 OPERATOR_NAMESPACE ?= camunda-operator-system
+# The ServiceAccount that the built-in PluginRegistrations name. A manager in
+# a cluster gets it from its own Pod, so only `make run` needs this default.
+OPERATOR_SERVICE_ACCOUNT ?= camunda-operator-controller-manager
 
 # Recipes below expand IMG in the shell (e.g. $${IMG%:*}), which reads the
 # environment. Make exports command-line variables automatically but not this
@@ -244,7 +247,8 @@ build-cli: fmt vet ## Build the camunda-operator-cli binary.
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host. The backup Jobs it renders run CLI_IMG.
 	@"$(KUBECTL)" create namespace "$(OPERATOR_NAMESPACE)" --dry-run=client -o yaml | "$(KUBECTL)" apply -f -
-	go run ./cmd/main.go --camunda-operator-cli-image=${CLI_IMG} --namespace=${OPERATOR_NAMESPACE}
+	go run ./cmd/main.go --camunda-operator-cli-image=${CLI_IMG} --namespace=${OPERATOR_NAMESPACE} \
+		--service-account=${OPERATOR_SERVICE_ACCOUNT}
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -685,10 +689,10 @@ docs-build: ## Build the documentation site in strict mode.
 	mkdocs build --strict
 
 .PHONY: api-docs
-api-docs: crd-ref-docs ## Render the API reference in docs/crds/api-reference.md from the types in api/v1.
+api-docs: crd-ref-docs ## Render the API reference in docs/crds/api-reference.md from the types in api/.
 	{ cat hack/crd-ref-docs/config.yaml; \
 		printf 'render:\n  kubernetesVersion: %s\n' "$(ENVTEST_K8S_VERSION)"; } > "$(LOCALBIN)/crd-ref-docs.yaml"
-	"$(CRD_REF_DOCS)" --source-path=api/v1 --config="$(LOCALBIN)/crd-ref-docs.yaml" \
+	"$(CRD_REF_DOCS)" --source-path=api --config="$(LOCALBIN)/crd-ref-docs.yaml" \
 		--renderer=markdown --output-path=docs/crds/api-reference.md
 
 .PHONY: docs-sentences

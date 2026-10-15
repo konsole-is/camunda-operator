@@ -1,16 +1,15 @@
 apiVersion: plugins.camunda.io/v1alpha1
 kind: PluginSection
 metadata:
-  name: backup-storage
+  name: dns-zone
 spec:
-  label: Backup storage
-  description: Where the cluster keeps its backups.
-  order: 40
+  label: DNS zone
+  description: The DNS zone that holds the records of the cluster.
+  order: 65
   selection: One
-  emptyOptionLabel: No backups
-  slot: backupStorage
+  emptyOptionLabel: No DNS records
   appliesTo:
     - CamundaClusterClaim
   outputs:
-    - key: objectStorageConfig
-      description: The name of the ObjectStorageConfig that the cluster writes its backups to.
+    - key: zoneId
+      description: The ID of the DNS zone.

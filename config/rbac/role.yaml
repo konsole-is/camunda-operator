@@ -238,6 +238,15 @@ rules:
   - update
   - watch
 - apiGroups:
+  - plugins.camunda.io
+  resources:
+  - pluginregistrations
+  - pluginsections
+  verbs:
+  - create
+  - get
+  - patch
+- apiGroups:
   - postgresql.cnpg.io
   resources:
   - backups

@@ -22,6 +22,18 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the camunda-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- plugins_grant_admin_role.yaml
+- plugins_grant_editor_role.yaml
+- plugins_grant_viewer_role.yaml
+- plugins_pluginrequest_admin_role.yaml
+- plugins_pluginrequest_editor_role.yaml
+- plugins_pluginrequest_viewer_role.yaml
+- plugins_pluginregistration_admin_role.yaml
+- plugins_pluginregistration_editor_role.yaml
+- plugins_pluginregistration_viewer_role.yaml
+- plugins_pluginsection_admin_role.yaml
+- plugins_pluginsection_editor_role.yaml
+- plugins_pluginsection_viewer_role.yaml
 - camundarelease_admin_role.yaml
 - camundarelease_editor_role.yaml
 - camundarelease_viewer_role.yaml

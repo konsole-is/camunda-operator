@@ -30,6 +30,8 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
+
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
 // camundaGroupSuffix ends the name of each API group of the operator.
@@ -114,6 +116,10 @@ func newScope(ctx context.Context, cfg *rest.Config) (*scope, error) {
 			s.observed[schema.GroupKind{Group: group, Kind: kind}] = true
 		}
 	}
+	// TODO(#586): no controller writes the status of a PluginRegistration
+	// until the registry controller does, so a built-in registration never
+	// reports its generation.
+	delete(s.observed, schema.GroupKind{Group: pluginsv1alpha1.GroupVersion.Group, Kind: "PluginRegistration"})
 
 	if err := s.warmUp(ctx); err != nil {
 		return nil, err

@@ -141,6 +141,36 @@ var _ = Describe("Manager", Ordered, Label(utils.LabelManager), func() {
 			Eventually(verifyControllerUp).Should(Succeed())
 		})
 
+		// Envtest runs as an admin, so only a real install proves that the
+		// role of the manager lets it write the plugin objects.
+		It("should write the core plugin sections and the built-in registrations", func() {
+			verifySections := func(g Gomega) {
+				cmd := exec.Command(
+					"kubectl", "get", "pluginsections",
+					"-o", `jsonpath={range .items[*]}{.metadata.name}{"\n"}{end}`,
+				)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(utils.GetNonEmptyLines(output)).To(ContainElements(
+					"cloud-identity", "encryption-key", "volume-encryption", "backup-storage",
+					"secondary-storage", "access", "connectors-permissions", "management-database",
+				))
+			}
+			Eventually(verifySections).Should(Succeed())
+
+			By("checking that a built-in registration names the ServiceAccount of the manager")
+			verifyRegistration := func(g Gomega) {
+				cmd := exec.Command(
+					"kubectl", "get", "pluginregistration", "elasticsearch",
+					"-o", "jsonpath={.spec.serviceAccount.namespace}/{.spec.serviceAccount.name}",
+				)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal(namespace + "/" + serviceAccountName))
+			}
+			Eventually(verifyRegistration).Should(Succeed())
+		})
+
 		It("should ensure the metrics endpoint is serving metrics", func() {
 			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
 			cmd := exec.Command(
