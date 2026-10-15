@@ -576,6 +576,11 @@ describe("SectionCards", () => {
         message: "large is not an available choice",
       },
     ]);
+    const cards = screen.getByRole("group", { name: "Preset" });
+    expect(
+      document.getElementById(cards.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe("large is not an available choice");
   });
 
   it("sets the parameter of a choice from its card", async () => {

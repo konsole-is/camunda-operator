@@ -289,11 +289,17 @@ function OptionParameters({
       ?.message;
   };
   const rest = option.parameters.filter((r) => r.name !== choices?.parameter);
+  const choiceError = choices && errorOf(choices.parameter);
   if (!choices && rest.length === 0) return null;
   return (
     <div className="flex flex-col gap-3 border-t border-divider pt-3">
       {choices && (
-        <fieldset className="flex flex-col gap-2">
+        <fieldset
+          aria-describedby={
+            choiceError ? `${idPrefix}-choice-error` : undefined
+          }
+          className="flex flex-col gap-2"
+        >
           <legend className="mb-1 text-sm font-medium text-muted">
             {choiceRule?.label ?? "Preset"}
           </legend>
@@ -332,6 +338,11 @@ function OptionParameters({
               );
             })}
           </div>
+          {choiceError && (
+            <p id={`${idPrefix}-choice-error`} className="text-xs text-bad">
+              {choiceError}
+            </p>
+          )}
         </fieldset>
       )}
       {rest.map((rule) => (
