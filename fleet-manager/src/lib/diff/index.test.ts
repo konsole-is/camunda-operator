@@ -48,3 +48,32 @@ describe("objectDiff", () => {
     ]);
   });
 });
+
+describe("lineDiff on large texts", () => {
+  it("finds one change in a long text that is the same around it", () => {
+    const lines = Array.from({ length: 20_000 }, (_, i) => `line ${i}`);
+    const after = [...lines];
+    after[10_000] = "changed";
+    const diff = lineDiff(lines.join("\n"), after.join("\n"));
+    expect(diff.filter((line) => line.op !== "same")).toEqual([
+      { op: "removed", text: "line 10000" },
+      { op: "added", text: "changed" },
+    ]);
+    expect(diff).toHaveLength(20_001);
+  });
+
+  it("shows a change too large to compare as removed lines, then added lines", () => {
+    // "shared" would stay unchanged in a line by line compare.
+    const before = Array.from({ length: 2_100 }, (_, i) =>
+      i === 1_000 ? "shared" : `old ${i}`,
+    );
+    const after = Array.from({ length: 2_100 }, (_, i) =>
+      i === 1_000 ? "shared" : `new ${i}`,
+    );
+    const diff = lineDiff(before.join("\n"), after.join("\n"));
+    expect(diff).toEqual([
+      ...before.map((text) => ({ op: "removed", text })),
+      ...after.map((text) => ({ op: "added", text })),
+    ]);
+  });
+});

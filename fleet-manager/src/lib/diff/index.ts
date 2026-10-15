@@ -3,14 +3,42 @@ import { stringify } from "yaml";
 /** DiffLine is one line of a line diff: unchanged, added, or removed. */
 export type DiffLine = { op: "same" | "added" | "removed"; text: string };
 
+// Above this many cells, the compare table takes more memory than a
+// preview may use. The changed part then shows as removed, then added.
+const MAX_CELLS = 4_000_000;
+
 /**
- * lineDiff compares two texts line by line with a longest common
- * subsequence. Where a line changes, the removed line comes before the
- * added one. A final newline adds no line.
+ * lineDiff compares two texts line by line. Where a line changes, the
+ * removed line comes before the added one. A final newline adds no line.
  */
 export function lineDiff(before: string, after: string): DiffLine[] {
   const a = splitLines(before);
   const b = splitLines(after);
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let end = 0;
+  while (
+    end < a.length - start &&
+    end < b.length - start &&
+    a[a.length - 1 - end] === b[b.length - 1 - end]
+  )
+    end++;
+  const same = (lines: string[]): DiffLine[] =>
+    lines.map((text) => ({ op: "same", text }));
+  return [
+    ...same(a.slice(0, start)),
+    ...changed(a.slice(start, a.length - end), b.slice(start, b.length - end)),
+    ...same(a.slice(a.length - end)),
+  ];
+}
+
+function changed(a: string[], b: string[]): DiffLine[] {
+  if ((a.length + 1) * (b.length + 1) > MAX_CELLS) {
+    return [
+      ...a.map((text): DiffLine => ({ op: "removed", text })),
+      ...b.map((text): DiffLine => ({ op: "added", text })),
+    ];
+  }
   const common = Array.from(
     { length: a.length + 1 },
     () => new Uint32Array(b.length + 1),
