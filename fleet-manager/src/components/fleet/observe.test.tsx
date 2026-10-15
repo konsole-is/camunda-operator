@@ -172,6 +172,20 @@ describe("LogViewer", () => {
     expect(screen.getByRole("option", { name: "warn" })).toBeTruthy();
   });
 
+  it("keeps an opened line open on that line when the buffer moves", async () => {
+    const withFields = (message: string): LogLine => ({
+      ...line(message),
+      fields: { pod: message },
+    });
+    const a = withFields("a");
+    const b = withFields("b");
+    const { rerender } = render(<LogViewer lines={[a, b]} />);
+    await userEvent.click(screen.getByText("a"));
+    expect(screen.getByText("a").closest("details")?.open).toBe(true);
+    rerender(<LogViewer lines={[b, withFields("c")]} />);
+    expect(screen.getByText("b").closest("details")?.open).toBe(false);
+  });
+
   it("takes the keyboard focus, so a keyboard user can scroll it", () => {
     render(<LogViewer lines={[line("a")]} />);
     const log = screen.getByRole("log");

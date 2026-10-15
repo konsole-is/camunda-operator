@@ -35,6 +35,16 @@ export function LogViewer({
   const [level, setLevel] = useState("");
   const [text, setText] = useState("");
   const box = useRef<HTMLDivElement>(null);
+  // A buffer drops and adds lines, so a position does not name a line. Each
+  // line object keeps its key, also when its text repeats another line.
+  const [keyOf] = useState(() => {
+    const keys = new WeakMap<LogLine, number>();
+    let next = 0;
+    return (line: LogLine) => {
+      if (!keys.has(line)) keys.set(line, next++);
+      return keys.get(line)!;
+    };
+  });
 
   const kept = paused ?? lines;
   const newLines = paused ? countAfter(paused, lines) : 0;
@@ -118,7 +128,7 @@ export function LogViewer({
         {shown.length === 0 && (
           <p className="px-3 py-2 font-sans text-muted">No lines</p>
         )}
-        {shown.map((line, i) => {
+        {shown.map((line) => {
           const row = (
             <>
               {line.time && (
@@ -142,14 +152,14 @@ export function LogViewer({
             </>
           );
           return Object.keys(line.fields).length > 0 ? (
-            <details key={i} className="px-3">
+            <details key={keyOf(line)} className="px-3">
               <summary className="flex cursor-pointer gap-3">{row}</summary>
               <pre className="ml-6 text-muted">
                 {JSON.stringify(line.fields, null, 2)}
               </pre>
             </details>
           ) : (
-            <div key={i} className="flex gap-3 px-3">
+            <div key={keyOf(line)} className="flex gap-3 px-3">
               {row}
             </div>
           );
