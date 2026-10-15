@@ -92,6 +92,22 @@ func TestSettle(t *testing.T) {
 		assert.ErrorContains(t, err, "did not settle within 1s")
 		assert.Less(t, time.Since(start), timeout+time.Second)
 	})
+
+	t.Run("fails with its timeout error when the client rate limiter would wait past it", func(t *testing.T) {
+		throttled := rest.CopyConfig(cfg)
+		throttled.QPS, throttled.Burst = 0.1, 1
+		throttledClient, err := client.New(throttled, client.Options{Mapper: c.RESTMapper()})
+		require.NoError(t, err)
+		throttledSim := newSimulator(throttledClient)
+		throttledSim.watch("fight")
+
+		const timeout = time.Second
+		start := time.Now()
+		err = settle(ctx, throttledSim, sc, timeout, before)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "did not settle within 1s")
+		assert.Less(t, time.Since(start), timeout+time.Second)
+	})
 }
 
 // delayed holds each request for delay before it sends it, or until the
