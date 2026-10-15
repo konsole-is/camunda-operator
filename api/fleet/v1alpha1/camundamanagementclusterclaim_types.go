@@ -331,8 +331,8 @@ type ManagementClusterRef struct {
 // clusters of one or more environments. The claim controller writes a
 // CamundaManagementCluster with the name of the claim, and the
 // PluginRequests of the selected sections. The name is a DNS-1035 label of
-// at most 40 characters, because the claim adds a suffix to it in the names
-// of the resources that it writes.
+// at most 40 characters. The claim adds a suffix to it in the names of the
+// resources that it writes.
 type CamundaManagementClusterClaim struct {
 	metav1.TypeMeta `json:",inline"`
 

@@ -248,9 +248,9 @@ type CamundaClusterClaimStatus struct {
 // controller expands it into a CamundaCluster of the same name, a
 // PluginRequest for each selection, and the attachments. The Environment of
 // the namespace sets which presets, releases, and registrations the claim can
-// use. The name is a DNS-1035 label of at most 40 characters, because the
-// claim adds a suffix to it in the names of the resources that it writes,
-// such as <claim>-es-es-http.
+// use. The name is a DNS-1035 label of at most 40 characters. The claim adds
+// a suffix to it in the names of the resources that it writes, such as
+// <claim>-es-es-http.
 type CamundaClusterClaim struct {
 	metav1.TypeMeta `json:",inline"`
 

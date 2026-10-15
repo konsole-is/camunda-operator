@@ -34,6 +34,12 @@ resources:
 - plugins_pluginsection_admin_role.yaml
 - plugins_pluginsection_editor_role.yaml
 - plugins_pluginsection_viewer_role.yaml
+- fleet_camundamanagementclusterclaim_admin_role.yaml
+- fleet_camundamanagementclusterclaim_editor_role.yaml
+- fleet_camundamanagementclusterclaim_viewer_role.yaml
+- fleet_camundaclusterclaim_admin_role.yaml
+- fleet_camundaclusterclaim_editor_role.yaml
+- fleet_camundaclusterclaim_viewer_role.yaml
 - fleet_environment_admin_role.yaml
 - fleet_environment_editor_role.yaml
 - fleet_environment_viewer_role.yaml
