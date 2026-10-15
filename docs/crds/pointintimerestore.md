@@ -71,7 +71,7 @@ The point must lie inside the window that the continuous primary-storage backups
 
 | Bound | Field on the cluster | Default |
 | --- | --- | --- |
-| Zeebe took a backup after the point | `spec.backup.primaryStorage.schedule` | `PT1H` |
+| Zeebe started a backup after the point | `spec.backup.primaryStorage.schedule` | `PT1H` |
 | Zeebe still keeps that backup | `spec.backup.primaryStorage.retention.window` | `P7D` |
 
 **Choose a point at least one backup interval before the cluster stopped writing, and inside the retention window.** With the defaults, a point between one hour and seven days before the brokers stopped is safe. "Now" is always outside the window, because the newest backup is always behind the brokers.
@@ -82,6 +82,8 @@ To read the real window, ask the cluster while it still runs:
 kubectl exec -n my-cluster-ns my-cluster-zeebe-0 -- \
   curl -s localhost:9600/actuator/backupRuntime/state
 ```
+
+In that answer, the `checkpointTimestamp` of a backup is the time that the backup finished, not the time that it started. A backup that finished after the point can have started before it, and then it does not cover the point.
 
 The point must also lie within the retention period that the `DatabaseServerConfig` declares, and not in the future.
 

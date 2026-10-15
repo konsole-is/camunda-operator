@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"regexp"
@@ -238,15 +239,70 @@ func SecretEnv(envName, name, key string) corev1.EnvVar {
 	}
 }
 
-// ParseCheckpointTime reads a checkpointTimestamp of the Zeebe backup runtime
-// state endpoint. The endpoint writes the zone as "Z" or as "+0000", and only
-// the first of those two is RFC 3339.
-func ParseCheckpointTime(value string) (time.Time, error) {
-	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z0700"} {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed, nil
+// BackupPositions returns the checkpoint position of the newest
+// primary-storage backup of each partition, by partition id, from a body of
+// the backup runtime state endpoint of a broker.
+//
+// A partition that holds no backup is absent from the map.
+func BackupPositions(body []byte) (map[int]int64, error) {
+	var state struct {
+		BackupStates []struct {
+			PartitionID int   `json:"partitionId"`
+			Position    int64 `json:"checkpointPosition"`
+		} `json:"backupStates"`
+	}
+	if err := json.Unmarshal(body, &state); err != nil {
+		return nil, fmt.Errorf("decoding the backup runtime state: %w", err)
+	}
+
+	positions := map[int]int64{}
+	for _, backup := range state.BackupStates {
+		positions[backup.PartitionID] = max(positions[backup.PartitionID], backup.Position)
+	}
+
+	return positions, nil
+}
+
+// ExporterPositions returns the exported position of each partition, by
+// partition id, from the unaligned psql output of
+// "SELECT partition_id, last_exported_position FROM exporter_position". Empty
+// output gives an empty map.
+func ExporterPositions(out string) (map[int]int64, error) {
+	positions := map[int]int64{}
+	for line := range strings.Lines(strings.TrimSpace(out)) {
+		partition, position, ok := strings.Cut(strings.TrimSpace(line), "|")
+		if !ok {
+			return nil, fmt.Errorf("reading the exporter position row %q", line)
+		}
+
+		id, err := strconv.Atoi(partition)
+		if err != nil {
+			return nil, fmt.Errorf("reading the partition of the exporter position row %q: %w", line, err)
+		}
+
+		exported, err := strconv.ParseInt(position, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("reading the position of the exporter position row %q: %w", line, err)
+		}
+
+		positions[id] = exported
+	}
+
+	return positions, nil
+}
+
+// UncoveredPartitions returns, in ascending order, each partition of exported
+// that no backup in backups covers. A backup covers an exported position when
+// its checkpoint position is at or past it. The restore application refuses
+// a partition that no backup covers. A partition without a backup is
+// uncovered.
+func UncoveredPartitions(exported, backups map[int]int64) []int {
+	var uncovered []int
+	for _, partition := range slices.Sorted(maps.Keys(exported)) {
+		if position, ok := backups[partition]; !ok || position < exported[partition] {
+			uncovered = append(uncovered, partition)
 		}
 	}
 
-	return time.Time{}, fmt.Errorf("reading the checkpoint timestamp %q", value)
+	return uncovered
 }
