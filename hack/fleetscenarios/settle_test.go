@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/flowcontrol"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/konsole-is/camunda-operator/test/envtest"
@@ -88,6 +89,24 @@ func TestSettle(t *testing.T) {
 		const timeout = time.Second
 		start := time.Now()
 		err = settle(ctx, slowSim, sc, timeout, before)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "did not settle within 1s")
+		assert.Less(t, time.Since(start), timeout+time.Second)
+	})
+
+	t.Run("fails with its timeout error when the rate limiter cannot wait until the timeout", func(t *testing.T) {
+		// One token, then one token every 5 seconds. The second request of
+		// settle has to wait past the timeout for its token.
+		throttled := rest.CopyConfig(cfg)
+		throttled.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(0.2, 1)
+		throttledClient, err := client.New(throttled, client.Options{Mapper: c.RESTMapper()})
+		require.NoError(t, err)
+		throttledSim := newSimulator(throttledClient)
+		throttledSim.watch("fight")
+
+		const timeout = time.Second
+		start := time.Now()
+		err = settle(ctx, throttledSim, sc, timeout, before)
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "did not settle within 1s")
 		assert.Less(t, time.Since(start), timeout+time.Second)

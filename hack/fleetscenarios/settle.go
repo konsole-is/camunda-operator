@@ -57,8 +57,13 @@ func settle(
 	before map[string]float64,
 ) error {
 	parent := ctx
-	ctx, cancel := context.WithTimeoutCause(parent, timeout, errNotSettled)
-	defer cancel()
+	// The context has no deadline. The client rate limiter refuses a wait
+	// that would pass a deadline before the context ends, with an error that
+	// notSettled cannot tell from another failure.
+	ctx, cancel := context.WithCancelCause(parent)
+	defer cancel(nil)
+	timer := time.AfterFunc(timeout, func() { cancel(errNotSettled) })
+	defer timer.Stop()
 
 	quietSince := time.Now()
 	objectChanged := map[string]time.Time{}
