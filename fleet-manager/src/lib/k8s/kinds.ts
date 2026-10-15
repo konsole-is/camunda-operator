@@ -9,8 +9,10 @@ import type {
 } from "@kubernetes/client-node";
 import type { BackupSchedule } from "@/generated/crds/backupschedule";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
+import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { CamundaManagementCluster } from "@/generated/crds/camundamanagementcluster";
+import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { CamundaOptimize } from "@/generated/crds/camundaoptimize";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
@@ -75,6 +77,8 @@ export interface KindTypes {
   PointInTimeRestore: PointInTimeRestore;
   SecondaryStorageConfig: SecondaryStorageConfig;
   Environment: Environment;
+  CamundaClusterClaim: CamundaClusterClaim;
+  CamundaManagementClusterClaim: CamundaManagementClusterClaim;
   PluginSection: PluginSection;
   PluginRegistration: PluginRegistration;
   PluginRequest: PluginRequest;
@@ -240,6 +244,18 @@ export const KindMap = {
     version: "v1alpha1",
     plural: "environments",
     scope: "Cluster",
+  },
+  CamundaClusterClaim: {
+    group: "fleet.camunda.io",
+    version: "v1alpha1",
+    plural: "camundaclusterclaims",
+    scope: "Namespaced",
+  },
+  CamundaManagementClusterClaim: {
+    group: "fleet.camunda.io",
+    version: "v1alpha1",
+    plural: "camundamanagementclusterclaims",
+    scope: "Namespaced",
   },
   PluginSection: {
     group: plugins,
