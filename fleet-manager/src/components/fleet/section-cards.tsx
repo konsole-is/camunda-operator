@@ -359,11 +359,6 @@ function OptionParameters({
   );
 }
 
-/**
- * ParameterField shows one parameter: locked, an allowed list (checkboxes
- * for an array, else a select), an enum select, a checkbox, a number, a
- * text, or YAML for any other schema.
- */
 function ParameterField({
   id,
   rule,
