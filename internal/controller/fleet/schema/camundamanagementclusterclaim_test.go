@@ -38,6 +38,10 @@ type planeClaim = fleetv1alpha1.CamundaManagementClusterClaim
 // oidValue is the claim value of the oidc admin of the examples.
 const oidValue = "1f8c0e2a-2b1a-4a5f-9f0d-2b0a1c3d4e5f"
 
+// keycloakVersion is the Keycloak version of the examples, from the 8.9 row
+// of the images table.
+const keycloakVersion = "26.6.4"
+
 // validPlaneClaim returns the smallest plane claim with a unique name: the
 // oidc mode, a claim admin, and the Identity version.
 func validPlaneClaim() *planeClaim {
@@ -80,7 +84,7 @@ func realisticPlaneClaim() *planeClaim {
 	}
 	claim.Spec.Versions = fleetv1alpha1.ManagementVersions{
 		Identity:   "8.9.10",
-		Keycloak:   "26.6.4",
+		Keycloak:   keycloakVersion,
 		Console:    "8.9.122",
 		WebModeler: "8.9.10",
 	}
@@ -111,7 +115,7 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 			"refuses two identity providers",
 			validPlaneClaim, func(c *planeClaim) {
 				c.Spec.Management.IdentityProvider.Keycloak = &fleetv1alpha1.KeycloakOverrides{}
-				c.Spec.Versions.Keycloak = "26.6.4"
+				c.Spec.Versions.Keycloak = keycloakVersion
 			}, "exactly one identity provider: keycloak, externalKeycloak, or oidc",
 		),
 		Entry(
@@ -138,7 +142,7 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 		),
 		Entry(
 			"admits versions.keycloak in the oidc mode",
-			validPlaneClaim, func(c *planeClaim) { c.Spec.Versions.Keycloak = "26.6.4" }, "",
+			validPlaneClaim, func(c *planeClaim) { c.Spec.Versions.Keycloak = keycloakVersion }, "",
 		),
 		Entry(
 			"refuses a versions.keycloak of two parts",

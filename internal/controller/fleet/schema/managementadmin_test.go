@@ -130,7 +130,7 @@ func managementClusterFor(mode identityMode, admin v1.IdentityAdminSpec, webMode
 		mc.Spec.IdentityProvider.OIDC = &v1.ManagementOIDCSpec{}
 	case modeKeycloak:
 		mc.Spec.IdentityProvider.Keycloak = &v1.ManagedKeycloakSpec{
-			Version:           "26.6.4",
+			Version:           keycloakVersion,
 			ExternalURL:       "https://keycloak.example.com/auth",
 			DatabaseConfigRef: "keycloak-db",
 		}
@@ -166,7 +166,7 @@ func planeClaimFor(mode identityMode, admin v1.IdentityAdminSpec, webModeler boo
 		claim.Spec.Management.IdentityProvider = fleetv1alpha1.ManagementIdentityProvider{
 			Keycloak: &fleetv1alpha1.KeycloakOverrides{},
 		}
-		claim.Spec.Versions.Keycloak = "26.6.4"
+		claim.Spec.Versions.Keycloak = keycloakVersion
 	case modeExternalKeycloak:
 		claim.Spec.Management.IdentityProvider = fleetv1alpha1.ManagementIdentityProvider{
 			ExternalKeycloak: externalKeycloak(),
