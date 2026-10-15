@@ -10,3 +10,6 @@ deploy/chart/
 e2e/scenarios/*/*.yaml
 !e2e/scenarios/*/scenario.yaml
 !e2e/scenarios/*/observe.yaml
+# The release workflow of konsole-is/camunda-operator-plugins writes this
+# file with jq. A test checks its layout.
+catalog/official-plugins.json

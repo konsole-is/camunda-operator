@@ -23,7 +23,8 @@ describe("loadBundledData", () => {
     expect(data.imagesTable.schemaVersion).toBe(1);
     expect(Object.keys(data.imagesTable.minors).length).toBeGreaterThan(0);
     expect(data.imagesTablePath).toMatch(/pkg\/images\/table\.json$/);
-    expect(data.catalog).toEqual({ schemaVersion: 1, charts: [] });
+    expect(data.catalog.schemaVersion).toBe(1);
+    expect(data.catalog.charts.length).toBeGreaterThan(0);
     expect(data.catalogPath).toMatch(/catalog\/official-plugins\.json$/);
   });
 
@@ -35,8 +36,12 @@ describe("loadBundledData", () => {
           {
             name: "aws",
             description: "AWS options",
+            sections: ["cloud-identity"],
             chart: "oci://example/aws",
-            installCommand: "helm install aws oci://example/aws",
+            version: "0.1.0",
+            repository: "https://example/aws",
+            installCommand:
+              "helm install aws oci://example/aws --version 0.1.0",
           },
         ],
       }),
@@ -104,6 +109,16 @@ describe("parseImagesTable", () => {
   });
 });
 
+const validChart = {
+  name: "aws",
+  description: "d",
+  sections: ["cloud-identity"],
+  chart: "oci://x",
+  version: "0.1.0",
+  repository: "https://x",
+  installCommand: "helm install aws oci://x --version 0.1.0",
+};
+
 describe("parseCatalog", () => {
   it("refuses a catalog without schemaVersion", () => {
     expect(() => parseCatalog({ charts: [] })).toThrow(
@@ -112,21 +127,49 @@ describe("parseCatalog", () => {
   });
 
   it("refuses a chart without an install command", () => {
+    const chart: Record<string, unknown> = { ...validChart };
+    delete chart.installCommand;
+
+    expect(() => parseCatalog({ schemaVersion: 1, charts: [chart] })).toThrow(
+      "charts[0].installCommand is not a non-empty string",
+    );
+  });
+
+  it.each(["version", "repository"])("refuses a chart without %s", (field) => {
+    const chart: Record<string, unknown> = { ...validChart };
+    delete chart[field];
+
+    expect(() => parseCatalog({ schemaVersion: 1, charts: [chart] })).toThrow(
+      `charts[0].${field} is not a non-empty string`,
+    );
+  });
+
+  it.each([
+    ["without sections", undefined],
+    ["with an empty list of sections", []],
+    ["with a section that is not a string", [1]],
+    ["with an empty section name", [""]],
+  ])("refuses a chart %s", (_, sections) => {
     expect(() =>
-      parseCatalog({
-        schemaVersion: 1,
-        charts: [{ name: "aws", description: "d", chart: "oci://x" }],
-      }),
-    ).toThrow("charts[0].installCommand is not a non-empty string");
+      parseCatalog({ schemaVersion: 1, charts: [{ ...validChart, sections }] }),
+    ).toThrow("charts[0].sections is not a non-empty list of section names");
+  });
+
+  it("reads a chart of the full shape", () => {
+    expect(
+      parseCatalog({ schemaVersion: 1, charts: [validChart] }).charts,
+    ).toEqual([validChart]);
   });
 });
 
 describe("describeBundledData", () => {
   it("names both files on one line", async () => {
-    const line = describeBundledData(await loadBundledData({}));
+    const data = await loadBundledData({});
 
-    expect(line).toMatch(
-      /^Read the images table \S+table\.json \(minors \d+\.\d+.*\) and the catalog \S+official-plugins\.json \(0 charts\)$/,
+    expect(describeBundledData(data)).toMatch(
+      new RegExp(
+        String.raw`^Read the images table \S+table\.json \(minors \d+\.\d+.*\) and the catalog \S+official-plugins\.json \(${data.catalog.charts.length} charts\)$`,
+      ),
     );
   });
 });
