@@ -63,9 +63,9 @@ function Line({ line }: { line: DiffLine }) {
         {sign}
       </span>
       {line.op === "added" ? (
-        <ins className="no-underline">{line.text}</ins>
+        <ins className="whitespace-pre no-underline">{line.text}</ins>
       ) : line.op === "removed" ? (
-        <del className="no-underline">{line.text}</del>
+        <del className="whitespace-pre no-underline">{line.text}</del>
       ) : (
         text
       )}
