@@ -173,6 +173,14 @@ export const fleetSharedConditionTypes = [
 ] as const;
 export type FleetSharedConditionType = (typeof fleetSharedConditionTypes)[number];
 
+export const fleetCamundaClusterClaimConditionTypes = [
+  "AttachmentsReady",
+  "ClusterReady",
+  "Ready",
+  "RequestsReady",
+] as const;
+export type FleetCamundaClusterClaimConditionType = (typeof fleetCamundaClusterClaimConditionTypes)[number];
+
 export const fleetEnvironmentConditionTypes = [
   "Ready",
 ] as const;

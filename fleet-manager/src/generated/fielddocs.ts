@@ -4451,6 +4451,864 @@ export const fieldDocs: FieldDocs = {
     }
   },
   "fleet.camunda.io": {
+    "CamundaClusterClaim": {
+      "spec": {
+        "description": "spec is the cluster that the claim asks for",
+        "anchor": "#camundaclusterclaim"
+      },
+      "spec.allowVersionDowngrade": {
+        "description": "AllowVersionDowngrade is the target version of a confirmed downgrade,\nas a full version such as 8.9.3. The claim controller sets the\nannotation camunda.io/allow-version-downgrade on the CamundaCluster to\nthis version until the cluster reports it. The fleet manager clears\nthe field after the cluster reports the target version.",
+        "anchor": "#camundaclusterclaimspec"
+      },
+      "spec.attachments": {
+        "description": "Attachments are the resources that the claim controller attaches to\nthe cluster.",
+        "anchor": "#camundaclusterclaimspec"
+      },
+      "spec.attachments.backupSchedule": {
+        "description": "BackupSchedule adds a BackupSchedule named <claim>-backups for the\ncluster. Unset, the claim has no backup schedule.",
+        "anchor": "#clusterattachments"
+      },
+      "spec.attachments.backupSchedule.retained": {
+        "description": "Retained limits how many backups of the schedule stay. Unset, the\ndefaults of the BackupSchedule apply.",
+        "anchor": "#backupscheduleattachment"
+      },
+      "spec.attachments.backupSchedule.retained.completed": {
+        "description": "Completed is how many completed backups the schedule keeps.",
+        "anchor": "#retainedbackups"
+      },
+      "spec.attachments.backupSchedule.retained.failed": {
+        "description": "Failed is how many failed backups the schedule keeps. With zero, the\noperator deletes a failed backup soon after it fails.",
+        "anchor": "#retainedbackups"
+      },
+      "spec.attachments.backupSchedule.schedule": {
+        "description": "Schedule is when the backups run: a five-field cron expression\n(minute, hour, day of month, month, day of week), evaluated in UTC.",
+        "anchor": "#backupscheduleattachment"
+      },
+      "spec.attachments.optimize": {
+        "description": "Optimize adds a CamundaOptimize named <claim>-optimize that reads the\ncluster. Unset, the claim has no Optimize.",
+        "anchor": "#clusterattachments"
+      },
+      "spec.attachments.optimize.externalUrl": {
+        "description": "ExternalURL is the URL where browsers reach this Optimize, with the\nrules of externalUrl on the CamundaOptimize. The claim controller\nrefuses it with reason SlotConflict when the access section has a\nselection, because that section fills it.",
+        "anchor": "#optimizeattachment"
+      },
+      "spec.attachments.optimize.importer": {
+        "description": "Importer configures the Deployment that imports the cluster data into\nthe Optimize indices. Optimize supports one active importer, so\nreplicas must be 0 or 1.",
+        "anchor": "#optimizeattachment"
+      },
+      "spec.attachments.optimize.importer.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.importer.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.importer.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.importer.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.importer.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.importer.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.importer.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.importer.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.attachments.optimize.importer.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.attachments.optimize.importer.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.attachments.optimize.indexReplicas": {
+        "description": "IndexReplicas is the replica count of each Optimize index. Unset, the\nstorage of the cluster gives the count, as on the CamundaOptimize.",
+        "anchor": "#optimizeattachment"
+      },
+      "spec.attachments.optimize.managementAuthConfigRef": {
+        "description": "ManagementAuthConfigRef names the cluster-scoped ManagementAuthConfig\nthat Optimize signs in against. The claim controller writes it to\nmanagementAuthRef of the CamundaOptimize.",
+        "anchor": "#optimizeattachment"
+      },
+      "spec.attachments.optimize.monitoring": {
+        "description": "Monitoring configures the monitoring integrations of Optimize.",
+        "anchor": "#optimizeattachment"
+      },
+      "spec.attachments.optimize.monitoring.serviceMonitor": {
+        "description": "ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,\nthe operator creates one ServiceMonitor for each Deployment, with the\nname of the workload. It scrapes /actuator/prometheus on the management\nport.",
+        "anchor": "#optimizemonitoringspec"
+      },
+      "spec.attachments.optimize.monitoring.serviceMonitor.annotations": {
+        "description": "Annotations are extra annotations applied to the ServiceMonitor.",
+        "anchor": "#servicemonitorspec"
+      },
+      "spec.attachments.optimize.monitoring.serviceMonitor.enabled": {
+        "description": "Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,\nthe exporter) when true. Defaults to false.",
+        "anchor": "#servicemonitorspec"
+      },
+      "spec.attachments.optimize.monitoring.serviceMonitor.labels": {
+        "description": "Labels are extra labels applied to the ServiceMonitor.",
+        "anchor": "#servicemonitorspec"
+      },
+      "spec.attachments.optimize.webapp": {
+        "description": "Webapp configures the Deployment that serves the Optimize user\ninterface.",
+        "anchor": "#optimizeattachment"
+      },
+      "spec.attachments.optimize.webapp.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.webapp.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.webapp.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.webapp.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.webapp.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.webapp.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.webapp.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#workloadspec"
+      },
+      "spec.attachments.optimize.webapp.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.attachments.optimize.webapp.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.attachments.optimize.webapp.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster": {
+        "description": "Cluster holds the overrides of the cluster. It has the shape of the\nCamundaCluster spec, and it merges over the preset and the release.\n\nThe API server refuses these fields here. An explicit zero value, such\nas suspend: false, counts as unset.\n  - presetRef, releaseRef, platformConfigRef, and suspend: the claim\n    has its own fields for them.\n  - version and connectors.version: the release sets them. Use\n    allowVersionDowngrade for a downgrade.\n  - serviceAccount.name and connectors.serviceAccount.name: the claim\n    controller sets them.\n  - storageRef and backupStorageRef: the secondary-storage and\n    backup-storage sections fill them.\n\nA selected section fills these fields. The claim controller refuses a\nclaim that sets one of them with reason SlotConflict. Without a\nselection in that section, the claim can set the field.\n  - externalUrl: access.\n  - serviceAccount.annotations: cloud-identity.\n  - connectors.serviceAccount.annotations: connectors-permissions.\n  - zeebe.storageClassName: volume-encryption.",
+        "anchor": "#camundaclusterclaimspec"
+      },
+      "spec.cluster.admin": {
+        "description": "Admin configures the Admin web application (Orchestration Cluster\nIdentity before Camunda 8.9). Its Spring profile is admin.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.admin.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.admin.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.admin.mode": {
+        "description": "Mode selects a Deployment of the unified binary that serves only this\napplication (Standalone) or the nearest standalone host up the chain\n(Embedded). Defaults to Embedded. The workload fields have an effect\nonly in Standalone mode. The exception is extraEnv and extraEnvFrom: in\nEmbedded mode, they apply to the host process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.admin.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.admin.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.admin.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.admin.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.admin.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.admin.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.admin.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.admin.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.auth": {
+        "description": "Auth holds the credentials of this cluster and the identities that get\nits admin role. Under OIDC, it holds the client credentials and the\nadministrators. Under basic authentication, it holds the admin\ncredential that the operator owns.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.auth.admin": {
+        "description": "Admin holds the identities that get the admin role of this cluster. It\napplies under OIDC only. Basic authentication seeds its own\nadministrator and ignores this block.",
+        "anchor": "#clusterauthspec"
+      },
+      "spec.cluster.auth.admin.clients": {
+        "description": "Clients are the values of the client id claim that get the admin role.\nA client entry matches only when the platform config sets\nauth.oidc.clientIdClaim.",
+        "anchor": "#clusteradminspec"
+      },
+      "spec.cluster.auth.admin.mappingRules": {
+        "description": "MappingRules give the admin role to every token that holds a claim with\na given value.",
+        "anchor": "#clusteradminspec"
+      },
+      "spec.cluster.auth.admin.mappingRules.claimName": {
+        "description": "ClaimName is the name of a claim, or a JSONPath expression that points\nat a claim.",
+        "anchor": "#adminmappingrule"
+      },
+      "spec.cluster.auth.admin.mappingRules.claimValue": {
+        "description": "ClaimValue is the value that the claim must hold for the rule to match.",
+        "anchor": "#adminmappingrule"
+      },
+      "spec.cluster.auth.admin.mappingRules.id": {
+        "description": "ID names the rule inside the cluster. The Admin web application lists it\nunder Mapping Rules.",
+        "anchor": "#adminmappingrule"
+      },
+      "spec.cluster.auth.admin.users": {
+        "description": "Users are the values of the username claim that get the admin role.",
+        "anchor": "#clusteradminspec"
+      },
+      "spec.cluster.auth.audience": {
+        "description": "Audience is the audience that access tokens must carry. Defaults to\nthe client ID that the cluster uses.",
+        "anchor": "#clusterauthspec"
+      },
+      "spec.cluster.auth.basic": {
+        "description": "Basic configures the admin credential that the operator owns. It\napplies under basic authentication only. OIDC ignores this block, like\nbasic authentication ignores admin.",
+        "anchor": "#clusterauthspec"
+      },
+      "spec.cluster.auth.basic.adminEmail": {
+        "description": "AdminEmail is the email address of the admin user that the operator\nseeds. The orchestration cluster stores it on that user, and the Admin\nweb application shows it. Set the address of the person or the team\nthat owns the cluster.\n\nWhen empty, the operator uses admin@example.com. RFC 2606 reserves this\ndomain for documentation, so the default is not the address of a real\nperson.\n\nThe operator applies a changed value to the running cluster. The\ncluster validates the address and refuses a domain without a dot. When\nthe cluster refuses an address, AdminSecretReady shows its answer.",
+        "anchor": "#basicauthspec"
+      },
+      "spec.cluster.auth.basic.passwordRotation": {
+        "description": "PasswordRotation requests one rotation of the admin password. Set it\nto a value that differs from the applied one, for example a date. The\noperator generates a new password and sets it on the admin user of the\nrunning cluster. Then it publishes the password in the admin Secret.\nThe connectors Deployment restarts with the new password. An empty\nvalue never rotates. A suspended cluster rotates after it resumes.\n\nstatus.adminPassword.rotation shows the applied value. A preset can set\nthis field. Then every cluster that references the preset rotates, and\neach of these clusters reports its own status.",
+        "anchor": "#basicauthspec"
+      },
+      "spec.cluster.auth.clientId": {
+        "description": "ClientID is the OIDC client ID of this cluster. A client ID replaces\nthe whole client: the audience and the client secret then come from\nthis block only. Requires clientSecretRef.",
+        "anchor": "#clusterauthspec"
+      },
+      "spec.cluster.auth.clientSecretRef": {
+        "description": "ClientSecretRef names the Secret that holds the OIDC client secret of\nthis cluster. Required when clientId is set.",
+        "anchor": "#clusterauthspec"
+      },
+      "spec.cluster.auth.clientSecretRef.key": {
+        "description": "Key is the key in the Secret that holds the value.",
+        "anchor": "#localsecretkeyref"
+      },
+      "spec.cluster.auth.clientSecretRef.name": {
+        "description": "Name is the name of the Secret that holds the value.",
+        "anchor": "#localsecretkeyref"
+      },
+      "spec.cluster.backup": {
+        "description": "Backup configures the backups of this cluster. It sets the schedule and\nthe retention of the primary-storage backups that Zeebe takes, and the\npod of the database dump Job. A preset can set this block, but not\nbackupStorageRef. The block applies only to a cluster with relational\nsecondary storage. Only such a cluster has continuous and scheduled\nprimary-storage backups and the dump Job.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.backup.dump": {
+        "description": "Dump configures the Job that writes the logical database to the backup\nbucket. A LogicalBackupRDBMS can replace this block as a whole.",
+        "anchor": "#clusterbackupspec"
+      },
+      "spec.cluster.backup.dump.activeDeadlineSeconds": {
+        "description": "ActiveDeadlineSeconds is the number of seconds that the dump Job can\nrun before it fails, counted from its start. When the dump block that\napplies does not set it, the Job gets 86400 (24 hours). In the block of\nthe cluster, an unset value takes the value of the preset. The\nspec.dump of a LogicalBackupRDBMS replaces the block of the cluster, so\nan unset value there gives 86400, not the value of the cluster.\n\nThe default is large, so that a very large dump can complete. The Job\nalways has a deadline. A pod that cannot start uses no retry, so\nwithout a deadline a broken Job stays active for the life of the\nbackup. A lower value fails a stuck dump sooner. A higher value gives a\nlong dump the time that it needs.",
+        "anchor": "#backupdumpspec"
+      },
+      "spec.cluster.backup.dump.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the dump pod.\n\nIn the spec.dump of a LogicalBackupRDBMS, every name that starts with\nPG or UPLOAD_ is reserved, and the API server refuses it. A PG* name is\nconnection policy, because libpq reads PGHOSTADDR, PGSERVICE,\nPGOPTIONS, and more. UPLOAD_* is the upload contract. The variables of\na backup reach only the dump container, never the upload container.\nCloud SDKs read endpoint, proxy, and configuration variables from the\nenvironment, and the author of a backup must not change where the dump\ngoes.\n\nIn the spec.backup.dump of the cluster, no name is reserved, and the\nvariables reach every container. The cluster owner sets the connection\npolicy, PGSSLMODE included.\n\nUnlike the extraEnv of a workload, this list is atomic. One field\nmanager owns the whole list, because no extension adds entries to a\ndump pod.",
+        "anchor": "#backupdumpspec"
+      },
+      "spec.cluster.backup.dump.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources of the dump pod. In the\nspec.dump of a LogicalBackupRDBMS, every source needs a prefix that\ncannot make a PG* or UPLOAD_* name. The writer of the referenced object\nchooses its keys. As with ExtraEnv, the sources of a\nbackup reach only the dump container. The block of the cluster needs no\nprefix, and its sources reach every container.",
+        "anchor": "#backupdumpspec"
+      },
+      "spec.cluster.backup.dump.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the dump pod. A service mesh\nsidecar keeps running after the dump finishes, and the Job does not\ncomplete. Set the injection annotation of the mesh to false here.",
+        "anchor": "#backupdumpspec"
+      },
+      "spec.cluster.backup.dump.podLabels": {
+        "description": "PodLabels are extra labels of the dump pod.",
+        "anchor": "#backupdumpspec"
+      },
+      "spec.cluster.backup.dump.postgresImage": {
+        "description": "PostgresImage is the full image reference of the dump container. It\nreplaces the default postgres:<major> of the upstream registry. Set it\nin an air-gapped installation, where the default image is not\navailable.",
+        "anchor": "#backupdumpspec"
+      },
+      "spec.cluster.backup.dump.resources": {
+        "description": "Resources are the CPU and memory of the dump pod.",
+        "anchor": "#backupdumpspec"
+      },
+      "spec.cluster.backup.dump.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the dump pod. When set,\nit replaces the block of a preset, with no merge.",
+        "anchor": "#backupdumpspec"
+      },
+      "spec.cluster.backup.dump.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.backup.dump.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.backup.dump.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.backup.dump.scratchVolume": {
+        "description": "ScratchVolume is where the pod writes the dump before the upload. When\nset, it replaces the block of a preset, with no merge. The dump pod\nruns with fsGroup 999, the postgres group. Thus pg_dump can write to a\nvolume that a storage class gives with the root owner.",
+        "anchor": "#backupdumpspec"
+      },
+      "spec.cluster.backup.dump.scratchVolume.sizeLimit": {
+        "description": "SizeLimit is the size of the emptyDir that holds the dump. Set it to\nthe size the dump needs, with room to spare.",
+        "anchor": "#scratchvolumespec"
+      },
+      "spec.cluster.backup.dump.scratchVolume.storageClassName": {
+        "description": "StorageClassName makes the scratch volume a PersistentVolumeClaim of\nthis class, not an emptyDir. Use it when the dump is larger than the\nephemeral storage of a node.",
+        "anchor": "#scratchvolumespec"
+      },
+      "spec.cluster.backup.primaryStorage": {
+        "description": "PrimaryStorage configures the backups that Zeebe takes of its own\nprimary storage. A point-in-time restore uses them.",
+        "anchor": "#clusterbackupspec"
+      },
+      "spec.cluster.backup.primaryStorage.checkpointInterval": {
+        "description": "CheckpointInterval is the interval at which Zeebe writes marker\ncheckpoints into the log stream, as an ISO 8601 duration of days and\ntime (P2DT3H, PT15M). Camunda parses no week, month, or year units.\nIt is the granularity of a point-in-time restore. Defaults to PT15M.",
+        "anchor": "#primarystoragebackupspec"
+      },
+      "spec.cluster.backup.primaryStorage.continuous": {
+        "description": "Continuous keeps every log segment until it is backed up, so that a\nrestore finds a range without gaps. Defaults to true on a relational\ncluster with a backupStorageRef. A preset can turn it on for many\nclusters, and one cluster can still turn it off.",
+        "anchor": "#primarystoragebackupspec"
+      },
+      "spec.cluster.backup.primaryStorage.retention": {
+        "description": "Retention bounds how long Zeebe keeps its primary-storage backups.",
+        "anchor": "#primarystoragebackupspec"
+      },
+      "spec.cluster.backup.primaryStorage.retention.cleanupSchedule": {
+        "description": "CleanupSchedule is the interval at which Zeebe looks for backups\noutside the window: an ISO 8601 duration, a CRON expression, or\n\"none\". Defaults to PT1H.",
+        "anchor": "#primarystorageretentionspec"
+      },
+      "spec.cluster.backup.primaryStorage.retention.window": {
+        "description": "Window is how far back the backups stay available for a restore, as an\nISO 8601 duration of days and time (P7D, PT12H). Camunda parses no\nweek, month, or year units. Defaults to P7D. It limits the restore\nwindow, so set it at least as long as the recovery point that the\ncluster needs. A BackupSchedule can keep database dumps for longer than\nthis window. A restore of such an old dump is not possible.",
+        "anchor": "#primarystorageretentionspec"
+      },
+      "spec.cluster.backup.primaryStorage.schedule": {
+        "description": "Schedule is the interval at which Zeebe takes a primary-storage\nbackup: an ISO 8601 duration, a CRON expression, or \"none\". Defaults\nto PT1H. Always use a schedule with continuous. Otherwise the log grows\nwithout limit.",
+        "anchor": "#primarystoragebackupspec"
+      },
+      "spec.cluster.backupStorageRef": {
+        "description": "BackupStorageRef names an ObjectStorageConfig, in the namespace of\nthis cluster, for backups.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.connectors": {
+        "description": "Connectors configures the connectors runtime.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.connectors.enabled": {
+        "description": "Enabled runs the connectors runtime when true. Defaults to false.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.connectors.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.connectors.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.connectors.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.connectors.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.connectors.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.connectors.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.connectors.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.connectors.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.connectors.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.connectors.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.connectors.serviceAccount": {
+        "description": "ServiceAccount configures the ServiceAccount of the connectors pods.\nWhen unset, they run under the default ServiceAccount of the namespace.\nWhen set, they run under <name>-connectors, or under name. Only\nthe annotations of this block go on the account, never the identities\nof the buckets. When they carry azure.workload.identity/client-id, the\nconnectors pods get the label azure.workload.identity/use: \"true\". The\nconnectors never run under the cluster ServiceAccount: name must differ\nfrom it, and a spec.serviceAccount.name of default needs this block, or\nReady reports InvalidReference. The name default needs create false.\nWith create false, name must not be <name>-camunda while\nneither the cluster nor its preset sets spec.serviceAccount and no\nreferenced bucket uses workload identity. Ready then reports\nInvalidReference, also while connectors are off. A preset can set this\nblock, except name.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.connectors.serviceAccount.annotations": {
+        "description": "Annotations to set on the ServiceAccount that the operator creates.\nUsually these are workload-identity annotations (IRSA, GCP Workload\nIdentity, and more) that give the pods access to cloud resources, such\nas the snapshot bucket for backups. Except on connectors.serviceAccount\nof a CamundaCluster, the operator also adds the identity annotation of\neach referenced bucket that names an identity. An annotation set here\nwins over it. With create false, the operator sets no annotation. Add them\nto the existing ServiceAccount yourself.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.cluster.connectors.serviceAccount.create": {
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.cluster.connectors.serviceAccount.name": {
+        "description": "Name is the name of the ServiceAccount. When empty, the operator\nderives the name from the name of the resource, as the doc of each kind\nstates. The cloud provider uses this name. A workload identity that\nneeds no annotation, such as EKS Pod Identity, binds the principal\nsystem:serviceaccount:<namespace>:<name>.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.cluster.connectors.version": {
+        "description": "Version is the version of the connectors bundle image, as a full\nsemantic version. Use the same minor as the cluster, such as 8.9.x for\na cluster on 8.9. The patch does not follow the cluster patch. Required\nwhen connectors are enabled, unless the resolved release provides it.\nForbidden in a preset.",
+        "anchor": "#connectorsspec"
+      },
+      "spec.cluster.documentStorageRef": {
+        "description": "DocumentStorageRef names an ObjectStorageConfig, in the namespace of\nthis cluster, for document storage.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.externalUrl": {
+        "description": "ExternalURL is the external base URL of the cluster. The operator uses\nit for OIDC redirect URLs and web application links. It creates no\nIngress.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of every workload. A\nper-component entry wins over an entry here with the same name.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nA CamundaManagementCluster that serves this cluster owns the four\nCAMUNDA_CONSOLE_PING_ entries (CAMUNDA_HUB_PING_ on Camunda 8.10 and\nlater). It replaces what you set under these names. If your entry under\none of these names has valueFrom, the management cluster removes it. One\nentry cannot hold a value and a reference together.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of\nevery workload.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.gateway": {
+        "description": "Gateway configures the gateway.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.gateway.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#gatewayspec"
+      },
+      "spec.cluster.gateway.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#gatewayspec"
+      },
+      "spec.cluster.gateway.mode": {
+        "description": "Mode selects a Deployment of the unified binary (Standalone) or the\nembedded gateway of the brokers (Embedded). Defaults to Standalone.\nThe workload fields have an effect only in Standalone mode. The\nexception is extraEnv and extraEnvFrom: in Embedded mode, they apply to\nthe brokers.",
+        "anchor": "#gatewayspec"
+      },
+      "spec.cluster.gateway.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#gatewayspec"
+      },
+      "spec.cluster.gateway.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#gatewayspec"
+      },
+      "spec.cluster.gateway.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#gatewayspec"
+      },
+      "spec.cluster.gateway.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#gatewayspec"
+      },
+      "spec.cluster.gateway.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#gatewayspec"
+      },
+      "spec.cluster.gateway.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.gateway.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.gateway.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.indexReplicas": {
+        "description": "IndexReplicas is the replica count of each index that the cluster\ncreates in an Elasticsearch secondary storage. When it is not set, the\nnodeCount of the storage contract gives the count: 0 on one node, 1 on\ntwo or more nodes. Without a nodeCount, Camunda keeps its own default.\nWhen indexReplicas is not set and the extraEnv of a process sets a\nlegacy replica key, that process keeps the value of the key.\n\nThe cluster applies the count to its existing indices when it starts.\nIf the nodes cannot place the count, the operator keeps it and records\nan IndexReplicasExceedNodes Warning event on the CamundaCluster. A\nrelational secondary\nstorage ignores this field.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.monitoring": {
+        "description": "Monitoring configures the monitoring integrations.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.monitoring.serviceMonitor": {
+        "description": "ServiceMonitor configures the Prometheus ServiceMonitors. When enabled,\nthe operator creates one ServiceMonitor for each process, with the name\nof the workload. It scrapes /actuator/prometheus on the management port\n9600 of a unified process, and on the HTTP port 8080 of connectors.",
+        "anchor": "#clustermonitoringspec"
+      },
+      "spec.cluster.monitoring.serviceMonitor.annotations": {
+        "description": "Annotations are extra annotations applied to the ServiceMonitor.",
+        "anchor": "#servicemonitorspec"
+      },
+      "spec.cluster.monitoring.serviceMonitor.enabled": {
+        "description": "Enabled creates the ServiceMonitors (and, for an ElasticsearchCluster,\nthe exporter) when true. Defaults to false.",
+        "anchor": "#servicemonitorspec"
+      },
+      "spec.cluster.monitoring.serviceMonitor.labels": {
+        "description": "Labels are extra labels applied to the ServiceMonitor.",
+        "anchor": "#servicemonitorspec"
+      },
+      "spec.cluster.operate": {
+        "description": "Operate configures the Operate web application.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.operate.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.operate.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.operate.mode": {
+        "description": "Mode selects a Deployment of the unified binary that serves only this\napplication (Standalone) or the nearest standalone host up the chain\n(Embedded). Defaults to Embedded. The workload fields have an effect\nonly in Standalone mode. The exception is extraEnv and extraEnvFrom: in\nEmbedded mode, they apply to the host process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.operate.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.operate.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.operate.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.operate.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.operate.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.operate.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.operate.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.operate.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.pause": {
+        "description": "Pause stops the reconciliation of this cluster: the operator changes no\nworkload and writes no status. It records a Paused event instead. Other\nresources that use the cluster, such as a BackupSchedule or a restore,\nstill act on it. When you delete a paused cluster, the operator still\nreleases its storage backends. Defaults to false.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.platformConfigRef": {
+        "description": "PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that\nprovides auth, license, and image repositories. Required on a\nCamundaCluster, forbidden in a preset.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of every workload pod. The keys\ncamunda.io/config-hash and camunda.io/service-account-hash belong to the\noperator. A value for them here, or in the podAnnotations of a process,\ndoes not reach the pods.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.podLabels": {
+        "description": "PodLabels are extra labels of every workload pod.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.presetRef": {
+        "description": "PresetRef names a cluster-scoped CamundaClusterPreset used as the\nconfiguration baseline. The preset doc lists the merge rules.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.releaseRef": {
+        "description": "ReleaseRef names a cluster-scoped CamundaRelease that provides the\nversions, the pinned images, and the environment of a version. It\nmerges over the preset and under this spec. Forbidden in a preset.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of every workload that does\nnot set its own. When set, it replaces the scheduling block of a preset,\nwith no merge.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.serviceAccount": {
+        "description": "ServiceAccount configures the ServiceAccount of every workload except\nthe connectors, which connectors.serviceAccount configures. The\nworkloads get access to the buckets of backupStorageRef and\ndocumentStorageRef through this identity. When the operator creates\nthe account, it adds the identity annotation of each bucket that names\none. When the annotations carry azure.workload.identity/client-id, the\npods of these workloads, the backup Jobs included, get the label\nazure.workload.identity/use: \"true\". The name <name>-camunda\nbelongs to the operator. While neither the cluster nor its preset sets\nthis block and no referenced bucket uses workload identity, the\noperator deletes an account of that name. It deletes one that it did\nnot create too, except while connectors.serviceAccount names it with\ncreate false: Ready then reports InvalidReference.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.serviceAccount.annotations": {
+        "description": "Annotations to set on the ServiceAccount that the operator creates.\nUsually these are workload-identity annotations (IRSA, GCP Workload\nIdentity, and more) that give the pods access to cloud resources, such\nas the snapshot bucket for backups. Except on connectors.serviceAccount\nof a CamundaCluster, the operator also adds the identity annotation of\neach referenced bucket that names an identity. An annotation set here\nwins over it. With create false, the operator sets no annotation. Add them\nto the existing ServiceAccount yourself.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.cluster.serviceAccount.create": {
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.cluster.serviceAccount.name": {
+        "description": "Name is the name of the ServiceAccount. When empty, the operator\nderives the name from the name of the resource, as the doc of each kind\nstates. The cloud provider uses this name. A workload identity that\nneeds no annotation, such as EKS Pod Identity, binds the principal\nsystem:serviceaccount:<namespace>:<name>.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.cluster.storageRef": {
+        "description": "StorageRef names the SecondaryStorageConfig, in the namespace of this\ncluster, that describes the secondary storage backend. Required on a\nCamundaCluster, forbidden in a preset. One backend serves one\nCamundaCluster. Two contracts that name one address are one backend. If\nanother cluster already holds the backend, the operator suspends this\ncluster with Ready reason StorageAlreadyAttached. The suspension stays\nuntil the other cluster moves to another backend or is deleted.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.suspend": {
+        "description": "Suspend scales every workload to zero and keeps the data. Defaults to\nfalse. An annotation with the prefix suspension-hold.camunda.io/ on the\nCamundaCluster also suspends it, whatever this field says.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.tasklist": {
+        "description": "Tasklist configures the Tasklist web application.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.tasklist.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.tasklist.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.tasklist.mode": {
+        "description": "Mode selects a Deployment of the unified binary that serves only this\napplication (Standalone) or the nearest standalone host up the chain\n(Embedded). Defaults to Embedded. The workload fields have an effect\nonly in Standalone mode. The exception is extraEnv and extraEnvFrom: in\nEmbedded mode, they apply to the host process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.tasklist.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.tasklist.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.tasklist.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.tasklist.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.tasklist.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#webappspec"
+      },
+      "spec.cluster.tasklist.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.tasklist.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.tasklist.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.version": {
+        "description": "Version is the Camunda version to deploy, as a full semantic version.\nRequired unless the resolved release provides it. Forbidden in a\npreset. The operator refuses a version below 8.9.0, also when it comes\nfrom the release. The operator also refuses a version below the\nversion that the brokers run, with Ready reason VersionDowngradeRefused.\nThe annotation camunda.io/allow-version-downgrade on the CamundaCluster,\nset to that version, permits it.\nThe operator also refuses a version more than one minor above the\nversion that the brokers run, in the same major, with Ready reason\nVersionSkipRefused. No annotation permits that move.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.zeebe": {
+        "description": "Zeebe configures the brokers.",
+        "anchor": "#camundaclusterspec"
+      },
+      "spec.cluster.zeebe.extraEnv": {
+        "description": "ExtraEnv are extra environment variables of the container of this\nprocess. On a CamundaCluster, an entry here wins over a top-level entry\nwith the same name. The entries of an embedded web application apply to\nits host process.\n\nThe list merges by name under server-side apply. Each field manager owns\nonly the entries that it applies, so an extension controller can add its\nown entry next to yours. One applied manifest cannot hold two entries\nwith the same name.\n\nTwo field managers that apply the same name do not conflict, because the\nmerge is per field inside the entry. One manager can own value and the\nother valueFrom. A container rejects an entry that has both, so the API\nserver refuses to store such an entry.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.extraEnvFrom": {
+        "description": "ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the\ncontainer of this process.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.partitions": {
+        "description": "Partitions is the number of partitions. Defaults to 1. Once set, it can\nneither be decreased nor removed.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.persistentVolumeClaimRetentionPolicy": {
+        "description": "PersistentVolumeClaimRetentionPolicy says what happens to the broker\nvolumes when the CamundaCluster is deleted. A scale-down and a\nsuspension always keep them.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.persistentVolumeClaimRetentionPolicy.whenDeleted": {
+        "description": "WhenDeleted is what happens to the data volumes when the resource is\ndeleted. Defaults to Delete. Delete removes them with the resource.\nRetain keeps them, and a later resource with the same name attaches\nthem again.",
+        "anchor": "#persistentvolumeclaimretentionpolicy"
+      },
+      "spec.cluster.zeebe.podAnnotations": {
+        "description": "PodAnnotations are extra annotations of the pods of this process. In a\nCamundaCluster, the keys camunda.io/config-hash and\ncamunda.io/service-account-hash belong to the operator, and a value for\nthem does not reach the pods.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.podLabels": {
+        "description": "PodLabels are extra labels of the pods of this process.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.replicas": {
+        "description": "Replicas is the number of pods of this process. Defaults to 1. On a\nCamundaCluster it has no effect on an embedded web application.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.replicationFactor": {
+        "description": "ReplicationFactor is the number of brokers that hold a copy of each\npartition. Defaults to 1. It must not exceed replicas.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.resources": {
+        "description": "Resources are the CPU and memory of the container of this process.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.scheduling": {
+        "description": "Scheduling holds the scheduling constraints of the pods of this process.\nWhen set, it replaces all other scheduling blocks for this process, with\nno merge. On a CamundaCluster, these are the top-level block and the\nblock of a preset.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.scheduling.nodeAffinity": {
+        "description": "NodeAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.zeebe.scheduling.podAffinity": {
+        "description": "PodAffinity rules for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.zeebe.scheduling.tolerations": {
+        "description": "Tolerations for the pods.",
+        "anchor": "#schedulingspec"
+      },
+      "spec.cluster.zeebe.storageClassName": {
+        "description": "StorageClassName is the StorageClass of the broker volumes. Defaults to\nthe default StorageClass of the Kubernetes cluster. The class cannot\nchange after the broker StatefulSet exists. The API server refuses a\nchange of a value that the CamundaCluster sets itself. A preset can\nchange the class, and a cluster that got its class from a preset can\nset another one. A cluster whose broker StatefulSet exists, also a\nsuspended one, then keeps its class and records a\nStorageClassChangeIgnored event. A cluster without a broker StatefulSet\ntakes the new class. Volumes that whenDeleted Retain kept from a\ndeleted cluster of the same name keep their class.",
+        "anchor": "#zeebespec"
+      },
+      "spec.cluster.zeebe.storageSize": {
+        "description": "StorageSize is the size of the data volume of each broker. Defaults to\n10Gi. It can only grow. The API server refuses a change of this field\nin a CamundaCluster to a smaller value. A smaller value is accepted when\nthe field was not set before, or when a preset lowers the size. A\ncluster whose volumes are already larger then keeps that size and\nrecords a StorageShrinkIgnored event.\nWhen the size grows, the operator expands the existing claims in place.\nThe storage class must support volume expansion.",
+        "anchor": "#zeebespec"
+      },
+      "spec.deletionPolicy": {
+        "description": "DeletionPolicy says what happens to the resources of the plugin\nrequests when the claim is deleted. Delete deletes them. Orphan keeps\nthem. Empty means spec.deletionPolicy of the Environment. The\nCamundaCluster and the attachments are always deleted with the claim,\nunder their own retention rules.",
+        "anchor": "#camundaclusterclaimspec"
+      },
+      "spec.platformConfigRef": {
+        "description": "PlatformConfigRef names the CamundaPlatformConfig of the cluster.\nEmpty means spec.platformConfigRef of the Environment.",
+        "anchor": "#camundaclusterclaimspec"
+      },
+      "spec.plugins": {
+        "description": "Plugins are the registrations that the claim selects, one item for\neach section and registration. The sections and their registrations\nare fixed after creation. Only the parameters of a selection can\nchange.",
+        "anchor": "#camundaclusterclaimspec"
+      },
+      "spec.plugins.parameters": {
+        "description": "Parameters are the parameter values of the selection. Only the\nclaim-editable parameters of the policy can differ from the policy\nvalues. The claim controller refuses another change with NotAllowed.",
+        "anchor": "#pluginselection"
+      },
+      "spec.plugins.registration": {
+        "description": "Registration is the name of the PluginRegistration.",
+        "anchor": "#pluginselection"
+      },
+      "spec.plugins.section": {
+        "description": "Section is the name of the PluginSection.",
+        "anchor": "#pluginselection"
+      },
+      "spec.presetRef": {
+        "description": "PresetRef names the CamundaClusterPreset of the cluster. When the\nnamespace belongs to an Environment, the Environment must list the\npreset in spec.presets.camundaCluster. The claim controller checks a\nchange of an existing claim against the current Environment.",
+        "anchor": "#camundaclusterclaimspec"
+      },
+      "spec.releaseRef": {
+        "description": "ReleaseRef names the CamundaRelease of the cluster, which sets its\nversions. Empty means the default release of the Environment. The\nclaim controller checks a change of an existing claim against the\ncurrent Environment.",
+        "anchor": "#camundaclusterclaimspec"
+      },
+      "spec.suspend": {
+        "description": "Suspend scales every workload of the cluster to zero and keeps the\ndata.",
+        "anchor": "#camundaclusterclaimspec"
+      },
+      "status": {
+        "description": "status is the state of the claim",
+        "anchor": "#camundaclusterclaim"
+      },
+      "status.cluster": {
+        "description": "Cluster names the CamundaCluster of the claim. It is unset until the\nclaim controller writes the cluster.",
+        "anchor": "#camundaclusterclaimstatus"
+      },
+      "status.cluster.name": {
+        "description": "Name is the name of the CamundaCluster, in the namespace of this\nobject.",
+        "anchor": "#clusterref"
+      },
+      "status.conditions": {
+        "description": "Conditions report the state of the claim. Ready is False with reason\nNoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when a check of the\nclaim fails. Otherwise Ready follows RequestsReady, ClusterReady, and\nAttachmentsReady.",
+        "anchor": "#camundaclusterclaimstatus"
+      },
+      "status.environment": {
+        "description": "Environment is the Environment of the namespace when the claim was\ncreated. It is empty when no Environment applied.",
+        "anchor": "#camundaclusterclaimstatus"
+      },
+      "status.observedGeneration": {
+        "description": "ObservedGeneration is the last generation that the cluster claim\ncontroller processed.",
+        "anchor": "#camundaclusterclaimstatus"
+      },
+      "status.requests": {
+        "description": "Requests is the state of each PluginRequest of the claim.",
+        "anchor": "#camundaclusterclaimstatus"
+      },
+      "status.requests.name": {
+        "description": "Name is the name of the PluginRequest.",
+        "anchor": "#requeststatus"
+      },
+      "status.requests.outputsReady": {
+        "description": "OutputsReady is the status of the OutputsReady condition of the\nrequest.",
+        "anchor": "#requeststatus"
+      },
+      "status.requests.ready": {
+        "description": "Ready is the status of the Ready condition of the request.",
+        "anchor": "#requeststatus"
+      },
+      "status.requests.registration": {
+        "description": "Registration is the name of the PluginRegistration of the request.",
+        "anchor": "#requeststatus"
+      },
+      "status.requests.section": {
+        "description": "Section is the name of the PluginSection of the request.",
+        "anchor": "#requeststatus"
+      },
+      "status.resolvedPolicy": {
+        "description": "ResolvedPolicy is the policy that the claim recorded from its\nEnvironment at creation. A later change of the Environment does not\nchange it.",
+        "anchor": "#camundaclusterclaimstatus"
+      },
+      "status.resolvedPolicy.deletionPolicy": {
+        "description": "DeletionPolicy is the deletion default of the environment.",
+        "anchor": "#resolvedpolicy"
+      },
+      "status.resolvedPolicy.parameters": {
+        "description": "Parameters holds the parameter values and the claim-editable\nparameters, by registration name.",
+        "anchor": "#resolvedpolicy"
+      },
+      "status.resolvedPolicy.sections": {
+        "description": "Sections holds the policy of each section, by section name.",
+        "anchor": "#resolvedpolicy"
+      }
+    },
     "Environment": {
       "spec": {
         "description": "spec is the policy of the environment",
