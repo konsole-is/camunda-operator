@@ -43,6 +43,37 @@ describe("the gallery stories", () => {
     }
   });
 
+  it("has a story for each shared component of the fleet pages", () => {
+    const components = new Set(stories.map((s) => s.component));
+    for (const name of [
+      "DataTable",
+      "EnvEditor",
+      "KeyValueEditor",
+      "ResourcesEditor",
+      "SchedulingEditor",
+      "SecretRefPicker",
+      "YamlEditor",
+      "SectionCards",
+      "WizardStepper",
+      "NamespacePicker",
+      "DiffView",
+      "ReviewPanel",
+      "TypedConfirm",
+      "InlineConfirm",
+      "Toast",
+      "FieldHelp",
+      "ConditionsTable",
+      "PodTable",
+      "UsageBars",
+      "MetricChart",
+      "LogViewer",
+      "EventList",
+      "ProgressRows",
+    ]) {
+      expect(components).toContain(name);
+    }
+  });
+
   it("has a story for each component of this issue", () => {
     const components = new Set(stories.map((s) => s.component));
     for (const name of [
