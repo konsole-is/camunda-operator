@@ -93,7 +93,7 @@ spec:
       containers:
         - name: aws
           # renovate: datasource=docker depName=amazon/aws-cli
-          image: amazon/aws-cli:2.37.10
+          image: amazon/aws-cli:2.37.11
           args: ["s3api", "create-bucket", "--bucket", "camunda-backup"]
           env:
             - name: AWS_ACCESS_KEY_ID
