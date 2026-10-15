@@ -3,7 +3,7 @@
 import { CircleHelp } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import type { FieldDoc } from "@/generated/fielddocs";
-import { apiReferenceUrl } from "@/lib/fielddocs";
+import { apiReferenceUrl } from "@/lib/fielddocs/link";
 
 /**
  * FieldHelp is the (?) next to a form label. On hover or keyboard focus it

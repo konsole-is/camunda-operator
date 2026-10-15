@@ -1,6 +1,6 @@
 import { type FieldDoc, fieldDocs } from "@/generated/fielddocs";
 
-const DOCS_SITE = "https://konsole-is.github.io/camunda-operator/";
+export { apiReferenceUrl } from "./link";
 
 /**
  * fieldDocFor returns the doc of a field path of a kind, or undefined when
@@ -18,21 +18,6 @@ export function fieldDocFor(
   const paths = kinds && own(kinds, kind);
   const doc = paths && own(paths, path);
   return doc?.description ? doc : undefined;
-}
-
-/**
- * apiReferenceUrl links an anchor of the API reference in the docs of an
- * operator version. A release vX.Y.Z has the docs of its minor, X.Y. Any
- * other version, such as a development build or a release candidate, links
- * the docs of main, dev.
- */
-export function apiReferenceUrl(
-  operatorVersion: string,
-  anchor: string,
-): string {
-  const release = /^v?(\d+)\.(\d+)\.\d+$/.exec(operatorVersion);
-  const docsVersion = release ? `${release[1]}.${release[2]}` : "dev";
-  return `${DOCS_SITE}${docsVersion}/crds/api-reference/${anchor}`;
 }
 
 function own<T>(
