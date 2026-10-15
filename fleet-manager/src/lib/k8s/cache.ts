@@ -168,7 +168,12 @@ class KindInformer {
                 : object,
               raw,
             ),
-          done,
+          // done of ListWatch is async and the client does not await it, so
+          // a watch that cannot start again would reject with no handler.
+          (err) =>
+            void (done(err) as unknown as Promise<void>).catch((e: unknown) =>
+              this.onError(e),
+            ),
         ),
     } as unknown as Watch;
 

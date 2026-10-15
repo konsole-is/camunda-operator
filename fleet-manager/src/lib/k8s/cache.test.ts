@@ -182,6 +182,28 @@ describe("ResourceCache", () => {
     expect(list).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps retrying when a watch cannot start again after a timeout", async () => {
+    const list = vi.fn(async () => listOf([item("a")], "10"));
+    const watch = new FakeWatch();
+    const watchOnce = watch.watch.bind(watch);
+    let starts = 0;
+    watch.watch = async (...args: Parameters<FakeWatch["watch"]>) => {
+      starts++;
+      if (starts === 2) throw new Error("Unauthorized");
+      return watchOnce(...args);
+    };
+    const { cache } = newCache({ list, timeoutReconnectMs: 1 }, watch);
+    await cache.objects("Environment");
+
+    watch.calls[0].done(
+      Object.assign(new Error("timed out"), { name: "TimeoutError" }),
+    );
+
+    await vi.waitFor(() => expect(watch.calls).toHaveLength(2));
+    expect(starts).toBe(3);
+    expect(watch.calls[1].params.resourceVersion).toBe("10");
+  });
+
   it("watches again from the last resourceVersion after a watch error", async () => {
     const list = vi.fn(async () => listOf([item("a")], "10"));
     const { cache, watch } = newCache({ list });
