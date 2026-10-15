@@ -97,7 +97,9 @@ function useWatchedList<K extends KindName>(
   initial: Resource<K>[],
 ): { items: Resource<K>[]; error?: string } {
   const client = useQueryClient();
-  const [error, setError] = useState<string>();
+  // The failure keeps the query key of its stream, so the failure of an
+  // old filter does not show on a new one.
+  const [failure, setFailure] = useState<{ key: string; message: string }>();
   const { namespace, labelSelector, name } = filter;
   const key = queryKey(kind, filter);
   const { data } = useQuery({
@@ -117,13 +119,13 @@ function useWatchedList<K extends KindName>(
         (event as MessageEvent<string>).data,
       ) as WatchSnapshot<Resource<K>>;
       client.setQueryData(effectKey, snapshot.objects);
-      setError(undefined);
+      setFailure(undefined);
     });
     source.addEventListener("failure", (event) => {
-      const failure = JSON.parse(
+      const frame = JSON.parse(
         (event as MessageEvent<string>).data,
       ) as WatchFailure;
-      setError(failure.message);
+      setFailure({ key: JSON.stringify(effectKey), message: frame.message });
     });
     source.addEventListener("delta", (event) => {
       const delta = JSON.parse(
@@ -138,5 +140,7 @@ function useWatchedList<K extends KindName>(
     return () => source.close();
   }, [client, kind, namespace, labelSelector, name]);
 
+  const error =
+    failure?.key === JSON.stringify(key) ? failure.message : undefined;
   return error === undefined ? { items: data } : { items: data, error };
 }

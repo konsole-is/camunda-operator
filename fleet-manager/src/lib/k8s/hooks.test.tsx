@@ -141,6 +141,25 @@ describe("useResources", () => {
     await waitFor(() => expect(result.current).toEqual({ items: [pod("b")] }));
   });
 
+  it("clears the error of the old stream when the filter changes", async () => {
+    const { result, rerender } = renderHook(
+      ({ namespace }) => useResources("Pod", { namespace }, []),
+      { wrapper, initialProps: { namespace: "team" } },
+    );
+    FakeEventSource.instances[0].emit("failure", {
+      kind: "Pod",
+      message: "The API server is down",
+    });
+    await waitFor(() =>
+      expect(result.current.error).toBe("The API server is down"),
+    );
+
+    rerender({ namespace: "other" });
+
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(result.current.error).toBeUndefined();
+  });
+
   it("closes the stream on unmount", () => {
     const { unmount } = renderHook(() => useResources("Pod", {}, []), {
       wrapper,
