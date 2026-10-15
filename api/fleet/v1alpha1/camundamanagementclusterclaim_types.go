@@ -175,7 +175,7 @@ type KeycloakOverrides struct {
 }
 
 // IdentityOverrides configures Management Identity for a plane claim.
-// +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, e.name != 'KEYCLOAK_URL' && e.name != 'KEYCLOAK_REALM')",message="extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM. Both follow from spec.identityProvider, and in a Keycloak mode this management plane claims the realm they name"
+// +kubebuilder:validation:XValidation:rule="!has(self.extraEnv) || self.extraEnv.all(e, e.name != 'KEYCLOAK_URL' && e.name != 'KEYCLOAK_REALM')",message="extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM. Both follow from spec.management.identityProvider, and in a Keycloak mode this management plane claims the realm they name"
 type IdentityOverrides struct {
 	// ExternalURL is the URL where browsers reach Management Identity. A URL
 	// with a path other than / must use https. The claim controller refuses

@@ -17,7 +17,6 @@ limitations under the License.
 package schema
 
 import (
-	"fmt"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -216,7 +215,7 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 				c.Spec.Management.Identity.ExtraEnv = []corev1.EnvVar{
 					{Name: "KEYCLOAK_URL", Value: "https://elsewhere.example.com/auth"},
 				}
-			}, "must not set KEYCLOAK_URL or KEYCLOAK_REALM",
+			}, "must not set KEYCLOAK_URL or KEYCLOAK_REALM. Both follow from spec.management.identityProvider",
 		),
 		Entry(
 			"admits an Identity extraEnv of another variable",
@@ -262,11 +261,11 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 
 		Entry(
 			"refuses 33 selections",
-			validPlaneClaim, func(c *planeClaim) { c.Spec.Plugins = selections(33) }, "Too many",
+			validPlaneClaim, func(c *planeClaim) { c.Spec.Plugins = clusterClaimSelections(33) }, "Too many",
 		),
 		Entry(
 			"admits 32 selections",
-			validPlaneClaim, func(c *planeClaim) { c.Spec.Plugins = selections(32) }, "",
+			validPlaneClaim, func(c *planeClaim) { c.Spec.Plugins = clusterClaimSelections(32) }, "",
 		),
 		Entry(
 			"refuses a managementAuthConfigName that is not a DNS name",
@@ -335,7 +334,7 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 		),
 		Entry(
 			"refuses a first selection on a claim created without one",
-			validPlaneClaim, func(c *planeClaim) { c.Spec.Plugins = selections(1) }, planeSectionsMessage,
+			validPlaneClaim, func(c *planeClaim) { c.Spec.Plugins = clusterClaimSelections(1) }, planeSectionsMessage,
 		),
 		Entry(
 			"admits a move from the keycloak mode to the oidc mode with a claim admin",
@@ -347,7 +346,7 @@ var _ = Describe("CamundaManagementClusterClaim schema", func() {
 			}, "",
 		),
 		Entry(
-			"admits an update of an existing claim without a name check",
+			"admits a spec update",
 			validPlaneClaim, func(c *planeClaim) { c.Spec.Suspend = true }, "",
 		),
 	)
@@ -380,19 +379,6 @@ func pathRuleEntries(label, field string, set func(*planeClaim, string)) []Table
 		),
 		entry("admits the "+label+" URL with dots inside a segment", "https://camunda.example.com/v1.2/.app", ""),
 	}
-}
-
-// selections returns n selections, each in a section of its own.
-func selections(n int) []fleetv1alpha1.PluginSelection {
-	out := make([]fleetv1alpha1.PluginSelection, n)
-	for i := range out {
-		out[i] = fleetv1alpha1.PluginSelection{
-			Section:      fmt.Sprintf("section-%d", i),
-			Registration: fmt.Sprintf("registration-%d", i),
-		}
-	}
-
-	return out
 }
 
 // withSelections returns validPlaneClaim with an access and a

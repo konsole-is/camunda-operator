@@ -2111,8 +2111,9 @@ spec:
                     type: object
                     x-kubernetes-validations:
                     - message: extraEnv must not set KEYCLOAK_URL or KEYCLOAK_REALM.
-                        Both follow from spec.identityProvider, and in a Keycloak
-                        mode this management plane claims the realm they name
+                        Both follow from spec.management.identityProvider, and in
+                        a Keycloak mode this management plane claims the realm they
+                        name
                       rule: '!has(self.extraEnv) || self.extraEnv.all(e, e.name !=
                         ''KEYCLOAK_URL'' && e.name != ''KEYCLOAK_REALM'')'
                   identityProvider:
