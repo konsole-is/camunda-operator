@@ -53,6 +53,12 @@ export function parseWatchRequest(params: URLSearchParams): WatchRequest {
   return { kinds: kinds as KindName[], namespace, labelSelector, name };
 }
 
+export interface WatchStreamOptions {
+  heartbeatMs?: number;
+  retryMs?: number;
+  maxPendingBytes?: number;
+}
+
 /**
  * watchStream returns the SSE body of one connection. For each kind it sends
  * a frame "snapshot" with the matching objects, then a frame "delta" for each
@@ -60,14 +66,18 @@ export function parseWatchRequest(params: URLSearchParams): WatchRequest {
  * does not sync gets a frame "failure" with the message, and then the stream
  * ends. The frame sets the retry time of EventSource to retryMs. A comment
  * line goes out every heartbeatMs, so idle proxies keep the connection. The
- * stream also ends when signal aborts.
+ * stream also ends when signal aborts, and at the next write when more than
+ * maxPendingBytes wait unread in its queue.
  */
 export function watchStream(
   cache: ResourceCache,
   request: WatchRequest,
   signal: AbortSignal,
-  heartbeatMs = 25_000,
-  retryMs = 5_000,
+  {
+    heartbeatMs = 25_000,
+    retryMs = 5_000,
+    maxPendingBytes = 8 * 1024 * 1024,
+  }: WatchStreamOptions = {},
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const matchesLabels = parseSelector(request.labelSelector ?? "");
@@ -85,76 +95,90 @@ export function watchStream(
     unsubscribes.splice(0).forEach((unsubscribe) => unsubscribe());
   };
 
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const write = (text: string) => {
-        if (!closed) controller.enqueue(encoder.encode(text));
-      };
-      const send = (event: string, data: unknown, fields = "") =>
-        write(`${fields}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-      const end = () => {
-        close();
-        try {
-          controller.close();
-        } catch {
-          // cancel already closed the stream.
-        }
-      };
-      signal.addEventListener("abort", end, { once: true });
-      if (signal.aborted) return;
-
-      for (const kind of request.kinds) {
-        const seen = new Set<string>();
-        // Changes that arrive before the snapshot is sent wait here, so the
-        // snapshot always comes first.
-        let queue: [CacheChange, KubernetesObject][] | undefined = [];
-        const deliver = (change: CacheChange, object: KubernetesObject) => {
-          const type = deltaType(
-            seen,
-            change,
-            objectKey(object),
-            inFilter(object),
-          );
-          if (type) send("delta", { type, kind, object });
+  return new ReadableStream<Uint8Array>(
+    {
+      async start(controller) {
+        const end = () => {
+          close();
+          try {
+            controller.close();
+          } catch {
+            // cancel already closed the stream.
+          }
         };
-        try {
-          const { snapshot, unsubscribe } = await cache.subscribe(
-            kind,
-            (change, object) => {
-              if (queue) queue.push([change, object as KubernetesObject]);
-              else deliver(change, object as KubernetesObject);
-            },
-          );
-          if (closed) {
-            unsubscribe();
+        // The shared informer does not wait for its listener, so a write
+        // cannot wait for a slow client. desiredSize is below 0 when more
+        // than maxPendingBytes wait in the queue.
+        const write = (text: string) => {
+          if (closed) return;
+          if ((controller.desiredSize ?? 0) < 0) {
+            end();
             return;
           }
-          unsubscribes.push(unsubscribe);
-          const objects = (snapshot as KubernetesObject[]).filter(inFilter);
-          objects.forEach((o) => seen.add(objectKey(o)));
-          send("snapshot", { kind, objects });
-          const waiting = queue;
-          queue = undefined;
-          waiting.forEach(([change, object]) => deliver(change, object));
-        } catch (error) {
-          send(
-            "failure",
-            {
-              kind,
-              message: error instanceof Error ? error.message : String(error),
-            },
-            `retry: ${retryMs}\n`,
-          );
+          controller.enqueue(encoder.encode(text));
+        };
+        const send = (event: string, data: unknown, fields = "") =>
+          write(`${fields}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        signal.addEventListener("abort", end, { once: true });
+        if (signal.aborted) {
           end();
           return;
         }
-      }
-      if (!closed) {
-        heartbeat = setInterval(() => write(": keep-alive\n\n"), heartbeatMs);
-      }
+
+        for (const kind of request.kinds) {
+          const seen = new Set<string>();
+          // Changes that arrive before the snapshot is sent wait here, so the
+          // snapshot always comes first.
+          let queue: [CacheChange, KubernetesObject][] | undefined = [];
+          const deliver = (change: CacheChange, object: KubernetesObject) => {
+            const type = deltaType(
+              seen,
+              change,
+              objectKey(object),
+              inFilter(object),
+            );
+            if (type) send("delta", { type, kind, object });
+          };
+          try {
+            const { snapshot, unsubscribe } = await cache.subscribe(
+              kind,
+              (change, object) => {
+                if (queue) queue.push([change, object as KubernetesObject]);
+                else deliver(change, object as KubernetesObject);
+              },
+            );
+            if (closed) {
+              unsubscribe();
+              return;
+            }
+            unsubscribes.push(unsubscribe);
+            const objects = (snapshot as KubernetesObject[]).filter(inFilter);
+            objects.forEach((o) => seen.add(objectKey(o)));
+            send("snapshot", { kind, objects });
+            const waiting = queue;
+            queue = undefined;
+            waiting.forEach(([change, object]) => deliver(change, object));
+          } catch (error) {
+            send(
+              "failure",
+              {
+                kind,
+                message: error instanceof Error ? error.message : String(error),
+              },
+              `retry: ${retryMs}\n`,
+            );
+            end();
+            return;
+          }
+        }
+        if (!closed) {
+          heartbeat = setInterval(() => write(": keep-alive\n\n"), heartbeatMs);
+        }
+      },
+      cancel() {
+        close();
+      },
     },
-    cancel() {
-      close();
-    },
-  });
+    new ByteLengthQueuingStrategy({ highWaterMark: maxPendingBytes }),
+  );
 }
