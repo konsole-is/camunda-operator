@@ -38,10 +38,13 @@ const (
 	interval = envtest.Interval
 )
 
-// resumeDeadline is the resume deadline of the suite. Short, so it fires
-// inside a test, but only when resume keeps failing, which only the
-// deadline tests arrange.
-const resumeDeadline = 2 * time.Second
+// Short, so that the polling of a running procedure fits inside the test
+// timeout and the deadline fires inside a test. The deadline fires only
+// when resume keeps failing.
+const (
+	pollInterval   = 100 * time.Millisecond
+	resumeDeadline = 2 * time.Second
+)
 
 var (
 	env       *envtest.Env
@@ -60,12 +63,9 @@ var _ = BeforeSuite(func() {
 
 	env = envtest.Start(func(mgr ctrl.Manager) error {
 		return New(mgr.GetClient(), mgr.GetAPIReader(), mgr.GetScheme(), Options{
-			// Short, so the polling of a running procedure fits inside the
-			// test timeout.
-			PollInterval:   100 * time.Millisecond,
+			PollInterval:   pollInterval,
 			ResumeDeadline: resumeDeadline,
-			// Short for the same reason. Only the unreachable-Elasticsearch
-			// test arranges an endpoint that stays down.
+			// Short, so that it fires inside the test timeout.
 			UnreachableBound: 2 * time.Second,
 			// Short, so a fresh-id conflict fails inside the test timeout.
 			// Wide enough that the registration-lag test, which polls

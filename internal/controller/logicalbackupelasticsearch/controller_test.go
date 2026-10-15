@@ -555,16 +555,20 @@ func expectPhase(backup *v1.LogicalBackupElasticsearch, phase v1.LogicalBackupPh
 // expectResumeFailed waits until backup gives up on a resume that keeps
 // failing and ends with ResumeFailed. The deadline counts each wait between
 // two attempts as one poll interval at most, so a slow reconcile adds
-// attempts, not time against the deadline. Each Eventually therefore waits
-// for one more step or attempt, and the loop fails if the backup still runs
-// after its attempts used up the deadline.
+// attempts, not time against the deadline. The loop fails if the span from
+// the first to the last attempt exceeds the deadline by more than one
+// second, or if it takes more than ten times resumeDeadline/pollInterval
+// steps and attempts.
 func expectResumeFailed(backup *v1.LogicalBackupElasticsearch) {
 	GinkgoHelper()
-	for {
+	maxWaits := 10 * int(resumeDeadline/pollInterval)
+	for waits := 0; ; waits++ {
 		current := currentBackup(backup)
 		if current.Status.Phase == v1.LogicalBackupFailed {
 			break
 		}
+
+		Expect(waits).To(BeNumerically("<", maxWaits), "the backup still resumes after %d steps and attempts", waits)
 
 		started, last := current.Status.ResumeStartedTime, current.Status.LastResumeAttemptTime
 		if started != nil && last != nil {
