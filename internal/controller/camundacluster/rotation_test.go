@@ -81,18 +81,38 @@ var _ = Describe("Admin password rotation", func() {
 		users.SetUser(components.AdminUsername, components.AdminUsername, components.DefaultAdminEmail, password)
 	}
 
-	// requestRotation sets spec.auth.basic.passwordRotation on cluster.
+	// requestRotation sets spec.auth.basic.passwordRotation on cluster and
+	// waits until the admin Secret stages a password for value, or already
+	// records value as applied. A rotation takes a reconcile for each step,
+	// and a reconcile can take seconds on a loaded machine, so each wait of
+	// a spec covers one step, not the whole rotation.
 	requestRotation := func(cluster *v1.CamundaCluster, value string) {
 		GinkgoHelper()
 		updateCluster(cluster, func(c *v1.CamundaCluster) {
 			c.Spec.Auth = &v1.ClusterAuthSpec{Basic: &v1.BasicAuthSpec{PasswordRotation: value}}
 		})
+
+		Eventually(func(g Gomega) {
+			var secret corev1.Secret
+			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
+			g.Expect(secret.Data).To(Or(
+				HaveKeyWithValue(components.AdminPendingRotationKey, []byte(value)),
+				HaveKeyWithValue(components.AdminRotationKey, []byte(value)),
+			))
+		}, timeout, interval).Should(Succeed())
 	}
 
-	// expectRotated waits until cluster records the rotation and its Secret
+	// expectRotated waits until the admin Secret of cluster records the
+	// rotation, then until the status of cluster records it and the Secret
 	// holds the password of the fake, without a pending key.
 	expectRotated := func(cluster *v1.CamundaCluster, rotation string) {
 		GinkgoHelper()
+		Eventually(func(g Gomega) {
+			var secret corev1.Secret
+			g.Expect(k8sClient.Get(ctx, adminSecretKey(cluster), &secret)).To(Succeed())
+			g.Expect(secret.Data).To(HaveKeyWithValue(components.AdminRotationKey, []byte(rotation)))
+		}, timeout, interval).Should(Succeed())
+
 		Eventually(func(g Gomega) {
 			var latest v1.CamundaCluster
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), &latest)).To(Succeed())
