@@ -1773,22 +1773,21 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		}, timeout, interval).Should(Equal(v1.StepResumeExporting))
 
 		// Each Eventually waits for one more attempt, so that a slow
-		// reconcile does not use up the bound.
-		nextAttempt := func() {
+		// reconcile does not use up the bound. An Eventually polls slower than
+		// resume retries, so a new count at each wait spends attempts that the
+		// deadline counts.
+		awaitAttempts := func(from, n int) {
 			GinkgoHelper()
-			attempts := r.management.ResumeAttempts()
-			Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">", attempts))
+			for want := from + 1; want <= from+n; want++ {
+				Eventually(r.management.ResumeAttempts, timeout, interval).Should(BeNumerically(">=", want))
+			}
 		}
 		// The window under test starts once resume attempts are under way.
 		// No probe of an earlier step is still in flight then. The window
 		// spans five more attempts.
-		for range 3 {
-			nextAttempt()
-		}
-		before := r.search.StatsCalls()
-		for range 5 {
-			nextAttempt()
-		}
+		awaitAttempts(0, 3)
+		before, attempts := r.search.StatsCalls(), r.management.ResumeAttempts()
+		awaitAttempts(attempts, 5)
 		Expect(r.search.StatsCalls()).To(Equal(before), "no size probe between resume attempts")
 		Expect(currentBackup(backup).Status.Step).To(Equal(v1.StepResumeExporting))
 		Expect(r.management.HistoryStarts(id)).To(BeZero())
