@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { YAMLParseError, parse, stringify } from "yaml";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -14,7 +14,7 @@ import {
  * structured editor: affinity and extraEnvFrom. Empty text is no value. A
  * YAML error names its line. With a schema, the parsed value is validated
  * against it. onChange gets the value, or undefined while the text does not
- * parse, and the errors after each edit.
+ * parse, and the errors when an edit or a new schema changes them.
  */
 export function YamlEditor({
   label,
@@ -33,7 +33,14 @@ export function YamlEditor({
   const [text, setText] = useState(() =>
     defaultValue === undefined ? "" : stringify(defaultValue),
   );
-  const [, errors] = check(text, schema);
+  const [value, errors] = check(text, schema);
+  const report = JSON.stringify([value ?? null, errors]);
+  const reported = useRef(report);
+  useEffect(() => {
+    if (reported.current === report) return;
+    reported.current = report;
+    onChange?.(value, errors);
+  });
 
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -50,8 +57,6 @@ export function YamlEditor({
         aria-describedby={errors.length ? `${id}-errors` : undefined}
         onChange={(event) => {
           setText(event.target.value);
-          const [value, found] = check(event.target.value, schema);
-          onChange?.(value, found);
         }}
       />
       {errors.length > 0 && (

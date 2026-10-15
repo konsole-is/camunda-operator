@@ -324,6 +324,37 @@ describe("YamlEditor", () => {
     expect(screen.getByText("replicas: must be integer")).toBeTruthy();
   });
 
+  it("reports the errors of a new schema to onChange", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <YamlEditor
+        label="Overrides"
+        schema={{ type: "object" }}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Overrides" }),
+      "replicas: two",
+    );
+    expect(onChange).toHaveBeenLastCalledWith({ replicas: "two" }, []);
+    const calls = onChange.mock.calls.length;
+    rerender(
+      <YamlEditor
+        label="Overrides"
+        schema={{
+          type: "object",
+          properties: { replicas: { type: "integer" } },
+        }}
+        onChange={onChange}
+      />,
+    );
+    expect(onChange).toHaveBeenLastCalledWith({ replicas: "two" }, [
+      { path: "replicas", message: "must be integer" },
+    ]);
+    expect(onChange.mock.calls.length).toBe(calls + 1);
+  });
+
   it("checks the text again when the schema changes", () => {
     const { rerender } = render(
       <YamlEditor
