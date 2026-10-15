@@ -7,6 +7,7 @@ export type EventLike = {
   reason?: string;
   message?: string;
   count?: number;
+  series?: { count?: number; lastObservedTime?: string | Date };
   lastTimestamp?: string | Date;
   eventTime?: string | Date;
   firstTimestamp?: string | Date;
@@ -28,6 +29,7 @@ export function EventList({
   if (events.length === 0)
     return <p className="text-sm text-muted">No events</p>;
   const time = (e: EventLike) =>
+    e.series?.lastObservedTime ??
     e.lastTimestamp ??
     e.eventTime ??
     e.firstTimestamp ??
@@ -40,6 +42,7 @@ export function EventList({
     <ul className="flex flex-col divide-y divide-divider">
       {sorted.map((event, i) => {
         const warning = event.type === "Warning";
+        const count = event.series?.count ?? event.count;
         return (
           <li
             key={event.metadata?.uid ?? i}
@@ -63,8 +66,8 @@ export function EventList({
             </span>
             <span className="min-w-0 flex-1 text-text-2">
               {event.message}
-              {event.count && event.count > 1 ? (
-                <span className="text-muted">{` (${event.count} times)`}</span>
+              {count && count > 1 ? (
+                <span className="text-muted">{` (${count} times)`}</span>
               ) : null}
             </span>
           </li>
