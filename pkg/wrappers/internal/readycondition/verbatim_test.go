@@ -34,6 +34,8 @@ func TestVerbatimConverging(t *testing.T) {
 	staleFalse.ObservedGeneration = 1
 	staleTrue := objectWith(metav1.ConditionTrue, string(component.Healthy), "")
 	staleTrue.ObservedGeneration = 1
+	staleCondition := objectWith(metav1.ConditionTrue, string(component.Healthy), "")
+	staleCondition.Conditions[0].ObservedGeneration = 1
 
 	tests := []struct {
 		name   string
@@ -111,6 +113,14 @@ func TestVerbatimConverging(t *testing.T) {
 				"Its last Ready condition was Healthy",
 		},
 		{
+			name:   "Ready=True of an older generation beside a current status is not Healthy",
+			op:     concepts.ConvergingOperationUpdated,
+			object: staleCondition,
+			want:   concepts.AliveConvergingStatusUpdating,
+			reason: "The operator has not observed generation 2 of the ElasticsearchCluster yet. " +
+				"Its last Ready condition was Healthy",
+		},
+		{
 			name:   "Ready=False of an older generation keeps its reason and message",
 			op:     concepts.ConvergingOperationUpdated,
 			object: staleFalse,
@@ -137,6 +147,8 @@ func TestVerbatimGrace(t *testing.T) {
 
 	stale := objectWith(metav1.ConditionTrue, string(component.Healthy), "")
 	stale.ObservedGeneration = 1
+	staleCondition := objectWith(metav1.ConditionTrue, string(component.Healthy), "")
+	staleCondition.Conditions[0].ObservedGeneration = 1
 
 	tests := []struct {
 		name   string
@@ -171,6 +183,11 @@ func TestVerbatimGrace(t *testing.T) {
 		{
 			name:   "Ready=True of an older generation is Down",
 			object: stale,
+			want:   concepts.GraceStatusDown,
+		},
+		{
+			name:   "Ready=True of an older generation beside a current status is Down",
+			object: staleCondition,
 			want:   concepts.GraceStatusDown,
 		},
 	}

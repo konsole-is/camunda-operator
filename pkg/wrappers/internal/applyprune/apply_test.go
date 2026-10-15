@@ -218,6 +218,7 @@ func TestWrappersApplyOnlyWhatTheySet(t *testing.T) {
 			Status:             metav1.ConditionFalse,
 			Reason:             apiv1.ReasonInvalidReference,
 			Message:            "CamundaRelease camunda-8-9 does not exist",
+			ObservedGeneration: stored.Generation,
 			LastTransitionTime: metav1.Now(),
 		}}
 		require.NoError(t, apiClient.Status().Update(t.Context(), &stored))

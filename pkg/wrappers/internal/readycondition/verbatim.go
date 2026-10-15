@@ -55,25 +55,35 @@ func VerbatimConverging(op concepts.ConvergingOperation, o Object) concepts.Aliv
 // currentReady returns the Ready condition when the operator observed the
 // current generation, and nil otherwise.
 func currentReady(o Object) *metav1.Condition {
-	if o.ObservedGeneration < o.Generation {
+	ready := meta.FindStatusCondition(o.Conditions, apiv1.ConditionReady)
+	if ready == nil || stale(o, ready) {
 		return nil
 	}
 
-	return meta.FindStatusCondition(o.Conditions, apiv1.ConditionReady)
+	return ready
+}
+
+// stale reports whether ready, or the status that holds it, is older than
+// the spec. A status write that lost a conflict can keep a new
+// status.observedGeneration beside the Ready condition of an older
+// generation.
+func stale(o Object, ready *metav1.Condition) bool {
+	return o.ObservedGeneration < o.Generation || (ready != nil && ready.ObservedGeneration < o.Generation)
 }
 
 // verbatim gives the Ready reason and message, unchanged. It says so when
 // the operator has not observed the current generation yet.
 func verbatim(o Object) string {
+	ready := meta.FindStatusCondition(o.Conditions, apiv1.ConditionReady)
 	text := o.Kind + " has not reported Ready yet"
-	if ready := meta.FindStatusCondition(o.Conditions, apiv1.ConditionReady); ready != nil {
+	if ready != nil {
 		text = ready.Reason
 		if ready.Message != "" {
 			text += ": " + ready.Message
 		}
 	}
 
-	if o.ObservedGeneration < o.Generation {
+	if stale(o, ready) {
 		text = unobserved(o) + ". Its last Ready condition was " + text
 	}
 

@@ -39,6 +39,7 @@ func clusterWithReady(observed int64, status metav1.ConditionStatus, reason, mes
 	if status != "" {
 		cluster.Status.Conditions = []metav1.Condition{{
 			Type: apiv1.ConditionReady, Status: status, Reason: reason, Message: message,
+			ObservedGeneration: observed,
 		}}
 	}
 

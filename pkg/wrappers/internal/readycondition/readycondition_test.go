@@ -33,7 +33,7 @@ func objectWith(status metav1.ConditionStatus, reason, message string) Object {
 	o := Object{Kind: "ElasticsearchCluster", Generation: 2, ObservedGeneration: 2}
 	if status != "" {
 		o.Conditions = []metav1.Condition{{
-			Type: apiv1.ConditionReady, Status: status, Reason: reason, Message: message,
+			Type: apiv1.ConditionReady, Status: status, Reason: reason, Message: message, ObservedGeneration: 2,
 		}}
 	}
 

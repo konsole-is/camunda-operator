@@ -43,6 +43,7 @@ func planeWithReady(
 	if status != "" {
 		plane.Status.Conditions = []metav1.Condition{{
 			Type: apiv1.ConditionReady, Status: status, Reason: reason, Message: message,
+			ObservedGeneration: observed,
 		}}
 	}
 
