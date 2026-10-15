@@ -538,6 +538,14 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 	$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
 		| go run ./hack/fleetchart -enabled=true -crds config/crd/bases
 	go run ./hack/fleetchart -enabled=false < dist/install.yaml
+	@# The install and the chart ship the Grant admission policy and its binding.
+	@for kind in ValidatingAdmissionPolicy ValidatingAdmissionPolicyBinding; do \
+		grep -qx "kind: $$kind" dist/install.yaml || { \
+			echo "ERROR: dist/install.yaml has no $$kind" >&2; exit 1; }; \
+		$(HELM) template verify "$(HELM_CHART_DIR)" --set crd.enabled=false | grep -qx "kind: $$kind" || { \
+			echo "ERROR: the chart does not render a $$kind" >&2; exit 1; }; \
+	done
+	@echo "  the install and the chart ship the Grant admission policy"
 	@$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
 		--set 'manager.imagePullSecrets[0].name=verify-pull' \
 		--show-only templates/fleet-manager/deployment.yaml | grep -q 'name: verify-pull' || { \
