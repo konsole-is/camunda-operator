@@ -44,7 +44,7 @@ export function SecretRefPicker({
     );
 
   return (
-    <div role="group" aria-label={label} className="flex min-w-0 flex-1 gap-2">
+    <div role="group" aria-label={label} className="flex min-w-48 flex-1 gap-2">
       <label htmlFor={`${id}-secret`} className="sr-only">
         Secret
       </label>

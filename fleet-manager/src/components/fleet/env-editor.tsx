@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/native-select";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { ValidationError } from "@/lib/schema";
+import { cn } from "@/lib/utils";
 import { LockedField } from "./locked-field";
 import {
   type SecretKeyRef,
@@ -75,7 +76,10 @@ export function EnvEditor({
             key={row.id}
             role="group"
             aria-label={`Variable ${index + 1}`}
-            className="flex flex-col gap-1"
+            className={cn(
+              "flex flex-col gap-1",
+              index > 0 && "border-t border-divider pt-3",
+            )}
           >
             <div className="flex flex-wrap items-center gap-2">
               {row.source === "other" ? (
@@ -89,7 +93,7 @@ export function EnvEditor({
                   <Input
                     aria-label="Name"
                     placeholder="Name"
-                    className="w-48"
+                    className="w-full sm:w-48"
                     value={row.name}
                     aria-invalid={nameError ? true : undefined}
                     aria-describedby={
@@ -128,7 +132,7 @@ export function EnvEditor({
                     <Input
                       aria-label="Value"
                       placeholder="Value"
-                      className="min-w-40 flex-1"
+                      className="min-w-32 flex-1"
                       value={row.value}
                       onChange={(event) =>
                         replace({ ...row, value: event.target.value })

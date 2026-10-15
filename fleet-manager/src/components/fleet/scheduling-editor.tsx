@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/native-select";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { ValidationError } from "@/lib/schema";
+import { cn } from "@/lib/utils";
 
 /** Toleration is one toleration of the pods, as the CRDs define it. */
 export type Toleration = NonNullable<
@@ -122,7 +123,10 @@ export function SchedulingEditor({
             key={row.id}
             role="group"
             aria-label={`Toleration ${index + 1}`}
-            className="flex flex-col gap-1"
+            className={cn(
+              "flex flex-col gap-1",
+              index > 0 && "border-t border-divider pt-3",
+            )}
           >
             <div className="flex flex-wrap items-end gap-2">
               {text("key", "Key", row.key, (v) => replace({ ...row, key: v }), {
