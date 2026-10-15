@@ -35,8 +35,8 @@ import (
 	apiv1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// The typed encoding carries status: {} and creationTimestamp: null. The
-// pruned content holds only what the object sets.
+// The pruned content holds only what the object sets. The status of the
+// object never joins an apply.
 func TestPruneDropsStatusAndEmptyValues(t *testing.T) {
 	t.Parallel()
 
@@ -50,12 +50,14 @@ func TestPruneDropsStatusAndEmptyValues(t *testing.T) {
 	got, err := Prune(cluster)
 	require.NoError(t, err)
 
-	assert.Equal(t, map[string]any{
-		"apiVersion": "core.camunda.io/v1",
-		"kind":       "CamundaCluster",
-		"metadata":   map[string]any{"name": "orders", "namespace": "team-a"},
-		"spec":       map[string]any{"presetRef": "small"},
-	}, got.Object)
+	assert.Equal(
+		t, map[string]any{
+			"apiVersion": "core.camunda.io/v1",
+			"kind":       "CamundaCluster",
+			"metadata":   map[string]any{"name": "orders", "namespace": "team-a"},
+			"spec":       map[string]any{"presetRef": "small"},
+		}, got.Object,
+	)
 }
 
 // A struct field whose fields all hold nothing is dropped, also when it is
@@ -89,9 +91,11 @@ func TestPruneKeepsASetPointerToAnEmptyStruct(t *testing.T) {
 	got, err := Prune(plane)
 	require.NoError(t, err)
 
-	assert.Equal(t, map[string]any{
-		"identityProvider": map[string]any{"oidc": map[string]any{}},
-	}, got.Object["spec"])
+	assert.Equal(
+		t, map[string]any{
+			"identityProvider": map[string]any{"oidc": map[string]any{}},
+		}, got.Object["spec"],
+	)
 }
 
 // A key of a map is a value, so a label with an empty value stays. An item
@@ -117,10 +121,12 @@ func TestPruneKeepsMapEntriesAndListItems(t *testing.T) {
 	labels, _, err := unstructured.NestedStringMap(got.Object, "metadata", "labels")
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"team": ""}, labels)
-	assert.Equal(t, map[string]any{
-		"inputs": map[string]any{"bucket": ""},
-		"target": map[string]any{"additionalServiceAccounts": []any{""}},
-	}, got.Object["spec"])
+	assert.Equal(
+		t, map[string]any{
+			"inputs": map[string]any{"bucket": ""},
+			"target": map[string]any{"additionalServiceAccounts": []any{""}},
+		}, got.Object["spec"],
+	)
 }
 
 // Parameters are free-form JSON. Their Go type names no field, so their
