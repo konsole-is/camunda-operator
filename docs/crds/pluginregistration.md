@@ -144,7 +144,7 @@ A plugin controller that writes the status of its registration must keep the `Ac
 
 ## Fields
 
-The [API reference](api-reference.md#pluginregistration) lists every field of `PluginRegistration`, with its type and its validation. The `label`, `description`, `docsUrl`, `controller`, `choices`, `limits`, and `metricQueries` fields change only what the fleet manager shows.
+The [API reference](api-reference.md#pluginregistration) lists every field of `PluginRegistration`, with its type, whether it is required, its default, and its validation. The `label`, `description`, `docsUrl`, `controller`, `choices`, `limits`, and `metricQueries` fields change only what the fleet manager shows.
 
 ## Validation rules
 

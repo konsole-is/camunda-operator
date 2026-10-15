@@ -126,7 +126,7 @@ A grant that is not `Ready` makes the `Ready` condition of its request `False` w
 
 ## Fields
 
-The [API reference](api-reference.md#grant) lists every field of `Grant`, with its type and its validation. It does not list the labels. [Labels](#labels) describes them.
+The [API reference](api-reference.md#grant) lists every field of `Grant`, with its type, whether it is required, its default, and its validation. It does not list the labels. [Labels](#labels) describes them.
 
 ## Validation rules
 

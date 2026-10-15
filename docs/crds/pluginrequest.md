@@ -116,7 +116,7 @@ status:
 
 ## Fields
 
-The [API reference](api-reference.md#pluginrequest) lists every field of `PluginRequest`, with its type and its validation.
+The [API reference](api-reference.md#pluginrequest) lists every field of `PluginRequest`, with its type, whether it is required, its default, and its validation.
 
 ## Validation rules
 

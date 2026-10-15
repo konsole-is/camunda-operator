@@ -73,7 +73,7 @@ The operator writes these fields with the field manager `camunda-operator-builti
 
 ## Fields
 
-The [API reference](api-reference.md#pluginsection) lists every field of `PluginSection`, with its type and its validation. The `label`, `description`, `order`, and `emptyOptionLabel` fields change only what the fleet manager shows.
+The [API reference](api-reference.md#pluginsection) lists every field of `PluginSection`, with its type, whether it is required, its default, and its validation. The `label`, `description`, `order`, and `emptyOptionLabel` fields change only what the fleet manager shows.
 
 ## Validation rules
 
