@@ -123,16 +123,19 @@ func asServiceAccount(namespace, name string) client.Client {
 }
 
 // bindClusterRole creates the ClusterRole name with rules and binds it to the
-// ServiceAccount namespace/serviceAccount.
-func bindClusterRole(name string, rules []rbacv1.PolicyRule, namespace, serviceAccount string) {
+// ServiceAccount namespace/serviceAccount. Both are deleted when the current
+// spec or suite node ends.
+func bindClusterRole(name, namespace, serviceAccount string, rules ...rbacv1.PolicyRule) {
 	GinkgoHelper()
 
-	Expect(admin.Create(ctx, &rbacv1.ClusterRole{
+	role := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Rules:      rules,
-	})).To(Succeed())
+	}
+	Expect(admin.Create(ctx, role)).To(Succeed())
+	DeferCleanup(func() { _ = admin.Delete(ctx, role) })
 
-	Expect(admin.Create(ctx, &rbacv1.ClusterRoleBinding{
+	binding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: rbacv1.GroupName,
@@ -144,7 +147,9 @@ func bindClusterRole(name string, rules []rbacv1.PolicyRule, namespace, serviceA
 			Namespace: namespace,
 			Name:      serviceAccount,
 		}},
-	})).To(Succeed())
+	}
+	Expect(admin.Create(ctx, binding)).To(Succeed())
+	DeferCleanup(func() { _ = admin.Delete(ctx, binding) })
 }
 
 // newGrant returns a valid grant with a generated name and the given labels,

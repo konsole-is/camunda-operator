@@ -65,7 +65,9 @@ var _ = Describe("Grant admission on update", func() {
 	})
 
 	It("refuses a change of the fragment by a requester without serve", func() {
-		grant.Spec.Fragment = &apiextensionsv1.JSON{Raw: []byte(`{"Effect":"Allow","Action":["s3:*"],"Resource":["*"]}`)}
+		grant.Spec.Fragment = &apiextensionsv1.JSON{
+			Raw: []byte(`{"Effect":"Allow","Action":["s3:*"],"Resource":["*"]}`),
+		}
 
 		Eventually(func() error {
 			return stranger.Update(ctx, grant)
@@ -79,23 +81,22 @@ var _ = Describe("Grant admission on update", func() {
 	})
 
 	It("refuses a move of the label of a Grant of another registration by the controller of the new one", func() {
-		bindClusterRole("aws-kms-key-controller", []rbacv1.PolicyRule{
-			{
+		bindClusterRole(
+			"aws-kms-key-controller",
+			pluginNamespace,
+			"aws-kms-key-controller",
+			rbacv1.PolicyRule{
 				APIGroups:     []string{pluginsv1alpha1.SchemeGroupVersion.Group},
 				Resources:     []string{"pluginregistrations"},
 				ResourceNames: []string{"aws-kms-key"},
 				Verbs:         []string{"serve"},
 			},
-			{
+			rbacv1.PolicyRule{
 				APIGroups: []string{pluginsv1alpha1.SchemeGroupVersion.Group},
 				Resources: []string{"grants"},
 				Verbs:     []string{"get", "update", "patch"},
 			},
-		}, pluginNamespace, "aws-kms-key-controller")
-		DeferCleanup(func() {
-			_ = admin.Delete(ctx, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "aws-kms-key-controller"}})
-			_ = admin.Delete(ctx, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "aws-kms-key-controller"}})
-		})
+		)
 		kms := asServiceAccount(pluginNamespace, "aws-kms-key-controller")
 
 		grant.Labels[pluginsv1alpha1.LabelRegistration] = "aws-kms-key"
@@ -138,15 +139,16 @@ var _ = Describe("Grant admission on update", func() {
 	})
 
 	It("lets the identity extension write the status without serve", func() {
-		bindClusterRole("identity-extension", []rbacv1.PolicyRule{{
-			APIGroups: []string{pluginsv1alpha1.SchemeGroupVersion.Group},
-			Resources: []string{"grants/status"},
-			Verbs:     []string{"update", "patch"},
-		}}, pluginNamespace, "identity-extension")
-		DeferCleanup(func() {
-			_ = admin.Delete(ctx, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "identity-extension"}})
-			_ = admin.Delete(ctx, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "identity-extension"}})
-		})
+		bindClusterRole(
+			"identity-extension",
+			pluginNamespace,
+			"identity-extension",
+			rbacv1.PolicyRule{
+				APIGroups: []string{pluginsv1alpha1.SchemeGroupVersion.Group},
+				Resources: []string{"grants/status"},
+				Verbs:     []string{"update", "patch"},
+			},
+		)
 		extension := asServiceAccount(pluginNamespace, "identity-extension")
 
 		meta.SetStatusCondition(&grant.Status.Conditions, metav1.Condition{

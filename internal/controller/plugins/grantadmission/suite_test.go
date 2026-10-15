@@ -64,11 +64,16 @@ var _ = BeforeSuite(func() {
 	applyManifests(filepath.Join("config", "samples", "plugins_serve_clusterrole.yaml"))
 
 	By("giving a second ServiceAccount write access to grants, without serve")
-	bindClusterRole("grant-writer", []rbacv1.PolicyRule{{
-		APIGroups: []string{pluginsv1alpha1.SchemeGroupVersion.Group},
-		Resources: []string{"grants"},
-		Verbs:     []string{"get", "create", "update", "patch"},
-	}}, pluginNamespace, strangerServiceAccount)
+	bindClusterRole(
+		"grant-writer",
+		pluginNamespace,
+		strangerServiceAccount,
+		rbacv1.PolicyRule{
+			APIGroups: []string{pluginsv1alpha1.SchemeGroupVersion.Group},
+			Resources: []string{"grants"},
+			Verbs:     []string{"get", "create", "update", "patch"},
+		},
+	)
 
 	// The policy acts a short time after it is created. A refusal of an
 	// admin request shows that it acts, because the binding covers every
