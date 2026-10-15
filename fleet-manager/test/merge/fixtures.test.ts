@@ -2,11 +2,15 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
+import type { CamundaClusterPresetSpec } from "@/generated/crds/camundaclusterpreset";
+import type { CamundaReleaseSpec } from "@/generated/crds/camundarelease";
 import type { DatabaseServerSpec } from "@/generated/crds/databaseserver";
 import type { DatabaseServerPresetSpec } from "@/generated/crds/databaseserverpreset";
 import type { ElasticsearchClusterSpec } from "@/generated/crds/elasticsearchcluster";
 import type { ElasticsearchClusterPresetSpec } from "@/generated/crds/elasticsearchclusterpreset";
 import {
+  mergeCluster,
   mergeDatabaseServer,
   mergeElasticsearch,
   type Merged,
@@ -121,6 +125,15 @@ type MergeRun = (f: MergeFixture) => Merged<object>;
 
 // Each kind of the operator, with the merge of the app that its cases test.
 const runs: Array<[MergeKind, MergeRun]> = [
+  [
+    "camundacluster",
+    (f) =>
+      mergeCluster(
+        f.preset as unknown as CamundaClusterPresetSpec | undefined,
+        f.release as unknown as CamundaReleaseSpec | undefined,
+        f.spec as unknown as CamundaClusterSpec,
+      ),
+  ],
   [
     "elasticsearchcluster",
     (f) =>
