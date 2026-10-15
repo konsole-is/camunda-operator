@@ -105,7 +105,7 @@ The contract of a server with an archive declares `pitr.enabled: true`, `pitr.re
 
 `retentionPeriodDays` is how far into the past a restore can reach. The bucket keeps the archive for that number of days, and the contract publishes the same number.
 
-A raised retention period does not bring back what the shorter one already removed. The window grows only as the archive writes new data. `status.archive.reachableFrom` is the oldest point that the bucket still holds, to the minute.
+A raised retention period does not bring back what the shorter one already removed. The window grows only as the archive writes new data. `status.archive.reachableFrom` is the oldest point that the bucket still holds, rounded down to the minute. The bucket can miss up to one minute after it.
 
 ### Schedule
 
