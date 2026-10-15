@@ -53,6 +53,7 @@ var implementedKindSamples = []string{
 	"plugins_v1alpha1_pluginregistration.yaml",
 	"plugins_v1alpha1_pluginrequest.yaml",
 	"plugins_v1alpha1_grant.yaml",
+	"fleet_v1alpha1_environment.yaml",
 }
 
 var _ = Describe("config/samples", func() {

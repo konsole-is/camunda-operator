@@ -1,0 +1,16 @@
+{{- if .Values.fleetManager.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fleet-manager.name" . }}
+  labels:
+    {{- include "fleet-manager.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fleet-manager.name" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fleet-manager.name" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

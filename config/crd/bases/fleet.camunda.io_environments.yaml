@@ -1,0 +1,411 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: environments.fleet.camunda.io
+spec:
+  group: fleet.camunda.io
+  names:
+    kind: Environment
+    listKind: EnvironmentList
+    plural: environments
+    singular: environment
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].reason
+      name: Reason
+      type: string
+    - jsonPath: .status.namespaces
+      name: Namespaces
+      type: integer
+    - jsonPath: .spec.displayName
+      name: Display name
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Environment sets the policy for the claims in its namespaces: the releases,
+          presets, and plugin registrations that a claim can use, the parameter
+          values, and the deletion default. A namespace belongs to the Environment
+          that its label fleet.camunda.io/environment names. Without any
+          Environment, the modes and the parameter values of the registrations
+          apply. The name is at most 63 characters, because other objects carry it
+          in a label value.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec is the policy of the environment
+            properties:
+              color:
+                description: |-
+                  Color is the color that the fleet manager shows for the environment,
+                  as a hex color such as #2E7D32. It changes nothing for a claim.
+                pattern: ^#[0-9a-fA-F]{6}$
+                type: string
+              deletionPolicy:
+                default: Delete
+                description: |-
+                  DeletionPolicy is the deletion policy of a claim of the environment
+                  that sets none itself. Delete deletes the resources of its plugin
+                  requests with the claim. Orphan keeps them. Unset means Delete. A
+                  change applies to new claims only.
+                enum:
+                - Delete
+                - Orphan
+                type: string
+              displayName:
+                description: |-
+                  DisplayName is the name that the fleet manager shows for the
+                  environment, at most 64 characters. It changes nothing for a claim.
+                maxLength: 64
+                type: string
+              namespaceCreation:
+                description: |-
+                  NamespaceCreation lets the create flow of the fleet manager create a
+                  namespace in the environment. Unset, the create flow cannot create a
+                  namespace.
+                properties:
+                  allowed:
+                    description: Allowed lets the create flow create a namespace in
+                      the environment.
+                    type: boolean
+                  labels:
+                    additionalProperties:
+                      description: LabelValue is the value of a Kubernetes label.
+                      maxLength: 63
+                      pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
+                      type: string
+                    description: |-
+                      Labels are fixed labels of a new namespace. Each is a valid label. The
+                      label fleet.camunda.io/environment is not allowed here, because the
+                      create flow sets it.
+                    maxProperties: 32
+                    type: object
+                    x-kubernetes-validations:
+                    - message: namespaceCreation.labels must have valid label keys
+                      rule: self.all(k, !format.qualifiedName().validate(k).hasValue())
+                  requiredLabelKeys:
+                    description: |-
+                      RequiredLabelKeys are label keys, for example team. The create flow
+                      asks for a value of each key and sets the label on the new namespace.
+                      Each key is a valid label key. The key fleet.camunda.io/environment is
+                      not allowed here.
+                    items:
+                      maxLength: 317
+                      type: string
+                    maxItems: 16
+                    type: array
+                    x-kubernetes-list-type: set
+                    x-kubernetes-validations:
+                    - message: namespaceCreation.requiredLabelKeys must be valid label
+                        keys
+                      rule: self.all(k, !format.qualifiedName().validate(k).hasValue())
+                type: object
+                x-kubernetes-validations:
+                - message: the environment label is set by the app
+                  rule: '!has(self.labels) || !(''fleet.camunda.io/environment'' in
+                    self.labels)'
+                - message: the environment label is set by the app
+                  rule: '!has(self.requiredLabelKeys) || !(''fleet.camunda.io/environment''
+                    in self.requiredLabelKeys)'
+              parameters:
+                additionalProperties:
+                  additionalProperties:
+                    description: |-
+                      ParameterPolicy is the policy of an Environment for one parameter of a
+                      PluginRegistration.
+                    properties:
+                      allowed:
+                        description: |-
+                          Allowed are the choices that a claim can pick for the parameter. The
+                          claim stores the name of a choice, or a list of names for an array
+                          parameter. The claim controller puts the value of each choice in the
+                          request, and refuses an unknown name with NotAllowed. Allowed needs
+                          claimEditable.
+                        items:
+                          description: NamedValue is one choice of a claim-editable
+                            parameter.
+                          properties:
+                            label:
+                              description: |-
+                                Label is what the fleet manager shows for the choice, for example SQS
+                                access.
+                              maxLength: 64
+                              minLength: 1
+                              type: string
+                            name:
+                              description: |-
+                                Name is what the claim stores when it picks the choice, for example
+                                sqs. It is unique in the list.
+                              maxLength: 63
+                              minLength: 1
+                              type: string
+                            value:
+                              description: |-
+                                Value is what the request gets, for example the ARN of a policy. It
+                                can be any JSON value.
+                              x-kubernetes-preserve-unknown-fields: true
+                          required:
+                          - label
+                          - name
+                          - value
+                          type: object
+                        maxItems: 32
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      claimEditable:
+                        description: |-
+                          ClaimEditable lets a claim of the environment change the parameter.
+                          Without it, the claim gets the value of the policy or of the
+                          registration.
+                        type: boolean
+                      value:
+                        description: Value replaces the value that the registration
+                          gives the parameter.
+                        x-kubernetes-preserve-unknown-fields: true
+                    type: object
+                    x-kubernetes-validations:
+                    - message: 'allowed needs claimEditable: true'
+                      rule: '!has(self.allowed) || size(self.allowed) == 0 || (has(self.claimEditable)
+                        && self.claimEditable)'
+                  description: |-
+                    ParameterPolicies holds the policy of each parameter of one
+                    PluginRegistration, by parameter name.
+                  maxProperties: 64
+                  type: object
+                description: |-
+                  Parameters holds the policy of the parameters of each
+                  PluginRegistration, by registration name and then by parameter name.
+                  A parameter without a policy keeps the value of its registration, and
+                  a claim cannot change it. A change applies to new claims only.
+                maxProperties: 64
+                type: object
+              platformConfigRef:
+                description: |-
+                  PlatformConfigRef names the CamundaPlatformConfig of a claim of the
+                  environment that names none itself. A change applies to new claims
+                  only.
+                type: string
+              presets:
+                description: |-
+                  Presets lists, for each preset kind, the presets that a claim of the
+                  environment can use. The claim controller checks a new claim, and a
+                  preset change of an existing claim, against the current lists.
+                properties:
+                  camundaCluster:
+                    description: |-
+                      CamundaCluster are the names of the CamundaClusterPresets that a
+                      cluster claim can use.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  databaseServer:
+                    description: |-
+                      DatabaseServer are the names of the DatabaseServerPresets that the
+                      built-in PostgreSQL of a claim can use.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  elasticsearchCluster:
+                    description: |-
+                      ElasticsearchCluster are the names of the ElasticsearchClusterPresets
+                      that the built-in Elasticsearch of a claim can use.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
+              releases:
+                description: |-
+                  Releases lists the CamundaReleases that a claim of the environment can
+                  use. The claim controller checks a new claim, and a release change of
+                  an existing claim, against the current list.
+                properties:
+                  allowed:
+                    description: Allowed are the names of the CamundaReleases that
+                      a claim can use.
+                    items:
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-type: set
+                  default:
+                    description: |-
+                      Default is the release of a claim that names none. It is one of
+                      allowed.
+                    maxLength: 253
+                    type: string
+                type: object
+              sections:
+                additionalProperties:
+                  description: SectionPolicy is the policy of an Environment for one
+                    PluginSection.
+                  properties:
+                    allowed:
+                      description: |-
+                        Allowed are the names of the PluginRegistrations of the section that a
+                        claim of the environment can select. With no item, a claim can select
+                        only the empty option.
+                      items:
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                      maxItems: 64
+                      type: array
+                      x-kubernetes-list-type: set
+                    default:
+                      description: |-
+                        Default is the registration that the create flow of the fleet manager
+                        preselects. It is empty or one of allowed.
+                      maxLength: 253
+                      type: string
+                    required:
+                      description: |-
+                        Required makes a claim of the environment select a registration of the
+                        section. The fleet manager then hides the empty option.
+                      type: boolean
+                  type: object
+                  x-kubernetes-validations:
+                  - message: default must be one of allowed
+                    rule: '!has(self.default) || size(self.default) == 0 || (has(self.allowed)
+                      && self.default in self.allowed)'
+                  - message: required needs at least one registration in allowed
+                    rule: '!has(self.required) || !self.required || (has(self.allowed)
+                      && size(self.allowed) > 0)'
+                description: |-
+                  Sections holds the policy of each PluginSection, by section name. A
+                  claim of the environment can select only a registration that the
+                  policy of its section allows. A section that is not listed offers
+                  only the empty option. A change applies to new claims only.
+                maxProperties: 64
+                type: object
+            type: object
+            x-kubernetes-validations:
+            - message: releases.default must be one of releases.allowed
+              rule: '!has(self.releases) || !has(self.releases.default) || size(self.releases.default)
+                == 0 || (has(self.releases.allowed) && self.releases.default in self.releases.allowed)'
+          status:
+            description: status is the state of the environment
+            properties:
+              conditions:
+                description: |-
+                  Conditions report the state of the environment. Ready is False with
+                  reason InvalidReference when a release, preset, platform config,
+                  section, or registration that the spec names does not exist. The
+                  message names each missing object.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              namespaces:
+                description: |-
+                  Namespaces is the number of namespaces that carry the label of this
+                  environment. It is unset until the environment controller counts the
+                  namespaces.
+                format: int32
+                type: integer
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the last generation that the environment
+                  controller processed.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+        x-kubernetes-validations:
+        - message: metadata.name must be at most 63 characters, because it is used
+            as a label value
+          rule: self.metadata.name.size() <= 63
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -25,10 +25,15 @@ jobs:
     env:
       IMG: camunda-operator:scan
       CLI_IMG: camunda-operator-cli:scan
+      FLEET_IMG: camunda-operator-fleet-manager:scan
 
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
+
+      # The fleet manager image builds each platform in emulation.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@v4
@@ -38,6 +43,7 @@ jobs:
         run: |
           make docker-buildx "IMG=${IMG}" "PLATFORMS=${{ matrix.platform }}" BUILDX_OUTPUT=--load
           make docker-buildx-cli "CLI_IMG=${CLI_IMG}" "PLATFORMS=${{ matrix.platform }}" BUILDX_OUTPUT=--load
+          make docker-buildx-fleet "FLEET_IMG=${FLEET_IMG}" "PLATFORMS=${{ matrix.platform }}" BUILDX_OUTPUT=--load
 
       # The Security workflow explains the pin of trivy-action.
       - name: Scan the operator image
@@ -58,6 +64,23 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+
+      - name: Scan the fleet manager image
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.FLEET_IMG }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # The image of each platform starts in emulation, so a native package
+      # of the wrong platform stops the release here.
+      - name: Test the fleet manager image
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        env:
+          TEST_IMAGE_TIMEOUT: "300"
+        run: fleet-manager/deploy/test-image.sh "${FLEET_IMG}"
 
   release:
     name: Build and publish artifacts
@@ -95,7 +118,8 @@ jobs:
 
       # CLI_IMG is the companion image that the Jobs of the operator run. The
       # chart and install.yaml pass it to the manager through
-      # --camunda-operator-cli-image.
+      # --camunda-operator-cli-image. FLEET_IMG is the image of the chart value
+      # fleetManager.enabled.
       - name: Derive the version from the tag
         run: |
           num='(0|[1-9][0-9]*)'
@@ -109,6 +133,7 @@ jobs:
             echo "VERSION=${version}"
             echo "IMG=ghcr.io/${GITHUB_REPOSITORY}:${version}"
             echo "CLI_IMG=ghcr.io/${GITHUB_REPOSITORY}-cli:${version}"
+            echo "FLEET_IMG=ghcr.io/${GITHUB_REPOSITORY}-fleet-manager:${version}"
           } >> "${GITHUB_ENV}"
 
       # The api module lives in a subdirectory, so its Go tag carries the
@@ -160,6 +185,10 @@ jobs:
         with:
           cosign-release: v3.1.3
 
+      # The fleet manager image builds each platform in emulation.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@v4
 
@@ -171,13 +200,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate the chart and installer manifests
-        run: make helm-generate IMG=${IMG} CLI_IMG=${CLI_IMG}
+        run: make helm-generate IMG=${IMG} CLI_IMG=${CLI_IMG} FLEET_IMG=${FLEET_IMG}
 
       - name: Stamp the release version into Chart.yaml
         run: |
           sed -i -e "s/^version: .*/version: ${VERSION}/" dist/chart/Chart.yaml
           sed -i -e "s/^appVersion: .*/appVersion: \"${VERSION}\"/" dist/chart/Chart.yaml
-          sed -i -e "s|\(image: ghcr.io/konsole-is/camunda-operator\(-cli\)\{0,1\}\):.*|\1:${VERSION}|" dist/chart/Chart.yaml
+          # The delimiter is #, because \| is the alternation of the expression.
+          sed -i -e "s#\(image: ghcr.io/konsole-is/camunda-operator\(-cli\|-fleet-manager\)\{0,1\}\):.*#\1:${VERSION}#" dist/chart/Chart.yaml
           grep -E '^(version|appVersion):|image: ' dist/chart/Chart.yaml
 
       - name: Verify the chart
@@ -204,6 +234,17 @@ jobs:
             --format '{{.Manifest.Digest}}')
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "cli image digest: ${digest}"
+
+      - name: Build and push the fleet manager image
+        run: make docker-buildx-fleet FLEET_IMG=${FLEET_IMG}
+
+      - name: Resolve the fleet manager image digest
+        id: fleet
+        run: |
+          digest=$(docker buildx imagetools inspect "${FLEET_IMG}" \
+            --format '{{.Manifest.Digest}}')
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "fleet manager image digest: ${digest}"
 
       - name: Package and push the chart
         id: chart
@@ -250,6 +291,9 @@ jobs:
 
       - name: Sign the CLI image
         run: cosign sign --yes "ghcr.io/${{ github.repository }}-cli@${{ steps.cli.outputs.digest }}"
+
+      - name: Sign the fleet manager image
+        run: cosign sign --yes "ghcr.io/${{ github.repository }}-fleet-manager@${{ steps.fleet.outputs.digest }}"
 
       - name: Sign the chart
         run: cosign sign --yes "${CHART_REPO}@${{ steps.chart.outputs.digest }}"

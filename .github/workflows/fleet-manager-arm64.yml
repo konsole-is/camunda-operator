@@ -1,0 +1,41 @@
+name: Fleet manager arm64 image
+
+# The release builds and starts the arm64 image in emulation. This workflow
+# does the same before a release, but only for the files that change how the
+# image builds or starts, because a build in emulation takes many minutes.
+on:
+  pull_request:
+    paths:
+      - fleet-manager/Dockerfile
+      - fleet-manager/deploy/**
+      - fleet-manager/package.json
+      - fleet-manager/pnpm-lock.yaml
+      - .github/workflows/fleet-manager-arm64.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: Build and test the arm64 image
+    runs-on: ubuntu-latest
+    env:
+      FLEET_IMG: fleet-manager:arm64
+      TEST_IMAGE_TIMEOUT: "300"
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build the arm64 fleet manager image
+        run: make docker-buildx-fleet "FLEET_IMG=${FLEET_IMG}" PLATFORMS=linux/arm64 BUILDX_OUTPUT=--load
+
+      - name: Test the arm64 fleet manager image
+        run: fleet-manager/deploy/test-image.sh "${FLEET_IMG}"

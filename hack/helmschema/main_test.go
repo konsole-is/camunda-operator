@@ -26,7 +26,7 @@ import (
 )
 
 // generatedValues has the shape that the kubebuilder helm plugin (v4.16)
-// writes, after helmcli.
+// writes, after helmcli and helmfleet.
 const generatedValues = `## String to partially override chart.fullname template
 ##
 # nameOverride: ""
@@ -91,6 +91,15 @@ metrics:
   # Metrics server port
   port: 8443
   ratio: 0.5
+
+## Fleet manager
+##
+fleetManager:
+  enabled: false
+
+  resources:
+    limits:
+      memory: 512Mi
 `
 
 const generatedTemplate = `spec:
@@ -207,6 +216,7 @@ func TestGenerateAcceptsAnyContentOfOpenValues(t *testing.T) {
 		"manager.securityContext",
 		"manager.resources",
 		"manager.strategy",
+		"fleetManager.resources",
 		"global",
 	} {
 		p := at(t, root, path)

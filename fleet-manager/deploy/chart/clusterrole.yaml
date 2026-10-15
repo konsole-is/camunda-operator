@@ -1,0 +1,70 @@
+{{- if .Values.fleetManager.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fleet-manager.name" . }}
+  labels:
+    {{- include "fleet-manager.labels" . | nindent 4 }}
+rules:
+  # The kinds whose fields the app writes.
+  - apiGroups: [fleet.camunda.io]
+    resources: [camundaclusterclaims, camundamanagementclusterclaims, environments]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [core.camunda.io]
+    resources:
+      - camundaclusterpresets
+      - elasticsearchclusterpresets
+      - databaseserverpresets
+      - camundareleases
+      - camundaplatformconfigs
+      - objectstorageconfigs
+      - secondarystorageconfigs
+      - databaseserverconfigs
+      - databaseconfigs
+      - managementauthconfigs
+      - logicalbackupelasticsearches
+      - logicalbackuprdbmses
+      - logicalrestoreelasticsearches
+      - logicalrestorerdbmses
+      - pointintimerestores
+      - backupschedules
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, list, watch, create, patch]
+  # The app writes Secret values and shows only their names and keys.
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, create, update]
+  # The kinds that the app reads.
+  - apiGroups: [core.camunda.io]
+    resources:
+      - camundaclusters
+      - camundamanagementclusters
+      - camundaoptimizes
+      - elasticsearchclusters
+      - databaseservers
+      - databases
+    verbs: [get, list, watch]
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginsections, pluginregistrations, pluginrequests, grants]
+    verbs: [get, list, watch]
+  - apiGroups: [external-secrets.io]
+    resources: [externalsecrets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods, events, services, persistentvolumeclaims]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes, grpcroutes]
+    verbs: [get, list, watch]
+{{- end }}

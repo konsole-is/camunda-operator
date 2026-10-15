@@ -1,9 +1,9 @@
 name: Renovate commit
 
 # Commits the files that the Renovate regenerate workflow uploaded to the
-# Renovate branch, then starts Lint, Tests, and Chart on that commit.
-# GitHub runs a workflow_run workflow from the default branch, so a Renovate
-# branch cannot change the steps that hold the write token.
+# Renovate branch, then starts Lint, Tests, Chart, and Fleet manager on
+# that commit. GitHub runs a workflow_run workflow from the default branch,
+# so a Renovate branch cannot change the steps that hold the write token.
 on:
   workflow_run:
     workflows: ["Renovate regenerate"]
@@ -66,7 +66,11 @@ jobs:
             (startswith("config/prometheus/observability/")
               or test("^test/fixtures/merge/.+\\.json$")
               or . == "docs/crds/api-reference.md"
-              or . == "pkg/images/table.json")
+              or . == "pkg/images/table.json"
+              or startswith("fleet-manager/src/generated/")
+              or (test("^fleet-manager/e2e/scenarios/[^/]+/[^/]+\\.yaml$")
+                and (endswith("/scenario.yaml") | not)
+                and (endswith("/observe.yaml") | not)))
             and (contains("..") | not))' additions.json deletions.json > /dev/null
           tip=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha)
           if [ "$tip" != "$HEAD_SHA" ]; then
@@ -105,6 +109,6 @@ jobs:
       - name: Run the checks on the new commit
         if: steps.commit.outputs.dispatch == 'true'
         run: |
-          for workflow in lint.yml test.yml chart.yml; do
+          for workflow in lint.yml test.yml chart.yml fleet-manager.yml; do
             gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
           done

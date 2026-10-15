@@ -68,7 +68,7 @@ A contract is a resource that carries connection details and credential referenc
 
 ## Planned kinds
 
-The kinds below are an alpha API in the group `plugins.camunda.io/v1alpha1`. No controller acts on them yet. The install does not include their CRDs, and their fields can change in a later release.
+The kinds below are an alpha API in the groups `plugins.camunda.io/v1alpha1` and `fleet.camunda.io/v1alpha1`. No controller acts on them yet. The install does not include their CRDs, and their fields can change in a later release.
 
 | Kind | Scope | What it is |
 | --- | --- | --- |
@@ -76,6 +76,7 @@ The kinds below are an alpha API in the group `plugins.camunda.io/v1alpha1`. No 
 | `PluginRegistration` | Cluster | One option that a plugin offers in one or more sections, with the permissions that the option asks for. |
 | `PluginRequest` | Namespaced | A request to a plugin for the resources of one section. |
 | `Grant` | Namespaced | One permission that a plugin asks for, on behalf of a `PluginRequest`. |
+| `Environment` | Cluster | The policy for the claims in the namespaces whose label `fleet.camunda.io/environment` names it. |
 
 ## How the kinds relate
 

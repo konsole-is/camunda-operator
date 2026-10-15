@@ -71,6 +71,28 @@ jobs:
           git add --intent-to-add pkg/images/table.json
           git diff --exit-code -- pkg/images/table.json
 
+      # The fleet manager reads the CRDs and the condition types of api/
+      # through fleet-manager/src/generated. A change to a CRD, a field
+      # description, or a condition type must regenerate it in the same change.
+      - name: Setup Node for the fleet manager
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: fleet-manager/.node-version
+      - name: Check that the fleet manager types are generated
+        run: |
+          make fleet-generate
+          git add --intent-to-add fleet-manager/src/generated
+          git diff --exit-code -- fleet-manager/src/generated
+
+      # The files beside each scenario.yaml under fleet-manager/e2e/scenarios
+      # are what the reconcilers write on envtest. A change to a reconciler
+      # that changes what it writes must regenerate them in the same change.
+      - name: Check that the page scenarios are generated
+        run: |
+          make fleet-scenarios
+          git add --intent-to-add fleet-manager/e2e/scenarios
+          git diff --exit-code -- fleet-manager/e2e/scenarios
+
       - name: Check the docs against the simple-english rules
         run: make docs-sentences
 

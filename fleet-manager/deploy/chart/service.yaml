@@ -1,0 +1,17 @@
+{{- if .Values.fleetManager.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fleet-manager.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fleet-manager.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fleet-manager.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+{{- end }}

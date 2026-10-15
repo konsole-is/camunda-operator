@@ -65,6 +65,8 @@ helm install camunda-operator \
 
 The [installation guide](https://konsole-is.github.io/camunda-operator/dev/installation/) covers plain manifests, signature verification, CRDs installed separately, upgrades, and removal.
 
+The chart can also install the fleet manager, a web app for the Camunda clusters of the Kubernetes cluster. Add `--set fleetManager.enabled=true`, and see [Install the fleet manager](https://konsole-is.github.io/camunda-operator/dev/fleet-manager/install/).
+
 ## Run your first cluster
 
 [Getting started](https://konsole-is.github.io/camunda-operator/dev/getting-started/) takes you from an empty Kubernetes cluster to a running Camunda cluster that you can log in to.
@@ -77,6 +79,7 @@ The [documentation site](https://konsole-is.github.io/camunda-operator/) has a v
 - [Installation](https://konsole-is.github.io/camunda-operator/dev/installation/)
 - [Architecture](https://konsole-is.github.io/camunda-operator/dev/architecture/): how the resources relate and the rules the operator follows
 - [Observability](https://konsole-is.github.io/camunda-operator/dev/observability/): the metrics of the operator, and the dashboards and alerts that ship with it
+- [Install the fleet manager](https://konsole-is.github.io/camunda-operator/dev/fleet-manager/install/): the web app that the chart installs with `fleetManager.enabled=true`
 - [Use the API types from Go](https://konsole-is.github.io/camunda-operator/dev/go-api/): the api module for programs that create or read the CRs
 - Guides: [presets](https://konsole-is.github.io/camunda-operator/dev/guides/presets/), [secondary storage](https://konsole-is.github.io/camunda-operator/dev/guides/secondary-storage/), [authentication](https://konsole-is.github.io/camunda-operator/dev/guides/authentication/), [management plane](https://konsole-is.github.io/camunda-operator/dev/guides/management-plane/), [backup](https://konsole-is.github.io/camunda-operator/dev/guides/backup/), [operations](https://konsole-is.github.io/camunda-operator/dev/guides/operations/)
 - [CRD reference](https://konsole-is.github.io/camunda-operator/dev/crds/)
@@ -93,9 +96,9 @@ make helm-generate  # regenerate dist/chart/ from config/
 make docs-serve     # preview the documentation site
 ```
 
-`dist/chart/values.yaml`, `dist/chart/values.schema.json`, and `dist/chart/templates/` are generated. Change the defaults in `config/` and run `make helm-generate`.
+`dist/chart/values.yaml`, `dist/chart/values.schema.json`, and `dist/chart/templates/` are generated. Change the defaults in `config/` and run `make helm-generate`. The templates of the fleet manager come from `fleet-manager/deploy/chart/`.
 
-A Renovate update can change the input of a file that the Lint workflow checks for drift, such as `pkg/images/table.json` or `docs/crds/api-reference.md`. The Renovate regenerate workflow runs those generators on each push to a `renovate/**` branch. When a file changes, the Renovate commit workflow commits the result to the branch and starts Lint, Tests, and Chart on that commit. GitHub also shows the `pull_request` runs of that commit as waiting for approval. You do not have to approve them. The two workflows use the token of the workflow run and need no secret.
+A Renovate update can change the input of a file that the Lint workflow checks for drift, such as `pkg/images/table.json` or `docs/crds/api-reference.md`. The Renovate regenerate workflow runs those generators on each push to a `renovate/**` branch. When a file changes, the Renovate commit workflow commits the result to the branch and starts Lint, Tests, Chart, and Fleet manager on that commit. GitHub also shows the `pull_request` runs of that commit as waiting for approval. You do not have to approve them. The two workflows use the token of the workflow run and need no secret.
 
 Issues and pull requests are welcome at [github.com/konsole-is/camunda-operator](https://github.com/konsole-is/camunda-operator).
 

@@ -1,0 +1,10 @@
+# BuildKit reads this file in place of the root .dockerignore, which keeps only
+# Go files. The fleet manager image needs the app and the images table.
+**
+!fleet-manager/**
+!pkg/images/table.json
+fleet-manager/node_modules/
+fleet-manager/.next/
+fleet-manager/coverage/
+fleet-manager/next-env.d.ts
+fleet-manager/*.tsbuildinfo

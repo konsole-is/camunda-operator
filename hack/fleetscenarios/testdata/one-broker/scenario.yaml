@@ -1,0 +1,73 @@
+schemaVersion: 1
+description: A basic-auth cluster with 1 of 3 brokers ready, then all 3.
+seed:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: team-b
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaPlatformConfig
+    metadata:
+      name: basic
+    spec:
+      auth:
+        method: basic
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: es-credentials
+      namespace: team-b
+    stringData:
+      username: camunda
+      password: es-password
+  - apiVersion: core.camunda.io/v1
+    kind: SecondaryStorageConfig
+    metadata:
+      name: es
+      namespace: team-b
+    spec:
+      type: elasticsearch
+      elasticsearch:
+        endpoint: https://es-es-http.team-b.svc:9200
+        credentialsSecretRef:
+          name: es-credentials
+          usernameKey: username
+          passwordKey: password
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaCluster
+    metadata:
+      name: orders
+      namespace: team-b
+    spec:
+      platformConfigRef: basic
+      version: "8.9.23"
+      storageRef: es
+      zeebe:
+        replicas: 3
+      connectors:
+        enabled: false
+workload:
+  - kind: StatefulSet
+    namespace: team-b
+    name: orders-zeebe
+    readyReplicas: 1
+overlays:
+  - reason: >-
+      The operator records a finished rotation only after the user API of the
+      cluster accepts the new password. envtest cannot serve that API.
+    object:
+      apiVersion: core.camunda.io/v1
+      kind: CamundaCluster
+      namespace: team-b
+      name: orders
+    status:
+      adminPassword:
+        rotation: "2026-01"
+states:
+  - name: brokers-ready
+    description: All 3 brokers are ready.
+    workload:
+      - kind: StatefulSet
+        namespace: team-b
+        name: orders-zeebe
+        readyReplicas: 3

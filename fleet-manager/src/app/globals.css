@@ -1,1 +1,90 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+/* The data-open, data-checked, and other variants of the primitives. */
+@import "shadcn/tailwind.css";
+
+/* The app has one theme, dark. The layout puts the class dark on <html>, so
+   the dark: variants of the shadcn primitives always apply. */
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  color-scheme: dark;
+  --bg: #0a0f1e;
+  --panel: #0f1630;
+  --panel-2: #151d3b;
+  --border: #1f2a55;
+  --divider: #1c2650;
+  --text: #e8ecf5;
+  --text-2: #c9d2e6;
+  --muted: #a3adc2;
+  /* Lighter than the #6b7591 of the UI draft, which is under 4.5:1 as text
+     on every surface. */
+  --faint: #7d869e;
+  --accent: #ff6b1a;
+  --accent-hover: #ff8541;
+  --ok: #3dd68c;
+  --warn: #ffc14d;
+  --bad: #ff6b81;
+  --info: #5b9bff;
+  /* A dot color only. As text it is under the contrast floor. */
+  --off: #3c4c85;
+  --radius: 0.5rem;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-border: var(--border);
+  --color-divider: var(--divider);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-info: var(--info);
+  --color-off: var(--off);
+
+  /* The color names of the shadcn primitives. accent and muted are not here:
+     the tokens give those names another meaning, so the primitives use
+     panel-2 for their hover and quiet surfaces. */
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--panel);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--panel-2);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--bg);
+  --color-secondary: var(--panel-2);
+  --color-secondary-foreground: var(--text);
+  --color-muted-foreground: var(--muted);
+  --color-destructive: var(--bad);
+  --color-destructive-foreground: var(--bg);
+  --color-input: var(--border);
+  /* The edge of a form control. --border is under 3:1 on the surfaces. */
+  --color-control-edge: var(--faint);
+  --color-ring: var(--info);
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-bg font-sans text-sm text-text;
+  }
+}

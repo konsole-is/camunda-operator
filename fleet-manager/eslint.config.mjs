@@ -31,5 +31,14 @@ export default defineConfig([
       ],
     },
   },
-  globalIgnores([".next/**", "next-env.d.ts", "test/fixtures/**"]),
+  globalIgnores([
+    ".next/**",
+    "next-env.d.ts",
+    "test/fixtures/**",
+    "src/generated/**",
+    ".next-gallery/**",
+    "ui-gallery/**",
+    "test-results/**",
+    "playwright-report/**",
+  ]),
 ]);
