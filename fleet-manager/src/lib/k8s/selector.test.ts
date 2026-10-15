@@ -32,10 +32,26 @@ describe("parseSelector", () => {
     "tier in (db,pr*d)",
     "env in ()",
     "env notin ( )",
+    "a/b/c=x",
+    "tier=-db",
+    "tier in (db,prod-)",
+    `tier=${"v".repeat(64)}`,
+    `${"k".repeat(64)}=x`,
+    `${"p".repeat(254)}/app=x`,
+    "Camunda.io/cluster",
   ])("refuses %j and quotes it", (selector) => {
     expect(() => parseSelector(selector)).toThrow(
       `The label selector "${selector}" is not valid`,
     );
+  });
+
+  it.each([
+    `tier=${"v".repeat(63)}`,
+    `${"k".repeat(63)}`,
+    `${"p".repeat(253)}/app=x`,
+    "app.kubernetes.io/name in (web,db)",
+  ])("accepts %j at the limits of the label rules", (selector) => {
+    expect(() => parseSelector(selector)).not.toThrow();
   });
 
   it("matches an empty value with key=", () => {

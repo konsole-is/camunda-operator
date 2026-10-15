@@ -5,12 +5,32 @@ export type LabelMatcher = (
   labels: Record<string, string> | undefined,
 ) => boolean;
 
-const KEY = String.raw`[A-Za-z0-9][-A-Za-z0-9_./]*`;
-const VALUE = String.raw`[-A-Za-z0-9_.]*`;
-const SET_VALUE = new RegExp(String.raw`^${VALUE}$`);
+const KEY = String.raw`[^\s!=(),]+`;
+const VALUE = String.raw`[^\s!=(),]*`;
 const SET = new RegExp(String.raw`^(${KEY})\s+(in|notin)\s*\(([^)]*)\)$`);
 const EQUALITY = new RegExp(String.raw`^(${KEY})\s*(==|=|!=)\s*(${VALUE})$`);
 const EXISTS = new RegExp(String.raw`^(!?)\s*(${KEY})$`);
+
+// The label rules of Kubernetes: a name of at most 63 characters, and a key
+// with an optional DNS subdomain prefix of at most 253 characters.
+const NAME = /^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$/;
+const PREFIX =
+  /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
+
+function isKey(key: string): boolean {
+  const slash = key.indexOf("/");
+  if (slash < 0) return NAME.test(key);
+  const prefix = key.slice(0, slash);
+  return (
+    prefix.length <= 253 &&
+    PREFIX.test(prefix) &&
+    NAME.test(key.slice(slash + 1))
+  );
+}
+
+function isValue(value: string): boolean {
+  return value === "" || NAME.test(value);
+}
 
 /**
  * parseSelector parses a Kubernetes label selector, such as
@@ -50,7 +70,7 @@ function requirement(
 ): (labels: Record<string, string>) => boolean {
   const set = SET.exec(part);
   const values = set?.[3].split(",").map((v) => v.trim());
-  if (set && set[3].trim() !== "" && values!.every((v) => SET_VALUE.test(v))) {
+  if (set && isKey(set[1]) && set[3].trim() !== "" && values!.every(isValue)) {
     const [, key, op] = set;
     return op === "in"
       ? (labels) => Object.hasOwn(labels, key) && values!.includes(labels[key])
@@ -58,14 +78,14 @@ function requirement(
           !Object.hasOwn(labels, key) || !values!.includes(labels[key]);
   }
   const equality = EQUALITY.exec(part);
-  if (equality) {
+  if (equality && isKey(equality[1]) && isValue(equality[3])) {
     const [, key, op, value] = equality;
     return op === "!="
       ? (labels) => labels[key] !== value
       : (labels) => Object.hasOwn(labels, key) && labels[key] === value;
   }
   const exists = EXISTS.exec(part);
-  if (exists) {
+  if (exists && isKey(exists[2])) {
     const [, not, key] = exists;
     return not
       ? (labels) => !Object.hasOwn(labels, key)
