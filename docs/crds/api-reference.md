@@ -2,6 +2,7 @@
 
 ## Packages
 - [core.camunda.io/v1](#corecamundaiov1)
+- [plugins.camunda.io/v1alpha1](#pluginscamundaiov1alpha1)
 
 
 ## core.camunda.io/v1
@@ -912,6 +913,7 @@ in a namespace can back up the clusters of that namespace, and no others.
 _Appears in:_
 - [BackupScheduleSpec](#backupschedulespec)
 - [CamundaOptimizeSpec](#camundaoptimizespec)
+- [GrantSpec](#grantspec)
 - [LogicalBackupElasticsearchSpec](#logicalbackupelasticsearchspec)
 - [LogicalBackupRDBMSSpec](#logicalbackuprdbmsspec)
 - [LogicalRestoreElasticsearchSpec](#logicalrestoreelasticsearchspec)
@@ -4042,5 +4044,689 @@ _Appears in:_
 | `storageClassName` _string_ | StorageClassName is the StorageClass of the broker volumes. Defaults to<br />the default StorageClass of the Kubernetes cluster. The class cannot<br />change after the broker StatefulSet exists. The API server refuses a<br />change of a value that the CamundaCluster sets itself. A preset can<br />change the class, and a cluster that got its class from a preset can<br />set another one. A cluster whose broker StatefulSet exists, also a<br />suspended one, then keeps its class and records a<br />StorageClassChangeIgnored event. A cluster without a broker StatefulSet<br />takes the new class. Volumes that whenDeleted Retain kept from a<br />deleted cluster of the same name keep their class. |  | Optional: \{\} <br /> |
 | `storageSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#quantity-resource-api)_ | StorageSize is the size of the data volume of each broker. Defaults to<br />10Gi. It can only grow. The API server refuses a change of this field<br />in a CamundaCluster to a smaller value. A smaller value is accepted when<br />the field was not set before, or when a preset lowers the size. A<br />cluster whose volumes are already larger then keeps that size and<br />records a StorageShrinkIgnored event.<br />When the size grows, the operator expands the existing claims in place.<br />The storage class must support volume expansion. |  | Optional: \{\} <br /> |
 | `persistentVolumeClaimRetentionPolicy` _[PersistentVolumeClaimRetentionPolicy](#persistentvolumeclaimretentionpolicy)_ | PersistentVolumeClaimRetentionPolicy says what happens to the broker<br />volumes when the CamundaCluster is deleted. A scale-down and a<br />suspension always keep them. |  | Optional: \{\} <br /> |
+
+
+
+## plugins.camunda.io/v1alpha1
+
+Package v1alpha1 contains API Schema definitions for the plugins v1alpha1
+API group. The kinds of this group connect the claims of the fleet manager
+to the plugin controllers that serve them.
+
+The v1alpha1 version has no compatibility promise. A later release can
+change or remove any type, field, or value of this package.
+
+### Resource Types
+- [Grant](#grant)
+- [PluginRegistration](#pluginregistration)
+- [PluginRequest](#pluginrequest)
+- [PluginSection](#pluginsection)
+
+
+
+#### Choice
+
+
+
+Choice is a preset or an existing resource that a claim can pick for a
+parameter of a registration.
+
+
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the value that the claim stores when it picks the choice. |  | MinLength: 1 <br /> |
+| `specs` _[ChoiceSpec](#choicespec) array_ | Specs are the facts that the fleet manager shows for the choice, for<br />example the version, the node count, or the memory. |  | Optional: \{\} <br /> |
+
+
+#### ChoiceSpec
+
+
+
+ChoiceSpec is one fact of a choice.
+
+
+
+_Appears in:_
+- [Choice](#choice)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `label` _string_ | Label names the fact. |  | MinLength: 1 <br /> |
+| `value` _string_ | Value is the value of the fact. |  |  |
+
+
+#### ClaimKind
+
+_Underlying type:_ _string_
+
+ClaimKind names a claim kind of the fleet.camunda.io group.
+
+_Validation:_
+- Enum: [CamundaClusterClaim CamundaManagementClusterClaim]
+
+_Appears in:_
+- [ClaimRef](#claimref)
+- [PluginSectionSpec](#pluginsectionspec)
+
+| Field | Description |
+| --- | --- |
+| `CamundaClusterClaim` | ClaimKindCamundaClusterClaim is the claim of a CamundaCluster.<br /> |
+| `CamundaManagementClusterClaim` | ClaimKindCamundaManagementClusterClaim is the claim of a<br />CamundaManagementCluster.<br /> |
+
+
+#### ClaimRef
+
+
+
+ClaimRef names the claim that wrote a request.
+
+
+
+_Appears in:_
+- [PluginRequestSpec](#pluginrequestspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `kind` _[ClaimKind](#claimkind)_ | Kind is the kind of the claim. |  | Enum: [CamundaClusterClaim CamundaManagementClusterClaim] <br /> |
+| `name` _string_ | Name is the name of the claim, in the namespace of the request. |  | MinLength: 1 <br /> |
+
+
+#### ControllerInfo
+
+
+
+ControllerInfo identifies the plugin controller that serves a registration.
+
+
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the name of the plugin controller. |  | MinLength: 1 <br /> |
+| `version` _string_ | Version is the version of the plugin controller, from its build info. |  | Optional: \{\} <br /> |
+
+
+#### DeletionPolicy
+
+_Underlying type:_ _string_
+
+DeletionPolicy says what happens to the resources of a request when the
+request is deleted.
+
+_Validation:_
+- Enum: [Delete Orphan]
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+- [PluginRequestSpec](#pluginrequestspec)
+
+| Field | Description |
+| --- | --- |
+| `Delete` | DeletionPolicyDelete deletes the resources that the plugin wrote.<br /> |
+| `Orphan` | DeletionPolicyOrphan keeps the resources and removes their owner<br />reference to the request.<br /> |
+
+
+#### Grant
+
+
+
+Grant asks the identity of a cluster for one permission on behalf of a
+PluginRequest. A plugin controller writes the spec, and the identity
+extension of the cluster writes the status. The name is at most 63
+characters, because other objects carry it in a label value.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `plugins.camunda.io/v1alpha1` | | |
+| `kind` _string_ | `Grant` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  | Optional: \{\} <br /> |
+| `spec` _[GrantSpec](#grantspec)_ | spec defines the desired state of Grant |  | Required: \{\} <br /> |
+| `status` _[GrantStatus](#grantstatus)_ | status defines the observed state of Grant |  | Optional: \{\} <br /> |
+
+
+#### GrantFormat
+
+_Underlying type:_ _string_
+
+GrantFormat is the format of the fragment of a grant. A later version adds
+gcp-iam-binding and azure-role-assignment.
+
+_Validation:_
+- Enum: [aws-iam-statement]
+
+_Appears in:_
+- [GrantSpec](#grantspec)
+- [GrantTemplate](#granttemplate)
+
+| Field | Description |
+| --- | --- |
+| `aws-iam-statement` |  |
+
+
+#### GrantSpec
+
+
+
+GrantSpec is the desired state of a Grant. A plugin controller writes it.
+
+
+
+_Appears in:_
+- [Grant](#grant)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `cluster` _[ClusterRef](#clusterref)_ | Cluster names the CamundaCluster whose identity gets the permission,<br />in the namespace of the grant. It cannot change after the grant is<br />created. |  |  |
+| `template` _string_ | Template is the name of the grant template in the registration that<br />the fragment is rendered from. It cannot change after the grant is<br />created. |  | MinLength: 1 <br /> |
+| `format` _[GrantFormat](#grantformat)_ | Format is the format of the fragment. It cannot change after the<br />grant is created. |  | Enum: [aws-iam-statement] <br /> |
+| `fragment` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#json-v1-apiextensions-k8s-io)_ | Fragment is one permission statement, filled in from the template. It<br />is a JSON object. |  | Type: object <br /> |
+
+
+#### GrantStatus
+
+
+
+GrantStatus is the observed state of a Grant. The identity extension of
+the cluster writes it.
+
+
+
+_Appears in:_
+- [Grant](#grant)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions are Applied, MatchesTemplate, and Ready. Applied is False<br />with reason OverCeiling, OverSizeLimit, or Rejected when the identity<br />extension refuses the fragment. MatchesTemplate is False with reason<br />TemplateChanged when the fragment no longer matches its template.<br />Ready is True with reason Healthy when both are True. Otherwise Ready<br />has the reason and the message of the first of them that is False. |  | Optional: \{\} <br /> |
+
+
+#### GrantTemplate
+
+
+
+GrantTemplate is one permission statement that a registration asks for,
+with placeholders that the plugin fills for each request.
+
+
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the name of the template. A Grant names the template it was<br />rendered from. |  | MinLength: 1 <br /> |
+| `format` _[GrantFormat](#grantformat)_ | Format is the format of the statement. |  | Enum: [aws-iam-statement] <br /> |
+| `template` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#json-v1-apiextensions-k8s-io)_ | Template is the statement, with Go template placeholders such as<br />\{\{ .parameters.x \}\} and \{\{ .outputs.x \}\}. It is a JSON object, like<br />the fragment of a Grant. |  | Type: object <br /> |
+| `description` _string_ | Description says what the permission is for. |  | Optional: \{\} <br /> |
+| `requiresInputs` _string array_ | RequiresInputs names the inputs that must have a value before the<br />plugin writes the grant. |  | MaxItems: 32 <br />items:MaxLength: 63 <br />Optional: \{\} <br /> |
+
+
+#### InputDecl
+
+
+
+InputDecl declares a value that a registration reads from the output of
+another section.
+
+
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the name of the input. The request carries its value under<br />this name. |  | MaxLength: 63 <br />MinLength: 1 <br /> |
+| `from` _string_ | From names the output that gives the value, in the form<br /><section>/<output>. |  | Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/[A-Za-z][A-Za-z0-9]*$` <br /> |
+| `required` _boolean_ | Required refuses a selection of the option when the input has no value. |  | Optional: \{\} <br /> |
+| `formats` _string array_ | Formats lists the formats of the value that the registration accepts,<br />for example aws-kms-arn. Empty accepts every format. |  | Optional: \{\} <br /> |
+
+
+#### Limit
+
+
+
+Limit is a value that the plugin chart fixes, which no Environment and no
+claim can change.
+
+
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `label` _string_ | Label names the limit. |  | MinLength: 1 <br /> |
+| `value` _string_ | Value is the value of the limit. |  |  |
+| `description` _string_ | Description says what the limit means for a claim. |  | Optional: \{\} <br /> |
+
+
+#### Link
+
+
+
+Link is a named URL that a plugin reports for a request, for example the
+console page of a bucket.
+
+
+
+_Appears in:_
+- [PluginRequestStatus](#pluginrequeststatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name names the link. |  | MinLength: 1 <br /> |
+| `url` _string_ | URL is the address of the link. |  | MinLength: 1 <br /> |
+
+
+#### MetricQuery
+
+
+
+MetricQuery is a Prometheus query that the fleet manager shows for a
+request of the registration.
+
+
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `label` _string_ | Label names the metric. |  | MinLength: 1 <br /> |
+| `query` _string_ | Query is PromQL with Go template placeholders, for example<br />\{\{ .namespace \}\} and \{\{ .pods \}\}. |  | MinLength: 1 <br /> |
+| `unit` _string_ | Unit is the unit of the value, for example bytes. |  | Optional: \{\} <br /> |
+
+
+#### Mode
+
+_Underlying type:_ _string_
+
+Mode is the fallback of a registration when no Environment exists.
+
+_Validation:_
+- Enum: [Default Optional]
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+
+| Field | Description |
+| --- | --- |
+| `Default` | ModeDefault selects the option in a new claim.<br /> |
+| `Optional` | ModeOptional offers the option, and a new claim does not select it.<br /> |
+
+
+#### OnOrphan
+
+_Underlying type:_ _string_
+
+OnOrphan says what happens to a resource of a request with the deletion
+policy Orphan.
+
+_Validation:_
+- Enum: [Kept Deleted]
+
+_Appears in:_
+- [ResourceRef](#resourceref)
+
+| Field | Description |
+| --- | --- |
+| `Kept` | OnOrphanKept keeps the resource.<br /> |
+| `Deleted` | OnOrphanDeleted deletes the resource, for example a route to a Service<br />that is gone.<br /> |
+
+
+#### OutputDecl
+
+
+
+OutputDecl declares a value that a plugin writes to the status of a request.
+
+
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+- [PluginSectionSpec](#pluginsectionspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `key` _string_ | Key is the key of the output in the status of the request. It starts<br />with a letter and holds only letters and digits. |  | Pattern: `^[A-Za-z][A-Za-z0-9]*$` <br /> |
+| `description` _string_ | Description says what the value is. |  | Optional: \{\} <br /> |
+| `format` _string_ | Format is the format of the value, for example aws-kms-arn. |  | Optional: \{\} <br /> |
+
+
+#### PluginRegistration
+
+
+
+PluginRegistration is one option that a plugin offers to the sections of
+the create flow of a claim. The plugin controller writes it at startup from
+its chart values, and the operator writes the built-in registrations. The
+name is at most 63 characters, because other objects carry it in a label
+value.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `plugins.camunda.io/v1alpha1` | | |
+| `kind` _string_ | `PluginRegistration` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  | Optional: \{\} <br /> |
+| `spec` _[PluginRegistrationSpec](#pluginregistrationspec)_ | spec defines the option |  | Required: \{\} <br /> |
+| `status` _[PluginRegistrationStatus](#pluginregistrationstatus)_ | status defines the observed state of PluginRegistration |  | Optional: \{\} <br /> |
+
+
+#### PluginRegistrationSpec
+
+
+
+PluginRegistrationSpec describes one option that a plugin offers in one or
+more sections: what it needs, what it writes, and which permissions it asks
+for.
+
+
+
+_Appears in:_
+- [PluginRegistration](#pluginregistration)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `sections` _string array_ | Sections lists the names of the PluginSections that the option serves. |  |  |
+| `label` _string_ | Label is the name of the option in the fleet manager. It names the<br />outcome, for example "New S3 bucket". Display only. No controller reads<br />it. |  | MinLength: 1 <br /> |
+| `description` _string_ | Description says what the option does. Display only. No controller<br />reads it. |  | Optional: \{\} <br /> |
+| `docsUrl` _string_ | DocsURL is the address of the documentation of the option. Display<br />only. No controller reads it. |  | Optional: \{\} <br /> |
+| `mode` _[Mode](#mode)_ | Mode says whether a new claim selects the option when no Environment<br />exists. |  | Enum: [Default Optional] <br /> |
+| `controller` _[ControllerInfo](#controllerinfo)_ | Controller names the plugin controller that serves the option and its<br />version. Display only. No controller reads it. |  | Optional: \{\} <br /> |
+| `serviceAccount` _[ServiceAccountRef](#serviceaccountref)_ | ServiceAccount is the ServiceAccount of the plugin controller. Only this<br />ServiceAccount can write a Grant for the option. |  |  |
+| `operatorVersions` _string_ | OperatorVersions is the semver range of the operator versions that the<br />plugin supports, for example ">=0.3.0 <1.0.0". The operator reports a<br />range that does not hold its version, or that is not a valid range. |  | Optional: \{\} <br /> |
+| `parameters` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#json-v1-apiextensions-k8s-io)_ | Parameters is the OpenAPI v3 schema of the parameters of a request for<br />the option. |  | Optional: \{\} <br /> |
+| `parameterValues` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#json-v1-apiextensions-k8s-io)_ | ParameterValues are the parameter values that the admin set in the<br />plugin chart. An Environment can override them. |  | Optional: \{\} <br /> |
+| `claimEditable` _string array_ | ClaimEditable lists the parameters that a claim can change when no<br />Environment says otherwise. |  | Optional: \{\} <br /> |
+| `choices` _[Choice](#choice) array_ | Choices are the presets or existing resources that a claim can pick<br />for a parameter. The claim stores the name of the pick in its<br />parameters. Display only. No controller reads it. |  | Optional: \{\} <br /> |
+| `inputs` _[InputDecl](#inputdecl) array_ | Inputs declares the values that the option reads from the outputs of<br />other sections. Each name is unique. |  | MaxItems: 32 <br />Optional: \{\} <br /> |
+| `outputs` _[OutputDecl](#outputdecl) array_ | Outputs declares the values that the plugin writes to the status of a<br />request. It includes the outputs of each section that the option<br />serves. Each key is unique. |  | Optional: \{\} <br /> |
+| `limits` _[Limit](#limit) array_ | Limits are the values that the plugin chart fixes, which no<br />Environment and no claim can change, for example a permissions<br />boundary. The plugin enforces them from its chart. Display only. No<br />controller reads it. |  | Optional: \{\} <br /> |
+| `grantTemplates` _[GrantTemplate](#granttemplate) array_ | GrantTemplates are the permission statements that the option asks for,<br />one Grant for each template. Each name is unique. |  | MaxItems: 32 <br />Optional: \{\} <br /> |
+| `deletionPolicies` _[DeletionPolicy](#deletionpolicy) array_ | DeletionPolicies lists the deletion policies that the plugin supports.<br />Every plugin supports Delete. |  | Enum: [Delete Orphan] <br />MaxItems: 2 <br /> |
+| `metricQueries` _[MetricQuery](#metricquery) array_ | MetricQueries are the Prometheus queries that the fleet manager shows<br />for a request of the option. Display only. No controller reads it. |  | Optional: \{\} <br /> |
+
+
+#### PluginRegistrationStatus
+
+
+
+PluginRegistrationStatus is the observed state of a PluginRegistration.
+
+
+
+_Appears in:_
+- [PluginRegistration](#pluginregistration)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the last generation that a controller of the<br />registration processed. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions holds Accepted and Ready. The operator sets Accepted. Its<br />False reasons are SectionMissing, OperatorVersionUnsupported, and<br />DefaultConflict. The plugin controller sets Ready from its health and<br />its credentials. The fleet manager offers the option only when both<br />are True. |  | Optional: \{\} <br /> |
+
+
+#### PluginRequest
+
+
+
+PluginRequest asks a plugin for the resources of one section of a claim.
+A claim controller writes the spec, and the plugin controller that serves
+the registration writes the status. The claim names a request
+<claim>-<section>. The name is at most 63 characters, because other
+objects carry it in a label value.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `plugins.camunda.io/v1alpha1` | | |
+| `kind` _string_ | `PluginRequest` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  | Optional: \{\} <br /> |
+| `spec` _[PluginRequestSpec](#pluginrequestspec)_ | spec defines the desired state of PluginRequest |  | Required: \{\} <br /> |
+| `status` _[PluginRequestStatus](#pluginrequeststatus)_ | status defines the observed state of PluginRequest |  | Optional: \{\} <br /> |
+
+
+#### PluginRequestSpec
+
+
+
+PluginRequestSpec is the desired state of a PluginRequest. A claim
+controller writes it.
+
+
+
+_Appears in:_
+- [PluginRequest](#pluginrequest)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `section` _string_ | Section is the name of the PluginSection that the request fills. It<br />cannot change after the request is created. |  | MinLength: 1 <br /> |
+| `registration` _string_ | Registration is the name of the PluginRegistration that serves the<br />request. It cannot change after the request is created. |  | MinLength: 1 <br /> |
+| `claimRef` _[ClaimRef](#claimref)_ | ClaimRef names the claim that wrote the request. It cannot change<br />after the request is created. |  |  |
+| `target` _[TargetRef](#targetref)_ | Target names the resource that the request serves, before the<br />resource exists. target.kind and target.name cannot change after the<br />request is created. |  |  |
+| `inputs` _object (keys:string, values:string)_ | Inputs are the values of the inputs of the registration, by input<br />name. The claim controller resolves them from the outputs of other<br />requests of the same claim. |  | Optional: \{\} <br /> |
+| `parameters` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#json-v1-apiextensions-k8s-io)_ | Parameters are the settings of the request, as free-form JSON. The<br />plugin checks them against the parameter schema of the registration. |  | Optional: \{\} <br /> |
+| `deletionPolicy` _[DeletionPolicy](#deletionpolicy)_ | DeletionPolicy says what the plugin does with the resources of the<br />request when the request is deleted. The claim controller copies it<br />from the claim before it deletes the request. |  | Enum: [Delete Orphan] <br /> |
+
+
+#### PluginRequestStatus
+
+
+
+PluginRequestStatus is the observed state of a PluginRequest. The plugin
+controller that serves the registration writes it.
+
+
+
+_Appears in:_
+- [PluginRequest](#pluginrequest)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the generation of the spec that the plugin<br />processed last. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions are OutputsReady and Ready. OutputsReady is True when the<br />outputs are written for the current generation. Ready is False with<br />reason GrantRejected while a Grant of the request is not Ready. Ready<br />is False with reason WaitingForEndpoints while an access request waits<br />for the endpoints of its target. Ready is False with reason<br />InvalidParameters when the parameters do not pass the registration.<br />The plugin sets the other reasons. |  | Optional: \{\} <br /> |
+| `outputs` _object (keys:string, values:string)_ | Outputs are the values that the plugin publishes for the request, by<br />output key. A reader trusts them only while OutputsReady is True and<br />the observedGeneration of that condition equals metadata.generation. |  | Optional: \{\} <br /> |
+| `summary` _[SummaryItem](#summaryitem) array_ | Summary is a list of facts about the request, for display only. No<br />controller reads it. The first item is the headline. |  | Optional: \{\} <br /> |
+| `summaryTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | SummaryTime is when the plugin wrote the summary last, for display<br />only. |  | Optional: \{\} <br /> |
+| `links` _[Link](#link) array_ | Links are named URLs about the request, for example the console page<br />of a bucket, for display only. |  | Optional: \{\} <br /> |
+| `podSelector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#labelselector-v1-meta)_ | PodSelector selects the pods that the plugin runs for the request, for<br />display only. |  | Optional: \{\} <br /> |
+| `resources` _[ResourceRef](#resourceref) array_ | Resources are the resources that the plugin made for the request, in<br />the cluster or in a cloud, for display only. |  | Optional: \{\} <br /> |
+
+
+#### PluginSection
+
+
+
+PluginSection is one section of the create flow of a claim, such as
+"Backup storage" or "Access". The operator writes the core sections, and a
+plugin chart writes a section that it brings. The name is at most 63
+characters, because other objects carry it in a label value.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `plugins.camunda.io/v1alpha1` | | |
+| `kind` _string_ | `PluginSection` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  | Optional: \{\} <br /> |
+| `spec` _[PluginSectionSpec](#pluginsectionspec)_ | spec defines the section |  | Required: \{\} <br /> |
+
+
+#### PluginSectionSpec
+
+
+
+PluginSectionSpec describes one section of the create flow of a claim. The
+registrations that serve the section are its options.
+
+
+
+_Appears in:_
+- [PluginSection](#pluginsection)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `label` _string_ | Label is the name of the section in the fleet manager, for example<br />"Backup storage". Display only. No controller reads it. |  | MinLength: 1 <br /> |
+| `description` _string_ | Description says what the section is for. Display only. No controller<br />reads it. |  | Optional: \{\} <br /> |
+| `order` _integer_ | Order is the position of the section in the create flow. A section<br />with a lower value comes first. Display only. No controller reads it. |  | Optional: \{\} <br /> |
+| `selection` _[Selection](#selection)_ | Selection says how many options of the section one claim can select. |  | Enum: [One Many] <br /> |
+| `emptyOptionLabel` _string_ | EmptyOptionLabel is the label of the option that selects nothing, for<br />example "No backups". When it is empty, the section has no empty<br />option. Display only. No controller reads it. |  | Optional: \{\} <br /> |
+| `slot` _[Slot](#slot)_ | Slot names the fields of the generated resource that the outputs of<br />the section fill. When it is empty, the outputs are only inputs of<br />other registrations. |  | Enum: [workloadIdentity volumeEncryption backupStorage secondaryStorage externalAccess managementDatabases connectorsIdentity] <br />Optional: \{\} <br /> |
+| `appliesTo` _[ClaimKind](#claimkind) array_ | AppliesTo lists the claim kinds whose create flow shows the section. |  | Enum: [CamundaClusterClaim CamundaManagementClusterClaim] <br /> |
+| `outputs` _[OutputDecl](#outputdecl) array_ | Outputs declares the outputs that every registration of the section<br />writes. |  | Optional: \{\} <br /> |
+
+
+#### ResourceRef
+
+
+
+ResourceRef is one resource that a plugin made for a request, in the
+cluster or in a cloud.
+
+
+
+_Appears in:_
+- [PluginRequestStatus](#pluginrequeststatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `kind` _string_ | Kind is the kind of the resource, for example S3Bucket or StorageClass. |  | MinLength: 1 <br /> |
+| `name` _string_ | Name is the name of the resource. |  | MinLength: 1 <br /> |
+| `id` _string_ | ID is the identifier of the resource in its system, for example an ARN. |  | Optional: \{\} <br /> |
+| `location` _string_ | Location is where the resource is, for example a cloud region. |  | Optional: \{\} <br /> |
+| `role` _string_ | Role says what the resource does for the request. |  | Optional: \{\} <br /> |
+| `onOrphan` _[OnOrphan](#onorphan)_ | OnOrphan says what happens to the resource with the deletion policy<br />Orphan. |  | Enum: [Kept Deleted] <br /> |
+
+
+#### Selection
+
+_Underlying type:_ _string_
+
+Selection says how many options of a section one claim can select.
+
+_Validation:_
+- Enum: [One Many]
+
+_Appears in:_
+- [PluginSectionSpec](#pluginsectionspec)
+
+| Field | Description |
+| --- | --- |
+| `One` | SelectionOne lets a claim select at most one option of the section.<br /> |
+| `Many` | SelectionMany lets a claim select more than one option of the section.<br /> |
+
+
+#### ServiceAccountRef
+
+
+
+ServiceAccountRef names a ServiceAccount in a named namespace.
+
+
+
+_Appears in:_
+- [PluginRegistrationSpec](#pluginregistrationspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `namespace` _string_ | Namespace is the namespace of the ServiceAccount. |  | MaxLength: 63 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br /> |
+| `name` _string_ | Name is the name of the ServiceAccount. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$` <br /> |
+
+
+#### Severity
+
+_Underlying type:_ _string_
+
+Severity is the weight of a summary item.
+
+_Validation:_
+- Enum: [Info Warning Error]
+
+_Appears in:_
+- [SummaryItem](#summaryitem)
+
+| Field | Description |
+| --- | --- |
+| `Info` | SeverityInfo is a fact that needs no action.<br /> |
+| `Warning` | SeverityWarning is a fact that needs attention soon.<br /> |
+| `Error` | SeverityError is a fact that needs action now.<br /> |
+
+
+#### Slot
+
+_Underlying type:_ _string_
+
+Slot names the fields of the generated resource that the outputs of a
+section fill. The set is closed.
+
+_Validation:_
+- Enum: [workloadIdentity volumeEncryption backupStorage secondaryStorage externalAccess managementDatabases connectorsIdentity]
+
+_Appears in:_
+- [PluginSectionSpec](#pluginsectionspec)
+
+| Field | Description |
+| --- | --- |
+| `workloadIdentity` | SlotWorkloadIdentity fills the ServiceAccount annotations of the cluster.<br /> |
+| `volumeEncryption` | SlotVolumeEncryption fills the storage class of the Zeebe volumes.<br /> |
+| `backupStorage` | SlotBackupStorage fills the backup storage reference of the cluster.<br /> |
+| `secondaryStorage` | SlotSecondaryStorage fills the secondary storage reference of the cluster.<br /> |
+| `externalAccess` | SlotExternalAccess fills the external URLs of a cluster or a<br />management cluster.<br /> |
+| `managementDatabases` | SlotManagementDatabases fills the database references of Keycloak,<br />Identity, and Web Modeler in a management cluster.<br /> |
+| `connectorsIdentity` | SlotConnectorsIdentity fills the ServiceAccount annotations of the<br />Connectors.<br /> |
+
+
+#### SummaryItem
+
+
+
+SummaryItem is one fact that a plugin reports about a request.
+
+
+
+_Appears in:_
+- [PluginRequestStatus](#pluginrequeststatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `label` _string_ | Label names the fact. |  | MinLength: 1 <br /> |
+| `value` _string_ | Value is the value of the fact. |  |  |
+| `severity` _[Severity](#severity)_ | Severity is the weight of the fact. The fleet manager lists Warning<br />and Error items as warnings. | Info | Enum: [Info Warning Error] <br />Optional: \{\} <br /> |
+
+
+#### TargetRef
+
+
+
+TargetRef names the resource that a request serves. The claim names it
+before the resource exists.
+
+
+
+_Appears in:_
+- [PluginRequestSpec](#pluginrequestspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `kind` _string_ | Kind is the kind of the resource, for example CamundaCluster. |  | MinLength: 1 <br /> |
+| `name` _string_ | Name is the name of the resource, in the namespace of the request. |  | MinLength: 1 <br /> |
+| `serviceAccountName` _string_ | ServiceAccountName is the ServiceAccount that the pods of the resource<br />run under. |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$` <br />Optional: \{\} <br /> |
+| `additionalServiceAccounts` _string array_ | AdditionalServiceAccounts are the names of more ServiceAccounts that<br />the cloud identity of the request also trusts. Examples are the<br />ServiceAccounts of the built-in storage that takes the backup storage<br />input. Each name is a ServiceAccount in the namespace of the request.<br />A name with a namespace part is refused, so that a request never makes<br />a cloud identity trust a ServiceAccount of another namespace. |  | items:MaxLength: 253 <br />items:Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$` <br />Optional: \{\} <br /> |
 
 
