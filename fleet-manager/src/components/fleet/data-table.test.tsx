@@ -198,6 +198,39 @@ describe("DataTable", () => {
     expect(checked()).toEqual([]);
   });
 
+  it.each([
+    ["the filter", []],
+    [
+      "its picked option",
+      [{ ...filters[0], options: [{ value: "prod", label: "Production" }] }],
+    ],
+  ])("stops a filter value when new filters remove %s", async (_, after) => {
+    const { rerender } = render(
+      <DataTable
+        label="Clusters"
+        columns={columns}
+        rows={rows}
+        filters={filters}
+      />,
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Environment" }),
+      "dev",
+    );
+    expect(screen.getAllByRole("link").map((a) => a.textContent)).toEqual([
+      "payments",
+    ]);
+    rerender(
+      <DataTable
+        label="Clusters"
+        columns={columns}
+        rows={rows}
+        filters={after}
+      />,
+    );
+    expect(screen.getAllByRole("link")).toHaveLength(3);
+  });
+
   it("says so when no row matches", async () => {
     table();
     await userEvent.type(

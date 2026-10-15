@@ -78,6 +78,15 @@ export function DataTable({
   const id = useId();
   const [query, setQuery] = useState("");
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
+  // A value counts only while the filters still offer it, because the user
+  // cannot clear a filter that is gone.
+  const activeFilters = Object.fromEntries(
+    Object.entries(filterValues).filter(([key, value]) =>
+      filters.some(
+        (f) => f.key === key && f.options.some((o) => o.value === value),
+      ),
+    ),
+  );
   const [sort, setSort] = useState<Sort | undefined>();
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -91,7 +100,7 @@ export function DataTable({
           ([key, value]) => !value || row.filters?.[key] === value,
         ),
     );
-  const visible = sorted(matches(query, filterValues), sort);
+  const visible = sorted(matches(query, activeFilters), sort);
   const pages = Math.max(1, Math.ceil(visible.length / pageSize));
   const current = Math.min(page, pages - 1);
   const shown = visible.slice(current * pageSize, (current + 1) * pageSize);
@@ -138,7 +147,7 @@ export function DataTable({
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
-              narrow(event.target.value, filterValues);
+              narrow(event.target.value, activeFilters);
             }}
           />
         </div>
@@ -152,10 +161,10 @@ export function DataTable({
             </label>
             <NativeSelect
               id={`${id}-filter-${filter.key}`}
-              value={filterValues[filter.key] ?? ""}
+              value={activeFilters[filter.key] ?? ""}
               onChange={(event) => {
                 const next = {
-                  ...filterValues,
+                  ...activeFilters,
                   [filter.key]: event.target.value,
                 };
                 setFilterValues(next);
