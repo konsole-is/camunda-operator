@@ -182,6 +182,47 @@ describe("NamespacePicker", () => {
     ]);
   });
 
+  it("keeps a fixed label when its key is also required, and does not ask for it", async () => {
+    const onChange = vi.fn();
+    render(
+      <NamespacePicker
+        namespaces={namespaces}
+        environment={{
+          ...environment,
+          namespaceCreation: {
+            ...environment.namespaceCreation,
+            requiredLabelKeys: ["team", "cost-center"],
+          },
+        }}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Create a namespace" }),
+    );
+    expect(screen.queryByRole("textbox", { name: "cost-center" })).toBeNull();
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Name" }),
+      "team-orders",
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "team" }),
+      "orders",
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      {
+        kind: "new",
+        name: "team-orders",
+        labels: {
+          "cost-center": "4711",
+          team: "orders",
+          [ENVIRONMENT_LABEL]: "prod",
+        },
+      },
+      [],
+    );
+  });
+
   it("lists only the namespaces of the environment", () => {
     render(
       <NamespacePicker namespaces={namespaces} environment={environment} />,

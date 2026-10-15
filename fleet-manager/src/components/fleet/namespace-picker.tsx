@@ -32,8 +32,9 @@ const DNS_LABEL = /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/;
 /**
  * NamespacePicker picks a namespace of the environment, or, when the
  * environment allows it, a new one. A new namespace gets the fixed labels
- * of the environment, a value for each required label key, and the
- * environment label, which always wins. Without an environment, it lists
+ * of the environment, a value for each required label key that they do
+ * not set, and the environment label, which always wins. Without an
+ * environment, it lists
  * every namespace and cannot create one. onChange gets the choice and no
  * errors, or undefined and the errors: a name that is taken or not a DNS
  * label, and a required key without a valid label value.
@@ -55,6 +56,9 @@ export function NamespacePicker({
   const id = useId();
   const creation = environment?.namespaceCreation;
   const canCreate = !!creation?.allowed;
+  const askedKeys = (creation?.requiredLabelKeys ?? []).filter(
+    (key) => !Object.hasOwn(creation?.labels ?? {}, key),
+  );
   const own = namespaces.filter(
     (ns) => !environment || ns.environment === environment.name,
   );
@@ -91,7 +95,7 @@ export function NamespacePicker({
       });
     else if (namespaces.some((ns) => ns.name === n))
       errors.push({ path: "name", message: `${n} already exists` });
-    for (const key of creation?.requiredLabelKeys ?? []) {
+    for (const key of askedKeys) {
       const value = v[key] ?? "";
       if (value === "")
         errors.push({
@@ -106,9 +110,7 @@ export function NamespacePicker({
         });
     }
     if (errors.length) return [undefined, errors];
-    const required = Object.fromEntries(
-      (creation?.requiredLabelKeys ?? []).map((k) => [k, v[k]]),
-    );
+    const required = Object.fromEntries(askedKeys.map((k) => [k, v[k]]));
     return [
       {
         kind: "new",
@@ -207,7 +209,7 @@ export function NamespacePicker({
               emit("new", existing, v, values);
             }}
           />
-          {(creation?.requiredLabelKeys ?? []).map((key) => (
+          {askedKeys.map((key) => (
             <Field
               key={key}
               id={`${id}-label-${key}`}
