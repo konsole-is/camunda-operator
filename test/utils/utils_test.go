@@ -18,24 +18,33 @@ package utils
 
 import (
 	"context"
+	"errors"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestRunContextEndsWithItsContext proves that a command whose child holds
 // the output pipe returns when its context ends, and that the child is killed
 // with it. The teardown of the e2e suite runs make, and make runs kubectl,
-// which can wait without end. A kill of the command alone returns only after
-// the wait delay of ten seconds.
+// which can wait without end.
 func TestRunContextEndsWithItsContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	start := time.Now()
-	_, err := RunContext(ctx, "sh", "-c", "sleep 300 & wait")
+	out, err := RunContext(ctx, "sh", "-c", "sleep 300 & echo $!; wait")
 
 	assert.Error(t, err)
 	assert.Less(t, time.Since(start), 5*time.Second)
+
+	child, convErr := strconv.Atoi(strings.TrimSpace(out))
+	require.NoError(t, convErr, out)
+	gone := func() bool { return errors.Is(syscall.Kill(child, 0), syscall.ESRCH) }
+	assert.Eventually(t, gone, 5*time.Second, 100*time.Millisecond, "the child of the command still runs")
 }

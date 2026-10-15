@@ -141,7 +141,13 @@ jobs:
             host="cpu=${cpu} load1=${load1} cores=${cores}"
             top=$(ps -eo rss=,comm= --sort=-rss | head -5 | awk '{printf "%s=%dMiB ", $2, $1 / 1024}')
             busiest=$(docker stats --no-stream --format '{{.Name}}={{.MemUsage}}' 2>/dev/null | tr '\n' ' ')
-            echo "[node] $(date -u +%H:%M:%SZ) ${memory} ${host} | top: ${top}| docker: ${busiest}"
+            # The manager runs under a 128Mi limit and often drops out of the
+            # top list, so its memory and its restarts are on each line. A
+            # stall then shows whether the container was killed.
+            manager_rss=$(ps -eo rss=,comm= | awk '$2 == "manager" {printf "%dMiB ", $1 / 1024}')
+            manager_pod=$(kubectl get pods -n camunda-operator-system -l control-plane=controller-manager \
+              --request-timeout=5s -o jsonpath='{range .items[*].status.containerStatuses[*]}restarts={.restartCount} last={.lastState.terminated.reason} {end}' 2>/dev/null)
+            echo "[node] $(date -u +%H:%M:%SZ) ${memory} ${host} | top: ${top}| docker: ${busiest}| manager: rss=${manager_rss:-none} ${manager_pod:-pod=none}"
             sleep 30
           done
           SAMPLER

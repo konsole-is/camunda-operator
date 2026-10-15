@@ -320,6 +320,13 @@ func dumpDiagnostics(testNamespace string) {
 		"controller-manager pod": {
 			"describe", "pods", "-l", "control-plane=controller-manager", "-n", namespace,
 		},
+		"controller-manager events": {"get", "events", "-n", namespace, "--sort-by=.lastTimestamp"},
+		// A deleted CamundaCluster releases its claim Leases before it drops
+		// its finalizer. A Lease that still names one shows that its deletion
+		// stopped before the release.
+		"claim leases": {
+			"get", "leases", "-n", namespace, "-l", "app.kubernetes.io/managed-by=camunda-operator", "-o", "yaml",
+		},
 		"events": {"get", "events", "-n", testNamespace, "--sort-by=.lastTimestamp"},
 		"resources": {
 			"get",
