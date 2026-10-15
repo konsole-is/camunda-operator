@@ -71,10 +71,11 @@ help: ## Display this help.
 ##@ Development
 
 # The repository holds three Go modules: the operator at the root, the API
-# types in ./api, and the plugin conformance suite in ./conformance. Programs
-# and plugin repositories import the last two without the operator's
-# dependencies. A `./...` pattern never crosses a module boundary, so each Go
-# tool below loops over MODULES or has one line for each module.
+# types in ./api, and the plugin conformance suite in ./conformance. Consumers
+# import ./api, and plugin repositories import ./conformance, without the
+# operator's dependencies. A `./...` pattern never crosses a module boundary,
+# so `go mod tidy`, `go vet`, the linter, and `govulncheck` loop over MODULES,
+# and `go test` has one line for each module.
 MODULES := . ./api ./conformance
 
 .PHONY: manifests
