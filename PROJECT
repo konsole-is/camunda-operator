@@ -234,6 +234,7 @@ resources:
   version: v1alpha1
 - api:
     crdVersion: v1
+  controller: true
   domain: camunda.io
   group: fleet
   kind: Environment
