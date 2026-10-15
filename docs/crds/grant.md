@@ -133,6 +133,13 @@ metadata:
   # string. Required. At most 63 characters.
   name: orders-backup-storage-bucket-access
   namespace: my-cluster-ns
+  labels:
+    # string. Required. The registration that holds the template. The API server refuses a grant without it.
+    plugins.camunda.io/registration: s3-backup-bucket
+    # string. The request that the grant belongs to. The plugin sets it.
+    plugins.camunda.io/request: orders-backup-storage
+    # string. The CamundaCluster whose identity gets the permission. The plugin sets it.
+    plugins.camunda.io/cluster: orders
 spec:
   # object. Required. The CamundaCluster whose identity gets the permission. Immutable.
   cluster:
