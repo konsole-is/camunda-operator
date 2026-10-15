@@ -385,7 +385,8 @@ type DatabaseServerArchiveStatus struct {
 	// +optional
 	Boundary *ArchiveBoundary `json:"boundary,omitempty"`
 	// ReachableFrom is the oldest point that the objects in the bucket still
-	// cover. The retention period removes old objects from the bucket. A
+	// cover, rounded down to the minute. The bucket can miss up to one minute
+	// after it. The retention period removes old objects from the bucket. A
 	// longer retention period does not bring back what a shorter one already
 	// removed. The window grows to the new retention period only as the
 	// archive writes past this point. The server refuses a rollback to a

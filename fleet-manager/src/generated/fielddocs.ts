@@ -2765,7 +2765,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#archiverecord"
       },
       "status.archive.reachableFrom": {
-        "description": "ReachableFrom is the oldest point that the objects in the bucket still\ncover. The retention period removes old objects from the bucket. A\nlonger retention period does not bring back what a shorter one already\nremoved. The window grows to the new retention period only as the\narchive writes past this point. The server refuses a rollback to a\npoint before it. When it is unset, only the retention period limits\nthe window.",
+        "description": "ReachableFrom is the oldest point that the objects in the bucket still\ncover, rounded down to the minute. The bucket can miss up to one minute\nafter it. The retention period removes old objects from the bucket. A\nlonger retention period does not bring back what a shorter one already\nremoved. The window grows to the new retention period only as the\narchive writes past this point. The server refuses a rollback to a\npoint before it. When it is unset, only the retention period limits\nthe window.",
         "anchor": "#databaseserverarchivestatus"
       },
       "status.cluster": {

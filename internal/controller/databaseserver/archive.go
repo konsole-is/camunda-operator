@@ -253,14 +253,20 @@ func reportedArchiveOutage(
 }
 
 // advanceArchiveFloor raises status.archive.reachableFrom to the point the
-// retention period prunes the bucket to at now. A server that writes no
-// archive prunes nothing, so its floor stands still.
+// retention period prunes the bucket to at now, truncated to the minute. A
+// server that writes no archive prunes nothing, so its floor stands still.
 func advanceArchiveFloor(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, now metav1.Time) {
 	if merged.Archive == nil {
 		return
 	}
 
-	floor := metav1.NewTime(now.Add(-time.Duration(merged.Archive.RetentionPeriodDays) * day))
+	// A floor that moves with each second changes the status in each
+	// reconcile that crosses a second, and that write starts the next
+	// reconcile. A server whose reconcile takes a second then never stops.
+	// outOfReach checks the retention period itself, so the floor only has to
+	// hold what a shorter period pruned to.
+	pruned := now.Add(-time.Duration(merged.Archive.RetentionPeriodDays) * day)
+	floor := metav1.NewTime(pruned.Truncate(time.Minute))
 	if server.Status.Archive == nil {
 		server.Status.Archive = &v1.DatabaseServerArchiveStatus{}
 	}
