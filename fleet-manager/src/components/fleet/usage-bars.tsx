@@ -53,7 +53,7 @@ function Bar({
         aria-label={label}
         aria-valuemin={0}
         aria-valuemax={max ?? used}
-        aria-valuenow={used}
+        aria-valuenow={max ? Math.min(used, max) : used}
         aria-valuetext={text}
         className="h-1.5 flex-1 overflow-hidden rounded-full bg-panel-2"
       >

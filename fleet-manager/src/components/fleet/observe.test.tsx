@@ -8,6 +8,7 @@ import { LogViewer } from "./log-viewer";
 import { MetricChart } from "./metric-chart";
 import { PodTable } from "./pod-table";
 import { ProgressRows } from "./progress-rows";
+import { UsageBars } from "./usage-bars";
 
 afterEach(cleanup);
 
@@ -24,6 +25,24 @@ describe("MetricChart", () => {
   it("says so when the range has no data", () => {
     render(<MetricChart title="Exported records" series={[]} />);
     expect(screen.getByText("No data for this range")).toBeTruthy();
+  });
+});
+
+describe("UsageBars", () => {
+  it("keeps the meter value in range when the use passes the request", () => {
+    render(
+      <UsageBars
+        usage={{
+          pod: "x",
+          cpu: { usedCores: 0.5, requestCores: 0.25 },
+          memory: { usedBytes: 2 ** 30 },
+        }}
+      />,
+    );
+    const cpu = screen.getByRole("meter", { name: "CPU" });
+    expect(cpu.getAttribute("aria-valuenow")).toBe("0.25");
+    expect(cpu.getAttribute("aria-valuemax")).toBe("0.25");
+    expect(cpu.getAttribute("aria-valuetext")).toBe("500m of 250m cores");
   });
 });
 
