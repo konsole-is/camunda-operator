@@ -114,6 +114,7 @@ func newScope(ctx context.Context, cfg *rest.Config) (*scope, error) {
 			s.observed[schema.GroupKind{Group: group, Kind: kind}] = true
 		}
 	}
+
 	if err := s.warmUp(ctx); err != nil {
 		return nil, err
 	}
