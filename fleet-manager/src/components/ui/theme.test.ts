@@ -22,7 +22,7 @@ const FOREIGN = [
 ];
 
 describe("shadcn primitives", () => {
-  it("has the ten primitives the pages need", () => {
+  it("has the twelve primitives the pages need", () => {
     expect(primitives.sort()).toEqual(
       [
         "badge.tsx",
@@ -30,10 +30,12 @@ describe("shadcn primitives", () => {
         "checkbox.tsx",
         "dialog.tsx",
         "input.tsx",
+        "native-select.tsx",
         "popover.tsx",
         "select.tsx",
         "table.tsx",
         "tabs.tsx",
+        "textarea.tsx",
         "tooltip.tsx",
       ].sort(),
     );
