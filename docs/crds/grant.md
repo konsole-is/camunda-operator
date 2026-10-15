@@ -54,6 +54,59 @@ kubectl get grants -n my-cluster-ns -l plugins.camunda.io/cluster=orders
 
 `spec.format` is the format of `spec.fragment`. The only format today is `aws-iam-statement`: one AWS IAM policy statement, as a JSON object.
 
+## Who can write a grant
+
+A plugin chart gives the ServiceAccount of its controller the RBAC verb `serve` on its own registrations. Put the names of these registrations in `resourceNames`. A `PluginRegistration` is cluster-scoped, so `serve` needs a ClusterRole. The same role gives the controller write access to grants. The repository holds this example as `config/samples/plugins_serve_clusterrole.yaml`:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: s3-backup-bucket-controller
+rules:
+- apiGroups: ["plugins.camunda.io"]
+  resources: ["pluginregistrations"]
+  resourceNames: ["s3-backup-bucket"]
+  verbs: ["serve"]
+- apiGroups: ["plugins.camunda.io"]
+  resources: ["grants"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: s3-backup-bucket-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: s3-backup-bucket-controller
+subjects:
+- kind: ServiceAccount
+  namespace: camunda-plugins
+  name: s3-backup-bucket-controller
+```
+
+The chart does not ship an admission policy of its own. The operator installs one policy for all plugins. To see it, run `kubectl get validatingadmissionpolicies`. With `install.yaml`, or with a Helm release named `camunda-operator`, its name is `camunda-operator-plugins.camunda.io-grant-author`. A Helm release with another name puts the release name first, for example `my-release-camunda-operator-plugins.camunda.io-grant-author`.
+
+The API server admits a grant from a requester that has `serve` on the registration that the label `plugins.camunda.io/registration` names. The grant must have this label, with a value that is not empty. Its `spec.format` must be `aws-iam-statement`. A change of the label needs `serve` on the old registration and on the new registration. Thus the controller of one registration cannot take the grant of another registration.
+
+Otherwise the API server refuses the request. `kubectl` prints the cause:
+
+```text
+Error from server (Forbidden): error when creating "grant.yaml": grants.plugins.camunda.io "orders-backup-storage-bucket-access" is forbidden: ValidatingAdmissionPolicy 'camunda-operator-plugins.camunda.io-grant-author' with binding 'camunda-operator-plugins.camunda.io-grant-author-binding' denied request: the requester system:serviceaccount:camunda-plugins:stranger does not have the verb serve on the PluginRegistration s3-backup-bucket, so it cannot write a Grant for it
+```
+
+| Cause | Message | What to do |
+| --- | --- | --- |
+| The label is missing or empty. | `a Grant must carry the label plugins.camunda.io/registration with the name of the PluginRegistration that it belongs to` | Set the label to the name of the registration that holds the template. |
+| The requester does not have `serve` on the registration in the label. After a change of the label, this is the new registration. | `the requester <user> does not have the verb serve on the PluginRegistration <name>, so it cannot write a Grant for it` | Give the ServiceAccount of the controller `serve` on that registration, as in the role above. Or correct the label. |
+| The requester changed the label, and it does not have `serve` on the old registration. | `the requester <user> does not have the verb serve on the PluginRegistration <name>, so it cannot change a Grant of it` | Change the label only as a requester with `serve` on both registrations. Or create a new grant for the new registration. |
+| The format is not `aws-iam-statement`. | `spec.format: Unsupported value: "<format>": supported values: "aws-iam-statement"` | Set `spec.format: aws-iam-statement`. |
+
+Some writes do not need `serve`. The identity extension writes the status of a grant without it. A change of metadata other than the labels does not need it either, for example an annotation or an owner reference. Kubernetes removes the owner reference when the request of a grant is deleted with the `Orphan` propagation policy. A change of the spec or of a label always needs `serve`.
+
+A user with the verb `*` on `pluginregistrations`, for example through the ClusterRole `cluster-admin`, has `serve` on every registration.
+
 ## Status
 
 | Type | Reason | Meaning | What to do |
