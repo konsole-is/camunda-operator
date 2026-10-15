@@ -1,0 +1,152 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package conformance
+
+import (
+	"errors"
+	"fmt"
+	"time"
+
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+)
+
+// Config is the input of a conformance run. Run refuses a config with an
+// empty Registration or Namespace, no Cases, two cases with one name, or a
+// skip that Skip does not allow.
+type Config struct {
+	// Registration is the name of the PluginRegistration under test.
+	Registration string
+	// Namespace is the namespace of the requests of the run.
+	Namespace string
+	// Cases are the requests of the run, one PluginRequest each.
+	Cases []Case
+	// Timeouts are the longest waits of the run.
+	Timeouts Timeouts
+	// Skip names the checks that the run does not run. Only a skippable
+	// check can be skipped, and each skip needs a reason.
+	Skip []Skip
+}
+
+func (c Config) validate() error {
+	var errs []error
+
+	if c.Registration == "" {
+		errs = append(errs, errors.New("registration is empty"))
+	}
+
+	if c.Namespace == "" {
+		errs = append(errs, errors.New("namespace is empty"))
+	}
+
+	if len(c.Cases) == 0 {
+		errs = append(errs, errors.New("a run needs at least one case"))
+	}
+
+	names := make(map[string]bool, len(c.Cases))
+	for i, tc := range c.Cases {
+		switch {
+		case tc.Name == "":
+			errs = append(errs, fmt.Errorf("case %d has no name", i))
+		case names[tc.Name]:
+			errs = append(errs, fmt.Errorf("case name %q is used more than once", tc.Name))
+		}
+		names[tc.Name] = true
+
+		switch tc.DeletionPolicy {
+		case "", pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan:
+		default:
+			errs = append(errs, fmt.Errorf(
+				"case %q has the deletion policy %q, which is not Delete or Orphan",
+				tc.Name,
+				tc.DeletionPolicy,
+			))
+		}
+	}
+
+	errs = append(errs, c.Timeouts.validate())
+
+	return errors.Join(errs...)
+}
+
+// Case is one request of a run, as a claim controller writes it.
+type Case struct {
+	// Name names the case in the report. It is unique in the config.
+	Name string
+	// Inputs are the resolved inputs of the request.
+	Inputs map[string]string
+	// Parameters are the parameters of the request.
+	Parameters *apiextensionsv1.JSON
+	// Target is the resource that the request serves.
+	Target pluginsv1alpha1.TargetRef
+	// DeletionPolicy is the deletion policy of the request. It is empty,
+	// Delete, or Orphan.
+	DeletionPolicy pluginsv1alpha1.DeletionPolicy
+}
+
+// Skip is a check that a run does not run, with the reason that the report
+// shows.
+type Skip struct {
+	ID     CheckID
+	Reason string
+}
+
+// Timeouts are the longest waits of a run. A zero field takes its default.
+// A negative field is refused.
+type Timeouts struct {
+	// OutputsReady is the wait for OutputsReady=True on a request. The
+	// default is 5 minutes.
+	OutputsReady time.Duration
+	// Ready is the wait for Ready=True on a request. The default is 10
+	// minutes.
+	Ready time.Duration
+	// Deletion is the wait for a deleted request to be gone. The default is
+	// 5 minutes.
+	Deletion time.Duration
+}
+
+func (t Timeouts) withDefaults() Timeouts {
+	if t.OutputsReady == 0 {
+		t.OutputsReady = 5 * time.Minute
+	}
+
+	if t.Ready == 0 {
+		t.Ready = 10 * time.Minute
+	}
+
+	if t.Deletion == 0 {
+		t.Deletion = 5 * time.Minute
+	}
+
+	return t
+}
+
+func (t Timeouts) validate() error {
+	var errs []error
+	for name, d := range map[string]time.Duration{
+		"OutputsReady": t.OutputsReady,
+		"Ready":        t.Ready,
+		"Deletion":     t.Deletion,
+	} {
+		if d < 0 {
+			errs = append(errs, fmt.Errorf("timeout %s is negative: %s", name, d))
+		}
+	}
+
+	return errors.Join(errs...)
+}
