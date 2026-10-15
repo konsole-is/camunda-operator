@@ -17,8 +17,11 @@ limitations under the License.
 package utils
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
@@ -45,6 +48,39 @@ func TestRunContextEndsWithItsContext(t *testing.T) {
 
 	child, convErr := strconv.Atoi(strings.TrimSpace(out))
 	require.NoError(t, convErr, out)
-	gone := func() bool { return errors.Is(syscall.Kill(child, 0), syscall.ESRCH) }
+	gone := func() bool { return stopped(child) }
 	assert.Eventually(t, gone, 5*time.Second, 100*time.Millisecond, "the child of the command still runs")
+}
+
+// TestStoppedTreatsAZombieAsStopped proves that stopped tells a process that
+// exited and was not reaped from one that runs.
+func TestStoppedTreatsAZombieAsStopped(t *testing.T) {
+	running := exec.Command("sleep", "300")
+	require.NoError(t, running.Start())
+	defer func() { _ = running.Process.Kill(); _ = running.Wait() }()
+
+	zombie := exec.Command("true")
+	require.NoError(t, zombie.Start())
+	defer func() { _ = zombie.Wait() }()
+
+	assert.False(t, stopped(running.Process.Pid))
+	assert.Eventually(t, func() bool { return stopped(zombie.Process.Pid) }, 5*time.Second, 50*time.Millisecond)
+}
+
+// stopped reports whether the process pid no longer runs. A killed child
+// stays a zombie until its new parent reaps it, and some container inits
+// never do.
+func stopped(pid int) bool {
+	if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+		return true
+	}
+
+	stat, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return false
+	}
+	// The state follows the command name, which is in parentheses.
+	fields := strings.Fields(string(stat[bytes.LastIndexByte(stat, ')')+1:]))
+
+	return len(fields) > 0 && fields[0] == "Z"
 }
