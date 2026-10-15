@@ -26,7 +26,14 @@ export type ImagesTable = {
 export type CatalogChart = {
   name: string;
   description: string;
+  /** sections names the PluginSections whose options the chart brings. */
+  sections: string[];
+  /** chart is the OCI reference of the chart, without a version. */
   chart: string;
+  /** version is the chart version that installCommand installs. */
+  version: string;
+  /** repository is the address of the source repository of the chart. */
+  repository: string;
   installCommand: string;
 };
 
@@ -49,6 +56,8 @@ const CHART_FIELDS = [
   "name",
   "description",
   "chart",
+  "version",
+  "repository",
   "installCommand",
 ] as const;
 
@@ -136,6 +145,16 @@ export function parseCatalog(data: unknown): Catalog {
       if (typeof chart[field] !== "string" || chart[field] === "") {
         throw new Error(`charts[${i}].${field} is not a non-empty string`);
       }
+    }
+    const sections = chart.sections;
+    if (
+      !Array.isArray(sections) ||
+      sections.length === 0 ||
+      !sections.every((s) => typeof s === "string" && s !== "")
+    ) {
+      throw new Error(
+        `charts[${i}].sections is not a non-empty list of section names`,
+      );
     }
   });
   return doc as Catalog;
