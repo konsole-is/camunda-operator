@@ -81,7 +81,7 @@ To correct it, create each missing object, or remove its name from the spec. You
 
 ## Policy
 
-`spec.sections` holds the policy of each `PluginSection`, by section name. A claim can select only a registration in `allowed`. The create flow of the fleet manager preselects `default`. The empty option selects no registration of the section. `required: true` makes a claim select a registration, and the fleet manager then hides the empty option. A section that is not in the list offers only the empty option:
+`spec.sections` holds the policy of each `PluginSection`, by section name. A claim can select only a registration in `allowed`. The create flow of the fleet manager preselects `default`. The empty option selects no registration of the section. `required: true` makes a claim select a registration, and the fleet manager then hides the empty option. A section that is not in `spec.sections` offers only the empty option:
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
@@ -149,93 +149,29 @@ A change of `sections`, `parameters`, `deletionPolicy`, or `platformConfigRef` a
 
 `kubectl get environments` shows `Ready`, the reason, the number of namespaces, and the age. `kubectl get environments -o wide` adds the display name.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#environment) lists every field of `Environment`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: fleet.camunda.io/v1alpha1
-kind: Environment
-metadata:
-  # Cluster-scoped: no namespace. At most 63 characters.
-  name: production
-spec:
-  # string. Optional. The name that the fleet manager shows, at most 64 characters. It changes nothing for a claim.
-  displayName: Production
-  # string. Optional. The color that the fleet manager shows, as a hex color. It changes nothing for a claim.
-  color: "#2E7D32"
-  # string. Optional. The CamundaPlatformConfig of a claim that names none itself. A change applies to new claims only.
-  platformConfigRef: my-platform-config
-  # object. Optional. The presets that a claim can use, for each preset kind.
-  presets:
-    # []string. Optional. Names of the CamundaClusterPresets that a cluster claim can use.
-    camundaCluster:
-      - small
-    # []string. Optional. Names of the ElasticsearchClusterPresets that the built-in Elasticsearch of a claim can use.
-    elasticsearchCluster:
-      - es-small
-    # []string. Optional. Names of the DatabaseServerPresets that the built-in PostgreSQL of a claim can use.
-    databaseServer:
-      - pg-small
-  # object. Optional. The releases that a claim can use.
-  releases:
-    # []string. Optional. Names of the CamundaReleases that a claim can use.
-    allowed:
-      - camunda-8-9-0
-    # string. Optional. The release of a claim that names none. It is one of allowed.
-    default: camunda-8-9-0
-  # map[string]SectionPolicy. Optional. The policy of each PluginSection, by section name. A change applies to new claims only.
-  sections:
-    backup-storage:
-      # boolean. Optional, default: false. A claim must select a registration of the section.
-      required: true
-      # string. Optional. The registration that the create flow preselects. It is empty or one of allowed.
-      default: s3-backups
-      # []string. Optional. Names of the PluginRegistrations of the section that a claim can select.
-      allowed:
-        - s3-backups
-  # map[string]map[string]ParameterPolicy. Optional. The policy of each parameter, by registration name and then by parameter name. A change applies to new claims only.
-  parameters:
-    s3-backups:
-      retentionDays:
-        # JSON. Optional. Replaces the value that the registration gives the parameter.
-        value: 30
-        # boolean. Optional, default: false. A claim can change the parameter.
-        claimEditable: true
-        # []NamedValue. Optional. The choices that a claim can pick. Needs claimEditable.
-        allowed:
-          # string. Required. What the claim stores when it picks the choice.
-          - name: month
-            # string. Required. What the fleet manager shows for the choice.
-            label: One month
-            # JSON. Required. What the plugin gets.
-            value: 30
-  # string. Optional, default: Delete. The deletion policy of a claim that sets none: Delete or Orphan. A change applies to new claims only.
-  deletionPolicy: Delete
-  # object. Optional. Lets the create flow of the fleet manager create a namespace in the environment.
-  namespaceCreation:
-    # boolean. Optional, default: false. The create flow can create a namespace.
-    allowed: true
-    # map[string]string. Optional. Fixed labels of a new namespace.
-    labels:
-      owner: platform
-    # []string. Optional. Label keys that the create flow asks a value for.
-    requiredLabelKeys:
-      - team
-```
+## Validation rules
 
-### Validation rules
+The API server refuses an environment when:
 
-- `metadata.name` has at most 63 characters.
-- A name in `presets` or `releases.allowed`, and a key of `sections` or `parameters`, is not empty.
-- `releases.default` is empty or one of `releases.allowed`.
-- In each section policy, `default` is empty or one of `allowed`. `required: true` needs at least one name in `allowed`.
-- A parameter policy with `allowed` needs `claimEditable: true`. Each choice has a unique `name` of at most 63 characters and a `label` of at most 64 characters.
-- `namespaceCreation.labels` and `namespaceCreation.requiredLabelKeys` cannot hold `fleet.camunda.io/environment`. Each key is a valid label key, and each label value is a valid label value.
-- `displayName` has at most 64 characters. `color` is a hex color such as `#2E7D32`.
-- `sections`, `parameters`, and `releases.allowed` have at most 64 entries. A parameter policy has at most 32 choices. `namespaceCreation` has at most 32 labels and 16 required label keys.
+- The name is longer than 63 characters: `metadata.name must be at most 63 characters, because it is used as a label value`.
+- `sections` has an empty key: `sections cannot have an empty section name`.
+- `parameters` has an empty key: `parameters cannot have an empty registration name`.
+- A name in `presets` or in `releases.allowed` is empty.
+- `releases.default` is set and is not in `releases.allowed`: `releases.default must be one of releases.allowed`.
+- The `default` of a section policy is set and is not in its `allowed`: `default must be one of allowed`.
+- A section policy has `required: true` and an empty `allowed`: `required needs at least one registration in allowed`.
+- A parameter policy has `allowed` without `claimEditable: true`: `allowed needs claimEditable: true`.
+- `namespaceCreation.labels` or `namespaceCreation.requiredLabelKeys` holds `fleet.camunda.io/environment`: `the environment label is set by the app`.
+- A key of `namespaceCreation.labels` or of `namespaceCreation.requiredLabelKeys` is not a valid label key, or a label value is not a valid label value.
+- Two choices of a parameter policy have the same `name`.
 
-### A production-shaped example
+The API reference gives the bounds of each field, for example the length of `displayName` and the number of entries in `sections`.
+
+## A production-shaped example
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
