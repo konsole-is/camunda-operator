@@ -22,14 +22,21 @@ package pluginregistration
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
@@ -102,7 +109,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	)
 }
 
-// observe reads the sections that reg names.
+// observe reads the sections that reg names and the other Default
+// registrations of each.
 func (r *Reconciler) observe(ctx context.Context, reg *pluginsv1alpha1.PluginRegistration) (facts, error) {
 	var f facts
 	for _, name := range reg.Spec.Sections {
@@ -114,14 +122,46 @@ func (r *Reconciler) observe(ctx context.Context, reg *pluginsv1alpha1.PluginReg
 		case err != nil:
 			return facts{}, fmt.Errorf("reading PluginSection %q: %w", name, err)
 		}
+
+		peers, err := r.defaultPeers(ctx, reg.Name, name)
+		if err != nil {
+			return facts{}, err
+		}
+		if len(peers) > 0 {
+			if f.defaultPeers == nil {
+				f.defaultPeers = map[string][]string{}
+			}
+			f.defaultPeers[name] = peers
+		}
 	}
 
 	return f, nil
 }
 
+// defaultPeers returns the sorted names of the registrations other than self
+// that serve section with mode Default.
+func (r *Reconciler) defaultPeers(ctx context.Context, self, section string) ([]string, error) {
+	var list pluginsv1alpha1.PluginRegistrationList
+	if err := r.List(ctx, &list, client.MatchingFields{SectionsField: section}); err != nil {
+		return nil, fmt.Errorf("listing the registrations of section %q: %w", section, err)
+	}
+
+	var names []string
+	for _, peer := range list.Items {
+		if peer.Name != self && peer.Spec.Mode == pluginsv1alpha1.ModeDefault {
+			names = append(names, peer.Name)
+		}
+	}
+	slices.Sort(names)
+
+	return names, nil
+}
+
 // SetupWithManager checks OperatorVersion first and returns an error when it
 // is not strict semver. Then it registers the SectionsField index and the
-// controller, which also runs when a section is created or deleted.
+// controller, which also runs when a section is created or deleted, and when
+// another registration of one of its sections is created, deleted, or changes
+// its spec.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if _, err := semver.StrictNewVersion(r.OperatorVersion); err != nil {
 		return fmt.Errorf("operator version %q is not valid semver: %w", r.OperatorVersion, err)
@@ -149,6 +189,37 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 				SectionsField, refindex.ObjectName,
 			),
 		).
+		// The map function gets the old and the new object of an update, so a
+		// registration that leaves a section still enqueues its old peers.
+		Watches(
+			&pluginsv1alpha1.PluginRegistration{},
+			handler.EnqueueRequestsFromMapFunc(r.registrationsOfSharedSections),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+		).
 		Named(controllerName).
 		Complete(r)
+}
+
+// registrationsOfSharedSections returns a request for every registration
+// that serves a section of o, o included. A list that fails drops that
+// section and is logged.
+func (r *Reconciler) registrationsOfSharedSections(ctx context.Context, o client.Object) []reconcile.Request {
+	reg, ok := o.(*pluginsv1alpha1.PluginRegistration)
+	if !ok {
+		return nil
+	}
+
+	var reqs []reconcile.Request
+	for _, section := range reg.Spec.Sections {
+		var list pluginsv1alpha1.PluginRegistrationList
+		if err := r.List(ctx, &list, client.MatchingFields{SectionsField: section}); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to list the registrations of a section", "section", section)
+			continue
+		}
+		for _, peer := range list.Items {
+			reqs = append(reqs, reconcile.Request{NamespacedName: types.NamespacedName{Name: peer.Name}})
+		}
+	}
+
+	return reqs
 }

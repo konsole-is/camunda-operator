@@ -77,4 +77,51 @@ var _ = Describe("PluginRegistration Accepted", func() {
 
 		expectAccepted(reg.Name, metav1.ConditionTrue, v1.ReasonHealthy)
 	})
+
+	It("reports DefaultConflict on both Default registrations until one is Optional", func() {
+		section := createSection("section-" + utilrand.String(5))
+		first := newRegistration(pluginsv1alpha1.ModeDefault, section.Name)
+		second := newRegistration(pluginsv1alpha1.ModeDefault, section.Name)
+		createRegistration(first)
+		createRegistration(second)
+
+		Expect(expectAccepted(first.Name, metav1.ConditionFalse, pluginsv1alpha1.ReasonDefaultConflict).Message).
+			To(ContainSubstring(second.Name))
+		Expect(expectAccepted(second.Name, metav1.ConditionFalse, pluginsv1alpha1.ReasonDefaultConflict).Message).
+			To(ContainSubstring(first.Name))
+
+		updateRegistration(second, func(reg *pluginsv1alpha1.PluginRegistration) {
+			reg.Spec.Mode = pluginsv1alpha1.ModeOptional
+		})
+
+		expectAccepted(first.Name, metav1.ConditionTrue, v1.ReasonHealthy)
+		expectAccepted(second.Name, metav1.ConditionTrue, v1.ReasonHealthy)
+	})
+
+	It("clears DefaultConflict when the other registration leaves the section", func() {
+		section := createSection("section-" + utilrand.String(5))
+		elsewhere := createSection("section-" + utilrand.String(5))
+		stays := newRegistration(pluginsv1alpha1.ModeDefault, section.Name)
+		leaves := newRegistration(pluginsv1alpha1.ModeDefault, section.Name)
+		createRegistration(stays)
+		createRegistration(leaves)
+		expectAccepted(stays.Name, metav1.ConditionFalse, pluginsv1alpha1.ReasonDefaultConflict)
+
+		updateRegistration(leaves, func(reg *pluginsv1alpha1.PluginRegistration) {
+			reg.Spec.Sections = []string{elsewhere.Name}
+		})
+
+		expectAccepted(stays.Name, metav1.ConditionTrue, v1.ReasonHealthy)
+		expectAccepted(leaves.Name, metav1.ConditionTrue, v1.ReasonHealthy)
+	})
+
+	It("keeps an Optional registration accepted beside two Default registrations", func() {
+		section := createSection("section-" + utilrand.String(5))
+		createRegistration(newRegistration(pluginsv1alpha1.ModeDefault, section.Name))
+		createRegistration(newRegistration(pluginsv1alpha1.ModeDefault, section.Name))
+		optional := newRegistration(pluginsv1alpha1.ModeOptional, section.Name)
+		createRegistration(optional)
+
+		expectAccepted(optional.Name, metav1.ConditionTrue, v1.ReasonHealthy)
+	})
 })
