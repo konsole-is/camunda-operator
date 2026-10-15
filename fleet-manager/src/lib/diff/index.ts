@@ -72,14 +72,15 @@ function changed(a: string[], b: string[]): DiffLine[] {
 
 /**
  * objectDiff renders both objects as YAML with sorted keys and compares the
- * lines, so a different key order is no change. A before of undefined is a
- * new object: every line is added.
+ * lines, so a different key order is no change. An undefined before is a
+ * new object, all added, and an undefined after a deleted one, all removed.
  */
 export function objectDiff(before: unknown, after: unknown): DiffLine[] {
-  return lineDiff(before === undefined ? "" : toYaml(before), toYaml(after));
+  return lineDiff(toYaml(before), toYaml(after));
 }
 
 function toYaml(value: unknown): string {
+  if (value === undefined) return "";
   return stringify(value, { sortMapEntries: true });
 }
 

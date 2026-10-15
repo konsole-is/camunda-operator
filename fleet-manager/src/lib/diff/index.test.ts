@@ -38,6 +38,16 @@ describe("objectDiff", () => {
     ]);
   });
 
+  it("treats a missing after as a deleted object", () => {
+    expect(objectDiff({ a: 1 }, undefined)).toEqual([
+      { op: "removed", text: "a: 1" },
+    ]);
+  });
+
+  it("gives no line when both objects are missing", () => {
+    expect(objectDiff(undefined, undefined)).toEqual([]);
+  });
+
   it("shows a changed field as one removed and one added line", () => {
     expect(
       objectDiff({ spec: { replicas: 1 } }, { spec: { replicas: 3 } }),
