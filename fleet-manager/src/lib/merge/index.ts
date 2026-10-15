@@ -2,3 +2,12 @@ export type { FieldSourceMap, Layer, Merged } from "./engine";
 export type { FieldPath } from "./path";
 export { mergeDatabaseServer, mergeElasticsearch } from "./storage";
 export { mergeCluster } from "./cluster";
+export {
+  APP_FIELD_MANAGER,
+  CLUSTER_CLAIM_MANAGER_PREFIX,
+  PLANE_CLAIM_MANAGER_PREFIX,
+  fieldManagers,
+  isClaimManager,
+  type ManagedFieldsEntry,
+  type ManagedObject,
+} from "./managers";
