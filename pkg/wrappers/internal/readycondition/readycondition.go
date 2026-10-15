@@ -70,7 +70,7 @@ var failingReasons = map[string]struct{}{
 // other state, also a Ready of an older generation, is Creating on the first
 // apply and Updating afterwards.
 func Converging(op concepts.ConvergingOperation, o Object) concepts.AliveStatusWithReason {
-	if stale := concepts.StaleGenerationStatus(op, o.ObservedGeneration, o.Generation, o.Kind); stale != nil {
+	if stale := concepts.StaleGenerationStatus(op, observed(o), o.Generation, o.Kind); stale != nil {
 		stale.Reason = unobserved(o)
 
 		return *stale
@@ -90,6 +90,19 @@ func Converging(op concepts.ConvergingOperation, o Object) concepts.AliveStatusW
 	}
 
 	return concepts.AliveStatusWithReason{Status: status, Reason: reason}
+}
+
+// observed returns the generation that both the status and its Ready
+// condition reached. A status write that lost a conflict can keep a new
+// status.observedGeneration beside the Ready condition of an older
+// generation.
+func observed(o Object) int64 {
+	ready := meta.FindStatusCondition(o.Conditions, apiv1.ConditionReady)
+	if ready != nil && ready.ObservedGeneration < o.ObservedGeneration {
+		return ready.ObservedGeneration
+	}
+
+	return o.ObservedGeneration
 }
 
 // unobserved explains a Ready condition that is older than the spec.
@@ -131,7 +144,7 @@ func read(o Object) (state, string) {
 // rules of Converging: serving is Operational, Failing is OperationFailing,
 // and every other state is OperationPending.
 func Operational(o Object) concepts.OperationalStatusWithReason {
-	if o.ObservedGeneration < o.Generation {
+	if observed(o) < o.Generation {
 		return concepts.OperationalStatusWithReason{
 			Status: concepts.OperationalStatusPending,
 			Reason: unobserved(o),
@@ -155,7 +168,7 @@ func Operational(o Object) concepts.OperationalStatusWithReason {
 // generation is Down too, so Grace never reports Healthy where Converging
 // does not.
 func Grace(o Object) concepts.GraceStatusWithReason {
-	if o.ObservedGeneration < o.Generation {
+	if observed(o) < o.Generation {
 		return concepts.GraceStatusWithReason{Status: concepts.GraceStatusDown, Reason: unobserved(o)}
 	}
 
@@ -182,7 +195,7 @@ func Suspension(o Object, requested bool) concepts.SuspensionStatusWithReason {
 		}
 	}
 
-	if o.ObservedGeneration < o.Generation {
+	if observed(o) < o.Generation {
 		return concepts.SuspensionStatusWithReason{Status: concepts.SuspensionStatusSuspending, Reason: unobserved(o)}
 	}
 
