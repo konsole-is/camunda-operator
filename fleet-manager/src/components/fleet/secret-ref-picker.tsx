@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   NativeSelect,
   NativeSelectOption,
@@ -15,7 +15,8 @@ export type SecretRefs = { name: string; keys: string[] }[];
 /**
  * SecretRefPicker picks a Secret and one of its keys. It shows names only:
  * it never has a Secret value. onChange gets the reference when both are
- * picked, and undefined otherwise.
+ * picked, and undefined otherwise. When secrets no longer hold the picked
+ * Secret or key, onChange gets undefined if its last value was a reference.
  */
 export function SecretRefPicker({
   label,
@@ -33,15 +34,28 @@ export function SecretRefPicker({
   const id = useId();
   const [name, setName] = useState(defaultValue?.name ?? "");
   const [key, setKey] = useState(defaultValue?.key ?? "");
-  const keys = secrets.find((s) => s.name === name)?.keys ?? [];
+  const activeName = secrets.some((s) => s.name === name) ? name : "";
+  const keys = secrets.find((s) => s.name === activeName)?.keys ?? [];
+  const activeKey = keys.includes(key) ? key : "";
+  const ref =
+    activeName && activeKey ? { name: activeName, key: activeKey } : undefined;
+  const report = JSON.stringify(ref ?? null);
+  const reported = useRef(
+    JSON.stringify(
+      defaultValue?.name && defaultValue.key
+        ? { name: defaultValue.name, key: defaultValue.key }
+        : null,
+    ),
+  );
+  useEffect(() => {
+    if (reported.current === report) return;
+    reported.current = report;
+    onChange?.(ref);
+  });
 
   if (secrets.length === 0) {
     return <p className="text-sm text-muted">No Secrets in this namespace</p>;
   }
-  const emit = (nextName: string, nextKey: string) =>
-    onChange?.(
-      nextName && nextKey ? { name: nextName, key: nextKey } : undefined,
-    );
 
   return (
     <div role="group" aria-label={label} className="flex min-w-48 flex-1 gap-2">
@@ -50,12 +64,11 @@ export function SecretRefPicker({
       </label>
       <NativeSelect
         id={`${id}-secret`}
-        value={name}
-        aria-invalid={invalid && !name ? true : undefined}
+        value={activeName}
+        aria-invalid={invalid && !activeName ? true : undefined}
         onChange={(event) => {
           setName(event.target.value);
           setKey("");
-          emit(event.target.value, "");
         }}
       >
         <NativeSelectOption value="">Pick a Secret</NativeSelectOption>
@@ -70,12 +83,11 @@ export function SecretRefPicker({
       </label>
       <NativeSelect
         id={`${id}-key`}
-        value={key}
-        disabled={!name}
-        aria-invalid={invalid && !key ? true : undefined}
+        value={activeKey}
+        disabled={!activeName}
+        aria-invalid={invalid && !activeKey ? true : undefined}
         onChange={(event) => {
           setKey(event.target.value);
-          emit(name, event.target.value);
         }}
       >
         <NativeSelectOption value="">Pick a key</NativeSelectOption>

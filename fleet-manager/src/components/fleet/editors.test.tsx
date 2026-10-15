@@ -105,6 +105,37 @@ describe("EnvEditor", () => {
     expect(first.textContent).toContain("From a ConfigMap key");
   });
 
+  it.each([
+    ["the Secret", [{ name: "smtp", keys: ["token"] }]],
+    ["the key", [{ name: "db", keys: ["username"] }]],
+  ])("drops a Secret reference when %s goes away", (_, after) => {
+    const onChange = vi.fn();
+    const entry = {
+      name: "DB_PASSWORD",
+      valueFrom: { secretKeyRef: { name: "db", key: "password" } },
+    };
+    const { rerender } = render(
+      <EnvEditor
+        label="Env"
+        secrets={secrets}
+        defaultValue={[entry]}
+        onChange={onChange}
+      />,
+    );
+    rerender(
+      <EnvEditor
+        label="Env"
+        secrets={after}
+        defaultValue={[entry]}
+        onChange={onChange}
+      />,
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      [{ name: "DB_PASSWORD" }],
+      [{ path: "0.secret", message: "Pick a Secret and a key" }],
+    );
+  });
+
   it("reports an empty name, a repeated name, and a Secret entry without a key", async () => {
     const onChange = vi.fn();
     render(
