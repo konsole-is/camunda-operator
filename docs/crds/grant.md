@@ -103,7 +103,7 @@ Error from server (Forbidden): error when creating "grant.yaml": grants.plugins.
 | The requester changed the label, and it does not have `serve` on the old registration. | `the requester <user> does not have the verb serve on the PluginRegistration <name>, so it cannot change a Grant of it` | Change the label only as a requester with `serve` on both registrations. Or create a new grant for the new registration. |
 | The format is not `aws-iam-statement`. | `spec.format: Unsupported value: "<format>": supported values: "aws-iam-statement"` | Set `spec.format: aws-iam-statement`. |
 
-Some writes do not need `serve`. The identity extension writes the status of a grant without it. A change of metadata other than the labels does not need it either, for example an annotation or an owner reference. Kubernetes removes the owner reference when the request of a grant is deleted with the `Orphan` propagation policy. A change of the spec or of a label always needs `serve`.
+Some writes do not need `serve`. The identity extension writes the status of a grant without it. A change of metadata other than the labels does not need it either, for example an annotation or an owner reference. Kubernetes removes the owner reference when the request of a grant is deleted with the `Orphan` propagation policy. A change of the spec or of a label always needs `serve`. The policy does not check a delete. A plugin with the verb `delete` on grants can delete the grant of another plugin.
 
 A user with the verb `*` on `pluginregistrations`, for example through the ClusterRole `cluster-admin`, has `serve` on every registration.
 

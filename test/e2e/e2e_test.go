@@ -169,6 +169,18 @@ var _ = Describe("Manager", Ordered, Label(utils.LabelManager), func() {
 				g.Expect(output).To(Equal(namespace + "/" + serviceAccountName))
 			}
 			Eventually(verifyRegistration).Should(Succeed())
+
+			By("waiting for the operator to accept the built-in registration")
+			verifyAccepted := func(g Gomega) {
+				cmd := exec.Command(
+					"kubectl", "get", "pluginregistration", "elasticsearch",
+					"-o", "jsonpath={.status.conditions[?(@.type=='Accepted')].status}",
+				)
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("True"))
+			}
+			Eventually(verifyAccepted).Should(Succeed())
 		})
 
 		It("should ensure the metrics endpoint is serving metrics", func() {
