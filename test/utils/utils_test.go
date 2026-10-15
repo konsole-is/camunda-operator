@@ -22,6 +22,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -55,6 +56,10 @@ func TestRunContextEndsWithItsContext(t *testing.T) {
 // TestStoppedTreatsAZombieAsStopped proves that stopped tells a process that
 // exited and was not reaped from one that runs.
 func TestStoppedTreatsAZombieAsStopped(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("stopped reads the state of a zombie from /proc, which only Linux has")
+	}
+
 	running := exec.Command("sleep", "300")
 	require.NoError(t, running.Start())
 	defer func() { _ = running.Process.Kill(); _ = running.Wait() }()
