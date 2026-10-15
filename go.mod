@@ -14,7 +14,7 @@ require (
 	github.com/elastic/cloud-on-k8s/v3 v3.5.0
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/konsole-is/camunda-operator/api v0.2.0
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.44.0
