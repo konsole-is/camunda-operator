@@ -131,7 +131,7 @@ If you delete the holder, the next one takes the cluster. It reports `WaitingFor
 
 ## Authentication
 
-`spec.managementAuthRef` names a cluster-scoped [ManagementAuthConfig](managementauthconfig.md). That page lists the fields of the contract and the keys its Secret must carry.
+`spec.managementAuthRef` names a cluster-scoped [ManagementAuthConfig](managementauthconfig.md). That page describes the contract and the key that its Secret must carry. The [API reference](api-reference.md#managementauthconfigspec) lists the fields of the contract.
 
 The client Secret of the contract, and the license Secret of the [CamundaPlatformConfig](camundaplatformconfig.md) of the cluster, can live in another namespace. When one does, the operator copies it into the namespace of the `CamundaOptimize`, as `<name>-optimize-auth-client` and `<name>-optimize-license`. `MirroredSecretsReady` reports on the copies.
 
@@ -340,86 +340,11 @@ A change of the path restarts the webapp, and `status.endpoints` shows the new p
 
 The entry stays while the workloads are at zero with the cluster, and while a check fails. The Service stays too, so the route answers again when Optimize starts. There is no entry while another `CamundaOptimize` holds the cluster, or when the cluster is gone, because the operator then deletes the Service. A new `CamundaOptimize` whose first check fails has no entry yet.
 
-## Spec reference
+## Fields
 
-`webapp` and `importer` are the same workload block as the per-process sections of [CamundaCluster](camundacluster.md). There is no `platformConfigRef`: the image registry and the license come from the platform config of the referenced cluster.
+The [API reference](api-reference.md#camundaoptimize) lists every field of `CamundaOptimize`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaOptimize
-metadata:
-  name: my-cluster-optimize
-  namespace: my-cluster-ns
-spec:
-  # string. Required. Optimize version, as a full semantic version. Set it to the version of the cluster. A different minor is refused.
-  version: "8.9.0"
-  # string. Required. Name of the cluster-scoped ManagementAuthConfig that Optimize signs in against.
-  managementAuthRef: management-auth
-  # string. Optional. The URL a browser reaches this Optimize at. A path in it, such as /optimize, makes Optimize serve under that path. In the two Keycloak modes the management plane registers the login callback under it.
-  externalUrl: "https://optimize.camunda.example.com"
-  # object. Required. The CamundaCluster this Optimize instance attaches to. Immutable.
-  clusterRef:
-    # string. Required. Name of the CamundaCluster, in this namespace.
-    name: my-cluster
-  # object. Optional. The Optimize webapp Deployment, which serves the user interface.
-  webapp:
-    # integer. Optional, default: 1. Number of webapp replicas.
-    replicas: 1
-    # object. Optional. Resource requests and limits for the webapp pods.
-    resources:
-      requests:
-        cpu: "500m"
-        memory: 1Gi
-      limits:
-        cpu: "1"
-        memory: 2Gi
-    # list. Optional. Extra environment variables for the webapp pods.
-    extraEnv: []
-    # list. Optional. Extra envFrom sources (ConfigMap or Secret) for the webapp pods.
-    extraEnvFrom: []
-    # map. Optional. Extra labels on the webapp pods.
-    podLabels: {}
-    # map. Optional. Extra annotations on the webapp pods.
-    podAnnotations: {}
-    # object. Optional. Scheduling constraints (nodeAffinity, tolerations, podAffinity) for the webapp pods.
-    scheduling: {}
-  # object. Optional. The Optimize importer Deployment, which reads the zeebe-record indices.
-  importer:
-    # integer. Optional, default: 1. Number of importer replicas. Must be 0 or 1. Set 0 to stop the import.
-    replicas: 1
-    # object. Optional. Resource requests and limits for the importer pod.
-    resources:
-      requests:
-        cpu: "500m"
-        memory: 1Gi
-      limits:
-        cpu: "1"
-        memory: 2Gi
-    # list. Optional. Extra environment variables for the importer pod.
-    extraEnv: []
-    # list. Optional. Extra envFrom sources (ConfigMap or Secret) for the importer pod.
-    extraEnvFrom: []
-    # map. Optional. Extra labels on the importer pod.
-    podLabels: {}
-    # map. Optional. Extra annotations on the importer pod.
-    podAnnotations: {}
-    # object. Optional. Scheduling constraints (nodeAffinity, tolerations, podAffinity) for the importer pod.
-    scheduling: {}
-  # integer. Optional, minimum 0. Replicas of each Optimize index and of each zeebe-record index. Default: 0 when the storage contract names one node, 1 when it names more, the Optimize default when it names no node count.
-  indexReplicas: 0
-  # object. Optional. Prometheus integration.
-  monitoring:
-    # object. Optional. ServiceMonitor creation for both Deployments.
-    serviceMonitor:
-      # boolean. Optional, default: false. Create one ServiceMonitor per Deployment.
-      enabled: true
-      # map. Optional. Extra labels on the ServiceMonitors.
-      labels: {}
-      # map. Optional. Extra annotations on the ServiceMonitors.
-      annotations: {}
-```
-
-### Validation rules
+## Validation rules
 
 The API server enforces these at admission:
 
@@ -437,7 +362,7 @@ The rules below depend on live state, so the API server accepts a resource that 
 - No other `CamundaOptimize` holds the cluster.
 - No exporter entry on the cluster has the other kind of value.
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

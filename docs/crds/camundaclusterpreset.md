@@ -50,6 +50,8 @@ The cluster starts from `spec.cluster` of the preset. The [CamundaRelease](camun
 | `platformConfigRef`, `presetRef`, `releaseRef`, `externalUrl`, `serviceAccount` (the top-level block), `connectors.serviceAccount.name`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, `pause` | Instance-bound. They always come from the cluster and are rejected in a preset. |
 | `version`, `connectors.version` | Not part of a preset. They belong to a [CamundaRelease](camundarelease.md) or to the cluster, and a preset that sets one is rejected. |
 
+Each cluster reads the Secret of `auth.clientSecretRef` in its own namespace. Every namespace with a cluster that inherits the client needs that Secret.
+
 ## Changes
 
 When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` is the exception: it rolls no pods. A `passwordRotation` there rotates the admin password of each cluster, see [Authentication](camundacluster.md#authentication).
@@ -71,118 +73,11 @@ A preset reports no status. Problems appear on the referencing `CamundaCluster`:
 | `Ready` | `InvalidReference` | The cluster names a preset that does not exist. | Create the preset, or correct `presetRef`. |
 | `Ready` | `InvalidReference` | The merged spec breaks a rule. The message starts with `invalid effective spec:` and names the field. | Correct the field on the preset or on the cluster. |
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#camundaclusterpreset) lists every field of `CamundaClusterPreset`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaClusterPreset
-metadata:
-  # Cluster-scoped: no namespace.
-  name: medium
-spec:
-  # object. Required. The baseline. It has the shape of the CamundaCluster spec without the instance-bound fields. See the CamundaCluster page for every field.
-  cluster:
-    # object. Optional. OIDC client credential defaults and administrators of referencing clusters. Sits between the platform config and the cluster.
-    auth:
-      # string. Optional. Default OIDC client ID. Requires clientSecretRef.
-      clientId: "medium-clusters"
-      # string. Optional, default: the clientId. Audience that access tokens must carry.
-      audience: "medium-clusters"
-      # object. Optional, required when clientId is set. Secret key that holds the default client secret. Each cluster reads the Secret in its own namespace.
-      clientSecretRef:
-        name: "medium-clusters-oidc-secret"
-        key: "client-secret"
-      # object. Optional. Default administrators. A cluster that sets its own admin block replaces this block entirely.
-      admin:
-        clients:
-          - "platform-ops"
-    # []EnvVar. Optional. Environment variables of every workload. Merged by name, cluster entries win.
-    extraEnv:
-      - name: TZ
-        value: "UTC"
-    # []EnvFromSource. Optional. Environment sources of every workload. Preset entries first, then cluster entries.
-    extraEnvFrom: []
-    # map[string]string. Optional. Labels merged into every workload pod.
-    podLabels:
-      company.com/team: "automation-ops"
-    # map[string]string. Optional. Annotations merged into every workload pod.
-    podAnnotations:
-      company.com/cluster-preset: "medium"
-    # object. Optional. Scheduling constraints of every workload. A cluster that sets its own replaces this block entirely.
-    scheduling: {}
-    # object. Optional. Backup policy of referencing clusters. Same shape as on the CamundaCluster. backupStorageRef stays on the cluster.
-    backup:
-      primaryStorage:
-        continuous: true
-        schedule: "PT1H"
-        checkpointInterval: "PT15M"
-        retention:
-          window: "P7D"
-          cleanupSchedule: "PT1H"
-    # object. Optional. Broker baseline.
-    zeebe:
-      # integer. Optional. Number of brokers.
-      replicas: 3
-      # integer. Optional. Number of partitions.
-      partitions: 3
-      # integer. Optional. Replication factor.
-      replicationFactor: 3
-      # object. Optional. CPU and memory.
-      resources:
-        requests: { cpu: "1", memory: "2Gi" }
-      # string. Optional. StorageClass of the broker volumes.
-      storageClassName: "ssd"
-      # quantity. Optional. Size of the broker volumes. A cluster that applied a larger size keeps it.
-      storageSize: "32Gi"
-      # object. Optional. What happens to the broker volumes when a referencing cluster is deleted.
-      persistentVolumeClaimRetentionPolicy:
-        # string (Retain | Delete). Optional, default: Delete.
-        whenDeleted: Delete
-      # []EnvVar. Optional. Environment variables of the brokers. Merged by name with cluster entries.
-      extraEnv:
-        - name: JAVA_TOOL_OPTIONS
-          value: "-XX:+ExitOnOutOfMemoryError -Xmx1g"
-    # object. Optional. Gateway baseline.
-    gateway:
-      # string (Standalone | Embedded). Optional.
-      mode: Standalone
-      # integer. Optional. Replicas.
-      replicas: 2
-      # object. Optional. CPU and memory.
-      resources:
-        requests: { cpu: "500m", memory: "1Gi" }
-    # object. Optional. Operate baseline.
-    operate:
-      # string (Standalone | Embedded). Optional.
-      mode: Embedded
-    # object. Optional. Tasklist baseline.
-    tasklist:
-      # string (Standalone | Embedded). Optional.
-      mode: Embedded
-    # object. Optional. Admin baseline.
-    admin:
-      # string (Standalone | Embedded). Optional.
-      mode: Embedded
-    # object. Optional. Connectors baseline.
-    connectors:
-      # boolean. Optional. Runs the connectors runtime when true.
-      enabled: true
-      # integer. Optional. Replicas.
-      replicas: 1
-      # object. Optional. CPU and memory.
-      resources:
-        requests: { cpu: "250m", memory: "512Mi" }
-      # object. Optional. ServiceAccount of the connectors pods. The name is instance-bound and rejected here.
-      serviceAccount:
-        # boolean. Optional, default: true. When false, the connectors ServiceAccount of each cluster must already exist.
-        create: true
-        # map[string]string. Optional. Annotations on the ServiceAccount. When create is false, the operator does not set them, but an Azure client ID among them still labels the connectors pods.
-        annotations: {}
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.cluster` is required.
 - The instance-bound fields are rejected in `spec.cluster`: `platformConfigRef`, `presetRef`, `releaseRef`, `externalUrl`, `serviceAccount`, `connectors.serviceAccount.name`, `storageRef`, `backupStorageRef`, `documentStorageRef`, `monitoring`, `suspend`, and `pause`. An explicit zero value, for example `suspend: false` or an empty `presetRef`, counts as unset.
@@ -191,7 +86,7 @@ spec:
 - The transition rules of a `CamundaCluster` do not bind a preset: a preset can lower `zeebe.storageSize`. A referencing cluster keeps its applied volumes.
 - The API server checks a preset alone. The referencing cluster checks the merged spec, see [Validation rules](camundacluster.md#validation-rules).
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

@@ -179,29 +179,11 @@ Other status fields:
 - `status.completionTime` is when the restore reached a terminal phase.
 - `status.observedGeneration` is the last generation that the operator processed.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#logicalrestoreelasticsearch) lists every field of `LogicalRestoreElasticsearch`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: LogicalRestoreElasticsearch
-metadata:
-  name: my-cluster-lres
-  namespace: my-cluster-ns
-spec:
-  # object. Required. The completed LogicalBackupElasticsearch to restore.
-  backupRef:
-    # string. Required. Name of the backup, in the namespace of this resource.
-    name: my-cluster-backup
-  # object. Required. The CamundaCluster to restore into. It is the cluster
-  # the backup was taken from.
-  targetClusterRef:
-    # string. Required. Name of the cluster, in the namespace of this resource.
-    name: my-cluster
-```
-
-### Validation rules
+## Validation rules
 
 - The whole `spec` is immutable.
 - `spec.backupRef.name` and `spec.targetClusterRef.name` must not be empty.

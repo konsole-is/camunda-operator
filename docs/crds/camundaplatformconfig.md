@@ -154,118 +154,11 @@ A platform config owns nothing, so a delete removes nothing else. A `CamundaClus
 
 `status.observedGeneration` is the last generation the operator reconciled.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#camundaplatformconfig) lists every field of `CamundaPlatformConfig`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaPlatformConfig
-metadata:
-  # Cluster-scoped: no namespace.
-  name: my-platform-config
-spec:
-  # object. Optional, default: basic authentication. Authentication settings of every orchestration cluster.
-  auth:
-    # string (basic | oidc). Optional, default: basic. The authentication method.
-    method: oidc
-    # object. Required when method is oidc, forbidden when method is basic. The identity provider connection.
-    oidc:
-      # string. Required. Issuer URL of the identity provider. The endpoints come from its discovery document unless the fields below override them. Must be an http or https URL.
-      issuerUrl: "https://login.example.com/realms/camunda"
-      # string (generic | microsoft). Optional, default: generic. The kind of identity provider. Management Identity reads it.
-      providerType: "generic"
-      # string. Optional. Explicit JWKS endpoint. Overrides the value from discovery.
-      jwksUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/certs"
-      # string. Optional. Explicit token endpoint. Overrides the value from discovery.
-      tokenUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/token"
-      # string. Optional. Explicit authorization endpoint. Overrides the value from discovery.
-      authUrl: "https://login.example.com/realms/camunda/protocol/openid-connect/auth"
-      # string. Required. Default OIDC client ID of every cluster, unless a preset or a cluster overrides it.
-      clientId: "camunda-orchestration"
-      # string. Optional, default: the clientId. Audience that access tokens must carry.
-      audience: "camunda-orchestration"
-      # string. Optional, default: sub. Token claim that holds the username of a person.
-      usernameClaim: "preferred_username"
-      # string. Optional, default: unset. Token claim that holds the id of a machine client. Unset means every token is a person.
-      clientIdClaim: "client_id"
-      # object. Required. Secret key that holds the default OIDC client secret.
-      clientSecretRef:
-        # string. Required. Name of the Secret.
-        name: "oidc-credentials"
-        # string. Required. Namespace of the Secret. This resource has no namespace to default to.
-        namespace: "camunda-system"
-        # string. Required. Key in the Secret.
-        key: "client-secret"
-      # object. Optional. The identity provider clients of the management plane. A CamundaManagementCluster in oidc mode reads them.
-      management:
-        # object. Required. One entry per component of the management plane.
-        clients:
-          # object. Optional. The client of Management Identity.
-          identity:
-            # string. Required. Client id at the identity provider.
-            clientId: "camunda-identity"
-            # string. Optional, default: the clientId. Audience that access tokens must carry.
-            audience: "camunda-identity"
-            # object. Required. Secret key that holds the client secret. Same shape as clientSecretRef above.
-            clientSecretRef:
-              name: "management-identity-credentials"
-              namespace: "camunda-system"
-              key: "client-secret"
-          # object. Optional. The client of Optimize. The ManagementAuthConfig carries it.
-          optimize:
-            clientId: "camunda-optimize"
-            clientSecretRef:
-              name: "optimize-credentials"
-              namespace: "camunda-system"
-              key: "client-secret"
-          # object. Optional. The public client of the Web Modeler user interface. No secret.
-          webModeler:
-            clientId: "camunda-web-modeler"
-          # object. Optional. The client of the Web Modeler API.
-          webModelerApi:
-            clientId: "camunda-web-modeler-api"
-            clientSecretRef:
-              name: "web-modeler-api-credentials"
-              namespace: "camunda-system"
-              key: "client-secret"
-            # string. Optional, default: web-modeler-public-api. Audience of the Web Modeler public API.
-            publicApiAudience: "web-modeler-public-api"
-          # object. Optional. The public client of Console. No secret.
-          console:
-            clientId: "camunda-console"
-  # object. Optional. Secret key that holds the Camunda license key. Without it, clusters run in unlicensed non-production mode.
-  licenseSecretRef:
-    # string. Required. Name of the Secret.
-    name: "camunda-license"
-    # string. Required. Namespace of the Secret.
-    namespace: "camunda-system"
-    # string. Required. Key in the Secret.
-    key: "license-key"
-  # object. Optional. Renames images, one entry per image. Each value is a full repository with its registry and no tag or digest. The tag always comes from the version field of the resource that runs the image.
-  # A registry with a port needs a path after it, as in registry:5000/camunda/optimize.
-  images:
-    # string. Optional, default: camunda/camunda. The orchestration cluster processes.
-    camunda: "mirror.example.com/camunda/camunda"
-    # string. Optional, default: camunda/connectors-bundle. The connectors runtime.
-    connectors: "mirror.example.com/camunda/connectors-bundle"
-    # string. Optional, default: camunda/optimize. Optimize.
-    optimize: "mirror.example.com/camunda/optimize"
-    # string. Optional, default: camunda/identity. Management Identity.
-    identity: "mirror.example.com/camunda/identity"
-    # string. Optional, default: camunda/console. Console.
-    console: "mirror.example.com/camunda/console"
-    # string. Optional, default: camunda/web-modeler-restapi below 8.10, camunda/hub from 8.10. The Web Modeler restapi process.
-    webModelerRestapi: "mirror.example.com/camunda/web-modeler-restapi"
-    # string. Optional, default: camunda/web-modeler-websockets below 8.10, camunda/hub-websockets from 8.10. The Web Modeler websockets process.
-    webModelerWebsockets: "mirror.example.com/camunda/web-modeler-websockets"
-    # string. Optional, default: camunda/keycloak. The Keycloak that the operator runs.
-    keycloak: "mirror.example.com/camunda/keycloak"
-    # string. Optional, default: ghcr.io/cloudnative-pg/postgresql. The PostgreSQL that a DatabaseServer runs. The tag is the major version of the server, so a mirror must publish the same tags.
-    postgres: "mirror.example.com/cloudnative-pg/postgresql"
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.auth.method` is `basic` or `oidc`. `spec.auth.oidc.providerType` is `generic` or `microsoft`.
 - `spec.auth.oidc` is required when `spec.auth.method` is `oidc`, and forbidden when the method is `basic`.
@@ -274,7 +167,7 @@ spec:
 - Each `spec.images` value is a lowercase repository name, with no tag and no digest. A registry host can carry a port, as in `registry:5000/camunda/optimize`. A host that carries a port needs a path after it, so the bare `registry:5000` is refused.
 - The API server accepts this resource without the Secrets it names. The operator reports `Ready=False` with reason `MissingSecret` until each Secret exists, so you can create or rotate one later.
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

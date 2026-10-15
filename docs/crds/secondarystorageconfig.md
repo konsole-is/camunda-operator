@@ -107,48 +107,11 @@ status:
 
 `status.observedGeneration` is the last generation of the contract that the operator validated.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#secondarystorageconfig) lists every field of `SecondaryStorageConfig`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: SecondaryStorageConfig
-metadata:
-  name: my-storage-config
-  namespace: my-cluster-ns
-spec:
-  # string enum: elasticsearch | rdbms. Required. The secondary storage backend this contract describes.
-  type: elasticsearch
-  # object. Required when type is elasticsearch, forbidden otherwise. Elasticsearch connection details.
-  elasticsearch:
-    # string. Required. HTTP or HTTPS endpoint of the Elasticsearch cluster.
-    endpoint: "https://my-cluster-es:9200"
-    # object. Required. Basic-auth user with read and write access to the Camunda indices.
-    credentialsSecretRef:
-      # string. Required. Name of the Secret that holds the credentials.
-      name: my-cluster-es-credentials
-      # string. Optional, default: username. Key in the Secret that holds the username.
-      usernameKey: username
-      # string. Optional, default: password. Key in the Secret that holds the password.
-      passwordKey: password
-    # object. Optional. CA bundle that consumers use to verify the TLS certificate of the endpoint. Set it when the certificate is not signed by a well-known CA, for example the self-signed certificate of an ECK cluster.
-    caSecretRef:
-      # string. Required. Name of the Secret that holds the CA bundle.
-      name: my-cluster-es-es-http-certs-public
-      # string. Required. Key in the Secret that holds the CA bundle.
-      key: ca.crt
-    # string. Optional. Name of the snapshot repository, registered in this Elasticsearch cluster, that backups write to. An ElasticsearchCluster with a snapshotStorageRef fills it. Set it by hand for an Elasticsearch cluster the operator does not manage. A cluster that takes backups needs it.
-    snapshotRepository: my-cluster-ns.my-cluster-es
-    # integer. Optional, minimum 1. Number of data nodes of the Elasticsearch cluster. An ElasticsearchCluster fills it. Consumers take their default index replica count from it: 0 on one node, 1 on more.
-    nodeCount: 3
-  # object. Required when type is rdbms, forbidden otherwise. Relational database backend details.
-  rdbms:
-    # string. Required. Name of the DatabaseConfig, in the namespace of this contract, that describes the logical database.
-    databaseConfigRef: my-camunda-db
-```
-
-### Validation rules
+## Validation rules
 
 - `spec.type` must be `elasticsearch` or `rdbms`.
 - Exactly the block that matches `spec.type` must be set. `elasticsearch` requires `spec.elasticsearch` and forbids `spec.rdbms`. `rdbms` requires `spec.rdbms` and forbids `spec.elasticsearch`.
@@ -159,7 +122,7 @@ spec:
 - `spec.rdbms.databaseConfigRef` must not be empty.
 - No field is immutable.
 
-### An ECK cluster with a self-signed certificate
+## An ECK cluster with a self-signed certificate
 
 A manifest for an ECK cluster with a self-signed certificate and a registered snapshot repository. The names are the ones that an `ElasticsearchCluster` named `my-cluster-es` publishes:
 
@@ -183,7 +146,7 @@ spec:
     snapshotRepository: my-cluster-ns.my-cluster-es
 ```
 
-### A relational database backend
+## A relational database backend
 
 A manifest for a relational database backend that points to a `DatabaseConfig`:
 

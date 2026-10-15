@@ -185,35 +185,18 @@ Other status fields:
 - `status.completionTime` is when the restore reached a terminal phase.
 - `status.observedGeneration` is the last generation that the operator processed.
 
-## Spec reference
+## Fields
 
-Every field, with its type and whether it is required:
+The [API reference](api-reference.md#pointintimerestore) lists every field of `PointInTimeRestore`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: PointInTimeRestore
-metadata:
-  name: my-cluster-pitr
-  namespace: my-cluster-ns
-spec:
-  # object. Required. The cluster to roll back.
-  clusterRef:
-    # string. Required. Name of the CamundaCluster, in this namespace.
-    name: my-cluster
-  # string. Required. RFC 3339 timestamp to roll back to. It must lie within
-  # the retention period of the server, and not in the future. With
-  # pitr.recovery: external the database must already hold it.
-  timestamp: "2026-07-30T14:30:00Z"
-```
-
-### Validation rules
+## Validation rules
 
 - The whole `spec` is immutable.
 - `spec.timestamp` is an RFC 3339 timestamp. The API server accepts a point in the future. The restore reports `PitrUnavailable` for it.
 - `clusterRef` never crosses a namespace.
 - The API server accepts a restore that breaks a rule of live state. The restore reports the breach on `Ready`, see [Requirements](#requirements).
 
-### Roll back to just before a bad deployment
+## Roll back to just before a bad deployment
 
 ```yaml
 apiVersion: core.camunda.io/v1

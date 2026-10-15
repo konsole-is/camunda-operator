@@ -507,6 +507,6 @@ Neither way removes the line that you added to the hosts file in step 8. Remove 
 ## Next steps
 
 - [Management plane](guides/management-plane.md): run the management plane on your own domain, with your own Keycloak or OIDC provider, and with Web Modeler.
-- [CamundaManagementCluster reference](crds/camundamanagementcluster.md): every field, condition, and generated Secret.
+- [CamundaManagementCluster reference](crds/camundamanagementcluster.md): every condition and generated Secret, with a link to every field.
 - [Presets](guides/presets.md): write the sizes once and create each cluster in a few lines.
 - [Getting started](getting-started.md): an orchestration cluster alone, without a management plane.

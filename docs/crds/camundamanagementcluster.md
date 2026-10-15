@@ -756,169 +756,11 @@ An entry has no host. It belongs to the host of the URL of its app, and the `key
 
 The entries stay while the management plane is suspended, and while a check of the spec fails. The Services stay too, so a route answers again when the plane resumes.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#camundamanagementcluster) lists every field of `CamundaManagementCluster`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: CamundaManagementCluster
-metadata:
-  name: my-management
-  namespace: my-management-ns
-spec:
-  # string. Required. Name of the cluster-scoped CamundaPlatformConfig.
-  # It carries the license and the image settings. In the oidc mode it also
-  # carries the identity provider and every client of the management plane.
-  platformConfigRef: "my-platform-config"
-  # boolean. Optional, default: false. Scale every workload of this management plane to zero.
-  suspend: false
-  # object. Optional, default: no cluster. Label selector for the CamundaClusters that Console and Web Modeler serve. {} selects every cluster.
-  clusterSelector:
-    matchLabels:
-      environment: "production"
-  # object. Optional, default: every namespace. Label selector over the Namespace objects that
-  # clusterSelector searches. {} puts no limit on the namespace.
-  namespaceSelector:
-    matchLabels:
-      team: "payments"
-  # string. Optional, default: the name of this resource. Name of the cluster-scoped ManagementAuthConfig that this management plane writes.
-  managementAuthConfigName: "my-management"
-  # object. Required. Where people authenticate. Set exactly one of keycloak, externalKeycloak, or oidc.
-  identityProvider:
-    # object. Optional. Run Keycloak through the Keycloak Operator.
-    keycloak:
-      # string. Required. Keycloak version, as major.minor.patch. Supported: 26.0.0 and later, below 27.0.0.
-      # With Management Identity 8.9, stay below 26.7.0. See "The operator runs Keycloak".
-      version: "26.6.4"
-      # string. Required. The URL a browser reaches Keycloak at. Its path is exactly /auth. It is the issuer of every token.
-      # It carries no query and no fragment.
-      externalUrl: "https://camunda.example.com/auth"
-      # string. Required. Name of the DatabaseConfig of the Keycloak database, in this namespace.
-      databaseConfigRef: "my-keycloak-db"
-      # integer. Optional, default: 1. Number of Keycloak instances.
-      replicas: 1
-      # object. Optional. CPU and memory of the Keycloak container.
-      resources: {}
-      # object. Optional. Scheduling constraints of the Keycloak pods:
-      # nodeAffinity, podAffinity, tolerations.
-      scheduling: {}
-    # object. Optional. Connect to a Keycloak that you run.
-    externalKeycloak:
-      # string. Required. URL of Keycloak, including the /auth path when it has one. It must resolve from inside the Kubernetes cluster.
-      # It carries no query, no fragment, no user, and no password. The operator does not support a Keycloak
-      # behind a proxy that needs basic authentication.
-      url: "https://keycloak.example.com/auth"
-      # string. Optional, default: camunda-platform. The realm that Management Identity uses and creates.
-      # Letters, digits, dots, hyphens, and underscores only. It starts and ends with a letter or a digit.
-      realm: "camunda-platform"
-      # object. Required. Secret with the Keycloak administrator credentials.
-      adminCredentialsSecretRef:
-        # string. Required. Name of the Secret.
-        name: "my-keycloak-admin"
-        # string. Optional, default: username. Key that holds the user name.
-        usernameKey: "username"
-        # string. Optional, default: password. Key that holds the password.
-        passwordKey: "password"
-      # object. Optional. Secret key with the certificate authority of Keycloak, in PEM form. The operator trusts it
-      # in addition to the public authorities. Only valid with an https url.
-      caBundleSecretRef:
-        # string. Required. Name of the Secret.
-        name: "my-keycloak-ca"
-        # string. Required. Key that holds the PEM bundle.
-        key: "ca.crt"
-    # object. Optional. Connect to the identity provider of the referenced CamundaPlatformConfig. It carries no fields.
-    oidc: {}
-  # object. Required. Management Identity. It is always deployed.
-  identity:
-    # string. Required. Management Identity version, as major.minor.patch. Supported: 8.9.0 and later.
-    version: "8.9.0"
-    # string. Required. The URL a browser reaches Management Identity at. Must be an http or https URL. Identity serves under its path. A URL with a path other than / must be https.
-    externalUrl: "https://identity.camunda.example.com"
-    # string. Required. Name of the DatabaseConfig of the Management Identity database, in this namespace.
-    databaseConfigRef: "my-identity-db"
-    # object. Required. The first administrator of the management plane. Read on the first start only.
-    admin:
-      # string. Required in the oidc mode, forbidden in the keycloak modes. Token claim that identifies the administrator.
-      # It holds no equals sign.
-      claimName: "oid"
-      # string. Required with claimName. The value the claim carries for the administrator.
-      claimValue: "8f1c...e2"
-      # string. Required in the keycloak modes, forbidden in the oidc mode. Name of the first Keycloak user.
-      username: "admin"
-      # object. Optional, forbidden in the oidc mode. Secret key with the password of the first Keycloak user. Unset means a generated password.
-      passwordSecretRef:
-        name: "my-identity-admin"
-        key: "password"
-      # string. Optional, required with spec.webModeler in the keycloak modes. Email address of the first Keycloak user.
-      email: "admin@example.com"
-    # integer. Optional, default: 1. Number of Management Identity replicas.
-    replicas: 1
-    # object. Optional. CPU and memory of the container.
-    resources: {}
-    # list. Optional. Extra environment variables of the container. KEYCLOAK_URL and KEYCLOAK_REALM are refused.
-    extraEnv: []
-    # list. Optional. Extra environment sources (ConfigMaps, Secrets) of the container.
-    extraEnvFrom: []
-    # object. Optional. Extra labels of the pods.
-    podLabels: {}
-    # object. Optional. Extra annotations of the pods.
-    podAnnotations: {}
-    # object. Optional. Scheduling constraints of the pods.
-    scheduling: {}
-  # object. Optional. Console. Console is not deployed while this is unset.
-  console:
-    # string. Required. Console version, as major.minor.patch. Supported: 8.9.0 and later.
-    version: "8.9.0"
-    # string. Required. The URL a browser reaches Console at. Console serves under the path of this URL.
-    externalUrl: "https://console.camunda.example.com"
-    # integer. Optional, default: 1. Number of Console replicas.
-    replicas: 1
-    # object. Optional. CPU and memory of the container.
-    resources: {}
-    # The other workload fields of spec.identity apply here too: extraEnv,
-    # extraEnvFrom, podLabels, podAnnotations, scheduling.
-  # object. Optional. Web Modeler. Web Modeler is not deployed while this is unset.
-  webModeler:
-    # string. Required. Web Modeler version, as major.minor.patch. Supported: 8.9.0 and later.
-    version: "8.9.0"
-    # string. Required. The URL a browser reaches Web Modeler at.
-    externalUrl: "https://modeler.camunda.example.com"
-    # string. Required. The URL a browser reaches the live-update process at.
-    websocketsExternalUrl: "https://modeler.camunda.example.com/ws"
-    # string. Required. Name of the DatabaseConfig of the Web Modeler database, in this namespace.
-    databaseConfigRef: "my-web-modeler-db"
-    # object. Required. The SMTP server that Web Modeler sends notifications through.
-    mail:
-      # string. Required. Host name of the SMTP server.
-      smtpHost: "smtp.example.com"
-      # integer. Optional, default: 587. Port of the SMTP server.
-      smtpPort: 587
-      # string. Required. Address that Web Modeler sends from.
-      fromAddress: "noreply@example.com"
-      # string. Optional. Display name that Web Modeler sends under.
-      fromName: "Camunda"
-      # boolean. Optional, default: true. Turn STARTTLS on.
-      tls: true
-      # object. Optional. Secret with the user and the password of the SMTP server. Unset means a server that needs no credentials.
-      credentialsSecretRef:
-        name: "my-smtp-credentials"
-        usernameKey: "username"
-        passwordKey: "password"
-    # object. Optional. Workload fields of the application process. It takes
-    # the same fields as spec.identity: replicas, resources, extraEnv,
-    # extraEnvFrom, podLabels, podAnnotations, scheduling.
-    restapi:
-      # integer. Optional, default: 1. Number of replicas.
-      replicas: 1
-    # object. Optional. Workload fields of the live-update process. Same shape
-    # as restapi.
-    websockets:
-      # integer. Optional, default: 1. Number of replicas.
-      replicas: 1
-```
-
-### Validation rules
+## Validation rules
 
 The API server refuses an apply that breaks one of these:
 
@@ -948,7 +790,7 @@ The operator checks these after you apply the resource and reports them on `Read
 
 No field is immutable. A change to `spec.identity.admin` has no effect after the first start of Management Identity. See [The first administrator](#the-first-administrator).
 
-### A production-shaped example
+## A production-shaped example
 
 A management plane on a Keycloak that the operator runs, which serves every cluster labeled `environment: production`:
 

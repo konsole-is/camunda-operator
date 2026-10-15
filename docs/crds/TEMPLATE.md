@@ -5,7 +5,8 @@ It is not part of the published site.
 Rules:
 - Open with the intro, the minimal manifest, and the diagram. No "Purpose" heading.
 - Then one H2 per topic a reader searches for: Endpoints, Authentication, Storage, Deletion, Suspend, and so on. Headings, never bold lead-ins.
-- Then "## Status", "## Spec reference" (full YAML, then "### Validation rules", then one or more example H3s), and "## Related".
+- Then "## Status", "## Fields", "## Validation rules", one or more example H2s, and "## Related".
+- "## Fields" is one sentence that links the entry of the kind in api-reference.md. Do not copy the types, the required flags, or the defaults onto the page. make api-docs generates them from the GoDoc in api/v1. A fact about a field that a user needs and that the GoDoc does not state goes into the GoDoc, or into the topic section of the page.
 - Write for a person who uses the operator. Describe outcomes and the names a user types or waits on, not reconcile steps or internal mechanics.
 - Simplified Technical English: short sentences, active voice, can/will/must, no semicolons, no em-dashes, no contractions.
 - The API group is core.camunda.io/v1. Names in examples: cluster `my-cluster` in namespace `my-cluster-ns`, derived names `my-cluster-es`, `my-cluster-backup`, config kinds `my-storage-config`, `my-db-server`, `my-platform-config`, `my-backup-bucket`. In this template the placeholder resource is `my-cluster-example`. Replace it with the derived name of your kind.
@@ -52,31 +53,16 @@ What is removed. What is kept.
 
 `status.observedGeneration` is the last generation the operator reconciled.
 
-## Spec reference
+## Fields
 
-Every field, with its type, whether it is required, and its default:
+The [API reference](api-reference.md#kind) lists every field of `Kind`, with its type, whether it is required, its default, and its validation.
 
-```yaml
-apiVersion: core.camunda.io/v1
-kind: Kind
-metadata:
-  name: my-cluster-example
-  namespace: my-cluster-ns
-spec:
-  # object. Required. The CamundaCluster this resource attaches to.
-  clusterRef:
-    # string. Required. Name of the CamundaCluster, in this namespace.
-    name: my-cluster
-```
-
-Each field has one comment line above it: `# <type>. <Required|Optional>[, default: <value>]. <meaning>`.
-
-### Validation rules
+## Validation rules
 
 - Rules the API server enforces at admission, and the immutable fields.
 - If there are none beyond the schema, say so in one line.
 
-### A production-shaped example
+## A production-shaped example
 
 ```yaml
 apiVersion: core.camunda.io/v1

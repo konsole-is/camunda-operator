@@ -201,5 +201,5 @@ spec:
 - [Authentication](guides/authentication.md): connect an OIDC identity provider and name administrators.
 - [Backup](guides/backup.md): write backups of the cluster to a bucket.
 - [Operations](guides/operations.md): read the status, suspend, grow storage, rotate passwords.
-- [CamundaCluster reference](crds/camundacluster.md): every field.
+- [CamundaCluster reference](crds/camundacluster.md): every topic, condition, and validation rule, with a link to every field.
 - [Getting started with the management plane](getting-started-management-plane.md): add Console and sign in through Keycloak, on a kind cluster.
