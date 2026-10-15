@@ -123,8 +123,12 @@ var _ = Describe("ElasticsearchCluster", Ordered, Label(utils.LabelElasticsearch
 		_, _ = utils.Kubectl("delete", "ns", esNamespace, "--wait=false")
 	})
 
-	AfterEach(func() {
-		dumpDiagnostics(esNamespace)
+	// The storage claim spec of this container waits in a DeferCleanup for its
+	// clusters to go. That cleanup runs after every AfterEach, so a dump in an
+	// AfterEach misses its failure. A DeferCleanup that a BeforeEach registers
+	// runs after the cleanups of the spec.
+	BeforeEach(func() {
+		DeferCleanup(dumpDiagnostics, esNamespace)
 	})
 
 	It("reaches Ready Healthy and reports the data volume", func() {

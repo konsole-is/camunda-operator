@@ -19,10 +19,13 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
 )
@@ -58,6 +61,20 @@ func Run(cmd *exec.Cmd) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+// RunContext runs name with args as Run does, and kills the command and each
+// process that it started when ctx ends. A kill of the command alone leaves
+// its children with the output pipe open, and Run then waits for them.
+func RunContext(ctx context.Context, name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = 10 * time.Second
+
+	return Run(cmd)
 }
 
 // UninstallCertManager uninstalls the cert manager
