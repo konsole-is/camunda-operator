@@ -13,6 +13,7 @@ import { UsageBars } from "./usage-bars";
 /** PodLike is the part of a Pod that the table reads. V1Pod of @kubernetes/client-node fits it. */
 export type PodLike = {
   metadata?: { name?: string; creationTimestamp?: string | Date };
+  spec?: { containers?: unknown[] };
   status?: {
     phase?: string;
     containerStatuses?: { ready: boolean; restartCount: number }[];
@@ -63,7 +64,7 @@ export function PodTable({
                 >
                   {name}
                 </th>
-                <TableCell>{`${containers.filter((c) => c.ready).length}/${containers.length}`}</TableCell>
+                <TableCell>{`${containers.filter((c) => c.ready).length}/${pod.spec?.containers?.length ?? containers.length}`}</TableCell>
                 <TableCell className="text-text-2">
                   {pod.status?.phase ?? "-"}
                 </TableCell>
