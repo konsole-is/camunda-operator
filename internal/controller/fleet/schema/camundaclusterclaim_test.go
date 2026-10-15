@@ -36,8 +36,8 @@ import (
 )
 
 // clusterOverrideMessage is the message of the rule on spec.cluster.
-const clusterOverrideMessage = "spec.cluster must not set presetRef, releaseRef, platformConfigRef, suspend, version, " +
-	"connectors.version, serviceAccount.name, connectors.serviceAccount.name, storageRef, or backupStorageRef"
+const clusterOverrideMessage = "spec.cluster must not set presetRef, releaseRef, platformConfigRef, suspend, " +
+	"version, connectors.version, serviceAccount.name, connectors.serviceAccount.name, storageRef, or backupStorageRef"
 
 // clusterNameMessage is the message of the rule on metadata.name.
 const clusterNameMessage = "metadata.name must be a DNS-1035 label of at most 40 characters"
@@ -287,7 +287,10 @@ var _ = Describe("CamundaClusterClaim schema", func() {
 			expectAdmission(obj, wantErr)
 		},
 		Entry("refuses presetRef", func(s *v1.CamundaClusterSpec) { s.PresetRef = "large" }, clusterOverrideMessage),
-		Entry("refuses releaseRef", func(s *v1.CamundaClusterSpec) { s.ReleaseRef = "camunda-8-8" }, clusterOverrideMessage),
+		Entry(
+			"refuses releaseRef",
+			func(s *v1.CamundaClusterSpec) { s.ReleaseRef = "camunda-8-8" }, clusterOverrideMessage,
+		),
 		Entry(
 			"refuses platformConfigRef",
 			func(s *v1.CamundaClusterSpec) { s.PlatformConfigRef = "staging" }, clusterOverrideMessage,
@@ -311,12 +314,15 @@ var _ = Describe("CamundaClusterClaim schema", func() {
 			},
 			clusterOverrideMessage,
 		),
-		Entry("refuses storageRef", func(s *v1.CamundaClusterSpec) { s.StorageRef = "orders-es" }, clusterOverrideMessage),
+		Entry(
+			"refuses storageRef",
+			func(s *v1.CamundaClusterSpec) { s.StorageRef = "orders-es" },
+			clusterOverrideMessage,
+		),
 		Entry(
 			"refuses backupStorageRef",
 			func(s *v1.CamundaClusterSpec) { s.BackupStorageRef = "orders-backups" }, clusterOverrideMessage,
 		),
-
 		// Contract 3.2 lets a claim set these fields. A slot conflict is the
 		// claim controller's refusal, not the API server's.
 		Entry(
