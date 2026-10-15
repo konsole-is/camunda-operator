@@ -28,6 +28,7 @@ resources:
 - bases/plugins.camunda.io_pluginregistrations.yaml
 - bases/plugins.camunda.io_pluginrequests.yaml
 - bases/plugins.camunda.io_grants.yaml
+- bases/fleet.camunda.io_environments.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

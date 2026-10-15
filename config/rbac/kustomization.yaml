@@ -34,6 +34,9 @@ resources:
 - plugins_pluginsection_admin_role.yaml
 - plugins_pluginsection_editor_role.yaml
 - plugins_pluginsection_viewer_role.yaml
+- fleet_environment_admin_role.yaml
+- fleet_environment_editor_role.yaml
+- fleet_environment_viewer_role.yaml
 - camundarelease_admin_role.yaml
 - camundarelease_editor_role.yaml
 - camundarelease_viewer_role.yaml
