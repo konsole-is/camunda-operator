@@ -240,8 +240,9 @@ class KindInformer {
   }
 
   private async start(): Promise<void> {
+    // listed stays true from an earlier start whose watch did not start:
+    // ListWatch keeps that list and watches without a new one.
     try {
-      this.listed = false;
       this.listError = undefined;
       await this.listWatch.start();
       if (!this.listed) throw listFailure(this.kind, this.listError);

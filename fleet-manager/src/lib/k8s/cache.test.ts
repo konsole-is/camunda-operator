@@ -164,6 +164,24 @@ describe("ResourceCache", () => {
     expect(list).toHaveBeenCalledTimes(1);
   });
 
+  it("reads the kind on the next read after the first watch could not start", async () => {
+    const list = vi.fn(async () => listOf([item("a")], "10"));
+    const watch = new FakeWatch();
+    const watchOnce = watch.watch.bind(watch);
+    let starts = 0;
+    watch.watch = async (...args: Parameters<FakeWatch["watch"]>) => {
+      starts++;
+      if (starts === 1) throw new Error("Unauthorized");
+      return watchOnce(...args);
+    };
+    const { cache } = newCache({ list }, watch);
+
+    await expect(cache.objects("Environment")).rejects.toThrow(/Unauthorized/);
+
+    expect(names(await cache.objects("Environment"))).toEqual(["a"]);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
   it("watches again from the last resourceVersion after a watch error", async () => {
     const list = vi.fn(async () => listOf([item("a")], "10"));
     const { cache, watch } = newCache({ list });
