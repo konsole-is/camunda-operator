@@ -29,12 +29,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// NewClient wraps c so that a server-side apply of a T sends the content
-// that Prune returns. It decodes the answer of the API server back into the
+// NewClient wraps c so that an apply of a T with client.Apply sends the
+// content that Prune returns. It decodes the answer of the API server back into the
 // T, so the caller reads the applied object as it does without the wrapper.
 // Every other call passes through unchanged.
 func NewClient[T client.Object](c client.Client) client.Client {
@@ -45,15 +44,15 @@ type pruningClient[T client.Object] struct {
 	client.Client
 }
 
-// Patch sends the pruned content of a server-side apply of a T, and passes
-// every other patch through.
+// Patch sends the pruned content when a T is applied with client.Apply. It
+// passes every other patch through, also a raw apply patch.
 func (c *pruningClient[T]) Patch(
 	ctx context.Context,
 	obj client.Object,
 	patch client.Patch,
 	opts ...client.PatchOption,
 ) error {
-	if _, ok := obj.(T); !ok || patch.Type() != types.ApplyPatchType {
+	if _, ok := obj.(T); !ok || patch != client.Apply { //nolint:staticcheck // ocf applies through client.Apply
 		return c.Client.Patch(ctx, obj, patch, opts...)
 	}
 

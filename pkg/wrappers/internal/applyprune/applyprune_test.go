@@ -234,8 +234,8 @@ func TestClientDecodesTheAnswerIntoTheObject(t *testing.T) {
 	assert.Equal(t, "small", cluster.Spec.PresetRef)
 }
 
-// Another kind, and a patch that is not an apply, reach the inner client
-// unchanged.
+// Another kind, a patch that is not an apply, and a raw apply patch reach
+// the inner client unchanged.
 func TestClientPassesOtherCallsThrough(t *testing.T) {
 	t.Parallel()
 
@@ -247,9 +247,11 @@ func TestClientPassesOtherCallsThrough(t *testing.T) {
 	//nolint:staticcheck // ocf applies through the deprecated client.Apply patch
 	require.NoError(t, c.Patch(t.Context(), configMap, client.Apply))
 	require.NoError(t, c.Patch(t.Context(), cluster, client.MergeFrom(cluster.DeepCopy())))
+	require.NoError(t, c.Patch(t.Context(), cluster, client.RawPatch(types.ApplyPatchType, []byte(`{}`))))
 
-	require.Len(t, *objects, 2)
+	require.Len(t, *objects, 3)
 	assert.Same(t, configMap, (*objects)[0])
 	assert.Same(t, cluster, (*objects)[1])
-	assert.Equal(t, []types.PatchType{types.ApplyPatchType, types.MergePatchType}, *patchTypes)
+	assert.Same(t, cluster, (*objects)[2])
+	assert.Equal(t, []types.PatchType{types.ApplyPatchType, types.MergePatchType, types.ApplyPatchType}, *patchTypes)
 }

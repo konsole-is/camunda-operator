@@ -23,7 +23,7 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/internal/applyprune"
 )
 
-// NewApplyClient wraps c so that a server-side apply of a CamundaCluster
+// NewApplyClient wraps c so that an apply of a CamundaCluster with client.Apply
 // sends only the fields that hold a value: no status, no empty string, and
 // no struct without a set field. A field that the component did not
 // set then never joins its field manager, and another writer can own it. A
