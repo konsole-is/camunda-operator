@@ -86,7 +86,8 @@ describe("loadMergeFixtures", () => {
   });
 
   it("refuses a case without merged", async () => {
-    const { merged: _merged, ...withoutMerged } = validCase;
+    const withoutMerged: Partial<typeof validCase> = { ...validCase };
+    delete withoutMerged.merged;
     const dir = await fixtureDir("camundacluster", {
       "unmerged.json": withoutMerged,
     });
