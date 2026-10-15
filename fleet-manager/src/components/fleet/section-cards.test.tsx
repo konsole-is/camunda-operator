@@ -193,6 +193,39 @@ describe("SectionCards", () => {
     expect(locked.textContent).toContain("Set by your admin");
   });
 
+  it("forgets a YAML error when new options remove its option", async () => {
+    const onChange = vi.fn();
+    const option: OptionView = {
+      registration: "tuning",
+      label: "Tuning",
+      isDefault: true,
+      parameters: [
+        {
+          name: "overrides",
+          label: "Overrides",
+          schema: { type: "object" },
+          claimEditable: true,
+        },
+      ],
+    };
+    const { rerender } = render(
+      <SectionCards section={section({}, option)} onChange={onChange} />,
+    );
+    // user-event reads "[" as the start of a key name, so "[[" types one "[".
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Overrides" }),
+      "a: [[",
+    );
+    rerender(
+      <SectionCards section={section({ options: [] })} onChange={onChange} />,
+    );
+    rerender(
+      <SectionCards section={section({}, option)} onChange={onChange} />,
+    );
+    await userEvent.click(screen.getByRole("radio", { name: /Tuning/ }));
+    expect(onChange.mock.lastCall![1]).toEqual([]);
+  });
+
   it("forgets a YAML error when its option is chosen again", async () => {
     const onChange = vi.fn();
     const option: OptionView = {
@@ -499,6 +532,50 @@ describe("SectionCards", () => {
       [{ section: "connectors-permissions", registration: "other" }],
       [],
     );
+  });
+
+  it("reports a picked card that a refresh removed", async () => {
+    const onChange = vi.fn();
+    const storage = (names: string[]): SectionView =>
+      section({
+        name: "secondary-storage",
+        label: "Secondary storage",
+        emptyOptionLabel: undefined,
+        required: true,
+        options: [
+          {
+            registration: "elasticsearch",
+            label: "New Elasticsearch",
+            isDefault: true,
+            parameters: [
+              {
+                name: "preset",
+                label: "Preset",
+                claimEditable: true,
+                value: "small",
+              },
+            ],
+            choices: {
+              parameter: "preset",
+              items: names.map((name) => ({ name })),
+            },
+          },
+        ],
+      });
+    const { rerender } = render(
+      <SectionCards
+        section={storage(["small", "large"])}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.click(screen.getByRole("radio", { name: /large/ }));
+    rerender(<SectionCards section={storage(["small"])} onChange={onChange} />);
+    expect(onChange.mock.lastCall![1]).toEqual([
+      {
+        path: "elasticsearch.preset",
+        message: "large is not an available choice",
+      },
+    ]);
   });
 
   it("sets the parameter of a choice from its card", async () => {

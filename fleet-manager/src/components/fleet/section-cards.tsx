@@ -83,12 +83,12 @@ export function SectionCards({
 
   if (section !== seenSection) {
     setSeenSection(section);
-    setSelected(
-      selected.filter((r) => {
-        const option = findOption(section, r);
-        return !!option && !option.disabledReason;
-      }),
-    );
+    const kept = selected.filter((r) => {
+      const option = findOption(section, r);
+      return !!option && !option.disabledReason;
+    });
+    setSelected(kept);
+    setParseErrors(errorsOf(parseErrors, kept));
     setValues(withPolicy(section, values, touched));
     setGenerations(nextGenerations(section, generations, touched));
   }
@@ -107,13 +107,7 @@ export function SectionCards({
   // errors go too.
   const pick = (next: string[]) => {
     setSelected(next);
-    setParseErrors(
-      Object.fromEntries(
-        Object.entries(parseErrors).filter(([key]) =>
-          next.some((registration) => key.startsWith(`${registration}.`)),
-        ),
-      ),
-    );
+    setParseErrors(errorsOf(parseErrors, next));
   };
   const setParameter = (
     registration: string,
@@ -579,6 +573,17 @@ function initialValues(
   );
 }
 
+function errorsOf(
+  parseErrors: ParseErrors,
+  registrations: string[],
+): ParseErrors {
+  return Object.fromEntries(
+    Object.entries(parseErrors).filter(([key]) =>
+      registrations.some((registration) => key.startsWith(`${registration}.`)),
+    ),
+  );
+}
+
 function withPolicy(
   section: SectionView,
   values: Values,
@@ -683,6 +688,14 @@ function sectionErrors(
         (emptyList && (rule.required || rule.allowed))
       ) {
         if (rule.required) errors.push({ path, message: "is required" });
+        continue;
+      }
+      const choices = option.choices;
+      if (
+        choices?.parameter === rule.name &&
+        !choices.items.some((item) => item.name === value)
+      ) {
+        errors.push({ path, message: `${value} is not an available choice` });
         continue;
       }
       if (rule.allowed) {
