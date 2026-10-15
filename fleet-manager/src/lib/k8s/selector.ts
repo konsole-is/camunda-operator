@@ -52,20 +52,23 @@ function requirement(
     const [, key, op, list] = set;
     const values = list.split(",").map((v) => v.trim());
     return op === "in"
-      ? (labels) => key in labels && values.includes(labels[key])
-      : (labels) => !(key in labels) || !values.includes(labels[key]);
+      ? (labels) => Object.hasOwn(labels, key) && values.includes(labels[key])
+      : (labels) =>
+          !Object.hasOwn(labels, key) || !values.includes(labels[key]);
   }
   const equality = EQUALITY.exec(part);
   if (equality) {
     const [, key, op, value] = equality;
     return op === "!="
       ? (labels) => labels[key] !== value
-      : (labels) => key in labels && labels[key] === value;
+      : (labels) => Object.hasOwn(labels, key) && labels[key] === value;
   }
   const exists = EXISTS.exec(part);
   if (exists) {
     const [, not, key] = exists;
-    return not ? (labels) => !(key in labels) : (labels) => key in labels;
+    return not
+      ? (labels) => !Object.hasOwn(labels, key)
+      : (labels) => Object.hasOwn(labels, key);
   }
   throw new Error(
     `The label selector "${selector}" is not valid: the fleet manager cannot read "${part}"`,

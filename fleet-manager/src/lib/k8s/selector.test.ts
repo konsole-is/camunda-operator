@@ -16,6 +16,9 @@ describe("parseSelector", () => {
     ["!legacy", { legacy: "yes" }, false],
     ["app=web,env in (prod,dev),!legacy", { app: "web", env: "prod" }, true],
     ["app=web,tier=db", { app: "web" }, false],
+    ["constructor", {}, false],
+    ["!toString", {}, true],
+    ["constructor in (x)", {}, false],
   ])("%j against %j matches: %s", (selector, labels, expected) => {
     expect(parseSelector(selector)(labels)).toBe(expected);
   });
