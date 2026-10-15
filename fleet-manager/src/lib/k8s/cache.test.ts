@@ -204,6 +204,44 @@ describe("ResourceCache", () => {
     expect(watch.calls[1].params.resourceVersion).toBe("10");
   });
 
+  it("doubles the wait after each watch error, and a watch that ran resets it", async () => {
+    const list = vi.fn(async () => listOf([item("a")], "10"));
+    const { cache, watch } = newCache({
+      list,
+      retryDelayMs: 100,
+      timeoutReconnectMs: 1,
+    });
+    await cache.objects("Environment");
+    vi.useFakeTimers();
+    try {
+      const reset = () => new Error("connection reset");
+      // waitsFor fails the watch with close, then checks that the next
+      // watch starts after ms and not before.
+      const waitsFor = async (close: unknown, ms: number) => {
+        const before = watch.calls.length;
+        watch.calls[before - 1].done(close);
+        await vi.advanceTimersByTimeAsync(ms - 1);
+        expect(watch.calls).toHaveLength(before);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(watch.calls).toHaveLength(before + 1);
+      };
+
+      await waitsFor(reset(), 100);
+      await waitsFor(reset(), 200);
+      await waitsFor(reset(), 400);
+
+      // A watch that ends at its request timeout ran without an error.
+      watch.calls
+        .at(-1)!
+        .done(Object.assign(new Error("timed out"), { name: "TimeoutError" }));
+      await vi.advanceTimersByTimeAsync(1);
+      await waitsFor(reset(), 100);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
   it("watches again from the last resourceVersion after a watch error", async () => {
     const list = vi.fn(async () => listOf([item("a")], "10"));
     const { cache, watch } = newCache({ list });

@@ -170,10 +170,15 @@ class KindInformer {
             ),
           // done of ListWatch is async and the client does not await it, so
           // a watch that cannot start again would reject with no handler.
-          (err) =>
+          (err) => {
+            // A watch that ends with no error or at its request timeout ran.
+            if (!err || (err as Error).name === "TimeoutError") {
+              this.retryDelay = deps.retryDelayMs;
+            }
             void (done(err) as unknown as Promise<void>).catch((e: unknown) =>
               this.onError(e),
-            ),
+            );
+          },
         ),
     } as unknown as Watch;
 
