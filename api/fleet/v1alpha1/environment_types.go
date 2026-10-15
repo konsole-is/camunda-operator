@@ -205,6 +205,21 @@ type Environment struct {
 	Status EnvironmentStatus `json:"status,omitzero"`
 }
 
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *Environment) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *Environment) GetKind() string { return "Environment" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *Environment) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
+
 // +kubebuilder:object:root=true
 
 // EnvironmentList contains a list of Environment
