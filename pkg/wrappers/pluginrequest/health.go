@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 // The handlers in this file replace the scaffolded defaults that the ocf
@@ -65,7 +66,9 @@ func outputsReady(request *pluginsv1alpha1.PluginRequest) (bool, string) {
 			reason += ": " + outputs.Message
 		}
 
-		return false, reason
+		// A plugin can write a message up to the schema cap, and the
+		// component condition must stay writable with the prefix added.
+		return false, conditions.BoundMessage(reason)
 	}
 
 	return true, "The outputs of section " + section + " are ready"

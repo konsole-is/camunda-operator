@@ -17,6 +17,7 @@ limitations under the License.
 package pluginrequest
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
@@ -25,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 // requestWithOutputs returns a PluginRequest of section elasticsearch at
@@ -94,6 +96,23 @@ func TestDefaultOperationalStatusHandler(t *testing.T) {
 			assert.Contains(t, got.Reason, tt.reasonContains)
 		})
 	}
+}
+
+// A plugin can write an OutputsReady message up to the schema cap of 32768
+// characters. The reason, which becomes the message of the component
+// condition, stays within the bound of the operator.
+func TestDefaultOperationalStatusHandlerBoundsALongMessage(t *testing.T) {
+	t.Parallel()
+
+	request := requestWithOutputs(metav1.ConditionFalse, 2)
+	request.Status.Conditions[0].Message = strings.Repeat("x", 32768)
+
+	got, err := DefaultOperationalStatusHandler(concepts.ConvergingOperationUpdated, request)
+	require.NoError(t, err)
+
+	assert.Equal(t, concepts.OperationalStatusPending, got.Status)
+	assert.LessOrEqual(t, len(got.Reason), conditions.MaxMessageLength)
+	assert.True(t, strings.HasPrefix(got.Reason, "The outputs of section elasticsearch are not ready (Provisioning)"))
 }
 
 // Grace never reports Healthy where the operational handler is pending.
