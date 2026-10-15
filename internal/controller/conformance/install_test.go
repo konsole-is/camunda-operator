@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// A controller that watches a kind whose CRD the install leaves out stops the
+// A controller that reconciles a kind whose CRD the install leaves out stops the
 // manager at the cache sync on a real cluster. envtest loads every CRD base,
 // so no controller suite shows it. This test reads PROJECT, where each kind
 // with a controller has controller: true.
