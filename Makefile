@@ -617,8 +617,8 @@ fleet-lint: fleet-install ## Run eslint, prettier --check, and tsc --noEmit on t
 	$(FLEET_PNPM) run lint
 
 .PHONY: fleet-test
-fleet-test: fleet-install ## Run the fleet manager tests with Vitest.
-	$(FLEET_PNPM) run test
+fleet-test: fleet-install setup-envtest ## Run the fleet manager tests with Vitest. The tests of fleet-manager/test/k8s run against envtest.
+	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run test
 
 .PHONY: fleet-build
 fleet-build: fleet-install ## Build the fleet manager with next build.
