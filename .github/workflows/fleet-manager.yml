@@ -7,6 +7,7 @@ on:
       - fleet-manager/**
       - pkg/images/table.json
       - test/fixtures/merge/**
+      - api/fleet/v1alpha1/shared_types.go
       - .github/workflows/fleet-manager.yml
       - config/crd/bases/**
       - config/samples/**
@@ -16,6 +17,7 @@ on:
       - fleet-manager/**
       - pkg/images/table.json
       - test/fixtures/merge/**
+      - api/fleet/v1alpha1/shared_types.go
       - .github/workflows/fleet-manager.yml
       - config/crd/bases/**
       - config/samples/**
