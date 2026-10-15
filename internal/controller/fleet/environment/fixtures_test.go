@@ -19,6 +19,7 @@ package environment
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -150,4 +151,40 @@ func generationOf(env *fleetv1alpha1.Environment) int64 {
 	var latest fleetv1alpha1.Environment
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(env), &latest)).To(Succeed())
 	return latest.Generation
+}
+
+// createNamespace creates a uniquely named namespace with labels. envtest
+// runs no namespace controller, so a deleted namespace stays Terminating.
+// The specs therefore never reuse an environment name.
+func createNamespace(labels map[string]string) *corev1.Namespace {
+	GinkgoHelper()
+	return create(&corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: uniqueName("ns"), Labels: labels},
+	}).(*corev1.Namespace)
+}
+
+// setEnvironmentLabel sets the environment label of ns to name, or removes it
+// when name is empty.
+func setEnvironmentLabel(ns *corev1.Namespace, name string) {
+	GinkgoHelper()
+	patch := client.MergeFrom(ns.DeepCopy())
+	if name == "" {
+		delete(ns.Labels, fleetv1alpha1.LabelEnvironment)
+	} else {
+		if ns.Labels == nil {
+			ns.Labels = map[string]string{}
+		}
+		ns.Labels[fleetv1alpha1.LabelEnvironment] = name
+	}
+	Expect(k8sClient.Patch(ctx, ns, patch)).To(Succeed())
+}
+
+// expectNamespaces polls until status.namespaces of env is count.
+func expectNamespaces(env *fleetv1alpha1.Environment, count int32) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var latest fleetv1alpha1.Environment
+		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(env), &latest)).To(Succeed())
+		g.Expect(latest.Status.Namespaces).To(HaveValue(Equal(count)))
+	}, timeout, interval).Should(Succeed())
 }

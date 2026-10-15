@@ -15,7 +15,8 @@ limitations under the License.
 */
 
 // Package environment reports whether the objects that an Environment names
-// exist. It writes the status of the Environment only.
+// exist, and counts the namespaces of the environment. It writes the status
+// of the Environment only.
 package environment
 
 import (
@@ -23,11 +24,13 @@ import (
 	"fmt"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -71,10 +74,13 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=fleet.camunda.io,resources=environments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundareleases;camundaclusterpresets;elasticsearchclusterpresets;databaseserverpresets;camundaplatformconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginsections;pluginregistrations,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 
 // Reconcile sets Ready on the Environment: True with reason Healthy when every
 // object that the spec names exists, otherwise False with reason
-// InvalidReference and a message that names each missing object.
+// InvalidReference and a message that names each missing object. It also sets
+// status.namespaces to the number of namespaces with the label of the
+// environment.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var env fleetv1alpha1.Environment
 	if err := r.Get(ctx, req.NamespacedName, &env); err != nil {
@@ -90,6 +96,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+
+	namespaces, err := r.countNamespaces(ctx, env.Name)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	env.Status.Namespaces = &namespaces
 
 	ready := conditions.Ready(
 		metav1.ConditionTrue, v1.ReasonHealthy, "Every object that the spec names exists", env.Generation,
@@ -128,8 +140,23 @@ func (r *Reconciler) missing(ctx context.Context, refs []reference) ([]reference
 	return missing, nil
 }
 
+// countNamespaces returns the number of namespaces whose environment label
+// names the Environment. Only the labels are needed, so the list stays
+// metadata, like the namespace watch.
+func (r *Reconciler) countNamespaces(ctx context.Context, name string) (int32, error) {
+	list := &metav1.PartialObjectMetadataList{}
+	list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("NamespaceList"))
+	if err := r.List(ctx, list, client.MatchingLabels{fleetv1alpha1.LabelEnvironment: name}); err != nil {
+		return 0, fmt.Errorf("listing the namespaces of the environment: %w", err)
+	}
+
+	return int32(len(list.Items)), nil
+}
+
 // SetupWithManager registers the controller. Each watch of a kind that an
-// Environment names enqueues every Environment, because a cluster holds few.
+// Environment names, and of namespaces, enqueues every Environment, because a
+// cluster holds few. An unlabelled namespace enqueues them too, because the
+// label can have been removed from it.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -139,6 +166,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fleetv1alpha1.Environment{}).
+		Watches(&corev1.Namespace{}, all, builder.OnlyMetadata).
 		Watches(&v1.CamundaPlatformConfig{}, all).
 		Watches(&v1.CamundaClusterPreset{}, all).
 		Watches(&v1.ElasticsearchClusterPreset{}, all).
