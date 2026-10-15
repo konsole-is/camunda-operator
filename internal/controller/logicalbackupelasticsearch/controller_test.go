@@ -555,10 +555,7 @@ func expectPhase(backup *v1.LogicalBackupElasticsearch, phase v1.LogicalBackupPh
 // expectResumeFailed waits until backup gives up on a resume that keeps
 // failing and ends with ResumeFailed. The deadline counts each wait between
 // two attempts as one poll interval at most, so a slow reconcile adds
-// attempts, not time against the deadline. The loop fails if the span from
-// the first to the last attempt exceeds the deadline by more than one
-// second, or if it takes more than ten times resumeDeadline/pollInterval
-// steps and attempts.
+// attempts, not time against the deadline.
 func expectResumeFailed(backup *v1.LogicalBackupElasticsearch) {
 	GinkgoHelper()
 	maxWaits := 10 * int(resumeDeadline/pollInterval)
@@ -1777,9 +1774,9 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		}, timeout, interval).Should(Equal(v1.StepResumeExporting))
 
 		// Each Eventually waits for one more attempt, so that a slow
-		// reconcile does not use up the bound. An Eventually polls slower than
-		// resume retries, so a new count at each wait spends attempts that the
-		// deadline counts.
+		// reconcile does not use up the bound. If each wait read the count again,
+		// attempts made while it polls would not count, and the deadline could run
+		// out before the spec sees eight attempts.
 		awaitAttempts := func(from, n int) {
 			GinkgoHelper()
 			for want := from + 1; want <= from+n; want++ {
@@ -2423,10 +2420,12 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		backupID(backup)
 
 		By("reaching the failing resume attempts")
-		Eventually(func(g Gomega) {
-			g.Expect(currentBackup(backup).Status.Step).To(Equal(v1.StepResumeExporting))
-			g.Expect(currentBackup(backup).Status.LastResumeAttemptTime).NotTo(BeNil())
-		}, timeout, interval).Should(Succeed())
+		Eventually(func() v1.LogicalBackupElasticsearchStep {
+			return currentBackup(backup).Status.Step
+		}, timeout, interval).Should(Equal(v1.StepResumeExporting))
+		Eventually(func() *metav1.Time {
+			return currentBackup(backup).Status.LastResumeAttemptTime
+		}, timeout, interval).ShouldNot(BeNil())
 
 		By("parking longer than the whole deadline")
 		Eventually(func(g Gomega) {
