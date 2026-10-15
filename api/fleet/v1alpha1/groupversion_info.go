@@ -15,9 +15,9 @@ limitations under the License.
 */
 
 // Package v1alpha1 contains API Schema definitions for the fleet v1alpha1 API
-// group. The kinds of this group are what the fleet manager writes: the
-// environments that set the policy of their namespaces, and the claims that
-// expand into clusters and management clusters.
+// group. The fleet manager writes the kinds of this group. An environment
+// sets the policy of its namespaces. A claim expands into a cluster or a
+// management cluster.
 //
 // The v1alpha1 version has no compatibility promise. A later release can
 // change or remove any type, field, or value of this package.
