@@ -30,7 +30,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5
 	gocloud.dev v0.46.0
 	golang.org/x/net v0.60.0
-	golang.org/x/oauth2 v0.36.0
+	golang.org/x/oauth2 v0.37.0
 	k8s.io/api v0.37.1
 	k8s.io/apiextensions-apiserver v0.37.1
 	k8s.io/apimachinery v0.37.1
