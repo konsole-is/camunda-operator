@@ -2,11 +2,12 @@
 // The client half of the data layer. It imports only types from the server
 // modules of src/lib/k8s, and the isomorphic deltas module.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   applyDelta,
   type NamedObject,
   type WatchDelta,
+  type WatchFailure,
   type WatchSnapshot,
 } from "./deltas";
 import type { KindName, Resource } from "./kinds";
@@ -32,14 +33,16 @@ interface Filter {
  * useResources returns the objects of kind that opts select. It returns
  * initial, the snapshot of the server render, at once. It then follows
  * /api/watch: each snapshot frame replaces the list, also after a
- * reconnect, and each delta changes it. The stream closes on unmount. A
- * component that calls it needs a QueryClientProvider above it.
+ * reconnect, and each delta changes it. When the first list of the kind on
+ * the server fails, error holds its message and items keep the last list,
+ * which can be out of date, until the next snapshot. The stream closes on
+ * unmount. A component that calls it needs a QueryClientProvider above it.
  */
 export function useResources<K extends KindName>(
   kind: K,
   opts: ListOptions,
   initial: Resource<K>[],
-): Resource<K>[] {
+): { items: Resource<K>[]; error?: string } {
   return useWatchedList(
     kind,
     { namespace: opts.namespace, labelSelector: opts.labelSelector },
@@ -48,24 +51,26 @@ export function useResources<K extends KindName>(
 }
 
 /**
- * useResource returns one object of kind, live, as useResources does for a
- * list. It returns undefined when the object does not exist or was deleted.
+ * useResource returns one object of kind, live, and error, as useResources
+ * does for a list. item is undefined when the object does not exist or was
+ * deleted.
  */
 export function useResource<K extends KindName>(
   kind: K,
   ref: Ref,
   initial?: Resource<K>,
-): Resource<K> | undefined {
-  const list = useWatchedList(
+): { item?: Resource<K>; error?: string } {
+  const { items, error } = useWatchedList(
     kind,
     { namespace: ref.namespace, name: ref.name },
     initial ? [initial] : [],
   );
-  return list.find(
+  const item = items.find(
     (o) =>
       (o as NamedObject).metadata?.name === ref.name &&
       (o as NamedObject).metadata?.namespace === ref.namespace,
   );
+  return error === undefined ? { item } : { item, error };
 }
 
 function queryKey(kind: KindName, filter: Filter) {
@@ -90,8 +95,9 @@ function useWatchedList<K extends KindName>(
   kind: K,
   filter: Filter,
   initial: Resource<K>[],
-): Resource<K>[] {
+): { items: Resource<K>[]; error?: string } {
   const client = useQueryClient();
+  const [error, setError] = useState<string>();
   const { namespace, labelSelector, name } = filter;
   const key = queryKey(kind, filter);
   const { data } = useQuery({
@@ -111,6 +117,13 @@ function useWatchedList<K extends KindName>(
         (event as MessageEvent<string>).data,
       ) as WatchSnapshot<Resource<K>>;
       client.setQueryData(effectKey, snapshot.objects);
+      setError(undefined);
+    });
+    source.addEventListener("failure", (event) => {
+      const failure = JSON.parse(
+        (event as MessageEvent<string>).data,
+      ) as WatchFailure;
+      setError(failure.message);
     });
     source.addEventListener("delta", (event) => {
       const delta = JSON.parse(
@@ -125,5 +138,5 @@ function useWatchedList<K extends KindName>(
     return () => source.close();
   }, [client, kind, namespace, labelSelector, name]);
 
-  return data;
+  return error === undefined ? { items: data } : { items: data, error };
 }

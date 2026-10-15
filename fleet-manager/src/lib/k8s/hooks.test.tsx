@@ -68,7 +68,7 @@ describe("useResources", () => {
       () => useResources("Pod", { namespace: "team" }, [pod("a")]),
       { wrapper },
     );
-    expect(result.current).toEqual([pod("a")]);
+    expect(result.current).toEqual({ items: [pod("a")] });
   });
 
   it("watches the kind, the namespace, and the selector", () => {
@@ -99,7 +99,9 @@ describe("useResources", () => {
       kind: "Pod",
       objects: [pod("a"), pod("b")],
     });
-    await waitFor(() => expect(result.current).toEqual([pod("a"), pod("b")]));
+    await waitFor(() =>
+      expect(result.current.items).toEqual([pod("a"), pod("b")]),
+    );
   });
 
   it("applies each delta", async () => {
@@ -116,8 +118,27 @@ describe("useResources", () => {
     source.emit("delta", { type: "DELETED", kind: "Pod", object: pod("b") });
     source.emit("delta", { type: "ADDED", kind: "Pod", object: pod("c") });
     await waitFor(() =>
-      expect(result.current).toEqual([pod("a", "Running"), pod("c")]),
+      expect(result.current.items).toEqual([pod("a", "Running"), pod("c")]),
     );
+  });
+
+  it("keeps the list and reports a failure frame until the next snapshot", async () => {
+    const { result } = renderHook(
+      () => useResources("Pod", { namespace: "team" }, [pod("a")]),
+      { wrapper },
+    );
+    const source = FakeEventSource.instances[0];
+
+    source.emit("failure", { kind: "Pod", message: "The API server is down" });
+    await waitFor(() =>
+      expect(result.current).toEqual({
+        items: [pod("a")],
+        error: "The API server is down",
+      }),
+    );
+
+    source.emit("snapshot", { kind: "Pod", objects: [pod("b")] });
+    await waitFor(() => expect(result.current).toEqual({ items: [pod("b")] }));
   });
 
   it("closes the stream on unmount", () => {
@@ -145,9 +166,16 @@ describe("useResource", () => {
       kind: "Pod",
       object: pod("a", "Running"),
     });
-    await waitFor(() => expect(result.current).toEqual(pod("a", "Running")));
+    await waitFor(() =>
+      expect(result.current.item).toEqual(pod("a", "Running")),
+    );
 
     source.emit("delta", { type: "DELETED", kind: "Pod", object: pod("a") });
-    await waitFor(() => expect(result.current).toBeUndefined());
+    await waitFor(() => expect(result.current.item).toBeUndefined());
+
+    source.emit("failure", { kind: "Pod", message: "The API server is down" });
+    await waitFor(() =>
+      expect(result.current.error).toBe("The API server is down"),
+    );
   });
 });
