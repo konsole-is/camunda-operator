@@ -78,11 +78,14 @@ export function SectionCards({
   );
   const [parseErrors, setParseErrors] = useState<ParseErrors>({});
   const [seenSection, setSeenSection] = useState(section);
+  // A YAML field keeps its own text, so a new default needs a new field.
+  const [generations, setGenerations] = useState<Record<string, number>>({});
 
   if (section !== seenSection) {
     setSeenSection(section);
     setSelected(selected.filter((r) => findOption(section, r)));
     setValues(withPolicy(section, values, touched));
+    setGenerations(nextGenerations(section, generations, touched));
   }
 
   const selections = selectionsOf(section, selected, values);
@@ -160,6 +163,7 @@ export function SectionCards({
                   idPrefix={`${id}-${option.registration}`}
                   option={option}
                   values={values[option.registration] ?? {}}
+                  generations={generations}
                   errors={errors.filter((e) =>
                     [...touched].some(
                       (key) => e.path === key || e.path.startsWith(`${key}.`),
@@ -252,12 +256,14 @@ function OptionParameters({
   idPrefix,
   option,
   values,
+  generations,
   errors,
   onValue,
 }: {
   idPrefix: string;
   option: OptionView;
   values: Record<string, unknown>;
+  generations: Record<string, number>;
   errors: ValidationError[];
   onValue: (name: string, value: unknown, parse?: ValidationError[]) => void;
 }) {
@@ -320,7 +326,7 @@ function OptionParameters({
       )}
       {rest.map((rule) => (
         <ParameterField
-          key={rule.name}
+          key={`${rule.name}-${generations[`${option.registration}.${rule.name}`] ?? 0}`}
           id={`${idPrefix}-${rule.name}`}
           rule={rule}
           value={values[rule.name]}
@@ -576,6 +582,21 @@ function withPolicy(
       ),
     ]),
   );
+}
+
+function nextGenerations(
+  section: SectionView,
+  generations: Record<string, number>,
+  touched: ReadonlySet<string>,
+): Record<string, number> {
+  const next = { ...generations };
+  for (const option of section.options) {
+    for (const rule of option.parameters) {
+      const key = `${option.registration}.${rule.name}`;
+      if (!touched.has(key)) next[key] = (next[key] ?? 0) + 1;
+    }
+  }
+  return next;
 }
 
 /** The start value of a field. An allowed list keeps only the names it holds. */

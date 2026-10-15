@@ -277,6 +277,34 @@ describe("SectionCards", () => {
     );
   });
 
+  it("shows a new policy default in a YAML field that nobody edited", () => {
+    const policy = (value: unknown): OptionView => ({
+      registration: "tuning",
+      label: "Tuning",
+      isDefault: true,
+      parameters: [
+        {
+          name: "overrides",
+          label: "Overrides",
+          schema: { type: "object" },
+          claimEditable: true,
+          value,
+        },
+      ],
+    });
+    const { rerender } = render(
+      <SectionCards section={section({}, policy({ a: 1 }))} />,
+    );
+    rerender(<SectionCards section={section({}, policy({ a: 2 }))} />);
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Overrides",
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe("a: 2\n");
+  });
+
   it("checks an empty list against the schema of an optional parameter", async () => {
     const onChange = vi.fn();
     const option: OptionView = {
