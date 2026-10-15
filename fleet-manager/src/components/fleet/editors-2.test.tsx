@@ -79,6 +79,29 @@ describe("ResourcesEditor", () => {
     );
   });
 
+  it("compares a limit with a request in a unit that the list does not hold", async () => {
+    const onChange = vi.fn();
+    render(
+      <ResourcesEditor
+        label="Resources"
+        defaultValue={{ requests: { cpu: "1000000u" } }}
+        onChange={onChange}
+      />,
+    );
+    const limit = screen.getByRole("group", { name: "CPU limit" });
+    await userEvent.type(
+      within(limit).getByRole("textbox", { name: "Amount" }),
+      "500",
+    );
+    await userEvent.selectOptions(
+      within(limit).getByRole("combobox", { name: "Unit" }),
+      "m",
+    );
+    expect(onChange.mock.lastCall![1]).toEqual([
+      { path: "limits.cpu", message: "The limit is below the request" },
+    ]);
+  });
+
   it("compares a limit with a request in exponent notation", async () => {
     const onChange = vi.fn();
     render(

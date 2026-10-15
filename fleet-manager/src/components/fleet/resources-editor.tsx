@@ -36,10 +36,16 @@ const SCALE: Record<string, number> = {
   M: 1e6,
   G: 1e9,
   T: 1e12,
+  P: 1e15,
+  E: 1e18,
+  n: 1e-9,
+  u: 1e-6,
   Ki: 2 ** 10,
   Mi: 2 ** 20,
   Gi: 2 ** 30,
   Ti: 2 ** 40,
+  Pi: 2 ** 50,
+  Ei: 2 ** 60,
 };
 // The number part of a Kubernetes quantity.
 const NUMBER = /^(\d+\.?\d*|\.\d+)$/;
