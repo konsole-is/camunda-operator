@@ -40,11 +40,16 @@ const buttonVariants = cva(
   },
 );
 
+/**
+ * Button is a button with the theme of the app. It does not submit a form
+ * unless type is "submit".
+ */
 function Button({
   className,
   variant = "default",
   size = "default",
   asChild = false,
+  type,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
@@ -55,6 +60,7 @@ function Button({
   return (
     <Comp
       data-slot="button"
+      type={asChild ? type : (type ?? "button")}
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
