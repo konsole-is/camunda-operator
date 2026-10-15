@@ -423,6 +423,85 @@ describe("SectionCards", () => {
     ]);
   });
 
+  describe("an empty string", () => {
+    const option = (
+      schema: Record<string, unknown>,
+      value: string,
+    ): OptionView => ({
+      registration: "naming",
+      label: "Naming",
+      isDefault: true,
+      parameters: [
+        { name: "prefix", label: "Prefix", schema, claimEditable: true, value },
+      ],
+    });
+
+    it("keeps a cleared inherited string as an empty override", async () => {
+      const onChange = vi.fn();
+      render(
+        <SectionCards
+          section={section({}, option({ type: "string" }, "team-"))}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.clear(screen.getByRole("textbox", { name: "Prefix" }));
+      expect(onChange).toHaveBeenLastCalledWith(
+        [
+          {
+            section: "connectors-permissions",
+            registration: "naming",
+            parameters: { prefix: "" },
+          },
+        ],
+        [],
+      );
+    });
+
+    it("checks an empty string against the schema", async () => {
+      const onChange = vi.fn();
+      render(
+        <SectionCards
+          section={section(
+            {},
+            option({ type: "string", minLength: 1 }, "team-"),
+          )}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.clear(screen.getByRole("textbox", { name: "Prefix" }));
+      expect(onChange.mock.lastCall![1]).toEqual([
+        {
+          path: "naming.prefix",
+          message: "must NOT have fewer than 1 characters",
+        },
+      ]);
+    });
+
+    it("lets a select pick an empty enum value", async () => {
+      const onChange = vi.fn();
+      render(
+        <SectionCards
+          section={section(
+            {},
+            option({ type: "string", enum: ["", "enabled"] }, "enabled"),
+          )}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.selectOptions(
+        screen.getByRole("combobox", { name: "Prefix" }),
+        "Empty",
+      );
+      expect(onChange.mock.lastCall![0]).toEqual([
+        {
+          section: "connectors-permissions",
+          registration: "naming",
+          parameters: { prefix: "" },
+        },
+      ]);
+    });
+  });
+
   it("checks an empty list against the schema of an optional parameter", async () => {
     const onChange = vi.fn();
     const option: OptionView = {

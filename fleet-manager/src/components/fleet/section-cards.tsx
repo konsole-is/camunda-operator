@@ -441,22 +441,30 @@ function ParameterField({
       : undefined;
   if (rule.allowed || stringEnum) {
     const options =
-      rule.allowed ?? stringEnum!.map((v) => ({ name: v, label: v }));
+      rule.allowed ??
+      stringEnum!.map((v) => ({ name: v, label: v === "" ? "Empty" : v }));
+    // The options use their position as the value, so an enum value of ""
+    // does not collide with the placeholder.
+    const picked = options.findIndex((o) => o.name === value);
     return (
       <div className="flex max-w-sm flex-col gap-1">
         {label}
         <NativeSelect
           id={id}
-          value={typeof value === "string" ? value : ""}
+          value={picked === -1 ? "" : String(picked)}
           aria-invalid={invalid}
           aria-describedby={describedBy}
           onChange={(e) =>
-            onValue(e.target.value === "" ? undefined : e.target.value)
+            onValue(
+              e.target.value === ""
+                ? undefined
+                : options[Number(e.target.value)].name,
+            )
           }
         >
           <NativeSelectOption value="">Choose one</NativeSelectOption>
-          {options.map((o) => (
-            <NativeSelectOption key={o.name} value={o.name}>
+          {options.map((o, index) => (
+            <NativeSelectOption key={o.name} value={String(index)}>
               {o.label}
             </NativeSelectOption>
           ))}
@@ -515,9 +523,7 @@ function ParameterField({
           value={typeof value === "string" ? value : ""}
           aria-invalid={invalid}
           aria-describedby={describedBy}
-          onChange={(e) =>
-            onValue(e.target.value === "" ? undefined : e.target.value)
-          }
+          onChange={(e) => onValue(e.target.value)}
         />
         {message}
       </div>
@@ -689,7 +695,10 @@ function sectionErrors(
         continue;
       }
       const emptyList = Array.isArray(value) && value.length === 0;
-      if (value === undefined || value === "" || (emptyList && rule.required)) {
+      if (
+        value === undefined ||
+        ((value === "" || emptyList) && rule.required)
+      ) {
         if (rule.required) errors.push({ path, message: "is required" });
         continue;
       }
