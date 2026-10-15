@@ -29,15 +29,10 @@ import (
 // Kubernetes libraries, never the controllers and the dependencies of the
 // operator.
 func TestModuleDoesNotDependOnTheOperatorModule(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", "-f", "{{with .Module}}{{.Path}}{{end}}", "./...").Output()
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Path}}", "all").Output()
 	require.NoError(t, err)
 
 	modules := strings.Fields(string(out))
-	require.Contains(
-		t,
-		modules,
-		"github.com/konsole-is/camunda-operator/api",
-		"the list holds the modules of the imports",
-	)
+	require.Contains(t, modules, "github.com/konsole-is/camunda-operator/api", "the list holds the module graph")
 	assert.NotContains(t, modules, "github.com/konsole-is/camunda-operator")
 }
