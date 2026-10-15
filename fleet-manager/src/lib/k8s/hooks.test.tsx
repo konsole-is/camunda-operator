@@ -158,6 +158,11 @@ describe("useResources", () => {
 
     expect(FakeEventSource.instances).toHaveLength(2);
     expect(result.current.error).toBeUndefined();
+
+    rerender({ namespace: "team" });
+
+    expect(FakeEventSource.instances).toHaveLength(3);
+    expect(result.current.error).toBeUndefined();
   });
 
   it("closes the stream on unmount", () => {

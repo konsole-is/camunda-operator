@@ -97,8 +97,6 @@ function useWatchedList<K extends KindName>(
   initial: Resource<K>[],
 ): { items: Resource<K>[]; error?: string } {
   const client = useQueryClient();
-  // The failure keeps the query key of its stream, so the failure of an
-  // old filter does not show on a new one.
   const [failure, setFailure] = useState<{ key: string; message: string }>();
   const { namespace, labelSelector, name } = filter;
   const key = queryKey(kind, filter);
@@ -140,6 +138,8 @@ function useWatchedList<K extends KindName>(
     return () => source.close();
   }, [client, kind, namespace, labelSelector, name]);
 
+  // A change of the kind or the filter drops the failure of the old stream.
+  if (failure && failure.key !== JSON.stringify(key)) setFailure(undefined);
   const error =
     failure?.key === JSON.stringify(key) ? failure.message : undefined;
   return error === undefined ? { items: data } : { items: data, error };
