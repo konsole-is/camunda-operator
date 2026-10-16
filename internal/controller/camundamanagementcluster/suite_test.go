@@ -19,6 +19,7 @@ package camundamanagementcluster
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,8 +27,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -57,6 +60,9 @@ var (
 	// the manager runs, so a spec can refuse the CamundaCluster list of a
 	// reconcile step and read what the controller reports.
 	clusterListFault = &listFault{}
+	// reconcileCounts sits behind clusterListFault and counts the reconciles
+	// that the manager runs of each management cluster.
+	reconcileCounts = &reconcileCounter{}
 )
 
 // errClusterListRefused is what the armed fault answers.
@@ -92,6 +98,66 @@ func (f *listFault) List(ctx context.Context, list client.ObjectList, opts ...cl
 	}
 
 	return f.Reader.List(ctx, list, opts...)
+}
+
+// reconcileCounter is a client.Reader that counts the reconciles that the
+// manager runs of each management cluster, and passes every call through. A
+// count belongs to one object. A reconcile of another object, such as a late
+// requeue of a plane that an earlier spec deleted, does not move it. A direct
+// call of the reconciler carries no reconcile ID and does not count.
+type reconcileCounter struct {
+	client.Reader
+	mu     sync.Mutex
+	seen   map[types.UID]struct{}
+	counts map[client.ObjectKey]int
+}
+
+// wrap puts the counter in front of reader and returns it.
+func (c *reconcileCounter) wrap(reader client.Reader) client.Reader {
+	c.Reader = reader
+	c.seen = map[types.UID]struct{}{}
+	c.counts = map[client.ObjectKey]int{}
+
+	return c
+}
+
+// Get counts a reconcile on its first read of a CamundaManagementCluster.
+// Reconcile reads its own object before any other management cluster, so that
+// read names the object of the reconcile.
+func (c *reconcileCounter) Get(
+	ctx context.Context,
+	key client.ObjectKey,
+	obj client.Object,
+	opts ...client.GetOption,
+) error {
+	if _, ok := obj.(*v1.CamundaManagementCluster); ok {
+		c.count(controller.ReconcileIDFromContext(ctx), key)
+	}
+
+	return c.Reader.Get(ctx, key, obj, opts...)
+}
+
+func (c *reconcileCounter) count(reconcileID types.UID, key client.ObjectKey) {
+	if reconcileID == "" {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.seen[reconcileID]; ok {
+		return
+	}
+	c.seen[reconcileID] = struct{}{}
+	c.counts[key]++
+}
+
+// of returns the number of reconciles of the object at key that the manager
+// started.
+func (c *reconcileCounter) of(key client.ObjectKey) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.counts[key]
 }
 
 func TestCamundaManagementClusterController(t *testing.T) {
@@ -137,7 +203,7 @@ var _ = BeforeSuite(func() {
 			return err
 		}
 
-		r := New(mgr.GetClient(), clusterListFault.wrap(mgr.GetAPIReader()), mgr.GetScheme())
+		r := New(mgr.GetClient(), clusterListFault.wrap(reconcileCounts.wrap(mgr.GetAPIReader())), mgr.GetScheme())
 		// A refused user API is called again soon, so that a spec can watch
 		// the retry, and a cluster that holds the user is read again soon, so
 		// that a spec can watch the repair.

@@ -29,7 +29,6 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
@@ -169,10 +168,11 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 				g.Expect(identity.Reason).To(Equal(v1.ReasonHealthy))
 			}, timeout, interval).Should(Succeed())
 
-			var reconciles float64
+			reconcileCount := func() int { return reconcileCounts.of(client.ObjectKeyFromObject(s.mc)) }
+			var reconciles int
 			Eventually(func(g Gomega) {
-				reconciles = reconcileTotal()
-				g.Consistently(reconcileTotal, "1s", interval).Should(Equal(reconciles))
+				reconciles = reconcileCount()
+				g.Consistently(reconcileCount, "1s", interval).Should(Equal(reconciles))
 			}, timeout, interval).Should(Succeed())
 
 			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(s.mc)}
@@ -191,7 +191,7 @@ var _ = Describe("CamundaManagementCluster controller", func() {
 			Expect(meta.FindStatusCondition(latest.Status.Conditions, v1.ConditionIdentityReady)).To(Equal(
 				meta.FindStatusCondition(settled.Status.Conditions, v1.ConditionIdentityReady),
 			))
-			Consistently(reconcileTotal, "2s", interval).Should(Equal(reconciles))
+			Consistently(reconcileCount, "2s", interval).Should(Equal(reconciles))
 		})
 
 		It("refuses a platform config that authenticates with basic", func() {
@@ -661,32 +661,6 @@ func nudge(mc *v1.CamundaManagementCluster) {
 		latest.Annotations["test.camunda.io/reconcile"] = utilrand.String(5)
 		g.Expect(k8sClient.Update(ctx, latest)).To(Succeed())
 	}, timeout, interval).Should(Succeed())
-}
-
-// reconcileTotal returns controller_runtime_reconcile_total of the controller
-// under test, summed over every result. A direct call of the reconciler does
-// not count.
-func reconcileTotal() float64 {
-	GinkgoHelper()
-
-	families, err := crmetrics.Registry.Gather()
-	Expect(err).NotTo(HaveOccurred())
-
-	var total float64
-	for _, family := range families {
-		if family.GetName() != "controller_runtime_reconcile_total" {
-			continue
-		}
-		for _, metric := range family.GetMetric() {
-			for _, label := range metric.GetLabel() {
-				if label.GetName() == "controller" && label.GetValue() == controllerName {
-					total += metric.GetCounter().GetValue()
-				}
-			}
-		}
-	}
-
-	return total
 }
 
 // conditionOf reads one condition of the management cluster and asserts that
