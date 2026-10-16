@@ -31,4 +31,30 @@ describe("UsageBars", () => {
     expect(cpu.getAttribute("aria-valuemax")).toBe("0.25");
     expect(cpu.getAttribute("aria-valuetext")).toBe("500m of 250m cores");
   });
+
+  it.each([
+    ["at 90 % of a limit", true, { usedCores: 0.9, limitCores: 1 }],
+    ["below 90 % of a limit", false, { usedCores: 0.85, limitCores: 1 }],
+    [
+      "above 90 % of a request with no limit",
+      false,
+      { usedCores: 0.95, requestCores: 1 },
+    ],
+  ])("marks use %s as a warning: %s", (_, warns, cpu) => {
+    render(<UsageBars usage={{ pod: "x", cpu, memory: { usedBytes: 0 } }} />);
+    const fill = screen.getByRole("meter", { name: "CPU" }).firstElementChild;
+    expect(fill).not.toBeNull();
+    expect(fill?.classList.contains("bg-warn")).toBe(warns);
+  });
+
+  it("shows only the use without a request or a limit", () => {
+    render(
+      <UsageBars
+        usage={{ pod: "x", cpu: { usedCores: 0.95 }, memory: { usedBytes: 0 } }}
+      />,
+    );
+    const cpu = screen.getByRole("meter", { name: "CPU" });
+    expect(cpu.getAttribute("aria-valuetext")).toBe("950m cores");
+    expect(cpu.firstElementChild).toBeNull();
+  });
 });
