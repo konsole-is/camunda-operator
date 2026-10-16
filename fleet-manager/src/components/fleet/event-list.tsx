@@ -1,38 +1,28 @@
+import type { Resource } from "@/lib/k8s/kinds";
 import { cn } from "@/lib/utils";
 import { age } from "./age";
 
-/** EventLike is the part of an Event that the list reads. CoreV1Event fits it. */
-export type EventLike = {
-  type?: string;
-  reason?: string;
-  message?: string;
-  count?: number;
-  series?: { count?: number; lastObservedTime?: string | Date };
-  lastTimestamp?: string | Date;
-  eventTime?: string | Date;
-  firstTimestamp?: string | Date;
-  metadata?: { uid?: string; creationTimestamp?: string | Date };
-};
-
 /**
- * EventList lists the events of an object, newest first, with the reason,
- * the message, how many times it happened, and its age. A Warning event is
- * marked. An empty list says "No events".
+ * EventList lists the events.k8s.io/v1 Events of an object, newest first,
+ * with the reason, the note, how many times it happened, and its age. A
+ * Warning event is marked. An empty list says "No events".
  */
 export function EventList({
   events,
   now,
 }: {
-  events: EventLike[];
+  events: Resource<"Event">[];
   now: string;
 }) {
   if (events.length === 0)
     return <p className="text-sm text-muted">No events</p>;
-  const time = (e: EventLike) =>
+  // An Event that the API server converted from a core/v1 Event has a null
+  // eventTime and keeps its times in the deprecated fields.
+  const time = (e: Resource<"Event">): string | undefined =>
     e.series?.lastObservedTime ??
-    e.lastTimestamp ??
-    e.eventTime ??
-    e.firstTimestamp ??
+    e.deprecatedLastTimestamp ??
+    (e.eventTime as string | null) ??
+    e.deprecatedFirstTimestamp ??
     e.metadata?.creationTimestamp;
   const sorted = [...events].sort(
     (a, b) =>
@@ -42,7 +32,7 @@ export function EventList({
     <ul className="flex flex-col divide-y divide-divider">
       {sorted.map((event, i) => {
         const warning = event.type === "Warning";
-        const count = event.series?.count ?? event.count;
+        const count = event.series?.count ?? event.deprecatedCount;
         return (
           <li
             key={event.metadata?.uid ?? i}
@@ -65,7 +55,7 @@ export function EventList({
               )}
             </span>
             <span className="min-w-0 flex-1 text-text-2">
-              {event.message}
+              {event.note}
               {count && count > 1 ? (
                 <span className="text-muted">{` (${count} times)`}</span>
               ) : null}

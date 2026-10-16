@@ -136,15 +136,15 @@ export const observeStories: Story[] = [
           {
             type: "Normal",
             reason: "Created",
-            message: "Created the StatefulSet orders-zeebe",
-            lastTimestamp: "2026-10-15T09:00:00Z",
+            note: "Created the StatefulSet orders-zeebe",
+            eventTime: "2026-10-15T09:00:00Z",
           },
           {
             type: "Warning",
             reason: "BackOff",
-            message: "Back-off restarting the failed container",
-            count: 3,
-            lastTimestamp: "2026-10-15T11:59:00Z",
+            note: "Back-off restarting the failed container",
+            eventTime: "2026-10-15T11:50:00Z",
+            series: { count: 3, lastObservedTime: "2026-10-15T11:59:00Z" },
           },
         ]}
       />
