@@ -5,8 +5,8 @@ import { formatBytes, formatCores } from "./units";
 /**
  * UsageBars shows the CPU and memory of one pod as two meters. A meter
  * fills against the limit, or the request when there is no limit. Without
- * either it shows the use only. Use at 90 % or more of the limit is a
- * warning.
+ * either it shows the use only. Use at 90 % or more of a limit is a
+ * warning. Use against a request never is.
  */
 export function UsageBars({ usage }: { usage: PodUsage }) {
   return (
@@ -15,6 +15,7 @@ export function UsageBars({ usage }: { usage: PodUsage }) {
         label="CPU"
         used={usage.cpu.usedCores}
         max={usage.cpu.limitCores ?? usage.cpu.requestCores}
+        limit={usage.cpu.limitCores}
         format={formatCores}
         suffix=" cores"
       />
@@ -22,6 +23,7 @@ export function UsageBars({ usage }: { usage: PodUsage }) {
         label="Memory"
         used={usage.memory.usedBytes}
         max={usage.memory.limitBytes ?? usage.memory.requestBytes}
+        limit={usage.memory.limitBytes}
         format={formatBytes}
       />
     </div>
@@ -32,16 +34,19 @@ function Bar({
   label,
   used,
   max,
+  limit,
   format,
   suffix = "",
 }: {
   label: string;
   used: number;
   max?: number;
+  limit?: number;
   format: (n: number) => string;
   suffix?: string;
 }) {
   const share = max ? Math.min(1, used / max) : undefined;
+  const warn = limit ? used / limit >= 0.9 : false;
   const text = max
     ? `${format(used)} of ${format(max)}${suffix}`
     : `${format(used)}${suffix}`;
@@ -59,10 +64,7 @@ function Bar({
       >
         {share !== undefined && (
           <div
-            className={cn(
-              "h-full rounded-full",
-              share >= 0.9 ? "bg-warn" : "bg-info",
-            )}
+            className={cn("h-full rounded-full", warn ? "bg-warn" : "bg-info")}
             style={{ width: `${share * 100}%` }}
           />
         )}
