@@ -5,7 +5,7 @@ import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ValidationError } from "@/lib/schema";
-import { isLabelKey, isLabelValue } from "./labels";
+import { isLabelKey, isLabelValue } from "@/lib/labels";
 
 type Entry = { id: number; key: string; value: string };
 

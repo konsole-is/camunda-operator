@@ -1,5 +1,14 @@
+// This module runs in the browser and on the server, so it imports nothing.
+
+/**
+ * ENVIRONMENT_LABEL on a namespace names the Environment that the namespace
+ * belongs to. It is LabelEnvironment of api/fleet/v1alpha1.
+ */
+export const ENVIRONMENT_LABEL = "fleet.camunda.io/environment";
+
+// The label rules of Kubernetes: a name of at most 63 characters, and a key
+// with an optional DNS subdomain prefix of at most 253 characters.
 const NAME = /^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$/;
-const VALUE = /^([A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?)?$/;
 const PREFIX =
   /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
 
@@ -17,5 +26,5 @@ export function isLabelKey(key: string): boolean {
 
 /** isLabelValue says whether value is a valid Kubernetes label value. The empty value is valid. */
 export function isLabelValue(value: string): boolean {
-  return VALUE.test(value);
+  return value === "" || NAME.test(value);
 }

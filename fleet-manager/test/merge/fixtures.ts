@@ -3,7 +3,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { child, indexItem, keyedItem } from "@/lib/merge/path";
+import { child, indexItem, keyedItem } from "@/lib/merge";
 
 export type MergeKind =
   "camundacluster" | "elasticsearchcluster" | "databaseserver";

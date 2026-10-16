@@ -1,3 +1,4 @@
+import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { OpenAPISchema } from "@/lib/schema";
 
 /**
@@ -69,12 +70,15 @@ export type LockedParameter = ParameterBase & {
 };
 
 /**
- * SectionSelection is the selection of one section that a claim stores.
- * parameters holds only the claim-editable parameters whose value differs
- * from the policy.
+ * PluginSelection is the selection of one section that a claim stores in
+ * spec.plugins. parameters holds only the claim-editable parameters whose
+ * value differs from the policy, by parameter name. The CRD schema does not
+ * give parameters a shape, so this type adds it.
  */
-export type SectionSelection = {
-  section: string;
-  registration: string;
+export type PluginSelection = Omit<GeneratedPluginSelection, "parameters"> & {
   parameters?: Record<string, unknown>;
 };
+
+type GeneratedPluginSelection = NonNullable<
+  CamundaClusterClaim["spec"]["plugins"]
+>[number];

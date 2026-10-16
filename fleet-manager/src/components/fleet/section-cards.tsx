@@ -19,7 +19,7 @@ import type {
   EditableParameter,
   OptionView,
   ParameterRule,
-  SectionSelection,
+  PluginSelection,
   SectionView,
 } from "@/lib/policy/types";
 import { type ValidationError, validate } from "@/lib/schema";
@@ -52,11 +52,8 @@ export function SectionCards({
   onChange,
 }: {
   section: SectionView;
-  defaultValue?: SectionSelection[];
-  onChange?: (
-    selections: SectionSelection[],
-    errors: ValidationError[],
-  ) => void;
+  defaultValue?: PluginSelection[];
+  onChange?: (selections: PluginSelection[], errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const [selected, setSelected] = useState<string[]>(() =>
@@ -541,7 +538,7 @@ function ParameterField({
 }
 function initialSelection(
   section: SectionView,
-  defaultValue?: SectionSelection[],
+  defaultValue?: PluginSelection[],
 ): string[] {
   const usable = (r: string) =>
     section.options.some((o) => o.registration === r && !o.disabledReason);
@@ -564,7 +561,7 @@ function isEditable(rule: ParameterRule): rule is EditableParameter {
 
 function initialValues(
   section: SectionView,
-  defaultValue?: SectionSelection[],
+  defaultValue?: PluginSelection[],
 ): Values {
   return Object.fromEntries(
     section.options.map((option) => {
@@ -651,7 +648,7 @@ function selectionsOf(
   section: SectionView,
   selected: string[],
   values: Values,
-): SectionSelection[] {
+): PluginSelection[] {
   return selected.flatMap((registration) => {
     const option = findOption(section, registration);
     if (!option) return [];

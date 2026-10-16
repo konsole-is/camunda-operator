@@ -1,3 +1,4 @@
+import "server-only";
 import { type FieldDoc, fieldDocs } from "@/generated/fielddocs";
 
 export { apiReferenceUrl } from "./link";
@@ -6,8 +7,8 @@ export { apiReferenceUrl } from "./link";
  * fieldDocFor returns the doc of a field path of a kind, or undefined when
  * the group, the kind, or the path has no doc, or its description is empty.
  * It reads own properties only, so a path such as constructor gives
- * undefined. The map is large: call this on the server and pass the doc to
- * the client component.
+ * undefined. The map is large, so this module is server-only: pass the doc
+ * to the client component.
  */
 export function fieldDocFor(
   group: string,

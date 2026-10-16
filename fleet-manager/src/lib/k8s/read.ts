@@ -4,6 +4,10 @@ import { defaultCache, type ResourceCache } from "./cache";
 import { KindMap, type KindName, type Resource } from "./kinds";
 import { parseSelector } from "./selector";
 
+/**
+ * ListOptions select the objects that list and useResources return.
+ * labelSelector is a Kubernetes label selector.
+ */
 export interface ListOptions {
   namespace?: string;
   labelSelector?: string;
