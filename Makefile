@@ -691,6 +691,7 @@ api-docs: crd-ref-docs ## Render the API reference in docs/crds/api-reference.md
 		printf 'render:\n  kubernetesVersion: %s\n' "$(ENVTEST_K8S_VERSION)"; } > "$(LOCALBIN)/crd-ref-docs.yaml"
 	"$(CRD_REF_DOCS)" --source-path=api --config="$(LOCALBIN)/crd-ref-docs.yaml" \
 		--renderer=markdown --output-path=docs/crds/api-reference.md
+	go run ./hack/apireference docs/crds/api-reference.md
 
 .PHONY: docs-sentences
 docs-sentences: ## Report the sentences under docs/ that break the simple-english rules: length, semicolons, and the modals would, could, and may.

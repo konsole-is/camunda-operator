@@ -117,6 +117,10 @@ func TestCheckPage(t *testing.T) {
 			page: "The " + strings.Repeat("word ", 15) + "\n\n" + strings.Repeat("word ", 15) + "end.",
 		},
 		{
+			name: "an HTML entity is a character, not a semicolon",
+			page: "The name &lt;name&gt;-camunda belongs to the operator.",
+		},
+		{
 			name: "a semicolon is reported",
 			page: "The pod starts; the job ends.",
 			want: []finding{{line: 1, banned: ";"}},
