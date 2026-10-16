@@ -4165,7 +4165,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `observedGeneration` _integer_ | ObservedGeneration is the last generation that the cluster claim<br />controller processed. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions report the state of the claim. Ready is False with reason<br />NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when a check of the<br />claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and<br />AttachmentsReady. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions report the state of the claim. Ready is False with reason<br />NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when a check of the<br />claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and<br />AttachmentsReady. When ClusterReady has the reason Creating, Updating,<br />Failing, Degraded, or Down, its message holds the Ready reason and<br />message of the CamundaCluster. If the CamundaCluster has no Ready<br />condition yet, the message says so. With other reasons, such as<br />Error or PrerequisiteNotMet, the message gives that cause. |  | Optional: \{\} <br /> |
 | `environment` _string_ | Environment is the Environment of the namespace when the claim was<br />created. It is empty when no Environment applied. |  | Optional: \{\} <br /> |
 | `resolvedPolicy` _[ResolvedPolicy](#resolvedpolicy)_ | ResolvedPolicy is the policy that the claim recorded from its<br />Environment at creation. A later change of the Environment does not<br />change it. |  | Optional: \{\} <br /> |
 | `requests` _[RequestStatus](#requeststatus) array_ | Requests is the state of each PluginRequest of the claim. |  | Optional: \{\} <br /> |
@@ -4177,7 +4177,7 @@ _Appears in:_
 
 
 CamundaManagementClusterClaim asks for a management plane that serves the
-clusters of one or more environments. The claim controller writes a
+clusters of one or more environments. The plane claim controller writes a
 CamundaManagementCluster with the name of the claim, and the
 PluginRequests of the selected sections. The name is a DNS-1035 label of
 at most 40 characters. The claim adds a suffix to it in the names of the
@@ -4201,7 +4201,7 @@ resources that it writes.
 
 
 CamundaManagementClusterClaimSpec is the management plane that a team asks
-for. The claim controller writes one PluginRequest for each selected
+for. The plane claim controller writes one PluginRequest for each selected
 section and one CamundaManagementCluster with the name of the claim.
 
 
@@ -4227,7 +4227,7 @@ _Appears in:_
 
 
 CamundaManagementClusterClaimStatus is the state of a plane claim. The
-claim controller writes it.
+plane claim controller writes it.
 
 
 
@@ -4236,8 +4236,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `observedGeneration` _integer_ | ObservedGeneration is the last generation that the claim controller<br />processed. |  | Optional: \{\} <br /> |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions report the state of the claim. Ready is False with the<br />reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when the claim<br />controller refuses the claim. The message names the cause. Otherwise<br />Ready follows RequestsReady and ManagementClusterReady.<br />ManagementClusterReady carries the Ready reason and message of the<br />CamundaManagementCluster. |  | Optional: \{\} <br /> |
+| `observedGeneration` _integer_ | ObservedGeneration is the last generation that the plane claim<br />controller processed. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions report the state of the claim. Ready is False with the<br />reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when the plane claim<br />controller refuses the claim. The message names the cause. Otherwise<br />Ready follows RequestsReady and ManagementClusterReady. When<br />ManagementClusterReady has the reason Creating, Updating, Failing,<br />Degraded, or Down, its message holds the Ready reason and message of<br />the CamundaManagementCluster. If the CamundaManagementCluster has no<br />Ready condition yet, the message says so. With other reasons, such as<br />Error or PrerequisiteNotMet, the message gives that cause. |  | Optional: \{\} <br /> |
 | `environment` _string_ | Environment is the Environment of the namespace of the claim when the<br />claim was created. |  | Optional: \{\} <br /> |
 | `resolvedPolicy` _[ResolvedPolicy](#resolvedpolicy)_ | ResolvedPolicy is the policy of the environment when the claim was<br />created. A later change of the environment does not change it. |  | Optional: \{\} <br /> |
 | `requests` _[RequestStatus](#requeststatus) array_ | Requests lists the PluginRequests of the claim, one for each selected<br />section. |  | Optional: \{\} <br /> |
@@ -4364,7 +4364,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `displayName` _string_ | DisplayName is the name that the fleet manager shows for the<br />environment, at most 64 characters. It changes nothing for a claim. |  | MaxLength: 64 <br />Optional: \{\} <br /> |
 | `color` _string_ | Color is the color that the fleet manager shows for the environment,<br />as a hex color such as #2E7D32. It changes nothing for a claim. |  | Pattern: `^#[0-9a-fA-F]\{6\}$` <br />Optional: \{\} <br /> |
-| `platformConfigRef` _string_ | PlatformConfigRef names the CamundaPlatformConfig of a claim of the<br />environment that names none itself. A change applies to new claims<br />only. |  | Optional: \{\} <br /> |
+| `platformConfigRef` _string_ | PlatformConfigRef names the CamundaPlatformConfig of a claim of the<br />environment that names none itself. |  | Optional: \{\} <br /> |
 | `presets` _[EnvironmentPresets](#environmentpresets)_ | Presets lists, for each preset kind, the presets that a claim of the<br />environment can use. The claim controller checks a new claim, and a<br />preset change of an existing claim, against the current lists. |  | Optional: \{\} <br /> |
 | `releases` _[EnvironmentReleases](#environmentreleases)_ | Releases lists the CamundaReleases that a claim of the environment can<br />use. The claim controller checks a new claim, and a release change of<br />an existing claim, against the current list. |  | Optional: \{\} <br /> |
 | `sections` _object (keys:string, values:[SectionPolicy](#sectionpolicy))_ | Sections holds the policy of each PluginSection, by section name. A<br />claim of the environment can select only a registration that the<br />policy of its section allows. A section that is not listed offers<br />only the empty option. A change applies to new claims only. |  | MaxProperties: 64 <br />Optional: \{\} <br /> |

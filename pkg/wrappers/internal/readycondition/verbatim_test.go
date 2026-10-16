@@ -128,6 +128,14 @@ func TestVerbatimConverging(t *testing.T) {
 			reason: "The operator has not observed generation 2 of the ElasticsearchCluster yet. " +
 				"Its last Ready condition was InvalidReference: CamundaRelease 8-9 does not exist",
 		},
+		{
+			name:   "Ready=True of an older generation is Creating on the first apply",
+			op:     concepts.ConvergingOperationCreated,
+			object: staleTrue,
+			want:   concepts.AliveConvergingStatusCreating,
+			reason: "The operator has not observed generation 2 of the ElasticsearchCluster yet. " +
+				"Its last Ready condition was Healthy",
+		},
 	}
 
 	for _, tt := range tests {

@@ -5,7 +5,7 @@ import type { V1ObjectMeta } from "@kubernetes/client-node";
 
 /**
  * CamundaManagementClusterClaim asks for a management plane that serves the
- * clusters of one or more environments. The claim controller writes a
+ * clusters of one or more environments. The plane claim controller writes a
  * CamundaManagementCluster with the name of the claim, and the
  * PluginRequests of the selected sections. The name is a DNS-1035 label of
  * at most 40 characters. The claim adds a suffix to it in the names of the
@@ -3865,11 +3865,14 @@ export interface CamundaManagementClusterClaimStatus {
   /**
    * Conditions report the state of the claim. Ready is False with the
    * reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
-   * InvalidReference, SlotConflict, or WiringCycle when the claim
+   * InvalidReference, SlotConflict, or WiringCycle when the plane claim
    * controller refuses the claim. The message names the cause. Otherwise
-   * Ready follows RequestsReady and ManagementClusterReady.
-   * ManagementClusterReady carries the Ready reason and message of the
-   * CamundaManagementCluster.
+   * Ready follows RequestsReady and ManagementClusterReady. When
+   * ManagementClusterReady has the reason Creating, Updating, Failing,
+   * Degraded, or Down, its message holds the Ready reason and message of
+   * the CamundaManagementCluster. If the CamundaManagementCluster has no
+   * Ready condition yet, the message says so. With other reasons, such as
+   * Error or PrerequisiteNotMet, the message gives that cause.
    *
    * Items: Condition contains details for one aspect of the current state of this API Resource.
    */
@@ -3923,8 +3926,8 @@ export interface CamundaManagementClusterClaimStatus {
     name: string;
   };
   /**
-   * ObservedGeneration is the last generation that the claim controller
-   * processed.
+   * ObservedGeneration is the last generation that the plane claim
+   * controller processed.
    */
   observedGeneration?: number;
   /**

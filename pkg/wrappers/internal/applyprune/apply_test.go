@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// This file tests the five claim wrappers in one package, because one envtest
+// control plane serves all five kinds.
+
 package applyprune_test
 
 import (

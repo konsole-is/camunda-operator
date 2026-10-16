@@ -30,8 +30,11 @@ const (
 	// PrerequisiteNotMet or OperationPending, and the message names the
 	// sections.
 	ConditionRequestsReady = "RequestsReady"
-	// ConditionClusterReady copies the Ready reason and message of the
-	// CamundaCluster of the claim.
+	// ConditionClusterReady reports the CamundaCluster of the claim. ocf sets
+	// its reason, such as Creating, Healthy, or Down. While the reason is
+	// Creating, Updating, Failing, Degraded, or Down, the message holds the
+	// Ready reason and message of the CamundaCluster, or says that it has not
+	// reported Ready yet.
 	ConditionClusterReady = "ClusterReady"
 	// ConditionAttachmentsReady reports the CamundaOptimize and the
 	// BackupSchedule of the claim.
@@ -208,7 +211,11 @@ type CamundaClusterClaimStatus struct {
 	// NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
 	// InvalidReference, SlotConflict, or WiringCycle when a check of the
 	// claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and
-	// AttachmentsReady.
+	// AttachmentsReady. When ClusterReady has the reason Creating, Updating,
+	// Failing, Degraded, or Down, its message holds the Ready reason and
+	// message of the CamundaCluster. If the CamundaCluster has no Ready
+	// condition yet, the message says so. With other reasons, such as
+	// Error or PrerequisiteNotMet, the message gives that cause.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -235,6 +242,7 @@ type CamundaClusterClaimStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.status.cluster.name`

@@ -5257,7 +5257,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#clusterref"
       },
       "status.conditions": {
-        "description": "Conditions report the state of the claim. Ready is False with reason\nNoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when a check of the\nclaim fails. Otherwise Ready follows RequestsReady, ClusterReady, and\nAttachmentsReady.",
+        "description": "Conditions report the state of the claim. Ready is False with reason\nNoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when a check of the\nclaim fails. Otherwise Ready follows RequestsReady, ClusterReady, and\nAttachmentsReady. When ClusterReady has the reason Creating, Updating,\nFailing, Degraded, or Down, its message holds the Ready reason and\nmessage of the CamundaCluster. If the CamundaCluster has no Ready\ncondition yet, the message says so. With other reasons, such as\nError or PrerequisiteNotMet, the message gives that cause.",
         "anchor": "#camundaclusterclaimstatus"
       },
       "status.environment": {
@@ -5731,7 +5731,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#camundamanagementclusterclaim"
       },
       "status.conditions": {
-        "description": "Conditions report the state of the claim. Ready is False with the\nreason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when the claim\ncontroller refuses the claim. The message names the cause. Otherwise\nReady follows RequestsReady and ManagementClusterReady.\nManagementClusterReady carries the Ready reason and message of the\nCamundaManagementCluster.",
+        "description": "Conditions report the state of the claim. Ready is False with the\nreason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when the plane claim\ncontroller refuses the claim. The message names the cause. Otherwise\nReady follows RequestsReady and ManagementClusterReady. When\nManagementClusterReady has the reason Creating, Updating, Failing,\nDegraded, or Down, its message holds the Ready reason and message of\nthe CamundaManagementCluster. If the CamundaManagementCluster has no\nReady condition yet, the message says so. With other reasons, such as\nError or PrerequisiteNotMet, the message gives that cause.",
         "anchor": "#camundamanagementclusterclaimstatus"
       },
       "status.environment": {
@@ -5747,7 +5747,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#managementclusterref"
       },
       "status.observedGeneration": {
-        "description": "ObservedGeneration is the last generation that the claim controller\nprocessed.",
+        "description": "ObservedGeneration is the last generation that the plane claim\ncontroller processed.",
         "anchor": "#camundamanagementclusterclaimstatus"
       },
       "status.requests": {
@@ -5829,7 +5829,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#environmentspec"
       },
       "spec.platformConfigRef": {
-        "description": "PlatformConfigRef names the CamundaPlatformConfig of a claim of the\nenvironment that names none itself. A change applies to new claims\nonly.",
+        "description": "PlatformConfigRef names the CamundaPlatformConfig of a claim of the\nenvironment that names none itself.",
         "anchor": "#environmentspec"
       },
       "spec.presets": {
