@@ -32,8 +32,8 @@ const (
 	ConditionRequestsReady = "RequestsReady"
 	// ConditionClusterReady reports the CamundaCluster of the claim. Its
 	// reason is the convergence status of the cluster, such as Creating or
-	// Healthy. Its message holds the Ready reason and message of the
-	// CamundaCluster as <Reason>: <Message>.
+	// Healthy. Its message holds the Ready reason of the CamundaCluster, a
+	// colon, and the Ready message.
 	ConditionClusterReady = "ClusterReady"
 	// ConditionAttachmentsReady reports the CamundaOptimize and the
 	// BackupSchedule of the claim.
@@ -211,7 +211,7 @@ type CamundaClusterClaimStatus struct {
 	// InvalidReference, SlotConflict, or WiringCycle when a check of the
 	// claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and
 	// AttachmentsReady. The message of ClusterReady holds the Ready reason
-	// and message of the CamundaCluster as <Reason>: <Message>.
+	// of the CamundaCluster, a colon, and the Ready message.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

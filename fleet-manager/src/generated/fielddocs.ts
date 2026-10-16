@@ -5257,7 +5257,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#clusterref"
       },
       "status.conditions": {
-        "description": "Conditions report the state of the claim. Ready is False with reason\nNoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when a check of the\nclaim fails. Otherwise Ready follows RequestsReady, ClusterReady, and\nAttachmentsReady. The message of ClusterReady holds the Ready reason\nand message of the CamundaCluster as <Reason>: <Message>.",
+        "description": "Conditions report the state of the claim. Ready is False with reason\nNoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when a check of the\nclaim fails. Otherwise Ready follows RequestsReady, ClusterReady, and\nAttachmentsReady. The message of ClusterReady holds the Ready reason\nof the CamundaCluster, a colon, and the Ready message.",
         "anchor": "#camundaclusterclaimstatus"
       },
       "status.environment": {
@@ -5731,7 +5731,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#camundamanagementclusterclaim"
       },
       "status.conditions": {
-        "description": "Conditions report the state of the claim. Ready is False with the\nreason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when the plane claim\ncontroller refuses the claim. The message names the cause. Otherwise\nReady follows RequestsReady and ManagementClusterReady. The message of\nManagementClusterReady holds the Ready reason and message of the\nCamundaManagementCluster as <Reason>: <Message>.",
+        "description": "Conditions report the state of the claim. Ready is False with the\nreason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when the plane claim\ncontroller refuses the claim. The message names the cause. Otherwise\nReady follows RequestsReady and ManagementClusterReady. The message of\nManagementClusterReady holds the Ready reason of the\nCamundaManagementCluster, a colon, and the Ready message.",
         "anchor": "#camundamanagementclusterclaimstatus"
       },
       "status.environment": {

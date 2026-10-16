@@ -8094,7 +8094,7 @@ export interface CamundaClusterClaimStatus {
    * InvalidReference, SlotConflict, or WiringCycle when a check of the
    * claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and
    * AttachmentsReady. The message of ClusterReady holds the Ready reason
-   * and message of the CamundaCluster as <Reason>: <Message>.
+   * of the CamundaCluster, a colon, and the Ready message.
    *
    * Items: Condition contains details for one aspect of the current state of this API Resource.
    */

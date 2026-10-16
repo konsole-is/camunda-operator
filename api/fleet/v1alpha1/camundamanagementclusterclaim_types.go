@@ -34,8 +34,8 @@ const (
 	ConditionPlaneRequestsReady = "RequestsReady"
 	// ConditionManagementClusterReady reports the CamundaManagementCluster of
 	// the claim. Its reason is the convergence status of the plane, such as
-	// Creating or Healthy. Its message holds the Ready reason and message of
-	// the CamundaManagementCluster as <Reason>: <Message>.
+	// Creating or Healthy. Its message holds the Ready reason of the
+	// CamundaManagementCluster, a colon, and the Ready message.
 	ConditionManagementClusterReady = "ManagementClusterReady"
 )
 
@@ -284,8 +284,8 @@ type CamundaManagementClusterClaimStatus struct {
 	// InvalidReference, SlotConflict, or WiringCycle when the plane claim
 	// controller refuses the claim. The message names the cause. Otherwise
 	// Ready follows RequestsReady and ManagementClusterReady. The message of
-	// ManagementClusterReady holds the Ready reason and message of the
-	// CamundaManagementCluster as <Reason>: <Message>.
+	// ManagementClusterReady holds the Ready reason of the
+	// CamundaManagementCluster, a colon, and the Ready message.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
