@@ -38,8 +38,7 @@ type EnvironmentSpec struct {
 	// +optional
 	Color string `json:"color,omitempty"`
 	// PlatformConfigRef names the CamundaPlatformConfig of a claim of the
-	// environment that names none itself. A change applies to new claims
-	// only.
+	// environment that names none itself.
 	// +optional
 	PlatformConfigRef string `json:"platformConfigRef,omitempty"`
 	// Presets lists, for each preset kind, the presets that a claim of the
@@ -57,6 +56,7 @@ type EnvironmentSpec struct {
 	// policy of its section allows. A section that is not listed offers
 	// only the empty option. A change applies to new claims only.
 	// +kubebuilder:validation:MaxProperties=64
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k.size() > 0)",message="sections cannot have an empty section name"
 	// +optional
 	Sections map[string]SectionPolicy `json:"sections,omitempty"`
 	// Parameters holds the policy of the parameters of each
@@ -64,6 +64,7 @@ type EnvironmentSpec struct {
 	// A parameter without a policy keeps the value of its registration, and
 	// a claim cannot change it. A change applies to new claims only.
 	// +kubebuilder:validation:MaxProperties=64
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k.size() > 0)",message="parameters cannot have an empty registration name"
 	// +optional
 	Parameters map[string]ParameterPolicies `json:"parameters,omitempty"`
 	// DeletionPolicy is the deletion policy of a claim of the environment
@@ -86,16 +87,19 @@ type EnvironmentPresets struct {
 	// CamundaCluster are the names of the CamundaClusterPresets that a
 	// cluster claim can use.
 	// +listType=set
+	// +kubebuilder:validation:items:MinLength=1
 	// +optional
 	CamundaCluster []string `json:"camundaCluster,omitempty"`
 	// ElasticsearchCluster are the names of the ElasticsearchClusterPresets
 	// that the built-in Elasticsearch of a claim can use.
 	// +listType=set
+	// +kubebuilder:validation:items:MinLength=1
 	// +optional
 	ElasticsearchCluster []string `json:"elasticsearchCluster,omitempty"`
 	// DatabaseServer are the names of the DatabaseServerPresets that the
 	// built-in PostgreSQL of a claim can use.
 	// +listType=set
+	// +kubebuilder:validation:items:MinLength=1
 	// +optional
 	DatabaseServer []string `json:"databaseServer,omitempty"`
 }
@@ -182,9 +186,9 @@ type EnvironmentStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:validation:XValidation:rule="self.metadata.name.size() <= 63",message="metadata.name must be at most 63 characters, because it is used as a label value"
 
-// Environment sets the policy for the claims in its namespaces: the releases,
-// presets, and plugin registrations that a claim can use, the parameter
-// values, and the deletion default. A namespace belongs to the Environment
+// Environment sets the policy for the claims in its namespaces. The policy
+// names the releases, presets, and plugin registrations that a claim can use.
+// It also sets the parameter values and the deletion default. A namespace belongs to the Environment
 // that its label fleet.camunda.io/environment names. Without any
 // Environment, the modes and the parameter values of the registrations
 // apply. The name is at most 63 characters, because other objects carry it
@@ -203,6 +207,21 @@ type Environment struct {
 	// status is the state of the environment
 	// +optional
 	Status EnvironmentStatus `json:"status,omitzero"`
+}
+
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *Environment) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *Environment) GetKind() string { return "Environment" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *Environment) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
 }
 
 // +kubebuilder:object:root=true

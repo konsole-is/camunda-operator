@@ -35,7 +35,9 @@ func databaseWithReady(status metav1.ConditionStatus, reason string) *apiv1.Data
 		Status:     apiv1.DatabaseStatus{ObservedGeneration: 1},
 	}
 	if status != "" {
-		db.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: status, Reason: reason}}
+		db.Status.Conditions = []metav1.Condition{{
+			Type: apiv1.ConditionReady, Status: status, Reason: reason, ObservedGeneration: 1,
+		}}
 	}
 
 	return db

@@ -19,7 +19,11 @@ package schema
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 )
 
 // expectAdmission creates obj and expects the API server to admit it when
@@ -37,4 +41,36 @@ func expectAdmission(obj client.Object, wantErr string) {
 	}
 
 	Expect(err).To(MatchError(ContainSubstring(wantErr)))
+}
+
+// expectUpdate updates obj and expects the API server to admit the update
+// when wantErr is empty, and to refuse it with an error that contains wantErr
+// otherwise.
+func expectUpdate(obj client.Object, wantErr string) {
+	GinkgoHelper()
+
+	err := k8sClient.Update(ctx, obj)
+	if wantErr == "" {
+		Expect(err).NotTo(HaveOccurred())
+
+		return
+	}
+
+	Expect(err).To(MatchError(ContainSubstring(wantErr)))
+}
+
+// toUnstructured returns obj as an unstructured object of the fleet kind. The
+// typed client sends an empty required string and drops an empty optional
+// one, so a spec that leaves out a required field, or sends an explicit zero
+// value, goes through this form.
+func toUnstructured(obj runtime.Object, kind string) *unstructured.Unstructured {
+	GinkgoHelper()
+
+	content, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	Expect(err).NotTo(HaveOccurred())
+
+	u := &unstructured.Unstructured{Object: content}
+	u.SetGroupVersionKind(fleetv1alpha1.GroupVersion.WithKind(kind))
+
+	return u
 }

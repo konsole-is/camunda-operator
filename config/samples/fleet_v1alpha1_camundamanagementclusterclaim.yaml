@@ -1,0 +1,22 @@
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaManagementClusterClaim
+metadata:
+  name: platform-plane
+spec:
+  environments:
+    - production
+  management:
+    identityProvider:
+      keycloak:
+        externalUrl: https://camunda.example.com/auth
+    identity:
+      externalUrl: https://camunda.example.com/identity
+      admin:
+        username: admin
+        email: admin@example.com
+    console:
+      externalUrl: https://camunda.example.com/console
+  versions:
+    identity: "8.9.10"
+    keycloak: "26.6.4"
+    console: "8.9.122"

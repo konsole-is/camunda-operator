@@ -29,7 +29,11 @@ describe("fieldDocs", { timeout: 60_000 }, () => {
     expect(description).toMatch(/^Partitions is the number of partitions\./);
   });
 
-  it.each(["core.camunda.io", "plugins.camunda.io"] as const)(
+  it.each([
+    "core.camunda.io",
+    "plugins.camunda.io",
+    "fleet.camunda.io",
+  ] as const)(
     "links every %s field to a type of the API reference",
     (group) => {
       const reference = fs.readFileSync(

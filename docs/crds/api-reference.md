@@ -2,6 +2,7 @@
 
 ## Packages
 - [core.camunda.io/v1](#corecamundaiov1)
+- [fleet.camunda.io/v1alpha1](#fleetcamundaiov1alpha1)
 - [plugins.camunda.io/v1alpha1](#pluginscamundaiov1alpha1)
 
 
@@ -499,6 +500,7 @@ to one cluster only.
 
 _Appears in:_
 - [CamundaCluster](#camundacluster)
+- [CamundaClusterClaimSpec](#camundaclusterclaimspec)
 - [CamundaClusterPresetSpec](#camundaclusterpresetspec)
 
 | Field | Description | Default | Validation |
@@ -912,6 +914,7 @@ in a namespace can back up the clusters of that namespace, and no others.
 
 _Appears in:_
 - [BackupScheduleSpec](#backupschedulespec)
+- [CamundaClusterClaimStatus](#camundaclusterclaimstatus)
 - [CamundaOptimizeSpec](#camundaoptimizespec)
 - [GrantSpec](#grantspec)
 - [LogicalBackupElasticsearchSpec](#logicalbackupelasticsearchspec)
@@ -1729,6 +1732,7 @@ run.
 
 _Appears in:_
 - [IdentityProviderSpec](#identityproviderspec)
+- [ManagementIdentityProvider](#managementidentityprovider)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -1869,6 +1873,7 @@ user, and the first user keeps its access.
 
 
 _Appears in:_
+- [IdentityOverrides](#identityoverrides)
 - [IdentitySpec](#identityspec)
 
 | Field | Description | Default | Validation |
@@ -2718,6 +2723,7 @@ fields.
 
 _Appears in:_
 - [IdentityProviderSpec](#identityproviderspec)
+- [ManagementIdentityProvider](#managementidentityprovider)
 
 
 
@@ -2897,6 +2903,7 @@ CamundaOptimize.
 
 _Appears in:_
 - [CamundaOptimizeSpec](#camundaoptimizespec)
+- [OptimizeAttachment](#optimizeattachment)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -3538,6 +3545,7 @@ remove their stored backup data.
 
 
 _Appears in:_
+- [BackupScheduleAttachment](#backupscheduleattachment)
 - [BackupScheduleSpec](#backupschedulespec)
 
 | Field | Description | Default | Validation |
@@ -3653,12 +3661,15 @@ _Appears in:_
 - [BackupDumpSpec](#backupdumpspec)
 - [CamundaClusterSpec](#camundaclusterspec)
 - [ConnectorsSpec](#connectorsspec)
+- [ConsoleOverrides](#consoleoverrides)
 - [ConsoleSpec](#consolespec)
 - [DatabaseServerSpec](#databaseserverspec)
 - [DumpPodSpec](#dumppodspec)
 - [ElasticsearchClusterSpec](#elasticsearchclusterspec)
 - [GatewaySpec](#gatewayspec)
+- [IdentityOverrides](#identityoverrides)
 - [IdentitySpec](#identityspec)
+- [KeycloakOverrides](#keycloakoverrides)
 - [ManagedKeycloakSpec](#managedkeycloakspec)
 - [WebAppSpec](#webappspec)
 - [WorkloadSpec](#workloadspec)
@@ -3952,6 +3963,7 @@ WebModelerMailSpec configures the SMTP server of Web Modeler.
 
 
 _Appears in:_
+- [WebModelerOverrides](#webmodeleroverrides)
 - [WebModelerSpec](#webmodelerspec)
 
 | Field | Description | Default | Validation |
@@ -4000,10 +4012,14 @@ CamundaCluster uses it, and so does each workload of a CamundaOptimize.
 _Appears in:_
 - [CamundaOptimizeSpec](#camundaoptimizespec)
 - [ConnectorsSpec](#connectorsspec)
+- [ConsoleOverrides](#consoleoverrides)
 - [ConsoleSpec](#consolespec)
 - [GatewaySpec](#gatewayspec)
+- [IdentityOverrides](#identityoverrides)
 - [IdentitySpec](#identityspec)
+- [OptimizeAttachment](#optimizeattachment)
 - [WebAppSpec](#webappspec)
+- [WebModelerOverrides](#webmodeleroverrides)
 - [WebModelerSpec](#webmodelerspec)
 - [ZeebeSpec](#zeebespec)
 
@@ -4044,6 +4060,668 @@ _Appears in:_
 | `storageClassName` _string_ | StorageClassName is the StorageClass of the broker volumes. Defaults to<br />the default StorageClass of the Kubernetes cluster. The class cannot<br />change after the broker StatefulSet exists. The API server refuses a<br />change of a value that the CamundaCluster sets itself. A preset can<br />change the class, and a cluster that got its class from a preset can<br />set another one. A cluster whose broker StatefulSet exists, also a<br />suspended one, then keeps its class and records a<br />StorageClassChangeIgnored event. A cluster without a broker StatefulSet<br />takes the new class. Volumes that whenDeleted Retain kept from a<br />deleted cluster of the same name keep their class. |  | Optional: \{\} <br /> |
 | `storageSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#quantity-resource-api)_ | StorageSize is the size of the data volume of each broker. Defaults to<br />10Gi. It can only grow. The API server refuses a change of this field<br />in a CamundaCluster to a smaller value. A smaller value is accepted when<br />the field was not set before, or when a preset lowers the size. A<br />cluster whose volumes are already larger then keeps that size and<br />records a StorageShrinkIgnored event.<br />When the size grows, the operator expands the existing claims in place.<br />The storage class must support volume expansion. |  | Optional: \{\} <br /> |
 | `persistentVolumeClaimRetentionPolicy` _[PersistentVolumeClaimRetentionPolicy](#persistentvolumeclaimretentionpolicy)_ | PersistentVolumeClaimRetentionPolicy says what happens to the broker<br />volumes when the CamundaCluster is deleted. A scale-down and a<br />suspension always keep them. |  | Optional: \{\} <br /> |
+
+
+
+## fleet.camunda.io/v1alpha1
+
+Package v1alpha1 contains API Schema definitions for the fleet v1alpha1 API
+group. The fleet manager writes the kinds of this group. An environment
+sets the policy of its namespaces. A claim expands into a cluster or a
+management cluster.
+
+The v1alpha1 version has no compatibility promise. A later release can
+change or remove any type, field, or value of this package.
+
+### Resource Types
+- [CamundaClusterClaim](#camundaclusterclaim)
+- [CamundaManagementClusterClaim](#camundamanagementclusterclaim)
+- [Environment](#environment)
+
+
+
+#### BackupScheduleAttachment
+
+
+
+BackupScheduleAttachment holds the BackupSchedule fields that a claim can
+set. The claim controller sets the cluster reference to the cluster of the
+claim.
+
+
+
+_Appears in:_
+- [ClusterAttachments](#clusterattachments)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `schedule` _string_ | Schedule is when the backups run: a five-field cron expression<br />(minute, hour, day of month, month, day of week), evaluated in UTC. |  | Pattern: `^\s*([0-9A-Za-z*?,/-]+\s+)\{4\}[0-9A-Za-z*?,/-]+\s*$` <br />Required: \{\} <br /> |
+| `retained` _[RetainedBackups](#retainedbackups)_ | Retained limits how many backups of the schedule stay. Unset, the<br />defaults of the BackupSchedule apply. |  | Optional: \{\} <br /> |
+
+
+#### CamundaClusterClaim
+
+
+
+CamundaClusterClaim asks for one Camunda cluster. The cluster claim
+controller expands it into a CamundaCluster of the same name, a
+PluginRequest for each selection, and the attachments. The Environment of
+the namespace sets which presets, releases, and registrations the claim can
+use. The name is a DNS-1035 label of at most 40 characters. The claim adds
+a suffix to it in the names of the resources that it writes, such as
+<claim>-es-es-http.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fleet.camunda.io/v1alpha1` | | |
+| `kind` _string_ | `CamundaClusterClaim` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  | Optional: \{\} <br /> |
+| `spec` _[CamundaClusterClaimSpec](#camundaclusterclaimspec)_ | spec is the cluster that the claim asks for |  | Required: \{\} <br /> |
+| `status` _[CamundaClusterClaimStatus](#camundaclusterclaimstatus)_ | status is the state of the claim |  | Optional: \{\} <br /> |
+
+
+#### CamundaClusterClaimSpec
+
+
+
+CamundaClusterClaimSpec is the cluster that a claim asks for. The cluster
+claim controller expands it into a CamundaCluster, a PluginRequest for each
+selection, and the attachments.
+
+
+
+_Appears in:_
+- [CamundaClusterClaim](#camundaclusterclaim)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `presetRef` _string_ | PresetRef names the CamundaClusterPreset of the cluster. When the<br />namespace belongs to an Environment, the Environment must list the<br />preset in spec.presets.camundaCluster. The claim controller checks a<br />change of an existing claim against the current Environment. |  | MaxLength: 253 <br />MinLength: 1 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Required: \{\} <br /> |
+| `releaseRef` _string_ | ReleaseRef names the CamundaRelease of the cluster, which sets its<br />versions. Empty means the default release of the Environment. The<br />claim controller checks a change of an existing claim against the<br />current Environment. |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `platformConfigRef` _string_ | PlatformConfigRef names the CamundaPlatformConfig of the cluster.<br />Empty means spec.platformConfigRef of the Environment. |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `cluster` _[CamundaClusterSpec](#camundaclusterspec)_ | Cluster holds the overrides of the cluster. It has the shape of the<br />CamundaCluster spec, and it merges over the preset and the release.<br />The API server refuses these fields here. suspend: false and an empty<br />presetRef, releaseRef, storageRef, or backupStorageRef count as unset.<br />  - presetRef, releaseRef, platformConfigRef, and suspend: the claim<br />    has its own fields for them.<br />  - version and connectors.version: the release sets them. Use<br />    allowVersionDowngrade for a downgrade.<br />  - serviceAccount.name and connectors.serviceAccount.name: the claim<br />    controller sets them.<br />  - storageRef and backupStorageRef: the secondary-storage and<br />    backup-storage sections fill them.<br />A selected section fills these fields. The claim controller refuses a<br />claim that sets one of them with reason SlotConflict. Without a<br />selection in that section, the claim can set the field.<br />  - externalUrl: access.<br />  - serviceAccount.annotations: cloud-identity.<br />  - connectors.serviceAccount.annotations: connectors-permissions.<br />  - zeebe.storageClassName: volume-encryption. |  | Optional: \{\} <br /> |
+| `plugins` _[PluginSelection](#pluginselection) array_ | Plugins are the registrations that the claim selects, one item for<br />each section and registration. The sections and their registrations<br />are fixed after creation. Only the parameters of a selection can<br />change. |  | MaxItems: 32 <br />Optional: \{\} <br /> |
+| `attachments` _[ClusterAttachments](#clusterattachments)_ | Attachments are the resources that the claim controller attaches to<br />the cluster. |  | Optional: \{\} <br /> |
+| `deletionPolicy` _[DeletionPolicy](#deletionpolicy)_ | DeletionPolicy says what happens to the resources of the plugin<br />requests when the claim is deleted. Delete deletes them. Orphan keeps<br />them. Empty means spec.deletionPolicy of the Environment. The<br />CamundaCluster and the attachments are always deleted with the claim,<br />under their own retention rules. |  | Enum: [Delete Orphan] <br />Optional: \{\} <br /> |
+| `allowVersionDowngrade` _string_ | AllowVersionDowngrade is the target version of a confirmed downgrade,<br />as a full version such as 8.9.3. The claim controller sets the<br />annotation camunda.io/allow-version-downgrade on the CamundaCluster to<br />this version until the cluster reports it. The fleet manager clears<br />the field after the cluster reports the target version. |  | Pattern: `^(\d+\.\d+\.\d+)?$` <br />Optional: \{\} <br /> |
+| `suspend` _boolean_ | Suspend scales every workload of the cluster to zero and keeps the<br />data. |  | Optional: \{\} <br /> |
+
+
+#### CamundaClusterClaimStatus
+
+
+
+CamundaClusterClaimStatus is the state of a CamundaClusterClaim. The
+cluster claim controller writes it.
+
+
+
+_Appears in:_
+- [CamundaClusterClaim](#camundaclusterclaim)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the last generation that the cluster claim<br />controller processed. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions report the state of the claim. Ready is False with reason<br />NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when a check of the<br />claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and<br />AttachmentsReady. When ClusterReady has the reason Creating, Updating,<br />Failing, Degraded, or Down, its message holds the Ready reason and<br />message of the CamundaCluster. If the CamundaCluster has no Ready<br />condition yet, the message says so. With other reasons, such as<br />Error or PrerequisiteNotMet, the message gives that cause. |  | Optional: \{\} <br /> |
+| `environment` _string_ | Environment is the Environment of the namespace when the claim was<br />created. It is empty when no Environment applied. |  | Optional: \{\} <br /> |
+| `resolvedPolicy` _[ResolvedPolicy](#resolvedpolicy)_ | ResolvedPolicy is the policy that the claim recorded from its<br />Environment at creation. A later change of the Environment does not<br />change it. |  | Optional: \{\} <br /> |
+| `requests` _[RequestStatus](#requeststatus) array_ | Requests is the state of each PluginRequest of the claim. |  | Optional: \{\} <br /> |
+| `cluster` _[ClusterRef](#clusterref)_ | Cluster names the CamundaCluster of the claim. It is unset until the<br />claim controller writes the cluster. |  | Optional: \{\} <br /> |
+
+
+#### CamundaManagementClusterClaim
+
+
+
+CamundaManagementClusterClaim asks for a management plane that serves the
+clusters of one or more environments. The plane claim controller writes a
+CamundaManagementCluster with the name of the claim, and the
+PluginRequests of the selected sections. The name is a DNS-1035 label of
+at most 40 characters. The claim adds a suffix to it in the names of the
+resources that it writes.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fleet.camunda.io/v1alpha1` | | |
+| `kind` _string_ | `CamundaManagementClusterClaim` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  | Optional: \{\} <br /> |
+| `spec` _[CamundaManagementClusterClaimSpec](#camundamanagementclusterclaimspec)_ | spec is the management plane that the claim asks for |  | Required: \{\} <br /> |
+| `status` _[CamundaManagementClusterClaimStatus](#camundamanagementclusterclaimstatus)_ | status is the state of the claim |  | Optional: \{\} <br /> |
+
+
+#### CamundaManagementClusterClaimSpec
+
+
+
+CamundaManagementClusterClaimSpec is the management plane that a team asks
+for. The plane claim controller writes one PluginRequest for each selected
+section and one CamundaManagementCluster with the name of the claim.
+
+
+
+_Appears in:_
+- [CamundaManagementClusterClaim](#camundamanagementclusterclaim)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `environments` _string array_ | Environments are the names of the Environments that the plane serves.<br />The plane serves the CamundaClusters in the namespaces of these<br />environments. The claim controller refuses a name that no Environment<br />has, with the reason InvalidReference. |  | MaxItems: 64 <br />MinItems: 1 <br />items:MaxLength: 63 <br />items:MinLength: 1 <br /> |
+| `clusterSelector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#labelselector-v1-meta)_ | ClusterSelector selects the CamundaClusters that Console and Web<br />Modeler serve, in the namespaces of the environments. An unset<br />selector selects no cluster. An empty selector (\{\}) selects every<br />cluster. |  | Optional: \{\} <br /> |
+| `platformConfigRef` _string_ | PlatformConfigRef names the CamundaPlatformConfig of the plane. Empty<br />means the platformConfigRef of the Environment of the namespace of the<br />claim. |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `management` _[ManagementOverrides](#managementoverrides)_ | Management holds the settings of the plane that the claim can set: the<br />identity provider, Management Identity, Console, and Web Modeler. The<br />versions are in versions. The database references come from the<br />management-database section. |  |  |
+| `versions` _[ManagementVersions](#managementversions)_ | Versions holds the version of each component of the plane. The fleet<br />manager fills them from its images table, because Identity, Console,<br />and Web Modeler have their own version lines. For example, with<br />Camunda 8.9.23, Identity is 8.9.10. |  |  |
+| `plugins` _[PluginSelection](#pluginselection) array_ | Plugins holds the registration that the claim selects for each<br />section, for example access and management-database. The sections and<br />their registrations are fixed after creation. Only the parameters can<br />change. |  | MaxItems: 32 <br />Optional: \{\} <br /> |
+| `managementAuthConfigName` _string_ | ManagementAuthConfigName is the name of the cluster-scoped<br />ManagementAuthConfig that the plane writes. A CamundaOptimize reads it<br />through its managementAuthRef. Empty means the name of the claim. |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$` <br />Optional: \{\} <br /> |
+| `deletionPolicy` _[DeletionPolicy](#deletionpolicy)_ | DeletionPolicy says what happens to the resources of the<br />PluginRequests of the claim when the claim is deleted. Delete deletes<br />them. Orphan keeps them. Empty means the deletion policy of the<br />Environment. The CamundaManagementCluster is always deleted with the<br />claim. |  | Enum: [Delete Orphan] <br />Optional: \{\} <br /> |
+| `suspend` _boolean_ | Suspend scales every workload of the plane to zero. The PluginRequests<br />do not change. |  | Optional: \{\} <br /> |
+
+
+#### CamundaManagementClusterClaimStatus
+
+
+
+CamundaManagementClusterClaimStatus is the state of a plane claim. The
+plane claim controller writes it.
+
+
+
+_Appears in:_
+- [CamundaManagementClusterClaim](#camundamanagementclusterclaim)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the last generation that the plane claim<br />controller processed. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions report the state of the claim. Ready is False with the<br />reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when the plane claim<br />controller refuses the claim. The message names the cause. Otherwise<br />Ready follows RequestsReady and ManagementClusterReady. When<br />ManagementClusterReady has the reason Creating, Updating, Failing,<br />Degraded, or Down, its message holds the Ready reason and message of<br />the CamundaManagementCluster. If the CamundaManagementCluster has no<br />Ready condition yet, the message says so. With other reasons, such as<br />Error or PrerequisiteNotMet, the message gives that cause. |  | Optional: \{\} <br /> |
+| `environment` _string_ | Environment is the Environment of the namespace of the claim when the<br />claim was created. |  | Optional: \{\} <br /> |
+| `resolvedPolicy` _[ResolvedPolicy](#resolvedpolicy)_ | ResolvedPolicy is the policy of the environment when the claim was<br />created. A later change of the environment does not change it. |  | Optional: \{\} <br /> |
+| `requests` _[RequestStatus](#requeststatus) array_ | Requests lists the PluginRequests of the claim, one for each selected<br />section. |  | Optional: \{\} <br /> |
+| `managementCluster` _[ManagementClusterRef](#managementclusterref)_ | ManagementCluster names the CamundaManagementCluster of the claim. It<br />has the name of the claim. |  | Optional: \{\} <br /> |
+
+
+#### ClusterAttachments
+
+
+
+ClusterAttachments are the resources that a claim attaches to its cluster.
+
+
+
+_Appears in:_
+- [CamundaClusterClaimSpec](#camundaclusterclaimspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `optimize` _[OptimizeAttachment](#optimizeattachment)_ | Optimize adds a CamundaOptimize named <claim>-optimize that reads the<br />cluster. Unset, the claim has no Optimize. |  | Optional: \{\} <br /> |
+| `backupSchedule` _[BackupScheduleAttachment](#backupscheduleattachment)_ | BackupSchedule adds a BackupSchedule named <claim>-backups for the<br />cluster. Unset, the claim has no backup schedule. |  | Optional: \{\} <br /> |
+
+
+#### ConsoleOverrides
+
+
+
+ConsoleOverrides configures Console for a plane claim. versions.console is
+required while it is set.
+
+
+
+_Appears in:_
+- [ManagementOverrides](#managementoverrides)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `externalUrl` _string_ | ExternalURL is the URL where browsers reach Console. The claim<br />controller refuses this field with the reason SlotConflict when the<br />access section has a selection, because the access section then gives<br />the URL. Without a selection, set it here. |  | Optional: \{\} <br /> |
+| `replicas` _integer_ | Replicas is the number of pods of this process. Defaults to 1. On a<br />CamundaCluster it has no effect on an embedded web application. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#resourcerequirements-v1-core)_ | Resources are the CPU and memory of the container of this process. |  | Optional: \{\} <br /> |
+| `extraEnv` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#envvar-v1-core) array_ | ExtraEnv are extra environment variables of the container of this<br />process. On a CamundaCluster, an entry here wins over a top-level entry<br />with the same name. The entries of an embedded web application apply to<br />its host process.<br />The list merges by name under server-side apply. Each field manager owns<br />only the entries that it applies, so an extension controller can add its<br />own entry next to yours. One applied manifest cannot hold two entries<br />with the same name.<br />Two field managers that apply the same name do not conflict, because the<br />merge is per field inside the entry. One manager can own value and the<br />other valueFrom. A container rejects an entry that has both, so the API<br />server refuses to store such an entry. |  | Optional: \{\} <br /> |
+| `extraEnvFrom` _[EnvFromSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#envfromsource-v1-core) array_ | ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the<br />container of this process. |  | Optional: \{\} <br /> |
+| `podLabels` _object (keys:string, values:string)_ | PodLabels are extra labels of the pods of this process. |  | Optional: \{\} <br /> |
+| `podAnnotations` _object (keys:string, values:string)_ | PodAnnotations are extra annotations of the pods of this process. In a<br />CamundaCluster, the keys camunda.io/config-hash and<br />camunda.io/service-account-hash belong to the operator, and a value for<br />them does not reach the pods. |  | Optional: \{\} <br /> |
+| `scheduling` _[SchedulingSpec](#schedulingspec)_ | Scheduling holds the scheduling constraints of the pods of this process.<br />When set, it replaces all other scheduling blocks for this process, with<br />no merge. On a CamundaCluster, these are the top-level block and the<br />block of a preset. |  | Optional: \{\} <br /> |
+
+
+#### Environment
+
+
+
+Environment sets the policy for the claims in its namespaces. The policy
+names the releases, presets, and plugin registrations that a claim can use.
+It also sets the parameter values and the deletion default. A namespace belongs to the Environment
+that its label fleet.camunda.io/environment names. Without any
+Environment, the modes and the parameter values of the registrations
+apply. The name is at most 63 characters, because other objects carry it
+in a label value.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `fleet.camunda.io/v1alpha1` | | |
+| `kind` _string_ | `Environment` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  | Optional: \{\} <br /> |
+| `spec` _[EnvironmentSpec](#environmentspec)_ | spec is the policy of the environment |  | Required: \{\} <br /> |
+| `status` _[EnvironmentStatus](#environmentstatus)_ | status is the state of the environment |  | Optional: \{\} <br /> |
+
+
+#### EnvironmentPresets
+
+
+
+EnvironmentPresets lists the presets that the claims of an environment can
+use, for each preset kind.
+
+
+
+_Appears in:_
+- [EnvironmentSpec](#environmentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `camundaCluster` _string array_ | CamundaCluster are the names of the CamundaClusterPresets that a<br />cluster claim can use. |  | items:MinLength: 1 <br />Optional: \{\} <br /> |
+| `elasticsearchCluster` _string array_ | ElasticsearchCluster are the names of the ElasticsearchClusterPresets<br />that the built-in Elasticsearch of a claim can use. |  | items:MinLength: 1 <br />Optional: \{\} <br /> |
+| `databaseServer` _string array_ | DatabaseServer are the names of the DatabaseServerPresets that the<br />built-in PostgreSQL of a claim can use. |  | items:MinLength: 1 <br />Optional: \{\} <br /> |
+
+
+#### EnvironmentReleases
+
+
+
+EnvironmentReleases lists the releases that the claims of an environment
+can use.
+
+
+
+_Appears in:_
+- [EnvironmentSpec](#environmentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `allowed` _string array_ | Allowed are the names of the CamundaReleases that a claim can use. |  | MaxItems: 64 <br />items:MaxLength: 253 <br />items:MinLength: 1 <br />Optional: \{\} <br /> |
+| `default` _string_ | Default is the release of a claim that names none. It is one of<br />allowed. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+
+
+#### EnvironmentSpec
+
+
+
+EnvironmentSpec is the policy that an Environment sets for the claims in
+its namespaces. A namespace belongs to the Environment that its label
+fleet.camunda.io/environment names.
+
+
+
+_Appears in:_
+- [Environment](#environment)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `displayName` _string_ | DisplayName is the name that the fleet manager shows for the<br />environment, at most 64 characters. It changes nothing for a claim. |  | MaxLength: 64 <br />Optional: \{\} <br /> |
+| `color` _string_ | Color is the color that the fleet manager shows for the environment,<br />as a hex color such as #2E7D32. It changes nothing for a claim. |  | Pattern: `^#[0-9a-fA-F]\{6\}$` <br />Optional: \{\} <br /> |
+| `platformConfigRef` _string_ | PlatformConfigRef names the CamundaPlatformConfig of a claim of the<br />environment that names none itself. |  | Optional: \{\} <br /> |
+| `presets` _[EnvironmentPresets](#environmentpresets)_ | Presets lists, for each preset kind, the presets that a claim of the<br />environment can use. The claim controller checks a new claim, and a<br />preset change of an existing claim, against the current lists. |  | Optional: \{\} <br /> |
+| `releases` _[EnvironmentReleases](#environmentreleases)_ | Releases lists the CamundaReleases that a claim of the environment can<br />use. The claim controller checks a new claim, and a release change of<br />an existing claim, against the current list. |  | Optional: \{\} <br /> |
+| `sections` _object (keys:string, values:[SectionPolicy](#sectionpolicy))_ | Sections holds the policy of each PluginSection, by section name. A<br />claim of the environment can select only a registration that the<br />policy of its section allows. A section that is not listed offers<br />only the empty option. A change applies to new claims only. |  | MaxProperties: 64 <br />Optional: \{\} <br /> |
+| `parameters` _object (keys:string, values:[ParameterPolicies](#parameterpolicies))_ | Parameters holds the policy of the parameters of each<br />PluginRegistration, by registration name and then by parameter name.<br />A parameter without a policy keeps the value of its registration, and<br />a claim cannot change it. A change applies to new claims only. |  | MaxProperties: 64 <br />Optional: \{\} <br /> |
+| `deletionPolicy` _[DeletionPolicy](#deletionpolicy)_ | DeletionPolicy is the deletion policy of a claim of the environment<br />that sets none itself. Delete deletes the resources of its plugin<br />requests with the claim. Orphan keeps them. Unset means Delete. A<br />change applies to new claims only. | Delete | Enum: [Delete Orphan] <br />Optional: \{\} <br /> |
+| `namespaceCreation` _[NamespaceCreation](#namespacecreation)_ | NamespaceCreation lets the create flow of the fleet manager create a<br />namespace in the environment. Unset, the create flow cannot create a<br />namespace. |  | Optional: \{\} <br /> |
+
+
+#### EnvironmentStatus
+
+
+
+EnvironmentStatus is the state of an Environment. The environment
+controller writes it.
+
+
+
+_Appears in:_
+- [Environment](#environment)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `observedGeneration` _integer_ | ObservedGeneration is the last generation that the environment<br />controller processed. |  | Optional: \{\} <br /> |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions report the state of the environment. Ready is False with<br />reason InvalidReference when a release, preset, platform config,<br />section, or registration that the spec names does not exist. The<br />message names each missing object. |  | Optional: \{\} <br /> |
+| `namespaces` _integer_ | Namespaces is the number of namespaces that carry the label of this<br />environment. It is unset until the environment controller counts the<br />namespaces. |  | Optional: \{\} <br /> |
+
+
+#### IdentityOverrides
+
+
+
+IdentityOverrides configures Management Identity for a plane claim.
+
+
+
+_Appears in:_
+- [ManagementOverrides](#managementoverrides)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `externalUrl` _string_ | ExternalURL is the URL where browsers reach Management Identity. A URL<br />with a path other than / must use https. The claim controller refuses<br />this field with the reason SlotConflict when the access section has a<br />selection, because the access section then gives the URL. Without a<br />selection, set it here. |  | Optional: \{\} <br /> |
+| `admin` _[IdentityAdminSpec](#identityadminspec)_ | Admin names the first administrator of the plane. Set claimName and<br />claimValue in the oidc mode, and username in the Keycloak modes.<br />Management Identity reads it only on its first start. |  |  |
+| `replicas` _integer_ | Replicas is the number of pods of this process. Defaults to 1. On a<br />CamundaCluster it has no effect on an embedded web application. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#resourcerequirements-v1-core)_ | Resources are the CPU and memory of the container of this process. |  | Optional: \{\} <br /> |
+| `extraEnv` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#envvar-v1-core) array_ | ExtraEnv are extra environment variables of the container of this<br />process. On a CamundaCluster, an entry here wins over a top-level entry<br />with the same name. The entries of an embedded web application apply to<br />its host process.<br />The list merges by name under server-side apply. Each field manager owns<br />only the entries that it applies, so an extension controller can add its<br />own entry next to yours. One applied manifest cannot hold two entries<br />with the same name.<br />Two field managers that apply the same name do not conflict, because the<br />merge is per field inside the entry. One manager can own value and the<br />other valueFrom. A container rejects an entry that has both, so the API<br />server refuses to store such an entry. |  | Optional: \{\} <br /> |
+| `extraEnvFrom` _[EnvFromSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#envfromsource-v1-core) array_ | ExtraEnvFrom are extra environment sources (ConfigMaps, Secrets) of the<br />container of this process. |  | Optional: \{\} <br /> |
+| `podLabels` _object (keys:string, values:string)_ | PodLabels are extra labels of the pods of this process. |  | Optional: \{\} <br /> |
+| `podAnnotations` _object (keys:string, values:string)_ | PodAnnotations are extra annotations of the pods of this process. In a<br />CamundaCluster, the keys camunda.io/config-hash and<br />camunda.io/service-account-hash belong to the operator, and a value for<br />them does not reach the pods. |  | Optional: \{\} <br /> |
+| `scheduling` _[SchedulingSpec](#schedulingspec)_ | Scheduling holds the scheduling constraints of the pods of this process.<br />When set, it replaces all other scheduling blocks for this process, with<br />no merge. On a CamundaCluster, these are the top-level block and the<br />block of a preset. |  | Optional: \{\} <br /> |
+
+
+#### KeycloakOverrides
+
+
+
+KeycloakOverrides configures the Keycloak that the operator runs for a
+plane claim.
+
+
+
+_Appears in:_
+- [ManagementIdentityProvider](#managementidentityprovider)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `externalUrl` _string_ | ExternalURL is the URL where browsers reach Keycloak, with the /auth<br />path and no query and no fragment. The claim controller refuses this<br />field with the reason SlotConflict when the access section has a<br />selection, because the access section then gives the URL. Without a<br />selection, set it here. |  | Optional: \{\} <br /> |
+| `replicas` _integer_ | Replicas is the number of Keycloak instances. Defaults to 1. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#resourcerequirements-v1-core)_ | Resources are the CPU and memory of the Keycloak container. |  | Optional: \{\} <br /> |
+| `scheduling` _[SchedulingSpec](#schedulingspec)_ | Scheduling constraints of the Keycloak pods. |  | Optional: \{\} <br /> |
+
+
+#### LabelValue
+
+_Underlying type:_ _string_
+
+LabelValue is the value of a Kubernetes label.
+
+_Validation:_
+- MaxLength: 63
+- Pattern: `^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$`
+
+_Appears in:_
+- [NamespaceCreation](#namespacecreation)
+
+
+
+#### ManagementClusterRef
+
+
+
+ManagementClusterRef names a CamundaManagementCluster in the namespace of
+the claim.
+
+
+
+_Appears in:_
+- [CamundaManagementClusterClaimStatus](#camundamanagementclusterclaimstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the name of the CamundaManagementCluster. |  | MinLength: 1 <br /> |
+
+
+#### ManagementIdentityProvider
+
+
+
+ManagementIdentityProvider holds one of the three identity provider modes
+of a plane claim.
+
+
+
+_Appears in:_
+- [ManagementOverrides](#managementoverrides)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `keycloak` _[KeycloakOverrides](#keycloakoverrides)_ | Keycloak runs Keycloak through the Keycloak Operator. The Keycloak<br />Operator must be installed on the Kubernetes cluster. versions.keycloak<br />is required in this mode. |  | Optional: \{\} <br /> |
+| `externalKeycloak` _[ExternalKeycloakSpec](#externalkeycloakspec)_ | ExternalKeycloak connects Management Identity to a Keycloak that you<br />run. |  | Optional: \{\} <br /> |
+| `oidc` _[ManagementOIDCSpec](#managementoidcspec)_ | OIDC connects Management Identity to the identity provider of the<br />CamundaPlatformConfig of the plane. |  | Optional: \{\} <br /> |
+
+
+#### ManagementOverrides
+
+
+
+ManagementOverrides holds the settings of a management plane that a plane
+claim can set. The claim controller writes them to the
+CamundaManagementCluster.
+
+
+
+_Appears in:_
+- [CamundaManagementClusterClaimSpec](#camundamanagementclusterclaimspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `identityProvider` _[ManagementIdentityProvider](#managementidentityprovider)_ | IdentityProvider selects where users sign in. Exactly one of keycloak,<br />externalKeycloak, or oidc is set. The mode can change after creation. |  |  |
+| `identity` _[IdentityOverrides](#identityoverrides)_ | Identity configures Management Identity. The plane always runs it. |  |  |
+| `console` _[ConsoleOverrides](#consoleoverrides)_ | Console configures Console. While it is unset, the plane has no<br />Console. |  | Optional: \{\} <br /> |
+| `webModeler` _[WebModelerOverrides](#webmodeleroverrides)_ | WebModeler configures Web Modeler. While it is unset, the plane has no<br />Web Modeler. |  | Optional: \{\} <br /> |
+
+
+#### ManagementVersions
+
+
+
+ManagementVersions holds the version of each component of a plane claim,
+each as a full semantic version.
+
+
+
+_Appears in:_
+- [CamundaManagementClusterClaimSpec](#camundamanagementclusterclaimspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `identity` _string_ | Identity is the Management Identity version, for example 8.9.10. |  | Pattern: `^\d+\.\d+\.\d+$` <br /> |
+| `keycloak` _string_ | Keycloak is the Keycloak version. It is required in the keycloak mode.<br />Camunda 8.9 supports only Keycloak 26. |  | Pattern: `^\d+\.\d+\.\d+$` <br />Optional: \{\} <br /> |
+| `console` _string_ | Console is the Console version. It is required while<br />management.console is set. |  | Pattern: `^\d+\.\d+\.\d+$` <br />Optional: \{\} <br /> |
+| `webModeler` _string_ | WebModeler is the Web Modeler version. It is required while<br />management.webModeler is set. |  | Pattern: `^\d+\.\d+\.\d+$` <br />Optional: \{\} <br /> |
+
+
+#### NamedValue
+
+
+
+NamedValue is one choice of a claim-editable parameter.
+
+
+
+_Appears in:_
+- [ParameterPolicy](#parameterpolicy)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is what the claim stores when it picks the choice, for example<br />sqs. It is unique in the list. |  | MaxLength: 63 <br />MinLength: 1 <br /> |
+| `label` _string_ | Label is what the fleet manager shows for the choice, for example SQS<br />access. |  | MaxLength: 64 <br />MinLength: 1 <br /> |
+| `value` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#json-v1-apiextensions-k8s-io)_ | Value is what the request gets, for example the ARN of a policy. It<br />can be any JSON value. |  |  |
+
+
+#### NamespaceCreation
+
+
+
+NamespaceCreation controls how the create flow of the fleet manager creates
+a namespace in an environment. The create flow always sets the label
+fleet.camunda.io/environment on the new namespace.
+
+
+
+_Appears in:_
+- [EnvironmentSpec](#environmentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `allowed` _boolean_ | Allowed lets the create flow create a namespace in the environment. |  | Optional: \{\} <br /> |
+| `labels` _object (keys:string, values:[LabelValue](#labelvalue))_ | Labels are fixed labels of a new namespace. Each is a valid label. The<br />label fleet.camunda.io/environment is not allowed here, because the<br />create flow sets it. |  | MaxProperties: 32 <br />Optional: \{\} <br /> |
+| `requiredLabelKeys` _string array_ | RequiredLabelKeys are label keys, for example team. The create flow<br />asks for a value of each key and sets the label on the new namespace.<br />Each key is a valid label key. The key fleet.camunda.io/environment is<br />not allowed here. |  | MaxItems: 16 <br />items:MaxLength: 317 <br />Optional: \{\} <br /> |
+
+
+#### OptimizeAttachment
+
+
+
+OptimizeAttachment holds the CamundaOptimize fields that a claim can set.
+The claim controller sets the version from the release and the cluster
+reference to the cluster of the claim.
+
+
+
+_Appears in:_
+- [ClusterAttachments](#clusterattachments)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `managementAuthConfigRef` _string_ | ManagementAuthConfigRef names the cluster-scoped ManagementAuthConfig<br />that Optimize signs in against. The claim controller writes it to<br />managementAuthRef of the CamundaOptimize. |  | MaxLength: 253 <br />MinLength: 1 <br />Required: \{\} <br /> |
+| `externalUrl` _string_ | ExternalURL is the URL where browsers reach this Optimize, with the<br />rules of externalUrl on the CamundaOptimize. The claim controller<br />refuses it with reason SlotConflict when the access section has a<br />selection, because that section fills it. |  | Optional: \{\} <br /> |
+| `webapp` _[WorkloadSpec](#workloadspec)_ | Webapp configures the Deployment that serves the Optimize user<br />interface. |  | Optional: \{\} <br /> |
+| `importer` _[WorkloadSpec](#workloadspec)_ | Importer configures the Deployment that imports the cluster data into<br />the Optimize indices. Optimize supports one active importer, so<br />replicas must be 0 or 1. |  | Optional: \{\} <br /> |
+| `indexReplicas` _integer_ | IndexReplicas is the replica count of each Optimize index. Unset, the<br />storage of the cluster gives the count, as on the CamundaOptimize. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `monitoring` _[OptimizeMonitoringSpec](#optimizemonitoringspec)_ | Monitoring configures the monitoring integrations of Optimize. |  | Optional: \{\} <br /> |
+
+
+#### ParameterPolicies
+
+_Underlying type:_ _[map[string]ParameterPolicy](#map[string]parameterpolicy)_
+
+ParameterPolicies holds the policy of each parameter of one
+PluginRegistration, by parameter name.
+
+_Validation:_
+- MaxProperties: 64
+
+_Appears in:_
+- [EnvironmentSpec](#environmentspec)
+- [ResolvedPolicy](#resolvedpolicy)
+
+
+
+#### ParameterPolicy
+
+
+
+ParameterPolicy is the policy of an Environment for one parameter of a
+PluginRegistration.
+
+
+
+_Appears in:_
+- [ParameterPolicies](#parameterpolicies)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `value` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#json-v1-apiextensions-k8s-io)_ | Value replaces the value that the registration gives the parameter. |  | Optional: \{\} <br /> |
+| `claimEditable` _boolean_ | ClaimEditable lets a claim of the environment change the parameter.<br />Without it, the claim gets the value of the policy or of the<br />registration. |  | Optional: \{\} <br /> |
+| `allowed` _[NamedValue](#namedvalue) array_ | Allowed are the choices that a claim can pick for the parameter. The<br />claim stores the name of a choice, or a list of names for an array<br />parameter. The claim controller puts the value of each choice in the<br />request, and refuses an unknown name with NotAllowed. Allowed needs<br />claimEditable. |  | MaxItems: 32 <br />Optional: \{\} <br /> |
+
+
+#### PluginSelection
+
+
+
+PluginSelection is the registration that a claim selects for one section.
+
+
+
+_Appears in:_
+- [CamundaClusterClaimSpec](#camundaclusterclaimspec)
+- [CamundaManagementClusterClaimSpec](#camundamanagementclusterclaimspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `section` _string_ | Section is the name of the PluginSection. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
+| `registration` _string_ | Registration is the name of the PluginRegistration. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
+| `parameters` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#json-v1-apiextensions-k8s-io)_ | Parameters are the parameter values of the selection. Only the<br />claim-editable parameters of the policy can differ from the policy<br />values. The claim controller refuses another change with NotAllowed. |  | Optional: \{\} <br /> |
+
+
+#### RequestStatus
+
+
+
+RequestStatus is the state of one PluginRequest of a claim.
+
+
+
+_Appears in:_
+- [CamundaClusterClaimStatus](#camundaclusterclaimstatus)
+- [CamundaManagementClusterClaimStatus](#camundamanagementclusterclaimstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `section` _string_ | Section is the name of the PluginSection of the request. |  |  |
+| `registration` _string_ | Registration is the name of the PluginRegistration of the request. |  |  |
+| `name` _string_ | Name is the name of the PluginRequest. |  |  |
+| `outputsReady` _[ConditionStatus](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#conditionstatus-v1-meta)_ | OutputsReady is the status of the OutputsReady condition of the<br />request. |  | Optional: \{\} <br /> |
+| `ready` _[ConditionStatus](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#conditionstatus-v1-meta)_ | Ready is the status of the Ready condition of the request. |  | Optional: \{\} <br /> |
+
+
+#### ResolvedPolicy
+
+
+
+ResolvedPolicy is the policy that a claim recorded from its environment at
+creation. A later change of the environment does not change it.
+
+
+
+_Appears in:_
+- [CamundaClusterClaimStatus](#camundaclusterclaimstatus)
+- [CamundaManagementClusterClaimStatus](#camundamanagementclusterclaimstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `sections` _object (keys:string, values:[SectionPolicy](#sectionpolicy))_ | Sections holds the policy of each section, by section name. |  | MaxProperties: 64 <br />Optional: \{\} <br /> |
+| `parameters` _object (keys:string, values:[ParameterPolicies](#parameterpolicies))_ | Parameters holds the parameter values and the claim-editable<br />parameters, by registration name. |  | MaxProperties: 64 <br />Optional: \{\} <br /> |
+| `deletionPolicy` _[DeletionPolicy](#deletionpolicy)_ | DeletionPolicy is the deletion default of the environment. |  | Enum: [Delete Orphan] <br />Optional: \{\} <br /> |
+
+
+#### SectionPolicy
+
+
+
+SectionPolicy is the policy of an Environment for one PluginSection.
+
+
+
+_Appears in:_
+- [EnvironmentSpec](#environmentspec)
+- [ResolvedPolicy](#resolvedpolicy)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `required` _boolean_ | Required makes a claim of the environment select a registration of the<br />section. The fleet manager then hides the empty option. |  | Optional: \{\} <br /> |
+| `default` _string_ | Default is the registration that the create flow of the fleet manager<br />preselects. It is empty or one of allowed. |  | MaxLength: 253 <br />Optional: \{\} <br /> |
+| `allowed` _string array_ | Allowed are the names of the PluginRegistrations of the section that a<br />claim of the environment can select. With no item, a claim can select<br />only the empty option. |  | MaxItems: 64 <br />items:MaxLength: 253 <br />items:MinLength: 1 <br />Optional: \{\} <br /> |
+
+
+#### WebModelerOverrides
+
+
+
+WebModelerOverrides configures Web Modeler for a plane claim.
+versions.webModeler is required while it is set.
+
+
+
+_Appears in:_
+- [ManagementOverrides](#managementoverrides)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `externalUrl` _string_ | ExternalURL is the URL where browsers reach Web Modeler. The claim<br />controller refuses this field with the reason SlotConflict when the<br />access section has a selection, because the access section then gives<br />the URL. Without a selection, set it here. |  | Optional: \{\} <br /> |
+| `websocketsExternalUrl` _string_ | WebsocketsExternalURL is the URL where browsers get the live updates<br />of Web Modeler. The claim controller refuses this field with the<br />reason SlotConflict when the access section has a selection, because<br />the access section then gives the URL. Without a selection, set it<br />here. |  | Optional: \{\} <br /> |
+| `mail` _[WebModelerMailSpec](#webmodelermailspec)_ | Mail configures the SMTP server that Web Modeler sends notifications<br />through. Web Modeler does not start without it. |  |  |
+| `restapi` _[WorkloadSpec](#workloadspec)_ | Restapi configures the workload of the restapi process. |  | Optional: \{\} <br /> |
+| `websockets` _[WorkloadSpec](#workloadspec)_ | Websockets configures the workload of the websockets process. |  | Optional: \{\} <br /> |
 
 
 
@@ -4163,8 +4841,12 @@ _Validation:_
 - Enum: [Delete Orphan]
 
 _Appears in:_
+- [CamundaClusterClaimSpec](#camundaclusterclaimspec)
+- [CamundaManagementClusterClaimSpec](#camundamanagementclusterclaimspec)
+- [EnvironmentSpec](#environmentspec)
 - [PluginRegistrationSpec](#pluginregistrationspec)
 - [PluginRequestSpec](#pluginrequestspec)
+- [ResolvedPolicy](#resolvedpolicy)
 
 | Field | Description |
 | --- | --- |

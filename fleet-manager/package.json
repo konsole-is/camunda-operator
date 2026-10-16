@@ -22,6 +22,8 @@
     "@fontsource/jetbrains-mono": "5.3.0",
     "@fontsource/sora": "5.3.0",
     "@kubernetes/client-node": "2.0.0",
+    "@tanstack/react-query": "5.104.1",
+    "ajv": "8.20.0",
     "class-variance-authority": "0.7.1",
     "cn": "0.4.0",
     "lucide-react": "1.55.0",
@@ -29,7 +31,10 @@
     "radix-ui": "1.8.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "0.0.1"
+    "react-is": "19.3.0",
+    "recharts": "3.10.1",
+    "server-only": "0.0.1",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -54,7 +59,6 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.2",
     "vite": "8.3.4",
-    "vitest": "5.0.4",
-    "yaml": "2.9.1"
+    "vitest": "5.0.4"
   }
 }

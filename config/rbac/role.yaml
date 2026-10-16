@@ -207,6 +207,22 @@ rules:
   - update
   - watch
 - apiGroups:
+  - fleet.camunda.io
+  resources:
+  - environments
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - fleet.camunda.io
+  resources:
+  - environments/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - k8s.keycloak.org
   resources:
   - keycloaks

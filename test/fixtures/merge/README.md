@@ -1,6 +1,6 @@
 # Merge fixtures
 
-The cases in this directory show how the operator merges a preset, a release, and a resource spec. The tests in this directory run each case against the merge function of the operator. The fleet manager runs its own merge against the same cases.
+The cases in this directory show how the operator merges a preset, a release, and a resource spec. The tests in this directory run each case against the merge function of the operator. The fleet manager runs its own merge, in `fleet-manager/src/lib/merge`, against the same cases. Its test is `fleet-manager/test/merge/fixtures.test.ts`, and it reads the cases in this directory. Its merges of the `elasticsearchcluster` and `databaseserver` kinds take no release.
 
 ## Layout
 

@@ -1,0 +1,17 @@
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: orders
+spec:
+  presetRef: small
+  releaseRef: camunda-8-9
+  plugins:
+    - section: backup-storage
+      registration: s3-backups
+    - section: secondary-storage
+      registration: elasticsearch
+      parameters:
+        preset: small
+  cluster:
+    zeebe:
+      replicas: 3

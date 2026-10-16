@@ -33,6 +33,8 @@ for (const width of WIDTHS) {
         })),
       );
     expect(stories.length).toBeGreaterThan(0);
+    // Each story costs a page load, an axe run, and a screenshot.
+    test.setTimeout(Math.max(300_000, stories.length * 10_000));
 
     const shots: Shot[] = [];
     const manifest = path.join(OUT, `manifest-${width}.json`);

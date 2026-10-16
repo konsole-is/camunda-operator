@@ -4,9 +4,9 @@
 import type { V1ObjectMeta } from "@kubernetes/client-node";
 
 /**
- * Environment sets the policy for the claims in its namespaces: the releases,
- * presets, and plugin registrations that a claim can use, the parameter
- * values, and the deletion default. A namespace belongs to the Environment
+ * Environment sets the policy for the claims in its namespaces. The policy
+ * names the releases, presets, and plugin registrations that a claim can use.
+ * It also sets the parameter values and the deletion default. A namespace belongs to the Environment
  * that its label fleet.camunda.io/environment names. Without any
  * Environment, the modes and the parameter values of the registrations
  * apply. The name is at most 63 characters, because other objects carry it
@@ -131,8 +131,7 @@ export interface EnvironmentSpec {
   };
   /**
    * PlatformConfigRef names the CamundaPlatformConfig of a claim of the
-   * environment that names none itself. A change applies to new claims
-   * only.
+   * environment that names none itself.
    */
   platformConfigRef?: string;
   /**
