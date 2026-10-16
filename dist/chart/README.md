@@ -12,6 +12,9 @@ helm install camunda-operator \
 The installation guide covers signature verification, CRDs installed separately, upgrades, and removal:
 <https://github.com/konsole-is/camunda-operator/blob/main/docs/installation.md>
 
+The CRDs of this chart have no field descriptions. The validation and the defaults do not change. `kubectl explain` shows the fields and their types but no text. Helm stores each release in one Secret, and the API server limits a Secret to 1 MiB of data. The CRDs with their descriptions do not fit in that Secret. The API reference has the field descriptions:
+<https://konsole-is.github.io/camunda-operator/latest/crds/api-reference/>. The CRDs of `install.yaml` and `crds.yaml` of each release keep them, so `kubectl explain` shows them on a cluster where you applied one of these files.
+
 ## Values
 
 The defaults are the values of a released chart.

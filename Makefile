@@ -495,19 +495,19 @@ install-helm: ## Install the pinned version of Helm if it is missing.
 .PHONY: helm-generate
 helm-generate: build-installer ## Regenerate the Helm chart from kustomize output. Specify images with IMG, CLI_IMG, and FLEET_IMG.
 	kubebuilder edit --plugins=helm/v2-alpha --force
+	go run ./hack/helmcrds "$(HELM_CHART_DIR)"
 	go run ./hack/helmcli "$(HELM_CHART_DIR)"
 	go run ./hack/helmfleet -image "$(FLEET_IMG)" "$(HELM_CHART_DIR)"
 	go run ./hack/helmschema "$(HELM_CHART_DIR)"
 
-## Maximum gzipped rendered chart size in bytes before helm-verify fails.
-## The real bound is the gzipped Helm release Secret against etcd's ~1MB object
-## limit. The check measures `helm template ... | gzip -9 | wc -c` for every
-## rendered permutation and keeps the worst case. The limit is deliberately half
-## of the etcd bound, so the tripwire fires well before an install would fail.
-## It is an early warning to trigger the CRD-split conversation, not a
-## correctness check. When it trips, the CRD set has outgrown in-chart delivery
-## and the CRDs must move to a chart of their own.
-HELM_MAX_RENDER_GZIP_BYTES ?= 524288
+## Largest Helm release Secret, in bytes, before helm-verify fails. Helm
+## stores each release as base64(gzip(json)) in one Secret, and the API server
+## rejects a Secret with more than 1048576 bytes of data. The release holds
+## every chart template and the rendered manifest, so each CRD counts twice.
+## The max is three quarters of that limit. The rest is room for the values
+## that a user sets and for the next CRDs. When the check fails, the CRDs must
+## move out of the release, for example to a chart of their own.
+HELM_MAX_RELEASE_BYTES ?= 786432
 
 .PHONY: helm-verify
 helm-verify: install-helm ## Lint and render the Helm chart across value permutations. No cluster required.
@@ -554,34 +554,20 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		--show-only templates/fleet-manager/deployment.yaml | grep -q 'name: verify-pull' || { \
 		echo "ERROR: the fleet manager Pod does not use manager.imagePullSecrets" >&2; exit 1; }
 	@echo "  the fleet manager Pod uses manager.imagePullSecrets"
-	@set -e; \
-	max=0; worst=""; \
-	for opts in \
+	@# Measure the release Secret that an install writes, for each set of values.
+	@echo "  release Secret size (limit 1048576 bytes):"
+	@for opts in \
 		"" \
 		"--set crd.enabled=false" \
 		"--set rbac.helpers.enabled=true" \
 		"--set prometheus.enabled=true" \
 		"--set certManager.enabled=true" \
 		"--set fleetManager.enabled=true" \
-		"--set crd.enabled=false --set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true --set fleetManager.enabled=true" \
 		"--set rbac.helpers.enabled=true --set prometheus.enabled=true --set certManager.enabled=true --set fleetManager.enabled=true" \
 	; do \
-		label="$${opts:-<defaults>}"; \
-		tmp="$$(mktemp)"; \
-		$(HELM) template verify "$(HELM_CHART_DIR)" $$opts > "$$tmp"; \
-		bytes="$$(wc -c < "$$tmp")"; \
-		gz="$$(gzip -9 -c "$$tmp" | wc -c)"; \
-		rm -f "$$tmp"; \
-		printf '  %9s bytes (%7s gzipped)  helm template %s\n' "$$bytes" "$$gz" "$$label"; \
-		if [ "$$gz" -gt "$$max" ]; then max=$$gz; worst="$$label"; fi; \
-	done; \
-	echo "  worst case: $$max bytes gzipped ($$worst), limit $(HELM_MAX_RENDER_GZIP_BYTES)"; \
-	if [ "$$max" -gt "$(HELM_MAX_RENDER_GZIP_BYTES)" ]; then \
-		echo "ERROR: gzipped rendered chart exceeds $(HELM_MAX_RENDER_GZIP_BYTES) bytes in configuration: $$worst" >&2; \
-		echo "The CRD set has outgrown in-chart delivery. Consider splitting CRDs" >&2; \
-		echo "into a separate chart shipped alongside this one." >&2; \
-		exit 1; \
-	fi
+		$(HELM) install verify "$(HELM_CHART_DIR)" --namespace verify --dry-run=client -o json $$opts \
+			| go run ./hack/helmrelease -max $(HELM_MAX_RELEASE_BYTES) -label "$${opts:-<defaults>}" || exit 1; \
+	done
 
 .PHONY: helm-deploy
 helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify images with IMG, CLI_IMG, and FLEET_IMG.

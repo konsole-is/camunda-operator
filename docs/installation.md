@@ -43,6 +43,8 @@ helm install camunda-operator \
 
 This installs the manager and every custom resource definition. Replace `<version>` with a released version without the `v`, for example `0.1.0` for the release `v0.1.0`. The chart version, the chart `appVersion`, and the image tag are always this version.
 
+The CRDs of the chart have no field descriptions. The validation and the defaults do not change. On a chart install, `kubectl explain` shows each field and its type, but no text. Helm stores each release in one Secret, and the API server limits a Secret to 1 MiB of data. The CRDs with their descriptions do not fit in that Secret. The [API reference](crds/api-reference.md) has the field descriptions. The CRDs of `install.yaml` and `crds.yaml` also keep them, so `kubectl explain` shows them when you [install without Helm](#install-without-helm) or [install the CRDs separately](#install-the-crds-separately).
+
 ### Values
 
 The [chart README](https://github.com/konsole-is/camunda-operator/blob/main/dist/chart/README.md) documents every value. Helm stops with an error when you set a value that the chart does not know, or a value of the wrong type. The values you are most likely to set:
@@ -88,7 +90,7 @@ The manifest pins the CLI image in the manager's `CAMUNDA_OPERATOR_CLI_IMAGE` en
 
 ## Install the CRDs separately
 
-Install the CRDs yourself when you manage them outside Helm, for example with a GitOps tool. This also keeps them out of the Helm release Secret, which etcd limits to about 1 MB:
+Install the CRDs yourself when you manage them outside Helm, for example with a GitOps tool. The CRDs of `crds.yaml` keep their field descriptions, so `kubectl explain` shows them:
 
 ```bash
 kubectl apply --server-side -f https://github.com/konsole-is/camunda-operator/releases/download/v<version>/crds.yaml
