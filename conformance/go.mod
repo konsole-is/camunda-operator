@@ -5,7 +5,7 @@ go 1.26.0
 replace github.com/konsole-is/camunda-operator/api => ../api
 
 require (
-	github.com/konsole-is/camunda-operator/api v0.2.1-0.20261015084104-bb2edca2c2db
+	github.com/konsole-is/camunda-operator/api v0.2.1-0.20261015215804-0dbb1bf33a82
 	github.com/stretchr/testify v1.12.1
 	k8s.io/apiextensions-apiserver v0.37.1
 )
