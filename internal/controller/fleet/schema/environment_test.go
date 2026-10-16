@@ -158,6 +158,34 @@ var _ = Describe("Environment schema", func() {
 		),
 
 		Entry(
+			"refuses an empty cluster preset name", func(e *fleetv1alpha1.Environment) {
+				e.Spec.Presets.CamundaCluster = []string{""}
+			}, "spec.presets.camundaCluster[0]",
+		),
+		Entry(
+			"refuses an empty Elasticsearch preset name", func(e *fleetv1alpha1.Environment) {
+				e.Spec.Presets.ElasticsearchCluster = []string{""}
+			}, "spec.presets.elasticsearchCluster[0]",
+		),
+		Entry(
+			"refuses an empty database server preset name", func(e *fleetv1alpha1.Environment) {
+				e.Spec.Presets.DatabaseServer = []string{""}
+			}, "spec.presets.databaseServer[0]",
+		),
+		Entry(
+			"refuses an empty section name", func(e *fleetv1alpha1.Environment) {
+				e.Spec.Sections = map[string]fleetv1alpha1.SectionPolicy{"": {}}
+			}, "sections cannot have an empty section name",
+		),
+		Entry(
+			"refuses an empty registration name in parameters", func(e *fleetv1alpha1.Environment) {
+				e.Spec.Parameters = map[string]fleetv1alpha1.ParameterPolicies{
+					"": {"retentionDays": {ClaimEditable: true}},
+				}
+			}, "parameters cannot have an empty registration name",
+		),
+
+		Entry(
 			"admits a section without a default", func(e *fleetv1alpha1.Environment) {
 				setSection(e, fleetv1alpha1.SectionPolicy{Allowed: []string{"s3-backups"}})
 			}, "",

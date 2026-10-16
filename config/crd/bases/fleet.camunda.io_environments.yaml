@@ -35,9 +35,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          Environment sets the policy for the claims in its namespaces: the releases,
-          presets, and plugin registrations that a claim can use, the parameter
-          values, and the deletion default. A namespace belongs to the Environment
+          Environment sets the policy for the claims in its namespaces. The policy
+          names the releases, presets, and plugin registrations that a claim can use.
+          It also sets the parameter values and the deletion default. A namespace belongs to the Environment
           that its label fleet.camunda.io/environment names. Without any
           Environment, the modes and the parameter values of the registrations
           apply. The name is at most 63 characters, because other objects carry it
@@ -209,6 +209,9 @@ spec:
                   a claim cannot change it. A change applies to new claims only.
                 maxProperties: 64
                 type: object
+                x-kubernetes-validations:
+                - message: parameters cannot have an empty registration name
+                  rule: self.all(k, k.size() > 0)
               platformConfigRef:
                 description: |-
                   PlatformConfigRef names the CamundaPlatformConfig of a claim of the
@@ -226,6 +229,7 @@ spec:
                       CamundaCluster are the names of the CamundaClusterPresets that a
                       cluster claim can use.
                     items:
+                      minLength: 1
                       type: string
                     type: array
                     x-kubernetes-list-type: set
@@ -234,6 +238,7 @@ spec:
                       DatabaseServer are the names of the DatabaseServerPresets that the
                       built-in PostgreSQL of a claim can use.
                     items:
+                      minLength: 1
                       type: string
                     type: array
                     x-kubernetes-list-type: set
@@ -242,6 +247,7 @@ spec:
                       ElasticsearchCluster are the names of the ElasticsearchClusterPresets
                       that the built-in Elasticsearch of a claim can use.
                     items:
+                      minLength: 1
                       type: string
                     type: array
                     x-kubernetes-list-type: set
@@ -312,6 +318,9 @@ spec:
                   only the empty option. A change applies to new claims only.
                 maxProperties: 64
                 type: object
+                x-kubernetes-validations:
+                - message: sections cannot have an empty section name
+                  rule: self.all(k, k.size() > 0)
             type: object
             x-kubernetes-validations:
             - message: releases.default must be one of releases.allowed

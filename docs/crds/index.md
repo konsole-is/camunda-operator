@@ -1,6 +1,6 @@
 # CRD reference
 
-The operator defines the custom resources below in the API groups `core.camunda.io/v1` and `plugins.camunda.io/v1alpha1`.
+The operator defines the custom resources below in the API groups `core.camunda.io/v1`, `plugins.camunda.io/v1alpha1`, and `fleet.camunda.io/v1alpha1`.
 Each page opens with what the kind is and a minimal manifest. Then it covers one topic per section. It ends with the status conditions, the validation rules, and examples.
 
 The [API reference](api-reference.md) lists every type and field of these API groups on one page, with its default and its validation. Each kind page links its entry there. The page is generated from the API types, so it matches the CRDs of the same release.
@@ -77,13 +77,22 @@ These kinds are an alpha API in the group `plugins.camunda.io/v1alpha1`. Their f
 | [PluginRequest](pluginrequest.md) | Namespaced | A request to a plugin for the resources of one section. |
 | [Grant](grant.md) | Namespaced | One permission that a plugin asks for, on behalf of a `PluginRequest`. |
 
-## Planned kinds
+## Fleet
 
-The kind below is an alpha API in the group `fleet.camunda.io/v1alpha1`. No controller acts on it yet. The install does not include its CRD, and its fields can change in a later release.
+The kinds below are an alpha API in the group `fleet.camunda.io/v1alpha1`. Their fields can change in a later release.
 
 | Kind | Scope | What it is |
 | --- | --- | --- |
-| `Environment` | Cluster | The policy for the claims in the namespaces whose label `fleet.camunda.io/environment` names it. |
+| [Environment](environment.md) | Cluster | The policy for the claims in the namespaces whose label `fleet.camunda.io/environment` names it. |
+
+## Planned kinds
+
+The kinds below are an alpha API in the group `fleet.camunda.io/v1alpha1`. No controller acts on them yet, and their fields can change in a later release. The install includes their CRDs, so the API server accepts and checks them.
+
+| Kind | Scope | What it is |
+| --- | --- | --- |
+| `CamundaClusterClaim` | Namespaced | A request for one Camunda cluster under the policy of the environment of its namespace. |
+| `CamundaManagementClusterClaim` | Namespaced | A request for one management plane that serves the clusters of one or more environments. |
 
 ## How the kinds relate
 

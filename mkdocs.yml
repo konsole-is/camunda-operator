@@ -136,4 +136,6 @@ nav:
           - PluginRegistration: crds/pluginregistration.md
           - PluginRequest: crds/pluginrequest.md
           - Grant: crds/grant.md
+      - Fleet:
+          - Environment: crds/environment.md
       - API reference: crds/api-reference.md
