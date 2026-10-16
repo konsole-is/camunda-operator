@@ -11,11 +11,7 @@ import {
   type WatchSnapshot,
 } from "./deltas";
 import type { KindName, Resource } from "./kinds";
-
-export interface ListOptions {
-  namespace?: string;
-  labelSelector?: string;
-}
+import type { ListOptions } from "./read";
 
 /** Ref names one object. namespace is unset for a cluster-scoped kind. */
 export interface Ref {

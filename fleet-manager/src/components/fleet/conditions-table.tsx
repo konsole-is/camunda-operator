@@ -8,21 +8,12 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { age } from "./age";
-import type { ConditionStatus } from "./status";
+import { CONDITION_TONE, type ConditionLike, TEXT_TONE } from "./status";
 
 /** ConditionRow is the part of a Kubernetes condition that the table shows. */
-export type ConditionRow = {
+export type ConditionRow = ConditionLike & {
   type: string;
-  status: ConditionStatus;
-  reason?: string;
-  message?: string;
   lastTransitionTime?: string | Date;
-};
-
-const STATUS_TONE: Record<ConditionStatus, string> = {
-  True: "text-ok",
-  False: "text-bad",
-  Unknown: "text-warn",
 };
 
 /**
@@ -94,7 +85,12 @@ function Row({ condition, now }: { condition: ConditionRow; now: string }) {
       >
         {condition.type}
       </th>
-      <TableCell className={cn("font-medium", STATUS_TONE[condition.status])}>
+      <TableCell
+        className={cn(
+          "font-medium",
+          TEXT_TONE[CONDITION_TONE[condition.status]],
+        )}
+      >
         {condition.status}
       </TableCell>
       <TableCell className="text-text-2">{condition.reason ?? "-"}</TableCell>

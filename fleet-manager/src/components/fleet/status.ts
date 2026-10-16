@@ -9,6 +9,12 @@ export type ConditionLike = {
 
 export type StatusTone = "ok" | "warn" | "bad" | "off" | "muted";
 
+export const CONDITION_TONE: Record<ConditionStatus, StatusTone> = {
+  True: "ok",
+  False: "bad",
+  Unknown: "warn",
+};
+
 /**
  * describeReady turns a Ready condition into the words and the tone that the
  * status components show. A missing condition is "No status". The reason is
@@ -21,11 +27,19 @@ export function describeReady(condition: ConditionLike | undefined): {
 } {
   switch (condition?.status) {
     case "True":
-      return { tone: "ok", label: "Ready" };
+      return { tone: CONDITION_TONE.True, label: "Ready" };
     case "False":
-      return { tone: "bad", label: "Not ready", reason: condition.reason };
+      return {
+        tone: CONDITION_TONE.False,
+        label: "Not ready",
+        reason: condition.reason,
+      };
     case "Unknown":
-      return { tone: "warn", label: "Unknown", reason: condition.reason };
+      return {
+        tone: CONDITION_TONE.Unknown,
+        label: "Unknown",
+        reason: condition.reason,
+      };
     default:
       return { tone: "off", label: "No status" };
   }
@@ -38,6 +52,15 @@ export const CHIP_TONE: Record<StatusTone, string> = {
   bad: "bg-bad/15 text-bad",
   off: "bg-panel-2 text-muted",
   muted: "bg-panel-2 text-muted",
+};
+
+/** Text on the panel background. */
+export const TEXT_TONE: Record<StatusTone, string> = {
+  ok: "text-ok",
+  warn: "text-warn",
+  bad: "text-bad",
+  off: "text-muted",
+  muted: "text-muted",
 };
 
 export const DOT_TONE: Record<StatusTone, string> = {

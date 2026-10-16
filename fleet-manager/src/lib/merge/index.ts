@@ -1,5 +1,5 @@
 export type { FieldSourceMap, Layer, Merged } from "./engine";
-export type { FieldPath } from "./path";
+export { child, indexItem, keyedItem, valueItem, type FieldPath } from "./path";
 export { mergeDatabaseServer, mergeElasticsearch } from "./storage";
 export { mergeCluster } from "./cluster";
 export { defaultImages, type ImageRef, type ImageSet } from "./images";

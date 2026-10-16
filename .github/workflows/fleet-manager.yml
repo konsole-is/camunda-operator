@@ -9,6 +9,8 @@ on:
       - test/fixtures/merge/**
       - api/fleet/v1alpha1/shared_types.go
       - .github/workflows/fleet-manager.yml
+      - go.mod
+      - go.sum
       - config/crd/bases/**
       - config/samples/**
       - docs/crds/api-reference.md
@@ -19,6 +21,8 @@ on:
       - test/fixtures/merge/**
       - api/fleet/v1alpha1/shared_types.go
       - .github/workflows/fleet-manager.yml
+      - go.mod
+      - go.sum
       - config/crd/bases/**
       - config/samples/**
       - docs/crds/api-reference.md

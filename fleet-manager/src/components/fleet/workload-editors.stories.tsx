@@ -3,7 +3,7 @@ import { ResourcesEditor } from "./resources-editor";
 import { SchedulingEditor } from "./scheduling-editor";
 import { YamlEditor } from "./yaml-editor";
 
-export const editorStories2: Story[] = [
+export const workloadEditorStories: Story[] = [
   {
     component: "ResourcesEditor",
     name: "Set",

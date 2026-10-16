@@ -1,7 +1,7 @@
 import { confirmStories } from "@/components/fleet/confirm.stories";
 import { createFlowStories } from "@/components/fleet/create-flow.stories";
 import { dataTableStories } from "@/components/fleet/data-table.stories";
-import { editorStories2 } from "@/components/fleet/editors-2.stories";
+import { workloadEditorStories } from "@/components/fleet/workload-editors.stories";
 import { editorStories } from "@/components/fleet/editors.stories";
 import { helpStories } from "@/components/fleet/help.stories";
 import { lockedFieldStories } from "@/components/fleet/locked-field.stories";
@@ -23,7 +23,7 @@ export const stories: readonly Story[] = [
   ...helpStories,
   ...dataTableStories,
   ...editorStories,
-  ...editorStories2,
+  ...workloadEditorStories,
   ...sectionCardsStories,
   ...createFlowStories,
   ...observeStories,

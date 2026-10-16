@@ -74,7 +74,7 @@ describe("the gallery stories", () => {
     }
   });
 
-  it("has a story for each component of this issue", () => {
+  it("has a story for each shell, status, and locked field component", () => {
     const components = new Set(stories.map((s) => s.component));
     for (const name of [
       "StatusChip",

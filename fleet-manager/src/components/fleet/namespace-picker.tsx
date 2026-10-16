@@ -6,11 +6,8 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { ENVIRONMENT_LABEL, isLabelValue } from "@/lib/labels";
 import type { ValidationError } from "@/lib/schema";
-import { isLabelValue } from "./labels";
-
-/** ENVIRONMENT_LABEL is the label that puts a namespace in an environment (contract 3.1). */
-export const ENVIRONMENT_LABEL = "fleet.camunda.io/environment";
 
 export type NamespaceChoice =
   | { kind: "existing"; name: string }
