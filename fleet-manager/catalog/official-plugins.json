@@ -8,9 +8,9 @@
         "access"
       ],
       "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/gateway-access",
-      "version": "0.1.0",
+      "version": "0.0.0-test.1",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install gateway-access oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/gateway-access --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
+      "installCommand": "helm install gateway-access oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/gateway-access --version 0.0.0-test.1 --namespace camunda-operator-plugins --create-namespace"
     },
     {
       "name": "rustfs",
@@ -19,9 +19,9 @@
         "backup-storage"
       ],
       "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/rustfs",
-      "version": "0.1.0",
+      "version": "0.0.0-test.1",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install rustfs oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/rustfs --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
+      "installCommand": "helm install rustfs oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/rustfs --version 0.0.0-test.1 --namespace camunda-operator-plugins --create-namespace"
     },
     {
       "name": "aws-identity",
@@ -30,9 +30,9 @@
         "cloud-identity"
       ],
       "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-identity",
-      "version": "0.1.0",
+      "version": "0.0.0-test.1",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-identity oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-identity --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
+      "installCommand": "helm install aws-identity oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-identity --version 0.0.0-test.1 --namespace camunda-operator-plugins --create-namespace"
     },
     {
       "name": "aws-kms",
@@ -41,9 +41,9 @@
         "encryption-key"
       ],
       "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-kms",
-      "version": "0.1.0",
+      "version": "0.0.0-test.1",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-kms oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-kms --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
+      "installCommand": "helm install aws-kms oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-kms --version 0.0.0-test.1 --namespace camunda-operator-plugins --create-namespace"
     },
     {
       "name": "aws-ebs",
@@ -52,9 +52,9 @@
         "volume-encryption"
       ],
       "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-ebs",
-      "version": "0.1.0",
+      "version": "0.0.0-test.1",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-ebs oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-ebs --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
+      "installCommand": "helm install aws-ebs oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-ebs --version 0.0.0-test.1 --namespace camunda-operator-plugins --create-namespace"
     },
     {
       "name": "aws-s3",
@@ -63,9 +63,9 @@
         "backup-storage"
       ],
       "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-s3",
-      "version": "0.1.0",
+      "version": "0.0.0-test.1",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-s3 oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-s3 --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
+      "installCommand": "helm install aws-s3 oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-s3 --version 0.0.0-test.1 --namespace camunda-operator-plugins --create-namespace"
     },
     {
       "name": "aws-connectors-role",
@@ -74,9 +74,9 @@
         "connectors-permissions"
       ],
       "chart": "oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-connectors-role",
-      "version": "0.1.0",
+      "version": "0.0.0-test.1",
       "repository": "https://github.com/konsole-is/camunda-operator-plugins",
-      "installCommand": "helm install aws-connectors-role oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-connectors-role --version 0.1.0 --namespace camunda-operator-plugins --create-namespace"
+      "installCommand": "helm install aws-connectors-role oci://ghcr.io/konsole-is/camunda-operator-plugins/charts/aws-connectors-role --version 0.0.0-test.1 --namespace camunda-operator-plugins --create-namespace"
     }
   ]
 }
