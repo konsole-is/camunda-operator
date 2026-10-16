@@ -131,8 +131,7 @@ export interface EnvironmentSpec {
   };
   /**
    * PlatformConfigRef names the CamundaPlatformConfig of a claim of the
-   * environment that names none itself. A change applies to new claims
-   * only.
+   * environment that names none itself.
    */
   platformConfigRef?: string;
   /**

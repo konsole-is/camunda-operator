@@ -38,8 +38,7 @@ type EnvironmentSpec struct {
 	// +optional
 	Color string `json:"color,omitempty"`
 	// PlatformConfigRef names the CamundaPlatformConfig of a claim of the
-	// environment that names none itself. A change applies to new claims
-	// only.
+	// environment that names none itself.
 	// +optional
 	PlatformConfigRef string `json:"platformConfigRef,omitempty"`
 	// Presets lists, for each preset kind, the presets that a claim of the

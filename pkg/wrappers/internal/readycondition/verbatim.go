@@ -34,9 +34,14 @@ import (
 // Every other state, also a Ready of an older generation, is Creating on
 // the first apply and Updating afterwards.
 func VerbatimConverging(op concepts.ConvergingOperation, o Object) concepts.AliveStatusWithReason {
-	ready := currentReady(o)
 	reason := verbatim(o)
+	if stale := concepts.StaleGenerationStatus(op, observed(o), o.Generation, o.Kind); stale != nil {
+		stale.Reason = reason
 
+		return *stale
+	}
+
+	ready := meta.FindStatusCondition(o.Conditions, apiv1.ConditionReady)
 	switch {
 	case ready != nil && ready.Status == metav1.ConditionTrue:
 		return concepts.AliveStatusWithReason{Status: concepts.AliveConvergingStatusHealthy, Reason: reason}
@@ -50,16 +55,6 @@ func VerbatimConverging(op concepts.ConvergingOperation, o Object) concepts.Aliv
 	}
 
 	return concepts.AliveStatusWithReason{Status: status, Reason: reason}
-}
-
-// currentReady returns the Ready condition when the operator observed the
-// current generation, and nil otherwise.
-func currentReady(o Object) *metav1.Condition {
-	if observed(o) < o.Generation {
-		return nil
-	}
-
-	return meta.FindStatusCondition(o.Conditions, apiv1.ConditionReady)
 }
 
 // verbatim gives the Ready reason and message, unchanged. It says so when
@@ -104,4 +99,14 @@ func VerbatimGrace(o Object) concepts.GraceStatusWithReason {
 	}
 
 	return concepts.GraceStatusWithReason{Status: concepts.GraceStatusDown, Reason: reason}
+}
+
+// currentReady returns the Ready condition when the operator observed the
+// current generation, and nil otherwise.
+func currentReady(o Object) *metav1.Condition {
+	if observed(o) < o.Generation {
+		return nil
+	}
+
+	return meta.FindStatusCondition(o.Conditions, apiv1.ConditionReady)
 }

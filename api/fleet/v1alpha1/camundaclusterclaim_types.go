@@ -30,8 +30,10 @@ const (
 	// PrerequisiteNotMet or OperationPending, and the message names the
 	// sections.
 	ConditionRequestsReady = "RequestsReady"
-	// ConditionClusterReady copies the Ready reason and message of the
-	// CamundaCluster of the claim.
+	// ConditionClusterReady reports the CamundaCluster of the claim. Its
+	// reason is the convergence status of the cluster, such as Creating or
+	// Healthy. Its message holds the Ready reason and message of the
+	// CamundaCluster as <Reason>: <Message>.
 	ConditionClusterReady = "ClusterReady"
 	// ConditionAttachmentsReady reports the CamundaOptimize and the
 	// BackupSchedule of the claim.
@@ -208,7 +210,8 @@ type CamundaClusterClaimStatus struct {
 	// NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
 	// InvalidReference, SlotConflict, or WiringCycle when a check of the
 	// claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and
-	// AttachmentsReady.
+	// AttachmentsReady. The message of ClusterReady holds the Ready reason
+	// and message of the CamundaCluster as <Reason>: <Message>.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -235,6 +238,7 @@ type CamundaClusterClaimStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Cluster",type=string,JSONPath=`.status.cluster.name`

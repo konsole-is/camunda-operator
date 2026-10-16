@@ -8093,7 +8093,8 @@ export interface CamundaClusterClaimStatus {
    * NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
    * InvalidReference, SlotConflict, or WiringCycle when a check of the
    * claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and
-   * AttachmentsReady.
+   * AttachmentsReady. The message of ClusterReady holds the Ready reason
+   * and message of the CamundaCluster as <Reason>: <Message>.
    *
    * Items: Condition contains details for one aspect of the current state of this API Resource.
    */

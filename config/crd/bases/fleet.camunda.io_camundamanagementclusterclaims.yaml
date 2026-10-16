@@ -36,7 +36,7 @@ spec:
       openAPIV3Schema:
         description: |-
           CamundaManagementClusterClaim asks for a management plane that serves the
-          clusters of one or more environments. The claim controller writes a
+          clusters of one or more environments. The plane claim controller writes a
           CamundaManagementCluster with the name of the claim, and the
           PluginRequests of the selected sections. The name is a DNS-1035 label of
           at most 40 characters. The claim adds a suffix to it in the names of the
@@ -5030,11 +5030,11 @@ spec:
                 description: |-
                   Conditions report the state of the claim. Ready is False with the
                   reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
-                  InvalidReference, SlotConflict, or WiringCycle when the claim
+                  InvalidReference, SlotConflict, or WiringCycle when the plane claim
                   controller refuses the claim. The message names the cause. Otherwise
-                  Ready follows RequestsReady and ManagementClusterReady.
-                  ManagementClusterReady carries the Ready reason and message of the
-                  CamundaManagementCluster.
+                  Ready follows RequestsReady and ManagementClusterReady. The message of
+                  ManagementClusterReady holds the Ready reason and message of the
+                  CamundaManagementCluster as <Reason>: <Message>.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -5112,8 +5112,8 @@ spec:
                 type: object
               observedGeneration:
                 description: |-
-                  ObservedGeneration is the last generation that the claim controller
-                  processed.
+                  ObservedGeneration is the last generation that the plane claim
+                  controller processed.
                 format: int64
                 type: integer
               requests:
@@ -5151,8 +5151,7 @@ spec:
                   type: object
                 type: array
                 x-kubernetes-list-map-keys:
-                - section
-                - registration
+                - name
                 x-kubernetes-list-type: map
               resolvedPolicy:
                 description: |-

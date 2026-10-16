@@ -24,21 +24,23 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// The condition types that only CamundaManagementClusterClaim reports. Ready
-// and its reasons come from api/v1. The reasons of a refused claim are in
+// The component conditions of a CamundaManagementClusterClaim. Ready and its
+// reasons come from api/v1. The reasons of a refused claim are in
 // conditions.go.
 const (
 	// ConditionPlaneRequestsReady is the condition of the PluginRequests of a
 	// plane claim. Its string is the RequestsReady of CamundaClusterClaim, so
 	// one kubectl wait works on both claim kinds.
 	ConditionPlaneRequestsReady = "RequestsReady"
-	// ConditionManagementClusterReady carries the Ready reason and message of
-	// the CamundaManagementCluster that the claim writes, unchanged.
+	// ConditionManagementClusterReady reports the CamundaManagementCluster of
+	// the claim. Its reason is the convergence status of the plane, such as
+	// Creating or Healthy. Its message holds the Ready reason and message of
+	// the CamundaManagementCluster as <Reason>: <Message>.
 	ConditionManagementClusterReady = "ManagementClusterReady"
 )
 
 // CamundaManagementClusterClaimSpec is the management plane that a team asks
-// for. The claim controller writes one PluginRequest for each selected
+// for. The plane claim controller writes one PluginRequest for each selected
 // section and one CamundaManagementCluster with the name of the claim.
 // +kubebuilder:validation:XValidation:rule="(has(self.plugins) ? size(self.plugins) : 0) == (has(oldSelf.plugins) ? size(oldSelf.plugins) : 0) && (!has(oldSelf.plugins) || oldSelf.plugins.all(o, self.plugins.exists(n, n.section == o.section && n.registration == o.registration)))",message="sections and their registrations are fixed after creation"
 // +kubebuilder:validation:XValidation:rule="!has(self.management.identityProvider.keycloak) || has(self.versions.keycloak)",message="versions.keycloak is required with the keycloak identity provider"
@@ -271,19 +273,19 @@ type ManagementVersions struct {
 }
 
 // CamundaManagementClusterClaimStatus is the state of a plane claim. The
-// claim controller writes it.
+// plane claim controller writes it.
 type CamundaManagementClusterClaimStatus struct {
-	// ObservedGeneration is the last generation that the claim controller
-	// processed.
+	// ObservedGeneration is the last generation that the plane claim
+	// controller processed.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions report the state of the claim. Ready is False with the
 	// reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
-	// InvalidReference, SlotConflict, or WiringCycle when the claim
+	// InvalidReference, SlotConflict, or WiringCycle when the plane claim
 	// controller refuses the claim. The message names the cause. Otherwise
-	// Ready follows RequestsReady and ManagementClusterReady.
-	// ManagementClusterReady carries the Ready reason and message of the
-	// CamundaManagementCluster.
+	// Ready follows RequestsReady and ManagementClusterReady. The message of
+	// ManagementClusterReady holds the Ready reason and message of the
+	// CamundaManagementCluster as <Reason>: <Message>.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -299,8 +301,7 @@ type CamundaManagementClusterClaimStatus struct {
 	// Requests lists the PluginRequests of the claim, one for each selected
 	// section.
 	// +listType=map
-	// +listMapKey=section
-	// +listMapKey=registration
+	// +listMapKey=name
 	// +optional
 	Requests []RequestStatus `json:"requests,omitempty"`
 	// ManagementCluster names the CamundaManagementCluster of the claim. It
@@ -328,7 +329,7 @@ type ManagementClusterRef struct {
 // +kubebuilder:validation:XValidation:rule="oldSelf.hasValue() || (self.metadata.name.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$') && self.metadata.name.size() <= 40)",message="metadata.name must be a DNS-1035 label of at most 40 characters, because the claim adds a suffix to it in the names of the resources that it writes",optionalOldSelf=true
 
 // CamundaManagementClusterClaim asks for a management plane that serves the
-// clusters of one or more environments. The claim controller writes a
+// clusters of one or more environments. The plane claim controller writes a
 // CamundaManagementCluster with the name of the claim, and the
 // PluginRequests of the selected sections. The name is a DNS-1035 label of
 // at most 40 characters. The claim adds a suffix to it in the names of the

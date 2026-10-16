@@ -136,7 +136,7 @@ spec:
   # ... the rest of your environment
 ```
 
-A change of `sections`, `parameters`, `deletionPolicy`, or `platformConfigRef` applies to new claims only. An existing claim keeps the policy that it recorded at creation. The releases and the presets are different. A new claim, and a release or preset change of an existing claim, are checked against the current lists.
+A change of `sections`, `parameters`, or `deletionPolicy` applies to new claims only. An existing claim keeps the policy that it recorded at creation. The releases and the presets are different. A new claim, and a release or preset change of an existing claim, are checked against the current lists.
 
 ## Status
 
@@ -218,4 +218,6 @@ spec:
 - [CamundaRelease](camundarelease.md): named in `spec.releases`.
 - [CamundaClusterPreset](camundaclusterpreset.md), [ElasticsearchClusterPreset](elasticsearchclusterpreset.md), [DatabaseServerPreset](databaseserverpreset.md): named in `spec.presets`.
 - [CamundaPlatformConfig](camundaplatformconfig.md): named in `spec.platformConfigRef`.
+- [PluginSection](pluginsection.md): named by the keys of `spec.sections`.
+- [PluginRegistration](pluginregistration.md): named by the keys of `spec.parameters`, and in the `allowed` and `default` of each section.
 - [API reference](api-reference.md#environment): every type and field of `fleet.camunda.io/v1alpha1`.
