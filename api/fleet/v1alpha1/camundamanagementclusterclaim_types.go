@@ -33,9 +33,10 @@ const (
 	// one kubectl wait works on both claim kinds.
 	ConditionPlaneRequestsReady = "RequestsReady"
 	// ConditionManagementClusterReady reports the CamundaManagementCluster of
-	// the claim. Its reason is the convergence status of the plane, such as
-	// Creating or Healthy. Its message holds the Ready reason of the
-	// CamundaManagementCluster, a colon, and the Ready message.
+	// the claim. ocf sets its reason, such as Creating, Healthy, or Down.
+	// While the reason is Creating, Updating, Failing, Degraded, or Down, the
+	// message holds the Ready reason and message of the
+	// CamundaManagementCluster, or says that it has not reported Ready yet.
 	ConditionManagementClusterReady = "ManagementClusterReady"
 )
 
@@ -283,9 +284,12 @@ type CamundaManagementClusterClaimStatus struct {
 	// reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
 	// InvalidReference, SlotConflict, or WiringCycle when the plane claim
 	// controller refuses the claim. The message names the cause. Otherwise
-	// Ready follows RequestsReady and ManagementClusterReady. The message of
-	// ManagementClusterReady holds the Ready reason of the
-	// CamundaManagementCluster, a colon, and the Ready message.
+	// Ready follows RequestsReady and ManagementClusterReady. When
+	// ManagementClusterReady has the reason Creating, Updating, Failing,
+	// Degraded, or Down, its message holds the Ready reason and message of
+	// the CamundaManagementCluster. If the CamundaManagementCluster has no
+	// Ready condition yet, the message says so. With other reasons, such as
+	// Error or PrerequisiteNotMet, the message gives that cause.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

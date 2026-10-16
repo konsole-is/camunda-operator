@@ -5257,7 +5257,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#clusterref"
       },
       "status.conditions": {
-        "description": "Conditions report the state of the claim. Ready is False with reason\nNoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when a check of the\nclaim fails. Otherwise Ready follows RequestsReady, ClusterReady, and\nAttachmentsReady. The message of ClusterReady holds the Ready reason\nof the CamundaCluster, a colon, and the Ready message.",
+        "description": "Conditions report the state of the claim. Ready is False with reason\nNoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when a check of the\nclaim fails. Otherwise Ready follows RequestsReady, ClusterReady, and\nAttachmentsReady. When ClusterReady has the reason Creating, Updating,\nFailing, Degraded, or Down, its message holds the Ready reason and\nmessage of the CamundaCluster. If the CamundaCluster has no Ready\ncondition yet, the message says so. With other reasons, such as\nError or PrerequisiteNotMet, the message gives that cause.",
         "anchor": "#camundaclusterclaimstatus"
       },
       "status.environment": {
@@ -5731,7 +5731,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#camundamanagementclusterclaim"
       },
       "status.conditions": {
-        "description": "Conditions report the state of the claim. Ready is False with the\nreason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when the plane claim\ncontroller refuses the claim. The message names the cause. Otherwise\nReady follows RequestsReady and ManagementClusterReady. The message of\nManagementClusterReady holds the Ready reason of the\nCamundaManagementCluster, a colon, and the Ready message.",
+        "description": "Conditions report the state of the claim. Ready is False with the\nreason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when the plane claim\ncontroller refuses the claim. The message names the cause. Otherwise\nReady follows RequestsReady and ManagementClusterReady. When\nManagementClusterReady has the reason Creating, Updating, Failing,\nDegraded, or Down, its message holds the Ready reason and message of\nthe CamundaManagementCluster. If the CamundaManagementCluster has no\nReady condition yet, the message says so. With other reasons, such as\nError or PrerequisiteNotMet, the message gives that cause.",
         "anchor": "#camundamanagementclusterclaimstatus"
       },
       "status.environment": {

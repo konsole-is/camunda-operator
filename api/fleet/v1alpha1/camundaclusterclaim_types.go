@@ -30,10 +30,11 @@ const (
 	// PrerequisiteNotMet or OperationPending, and the message names the
 	// sections.
 	ConditionRequestsReady = "RequestsReady"
-	// ConditionClusterReady reports the CamundaCluster of the claim. Its
-	// reason is the convergence status of the cluster, such as Creating or
-	// Healthy. Its message holds the Ready reason of the CamundaCluster, a
-	// colon, and the Ready message.
+	// ConditionClusterReady reports the CamundaCluster of the claim. ocf sets
+	// its reason, such as Creating, Healthy, or Down. While the reason is
+	// Creating, Updating, Failing, Degraded, or Down, the message holds the
+	// Ready reason and message of the CamundaCluster, or says that it has not
+	// reported Ready yet.
 	ConditionClusterReady = "ClusterReady"
 	// ConditionAttachmentsReady reports the CamundaOptimize and the
 	// BackupSchedule of the claim.
@@ -210,8 +211,11 @@ type CamundaClusterClaimStatus struct {
 	// NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
 	// InvalidReference, SlotConflict, or WiringCycle when a check of the
 	// claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and
-	// AttachmentsReady. The message of ClusterReady holds the Ready reason
-	// of the CamundaCluster, a colon, and the Ready message.
+	// AttachmentsReady. When ClusterReady has the reason Creating, Updating,
+	// Failing, Degraded, or Down, its message holds the Ready reason and
+	// message of the CamundaCluster. If the CamundaCluster has no Ready
+	// condition yet, the message says so. With other reasons, such as
+	// Error or PrerequisiteNotMet, the message gives that cause.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

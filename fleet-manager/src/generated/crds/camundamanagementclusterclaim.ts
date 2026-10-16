@@ -3867,9 +3867,12 @@ export interface CamundaManagementClusterClaimStatus {
    * reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,
    * InvalidReference, SlotConflict, or WiringCycle when the plane claim
    * controller refuses the claim. The message names the cause. Otherwise
-   * Ready follows RequestsReady and ManagementClusterReady. The message of
-   * ManagementClusterReady holds the Ready reason of the
-   * CamundaManagementCluster, a colon, and the Ready message.
+   * Ready follows RequestsReady and ManagementClusterReady. When
+   * ManagementClusterReady has the reason Creating, Updating, Failing,
+   * Degraded, or Down, its message holds the Ready reason and message of
+   * the CamundaManagementCluster. If the CamundaManagementCluster has no
+   * Ready condition yet, the message says so. With other reasons, such as
+   * Error or PrerequisiteNotMet, the message gives that cause.
    *
    * Items: Condition contains details for one aspect of the current state of this API Resource.
    */
