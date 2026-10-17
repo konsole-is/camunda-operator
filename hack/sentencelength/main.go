@@ -41,7 +41,8 @@ limitations under the License.
 //     as one word and are not checked for semicolons or modals. A link counts
 //     as the words of its text. A hyphenated word counts as one word. A token
 //     without a letter or a digit is no word. An HTML line break counts as a
-//     space.
+//     space. An HTML entity, such as &lt;, is part of its word and is not a
+//     semicolon.
 //
 // How it classifies a sentence:
 //   - A sentence in an ordered list item is procedural.
@@ -108,6 +109,7 @@ var (
 	quoted        = regexp.MustCompile(`"[^"]*"|“[^”]*”`)
 	parens        = regexp.MustCompile(`\([^()]*\)`)
 	lineBreak     = regexp.MustCompile(`(?i)<br\s*/?>`)
+	entity        = regexp.MustCompile(`&(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#[xX][0-9A-Fa-f]+);`)
 	banned        = regexp.MustCompile(`;|(?i:\b(?:would|could|may)(?:n['’]t)?\b)`)
 )
 
@@ -406,6 +408,7 @@ func mask(s string) string {
 		}
 	}
 
+	fill(entity, false)
 	fill(inlineCode, false)
 	fill(link, true)
 	fill(refLink, true)
