@@ -314,10 +314,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	contractErr := r.writeContract(ctx, &mc, res)
 	if contractErr == nil {
 		// The new contract is written, so every other contract of this
-		// management cluster goes: the one the status names, and one that a
-		// pass whose status write was lost published under an earlier name.
-		// A failed withdrawal keeps the old name on the status, which is what
-		// makes the next reconcile withdraw it again.
+		// management cluster goes. A failed withdrawal keeps the old name on
+		// the status, where the finalizer looks for the contracts it owns.
 		if err := r.withdrawOtherContracts(ctx, &mc, res.ContractName); err != nil {
 			mc.Status.ManagementAuthConfig = previousContract
 			contractErr = err
