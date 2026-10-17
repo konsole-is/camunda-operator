@@ -60,7 +60,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -8396,7 +8396,7 @@ of the cluster.</p>
 </tr>
 <tr>
 <td><code>postgresImage</code> <em>string</em></td>
-<td>PostgresImage is the full image reference of the dump container. It<br />replaces the default postgres:<major> of the upstream registry. Set it<br />in an air-gapped installation, where the default image is not<br />available.</td>
+<td>PostgresImage is the full image reference of the dump container. It<br />replaces the default postgres:&lt;major&gt; of the upstream registry. Set it<br />in an air-gapped installation, where the default image is not<br />available.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -8469,7 +8469,7 @@ partitions.</p>
 <p>BackupSchedule creates logical backups of one CamundaCluster on a cron
 schedule, and deletes old backups that have its label. At each trigger, the
 operator creates the backup kind for the storage type of the cluster. The
-backup has the name <schedule>-<unix-timestamp> and the labels
+backup has the name &lt;schedule&gt;-&lt;unix-timestamp&gt; and the labels
 camunda.io/cluster and camunda.io/backup-schedule. If a name is too long
 for a resource name or a label value, the operator shortens it. Then it
 adds a hash of the full name, so two long names stay different.</p>
@@ -8787,7 +8787,7 @@ to one cluster only.</p>
 </tr>
 <tr>
 <td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
-<td>ServiceAccount configures the ServiceAccount of every workload except<br />the connectors, which connectors.serviceAccount configures. The<br />workloads get access to the buckets of backupStorageRef and<br />documentStorageRef through this identity. When the operator creates<br />the account, it adds the identity annotation of each bucket that names<br />one. When the annotations carry azure.workload.identity/client-id, the<br />pods of these workloads, the backup Jobs included, get the label<br />azure.workload.identity/use: "true". The name <name>-camunda<br />belongs to the operator. While neither the cluster nor its preset sets<br />this block and no referenced bucket uses workload identity, the<br />operator deletes an account of that name. It deletes one that it did<br />not create too, except while connectors.serviceAccount names it with<br />create false: Ready then reports InvalidReference.</td>
+<td>ServiceAccount configures the ServiceAccount of every workload except<br />the connectors, which connectors.serviceAccount configures. The<br />workloads get access to the buckets of backupStorageRef and<br />documentStorageRef through this identity. When the operator creates<br />the account, it adds the identity annotation of each bucket that names<br />one. When the annotations carry azure.workload.identity/client-id, the<br />pods of these workloads, the backup Jobs included, get the label<br />azure.workload.identity/use: "true". The name &lt;name&gt;-camunda<br />belongs to the operator. While neither the cluster nor its preset sets<br />this block and no referenced bucket uses workload identity, the<br />operator deletes an account of that name. It deletes one that it did<br />not create too, except while connectors.serviceAccount names it with<br />create false: Ready then reports InvalidReference.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -9244,7 +9244,7 @@ the cluster cannot have different values.</p>
 </tr>
 <tr>
 <td><code>externalUrl</code> <em>string</em></td>
-<td>ExternalURL is the URL where browsers reach this Optimize. With a path,<br />such as https://camunda.example.com/optimize, Optimize serves under that<br />path, and status.endpoints routes that path. Without a path, Optimize<br />serves at the root of the host.<br />In the two Keycloak modes, the management plane of managementAuthRef<br />registers <externalUrl>/api/authentication/callback on the optimize<br />client of the realm. Thus a person who signs in here comes back here.<br />Without a URL, the plane registers no callback, and Keycloak refuses<br />the return. The exception is a callback that somebody added to the<br />realm manually.<br />In the oidc mode, the operator registers no callback. The identity<br />provider of the platform config holds the callback URLs, so add<br /><externalUrl>/api/authentication/callback there.</td>
+<td>ExternalURL is the URL where browsers reach this Optimize. With a path,<br />such as https://camunda.example.com/optimize, Optimize serves under that<br />path, and status.endpoints routes that path. Without a path, Optimize<br />serves at the root of the host.<br />In the two Keycloak modes, the management plane of managementAuthRef<br />registers &lt;externalUrl&gt;/api/authentication/callback on the optimize<br />client of the realm. Thus a person who signs in here comes back here.<br />Without a URL, the plane registers no callback, and Keycloak refuses<br />the return. The exception is a callback that somebody added to the<br />realm manually.<br />In the oidc mode, the operator registers no callback. The identity<br />provider of the platform config holds the callback URLs, so add<br />&lt;externalUrl&gt;/api/authentication/callback there.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -9396,7 +9396,7 @@ orchestration clusters of an environment.</p>
 </tr>
 <tr>
 <td><code>images</code> <em><a href="#imagesspec">ImagesSpec</a></em></td>
-<td>Images changes the repositories of the images that the operator pulls,<br />one entry for each image, for example to a mirror. Each value is a full<br />repository with its registry and no tag. The tag always comes from the<br />version field of the resource that runs the image. A registry with a<br />port needs a path after the port, as in registry:5000/camunda/optimize.<br />The operator appends the tag to the value, as in<br />registry:5000/camunda/optimize:<version>.</td>
+<td>Images changes the repositories of the images that the operator pulls,<br />one entry for each image, for example to a mirror. Each value is a full<br />repository with its registry and no tag. The tag always comes from the<br />version field of the resource that runs the image. A registry with a<br />port needs a path after the port, as in registry:5000/camunda/optimize.<br />The operator appends the tag to the value, as in<br />registry:5000/camunda/optimize:&lt;version&gt;.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -9836,7 +9836,7 @@ Deployment.</p>
 </tr>
 <tr>
 <td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
-<td>ServiceAccount configures the ServiceAccount of the connectors pods.<br />When unset, they run under the default ServiceAccount of the namespace.<br />When set, they run under <name>-connectors, or under name. Only<br />the annotations of this block go on the account, never the identities<br />of the buckets. When they carry azure.workload.identity/client-id, the<br />connectors pods get the label azure.workload.identity/use: "true". The<br />connectors never run under the cluster ServiceAccount: name must differ<br />from it, and a spec.serviceAccount.name of default needs this block, or<br />Ready reports InvalidReference. The name default needs create false.<br />With create false, name must not be <name>-camunda while<br />neither the cluster nor its preset sets spec.serviceAccount and no<br />referenced bucket uses workload identity. Ready then reports<br />InvalidReference, also while connectors are off. A preset can set this<br />block, except name.</td>
+<td>ServiceAccount configures the ServiceAccount of the connectors pods.<br />When unset, they run under the default ServiceAccount of the namespace.<br />When set, they run under &lt;name&gt;-connectors, or under name. Only<br />the annotations of this block go on the account, never the identities<br />of the buckets. When they carry azure.workload.identity/client-id, the<br />connectors pods get the label azure.workload.identity/use: "true". The<br />connectors never run under the cluster ServiceAccount: name must differ<br />from it, and a spec.serviceAccount.name of default needs this block, or<br />Ready reports InvalidReference. The name default needs create false.<br />With create false, name must not be &lt;name&gt;-camunda while<br />neither the cluster nor its preset sets spec.serviceAccount and no<br />referenced bucket uses workload identity. Ready then reports<br />InvalidReference, also while connectors are off. A preset can set this<br />block, except name.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -10442,7 +10442,7 @@ reached the server.</p>
 </tr>
 <tr>
 <td><code>probedEndpoint</code> <em>string</em></td>
-<td>ProbedEndpoint is the host and the port that the last probe reached, as<br />"<host>:<port>". With it, the operator knows whether a spec change<br />moves the server.</td>
+<td>ProbedEndpoint is the host and the port that the last probe reached, as<br />"&lt;host&gt;:&lt;port&gt;". With it, the operator knows whether a spec change<br />moves the server.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -10454,7 +10454,7 @@ reached the server.</p>
 </tr>
 <tr>
 <td><code>probedSecretKeys</code> <em>string</em></td>
-<td>ProbedSecretKeys are the keys of that Secret that the last probe read,<br />as "<usernameKey>/<passwordKey>". One Secret can hold the credentials<br />of more than one user, so the keys identify the user.</td>
+<td>ProbedSecretKeys are the keys of that Secret that the last probe read,<br />as "&lt;usernameKey&gt;/&lt;passwordKey&gt;". One Secret can hold the credentials<br />of more than one user, so the keys identify the user.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -10641,7 +10641,7 @@ again, the server publishes the answer again from this status.</p>
 </table>
 <h4 id="databaseserverserviceaccountspec">DatabaseServerServiceAccountSpec<a class="headerlink" href="#databaseserverserviceaccountspec" title="Permanent link">&para;</a></h4>
 <p>DatabaseServerServiceAccountSpec configures the ServiceAccount of the
-instance pods. The operator creates it with the name <server name>-postgres.
+instance pods. The operator creates it with the name &lt;server name&gt;-postgres.
 Every CloudNativePG cluster of the server runs under it, also the cluster
 that a rollback builds. The operator adds the workload-identity
 annotations of the archive bucket. An annotation set here wins over the
@@ -10881,13 +10881,13 @@ A preset also refuses the version, which belongs to a CamundaRelease.</p>
 </tr>
 <tr>
 <td><code>applicationCredentials</code> <em><a href="#credentialsspec">CredentialsSpec</a></em></td>
-<td>ApplicationCredentials configures the application credentials Secret.<br />The operator always creates it. The Secret name defaults to<br /><CR name>-credentials.</td>
+<td>ApplicationCredentials configures the application credentials Secret.<br />The operator always creates it. The Secret name defaults to<br />&lt;CR name&gt;-credentials.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
 <td><code>backupCredentials</code> <em><a href="#backupcredentialsspec">BackupCredentialsSpec</a></em></td>
-<td>BackupCredentials configures the backup credentials Secret. The<br />operator creates it unless it is disabled. The Secret name defaults to<br /><CR name>-backup-credentials.</td>
+<td>BackupCredentials configures the backup credentials Secret. The<br />operator creates it unless it is disabled. The Secret name defaults to<br />&lt;CR name&gt;-backup-credentials.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -11182,7 +11182,7 @@ CamundaRelease.</p>
 </tr>
 <tr>
 <td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
-<td>ServiceAccount configures the ServiceAccount of the Elasticsearch pods.<br />The name <name>-es belongs to the operator. While neither the cluster<br />nor its preset sets this block and the snapshot bucket uses no workload<br />identity, the operator deletes the account <name>-es. It deletes one<br />that it did not create too.</td>
+<td>ServiceAccount configures the ServiceAccount of the Elasticsearch pods.<br />The name &lt;name&gt;-es belongs to the operator. While neither the cluster<br />nor its preset sets this block and the snapshot bucket uses no workload<br />identity, the operator deletes the account &lt;name&gt;-es. It deletes one<br />that it did not create too.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -11467,7 +11467,7 @@ run.</p>
 <tbody>
 <tr>
 <td><code>url</code> <em>string</em></td>
-<td>URL is the URL of Keycloak, with the /auth path when Keycloak has one.<br />Management Identity uses this URL, so it must resolve from inside the<br />Kubernetes cluster.<br />The operator appends /realms/<realm> to this URL, so the URL has no<br />query and no fragment. The URL is also in the annotations of the Lease<br />that claims the realm, so its length has a limit.<br />The URL has no user and no password. The operator does not support a<br />Keycloak behind a proxy that needs basic authentication.</td>
+<td>URL is the URL of Keycloak, with the /auth path when Keycloak has one.<br />Management Identity uses this URL, so it must resolve from inside the<br />Kubernetes cluster.<br />The operator appends /realms/&lt;realm&gt; to this URL, so the URL has no<br />query and no fragment. The URL is also in the annotations of the Lease<br />that claims the realm, so its length has a limit.<br />The URL has no user and no password. The operator does not support a<br />Keycloak behind a proxy that needs basic authentication.</td>
 <td></td>
 <td>MaxLength: 2048 <br /></td>
 </tr>
@@ -11725,7 +11725,7 @@ user, and the first user keeps its access.</p>
 <tbody>
 <tr>
 <td><code>claimName</code> <em>string</em></td>
-<td>ClaimName is the token claim that identifies the administrator, for<br />example oid or sub. Set it in the oidc mode. The operator records the<br />claim as <claimName>=<claimValue> and splits it at the first equals<br />sign. Thus the name cannot hold an equals sign.</td>
+<td>ClaimName is the token claim that identifies the administrator, for<br />example oid or sub. Set it in the oidc mode. The operator records the<br />claim as &lt;claimName&gt;=&lt;claimValue&gt; and splits it at the first equals<br />sign. Thus the name cannot hold an equals sign.</td>
 <td></td>
 <td>MinLength: 1 <br />Optional: {} <br /></td>
 </tr>
@@ -12529,7 +12529,7 @@ A backup runs one time. To try again, create a new CR.</p>
 </tr>
 <tr>
 <td><code>objectKey</code> <em>string</em></td>
-<td>ObjectKey is the full key of the dump in the backup bucket:<br /><basePath>/<namespace>/<cluster>/<backupId>/<uid>/camunda.dump. The<br />uid is the UID of this resource. Thus a backup id that is used again<br />never names the dump of another backup.</td>
+<td>ObjectKey is the full key of the dump in the backup bucket:<br />&lt;basePath&gt;/&lt;namespace&gt;/&lt;cluster&gt;/&lt;backupId&gt;/&lt;uid&gt;/camunda.dump. The<br />uid is the UID of this resource. Thus a backup id that is used again<br />never names the dump of another backup.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -13192,13 +13192,13 @@ the Keycloak Operator.</p>
 <tbody>
 <tr>
 <td><code>version</code> <em>string</em></td>
-<td>Version is the Keycloak version, as a full semantic version. Camunda<br />8.9 supports only Keycloak 26. The image is<br />camunda/keycloak:quay-optimized-<version>, unless the platform config<br />sets another repository.</td>
+<td>Version is the Keycloak version, as a full semantic version. Camunda<br />8.9 supports only Keycloak 26. The image is<br />camunda/keycloak:quay-optimized-&lt;version&gt;, unless the platform config<br />sets another repository.</td>
 <td></td>
 <td>Pattern: <code>^\d+\.\d+\.\d+$</code> <br /></td>
 </tr>
 <tr>
 <td><code>externalUrl</code> <em>string</em></td>
-<td>ExternalURL is the URL where browsers reach Keycloak, with the /auth<br />path. It is the front-channel issuer of every token. Management<br />Identity uses the front-channel URL since 8.5.3, so the Identity pods<br />must also reach it. Management Identity administers Keycloak through<br />the Service that the Keycloak Operator creates, not through this URL.<br />The operator appends /realms/<realm> to this URL, so the URL has no<br />query and no fragment.</td>
+<td>ExternalURL is the URL where browsers reach Keycloak, with the /auth<br />path. It is the front-channel issuer of every token. Management<br />Identity uses the front-channel URL since 8.5.3, so the Identity pods<br />must also reach it. Management Identity administers Keycloak through<br />the Service that the Keycloak Operator creates, not through this URL.<br />The operator appends /realms/&lt;realm&gt; to this URL, so the URL has no<br />query and no fragment.</td>
 <td></td>
 <td></td>
 </tr>
@@ -14790,7 +14790,7 @@ never conflict.</p>
 </tr>
 <tr>
 <td><code>requestedBy</code> <em>string</em></td>
-<td>RequestedBy is the namespace and the name of the resource that asks, as<br />"<namespace>/<name>". It comes back in pitr.lastRecovery. Thus the<br />requester can find its own answer.</td>
+<td>RequestedBy is the namespace and the name of the resource that asks, as<br />"&lt;namespace&gt;/&lt;name&gt;". It comes back in pitr.lastRecovery. Thus the<br />requester can find its own answer.</td>
 <td></td>
 <td>MaxLength: 507 <br />Pattern: <code>^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$</code> <br /></td>
 </tr>
@@ -15589,7 +15589,7 @@ keystore, never from the settings of a snapshot repository.</p>
 <tbody>
 <tr>
 <td><code>name</code> <em>string</em></td>
-<td>Name is the name of the ServiceAccount. When empty, the operator<br />derives the name from the name of the resource, as the doc of each kind<br />states. The cloud provider uses this name. A workload identity that<br />needs no annotation, such as EKS Pod Identity, binds the principal<br />system:serviceaccount:<namespace>:<name>.</td>
+<td>Name is the name of the ServiceAccount. When empty, the operator<br />derives the name from the name of the resource, as the doc of each kind<br />states. The cloud provider uses this name. A workload identity that<br />needs no annotation, such as EKS Pod Identity, binds the principal<br />system:serviceaccount:&lt;namespace&gt;:&lt;name&gt;.</td>
 <td></td>
 <td>MaxLength: 253 <br />Pattern: <code>^[a-z0-9]([-a-z0-9]*[a-z0-9])?$</code> <br />Optional: {} <br /></td>
 </tr>
@@ -16110,7 +16110,7 @@ PluginRequest for each selection, and the attachments. The Environment of
 the namespace sets which presets, releases, and registrations the claim can
 use. The name is a DNS-1035 label of at most 40 characters. The claim adds
 a suffix to it in the names of the resources that it writes, such as
-<claim>-es-es-http.</p>
+&lt;claim&gt;-es-es-http.</p>
 <table>
 <thead>
 <tr>
@@ -16468,13 +16468,13 @@ plane claim controller writes it.</p>
 <tbody>
 <tr>
 <td><code>optimize</code> <em><a href="#optimizeattachment">OptimizeAttachment</a></em></td>
-<td>Optimize adds a CamundaOptimize named <claim>-optimize that reads the<br />cluster. Unset, the claim has no Optimize.</td>
+<td>Optimize adds a CamundaOptimize named &lt;claim&gt;-optimize that reads the<br />cluster. Unset, the claim has no Optimize.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
 <td><code>backupSchedule</code> <em><a href="#backupscheduleattachment">BackupScheduleAttachment</a></em></td>
-<td>BackupSchedule adds a BackupSchedule named <claim>-backups for the<br />cluster. Unset, the claim has no backup schedule.</td>
+<td>BackupSchedule adds a BackupSchedule named &lt;claim&gt;-backups for the<br />cluster. Unset, the claim has no backup schedule.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -17151,7 +17151,7 @@ reference to the cluster of the claim.</p>
 </tbody>
 </table>
 <h4 id="parameterpolicies">ParameterPolicies<a class="headerlink" href="#parameterpolicies" title="Permanent link">&para;</a></h4>
-<p><em>Underlying type:</em> <em><a href="#map[string]parameterpolicy">map[string]ParameterPolicy</a></em></p>
+<p><em>Underlying type:</em> <em>object (keys:string, values:<a href="#parameterpolicy">ParameterPolicy</a>)</em></p>
 <p>ParameterPolicies holds the policy of each parameter of one
 PluginRegistration, by parameter name.</p>
 <p><em>Validation:</em>
@@ -17780,7 +17780,7 @@ another section.</p>
 </tr>
 <tr>
 <td><code>from</code> <em>string</em></td>
-<td>From names the output that gives the value, in the form<br /><section>/<output>.</td>
+<td>From names the output that gives the value, in the form<br />&lt;section&gt;/&lt;output&gt;.</td>
 <td></td>
 <td>Pattern: <code>^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/[A-Za-z][A-Za-z0-9]*$</code> <br /></td>
 </tr>
@@ -18189,7 +18189,7 @@ for.</p>
 <p>PluginRequest asks a plugin for the resources of one section of a claim.
 A claim controller writes the spec, and the plugin controller that serves
 the registration writes the status. The claim names a request
-<claim>-<section>. The name is at most 63 characters, because other
+&lt;claim&gt;-&lt;section&gt;. The name is at most 63 characters, because other
 objects carry it in a label value.</p>
 <table>
 <thead>
