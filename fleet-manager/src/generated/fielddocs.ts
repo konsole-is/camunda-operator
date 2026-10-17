@@ -329,7 +329,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#schedulingspec"
       },
       "spec.connectors.serviceAccount": {
-        "description": "ServiceAccount configures the ServiceAccount of the connectors pods.\nWhen unset, they run under the default ServiceAccount of the namespace.\nWhen set, they run under <name>-connectors, or under name. Only\nthe annotations of this block go on the account, never the identities\nof the buckets. When they carry azure.workload.identity/client-id, the\nconnectors pods get the label azure.workload.identity/use: \"true\". The\nconnectors never run under the cluster ServiceAccount: name must differ\nfrom it, and a spec.serviceAccount.name of default needs this block, or\nReady reports InvalidReference. The name default needs create false.\nWith create false, name must not be <name>-camunda while\nneither the cluster nor its preset sets spec.serviceAccount and no\nreferenced bucket uses workload identity. Ready then reports\nInvalidReference, also while connectors are off. A preset can set this\nblock, except name.",
+        "description": "ServiceAccount configures the ServiceAccount of the connectors pods.\nWhen unset, they run under the default ServiceAccount of the namespace.\nWhen set, they run under <name>-connectors, or under name. Only\nthe annotations of this block go on the account, never the identities\nof the buckets. When they carry azure.workload.identity/client-id, the\nconnectors pods get the label azure.workload.identity/use: \"true\". The\nconnectors never run under the cluster ServiceAccount: name must differ\nfrom it, and a spec.serviceAccount.name of default needs this block, or\nReady reports InvalidReference. The name default needs create false. A\npreset can set this block, except name.",
         "anchor": "#connectorsspec"
       },
       "spec.connectors.serviceAccount.annotations": {
@@ -525,7 +525,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#schedulingspec"
       },
       "spec.serviceAccount": {
-        "description": "ServiceAccount configures the ServiceAccount of every workload except\nthe connectors, which connectors.serviceAccount configures. The\nworkloads get access to the buckets of backupStorageRef and\ndocumentStorageRef through this identity. When the operator creates\nthe account, it adds the identity annotation of each bucket that names\none. When the annotations carry azure.workload.identity/client-id, the\npods of these workloads, the backup Jobs included, get the label\nazure.workload.identity/use: \"true\". The name <name>-camunda\nbelongs to the operator. While neither the cluster nor its preset sets\nthis block and no referenced bucket uses workload identity, the\noperator deletes an account of that name. It deletes one that it did\nnot create too, except while connectors.serviceAccount names it with\ncreate false: Ready then reports InvalidReference.",
+        "description": "ServiceAccount configures the ServiceAccount of every workload except\nthe connectors, which connectors.serviceAccount configures. The\nworkloads get access to the buckets of backupStorageRef and\ndocumentStorageRef through this identity. When the operator creates\nthe account, it adds the identity annotation of each bucket that names\none. When the annotations carry azure.workload.identity/client-id, the\npods of these workloads, the backup Jobs included, get the label\nazure.workload.identity/use: \"true\". When name is unset, the account\nis <name>-camunda. The pods need no account while neither the cluster\nnor its preset sets this block and no referenced bucket uses workload\nidentity. The operator then deletes the account only when the cluster\nowns it, because the operator created it or took it over. An account\nof that name that you created stays.",
         "anchor": "#camundaclusterspec"
       },
       "spec.serviceAccount.annotations": {
@@ -1055,7 +1055,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#schedulingspec"
       },
       "spec.cluster.connectors.serviceAccount": {
-        "description": "ServiceAccount configures the ServiceAccount of the connectors pods.\nWhen unset, they run under the default ServiceAccount of the namespace.\nWhen set, they run under <name>-connectors, or under name. Only\nthe annotations of this block go on the account, never the identities\nof the buckets. When they carry azure.workload.identity/client-id, the\nconnectors pods get the label azure.workload.identity/use: \"true\". The\nconnectors never run under the cluster ServiceAccount: name must differ\nfrom it, and a spec.serviceAccount.name of default needs this block, or\nReady reports InvalidReference. The name default needs create false.\nWith create false, name must not be <name>-camunda while\nneither the cluster nor its preset sets spec.serviceAccount and no\nreferenced bucket uses workload identity. Ready then reports\nInvalidReference, also while connectors are off. A preset can set this\nblock, except name.",
+        "description": "ServiceAccount configures the ServiceAccount of the connectors pods.\nWhen unset, they run under the default ServiceAccount of the namespace.\nWhen set, they run under <name>-connectors, or under name. Only\nthe annotations of this block go on the account, never the identities\nof the buckets. When they carry azure.workload.identity/client-id, the\nconnectors pods get the label azure.workload.identity/use: \"true\". The\nconnectors never run under the cluster ServiceAccount: name must differ\nfrom it, and a spec.serviceAccount.name of default needs this block, or\nReady reports InvalidReference. The name default needs create false. A\npreset can set this block, except name.",
         "anchor": "#connectorsspec"
       },
       "spec.cluster.connectors.serviceAccount.annotations": {
@@ -1251,7 +1251,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#schedulingspec"
       },
       "spec.cluster.serviceAccount": {
-        "description": "ServiceAccount configures the ServiceAccount of every workload except\nthe connectors, which connectors.serviceAccount configures. The\nworkloads get access to the buckets of backupStorageRef and\ndocumentStorageRef through this identity. When the operator creates\nthe account, it adds the identity annotation of each bucket that names\none. When the annotations carry azure.workload.identity/client-id, the\npods of these workloads, the backup Jobs included, get the label\nazure.workload.identity/use: \"true\". The name <name>-camunda\nbelongs to the operator. While neither the cluster nor its preset sets\nthis block and no referenced bucket uses workload identity, the\noperator deletes an account of that name. It deletes one that it did\nnot create too, except while connectors.serviceAccount names it with\ncreate false: Ready then reports InvalidReference.",
+        "description": "ServiceAccount configures the ServiceAccount of every workload except\nthe connectors, which connectors.serviceAccount configures. The\nworkloads get access to the buckets of backupStorageRef and\ndocumentStorageRef through this identity. When the operator creates\nthe account, it adds the identity annotation of each bucket that names\none. When the annotations carry azure.workload.identity/client-id, the\npods of these workloads, the backup Jobs included, get the label\nazure.workload.identity/use: \"true\". When name is unset, the account\nis <name>-camunda. The pods need no account while neither the cluster\nnor its preset sets this block and no referenced bucket uses workload\nidentity. The operator then deletes the account only when the cluster\nowns it, because the operator created it or took it over. An account\nof that name that you created stays.",
         "anchor": "#camundaclusterspec"
       },
       "spec.cluster.serviceAccount.annotations": {
@@ -3255,7 +3255,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#securesettingssource"
       },
       "spec.serviceAccount": {
-        "description": "ServiceAccount configures the ServiceAccount of the Elasticsearch pods.\nThe name <name>-es belongs to the operator. While neither the cluster\nnor its preset sets this block and the snapshot bucket uses no workload\nidentity, the operator deletes the account <name>-es. It deletes one\nthat it did not create too.",
+        "description": "ServiceAccount configures the ServiceAccount of the Elasticsearch pods.\nWhen name is unset, the account is <name>-es. The pods need no account\nwhile neither the cluster nor its preset sets this block and the\nsnapshot bucket uses no workload identity. The operator then deletes the\naccount only when the cluster owns it, because the operator created it\nor took it over. An account of that name that you created stays.",
         "anchor": "#elasticsearchclusterspec"
       },
       "spec.serviceAccount.annotations": {
@@ -3445,7 +3445,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#securesettingssource"
       },
       "spec.cluster.serviceAccount": {
-        "description": "ServiceAccount configures the ServiceAccount of the Elasticsearch pods.\nThe name <name>-es belongs to the operator. While neither the cluster\nnor its preset sets this block and the snapshot bucket uses no workload\nidentity, the operator deletes the account <name>-es. It deletes one\nthat it did not create too.",
+        "description": "ServiceAccount configures the ServiceAccount of the Elasticsearch pods.\nWhen name is unset, the account is <name>-es. The pods need no account\nwhile neither the cluster nor its preset sets this block and the\nsnapshot bucket uses no workload identity. The operator then deletes the\naccount only when the cluster owns it, because the operator created it\nor took it over. An account of that name that you created stays.",
         "anchor": "#elasticsearchclusterspec"
       },
       "spec.cluster.serviceAccount.annotations": {
@@ -4869,7 +4869,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#schedulingspec"
       },
       "spec.cluster.connectors.serviceAccount": {
-        "description": "ServiceAccount configures the ServiceAccount of the connectors pods.\nWhen unset, they run under the default ServiceAccount of the namespace.\nWhen set, they run under <name>-connectors, or under name. Only\nthe annotations of this block go on the account, never the identities\nof the buckets. When they carry azure.workload.identity/client-id, the\nconnectors pods get the label azure.workload.identity/use: \"true\". The\nconnectors never run under the cluster ServiceAccount: name must differ\nfrom it, and a spec.serviceAccount.name of default needs this block, or\nReady reports InvalidReference. The name default needs create false.\nWith create false, name must not be <name>-camunda while\nneither the cluster nor its preset sets spec.serviceAccount and no\nreferenced bucket uses workload identity. Ready then reports\nInvalidReference, also while connectors are off. A preset can set this\nblock, except name.",
+        "description": "ServiceAccount configures the ServiceAccount of the connectors pods.\nWhen unset, they run under the default ServiceAccount of the namespace.\nWhen set, they run under <name>-connectors, or under name. Only\nthe annotations of this block go on the account, never the identities\nof the buckets. When they carry azure.workload.identity/client-id, the\nconnectors pods get the label azure.workload.identity/use: \"true\". The\nconnectors never run under the cluster ServiceAccount: name must differ\nfrom it, and a spec.serviceAccount.name of default needs this block, or\nReady reports InvalidReference. The name default needs create false. A\npreset can set this block, except name.",
         "anchor": "#connectorsspec"
       },
       "spec.cluster.connectors.serviceAccount.annotations": {
@@ -5065,7 +5065,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#schedulingspec"
       },
       "spec.cluster.serviceAccount": {
-        "description": "ServiceAccount configures the ServiceAccount of every workload except\nthe connectors, which connectors.serviceAccount configures. The\nworkloads get access to the buckets of backupStorageRef and\ndocumentStorageRef through this identity. When the operator creates\nthe account, it adds the identity annotation of each bucket that names\none. When the annotations carry azure.workload.identity/client-id, the\npods of these workloads, the backup Jobs included, get the label\nazure.workload.identity/use: \"true\". The name <name>-camunda\nbelongs to the operator. While neither the cluster nor its preset sets\nthis block and no referenced bucket uses workload identity, the\noperator deletes an account of that name. It deletes one that it did\nnot create too, except while connectors.serviceAccount names it with\ncreate false: Ready then reports InvalidReference.",
+        "description": "ServiceAccount configures the ServiceAccount of every workload except\nthe connectors, which connectors.serviceAccount configures. The\nworkloads get access to the buckets of backupStorageRef and\ndocumentStorageRef through this identity. When the operator creates\nthe account, it adds the identity annotation of each bucket that names\none. When the annotations carry azure.workload.identity/client-id, the\npods of these workloads, the backup Jobs included, get the label\nazure.workload.identity/use: \"true\". When name is unset, the account\nis <name>-camunda. The pods need no account while neither the cluster\nnor its preset sets this block and no referenced bucket uses workload\nidentity. The operator then deletes the account only when the cluster\nowns it, because the operator created it or took it over. An account\nof that name that you created stays.",
         "anchor": "#camundaclusterspec"
       },
       "spec.cluster.serviceAccount.annotations": {

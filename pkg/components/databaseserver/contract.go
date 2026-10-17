@@ -107,7 +107,7 @@ func ContractComponent(
 		WithConditionType(v1.ConditionContractReady).
 		WithFeatureGate(feature.NewBooleanGate(withdrawn == "" || contractTaken != "")).
 		WithResource(superuser, component.ReadOnly(), component.BlockOnAbsence(), component.Auxiliary()).
-		WithResource(contract, component.BlockOnForeignController()).
+		WithResource(contract, component.BlockOnForeignController(), component.DeleteOnlyIfOwned()).
 		Build()
 }
 

@@ -90,7 +90,9 @@ func secretsComponents(in Input) (Built, error) {
 		if err != nil {
 			return Built{}, fmt.Errorf("building the %s component: %w", ComponentSecrets, err)
 		}
-		builder = builder.WithResource(published, component.GatedBy(feature.NewBooleanGate(gen.published)))
+		builder = builder.WithResource(
+			published, component.GatedBy(feature.NewBooleanGate(gen.published)), component.DeleteOnlyIfOwned(),
+		)
 	}
 
 	comp, err := builder.Build()
