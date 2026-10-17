@@ -288,23 +288,25 @@ func ElasticsearchComponent(
 	return component.NewComponentBuilder().
 		WithName("elasticsearch").
 		WithConditionType(v1.ConditionElasticsearchReady).
-		WithResource(account, accountOption(merged.ServiceAccount, usesServiceAccount(merged, storage))).
-		WithResource(elasticsearch).
+		WithResource(account, accountOptions(merged.ServiceAccount, usesServiceAccount(merged, storage))...).
+		WithResource(elasticsearch, component.DeleteOnlyIfOwned()).
 		WithGracePeriod(gracePeriod).
 		Suspend(merged.Suspend).
 		Build()
 }
 
-// accountOption registers the ServiceAccount of the pods. With create true the
-// operator owns the account, and deletes it while used is false. With create
-// false the account is the user's: the operator never applies or deletes it,
-// and removes its owner reference from an account that it created before, so
-// the account outlives the cluster.
-func accountOption(account *v1.ServiceAccountSpec, used bool) component.ResourceOption {
+// accountOptions registers the ServiceAccount of the pods. With create true
+// the operator owns the account. While used is false it deletes the account
+// only when the account carries the owner reference of the cluster, so an
+// account of the user with that name stays. With create false the account is
+// the user's: the operator never applies or deletes it, and removes its owner
+// reference from an account that it created before, so the account outlives
+// the cluster.
+func accountOptions(account *v1.ServiceAccountSpec, used bool) []component.ResourceOption {
 	if !account.Creates() {
-		return component.OrphanWhen(true)
+		return []component.ResourceOption{component.OrphanWhen(true)}
 	}
-	return component.GatedBy(feature.NewBooleanGate(used))
+	return []component.ResourceOption{component.GatedBy(feature.NewBooleanGate(used)), component.DeleteOnlyIfOwned()}
 }
 
 // serviceAccount renders the ServiceAccount of the pods. Its annotations are

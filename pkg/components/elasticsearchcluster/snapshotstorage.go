@@ -162,7 +162,9 @@ func KeystoreComponent(
 	return component.NewComponentBuilder().
 		WithName("keystore").
 		WithConditionType(v1.ConditionKeystoreReady).
-		WithResource(keystoreSecret, component.GatedBy(feature.NewBooleanGate(storage.keystore()))).
+		WithResource(
+			keystoreSecret, component.GatedBy(feature.NewBooleanGate(storage.keystore())), component.DeleteOnlyIfOwned(),
+		).
 		Build()
 }
 

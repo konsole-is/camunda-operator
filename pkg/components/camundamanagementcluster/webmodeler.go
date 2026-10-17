@@ -194,11 +194,11 @@ func webModelerComponents(in Input) (Built, error) {
 		WithName(ComponentWebModeler).
 		WithConditionType(component.ConditionType(v1.ConditionWebModelerReady)).
 		WithFeatureGate(gate).
-		WithResource(pusher, component.GatedBy(gate)).
-		WithResource(restapi, component.GatedBy(gate)).
-		WithResource(restapiService, component.GatedBy(gate)).
-		WithResource(websockets, component.GatedBy(gate)).
-		WithResource(websocketsService, component.GatedBy(gate)).
+		WithResource(pusher, component.GatedBy(gate), component.DeleteOnlyIfOwned()).
+		WithResource(restapi, component.GatedBy(gate), component.DeleteOnlyIfOwned()).
+		WithResource(restapiService, component.GatedBy(gate), component.DeleteOnlyIfOwned()).
+		WithResource(websockets, component.GatedBy(gate), component.DeleteOnlyIfOwned()).
+		WithResource(websocketsService, component.GatedBy(gate), component.DeleteOnlyIfOwned()).
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended).
 		Build()

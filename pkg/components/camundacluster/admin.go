@@ -123,6 +123,6 @@ func AdminSecretComponent(
 		WithName(adminComponentName).
 		WithConditionType(component.ConditionType(v1.ConditionAdminSecretReady)).
 		WithFeatureGate(feature.NewBooleanGate(enabled)).
-		WithResource(admin).
+		WithResource(admin, component.DeleteOnlyIfOwned()).
 		Build()
 }

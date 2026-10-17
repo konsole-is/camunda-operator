@@ -154,7 +154,11 @@ func identityComponents(in Input) (Built, error) {
 		// management plane that serves no Optimize renders no
 		// KEYCLOAK_INIT_OPTIMIZE_ROOT_URL, so the gate deletes the ConfigMap
 		// rather than leaving a list nothing reads.
-		WithResource(urls, component.GatedBy(feature.NewBooleanGate(len(in.OptimizeURLs) > 0))).
+		WithResource(
+			urls,
+			component.GatedBy(feature.NewBooleanGate(len(in.OptimizeURLs) > 0)),
+			component.DeleteOnlyIfOwned(),
+		).
 		WithResource(workload).
 		WithResource(svc).
 		WithGracePeriod(in.GracePeriod).
