@@ -42,6 +42,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
@@ -148,7 +149,7 @@ type Reconciler struct {
 // Status is written once per reconcile: the components and conditions.Stage
 // stage conditions on the in-memory CR, and the deferred FlushStatus persists
 // them together.
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	var optimize v1.CamundaOptimize
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &optimize); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -184,13 +185,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		APIReader:     r.APIReader,
 		Owner:         &optimize,
 	}
-	// Declared before the deferred flush, so the closure sees every component
-	// that the reconcile builds below and FlushStatus owns their conditions.
-	var comps []*component.Component
+	// announce records the event of a suspension change. It runs only after
+	// the status write that records the change landed.
+	var announce func()
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec, comps); flushErr != nil {
-			err = errors.Join(err, flushErr)
+		flushErr := component.FlushStatus(ctx, rec)
+		if flushErr == nil && announce != nil {
+			announce()
 		}
+		result, err = ownerstatus.Settle(result, err, flushErr)
 	}()
 
 	prior := readSuspension(&optimize)
@@ -205,10 +208,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		if failure.Reason == v1.ReasonClusterAlreadyAttached || errors.Is(err, errClusterGone) {
 			conditions.Stage(&optimize, conditions.Failed(&optimize, failure))
 			// The component conditions describe workloads that the next call
-			// deletes, and comps stays nil on this path, so the flush does not
-			// own those types and would write the stale values back. A parked
-			// CamundaOptimize renders nothing, so it reports nothing about
-			// what it used to render.
+			// deletes. A parked CamundaOptimize renders nothing, so it reports
+			// nothing about what it used to render.
 			removeComponentConditions(&optimize)
 			optimize.Status.SuspendedBy = ""
 			// The release deletes the webapp Service, so no route is left.
@@ -238,7 +239,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 			// the conditions carried in.
 			if outcome.Stopped {
 				prior.rendered = true
-				r.recordSuspensionChange(&optimize, prior, now)
+				announce = r.stageSuspensionChange(&optimize, prior, now)
 			}
 		} else {
 			// The cluster resumed while the check still fails. Nothing renders
@@ -270,12 +271,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	comps = built.all
-
 	reconcileErr := reconcileComponents(ctx, rec, built.all)
 	conditions.Stage(&optimize, conditions.Aggregate(&optimize, built.ready...))
 	optimize.Status.Endpoints = components.Endpoints(&optimize)
-	r.recordSuspensionChange(&optimize, prior, suspendedBy(res))
+	announce = r.stageSuspensionChange(&optimize, prior, suspendedBy(res))
 
 	if reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr

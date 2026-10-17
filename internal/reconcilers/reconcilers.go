@@ -217,16 +217,14 @@ func Setup(mgr ctrl.Manager, opts Options) error {
 		{"PluginRegistration", func() error {
 			return (&pluginregistration.Reconciler{
 				Client:          c,
-				APIReader:       reader,
 				Scheme:          scheme,
 				OperatorVersion: opts.OperatorVersion,
 			}).SetupWithManager(mgr)
 		}},
 		{"Environment", func() error {
 			return (&environment.Reconciler{
-				Client:    c,
-				APIReader: reader,
-				Scheme:    scheme,
+				Client: c,
+				Scheme: scheme,
 			}).SetupWithManager(mgr)
 		}},
 	}

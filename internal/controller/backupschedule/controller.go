@@ -29,7 +29,6 @@ package backupschedule
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -54,6 +53,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -126,7 +126,7 @@ type BackupScheduleReconciler struct {
 func (r *BackupScheduleReconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request,
-) (_ ctrl.Result, err error) {
+) (result ctrl.Result, err error) {
 	var schedule v1.BackupSchedule
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &schedule); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -152,9 +152,7 @@ func (r *BackupScheduleReconciler) Reconcile(
 		Owner:         &schedule,
 	}
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	now := r.opts.Now()

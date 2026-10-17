@@ -80,13 +80,6 @@ func createSection(name string) *pluginsv1alpha1.PluginSection {
 	return section
 }
 
-// acceptedOf reads the live Accepted condition of the registration name.
-func acceptedOf(g Gomega, name string) *metav1.Condition {
-	var reg pluginsv1alpha1.PluginRegistration
-	g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name}, &reg)).To(Succeed())
-	return meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted)
-}
-
 // expectAccepted waits until the registration name reports Accepted with
 // status and reason, at its current generation, and returns the condition.
 func expectAccepted(name string, status metav1.ConditionStatus, reason string) *metav1.Condition {

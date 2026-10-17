@@ -17,6 +17,7 @@ limitations under the License.
 package logicalbackupelasticsearch
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
@@ -50,10 +52,85 @@ func runtimeRig(t *testing.T) (*Reconciler, *camundaadmin.Client, *camundaadmint
 	mgmt, err := camundaadmin.New(camundaadmin.Binding{Endpoint: server.URL(), Version: "8.9.9"})
 	require.NoError(t, err)
 	r := &Reconciler{
+		Client:        receiptClient(),
+		APIReader:     receiptClient(),
 		EventRecorder: events.NewFakeRecorder(16),
 		options:       Options{RuntimeRegistrationGrace: time.Minute},
 	}
 	return r, mgmt, server
+}
+
+// receiptClient accepts every status patch and stores nothing, and answers a
+// read with the object it reads into, so a request path records its receipt
+// without a backup on an API server.
+func receiptClient() client.Client {
+	return interceptor.NewClient(fake.NewClientBuilder().Build(), interceptor.Funcs{
+		Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+			return nil
+		},
+		SubResourcePatch: func(
+			context.Context, client.Client, string, client.Object, client.Patch, ...client.SubResourcePatchOption,
+		) error {
+			return nil
+		},
+	})
+}
+
+// storedRig is runtimeRig with backup stored on a fake API server, so a test
+// reads back what a request recorded at once.
+func storedRig(
+	t *testing.T,
+	backup *v1.LogicalBackupElasticsearch,
+) (*Reconciler, *camundaadmin.Client, client.Client) {
+	t.Helper()
+	r, mgmt, _ := runtimeRig(t)
+	scheme := runtime.NewScheme()
+	require.NoError(t, v1.AddToScheme(scheme))
+	backup.Name, backup.Namespace = "backup", "camunda"
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backup).WithStatusSubresource(backup).Build()
+	require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(backup), backup))
+	r.Client, r.APIReader = c, c
+
+	return r, mgmt, c
+}
+
+// A start that answered ends the outage of an earlier step. The recorded
+// acceptance is what the next pass reads, because the status write at the end
+// of this pass conflicts with that record, so it carries the cleared clock.
+func TestRecordedAcceptanceClearsTheUnreachableClock(t *testing.T) {
+	outage := metav1.NewTime(time.Now().Add(-time.Hour).Truncate(time.Second))
+
+	t.Run("history", func(t *testing.T) {
+		backup := runtimeBackup()
+		backup.Status.UnreachableSince = &outage
+		intent := metav1.Now()
+		backup.Status.HistoryRequestedTime = &intent
+		r, mgmt, c := storedRig(t, backup)
+
+		_, err := r.requestHistoryBackup(t.Context(), mgmt, backup)
+		require.NoError(t, err)
+
+		var stored v1.LogicalBackupElasticsearch
+		require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(backup), &stored))
+		assert.NotNil(t, stored.Status.HistoryAcceptedTime)
+		assert.Nil(t, stored.Status.UnreachableSince)
+	})
+
+	t.Run("runtime", func(t *testing.T) {
+		backup := runtimeBackup()
+		backup.Status.UnreachableSince = &outage
+		intent := metav1.Now()
+		backup.Status.RuntimeRequestedTime = &intent
+		r, mgmt, c := storedRig(t, backup)
+
+		_, err := r.requestRuntimeBackup(t.Context(), mgmt, backup, &backup.Status.Runtime)
+		require.NoError(t, err)
+
+		var stored v1.LogicalBackupElasticsearch
+		require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(backup), &stored))
+		assert.NotNil(t, stored.Status.RuntimeAcceptedTime)
+		assert.Nil(t, stored.Status.UnreachableSince)
+	})
 }
 
 func runtimeBackup() *v1.LogicalBackupElasticsearch {
@@ -410,6 +487,8 @@ func TestRuntimeAcceptanceIsStampedAfterTheRequestReturned(t *testing.T) {
 	mgmt, err := camundaadmin.New(camundaadmin.Binding{Endpoint: slow.URL, Version: "8.9.9"})
 	require.NoError(t, err)
 	r := &Reconciler{
+		Client:        receiptClient(),
+		APIReader:     receiptClient(),
 		EventRecorder: events.NewFakeRecorder(16),
 		options:       Options{RuntimeRegistrationGrace: time.Minute},
 	}

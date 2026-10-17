@@ -73,6 +73,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
@@ -227,7 +228,7 @@ func New(
 // Reconcile advances the restore by at most one phase. The phase is the resume
 // marker: it is persisted before the side effect it names, so a restore that
 // re-enters after a crash continues where it stopped.
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	// The restore is its own state machine. A stale cached read of its status
 	// re-enters a phase whose side effect already ran, and the side effect of
 	// this controller deletes data.
@@ -255,9 +256,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		if finalized {
 			return
 		}
-		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	// The Jobs of a restore carry a controller reference to it, so the garbage
@@ -441,8 +440,8 @@ func (r *Reconciler) holdStarted(
 // fail ends the restore with reason and message. Every failure that this kind
 // raises itself reports the reason Failed: the causes that carry a reason of
 // their own, for example a server without point-in-time recovery, hold the
-// restore instead of ending it. Status keeps the reason, so a terminal look
-// stages the same one again after a write conflict.
+// restore instead of ending it. Status keeps the reason, so every terminal
+// look stages the same one again.
 func (r *Reconciler) fail(pitr *v1.PointInTimeRestore, reason, message string) {
 	pitr.Status.Phase = v1.PointInTimeRestoreFailed
 	restore.Fail(&pitr.Status.RestoreProgress, reason, message, metav1.Now())

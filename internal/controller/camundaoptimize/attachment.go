@@ -183,9 +183,9 @@ func (r *Reconciler) deleteControlled(
 
 // removeComponentConditions drops every condition that a component of this
 // CamundaOptimize reports. A parked CamundaOptimize builds no components, so
-// FlushStatus owns none of these types and leaves whatever the object already
-// carries. Without this call a deposed holder keeps a WebappReady of True over
-// a Deployment that releaseWorkloads has deleted.
+// nothing stages these types again, and the status write keeps whatever the
+// object already carries. Without this call a deposed holder keeps a
+// WebappReady of True over a Deployment that releaseWorkloads has deleted.
 //
 // The conditions come back on their own when this CamundaOptimize takes the
 // attachment again, because the components write them.

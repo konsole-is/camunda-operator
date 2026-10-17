@@ -33,6 +33,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/secretref"
@@ -84,11 +85,10 @@ func (r *ManagementAuthConfigReconciler) Reconcile(ctx context.Context, req ctrl
 
 	conditions.Stage(&cfg, cond)
 
-	// The contract owns no components, so its Ready condition follows the
-	// server on a conflict and is staged again on the next reconcile.
-	return ctrl.Result{}, component.FlushStatus(
+	return ownerstatus.Flush(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
+		component.ReconcileContext{Client: r.Client, Metrics: r.Metrics, Owner: &cfg},
+		ctrl.Result{},
 		nil,
 	)
 }

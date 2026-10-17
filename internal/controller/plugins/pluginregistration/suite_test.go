@@ -66,7 +66,6 @@ var _ = BeforeSuite(func() {
 
 		return (&Reconciler{
 			Client:          mgr.GetClient(),
-			APIReader:       mgr.GetAPIReader(),
 			Scheme:          mgr.GetScheme(),
 			OperatorVersion: operatorVersion,
 		}).SetupWithManager(mgr)

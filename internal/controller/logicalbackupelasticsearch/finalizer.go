@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -414,7 +415,7 @@ func (r *Reconciler) deleteHistorySnapshots(
 		// mid-way through the deletes. If the cluster is gone by the next
 		// reconcile, the sweep reads the old list and leaks the names
 		// found here.
-		if err := r.persistStatus(ctx, backup); err != nil {
+		if err := component.FlushStatus(ctx, r.statusContext(backup)); err != nil {
 			return false, fmt.Errorf("recording the history snapshot names: %w", err)
 		}
 		return false, nil

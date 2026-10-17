@@ -50,6 +50,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
@@ -175,7 +176,10 @@ type ElasticsearchClusterReconciler struct {
 // Status is written once per reconcile. The components and conditions.Stage
 // stage conditions on the in-memory cluster, and the deferred FlushStatus
 // persists them together.
-func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *ElasticsearchClusterReconciler) Reconcile(
+	ctx context.Context,
+	req ctrl.Request,
+) (result ctrl.Result, err error) {
 	var cluster v1.ElasticsearchCluster
 	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -194,13 +198,8 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 		APIReader:     r.APIReader,
 		Owner:         &cluster,
 	}
-	// Declared before the deferred flush, so the closure sees every component
-	// that the reconcile builds below and FlushStatus owns their conditions.
-	var comps []*component.Component
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, recCtx, comps); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, recCtx, result, err)
 	}()
 
 	merged, storage, err := r.preCheck(ctx, &cluster)
@@ -240,7 +239,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(ctx context.Context, req ctrl
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	comps = append(core, metrics)
+	comps := append(core, metrics)
 
 	// The metrics exporter is auxiliary: it keeps its own MetricsReady
 	// condition and stays out of Ready, so a broken exporter never marks the
