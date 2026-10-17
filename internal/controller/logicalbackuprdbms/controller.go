@@ -56,6 +56,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/objectstore"
@@ -205,7 +206,7 @@ type LogicalBackupRDBMSReconciler struct {
 func (r *LogicalBackupRDBMSReconciler) Reconcile(
 	ctx context.Context,
 	req ctrl.Request,
-) (_ ctrl.Result, err error) {
+) (result ctrl.Result, err error) {
 	var backup v1.LogicalBackupRDBMS
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &backup); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -238,17 +239,15 @@ func (r *LogicalBackupRDBMSReconciler) Reconcile(
 		Owner:         &backup,
 	}
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	if backup.Terminal() {
-		// A conflict on the terminal flush can restore a stale Ready from
-		// the server. stageTerminal is idempotent and heals it on the next
-		// look. The claim on the cluster goes back here, after the terminal
-		// status was flushed and never before it. Release is a no-op when
-		// nothing is held.
+		// A backup that an earlier operator release wrote can carry the
+		// terminal phase beside a stale Ready. stageTerminal is idempotent
+		// and heals it on the next look. The claim on the cluster goes back
+		// here, after the terminal status was flushed and never before it.
+		// Release is a no-op when nothing is held.
 		r.stageTerminal(&backup)
 		if err := r.releaseClaim(ctx, &backup); err != nil {
 			return ctrl.Result{}, err
@@ -318,7 +317,7 @@ func (r *LogicalBackupRDBMSReconciler) fail(backup *v1.LogicalBackupRDBMS, messa
 
 // stageTerminal stages the Ready condition of a terminal phase. It is
 // idempotent, so a terminal backup re-stages it on every look and heals a
-// conflict that restored a stale condition.
+// stale condition that an earlier operator release wrote.
 func (r *LogicalBackupRDBMSReconciler) stageTerminal(backup *v1.LogicalBackupRDBMS) {
 	switch backup.Status.Phase {
 	case v1.LogicalBackupCompleted:

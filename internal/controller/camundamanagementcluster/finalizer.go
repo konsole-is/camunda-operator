@@ -479,7 +479,7 @@ func (r *Reconciler) clearCallbackRealm(
 		APIReader:     r.APIReader,
 		Owner:         mc,
 	}
-	if err := component.FlushStatus(ctx, rec, nil); err != nil && !apierrors.IsNotFound(err) {
+	if err := component.FlushStatus(ctx, rec); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("clearing the record of the realm of the login callbacks: %w", err)
 	}
 

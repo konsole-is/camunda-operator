@@ -43,6 +43,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
@@ -229,7 +230,7 @@ type DatabaseServerReconciler struct {
 // stage conditions on the in-memory server, and the deferred FlushStatus
 // persists them together with the observed cluster, identifier, archive
 // history, and volumes.
-func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	// Live, not cached. A recovery is a state machine whose marker is
 	// status.recovery: each step reads it to tell what the last one did, and
 	// the steps create and delete CloudNativePG clusters. A stale read of that
@@ -243,6 +244,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 		return ctrl.Result{}, err
 	}
+	read := server.DeepCopy()
 
 	recCtx := component.ReconcileContext{
 		Client:        r.componentClient,
@@ -252,13 +254,8 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		APIReader:     r.APIReader,
 		Owner:         &server,
 	}
-	// Declared before the deferred flush, so the closure sees every component
-	// that the reconcile builds below and FlushStatus owns their conditions.
-	var comps []*component.Component
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, recCtx, comps); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, recCtx, result, err)
 	}()
 
 	// The contract, the archive, and the monitoring all name the cluster, so
@@ -370,8 +367,6 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	comps = built.all()
-
 	// A cluster whose name was held gets the whole grace period once its name
 	// is free. Otherwise the transition time of the held period ends it at once.
 	if resolved.clusterTaken == "" {
@@ -410,6 +405,13 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			&server, resolved.merged, built.archive, archiveStart,
 			resolved.archiveLocation, moved, built.archiveDestination.IsSet(), now,
 		)
+		// A move takes its time from this pass. A later pass that does not
+		// find it takes a later time, and leaves out a base backup that began
+		// in between. So the archive status of the move is recorded at once,
+		// with the conditions of this pass, which say what that archive holds.
+		if err := r.recordArchiveMove(ctx, read, &server); err != nil {
+			return ctrl.Result{}, err
+		}
 		markArchiveOutage(&server, resolved.archiveOutage)
 	}
 
@@ -443,8 +445,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{RequeueAfter: r.requeueAfter(&server, resolved, derived, recovering, built.cluster)}, nil
 }
 
-// all returns the components in reconcile order. FlushStatus owns every one of
-// their condition types.
+// all returns the components in reconcile order.
 func (c serverComponents) all() []*component.Component {
 	return []*component.Component{c.cluster, c.archive, c.contract, c.monitoring}
 }

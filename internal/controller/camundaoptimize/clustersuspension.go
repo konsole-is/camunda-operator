@@ -119,7 +119,7 @@ type suspension struct {
 // readSuspension returns the suspension that optimize carries into this pass.
 // Call it before anything stages a condition of this pass.
 func readSuspension(optimize *v1.CamundaOptimize) suspension {
-	// Not the conditions: a failed apply or a conflicting flush rewrites them.
+	// Not the conditions: a failed apply rewrites them.
 	return suspension{by: optimize.Status.SuspendedBy, rendered: hasWorkloads(optimize)}
 }
 
@@ -165,18 +165,23 @@ func hasWorkloads(optimize *v1.CamundaOptimize) bool {
 	return false
 }
 
-// recordSuspensionChange stages now as status.suspendedBy, and records an event
-// when the workloads start to follow a suspension or stop following one. It
-// records nothing when prior rendered no workload. The event marks the decision
-// of this pass, not its outcome.
-func (r *Reconciler) recordSuspensionChange(
+// stageSuspensionChange stages now as status.suspendedBy. When the workloads
+// start to follow a suspension or stop following one, it returns the function
+// that records the event of that change. Otherwise it returns nil, as it does
+// when prior rendered no workload. The event marks the decision of this pass,
+// not its outcome.
+//
+// Call the returned function only after the status write of this pass landed.
+// status.suspendedBy is the record of the change, so a pass whose write was
+// lost sees the same change again and must not record a second event.
+func (r *Reconciler) stageSuspensionChange(
 	optimize *v1.CamundaOptimize,
 	prior suspension,
 	now v1.OptimizeSuspension,
-) {
+) func() {
 	optimize.Status.SuspendedBy = now
 	if !prior.rendered || (prior.by != "") == (now != "") {
-		return
+		return nil
 	}
 
 	reason, note := eventReasonClusterResumed, noteResumed
@@ -185,15 +190,17 @@ func (r *Reconciler) recordSuspensionChange(
 		reason, note = held.eventReason, held.eventNote
 	}
 
-	// Ready cannot name the wait: its reason is Suspended, as for a suspended
-	// CamundaCluster.
-	r.EventRecorder.Eventf(
-		optimize,
-		nil,
-		corev1.EventTypeNormal,
-		reason,
-		workloadsuspend.EventActionSuspend,
-		note,
-		optimize.Spec.ClusterRef.Name,
-	)
+	return func() {
+		// Ready cannot name the wait: its reason is Suspended, as for a
+		// suspended CamundaCluster.
+		r.EventRecorder.Eventf(
+			optimize,
+			nil,
+			corev1.EventTypeNormal,
+			reason,
+			workloadsuspend.EventActionSuspend,
+			note,
+			optimize.Spec.ClusterRef.Name,
+		)
+	}
 }

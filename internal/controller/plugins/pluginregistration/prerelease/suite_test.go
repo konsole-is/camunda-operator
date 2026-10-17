@@ -60,7 +60,6 @@ var _ = BeforeSuite(func() {
 	env = envtest.Start(func(mgr ctrl.Manager) error {
 		return (&pluginregistration.Reconciler{
 			Client:          mgr.GetClient(),
-			APIReader:       mgr.GetAPIReader(),
 			Scheme:          mgr.GetScheme(),
 			OperatorVersion: operatorVersion,
 		}).SetupWithManager(mgr)

@@ -32,7 +32,6 @@ package logicalbackupelasticsearch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -49,6 +48,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
@@ -159,7 +159,7 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // Reconcile advances the backup by at most one step. The recorded step is
 // persisted before the next side effect, so a crash re-enters where it left
 // off.
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	// The backup is its own state machine. A stale cached read of its status
 	// re-enters a step whose side effect already ran, or allocates the backup
 	// ID again and orphans artifacts. Its own object is always read live.
@@ -192,14 +192,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	}
 
 	defer func() {
-		if flushErr := r.persistStatus(ctx, &backup); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, r.statusContext(&backup), result, err)
 	}()
 
-	// A write conflict at the terminal transition can restore an older Ready
-	// from the server. The terminal condition is staged again from the
-	// recorded outcome. SetStatusCondition makes the repeat a no-op.
+	// A backup that an earlier operator release wrote can carry the terminal
+	// phase beside an older Ready: its status write retried a conflict with
+	// the Ready of the server. The terminal condition is staged again from
+	// the recorded outcome. SetStatusCondition makes the repeat a no-op.
 	//
 	// The claim on the cluster goes back here, after the terminal status
 	// was flushed and never before it. The claim follows the pause, not the
@@ -225,21 +224,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	return r.run(ctx, &backup)
 }
 
-// persistStatus writes the status of backup through the ocf flush: the one
-// status write of a reconcile. Reconcile defers it. The finalizer runs
-// before that defer is installed. It calls persistStatus when it must make
-// a status fact durable before it acts on it.
-func (r *Reconciler) persistStatus(ctx context.Context, backup *v1.LogicalBackupElasticsearch) error {
-	return component.FlushStatus(
-		ctx, component.ReconcileContext{
-			Client:        r.Client,
-			Scheme:        r.Scheme,
-			EventRecorder: r.EventRecorder,
-			Metrics:       r.Metrics,
-			APIReader:     r.APIReader,
-			Owner:         backup,
-		}, nil,
-	)
+// statusContext is the ReconcileContext of a status write of backup.
+// Reconcile defers that write. The finalizer runs before that defer is
+// installed, and writes the status itself when it must make a status fact
+// durable before it acts on it.
+func (r *Reconciler) statusContext(backup *v1.LogicalBackupElasticsearch) component.ReconcileContext {
+	return component.ReconcileContext{
+		Client:        r.Client,
+		Scheme:        r.Scheme,
+		EventRecorder: r.EventRecorder,
+		Metrics:       r.Metrics,
+		APIReader:     r.APIReader,
+		Owner:         backup,
+	}
 }
 
 // terminalReady rebuilds the Ready condition of a terminal backup from the

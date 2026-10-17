@@ -45,8 +45,8 @@ func Finish(
 	p *v1.RestoreProgress,
 	cluster string,
 ) (Outcome, error) {
-	// A conflict on the terminal flush can restore a stale Ready from the
-	// server. Staging it again on every look corrects that.
+	// A restore that an earlier operator release wrote can carry the terminal
+	// phase beside a stale Ready. Staging it again on every look corrects that.
 	StageTerminal(owner, p)
 
 	// A completed Job keeps its pod, and the pvc-protection finalizer keeps a

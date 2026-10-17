@@ -40,6 +40,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
@@ -62,9 +63,7 @@ var lookupObjects = map[string]func() client.Object{
 // Reconciler maintains the status of Environment resources.
 type Reconciler struct {
 	client.Client
-	// APIReader reads the live Environment when a status write conflicts.
-	APIReader client.Reader
-	Scheme    *runtime.Scheme
+	Scheme *runtime.Scheme
 	// Metrics records the condition gauge of the framework. SetupWithManager
 	// sets it when it is nil.
 	Metrics component.MetricsRecorder
@@ -113,11 +112,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 	conditions.Stage(&env, ready)
 
-	// The controller owns no components, so its Ready condition follows the
-	// server on a conflict and is staged again on the next reconcile.
-	return ctrl.Result{}, component.FlushStatus(
+	return ownerstatus.Flush(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &env},
+		component.ReconcileContext{Client: r.Client, Metrics: r.Metrics, Owner: &env},
+		ctrl.Result{},
 		nil,
 	)
 }

@@ -110,18 +110,39 @@ func (r *Reconciler) applyContract(
 	return nil
 }
 
-// withdrawContract deletes the ManagementAuthConfig of this management
-// cluster: the one its spec names, and the one its status recorded before,
-// when a rename left the two apart. The contract is cluster-scoped and its
-// owner is namespaced, so Kubernetes collects nothing: the finalizer is what
-// removes it. A contract that another owner holds is left alone.
+// withdrawContract deletes every ManagementAuthConfig of this management
+// cluster: the one its spec names, and any that a rename left behind. The
+// contract is cluster-scoped and its owner is namespaced, so Kubernetes
+// collects nothing: the finalizer is what removes it. A contract that another
+// owner holds is left alone.
 func (r *Reconciler) withdrawContract(ctx context.Context, mc *v1.CamundaManagementCluster) error {
-	name := components.ContractName(mc)
-	if err := r.withdrawContractNamed(ctx, mc, name); err != nil {
-		return err
+	return r.withdrawOtherContracts(ctx, mc, "")
+}
+
+// withdrawOtherContracts deletes every ManagementAuthConfig that carries the
+// owner labels of mc and is not named keep, so an empty keep withdraws them
+// all. The labels survive a lost status
+// write, so a contract that an earlier pass published under another name is
+// found even when the status never named it.
+func (r *Reconciler) withdrawOtherContracts(
+	ctx context.Context,
+	mc *v1.CamundaManagementCluster,
+	keep string,
+) error {
+	var owned v1.ManagementAuthConfigList
+	if err := r.APIReader.List(ctx, &owned, client.MatchingLabels{
+		labels.ManagementClusterKey:          labels.OwnerName(mc.Name),
+		labels.ManagementClusterNamespaceKey: mc.Namespace,
+	}); err != nil {
+		return fmt.Errorf("listing the ManagementAuthConfigs of %s: %w", client.ObjectKeyFromObject(mc), err)
 	}
-	if previous := mc.Status.ManagementAuthConfig; previous != "" && previous != name {
-		return r.withdrawContractNamed(ctx, mc, previous)
+
+	for i := range owned.Items {
+		if name := owned.Items[i].Name; name != keep {
+			if err := r.withdrawContractNamed(ctx, mc, name); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil

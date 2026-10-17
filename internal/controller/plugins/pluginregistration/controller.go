@@ -40,6 +40,7 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 )
 
@@ -55,9 +56,7 @@ const SectionsField = "pluginregistration.spec.sections"
 // Reconciler maintains the Accepted condition of every PluginRegistration.
 type Reconciler struct {
 	client.Client
-	// APIReader reads the live registration when a status write conflicts.
-	APIReader client.Reader
-	Scheme    *runtime.Scheme
+	Scheme *runtime.Scheme
 	// OperatorVersion is the version of this operator build. The controller
 	// checks it against spec.operatorVersions. version.Dev is inside every
 	// valid range.
@@ -90,22 +89,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	// The component owns no resources. Passing it makes FlushStatus own
-	// Accepted, so on a conflict the live Ready of the plugin controller stays.
-	owner, err := component.NewComponentBuilder().
-		WithName("accepted").
-		WithConditionType(pluginsv1alpha1.ConditionAccepted).
-		Build()
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("building the accepted component: %w", err)
-	}
-
 	meta.SetStatusCondition(&reg.Status.Conditions, accepted(&reg, r.OperatorVersion, f))
 
-	return ctrl.Result{}, component.FlushStatus(
+	// The write sends the whole status as this reconcile read it. A write of
+	// the plugin controller in between makes it conflict, so it never rolls
+	// back Ready or status.observedGeneration.
+	return ownerstatus.Flush(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &reg},
-		[]*component.Component{owner},
+		component.ReconcileContext{Client: r.Client, Metrics: r.Metrics, Owner: &reg},
+		ctrl.Result{},
+		nil,
 	)
 }
 

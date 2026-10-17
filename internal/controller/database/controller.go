@@ -45,6 +45,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/database"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
@@ -119,7 +120,7 @@ type DatabaseReconciler struct {
 // Status is written once per reconcile. The component and conditions.Stage
 // stage conditions on the in-memory Database, and the deferred FlushStatus persists
 // them together.
-func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	// Cached, not live. No step here is keyed on the last status write of
 	// this controller: the collision key is derived again from the identity
 	// the contract reports, and the bootstrap converges what the server
@@ -164,13 +165,8 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 		APIReader:     r.APIReader,
 		Owner:         &database,
 	}
-	// Declared before the deferred flush, so the closure sees the component
-	// that the reconcile builds below and FlushStatus owns its condition.
-	var comps []*component.Component
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec, comps); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	bootstrapper, err := r.preCheck(ctx, &database)
@@ -186,7 +182,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 		}
 
 		if errors.Is(err, errClaimLost) {
-			kept, withdrawErr := r.withdrawBindings(ctx, rec, &database, &comps)
+			kept, withdrawErr := r.withdrawBindings(ctx, rec, &database)
 			if len(kept) > 0 {
 				failure.Message += fmt.Sprintf(
 					". These bindings belong to another Database and stay in place: %s",
@@ -234,8 +230,6 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	comps = []*component.Component{comp}
-
 	reconcileErr := comp.Reconcile(ctx, rec)
 	conditions.Stage(&database, conditions.Aggregate(&database, comp))
 
@@ -461,10 +455,9 @@ func bootstrapSQL(ctx context.Context, b pgbootstrap.Bootstrapper, name string, 
 }
 
 // withdrawBindings deletes the bindings that database published and still
-// controls, and sets comps to the component that did it, so the one status
-// flush of this reconcile owns BindingsReady and reports it as Disabled. A
-// Database that lost its claim keeps neither the contracts nor the credential
-// Secrets it published.
+// controls, and stages BindingsReady as Disabled on database. A Database that
+// lost its claim keeps neither the contracts nor the credential Secrets it
+// published.
 //
 // It returns the bindings it left in place. Two Databases can name one binding
 // explicitly, and only the one that controls it may delete it, so a loser that
@@ -473,7 +466,6 @@ func (r *DatabaseReconciler) withdrawBindings(
 	ctx context.Context,
 	rec component.ReconcileContext,
 	database *v1.Database,
-	comps *[]*component.Component,
 ) ([]string, error) {
 	published, kept, err := r.publishedBindings(ctx, database)
 	if err != nil {
@@ -484,8 +476,6 @@ func (r *DatabaseReconciler) withdrawBindings(
 	if err != nil {
 		return kept, err
 	}
-	*comps = []*component.Component{comp}
-
 	return kept, comp.Reconcile(ctx, rec)
 }
 

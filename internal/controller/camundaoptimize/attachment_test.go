@@ -90,9 +90,8 @@ func TestDeleteControlledLeavesAReplacementAlone(t *testing.T) {
 }
 
 // TestRemoveComponentConditionsDropsWhatAParkedHolderNoLongerRenders pins the
-// status of a deposed holder. It renders no component, so FlushStatus owns none
-// of the component condition types and writes back whatever the object carries.
-// A WebappReady of True over a deleted Deployment is the state this prevents.
+// status of a deposed holder. A WebappReady of True over a deleted Deployment
+// is the state this prevents.
 func TestRemoveComponentConditionsDropsWhatAParkedHolderNoLongerRenders(t *testing.T) {
 	optimize := &v1.CamundaOptimize{}
 	for _, conditionType := range []string{

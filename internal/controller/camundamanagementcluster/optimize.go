@@ -426,7 +426,7 @@ func (r *Reconciler) recordCallbackRealm(
 	}
 	mc.Status.CallbackRealm = target
 
-	if err := component.FlushStatus(ctx, rec, nil); err != nil {
+	if err := component.FlushStatus(ctx, rec); err != nil {
 		return stepRecordCallbackRealm.stop(mc, err)
 	}
 

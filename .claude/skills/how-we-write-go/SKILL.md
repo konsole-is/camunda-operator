@@ -562,10 +562,10 @@ func NewBackupReconciler(owner client.Object, ...) *BackupReconciler
 
 Use `meta.SetStatusCondition` to write conditions — never append or assign directly to the slice. It handles deduplication and sets `LastTransitionTime` only when the status changes.
 
-**`meta.SetStatusCondition` only mutates the in-memory slice.** It does not persist anything on its own. Every controller persists status through the ocf `component.FlushStatus`, once per reconcile, deferred at the top of the reconcile loop. That holds for a controller with no components too: stage the condition, set `observedGeneration`, flush with `nil` components. There is no second write path — no SSA of the status subresource, no `Status().Update()` at early returns.
+**`meta.SetStatusCondition` only mutates the in-memory slice.** It does not persist anything on its own. Every controller persists status through `ownerstatus.Flush` (`internal/ownerstatus`), which calls the ocf `component.FlushStatus` once per reconcile, deferred at the top of the reconcile loop. That holds for a controller with no components too: stage the condition, set `observedGeneration`, and flush. There is no second write path — no SSA of the status subresource, no `Status().Update()` at early returns.
 
 ```go
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
     var obj v1.Database
     if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -578,12 +578,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
         APIReader:     r.APIReader,
         Owner:         &obj,
     }
-    // Declared before the defer, so the closure sees the components built below.
-    var comps []*component.Component
     defer func() {
-        if flushErr := component.FlushStatus(ctx, rec, comps); flushErr != nil {
-            err = errors.Join(err, flushErr)
-        }
+        result, err = ownerstatus.Flush(ctx, rec, result, err)
     }()
 
     // Stage conditions freely with meta.SetStatusCondition; the defer writes them.
@@ -591,7 +587,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 }
 ```
 
-The named return `(_ ctrl.Result, err error)` lets the deferred flush join its error onto `err`, even when the reconcile itself succeeded. `FlushStatus` owns exactly the condition types of the components passed to it, so pass every component the reconcile built. On a 409 it keeps the staged owner, takes the `resourceVersion` of the server copy, and restores from it every condition type it does not own. `APIReader` comes from `mgr.GetAPIReader()` and makes that refetch read the live object rather than the cache. An unowned condition, such as the aggregate `Ready`, follows the server on a conflict and is staged again on the next reconcile.
+The named returns let the deferred flush set the result and the error, even when the reconcile itself succeeded. `FlushStatus` writes the whole status subresource with the `resourceVersion` of the read at the top of the reconcile. On a 409 it writes nothing and returns the conflict, so it never rolls back a field or a condition that another writer set. `ownerstatus.Flush` turns that conflict into a requeue after a second with no error, because a conflict is expected when other writers share the object: the plugin controllers, and the spec and metadata writes of users. The fleet manager does not write status today. If it ever does, check the single-writer rule of `ownerstatus.Record` again. Any other failure of the write stays an error. A lost write loses everything that the pass staged, so a side effect whose result a later pass cannot rebuild, such as the id of a backup that the cluster generated, records that result at once with `ownerstatus.Record`, right after the call. Read the owner fresh at the top of each reconcile: a copy from the cache or from an earlier pass holds an old `resourceVersion`, so its write can only conflict. A write that must be durable before the reconcile acts on it, such as a finalizer step, calls `component.FlushStatus` directly and treats a conflict as an error.
 
 **Condition vocabulary is API surface and lives in `api/v1`.** Users match it with `kubectl wait`, and the operators above import `api/v1` to gate on it. `api/v1/conditions.go` holds the vocabulary that more than one CRD reports (`ConditionReady`, `ReasonHealthy`, `ReasonInvalidReference`, `ReasonMissingSecret`, `ReasonConnectionFailed`). A reason or condition type that one CRD reports is declared in that CRD's types file, next to its spec. The CRD doc under `docs/crds` is the contract for both. `pkg/conditions` builds the aggregate `Ready`; it declares no vocabulary.
 

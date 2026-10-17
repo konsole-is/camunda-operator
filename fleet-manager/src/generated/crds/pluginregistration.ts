@@ -321,8 +321,9 @@ export interface PluginRegistrationStatus {
     type: string;
   }[];
   /**
-   * ObservedGeneration is the last generation that a controller of the
-   * registration processed.
+   * ObservedGeneration is the last generation of the registration that the
+   * plugin controller processed. Only the plugin controller sets it, so the
+   * field is absent until the plugin controller processes the registration.
    */
   observedGeneration?: number;
 }

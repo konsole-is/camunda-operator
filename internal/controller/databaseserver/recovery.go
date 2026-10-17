@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/cnpgcluster"
@@ -317,6 +318,16 @@ func (r *DatabaseServerReconciler) recordPublishedOutcome(
 		}
 
 		closeArchiveRecord(server, answered.PreviousCluster, published.CompletedAt)
+	}
+
+	// A Failed answer past the cutover is a rollback that abandonRecovery
+	// published: the server runs from the cluster it came from again. A look
+	// whose record of that move was lost still names the abandoned cluster,
+	// and the sweep would remove the one that holds the data.
+	if published.Result == v1.RecoveryResultFailed && carry != nil && carry.Cluster != "" &&
+		carry.Cluster == server.Status.Cluster && carry.PreviousCluster != "" {
+		server.Status.Cluster = carry.PreviousCluster
+		answered.Cluster = ""
 	}
 
 	server.Status.Recovery = answered
@@ -827,15 +838,23 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 		)
 	}
 
+	before := server.DeepCopy()
 	server.Status.Cluster = previous
 	server.Status.Recovery.Cluster = ""
 
-	return r.answerRecovery(
+	if err := r.answerRecovery(
 		ctx, server, contract, request, v1.RecoveryResultFailed,
 		fmt.Sprintf(
 			"%s. The server had already moved to it, and it runs from %q again", cause, previous,
 		),
-	)
+	); err != nil {
+		return err
+	}
+
+	// The move back is recorded at once, not left to the status write at the
+	// end of the pass, which a conflict loses. A look that finds it lost still
+	// repairs it from the Failed answer: see recordPublishedOutcome.
+	return ownerstatus.Record(ctx, r.Client, r.APIReader, before, server)
 }
 
 // createRecoveryCluster creates the cluster that recovers the server to the

@@ -23,10 +23,12 @@ import (
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 )
 
@@ -404,6 +406,25 @@ func closeArchiveRecords(server *v1.DatabaseServer, at metav1.Time) {
 			server.Status.Archive.History[i].To = &at
 		}
 	}
+}
+
+// recordArchiveMove writes the archive status and the conditions of server at
+// once when this pass marked a new boundary of the archive. read is the server
+// as the pass read it. The conditions go with the archive, because a closed
+// record must never stand beside an ArchiveReady that still reports the
+// archive it closed. The write replaces the whole condition list, so it must
+// run only while no other writer sets a condition of a DatabaseServer.
+func (r *DatabaseServerReconciler) recordArchiveMove(ctx context.Context, read, server *v1.DatabaseServer) error {
+	boundary := archiveBoundaryOf(server)
+	if boundary == nil || equality.Semantic.DeepEqual(archiveBoundaryOf(read), boundary) {
+		return nil
+	}
+
+	before := server.DeepCopy()
+	before.Status.Archive = read.Status.Archive.DeepCopy()
+	before.Status.Conditions = read.Status.Conditions
+
+	return ownerstatus.Record(ctx, r.Client, r.APIReader, before, server)
 }
 
 // markArchiveBoundary records that the archive of the server moved to location
