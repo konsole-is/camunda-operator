@@ -21,11 +21,15 @@ package ownerstatus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ConflictRequeue is how long a reconcile waits before it reads the owner
@@ -62,4 +66,67 @@ func Settle(res ctrl.Result, err, flushErr error) (ctrl.Result, error) {
 	default:
 		return ctrl.Result{}, errors.Join(err, flushErr)
 	}
+}
+
+// FlushRebased is Flush with the write of Rebase. base is the owner as the
+// reconcile read it.
+func FlushRebased(
+	ctx context.Context,
+	rec component.ReconcileContext,
+	base client.Object,
+	res ctrl.Result,
+	err error,
+) (ctrl.Result, error) {
+	return Settle(res, err, Rebase(ctx, rec, base))
+}
+
+// Rebase writes the status of rec.Owner with component.FlushStatus. base is
+// the owner as the reconcile read it. When the write conflicts and the live
+// owner still holds the status of base, another writer changed only the spec
+// or the metadata. Rebase then writes the staged status once more, on the
+// live resourceVersion. When the live status changed, Rebase returns the
+// conflict and writes nothing, so it never rolls back another writer.
+//
+// Use it where a pass records the receipt of a side effect that a later pass
+// cannot rebuild, such as the id of a backup that the cluster generated.
+// rec.APIReader reads the live owner, and must not be a cache.
+func Rebase(ctx context.Context, rec component.ReconcileContext, base client.Object) error {
+	err := component.FlushStatus(ctx, rec)
+	if !apierrors.IsConflict(err) {
+		return err
+	}
+
+	live, ok := base.DeepCopyObject().(client.Object)
+	if !ok {
+		return err
+	}
+	if getErr := rec.APIReader.Get(ctx, client.ObjectKeyFromObject(base), live); getErr != nil {
+		return errors.Join(err, getErr)
+	}
+
+	same, cmpErr := sameStatus(base, live)
+	if cmpErr != nil {
+		return errors.Join(err, cmpErr)
+	}
+	if !same {
+		return err
+	}
+
+	rec.Owner.SetResourceVersion(live.GetResourceVersion())
+
+	return component.FlushStatus(ctx, rec)
+}
+
+// sameStatus reports whether a and b hold the same status.
+func sameStatus(a, b client.Object) (bool, error) {
+	ua, err := runtime.DefaultUnstructuredConverter.ToUnstructured(a)
+	if err != nil {
+		return false, fmt.Errorf("converting %s: %w", client.ObjectKeyFromObject(a), err)
+	}
+	ub, err := runtime.DefaultUnstructuredConverter.ToUnstructured(b)
+	if err != nil {
+		return false, fmt.Errorf("converting %s: %w", client.ObjectKeyFromObject(b), err)
+	}
+
+	return equality.Semantic.DeepEqual(ua["status"], ub["status"]), nil
 }

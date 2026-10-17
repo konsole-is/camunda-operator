@@ -133,6 +133,59 @@ func TestFlushReturnsAnyOtherWriteFailure(t *testing.T) {
 	})
 }
 
+func TestRebaseWritesOverAWriteOfTheMetadataOnly(t *testing.T) {
+	c, owner := newOwner(t, interceptor.Funcs{})
+	base := owner.DeepCopy()
+	writeAsAnotherWriter(t, c, owner)
+	stageReady(owner)
+
+	err := Rebase(context.Background(), component.ReconcileContext{Client: c, APIReader: c, Owner: owner}, base)
+
+	require.NoError(t, err)
+	assert.True(t, storedReady(t, c, owner))
+}
+
+func TestRebaseKeepsTheStatusOfAnotherWriter(t *testing.T) {
+	c, owner := newOwner(t, interceptor.Funcs{})
+	base := owner.DeepCopy()
+	other := owner.DeepCopy()
+	other.Status.ObservedGeneration = 7
+	require.NoError(t, c.Status().Update(context.Background(), other))
+	stageReady(owner)
+
+	err := Rebase(context.Background(), component.ReconcileContext{Client: c, APIReader: c, Owner: owner}, base)
+
+	assert.True(t, apierrors.IsConflict(err))
+	var stored v1.ObjectStorageConfig
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(owner), &stored))
+	assert.Equal(t, int64(7), stored.Status.ObservedGeneration)
+	assert.False(
+		t,
+		meta.IsStatusConditionTrue(stored.Status.Conditions, v1.ConditionReady),
+		"a conflict must write nothing",
+	)
+}
+
+func TestFlushRebasedRequeuesWhenAnotherWriterChangedTheStatus(t *testing.T) {
+	c, owner := newOwner(t, interceptor.Funcs{})
+	base := owner.DeepCopy()
+	other := owner.DeepCopy()
+	other.Status.ObservedGeneration = 7
+	require.NoError(t, c.Status().Update(context.Background(), other))
+	stageReady(owner)
+
+	res, err := FlushRebased(
+		context.Background(),
+		component.ReconcileContext{Client: c, APIReader: c, Owner: owner},
+		base,
+		ctrl.Result{},
+		nil,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{RequeueAfter: ConflictRequeue}, res)
+}
+
 func TestSettle(t *testing.T) {
 	gr := v1.GroupVersion.WithResource("objectstorageconfigs").GroupResource()
 	conflict := fmt.Errorf("updating status: %w", apierrors.NewConflict(gr, "s", errors.New("modified")))

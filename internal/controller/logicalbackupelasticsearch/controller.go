@@ -191,8 +191,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		}
 	}
 
+	// base is the backup as this pass read it. The write keeps the receipts
+	// of this pass over a write that changed only the spec or the metadata.
+	base := backup.DeepCopy()
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, r.statusContext(&backup), result, err)
+		result, err = ownerstatus.FlushRebased(ctx, r.statusContext(&backup), base, result, err)
 	}()
 
 	// A backup that an earlier operator release wrote can carry the terminal

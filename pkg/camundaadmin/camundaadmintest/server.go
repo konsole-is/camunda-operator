@@ -78,6 +78,11 @@ type Server struct {
 	hiddenHistoryStatus int
 
 	nextGeneratedID int64
+
+	// beforeHistoryAnswer and beforeRuntimeAnswer run once, before the
+	// answer to the next start that succeeds.
+	beforeHistoryAnswer func(id int64)
+	beforeRuntimeAnswer func(id int64)
 }
 
 // New starts the fake. Close it with Close.
@@ -206,6 +211,24 @@ func (s *Server) ConflictNextRuntimeStart(n int) {
 	s.conflictRuntimeStarts = n
 }
 
+// BeforeNextHistoryAnswer runs hook once, with the backup id, after the next
+// history-backup start succeeds and before the fake answers it. The caller
+// of the start waits for the answer while hook runs. hook runs under the lock
+// of the fake, so it must not call the fake.
+func (s *Server) BeforeNextHistoryAnswer(hook func(id int64)) {
+	s.Lock()
+	defer s.Unlock()
+	s.beforeHistoryAnswer = hook
+}
+
+// BeforeNextRuntimeAnswer is BeforeNextHistoryAnswer for the next
+// runtime-backup start.
+func (s *Server) BeforeNextRuntimeAnswer(hook func(id int64)) {
+	s.Lock()
+	defer s.Unlock()
+	s.beforeRuntimeAnswer = hook
+}
+
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/actuator")
 
@@ -230,6 +253,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		s.history[id] = &Backup{ID: id, State: "IN_PROGRESS"}
 		s.historyStarts[id]++
+		if hook := s.beforeHistoryAnswer; hook != nil {
+			s.beforeHistoryAnswer = nil
+			hook(id)
+		}
 		adminhttptest.WriteJSON(
 			w,
 			http.StatusOK,
@@ -390,6 +417,10 @@ func (s *Server) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
 	}
 	s.runtime[id] = &Backup{ID: id, State: "IN_PROGRESS"}
 	s.runtimeStarts[id]++
+	if hook := s.beforeRuntimeAnswer; hook != nil {
+		s.beforeRuntimeAnswer = nil
+		hook(id)
+	}
 
 	// The cluster echoes an id of its own when one was supplied: the
 	// documented example answers a request for 100 with 1772011199310.
