@@ -236,14 +236,16 @@ func (r *Reconciler) requestHistoryBackup(
 		// the status write at the end of the pass, which a conflict loses.
 		// If the cluster is gone before the first poll, the finalizer then
 		// still knows which snapshots to sweep.
+		// The write that records the acceptance makes the status write at the
+		// end of the pass conflict, so it carries the cleared clock too.
 		before := backup.DeepCopy()
 		accepted := metav1.Now()
 		backup.Status.HistoryAcceptedTime = &accepted
 		recordHistorySnapshotNames(backup, scheduled)
+		answered(backup)
 		if err := ownerstatus.Record(ctx, r.Client, before, backup); err != nil {
 			return ctrl.Result{}, err
 		}
-		answered(backup)
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the web-application indices started")
 
@@ -533,10 +535,10 @@ func (r *Reconciler) requestRuntimeBackup(
 		before := backup.DeepCopy()
 		accepted := metav1.Now()
 		backup.Status.RuntimeAcceptedTime = &accepted
+		answered(backup)
 		if err := ownerstatus.Record(ctx, r.Client, before, backup); err != nil {
 			return ctrl.Result{}, err
 		}
-		answered(backup)
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the Zeebe partitions started")
 

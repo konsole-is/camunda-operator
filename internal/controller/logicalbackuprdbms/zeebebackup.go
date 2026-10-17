@@ -222,12 +222,12 @@ func (r *LogicalBackupRDBMSReconciler) startZeebeBackup(
 		// again must terminalize the backup, not park it without a bound.
 		return r.holdRunning(backup, managementFailure(cluster, err))
 	}
-	r.recovered(backup)
-
 	// The generated id is recorded at once, not left to the status write at
 	// the end of the pass, which a conflict loses. A pass that does not find
-	// the id would request a second backup.
+	// the id would request a second backup. That write makes the status write
+	// at the end of the pass conflict, so it carries the cleared clock too.
 	before := backup.DeepCopy()
+	r.recovered(backup)
 	now := metav1.Now()
 	backup.Status.ZeebeBackupID = &id
 	backup.Status.ZeebeBackupRequestedAt = &now

@@ -71,6 +71,63 @@ func receiptClient() client.Client {
 	})
 }
 
+// storedRig is runtimeRig with backup stored on a fake API server, so a test
+// reads back what a request recorded at once.
+func storedRig(
+	t *testing.T,
+	backup *v1.LogicalBackupElasticsearch,
+) (*Reconciler, *camundaadmin.Client, client.Client) {
+	t.Helper()
+	r, mgmt, _ := runtimeRig(t)
+	scheme := runtime.NewScheme()
+	require.NoError(t, v1.AddToScheme(scheme))
+	backup.Name, backup.Namespace = "backup", "camunda"
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backup).WithStatusSubresource(backup).Build()
+	require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(backup), backup))
+	r.Client = c
+
+	return r, mgmt, c
+}
+
+// A start that answered ends the outage of an earlier step. The recorded
+// acceptance is what the next pass reads, because the status write at the end
+// of this pass conflicts with that record, so it carries the cleared clock.
+func TestRecordedAcceptanceClearsTheUnreachableClock(t *testing.T) {
+	outage := metav1.NewTime(time.Now().Add(-time.Hour).Truncate(time.Second))
+
+	t.Run("history", func(t *testing.T) {
+		backup := runtimeBackup()
+		backup.Status.UnreachableSince = &outage
+		intent := metav1.Now()
+		backup.Status.HistoryRequestedTime = &intent
+		r, mgmt, c := storedRig(t, backup)
+
+		_, err := r.requestHistoryBackup(t.Context(), mgmt, backup)
+		require.NoError(t, err)
+
+		var stored v1.LogicalBackupElasticsearch
+		require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(backup), &stored))
+		assert.NotNil(t, stored.Status.HistoryAcceptedTime)
+		assert.Nil(t, stored.Status.UnreachableSince)
+	})
+
+	t.Run("runtime", func(t *testing.T) {
+		backup := runtimeBackup()
+		backup.Status.UnreachableSince = &outage
+		intent := metav1.Now()
+		backup.Status.RuntimeRequestedTime = &intent
+		r, mgmt, c := storedRig(t, backup)
+
+		_, err := r.requestRuntimeBackup(t.Context(), mgmt, backup, &backup.Status.Runtime)
+		require.NoError(t, err)
+
+		var stored v1.LogicalBackupElasticsearch
+		require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(backup), &stored))
+		assert.NotNil(t, stored.Status.RuntimeAcceptedTime)
+		assert.Nil(t, stored.Status.UnreachableSince)
+	})
+}
+
 func runtimeBackup() *v1.LogicalBackupElasticsearch {
 	backup := &v1.LogicalBackupElasticsearch{}
 	backup.Status.BackupID = testBackupID
