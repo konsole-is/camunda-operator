@@ -191,9 +191,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		}
 	}
 
-	base := backup.DeepCopy()
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, r.statusContext(&backup), base, result, err)
+		result, err = ownerstatus.Flush(ctx, r.statusContext(&backup), result, err)
 	}()
 
 	// A backup that an earlier operator release wrote can carry the terminal

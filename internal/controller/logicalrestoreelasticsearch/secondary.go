@@ -23,6 +23,7 @@ import (
 	"slices"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	elasticsearch "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/esadmin"
@@ -112,7 +113,14 @@ func (r *Reconciler) startRestore(
 		}
 	}
 
+	// The names are recorded at once, not left to the status write at the end
+	// of the pass, which a conflict loses. A look without them deletes the
+	// indices that Elasticsearch restores now, and asks for the restore again.
+	before := lres.DeepCopy()
 	lres.Status.RestoredSnapshots = snapshots
+	if err := ownerstatus.Record(ctx, r.Client, before, lres); err != nil {
+		return restore.Outcome{}, err
+	}
 	r.progressing(lres, "Elasticsearch restores the snapshots of the backup")
 
 	return restore.Outcome{Wait: restore.Shortly}, nil

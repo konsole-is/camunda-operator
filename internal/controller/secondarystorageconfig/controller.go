@@ -82,8 +82,6 @@ func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	base := cfg.DeepCopy()
-
 	cond, err := r.validate(ctx, &cfg)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -94,7 +92,6 @@ func (r *SecondaryStorageConfigReconciler) Reconcile(ctx context.Context, req ct
 	return ownerstatus.Flush(
 		ctx,
 		component.ReconcileContext{Client: r.Client, Metrics: r.Metrics, Owner: &cfg},
-		base,
 		ctrl.Result{},
 		nil,
 	)

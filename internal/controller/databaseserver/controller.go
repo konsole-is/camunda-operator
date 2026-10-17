@@ -152,11 +152,10 @@ type serverComponents struct {
 	// systemIdentifier holds the PostgreSQL system identifier once the cluster
 	// component has reconciled, and the reconcile mirrors it to status.
 	systemIdentifier *concepts.Data[string]
-	// archiveDestination is the destination path the archive component applied
-	// on its ObjectStore: the bucket URL that holds the archives of this
-	// server, prefix included. It is unset when that apply did not happen:
-	// see components.ArchiveComponent.
-	archiveDestination *concepts.Data[string]
+	// archiveApplied is when the spec of the ObjectStore of the archive last
+	// changed by an apply. It is unset when this pass did not apply it: see
+	// components.ArchiveComponent.
+	archiveApplied *concepts.Data[metav1.Time]
 }
 
 // DatabaseServerReconciler runs a PostgreSQL server through the external
@@ -245,8 +244,6 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	base := server.DeepCopy()
-
 	recCtx := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
@@ -256,7 +253,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Owner:         &server,
 	}
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, recCtx, base, result, err)
+		result, err = ownerstatus.Flush(ctx, recCtx, result, err)
 	}()
 
 	// The contract, the archive, and the monitoring all name the cluster, so
@@ -402,9 +399,17 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if !resolved.holdArchive && resolved.clusterTaken == "" && resolved.archiveTaken == "" {
 		now := metav1.Now()
 		advanceArchiveFloor(&server, resolved.merged, now)
+		// A move takes the time of the apply that made it, not of this pass.
+		// A pass after a lost status write then records the same time, and
+		// leaves out no base backup that began in between.
+		appliedAt, applied := built.archiveApplied.Get()
+		movedAt := now
+		if applied && !appliedAt.IsZero() {
+			movedAt = appliedAt
+		}
 		reconcileArchiveHistory(
 			&server, resolved.merged, built.archive, archiveStart,
-			resolved.archiveLocation, moved, built.archiveDestination.IsSet(), now,
+			resolved.archiveLocation, moved, applied, now, movedAt,
 		)
 		markArchiveOutage(&server, resolved.archiveOutage)
 	}
@@ -484,7 +489,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 	built.cluster = cluster
 	built.systemIdentifier = systemIdentifier
 
-	archive, destination, err := components.ArchiveComponent(
+	archive, applied, err := components.ArchiveComponent(
 		server, merged, resolved.archive, archiveStart, resolved.archiveOutage,
 		resolved.clusterTaken, resolved.archiveTaken,
 	)
@@ -492,7 +497,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 		return built, fmt.Errorf("building archive component: %w", err)
 	}
 	built.archive = archive
-	built.archiveDestination = destination
+	built.archiveApplied = applied
 
 	built.contract, err = components.ContractComponent(
 		server, merged, resolved.contractWithdrawn, resolved.contractTaken, resolved.archiveTaken,

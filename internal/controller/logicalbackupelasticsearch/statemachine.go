@@ -28,6 +28,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	camundacluster "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -230,14 +231,19 @@ func (r *Reconciler) requestHistoryBackup(
 	scheduled, err := mgmt.StartHistoryBackup(ctx, backup.Status.BackupID)
 	switch {
 	case err == nil:
-		// The names are recorded in the reconcile that saw the acceptance.
-		// The status flush at its end makes the acceptance and the names
-		// durable together. If the cluster is gone before the first poll,
-		// the finalizer then still knows which snapshots to sweep.
+		// The acceptance is the only proof that the backup under this ID is
+		// ours, so it is recorded at once, with the names, and not left to
+		// the status write at the end of the pass, which a conflict loses.
+		// If the cluster is gone before the first poll, the finalizer then
+		// still knows which snapshots to sweep.
+		before := backup.DeepCopy()
 		accepted := metav1.Now()
 		backup.Status.HistoryAcceptedTime = &accepted
-		answered(backup)
 		recordHistorySnapshotNames(backup, scheduled)
+		if err := ownerstatus.Record(ctx, r.Client, before, backup); err != nil {
+			return ctrl.Result{}, err
+		}
+		answered(backup)
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the web-application indices started")
 
@@ -521,9 +527,15 @@ func (r *Reconciler) requestRuntimeBackup(
 	case err == nil:
 		// The acceptance is stamped after the call returned, not with the
 		// time before it. The registration grace starts here, and a slow
-		// request must not silently shorten it.
+		// request must not silently shorten it. It is the only proof that
+		// the backup under this ID is ours, so it is recorded at once, not
+		// left to the status write at the end of the pass.
+		before := backup.DeepCopy()
 		accepted := metav1.Now()
 		backup.Status.RuntimeAcceptedTime = &accepted
+		if err := ownerstatus.Record(ctx, r.Client, before, backup); err != nil {
+			return ctrl.Result{}, err
+		}
 		answered(backup)
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
 		r.stageProgress(backup, "The backup of the Zeebe partitions started")

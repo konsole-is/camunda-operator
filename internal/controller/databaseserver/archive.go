@@ -309,6 +309,10 @@ func advanceArchiveFloor(server *v1.DatabaseServer, merged v1.DatabaseServerSpec
 // being written. The move is found again on every reconcile until one of them
 // applies it.
 //
+// movedAt is when that apply changed the ObjectStore. A move closes the record
+// and marks the boundary at movedAt, so every pass that records one move
+// records one time.
+//
 // A recovery closes the record of the cluster it replaces itself, at the
 // moment the contract moves. What is left here is the record of an archive
 // that another cluster of this server wrote and never closed, which only an
@@ -322,6 +326,7 @@ func reconcileArchiveHistory(
 	moved bool,
 	applied bool,
 	now metav1.Time,
+	movedAt metav1.Time,
 ) {
 	if merged.Archive == nil {
 		closeArchiveRecords(server, now)
@@ -351,15 +356,15 @@ func reconcileArchiveHistory(
 		}
 
 		// The interval of the location the server leaves ends here, at the
-		// same now that archiveBoundary already gave the guard. The record of
+		// time of the apply that moved it. The record of
 		// the new location opens on a later look, once a base backup of it has
 		// completed after this point. The boundary carries that point until
 		// then, because a closed record alone cannot: an archive that was
 		// disabled and re-enabled elsewhere closes no record at the move.
 		if open != nil {
-			open.To = &now
+			open.To = &movedAt
 		}
-		markArchiveBoundary(server, now, location, merged.Archive.ObjectStorageRef)
+		markArchiveBoundary(server, movedAt, location, merged.Archive.ObjectStorageRef)
 
 		return
 	}

@@ -15,23 +15,18 @@ limitations under the License.
 */
 
 // Package ownerstatus writes the status of the object that a reconcile owns.
-// A write that loses a conflict to a spec or metadata write is tried once more
-// on the live object. A write that loses a conflict to a status write of
-// another writer adds no error: the reconcile requeues, or returns the error
-// that it already had.
+// A status write that loses a conflict adds no error: the reconcile requeues,
+// or returns the error that it already had.
 package ownerstatus
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -40,30 +35,23 @@ import (
 // again after its status write lost a conflict.
 const ConflictRequeue = time.Second
 
-// Flush writes the status of rec.Owner with Rebase, and returns the result and
-// the error for Reconcile to return, as Settle decides them. base is a copy of
-// the owner as the reconcile read it, made before the reconcile staged any
-// status. res and err are the values that the reconcile had before the write.
-func Flush(
-	ctx context.Context,
-	rec component.ReconcileContext,
-	base client.Object,
-	res ctrl.Result,
-	err error,
-) (ctrl.Result, error) {
-	return Settle(res, err, Rebase(ctx, rec, base))
+// Flush writes the status of rec.Owner with component.FlushStatus, and returns
+// the result and the error for Reconcile to return, as Settle decides them.
+// res and err are the values that the reconcile had before the write.
+func Flush(ctx context.Context, rec component.ReconcileContext, res ctrl.Result, err error) (ctrl.Result, error) {
+	return Settle(res, err, component.FlushStatus(ctx, rec))
 }
 
 // Settle returns the result and the error for Reconcile to return after a
 // status write that returned flushErr. res and err are the values that the
 // reconcile had before the write. A reconcile that must know whether the
-// write landed calls Rebase itself and passes its error here.
+// write landed calls component.FlushStatus itself and passes its error here.
 //
-// A conflict means that another writer changed the status of the owner after
-// the reconcile read it, and that nothing was written. When err is nil, Settle
-// returns a requeue after ConflictRequeue and no error. When err is set,
-// Settle returns res and err, because err requeues the owner already. Any
-// other failure of the write is joined to err.
+// A conflict means that another writer changed the owner after the reconcile
+// read it, and that nothing was written. When err is nil, Settle returns a
+// requeue after ConflictRequeue and no error. When err is set, Settle returns
+// res and err, because err requeues the owner already. Any other failure of
+// the write is joined to err.
 func Settle(res ctrl.Result, err, flushErr error) (ctrl.Result, error) {
 	switch {
 	case flushErr == nil:
@@ -79,65 +67,26 @@ func Settle(res ctrl.Result, err, flushErr error) (ctrl.Result, error) {
 	}
 }
 
-// Rebase writes the status of rec.Owner with component.FlushStatus. base is a
-// copy of the owner as the reconcile read it. When the write conflicts and the
-// live owner still holds the status of base, Rebase writes the staged status
-// once more, on the live resourceVersion. When the live status changed, Rebase
-// returns the conflict and writes nothing, so it never rolls back another
-// writer.
+// Record writes, at once, the status fields that owner changed since before,
+// a copy of owner that the caller made before it staged them. Call it right
+// after a side effect whose result a later pass cannot rebuild, such as the
+// id of a backup that the cluster generated, so that a lost status write at
+// the end of the pass does not lose that result.
 //
-// It reads the live owner with rec.APIReader, or with rec.Client when
-// rec.APIReader is nil. When the read fails, Rebase returns that failure, not a
-// conflict. An owner that is gone returns the conflict.
-func Rebase(ctx context.Context, rec component.ReconcileContext, base client.Object) error {
-	err := component.FlushStatus(ctx, rec)
-	if !apierrors.IsConflict(err) {
-		return err
-	}
-
-	// A fresh object, not a copy of base: a decode leaves out the fields
-	// that the response omits, so a copy keeps a field that another writer
-	// removed.
-	live, ok := reflect.New(reflect.TypeOf(base).Elem()).Interface().(client.Object)
+// The write is a merge patch that carries no resourceVersion, so a write of
+// another field since the read does not make it conflict. The changed fields
+// must be status fields that no other writer sets, because the patch replaces
+// them whatever the server holds. owner is not changed. The patch moves the
+// resourceVersion, so the status write at the end of the same pass
+// conflicts, and the next pass reads the recorded fields back.
+func Record(ctx context.Context, c client.Client, before, owner client.Object) error {
+	receipt, ok := owner.DeepCopyObject().(client.Object)
 	if !ok {
-		return err
+		return fmt.Errorf("copying %s: unexpected type %T", client.ObjectKeyFromObject(owner), owner)
 	}
-	var reader client.Reader = rec.Client
-	if rec.APIReader != nil {
-		reader = rec.APIReader
-	}
-	key := client.ObjectKeyFromObject(base)
-	if getErr := reader.Get(ctx, key, live); getErr != nil {
-		if apierrors.IsNotFound(getErr) {
-			return err
-		}
-
-		return fmt.Errorf("reading %s after a status conflict: %w", key, getErr)
+	if err := c.Status().Patch(ctx, receipt, client.MergeFrom(before)); err != nil {
+		return fmt.Errorf("recording the status of %s: %w", client.ObjectKeyFromObject(owner), err)
 	}
 
-	same, cmpErr := sameStatus(base, live)
-	if cmpErr != nil {
-		return cmpErr
-	}
-	if !same {
-		return err
-	}
-
-	rec.Owner.SetResourceVersion(live.GetResourceVersion())
-
-	return component.FlushStatus(ctx, rec)
-}
-
-// sameStatus reports whether a and b hold the same status.
-func sameStatus(a, b client.Object) (bool, error) {
-	ua, err := runtime.DefaultUnstructuredConverter.ToUnstructured(a)
-	if err != nil {
-		return false, fmt.Errorf("converting %s: %w", client.ObjectKeyFromObject(a), err)
-	}
-	ub, err := runtime.DefaultUnstructuredConverter.ToUnstructured(b)
-	if err != nil {
-		return false, fmt.Errorf("converting %s: %w", client.ObjectKeyFromObject(b), err)
-	}
-
-	return equality.Semantic.DeepEqual(ua["status"], ub["status"]), nil
+	return nil
 }

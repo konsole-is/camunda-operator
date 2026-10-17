@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
 	components "github.com/konsole-is/camunda-operator/pkg/components/logicalbackuprdbms"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -223,13 +224,18 @@ func (r *LogicalBackupRDBMSReconciler) startZeebeBackup(
 	}
 	r.recovered(backup)
 
+	// The generated id is recorded at once, not left to the status write at
+	// the end of the pass, which a conflict loses. A pass that does not find
+	// the id would request a second backup.
+	before := backup.DeepCopy()
 	now := metav1.Now()
 	backup.Status.ZeebeBackupID = &id
 	backup.Status.ZeebeBackupRequestedAt = &now
+	if err := ownerstatus.Record(ctx, r.Client, before, backup); err != nil {
+		return settle, err
+	}
 	conditions.Stage(backup, progressing(backup, "the Zeebe backup runs"))
 
-	// The generated id must be persisted before the poll. A crash here must
-	// re-enter the poll, never request a second backup.
 	return shortly, nil
 }
 

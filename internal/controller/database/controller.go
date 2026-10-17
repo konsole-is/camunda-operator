@@ -157,8 +157,6 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 		}
 	}
 
-	base := database.DeepCopy()
-
 	rec := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
@@ -168,7 +166,7 @@ func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 		Owner:         &database,
 	}
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, rec, base, result, err)
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	bootstrapper, err := r.preCheck(ctx, &database)

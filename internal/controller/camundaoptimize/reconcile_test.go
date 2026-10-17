@@ -114,9 +114,8 @@ func TestReconcileRecordsOneResumeWhenAnApplyFails(t *testing.T) {
 	assert.Equal(t, map[string]int{eventReasonClusterResumed: 1}, h.suspensionEvents())
 }
 
-// TestReconcileRecordsOneSuspensionWhenTheFlushConflicts covers a pass on the
-// failure path whose status write conflicts, and whose second write on the
-// live object conflicts too, so the status of that pass is lost. The
+// TestReconcileRecordsOneSuspensionWhenTheFlushConflicts covers a status
+// conflict on the failure path, which loses the status write of that pass. The
 // suspension is recorded once over the two passes.
 func TestReconcileRecordsOneSuspensionWhenTheFlushConflicts(t *testing.T) {
 	h := newReconcileHarness(t)
@@ -126,7 +125,7 @@ func TestReconcileRecordsOneSuspensionWhenTheFlushConflicts(t *testing.T) {
 		Name: "mac-client", Namespace: h.optimize.Namespace,
 	}}))
 	h.setClusterSuspend(t, true)
-	conflicts := 2
+	conflicts := 1
 	h.failStatusUpdate = func(obj client.Object) error {
 		if conflicts == 0 {
 			return nil

@@ -230,8 +230,6 @@ func (r *LogicalBackupRDBMSReconciler) Reconcile(
 		}
 	}
 
-	base := backup.DeepCopy()
-
 	rec := component.ReconcileContext{
 		Client:        r.Client,
 		Scheme:        r.Scheme,
@@ -241,7 +239,7 @@ func (r *LogicalBackupRDBMSReconciler) Reconcile(
 		Owner:         &backup,
 	}
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, rec, base, result, err)
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	if backup.Terminal() {

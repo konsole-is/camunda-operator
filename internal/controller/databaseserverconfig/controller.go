@@ -111,8 +111,6 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	base := cfg.DeepCopy()
-
 	cond, next, err := r.validate(ctx, &cfg)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -123,7 +121,6 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 	return ownerstatus.Flush(
 		ctx,
 		component.ReconcileContext{Client: r.Client, Metrics: r.Metrics, Owner: &cfg},
-		base,
 		ctrl.Result{RequeueAfter: next},
 		nil,
 	)

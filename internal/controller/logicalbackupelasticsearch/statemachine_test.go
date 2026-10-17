@@ -17,6 +17,7 @@ limitations under the License.
 package logicalbackupelasticsearch
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/camundaadmin"
@@ -50,10 +52,23 @@ func runtimeRig(t *testing.T) (*Reconciler, *camundaadmin.Client, *camundaadmint
 	mgmt, err := camundaadmin.New(camundaadmin.Binding{Endpoint: server.URL(), Version: "8.9.9"})
 	require.NoError(t, err)
 	r := &Reconciler{
+		Client:        receiptClient(),
 		EventRecorder: events.NewFakeRecorder(16),
 		options:       Options{RuntimeRegistrationGrace: time.Minute},
 	}
 	return r, mgmt, server
+}
+
+// receiptClient accepts every status patch and stores nothing, so a request
+// path records its receipt without a backup on an API server.
+func receiptClient() client.Client {
+	return interceptor.NewClient(fake.NewClientBuilder().Build(), interceptor.Funcs{
+		SubResourcePatch: func(
+			context.Context, client.Client, string, client.Object, client.Patch, ...client.SubResourcePatchOption,
+		) error {
+			return nil
+		},
+	})
 }
 
 func runtimeBackup() *v1.LogicalBackupElasticsearch {
@@ -410,6 +425,7 @@ func TestRuntimeAcceptanceIsStampedAfterTheRequestReturned(t *testing.T) {
 	mgmt, err := camundaadmin.New(camundaadmin.Binding{Endpoint: slow.URL, Version: "8.9.9"})
 	require.NoError(t, err)
 	r := &Reconciler{
+		Client:        receiptClient(),
 		EventRecorder: events.NewFakeRecorder(16),
 		options:       Options{RuntimeRegistrationGrace: time.Minute},
 	}

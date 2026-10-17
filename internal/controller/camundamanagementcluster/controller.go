@@ -222,8 +222,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		}
 	}
 
-	base := mc.DeepCopy()
-
 	rec := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
@@ -233,7 +231,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		Owner:         &mc,
 	}
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, rec, base, result, err)
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	res, err := r.preCheck(ctx, &mc)
@@ -321,6 +319,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		if err := r.withdrawContractNamed(ctx, &mc, previousContract); err != nil {
 			mc.Status.ManagementAuthConfig = previousContract
 			contractErr = err
+		} else {
+			// The new name is recorded at once, not left to the status
+			// write at the end of the pass, which a conflict loses. A pass
+			// that still finds the old name after a second rename withdraws
+			// the old one and leaves this one behind.
+			before := mc.DeepCopy()
+			before.Status.ManagementAuthConfig = previousContract
+			contractErr = ownerstatus.Record(ctx, r.Client, before, &mc)
 		}
 	}
 	callbackFailure, callbackRetry, callbackErr := r.syncOptimizeCallbacks(

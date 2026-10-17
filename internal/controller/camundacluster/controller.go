@@ -194,8 +194,6 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	base := cluster.DeepCopy()
-
 	rec := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
@@ -205,7 +203,7 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Owner:         &cluster,
 	}
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, rec, base, result, err)
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	in, mirrors, err := r.preCheck(ctx, &cluster)

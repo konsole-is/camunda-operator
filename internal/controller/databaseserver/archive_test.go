@@ -271,7 +271,7 @@ func TestReconcileArchiveHistoryRecordsAMoveAtTheGivenInstant(t *testing.T) {
 
 	// A base backup that completed before the ObjectStore moved. The move wins
 	// over it: the component is never consulted, which a nil one shows.
-	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, true, appliedAt)
+	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, true, appliedAt, appliedAt)
 
 	history := server.Status.Archive.History
 	require.Len(t, history, 1, "a move opens no record")
@@ -299,7 +299,7 @@ func TestReconcileArchiveHistoryHoldsAMoveTheApplyDidNotReach(t *testing.T) {
 
 	server := archivingServerWith([]v1.ArchiveRecord{archiveRecord(nil)}, nil)
 
-	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, false, now)
+	reconcileArchiveHistory(server, merged, nil, &started, locationB, true, false, now, now)
 
 	history := server.Status.Archive.History
 	require.Len(t, history, 1)

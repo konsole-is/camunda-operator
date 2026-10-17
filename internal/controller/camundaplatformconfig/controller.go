@@ -87,8 +87,6 @@ func (r *CamundaPlatformConfigReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, err
 	}
 
-	base := cfg.DeepCopy()
-
 	cond, err := r.validate(ctx, &cfg)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -99,7 +97,6 @@ func (r *CamundaPlatformConfigReconciler) Reconcile(ctx context.Context, req ctr
 	return ownerstatus.Flush(
 		ctx,
 		component.ReconcileContext{Client: r.Client, Metrics: r.Metrics, Owner: &cfg},
-		base,
 		ctrl.Result{},
 		nil,
 	)

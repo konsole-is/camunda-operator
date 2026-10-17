@@ -143,8 +143,6 @@ func (r *BackupScheduleReconciler) Reconcile(
 		return ctrl.Result{}, nil
 	}
 
-	base := schedule.DeepCopy()
-
 	rec := component.ReconcileContext{
 		Client:        r.Client,
 		Scheme:        r.Scheme,
@@ -154,7 +152,7 @@ func (r *BackupScheduleReconciler) Reconcile(
 		Owner:         &schedule,
 	}
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, rec, base, result, err)
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	now := r.opts.Now()

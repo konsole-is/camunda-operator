@@ -177,8 +177,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		}
 	}
 
-	base := optimize.DeepCopy()
-
 	rec := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
@@ -191,7 +189,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	// the status write that records the change landed.
 	var announce func()
 	defer func() {
-		flushErr := ownerstatus.Rebase(ctx, rec, base)
+		flushErr := component.FlushStatus(ctx, rec)
 		if flushErr == nil && announce != nil {
 			announce()
 		}

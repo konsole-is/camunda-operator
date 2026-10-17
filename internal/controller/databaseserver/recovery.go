@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/cnpgcluster"
@@ -827,15 +828,25 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 		)
 	}
 
+	before := server.DeepCopy()
 	server.Status.Cluster = previous
 	server.Status.Recovery.Cluster = ""
 
-	return r.answerRecovery(
+	if err := r.answerRecovery(
 		ctx, server, contract, request, v1.RecoveryResultFailed,
 		fmt.Sprintf(
 			"%s. The server had already moved to it, and it runs from %q again", cause, previous,
 		),
-	)
+	); err != nil {
+		return err
+	}
+
+	// The next look reads a Failed answer back from the contract, but not the
+	// cluster to go back to. If the status write at the end of this pass is
+	// lost, status.cluster still names the abandoned cluster, and the sweep
+	// removes the one that holds the data. So the move back is recorded at
+	// once.
+	return ownerstatus.Record(ctx, r.Client, before, server)
 }
 
 // createRecoveryCluster creates the cluster that recovers the server to the

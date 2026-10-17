@@ -18,7 +18,6 @@ package ownerstatus
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -45,11 +44,11 @@ var (
 )
 
 func TestFlushWritesTheStagedStatusAndKeepsTheResult(t *testing.T) {
-	c, owner, base := newOwner(t, interceptor.Funcs{})
+	c, owner := newOwner(t, interceptor.Funcs{})
 	stageReady(owner)
 	want := ctrl.Result{RequeueAfter: 30 * time.Second}
 
-	res, err := Flush(context.Background(), component.ReconcileContext{Client: c, Owner: owner}, base, want, nil)
+	res, err := Flush(context.Background(), component.ReconcileContext{Client: c, Owner: owner}, want, nil)
 
 	require.NoError(t, err)
 	assert.Equal(t, want, res)
@@ -57,13 +56,12 @@ func TestFlushWritesTheStagedStatusAndKeepsTheResult(t *testing.T) {
 }
 
 func TestFlushKeepsTheReconcileErrorAfterAWrite(t *testing.T) {
-	c, owner, base := newOwner(t, interceptor.Funcs{})
+	c, owner := newOwner(t, interceptor.Funcs{})
 	stageReady(owner)
 
 	_, err := Flush(
 		context.Background(),
 		component.ReconcileContext{Client: c, Owner: owner},
-		base,
 		ctrl.Result{},
 		errReconcile,
 	)
@@ -72,128 +70,51 @@ func TestFlushKeepsTheReconcileErrorAfterAWrite(t *testing.T) {
 	assert.True(t, storedReady(t, c, owner))
 }
 
-func TestFlushWritesOverAWriteOfTheMetadataOnly(t *testing.T) {
-	c, owner, base := newOwner(t, interceptor.Funcs{})
-	writeMetadataAsAnotherWriter(t, c, owner)
-	stageReady(owner)
-	want := ctrl.Result{RequeueAfter: time.Minute}
+func TestFlushRequeuesAConflictWithoutAnError(t *testing.T) {
+	for name, write := range map[string]func(*testing.T, client.Client, *v1.ObjectStorageConfig){
+		"a metadata write":           writeMetadataAsAnotherWriter,
+		"a status write of a writer": writeStatusAsAnotherWriter,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, owner := newOwner(t, interceptor.Funcs{})
+			write(t, c, owner)
+			stageReady(owner)
 
-	res, err := Flush(context.Background(), component.ReconcileContext{Client: c, Owner: owner}, base, want, nil)
+			res, err := Flush(
+				context.Background(),
+				component.ReconcileContext{Client: c, Owner: owner},
+				ctrl.Result{RequeueAfter: time.Minute},
+				nil,
+			)
 
-	require.NoError(t, err)
-	assert.Equal(t, want, res)
-	assert.True(t, storedReady(t, c, owner))
+			require.NoError(t, err)
+			assert.Equal(t, ctrl.Result{RequeueAfter: ConflictRequeue}, res)
+			assert.False(t, storedReady(t, c, owner), "a conflict must write nothing")
+		})
+	}
 }
 
-func TestFlushKeepsTheStatusOfAnotherWriterAndRequeues(t *testing.T) {
-	c, owner, base := newOwner(t, interceptor.Funcs{})
+func TestFlushKeepsTheStatusOfAnotherWriter(t *testing.T) {
+	c, owner := newOwner(t, interceptor.Funcs{})
 	writeStatusAsAnotherWriter(t, c, owner)
 	stageReady(owner)
 
-	res, err := Flush(
-		context.Background(),
-		component.ReconcileContext{Client: c, APIReader: c, Owner: owner},
-		base,
-		ctrl.Result{RequeueAfter: time.Minute},
-		nil,
-	)
+	_, err := Flush(context.Background(), component.ReconcileContext{Client: c, Owner: owner}, ctrl.Result{}, nil)
 
 	require.NoError(t, err)
-	assert.Equal(t, ctrl.Result{RequeueAfter: ConflictRequeue}, res)
-	var stored v1.ObjectStorageConfig
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(owner), &stored))
-	assert.Equal(t, int64(7), stored.Status.ObservedGeneration)
-	assert.False(t, storedReady(t, c, owner), "a conflict must write nothing")
-}
-
-func TestFlushKeepsAStatusFieldThatAnotherWriterRemoved(t *testing.T) {
-	c, owner, _ := newOwner(t, interceptor.Funcs{})
-	owner.Status.ObservedGeneration = 5
-	require.NoError(t, c.Status().Update(context.Background(), owner))
-	base := owner.DeepCopy()
-	other := owner.DeepCopy()
-	other.Status.ObservedGeneration = 0
-	require.NoError(t, c.Status().Update(context.Background(), other))
-	stageReady(owner)
-	// The REST client decodes a response into the object that it gets, and
-	// leaves a field that the response omits as it was. This reader does
-	// the same.
-	reader := interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
-		Get: func(
-			ctx context.Context,
-			inner client.WithWatch,
-			key client.ObjectKey,
-			obj client.Object,
-			opts ...client.GetOption,
-		) error {
-			var fresh v1.ObjectStorageConfig
-			if err := inner.Get(ctx, key, &fresh, opts...); err != nil {
-				return err
-			}
-			data, err := json.Marshal(&fresh)
-			if err != nil {
-				return err
-			}
-
-			return json.Unmarshal(data, obj)
-		},
-	})
-
-	_, err := Flush(
-		context.Background(),
-		component.ReconcileContext{Client: c, APIReader: reader, Owner: owner},
-		base,
-		ctrl.Result{},
-		nil,
-	)
-
-	require.NoError(t, err)
-	var stored v1.ObjectStorageConfig
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(owner), &stored))
-	assert.Zero(t, stored.Status.ObservedGeneration, "the write restored a field that another writer removed")
-	assert.False(t, storedReady(t, c, owner), "a conflict must write nothing")
+	assert.Equal(t, int64(7), stored(t, c, owner).Status.ObservedGeneration)
 }
 
 func TestFlushReturnsOnlyTheReconcileErrorOnAConflict(t *testing.T) {
-	c, owner, base := newOwner(t, interceptor.Funcs{})
-	writeStatusAsAnotherWriter(t, c, owner)
+	c, owner := newOwner(t, interceptor.Funcs{})
+	writeMetadataAsAnotherWriter(t, c, owner)
 	stageReady(owner)
 	want := ctrl.Result{RequeueAfter: time.Minute}
 
-	res, err := Flush(
-		context.Background(),
-		component.ReconcileContext{Client: c, Owner: owner},
-		base,
-		want,
-		errReconcile,
-	)
+	res, err := Flush(context.Background(), component.ReconcileContext{Client: c, Owner: owner}, want, errReconcile)
 
 	assert.Equal(t, errReconcile, err)
 	assert.Equal(t, want, res)
-}
-
-func TestFlushReturnsAFailedReadAfterAConflict(t *testing.T) {
-	c, owner, base := newOwner(t, interceptor.Funcs{})
-	writeMetadataAsAnotherWriter(t, c, owner)
-	stageReady(owner)
-	forbidden := apierrors.NewForbidden(gr, "s", nil)
-	reader := interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
-		Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
-			return forbidden
-		},
-	})
-
-	res, err := Flush(
-		context.Background(),
-		component.ReconcileContext{Client: c, APIReader: reader, Owner: owner},
-		base,
-		ctrl.Result{},
-		nil,
-	)
-
-	assert.True(t, apierrors.IsForbidden(err))
-	assert.False(t, apierrors.IsConflict(err), "a failed read must not pass for a conflict")
-	assert.Equal(t, ctrl.Result{}, res)
 }
 
 func TestFlushReturnsAnyOtherWriteFailure(t *testing.T) {
@@ -205,12 +126,11 @@ func TestFlushReturnsAnyOtherWriteFailure(t *testing.T) {
 	}
 
 	t.Run("alone", func(t *testing.T) {
-		c, owner, base := newOwner(t, refuse)
+		c, owner := newOwner(t, refuse)
 
 		res, err := Flush(
 			context.Background(),
 			component.ReconcileContext{Client: c, Owner: owner},
-			base,
 			ctrl.Result{RequeueAfter: time.Minute},
 			nil,
 		)
@@ -220,12 +140,11 @@ func TestFlushReturnsAnyOtherWriteFailure(t *testing.T) {
 	})
 
 	t.Run("joined to the reconcile error", func(t *testing.T) {
-		c, owner, base := newOwner(t, refuse)
+		c, owner := newOwner(t, refuse)
 
 		_, err := Flush(
 			context.Background(),
 			component.ReconcileContext{Client: c, Owner: owner},
-			base,
 			ctrl.Result{},
 			errReconcile,
 		)
@@ -270,33 +189,80 @@ func TestSettle(t *testing.T) {
 	})
 }
 
-// newOwner returns a client that holds one owner, the owner as a reconcile
-// read it, and the copy of it that the reconcile keeps as its base.
-func newOwner(t *testing.T, funcs interceptor.Funcs) (client.Client, *v1.ObjectStorageConfig, *v1.ObjectStorageConfig) {
+func TestRecordLandsOverTheWritesOfOtherFields(t *testing.T) {
+	c, owner := newOwner(t, interceptor.Funcs{})
+	writeMetadataAsAnotherWriter(t, c, owner)
+	writeStatusAsAnotherWriter(t, c, owner)
+	before := owner.DeepCopy()
+	stageReady(owner)
+
+	err := Record(context.Background(), c, before, owner)
+
+	require.NoError(t, err)
+	got := stored(t, c, owner)
+	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, v1.ConditionReady))
+	assert.Equal(t, int64(7), got.Status.ObservedGeneration, "the field of the other writer stays")
+}
+
+func TestRecordMakesTheWriteAtTheEndOfThePassRequeue(t *testing.T) {
+	c, owner := newOwner(t, interceptor.Funcs{})
+	before := owner.DeepCopy()
+	stageReady(owner)
+	require.NoError(t, Record(context.Background(), c, before, owner))
+
+	res, err := Flush(context.Background(), component.ReconcileContext{Client: c, Owner: owner}, ctrl.Result{}, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, ctrl.Result{RequeueAfter: ConflictRequeue}, res)
+	assert.True(t, storedReady(t, c, owner), "the recorded fields stay")
+}
+
+func TestRecordReturnsAFailedWrite(t *testing.T) {
+	forbidden := apierrors.NewForbidden(gr, "s", nil)
+	c, owner := newOwner(t, interceptor.Funcs{
+		SubResourcePatch: func(
+			context.Context, client.Client, string, client.Object, client.Patch, ...client.SubResourcePatchOption,
+		) error {
+			return forbidden
+		},
+	})
+
+	before := owner.DeepCopy()
+	stageReady(owner)
+
+	err := Record(context.Background(), c, before, owner)
+
+	assert.True(t, apierrors.IsForbidden(err))
+	assert.False(t, storedReady(t, c, owner))
+}
+
+// newOwner returns a client that holds one owner, and the owner as a
+// reconcile read it.
+func newOwner(t *testing.T, funcs interceptor.Funcs) (client.Client, *v1.ObjectStorageConfig) {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, v1.AddToScheme(scheme))
-	stored := &v1.ObjectStorageConfig{ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "default"}}
+	initial := &v1.ObjectStorageConfig{ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "default"}}
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(stored).
-		WithStatusSubresource(stored).
+		WithObjects(initial).
+		WithStatusSubresource(initial).
 		WithInterceptorFuncs(funcs).
 		Build()
 
 	var owner v1.ObjectStorageConfig
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(stored), &owner))
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(initial), &owner))
 
-	return c, &owner, owner.DeepCopy()
+	return c, &owner
 }
 
 // writeMetadataAsAnotherWriter changes a label of the stored owner, so the
-// resourceVersion that owner holds is stale and its status is not.
+// resourceVersion that owner holds is stale.
 func writeMetadataAsAnotherWriter(t *testing.T, c client.Client, owner *v1.ObjectStorageConfig) {
 	t.Helper()
 
-	other := owner.DeepCopy()
+	other := stored(t, c, owner)
 	other.Labels = map[string]string{"writer": "other"}
 	require.NoError(t, c.Update(context.Background(), other))
 }
@@ -306,7 +272,7 @@ func writeMetadataAsAnotherWriter(t *testing.T, c client.Client, owner *v1.Objec
 func writeStatusAsAnotherWriter(t *testing.T, c client.Client, owner *v1.ObjectStorageConfig) {
 	t.Helper()
 
-	other := owner.DeepCopy()
+	other := stored(t, c, owner)
 	other.Status.ObservedGeneration = 7
 	require.NoError(t, c.Status().Update(context.Background(), other))
 }
@@ -319,11 +285,17 @@ func stageReady(owner *v1.ObjectStorageConfig) {
 	})
 }
 
+func stored(t *testing.T, c client.Client, owner *v1.ObjectStorageConfig) *v1.ObjectStorageConfig {
+	t.Helper()
+
+	var got v1.ObjectStorageConfig
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(owner), &got))
+
+	return &got
+}
+
 func storedReady(t *testing.T, c client.Client, owner *v1.ObjectStorageConfig) bool {
 	t.Helper()
 
-	var stored v1.ObjectStorageConfig
-	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(owner), &stored))
-
-	return meta.IsStatusConditionTrue(stored.Status.Conditions, v1.ConditionReady)
+	return meta.IsStatusConditionTrue(stored(t, c, owner).Status.Conditions, v1.ConditionReady)
 }

@@ -84,8 +84,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	base := reg.DeepCopy()
-
 	f, err := r.observe(ctx, &reg)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -99,7 +97,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ownerstatus.Flush(
 		ctx,
 		component.ReconcileContext{Client: r.Client, Metrics: r.Metrics, Owner: &reg},
-		base,
 		ctrl.Result{},
 		nil,
 	)

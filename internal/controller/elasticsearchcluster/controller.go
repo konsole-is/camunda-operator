@@ -190,8 +190,6 @@ func (r *ElasticsearchClusterReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	base := cluster.DeepCopy()
-
 	recCtx := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
@@ -201,7 +199,7 @@ func (r *ElasticsearchClusterReconciler) Reconcile(
 		Owner:         &cluster,
 	}
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, recCtx, base, result, err)
+		result, err = ownerstatus.Flush(ctx, recCtx, result, err)
 	}()
 
 	merged, storage, err := r.preCheck(ctx, &cluster)

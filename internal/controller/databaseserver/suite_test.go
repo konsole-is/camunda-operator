@@ -147,6 +147,38 @@ type backupListCounter struct {
 
 	mu     sync.Mutex
 	counts map[string]int
+	// beforeOutcome runs once, before the next recovery outcome that the
+	// reconciler publishes, when a spec set it.
+	beforeOutcome func()
+}
+
+// Patch runs the hook of a spec before a published recovery outcome, and
+// passes every write on.
+func (c *backupListCounter) Patch(
+	ctx context.Context,
+	obj client.Object,
+	patch client.Patch,
+	opts ...client.PatchOption,
+) error {
+	if obj.GetObjectKind().GroupVersionKind().Kind == "DatabaseServerConfig" {
+		c.mu.Lock()
+		hook := c.beforeOutcome
+		c.beforeOutcome = nil
+		c.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+	}
+
+	return c.Client.Patch(ctx, obj, patch, opts...)
+}
+
+// onNextOutcome makes hook run once, before the next recovery outcome.
+func (c *backupListCounter) onNextOutcome(hook func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.beforeOutcome = hook
 }
 
 // List counts a read of the CloudNativePG backups and passes every read on.

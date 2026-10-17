@@ -174,13 +174,15 @@ type barmanArchive struct {
 // else. The cluster then carries no archive plugin, so the schedule has no
 // object storage to write a base backup to and is removed with it.
 //
-// The returned data cell holds the destination path that this reconcile
-// applied to the ObjectStore, which names the bucket and the prefix under it.
-// It is unset when that apply did not happen: the component is disabled,
-// another owner controls the Secret or the ObjectStore, an earlier resource of
-// it failed, or the apply itself was rejected. The archive of the server is
-// then still where it was, whatever the spec asks for, so the caller records
-// no move.
+// The returned data cell holds the time at which the spec of the ObjectStore
+// last changed by an apply, as the API server stamped it. A pass that applies
+// the same spec again finds the same time, so a pass after a lost status
+// write records a move at the time of the apply that made it. The time is
+// zero when the API server stamped none. The cell is unset when that apply
+// did not happen: the component is disabled, another owner controls the
+// Secret or the ObjectStore, an earlier resource of it failed, or the apply
+// itself was rejected. The archive of the server is then still where it was,
+// whatever the spec asks for, so the caller records no move.
 func ArchiveComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -189,7 +191,7 @@ func ArchiveComponent(
 	outage *ArchiveOutage,
 	clusterTaken string,
 	archiveTaken string,
-) (*component.Component, *concepts.Data[string], error) {
+) (*component.Component, *concepts.Data[metav1.Time], error) {
 	resolved := archive.resolveOrNil(server)
 
 	settings, err := secret.NewBuilder(archiveSecret(server, resolved)).Build()
@@ -197,12 +199,12 @@ func ArchiveComponent(
 		return nil, nil, err
 	}
 
-	destination := concepts.NewData[string]("archive-destination-path")
+	applied := concepts.NewData[metav1.Time]("archive-applied-at")
 	storeBuilder := barmanobjectstore.NewBuilder(objectStore(server, merged, resolved))
 	barmanobjectstore.ExtractInto(
-		storeBuilder, destination,
-		func(o barmanobjectstore.ObjectStore) (string, error) {
-			return o.Spec.Configuration.DestinationPath, nil
+		storeBuilder, applied,
+		func(o barmanobjectstore.ObjectStore) (metav1.Time, error) {
+			return specAppliedAt(o.GetManagedFields()), nil
 		},
 	)
 
@@ -253,7 +255,23 @@ func ArchiveComponent(
 		return nil, nil, err
 	}
 
-	return comp, destination, nil
+	return comp, applied, nil
+}
+
+// specAppliedAt returns the newest time at which an apply changed the spec of
+// an object, or the zero time when the API server stamped none.
+func specAppliedAt(fields []metav1.ManagedFieldsEntry) metav1.Time {
+	var newest metav1.Time
+	for _, entry := range fields {
+		if entry.Operation != metav1.ManagedFieldsOperationApply || entry.Subresource != "" || entry.Time == nil {
+			continue
+		}
+		if entry.Time.After(newest.Time) {
+			newest = *entry.Time
+		}
+	}
+
+	return newest
 }
 
 // archiveSecret renders the Secret that carries the bucket settings of the
