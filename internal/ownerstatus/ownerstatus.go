@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -94,7 +95,10 @@ func Rebase(ctx context.Context, rec component.ReconcileContext, base client.Obj
 		return err
 	}
 
-	live, ok := base.DeepCopyObject().(client.Object)
+	// A fresh object, not a copy of base: a decode leaves out the fields
+	// that the response omits, so a copy keeps a field that another writer
+	// removed.
+	live, ok := reflect.New(reflect.TypeOf(base).Elem()).Interface().(client.Object)
 	if !ok {
 		return err
 	}

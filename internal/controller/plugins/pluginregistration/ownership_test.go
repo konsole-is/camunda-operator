@@ -102,7 +102,10 @@ var _ = Describe("PluginRegistration Accepted next to the plugin controller", fu
 		result, err := r.Reconcile(ctx, req)
 		Expect(err).NotTo(HaveOccurred(), "a conflict must not be a reconcile error")
 		Expect(result).To(Equal(ctrl.Result{RequeueAfter: ownerstatus.ConflictRequeue}))
-		Expect(racing.updates).To(Equal(1))
+		// A cache that still holds the status from before the write of the
+		// plugin makes the write try once more, and that try conflicts too.
+		Expect(racing.updates).To(BeNumerically("<=", 2))
+		lost := racing.updates
 
 		By("waiting until the cache of the next reconcile holds the write of the plugin")
 		Eventually(func(g Gomega) {
@@ -115,7 +118,7 @@ var _ = Describe("PluginRegistration Accepted next to the plugin controller", fu
 		result, err = r.Reconcile(ctx, req)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal(ctrl.Result{}))
-		Expect(racing.updates).To(Equal(2))
+		Expect(racing.updates).To(Equal(lost + 1))
 
 		var latest pluginsv1alpha1.PluginRegistration
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(reg), &latest)).To(Succeed())

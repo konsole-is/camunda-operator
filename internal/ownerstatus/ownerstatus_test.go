@@ -18,6 +18,7 @@ package ownerstatus
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -102,6 +103,54 @@ func TestFlushKeepsTheStatusOfAnotherWriterAndRequeues(t *testing.T) {
 	var stored v1.ObjectStorageConfig
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(owner), &stored))
 	assert.Equal(t, int64(7), stored.Status.ObservedGeneration)
+	assert.False(t, storedReady(t, c, owner), "a conflict must write nothing")
+}
+
+func TestFlushKeepsAStatusFieldThatAnotherWriterRemoved(t *testing.T) {
+	c, owner, _ := newOwner(t, interceptor.Funcs{})
+	owner.Status.ObservedGeneration = 5
+	require.NoError(t, c.Status().Update(context.Background(), owner))
+	base := owner.DeepCopy()
+	other := owner.DeepCopy()
+	other.Status.ObservedGeneration = 0
+	require.NoError(t, c.Status().Update(context.Background(), other))
+	stageReady(owner)
+	// The REST client decodes a response into the object that it gets, and
+	// leaves a field that the response omits as it was. This reader does
+	// the same.
+	reader := interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+		Get: func(
+			ctx context.Context,
+			inner client.WithWatch,
+			key client.ObjectKey,
+			obj client.Object,
+			opts ...client.GetOption,
+		) error {
+			var fresh v1.ObjectStorageConfig
+			if err := inner.Get(ctx, key, &fresh, opts...); err != nil {
+				return err
+			}
+			data, err := json.Marshal(&fresh)
+			if err != nil {
+				return err
+			}
+
+			return json.Unmarshal(data, obj)
+		},
+	})
+
+	_, err := Flush(
+		context.Background(),
+		component.ReconcileContext{Client: c, APIReader: reader, Owner: owner},
+		base,
+		ctrl.Result{},
+		nil,
+	)
+
+	require.NoError(t, err)
+	var stored v1.ObjectStorageConfig
+	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(owner), &stored))
+	assert.Zero(t, stored.Status.ObservedGeneration, "the write restored a field that another writer removed")
 	assert.False(t, storedReady(t, c, owner), "a conflict must write nothing")
 }
 
