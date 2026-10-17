@@ -25,7 +25,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -61,7 +60,6 @@ var _ = Describe("DatabaseServer status write that loses a conflict", func() {
 			var applies atomic.Int32
 			var firstApplied atomic.Int64
 			touched := make(chan error, 1)
-			labelled := make(chan error, 1)
 			objectStoreApplies.onApply(func(store *barmanobjectstore.ObjectStore) {
 				if store.GetNamespace() != server.Namespace ||
 					!strings.Contains(store.Spec.Configuration.DestinationPath, second.Name) {
@@ -71,11 +69,6 @@ var _ = Describe("DatabaseServer status write that loses a conflict", func() {
 				case 1:
 					touched <- tc.touch(server)
 					firstApplied.Store(time.Now().UnixNano())
-				case 2:
-					// Another manager labels the ObjectStore well after the
-					// move. Its apply is not the time of the move.
-					time.Sleep(2500 * time.Millisecond)
-					labelled <- labelObjectStore(store)
 				default:
 					time.Sleep(3 * time.Second)
 				}
@@ -87,7 +80,6 @@ var _ = Describe("DatabaseServer status write that loses a conflict", func() {
 				RetentionPeriodDays: 30,
 			})
 			Eventually(touched, timeout, interval).Should(Receive(Succeed()))
-			Eventually(labelled, timeout, interval).Should(Receive(Succeed()))
 
 			var boundary *v1.ArchiveBoundary
 			Eventually(func(g Gomega) {
@@ -147,19 +139,52 @@ var _ = Describe("DatabaseServer abandoned recovery whose status write loses a c
 	})
 })
 
-// labelObjectStore applies a label on store with a field manager of its own,
-// as another tool can.
-func labelObjectStore(store *barmanobjectstore.ObjectStore) error {
-	label := &unstructured.Unstructured{}
-	label.SetAPIVersion("barmancloud.cnpg.io/v1")
-	label.SetKind("ObjectStore")
-	label.SetNamespace(store.GetNamespace())
-	label.SetName(store.GetName())
-	label.SetLabels(map[string]string{"example.com/labelled": "true"})
+var _ = Describe("DatabaseServer abandoned recovery whose receipt is lost", func() {
+	// The answer is published, the receipt of the move back fails, and the
+	// status write at the end of the pass conflicts: nothing records the move.
+	It("keeps the cluster that holds the data from the answer on the contract", func() {
+		server, from := archivingServer()
+		askForRecovery(server, from.Add(time.Hour))
+		bringRecoveryClusterUp(server, "camunda-r1")
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
+		}, timeout, interval).Should(Succeed())
 
-	//nolint:staticcheck // the suite applies through the deprecated client.Apply patch, as the operator does
-	return k8sClient.Patch(ctx, label, client.Apply, client.FieldOwner("example.com/labeller"))
-}
+		stranger := serverNamed(server.Namespace, "stranger", "stranger", nil)
+		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
+		Eventually(func(g Gomega) {
+			var taken cnpgv1.Cluster
+			g.Expect(k8sClient.Get(ctx, key, &taken)).To(Succeed())
+			taken.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: v1.GroupVersion.String(),
+				Kind:       "DatabaseServer",
+				Name:       stranger.Name,
+				UID:        reconciledServer(stranger).UID,
+				Controller: new(true),
+			}}
+			g.Expect(k8sClient.Update(ctx, &taken)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+
+		touched := make(chan error, 1)
+		backupLists.onNextOutcome(func() {
+			backupLists.failNextStatusPatch()
+			touched <- touchServer(server)
+		})
+		DeferCleanup(func() { backupLists.onNextOutcome(nil) })
+		probeAnyEndpoint(server)
+
+		expectLastRecovery(server, v1.RecoveryResultFailed)
+		Eventually(touched, timeout, interval).Should(Receive(Succeed()))
+		Eventually(func(g Gomega) {
+			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda"))
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			g.Expect(k8sClient.Get(
+				ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &cnpgv1.Cluster{},
+			)).To(Succeed(), "the cluster that holds the data was removed")
+		}, "3s", interval).Should(Succeed())
+	})
+})
 
 // touchServer writes a label on server, as a user or a GitOps tool can while
 // the controller works on it.

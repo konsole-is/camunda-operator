@@ -83,7 +83,9 @@ func Settle(res ctrl.Result, err, flushErr error) (ctrl.Result, error) {
 //
 // Record reads the live object with reader first, and writes nothing when an
 // object with another UID replaced owner under its name. A status patch
-// cannot carry that check itself. reader must not be a cache.
+// cannot carry that check itself. reader must not be a cache. A replacement
+// between that read and the write gets the patch, and Record then returns an
+// error.
 func Record(ctx context.Context, c client.Client, reader client.Reader, before, owner client.Object) error {
 	key := client.ObjectKeyFromObject(owner)
 	live, ok := owner.DeepCopyObject().(client.Object)
@@ -103,6 +105,9 @@ func Record(ctx context.Context, c client.Client, reader client.Reader, before, 
 	}
 	if err := c.Status().Patch(ctx, receipt, client.MergeFrom(before)); err != nil {
 		return fmt.Errorf("recording the status of %s: %w", key, err)
+	}
+	if receipt.GetUID() != owner.GetUID() {
+		return fmt.Errorf("recording the status of %s: the receipt landed on an object that replaced it", key)
 	}
 
 	return nil

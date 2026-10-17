@@ -248,6 +248,24 @@ func TestRecordRefusesAnObjectThatReplacedTheOwner(t *testing.T) {
 	assert.False(t, storedReady(t, c, owner))
 }
 
+func TestRecordReportsAReceiptThatLandedOnAReplacement(t *testing.T) {
+	c, owner := newOwner(t, interceptor.Funcs{
+		SubResourcePatch: func(
+			_ context.Context, _ client.Client, _ string, obj client.Object, _ client.Patch, _ ...client.SubResourcePatchOption,
+		) error {
+			obj.SetUID("uid-of-a-replacement")
+
+			return nil
+		},
+	})
+	before := owner.DeepCopy()
+	stageReady(owner)
+
+	err := Record(context.Background(), c, c, before, owner)
+
+	require.Error(t, err)
+}
+
 // newOwner returns a client that holds one owner, and the owner as a
 // reconcile read it.
 func newOwner(t *testing.T, funcs interceptor.Funcs) (client.Client, *v1.ObjectStorageConfig) {

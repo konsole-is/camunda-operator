@@ -320,6 +320,16 @@ func (r *DatabaseServerReconciler) recordPublishedOutcome(
 		closeArchiveRecord(server, answered.PreviousCluster, published.CompletedAt)
 	}
 
+	// A Failed answer past the cutover is a rollback that abandonRecovery
+	// published: the server runs from the cluster it came from again. A look
+	// whose record of that move was lost still names the abandoned cluster,
+	// and the sweep would remove the one that holds the data.
+	if published.Result == v1.RecoveryResultFailed && carry != nil && carry.Cluster != "" &&
+		carry.Cluster == server.Status.Cluster && carry.PreviousCluster != "" {
+		server.Status.Cluster = carry.PreviousCluster
+		answered.Cluster = ""
+	}
+
 	server.Status.Recovery = answered
 
 	return nil
@@ -841,11 +851,9 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 		return err
 	}
 
-	// The next look reads a Failed answer back from the contract, but not the
-	// cluster to go back to. If the status write at the end of this pass is
-	// lost, status.cluster still names the abandoned cluster, and the sweep
-	// removes the one that holds the data. So the move back is recorded at
-	// once.
+	// The move back is recorded at once, not left to the status write at the
+	// end of the pass, which a conflict loses. A look that finds it lost still
+	// repairs it from the Failed answer: see recordPublishedOutcome.
 	return ownerstatus.Record(ctx, r.Client, r.APIReader, before, server)
 }
 

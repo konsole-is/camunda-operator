@@ -150,6 +150,46 @@ type backupListCounter struct {
 	// beforeOutcome runs once, before the next recovery outcome that the
 	// reconciler publishes, when a spec set it.
 	beforeOutcome func()
+	// failStatusPatch makes the next status patch fail, when a spec set it.
+	failStatusPatch bool
+}
+
+// Status refuses the next status patch when a spec asked for it, and passes
+// every other status write on.
+func (c *backupListCounter) Status() client.SubResourceWriter {
+	return &refusingStatusWriter{SubResourceWriter: c.Client.Status(), c: c}
+}
+
+// refusingStatusWriter is the status writer of backupListCounter.
+type refusingStatusWriter struct {
+	client.SubResourceWriter
+	c *backupListCounter
+}
+
+// Patch fails once after failNextStatusPatch.
+func (w *refusingStatusWriter) Patch(
+	ctx context.Context,
+	obj client.Object,
+	patch client.Patch,
+	opts ...client.SubResourcePatchOption,
+) error {
+	w.c.mu.Lock()
+	refuse := w.c.failStatusPatch
+	w.c.failStatusPatch = false
+	w.c.mu.Unlock()
+	if refuse {
+		return apierrors.NewInternalError(errors.New("the spec refuses this status patch"))
+	}
+
+	return w.SubResourceWriter.Patch(ctx, obj, patch, opts...)
+}
+
+// failNextStatusPatch makes the next status patch of the reconciler fail.
+func (c *backupListCounter) failNextStatusPatch() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.failStatusPatch = true
 }
 
 // Patch runs the hook of a spec before a published recovery outcome, and

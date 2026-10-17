@@ -178,6 +178,9 @@ type Server struct {
 	statsCalls      int
 
 	restores []RestoreRequest
+	// beforeRestoreAnswer runs once, before the answer to the next restore
+	// that the fake accepts.
+	beforeRestoreAnswer func(snapshot string)
 
 	// indices is the set of indices that the fake holds.
 	indices map[string]struct{}
@@ -300,6 +303,16 @@ func (s *Server) SnapshotCreates(repo, name string) int {
 	s.Lock()
 	defer s.Unlock()
 	return s.snapshotCreates[repo+"/"+name]
+}
+
+// BeforeNextRestoreAnswer runs hook once, with the snapshot name, after the
+// next restore is accepted and before the fake answers it. The caller of the
+// restore waits for the answer while hook runs. hook runs under the lock of
+// the fake, so it must not call the fake.
+func (s *Server) BeforeNextRestoreAnswer(hook func(snapshot string)) {
+	s.Lock()
+	defer s.Unlock()
+	s.beforeRestoreAnswer = hook
 }
 
 // RestoreRequests returns the restores that the fake accepted, in the order
@@ -783,6 +796,10 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request, parts []s
 		Indices:           indices,
 		WaitForCompletion: waitForCompletion,
 	})
+	if hook := s.beforeRestoreAnswer; hook != nil {
+		s.beforeRestoreAnswer = nil
+		hook(parts[2])
+	}
 	adminhttptest.WriteJSON(w, http.StatusOK, map[string]any{"accepted": true})
 }
 
