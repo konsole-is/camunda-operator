@@ -222,6 +222,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		}
 	}
 
+	base := mc.DeepCopy()
+
 	rec := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
@@ -231,7 +233,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		Owner:         &mc,
 	}
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, rec, result, err)
+		result, err = ownerstatus.Flush(ctx, rec, base, result, err)
 	}()
 
 	res, err := r.preCheck(ctx, &mc)

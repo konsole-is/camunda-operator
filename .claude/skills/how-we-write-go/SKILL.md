@@ -571,6 +571,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
+    base := obj.DeepCopy()
+
     rec := component.ReconcileContext{
         Client:        r.componentClient,
         Scheme:        r.Scheme,
@@ -579,7 +581,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
         Owner:         &obj,
     }
     defer func() {
-        result, err = ownerstatus.Flush(ctx, rec, result, err)
+        result, err = ownerstatus.Flush(ctx, rec, base, result, err)
     }()
 
     // Stage conditions freely with meta.SetStatusCondition; the defer writes them.
@@ -587,7 +589,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 }
 ```
 
-The named returns let the deferred flush set the result and the error, even when the reconcile itself succeeded. `FlushStatus` writes the whole status subresource with the `resourceVersion` of the read at the top of the reconcile. On a 409 it writes nothing and returns the conflict, so it never rolls back a field or a condition that another writer set. `ownerstatus.Flush` turns that conflict into a requeue after a second with no error, because a conflict is expected when other writers share the object: the fleet manager, the plugin controllers, and the spec and metadata writes of users. Any other failure of the write stays an error. Read the owner fresh at the top of each reconcile: a copy from the cache or from an earlier pass holds an old `resourceVersion`, so its write can only conflict. A write that must be durable before the reconcile acts on it, such as a finalizer step, calls `component.FlushStatus` directly and treats a conflict as an error.
+The named returns let the deferred flush set the result and the error, even when the reconcile itself succeeded. `FlushStatus` writes the whole status subresource with the `resourceVersion` of the read at the top of the reconcile. On a 409 it writes nothing and returns the conflict, so it never rolls back a field or a condition that another writer set. `ownerstatus.Flush` handles that conflict. `base` is the copy of the owner as the reconcile read it, made before anything is staged. When the live status still equals the status of `base`, only the spec or the metadata changed, and `Flush` writes the staged status once more on the live `resourceVersion`. A pass then keeps a receipt that a later pass cannot rebuild, such as a backup id that the cluster generated. When another writer changed the status, `Flush` writes nothing and requeues after a second with no error, because a conflict is expected when other writers share the object: the fleet manager and the plugin controllers. Any other failure of the write stays an error. Read the owner fresh at the top of each reconcile: a copy from the cache or from an earlier pass holds an old `resourceVersion`, so its write can only conflict. A write that must be durable before the reconcile acts on it, such as a finalizer step, calls `component.FlushStatus` directly and treats a conflict as an error.
 
 **Condition vocabulary is API surface and lives in `api/v1`.** Users match it with `kubectl wait`, and the operators above import `api/v1` to gate on it. `api/v1/conditions.go` holds the vocabulary that more than one CRD reports (`ConditionReady`, `ReasonHealthy`, `ReasonInvalidReference`, `ReasonMissingSecret`, `ReasonConnectionFailed`). A reason or condition type that one CRD reports is declared in that CRD's types file, next to its spec. The CRD doc under `docs/crds` is the contract for both. `pkg/conditions` builds the aggregate `Ready`; it declares no vocabulary.
 

@@ -245,6 +245,8 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
+	base := server.DeepCopy()
+
 	recCtx := component.ReconcileContext{
 		Client:        r.componentClient,
 		Scheme:        r.Scheme,
@@ -254,7 +256,7 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Owner:         &server,
 	}
 	defer func() {
-		result, err = ownerstatus.Flush(ctx, recCtx, result, err)
+		result, err = ownerstatus.Flush(ctx, recCtx, base, result, err)
 	}()
 
 	// The contract, the archive, and the monitoring all name the cluster, so

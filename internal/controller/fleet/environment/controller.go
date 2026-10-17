@@ -91,6 +91,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
+	base := env.DeepCopy()
+
 	missing, err := r.missing(ctx, references(&env.Spec))
 	if err != nil {
 		return ctrl.Result{}, err
@@ -115,6 +117,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return ownerstatus.Flush(
 		ctx,
 		component.ReconcileContext{Client: r.Client, Metrics: r.Metrics, Owner: &env},
+		base,
 		ctrl.Result{},
 		nil,
 	)

@@ -75,6 +75,9 @@ type objectStoreApplyBlocker struct {
 
 	mu       sync.Mutex
 	refusing map[string]bool
+	// beforeApply runs before each ObjectStore apply that passes, when a spec
+	// set it.
+	beforeApply func(store *barmanobjectstore.ObjectStore)
 }
 
 // Patch refuses the ObjectStore of a namespace the spec named.
@@ -84,11 +87,32 @@ func (c *objectStoreApplyBlocker) Patch(
 	patch client.Patch,
 	opts ...client.PatchOption,
 ) error {
-	if _, ok := obj.(*barmanobjectstore.ObjectStore); ok && c.refuses(obj.GetNamespace()) {
-		return apierrors.NewInternalError(errors.New("the spec refuses this ObjectStore apply"))
+	if store, ok := obj.(*barmanobjectstore.ObjectStore); ok {
+		if c.refuses(obj.GetNamespace()) {
+			return apierrors.NewInternalError(errors.New("the spec refuses this ObjectStore apply"))
+		}
+		if hook := c.applyHook(); hook != nil {
+			hook(store)
+		}
 	}
 
 	return c.Client.Patch(ctx, obj, patch, opts...)
+}
+
+// onApply makes hook run before each ObjectStore apply that passes. A nil
+// hook removes it.
+func (c *objectStoreApplyBlocker) onApply(hook func(store *barmanobjectstore.ObjectStore)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.beforeApply = hook
+}
+
+func (c *objectStoreApplyBlocker) applyHook() func(store *barmanobjectstore.ObjectStore) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.beforeApply
 }
 
 // refuse makes every later ObjectStore apply in namespace fail.

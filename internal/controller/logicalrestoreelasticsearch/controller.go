@@ -193,6 +193,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		return ctrl.Result{}, err
 	}
 
+	base := lres.DeepCopy()
+
 	rec := component.ReconcileContext{
 		Client:        r.Client,
 		Scheme:        r.Scheme,
@@ -207,7 +209,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		if finalized {
 			return
 		}
-		result, err = ownerstatus.Flush(ctx, rec, result, err)
+		result, err = ownerstatus.Flush(ctx, rec, base, result, err)
 	}()
 
 	// The Jobs of a restore carry a controller reference to it, so the garbage

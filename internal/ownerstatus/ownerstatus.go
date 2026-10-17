@@ -14,8 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package ownerstatus writes the status of the object that a reconcile owns,
-// and turns a lost write into a requeue that logs no error.
+// Package ownerstatus writes the status of the object that a reconcile owns.
+// A write that loses a conflict to a spec or metadata write is tried once more
+// on the live object. A write that loses a conflict to a status write of
+// another writer adds no error: the reconcile requeues, or returns the error
+// that it already had.
 package ownerstatus
 
 import (
@@ -36,23 +39,30 @@ import (
 // again after its status write lost a conflict.
 const ConflictRequeue = time.Second
 
-// Flush writes the status of rec.Owner with component.FlushStatus and returns
-// the result and the error for Reconcile to return, as Settle decides them.
-// res and err are the values that the reconcile had before the write.
-func Flush(ctx context.Context, rec component.ReconcileContext, res ctrl.Result, err error) (ctrl.Result, error) {
-	return Settle(res, err, component.FlushStatus(ctx, rec))
+// Flush writes the status of rec.Owner with Rebase, and returns the result and
+// the error for Reconcile to return, as Settle decides them. base is a copy of
+// the owner as the reconcile read it, made before the reconcile staged any
+// status. res and err are the values that the reconcile had before the write.
+func Flush(
+	ctx context.Context,
+	rec component.ReconcileContext,
+	base client.Object,
+	res ctrl.Result,
+	err error,
+) (ctrl.Result, error) {
+	return Settle(res, err, Rebase(ctx, rec, base))
 }
 
 // Settle returns the result and the error for Reconcile to return after a
 // status write that returned flushErr. res and err are the values that the
 // reconcile had before the write. A reconcile that must know whether the
-// write landed calls component.FlushStatus itself and passes its error here.
+// write landed calls Rebase itself and passes its error here.
 //
-// A conflict means that another writer changed the owner after the reconcile
-// read it, and that nothing was written. When err is nil, Settle returns a
-// requeue after ConflictRequeue and no error. When err is set, Settle returns
-// res and err, because err requeues the owner already. Any other failure of
-// the write is joined to err.
+// A conflict means that another writer changed the status of the owner after
+// the reconcile read it, and that nothing was written. When err is nil, Settle
+// returns a requeue after ConflictRequeue and no error. When err is set,
+// Settle returns res and err, because err requeues the owner already. Any
+// other failure of the write is joined to err.
 func Settle(res ctrl.Result, err, flushErr error) (ctrl.Result, error) {
 	switch {
 	case flushErr == nil:
@@ -68,28 +78,16 @@ func Settle(res ctrl.Result, err, flushErr error) (ctrl.Result, error) {
 	}
 }
 
-// FlushRebased is Flush with the write of Rebase. base is the owner as the
-// reconcile read it.
-func FlushRebased(
-	ctx context.Context,
-	rec component.ReconcileContext,
-	base client.Object,
-	res ctrl.Result,
-	err error,
-) (ctrl.Result, error) {
-	return Settle(res, err, Rebase(ctx, rec, base))
-}
-
-// Rebase writes the status of rec.Owner with component.FlushStatus. base is
-// the owner as the reconcile read it. When the write conflicts and the live
-// owner still holds the status of base, another writer changed only the spec
-// or the metadata. Rebase then writes the staged status once more, on the
-// live resourceVersion. When the live status changed, Rebase returns the
-// conflict and writes nothing, so it never rolls back another writer.
+// Rebase writes the status of rec.Owner with component.FlushStatus. base is a
+// copy of the owner as the reconcile read it. When the write conflicts and the
+// live owner still holds the status of base, Rebase writes the staged status
+// once more, on the live resourceVersion. When the live status changed, Rebase
+// returns the conflict and writes nothing, so it never rolls back another
+// writer.
 //
-// Use it where a pass records the receipt of a side effect that a later pass
-// cannot rebuild, such as the id of a backup that the cluster generated.
-// rec.APIReader reads the live owner, and must not be a cache.
+// It reads the live owner with rec.APIReader, or with rec.Client when
+// rec.APIReader is nil. When the read fails, Rebase returns that failure, not a
+// conflict. An owner that is gone returns the conflict.
 func Rebase(ctx context.Context, rec component.ReconcileContext, base client.Object) error {
 	err := component.FlushStatus(ctx, rec)
 	if !apierrors.IsConflict(err) {
@@ -100,13 +98,22 @@ func Rebase(ctx context.Context, rec component.ReconcileContext, base client.Obj
 	if !ok {
 		return err
 	}
-	if getErr := rec.APIReader.Get(ctx, client.ObjectKeyFromObject(base), live); getErr != nil {
-		return errors.Join(err, getErr)
+	var reader client.Reader = rec.Client
+	if rec.APIReader != nil {
+		reader = rec.APIReader
+	}
+	key := client.ObjectKeyFromObject(base)
+	if getErr := reader.Get(ctx, key, live); getErr != nil {
+		if apierrors.IsNotFound(getErr) {
+			return err
+		}
+
+		return fmt.Errorf("reading %s after a status conflict: %w", key, getErr)
 	}
 
 	same, cmpErr := sameStatus(base, live)
 	if cmpErr != nil {
-		return errors.Join(err, cmpErr)
+		return cmpErr
 	}
 	if !same {
 		return err

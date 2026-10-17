@@ -230,9 +230,8 @@ func (r *LogicalBackupRDBMSReconciler) Reconcile(
 		}
 	}
 
-	// base is the backup as this pass read it. The write keeps the receipts
-	// of this pass over a write that changed only the spec or the metadata.
 	base := backup.DeepCopy()
+
 	rec := component.ReconcileContext{
 		Client:        r.Client,
 		Scheme:        r.Scheme,
@@ -242,7 +241,7 @@ func (r *LogicalBackupRDBMSReconciler) Reconcile(
 		Owner:         &backup,
 	}
 	defer func() {
-		result, err = ownerstatus.FlushRebased(ctx, rec, base, result, err)
+		result, err = ownerstatus.Flush(ctx, rec, base, result, err)
 	}()
 
 	if backup.Terminal() {
