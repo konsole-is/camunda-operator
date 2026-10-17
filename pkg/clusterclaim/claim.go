@@ -437,9 +437,10 @@ func holderResource(
 // every restore kind leave the cluster the way they found it, and a terminal
 // holder of those kinds releases it.
 //
-// The recorded status.terminalReason decides first. A write conflict at the
-// terminal transition can persist the phase and the terminal reason while it
-// restores an older Ready condition. A decision from that stale condition
+// The recorded status.terminalReason decides first. A resource that an
+// earlier operator release wrote can carry the phase and the terminal reason
+// beside an older Ready condition, because its status write retried a
+// conflict with the Ready of the server. A decision from that stale condition
 // would take a live paused-cluster claim over. Without the field the reason
 // of the Ready condition decides.
 func keepsClusterPaused(resource claimHolder) bool {

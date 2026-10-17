@@ -37,6 +37,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/pgbootstrap"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
@@ -98,10 +99,8 @@ type DatabaseServerConfigReconciler struct {
 // new. The status update is then a no-op on the server and wakes no watch.
 // The requeue sets the probe cadence, not a status-write loop.
 func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// Live, not cached. A cached copy carries a resourceVersion the server has
-	// moved past, so the status write is refused with a conflict, and the
-	// repair takes Ready from the server and drops the one this pass staged.
-	// The requeue below is the probe interval, so the drop stands until then.
+	// Live, not cached. A cached copy can carry a resourceVersion that the
+	// server has moved past, and the status write of that copy conflicts.
 	var cfg v1.DatabaseServerConfig
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &cfg); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -119,16 +118,12 @@ func (r *DatabaseServerConfigReconciler) Reconcile(ctx context.Context, req ctrl
 
 	conditions.Stage(&cfg, cond)
 
-	// The contract runs no components, so this flush owns no condition type.
-	if err := component.FlushStatus(
+	return ownerstatus.Flush(
 		ctx,
-		component.ReconcileContext{Client: r.Client, APIReader: r.APIReader, Metrics: r.Metrics, Owner: &cfg},
+		component.ReconcileContext{Client: r.Client, Metrics: r.Metrics, Owner: &cfg},
+		ctrl.Result{RequeueAfter: next},
 		nil,
-	); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{RequeueAfter: next}, nil
+	)
 }
 
 // validate runs the documented checks of the contract and returns the Ready

@@ -40,6 +40,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
@@ -67,8 +68,7 @@ type CamundaClusterReconciler struct {
 	// so their data and every referenced CR are read live, and so is the
 	// cluster itself: the reconcile reports from the status it wrote last,
 	// and an informer copy that lags that write makes the next status write
-	// conflict. FlushStatus resolves such a conflict from the server for
-	// every condition type it does not own, Ready among them, so a staged
+	// conflict. A status write that conflicts writes nothing, so a staged
 	// pre-check failure is dropped. The refusal memo keeps the Warning from
 	// repeating either way; the live read keeps the condition from dropping.
 	APIReader client.Reader
@@ -155,7 +155,7 @@ const defaultRetryInterval = 30 * time.Second
 // backend another cluster holds reports StorageAlreadyAttached, and a cluster
 // that holds the backend reports WaitingForHandover while pods of another
 // cluster, or a writer for another cluster, still write it.
-func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	var cluster v1.CamundaCluster
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &cluster); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -202,13 +202,8 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		APIReader:     r.APIReader,
 		Owner:         &cluster,
 	}
-	// Declared before the deferred flush, so the closure sees every component
-	// that the reconcile builds below and FlushStatus owns their conditions.
-	var comps []*component.Component
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec, comps); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	in, mirrors, err := r.preCheck(ctx, &cluster)
@@ -311,8 +306,6 @@ func (r *CamundaClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	comps = built.all
-
 	// Read before the components stage their own conditions: stageFailure
 	// needs the AdminSecretReady that the server holds, not the healthy one
 	// that the Secret component is about to write over it.

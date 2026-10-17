@@ -64,6 +64,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/podstate"
@@ -186,7 +187,7 @@ func New(c client.Client, reader client.Reader, scheme *runtime.Scheme, options 
 // Reconcile advances the restore by at most one phase. The phase is the
 // resume marker: it is persisted before the side effect it names, so a
 // restore that re-enters after a crash continues where it stopped.
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	// The restore is its own state machine. A stale cached read of its status
 	// re-enters a phase whose side effect already ran, and the side effects of
 	// this controller erase data.
@@ -228,9 +229,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		Owner:         &lrr,
 	}
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec, nil); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	if lrr.Terminal() {
@@ -373,7 +372,7 @@ func (r *Reconciler) holdStarted(
 }
 
 // fail ends the restore with reason and message. Status keeps the reason, so
-// a terminal look stages the same one again after a write conflict.
+// every terminal look stages the same one again.
 func (r *Reconciler) fail(lrr *v1.LogicalRestoreRDBMS, reason, message string) {
 	lrr.Status.Phase = v1.LogicalRestoreFailed
 	restore.Fail(&lrr.Status.RestoreProgress, reason, message, metav1.Now())

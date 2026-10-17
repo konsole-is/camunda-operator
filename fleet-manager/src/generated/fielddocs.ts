@@ -6107,7 +6107,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pluginregistrationstatus"
       },
       "status.observedGeneration": {
-        "description": "ObservedGeneration is the last generation that a controller of the\nregistration processed.",
+        "description": "ObservedGeneration is the last generation of the registration that the\nplugin controller processed. The plugin controller is its only writer.\nThe operator never sets it, so the field is absent until the plugin\ncontroller processes the registration.",
         "anchor": "#pluginregistrationstatus"
       }
     },

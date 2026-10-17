@@ -55,9 +55,8 @@ var _ = BeforeSuite(func() {
 
 	env = envtest.Start(func(mgr ctrl.Manager) error {
 		return (&Reconciler{
-			Client:    mgr.GetClient(),
-			APIReader: mgr.GetAPIReader(),
-			Scheme:    mgr.GetScheme(),
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
 		}).SetupWithManager(mgr)
 	})
 

@@ -26,8 +26,7 @@ import (
 
 // Built is what Build returns.
 type Built struct {
-	// Components is every component, in reconcile order. The controller
-	// passes it to FlushStatus, which then owns the condition of each one.
+	// Components is every component, in reconcile order.
 	Components []*component.Component
 	// Ready are the components that the Ready condition aggregates over.
 	Ready []*component.Component

@@ -96,10 +96,10 @@ func TestReadSuspensionReadsTheStatus(t *testing.T) {
 	assert.Equal(t, suspension{rendered: true}, readSuspension(rendered))
 }
 
-// TestRecordSuspensionChangeRecordsTheStartAndTheEndOnly pins which changes
+// TestStageSuspensionChangeRecordsTheStartAndTheEndOnly pins which changes
 // reach the event stream: the start and the end of a suspension, and no other.
 // Every pass stages the state it decided on.
-func TestRecordSuspensionChangeRecordsTheStartAndTheEndOnly(t *testing.T) {
+func TestStageSuspensionChangeRecordsTheStartAndTheEndOnly(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
@@ -146,7 +146,9 @@ func TestRecordSuspensionChangeRecordsTheStartAndTheEndOnly(t *testing.T) {
 			r := &Reconciler{EventRecorder: recorder}
 			optimize := suspendedOptimize()
 
-			r.recordSuspensionChange(optimize, tc.prior, tc.now)
+			if announce := r.stageSuspensionChange(optimize, tc.prior, tc.now); announce != nil {
+				announce()
+			}
 
 			notes := recordedNotes(recorder)
 			reasons := make([]string, 0, len(notes))
@@ -202,7 +204,9 @@ func TestSuspensionNotesSpeakForTheClusterOnly(t *testing.T) {
 			recorder := events.NewFakeRecorder(10)
 			r := &Reconciler{EventRecorder: recorder}
 
-			r.recordSuspensionChange(suspendedOptimize(), tc.prior, tc.now)
+			announce := r.stageSuspensionChange(suspendedOptimize(), tc.prior, tc.now)
+			require.NotNil(t, announce)
+			announce()
 
 			assert.Equal(t, []string{tc.want}, recordedNotes(recorder))
 		})

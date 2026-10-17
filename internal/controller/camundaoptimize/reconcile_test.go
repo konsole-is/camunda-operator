@@ -115,8 +115,8 @@ func TestReconcileRecordsOneResumeWhenAnApplyFails(t *testing.T) {
 }
 
 // TestReconcileRecordsOneSuspensionWhenTheFlushConflicts covers a status
-// conflict on the failure path, where the flush takes every condition from the
-// server. The next pass does not record the suspension again.
+// conflict on the failure path, which loses the status write of that pass. The
+// suspension is recorded once over the two passes.
 func TestReconcileRecordsOneSuspensionWhenTheFlushConflicts(t *testing.T) {
 	h := newReconcileHarness(t)
 	h.start(t)
@@ -138,7 +138,8 @@ func TestReconcileRecordsOneSuspensionWhenTheFlushConflicts(t *testing.T) {
 			errors.New("the object has been modified"),
 		)
 	}
-	require.NoError(t, h.reconcile(t))
+	require.NoError(t, h.reconcile(t), "a conflict is not a reconcile error")
+	assert.Empty(t, h.suspensionEvents(), "a pass whose status write was lost records no event")
 	require.NoError(t, h.reconcile(t))
 
 	for _, key := range h.workloadKeys() {

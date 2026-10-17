@@ -49,6 +49,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
@@ -192,7 +193,7 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // Identity registers those callbacks as it starts. A pass that deletes the
 // resource writes the status once, to clear that record before it gives the
 // realm back.
-func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, err error) {
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	var mc v1.CamundaManagementCluster
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &mc); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -229,13 +230,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		APIReader:     r.APIReader,
 		Owner:         &mc,
 	}
-	// Declared before the deferred flush, so the closure sees every component
-	// that the reconcile builds below and FlushStatus owns their conditions.
-	var comps []*component.Component
 	defer func() {
-		if flushErr := component.FlushStatus(ctx, rec, comps); flushErr != nil {
-			err = errors.Join(err, flushErr)
-		}
+		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
 	res, err := r.preCheck(ctx, &mc)
@@ -298,7 +294,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	if err != nil {
 		return ctrl.Result{}, stepBuildComponents.stop(&mc, err)
 	}
-	comps = built.Components
 	// The routes describe Services, which outlive a suspension. A pass that
 	// stops before the build keeps the routes of the last one.
 	mc.Status.Endpoints = components.Endpoints(&mc)
@@ -343,7 +338,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 	// realm, so the controller comes back on its own: soon when a cluster or
 	// Keycloak refused the call, and on the converge interval to find a user
 	// or a login callback that somebody removed there.
-	var result ctrl.Result
 	switch {
 	case anyRow(rows, v1.ReasonBasicAuthUserFailed), len(removalRefused) > 0, callbackRetry, heldRealm:
 		result.RequeueAfter = r.retryInterval()
