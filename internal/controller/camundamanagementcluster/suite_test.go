@@ -63,6 +63,9 @@ var (
 	// reconcileCounts sits behind clusterListFault and counts the reconciles
 	// that the manager runs of each management cluster.
 	reconcileCounts = &reconcileCounter{}
+	// contractCreates sits in front of the client of the reconciler, and runs
+	// the hook of a spec before the reconciler creates a contract.
+	contractCreates = &contractCreateHooks{hooks: map[string]func(){}}
 )
 
 // errClusterListRefused is what the armed fault answers.
@@ -203,7 +206,8 @@ var _ = BeforeSuite(func() {
 			return err
 		}
 
-		r := New(mgr.GetClient(), clusterListFault.wrap(reconcileCounts.wrap(mgr.GetAPIReader())), mgr.GetScheme())
+		contractCreates.Client = mgr.GetClient()
+		r := New(contractCreates, clusterListFault.wrap(reconcileCounts.wrap(mgr.GetAPIReader())), mgr.GetScheme())
 		// A refused user API is called again soon, so that a spec can watch
 		// the retry, and a cluster that holds the user is read again soon, so
 		// that a spec can watch the repair.
@@ -223,3 +227,35 @@ var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	Eventually(env.Stop, time.Minute, time.Second).Should(Succeed())
 })
+
+// contractCreateHooks runs a hook once, before the reconciler creates the
+// ManagementAuthConfig that the hook names, and passes every call on.
+type contractCreateHooks struct {
+	client.Client
+
+	mu    sync.Mutex
+	hooks map[string]func()
+}
+
+// Create runs the hook of a contract of that name, once, then creates it.
+func (c *contractCreateHooks) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if _, ok := obj.(*v1.ManagementAuthConfig); ok {
+		c.mu.Lock()
+		hook := c.hooks[obj.GetName()]
+		delete(c.hooks, obj.GetName())
+		c.mu.Unlock()
+		if hook != nil {
+			hook()
+		}
+	}
+
+	return c.Client.Create(ctx, obj, opts...)
+}
+
+// beforeCreate makes hook run once, before the contract name is created.
+func (c *contractCreateHooks) beforeCreate(name string, hook func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.hooks[name] = hook
+}

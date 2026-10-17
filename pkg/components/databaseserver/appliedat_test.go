@@ -24,39 +24,47 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestSpecAppliedAtTakesTheNewestApplyOfTheSpec(t *testing.T) {
+func TestDestinationAppliedAtTakesTheApplyThatOwnsTheDestination(t *testing.T) {
 	older := metav1.NewTime(time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC))
 	newer := metav1.NewTime(older.Add(time.Minute))
 	newest := metav1.NewTime(older.Add(time.Hour))
+	destination := metav1.NewFieldsV1(`{"f:spec":{"f:configuration":{"f:destinationPath":{}}}}`)
+	label := metav1.NewFieldsV1(`{"f:metadata":{"f:labels":{"f:example.com/touched":{}}}}`)
 
 	cases := map[string]struct {
 		fields []metav1.ManagedFieldsEntry
 		want   metav1.Time
 	}{
 		"no stamp": {},
-		"the newest apply of the spec": {
+		"the newest apply that owns the destination": {
 			fields: []metav1.ManagedFieldsEntry{
-				{Operation: metav1.ManagedFieldsOperationApply, Time: &older},
-				{Operation: metav1.ManagedFieldsOperationApply, Time: &newer},
+				{Operation: metav1.ManagedFieldsOperationApply, Time: &older, FieldsV1: destination},
+				{Operation: metav1.ManagedFieldsOperationApply, Time: &newer, FieldsV1: destination},
 			},
 			want: newer,
 		},
-		"an update and an apply of the status do not count": {
+		"an apply of a label, an update, and an apply of the status do not count": {
 			fields: []metav1.ManagedFieldsEntry{
-				{Operation: metav1.ManagedFieldsOperationApply, Time: &older},
-				{Operation: metav1.ManagedFieldsOperationUpdate, Time: &newest},
-				{Operation: metav1.ManagedFieldsOperationApply, Subresource: "status", Time: &newest},
+				{Operation: metav1.ManagedFieldsOperationApply, Time: &older, FieldsV1: destination},
+				{Operation: metav1.ManagedFieldsOperationApply, Time: &newest, FieldsV1: label},
+				{Operation: metav1.ManagedFieldsOperationUpdate, Time: &newest, FieldsV1: destination},
+				{
+					Operation:   metav1.ManagedFieldsOperationApply,
+					Subresource: "status",
+					Time:        &newest,
+					FieldsV1:    destination,
+				},
 			},
 			want: older,
 		},
 		"an apply with no time": {
-			fields: []metav1.ManagedFieldsEntry{{Operation: metav1.ManagedFieldsOperationApply}},
+			fields: []metav1.ManagedFieldsEntry{{Operation: metav1.ManagedFieldsOperationApply, FieldsV1: destination}},
 		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := specAppliedAt(tc.fields)
+			got := destinationAppliedAt(tc.fields)
 
 			assert.True(t, tc.want.Equal(&got), "got %v, want %v", got, tc.want)
 		})

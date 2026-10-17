@@ -19,6 +19,7 @@ package databaseserver
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -174,8 +175,9 @@ type barmanArchive struct {
 // else. The cluster then carries no archive plugin, so the schedule has no
 // object storage to write a base backup to and is removed with it.
 //
-// The returned data cell holds the time at which the spec of the ObjectStore
-// last changed by an apply, as the API server stamped it. A pass that applies
+// The returned data cell holds the time at which the apply that owns the
+// destination path of the ObjectStore last changed it, as the API server
+// stamped it. A pass that applies
 // the same spec again finds the same time, so a pass after a lost status
 // write records a move at the time of the apply that made it. The time is
 // zero when the API server stamped none. The cell is unset when that apply
@@ -204,7 +206,7 @@ func ArchiveComponent(
 	barmanobjectstore.ExtractInto(
 		storeBuilder, applied,
 		func(o barmanobjectstore.ObjectStore) (metav1.Time, error) {
-			return specAppliedAt(o.GetManagedFields()), nil
+			return destinationAppliedAt(o.GetManagedFields()), nil
 		},
 	)
 
@@ -258,12 +260,16 @@ func ArchiveComponent(
 	return comp, applied, nil
 }
 
-// specAppliedAt returns the newest time at which an apply changed the spec of
-// an object, or the zero time when the API server stamped none.
-func specAppliedAt(fields []metav1.ManagedFieldsEntry) metav1.Time {
+// destinationAppliedAt returns the time of the newest apply that owns
+// spec.configuration.destinationPath of an ObjectStore, or the zero time
+// when the API server stamped none. An apply of another manager, such as one
+// that owns only a label, does not count. The API server stamps the entry of
+// a manager each time one of its fields changes.
+func destinationAppliedAt(fields []metav1.ManagedFieldsEntry) metav1.Time {
 	var newest metav1.Time
 	for _, entry := range fields {
-		if entry.Operation != metav1.ManagedFieldsOperationApply || entry.Subresource != "" || entry.Time == nil {
+		if entry.Operation != metav1.ManagedFieldsOperationApply || entry.Subresource != "" || entry.Time == nil ||
+			!ownsDestinationPath(entry.FieldsV1) {
 			continue
 		}
 		if entry.Time.After(newest.Time) {
@@ -272,6 +278,27 @@ func specAppliedAt(fields []metav1.ManagedFieldsEntry) metav1.Time {
 	}
 
 	return newest
+}
+
+// ownsDestinationPath reports whether fields name
+// spec.configuration.destinationPath.
+func ownsDestinationPath(fields *metav1.FieldsV1) bool {
+	if fields == nil {
+		return false
+	}
+
+	var owned struct {
+		Spec struct {
+			Configuration struct {
+				DestinationPath *json.RawMessage `json:"f:destinationPath"`
+			} `json:"f:configuration"`
+		} `json:"f:spec"`
+	}
+	if err := json.Unmarshal(fields.GetRawBytes(), &owned); err != nil {
+		return false
+	}
+
+	return owned.Spec.Configuration.DestinationPath != nil
 }
 
 // archiveSecret renders the Secret that carries the bucket settings of the

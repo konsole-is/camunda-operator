@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -62,6 +63,7 @@ var _ = Describe("DatabaseServer status write that loses a conflict", func() {
 			var applies atomic.Int32
 			var firstApplied atomic.Int64
 			touched := make(chan error, 1)
+			labelled := make(chan error, 1)
 			objectStoreApplies.onApply(func(store *barmanobjectstore.ObjectStore) {
 				if store.GetNamespace() != server.Namespace ||
 					!strings.Contains(store.Spec.Configuration.DestinationPath, second.Name) {
@@ -71,6 +73,11 @@ var _ = Describe("DatabaseServer status write that loses a conflict", func() {
 				case 1:
 					touched <- tc.touch(server)
 					firstApplied.Store(time.Now().UnixNano())
+				case 2:
+					// Another manager labels the ObjectStore well after the
+					// move. Its apply is not the time of the move.
+					time.Sleep(2500 * time.Millisecond)
+					labelled <- labelObjectStore(store)
 				default:
 					time.Sleep(3 * time.Second)
 				}
@@ -82,6 +89,7 @@ var _ = Describe("DatabaseServer status write that loses a conflict", func() {
 				RetentionPeriodDays: 30,
 			})
 			Eventually(touched, timeout, interval).Should(Receive(Succeed()))
+			Eventually(labelled, timeout, interval).Should(Receive(Succeed()))
 
 			var boundary *v1.ArchiveBoundary
 			Eventually(func(g Gomega) {
@@ -140,6 +148,20 @@ var _ = Describe("DatabaseServer abandoned recovery whose status write loses a c
 		}, "3s", interval).Should(Succeed())
 	})
 })
+
+// labelObjectStore applies a label on store with a field manager of its own,
+// as another tool can.
+func labelObjectStore(store *barmanobjectstore.ObjectStore) error {
+	label := &unstructured.Unstructured{}
+	label.SetAPIVersion("barmancloud.cnpg.io/v1")
+	label.SetKind("ObjectStore")
+	label.SetNamespace(store.GetNamespace())
+	label.SetName(store.GetName())
+	label.SetLabels(map[string]string{"example.com/labelled": "true"})
+
+	//nolint:staticcheck // the suite applies through the deprecated client.Apply patch, as the operator does
+	return k8sClient.Patch(ctx, label, client.Apply, client.FieldOwner("example.com/labeller"))
+}
 
 // touchServerStatus writes a condition of its own into the status of server,
 // as a second controller that shares the status can.

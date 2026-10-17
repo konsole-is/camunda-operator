@@ -312,21 +312,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		releaseErr = stepReleaseClaims.wrap(r.releaseClaims(ctx, &mc, clusters, namespaces, removalRefused))
 	}
 	contractErr := r.writeContract(ctx, &mc, res)
-	if contractErr == nil && previousContract != "" && previousContract != res.ContractName {
-		// The new contract is written, so the old one goes. A failed
-		// withdrawal keeps the old name on the status, which is what makes
-		// the next reconcile withdraw it again.
-		if err := r.withdrawContractNamed(ctx, &mc, previousContract); err != nil {
+	if contractErr == nil {
+		// The new contract is written, so every other contract of this
+		// management cluster goes: the one the status names, and one that a
+		// pass whose status write was lost published under an earlier name.
+		// A failed withdrawal keeps the old name on the status, which is what
+		// makes the next reconcile withdraw it again.
+		if err := r.withdrawOtherContracts(ctx, &mc, res.ContractName); err != nil {
 			mc.Status.ManagementAuthConfig = previousContract
 			contractErr = err
-		} else {
-			// The new name is recorded at once, not left to the status
-			// write at the end of the pass, which a conflict loses. A pass
-			// that still finds the old name after a second rename withdraws
-			// the old one and leaves this one behind.
-			before := mc.DeepCopy()
-			before.Status.ManagementAuthConfig = previousContract
-			contractErr = ownerstatus.Record(ctx, r.Client, before, &mc)
 		}
 	}
 	callbackFailure, callbackRetry, callbackErr := r.syncOptimizeCallbacks(
