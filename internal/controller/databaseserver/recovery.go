@@ -846,7 +846,7 @@ func (r *DatabaseServerReconciler) abandonRecovery(
 	// lost, status.cluster still names the abandoned cluster, and the sweep
 	// removes the one that holds the data. So the move back is recorded at
 	// once.
-	return ownerstatus.Record(ctx, r.Client, before, server)
+	return ownerstatus.Record(ctx, r.Client, r.APIReader, before, server)
 }
 
 // createRecoveryCluster creates the cluster that recovers the server to the

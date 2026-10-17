@@ -196,7 +196,7 @@ func TestRecordLandsOverTheWritesOfOtherFields(t *testing.T) {
 	before := owner.DeepCopy()
 	stageReady(owner)
 
-	err := Record(context.Background(), c, before, owner)
+	err := Record(context.Background(), c, c, before, owner)
 
 	require.NoError(t, err)
 	got := stored(t, c, owner)
@@ -208,7 +208,7 @@ func TestRecordMakesTheWriteAtTheEndOfThePassRequeue(t *testing.T) {
 	c, owner := newOwner(t, interceptor.Funcs{})
 	before := owner.DeepCopy()
 	stageReady(owner)
-	require.NoError(t, Record(context.Background(), c, before, owner))
+	require.NoError(t, Record(context.Background(), c, c, before, owner))
 
 	res, err := Flush(context.Background(), component.ReconcileContext{Client: c, Owner: owner}, ctrl.Result{}, nil)
 
@@ -230,9 +230,21 @@ func TestRecordReturnsAFailedWrite(t *testing.T) {
 	before := owner.DeepCopy()
 	stageReady(owner)
 
-	err := Record(context.Background(), c, before, owner)
+	err := Record(context.Background(), c, c, before, owner)
 
 	assert.True(t, apierrors.IsForbidden(err))
+	assert.False(t, storedReady(t, c, owner))
+}
+
+func TestRecordRefusesAnObjectThatReplacedTheOwner(t *testing.T) {
+	c, owner := newOwner(t, interceptor.Funcs{})
+	owner.SetUID("uid-of-the-object-that-was-read")
+	before := owner.DeepCopy()
+	stageReady(owner)
+
+	err := Record(context.Background(), c, c, before, owner)
+
+	require.Error(t, err)
 	assert.False(t, storedReady(t, c, owner))
 }
 

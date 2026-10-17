@@ -76,16 +76,33 @@ func Settle(res ctrl.Result, err, flushErr error) (ctrl.Result, error) {
 // The write is a merge patch that carries no resourceVersion, so a write of
 // another field since the read does not make it conflict. The changed fields
 // must be status fields that no other writer sets, because the patch replaces
-// them whatever the server holds. owner is not changed. The patch moves the
-// resourceVersion, so the status write at the end of the same pass
-// conflicts, and the next pass reads the recorded fields back.
-func Record(ctx context.Context, c client.Client, before, owner client.Object) error {
+// them whatever the server holds. A list, such as the conditions, is replaced
+// whole. owner is not changed. The patch moves the resourceVersion, so the
+// status write at the end of the same pass conflicts, and the next pass reads
+// the recorded fields back.
+//
+// Record reads the live object with reader first, and writes nothing when an
+// object with another UID replaced owner under its name. A status patch
+// cannot carry that check itself. reader must not be a cache.
+func Record(ctx context.Context, c client.Client, reader client.Reader, before, owner client.Object) error {
+	key := client.ObjectKeyFromObject(owner)
+	live, ok := owner.DeepCopyObject().(client.Object)
+	if !ok {
+		return fmt.Errorf("copying %s: unexpected type %T", key, owner)
+	}
+	if err := reader.Get(ctx, key, live); err != nil {
+		return fmt.Errorf("reading %s before recording its status: %w", key, err)
+	}
+	if live.GetUID() != owner.GetUID() {
+		return fmt.Errorf("recording the status of %s: the object was replaced under its name", key)
+	}
+
 	receipt, ok := owner.DeepCopyObject().(client.Object)
 	if !ok {
-		return fmt.Errorf("copying %s: unexpected type %T", client.ObjectKeyFromObject(owner), owner)
+		return fmt.Errorf("copying %s: unexpected type %T", key, owner)
 	}
 	if err := c.Status().Patch(ctx, receipt, client.MergeFrom(before)); err != nil {
-		return fmt.Errorf("recording the status of %s: %w", client.ObjectKeyFromObject(owner), err)
+		return fmt.Errorf("recording the status of %s: %w", key, err)
 	}
 
 	return nil

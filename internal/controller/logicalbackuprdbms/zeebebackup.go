@@ -231,7 +231,7 @@ func (r *LogicalBackupRDBMSReconciler) startZeebeBackup(
 	now := metav1.Now()
 	backup.Status.ZeebeBackupID = &id
 	backup.Status.ZeebeBackupRequestedAt = &now
-	if err := ownerstatus.Record(ctx, r.Client, before, backup); err != nil {
+	if err := ownerstatus.Record(ctx, r.Client, r.APIReader, before, backup); err != nil {
 		return settle, err
 	}
 	conditions.Stage(backup, progressing(backup, "the Zeebe backup runs"))

@@ -76,7 +76,7 @@ func TestRecordedZeebeBackupIDClearsTheFailureClock(t *testing.T) {
 	require.NoError(t, v1.AddToScheme(scheme))
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backup).WithStatusSubresource(backup).Build()
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(backup), backup))
-	r := &LogicalBackupRDBMSReconciler{Client: c, opts: Options{MidRunGrace: time.Minute}}
+	r := &LogicalBackupRDBMSReconciler{Client: c, APIReader: c, opts: Options{MidRunGrace: time.Minute}}
 
 	_, err = r.startZeebeBackup(context.Background(), backup, &v1.CamundaCluster{}, admin)
 	require.NoError(t, err)

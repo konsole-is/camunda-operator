@@ -118,7 +118,7 @@ func (r *Reconciler) startRestore(
 	// indices that Elasticsearch restores now, and asks for the restore again.
 	before := lres.DeepCopy()
 	lres.Status.RestoredSnapshots = snapshots
-	if err := ownerstatus.Record(ctx, r.Client, before, lres); err != nil {
+	if err := ownerstatus.Record(ctx, r.Client, r.APIReader, before, lres); err != nil {
 		return restore.Outcome{}, err
 	}
 	r.progressing(lres, "Elasticsearch restores the snapshots of the backup")

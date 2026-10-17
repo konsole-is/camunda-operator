@@ -53,16 +53,21 @@ func runtimeRig(t *testing.T) (*Reconciler, *camundaadmin.Client, *camundaadmint
 	require.NoError(t, err)
 	r := &Reconciler{
 		Client:        receiptClient(),
+		APIReader:     receiptClient(),
 		EventRecorder: events.NewFakeRecorder(16),
 		options:       Options{RuntimeRegistrationGrace: time.Minute},
 	}
 	return r, mgmt, server
 }
 
-// receiptClient accepts every status patch and stores nothing, so a request
-// path records its receipt without a backup on an API server.
+// receiptClient accepts every status patch and stores nothing, and answers a
+// read with the object it reads into, so a request path records its receipt
+// without a backup on an API server.
 func receiptClient() client.Client {
 	return interceptor.NewClient(fake.NewClientBuilder().Build(), interceptor.Funcs{
+		Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+			return nil
+		},
 		SubResourcePatch: func(
 			context.Context, client.Client, string, client.Object, client.Patch, ...client.SubResourcePatchOption,
 		) error {
@@ -84,7 +89,7 @@ func storedRig(
 	backup.Name, backup.Namespace = "backup", "camunda"
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backup).WithStatusSubresource(backup).Build()
 	require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(backup), backup))
-	r.Client = c
+	r.Client, r.APIReader = c, c
 
 	return r, mgmt, c
 }
@@ -483,6 +488,7 @@ func TestRuntimeAcceptanceIsStampedAfterTheRequestReturned(t *testing.T) {
 	require.NoError(t, err)
 	r := &Reconciler{
 		Client:        receiptClient(),
+		APIReader:     receiptClient(),
 		EventRecorder: events.NewFakeRecorder(16),
 		options:       Options{RuntimeRegistrationGrace: time.Minute},
 	}

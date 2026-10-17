@@ -243,7 +243,7 @@ func (r *Reconciler) requestHistoryBackup(
 		backup.Status.HistoryAcceptedTime = &accepted
 		recordHistorySnapshotNames(backup, scheduled)
 		answered(backup)
-		if err := ownerstatus.Record(ctx, r.Client, before, backup); err != nil {
+		if err := ownerstatus.Record(ctx, r.Client, r.APIReader, before, backup); err != nil {
 			return ctrl.Result{}, err
 		}
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}
@@ -536,7 +536,7 @@ func (r *Reconciler) requestRuntimeBackup(
 		accepted := metav1.Now()
 		backup.Status.RuntimeAcceptedTime = &accepted
 		answered(backup)
-		if err := ownerstatus.Record(ctx, r.Client, before, backup); err != nil {
+		if err := ownerstatus.Record(ctx, r.Client, r.APIReader, before, backup); err != nil {
 			return ctrl.Result{}, err
 		}
 		*part = v1.BackupPart{State: v1.BackupPartInProgress}

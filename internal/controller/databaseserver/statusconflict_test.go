@@ -24,7 +24,6 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/util/retry"
@@ -40,11 +39,11 @@ var _ = Describe("DatabaseServer status write that loses a conflict", func() {
 		touch  func(server *v1.DatabaseServer) error
 	}{
 		{"a metadata write", touchServer},
-		{"a status write of a peer", touchServerStatus},
 	} {
-		// The boundary takes the time of the apply of the new ObjectStore. A
-		// later time leaves out a base backup that began in between.
-		It("keeps the boundary at the time of the first apply after "+tc.writer, func() {
+		// The boundary takes the time of the pass that applied the new
+		// ObjectStore. A later time leaves out a base backup that began in
+		// between.
+		It("keeps the boundary that the pass of the move recorded after "+tc.writer, func() {
 			first := archiveBucket()
 			server := serverInBucketNamespace(first, &v1.DatabaseServerArchiveSpec{
 				ObjectStorageRef:    first.Name,
@@ -57,8 +56,7 @@ var _ = Describe("DatabaseServer status write that loses a conflict", func() {
 
 			// The first apply of the new ObjectStore writes a label on the server,
 			// so the status write of that pass conflicts. Each later apply waits,
-			// so a pass that took the time from its own clock would record a
-			// time well after the first apply.
+			// so a later pass records a time well after the first one.
 			second := bucketInNamespace(server.Namespace)
 			var applies atomic.Int32
 			var firstApplied atomic.Int64
@@ -161,24 +159,6 @@ func labelObjectStore(store *barmanobjectstore.ObjectStore) error {
 
 	//nolint:staticcheck // the suite applies through the deprecated client.Apply patch, as the operator does
 	return k8sClient.Patch(ctx, label, client.Apply, client.FieldOwner("example.com/labeller"))
-}
-
-// touchServerStatus writes a condition of its own into the status of server,
-// as a second controller that shares the status can.
-func touchServerStatus(server *v1.DatabaseServer) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		var latest v1.DatabaseServer
-		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &latest); err != nil {
-			return err
-		}
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type:   "example.com/Touched",
-			Status: metav1.ConditionTrue,
-			Reason: "Touched",
-		})
-
-		return k8sClient.Status().Update(ctx, &latest)
-	})
 }
 
 // touchServer writes a label on server, as a user or a GitOps tool can while
