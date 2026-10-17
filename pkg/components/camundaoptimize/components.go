@@ -132,7 +132,12 @@ func buildComponent(in Input, name string) (*component.Component, error) {
 		WithConditionType(component.ConditionType(conditionTypes[name])).
 		WithResource(workload).
 		WithResource(svc).
-		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
+		IncludeWhen(
+			in.ServiceMonitorSupported,
+			func() component.Resource { return monitor },
+			monitoringGate(in),
+			component.DeleteOnlyIfOwned(),
+		).
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended).
 		Build()

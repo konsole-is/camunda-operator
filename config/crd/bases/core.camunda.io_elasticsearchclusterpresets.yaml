@@ -1134,10 +1134,11 @@ spec:
                   serviceAccount:
                     description: |-
                       ServiceAccount configures the ServiceAccount of the Elasticsearch pods.
-                      The name <name>-es belongs to the operator. While neither the cluster
-                      nor its preset sets this block and the snapshot bucket uses no workload
-                      identity, the operator deletes the account <name>-es. It deletes one
-                      that it did not create too.
+                      When name is unset, the account is <name>-es. The pods need no account
+                      while neither the cluster nor its preset sets this block and the
+                      snapshot bucket uses no workload identity. The operator then deletes the
+                      account only when the cluster owns it, because the operator created it
+                      or took it over. An account of that name that you created stays.
                     properties:
                       annotations:
                         additionalProperties:

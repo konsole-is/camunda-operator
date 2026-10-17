@@ -104,9 +104,9 @@ func MetricsComponent(
 		WithName("metrics").
 		WithConditionType(v1.ConditionMetricsReady).
 		WithFeatureGate(feature.NewBooleanGate(MonitoringEnabled(merged))).
-		WithResource(exporter).
-		WithResource(metrics).
-		IncludeWhen(serviceMonitorSupported, func() component.Resource { return monitor }).
+		WithResource(exporter, component.DeleteOnlyIfOwned()).
+		WithResource(metrics, component.DeleteOnlyIfOwned()).
+		IncludeWhen(serviceMonitorSupported, func() component.Resource { return monitor }, component.DeleteOnlyIfOwned()).
 		WithGracePeriod(gracePeriod).
 		Suspend(merged.Suspend).
 		Build()

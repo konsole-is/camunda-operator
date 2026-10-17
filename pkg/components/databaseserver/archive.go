@@ -237,12 +237,14 @@ func ArchiveComponent(
 			settings,
 			component.GatedBy(feature.NewBooleanGate(len(archiveSecretData(resolved)) > 0)),
 			component.BlockOnForeignController(),
+			component.DeleteOnlyIfOwned(),
 		).
-		WithResource(store, component.BlockOnForeignController()).
+		WithResource(store, component.BlockOnForeignController(), component.DeleteOnlyIfOwned()).
 		WithResource(
 			baseBackup,
 			component.DeleteWhen(clusterTaken != "" || archiveTaken != ""),
 			component.BlockOnForeignController(),
+			component.DeleteOnlyIfOwned(),
 		).
 		// Last, after the ObjectStore. ocf skips every resource that follows a
 		// blocked guard. A guard registered earlier would hold the apply that

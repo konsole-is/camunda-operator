@@ -179,28 +179,39 @@ func zeebeComponent(in Input, p Process) (*component.Component, error) {
 		WithName(p.Component).
 		WithConditionType(component.ConditionType(p.ConditionType)).
 		WithFeatureGate(feature.NewBooleanGate(p.Enabled)).
-		WithResource(account, accountOption(in.Effective.ServiceAccount, usesServiceAccount(in))).
+		WithResource(account, accountOptions(in.Effective.ServiceAccount, usesServiceAccount(in))...).
 		WithResource(sts).
 		WithResource(svc).
 		// Gated, not excluded: a gateway that moves out of the brokers
 		// deletes the Service that routed to them.
-		WithResource(client, component.GatedBy(feature.NewBooleanGate(p.EmbeddedGateway))).
-		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
+		WithResource(
+			client,
+			component.GatedBy(feature.NewBooleanGate(p.EmbeddedGateway)),
+			component.DeleteOnlyIfOwned(),
+		).
+		IncludeWhen(
+			in.ServiceMonitorSupported,
+			func() component.Resource { return monitor },
+			monitoringGate(in),
+			component.DeleteOnlyIfOwned(),
+		).
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()
 }
 
-// accountOption registers a ServiceAccount that the spec block account
-// configures. With create true the operator owns the account, and deletes it
-// while used is false. With create false the account is the user's: the
-// operator never applies or deletes it, and removes its owner reference from an
-// account that it created before, so the account outlives the cluster.
-func accountOption(account *v1.ServiceAccountSpec, used bool) component.ResourceOption {
+// accountOptions registers a ServiceAccount that the spec block account
+// configures. With create true the operator owns the account. While used is
+// false it deletes the account only when the account carries the owner
+// reference of the cluster, so an account of the user with that name stays.
+// With create false the account is the user's: the operator never applies or
+// deletes it, and removes its owner reference from an account that it created
+// before, so the account outlives the cluster.
+func accountOptions(account *v1.ServiceAccountSpec, used bool) []component.ResourceOption {
 	if !account.Creates() {
-		return component.OrphanWhen(true)
+		return []component.ResourceOption{component.OrphanWhen(true)}
 	}
-	return component.GatedBy(feature.NewBooleanGate(used))
+	return []component.ResourceOption{component.GatedBy(feature.NewBooleanGate(used)), component.DeleteOnlyIfOwned()}
 }
 
 // serviceAccountFor renders the ServiceAccount of every workload pod except
@@ -652,11 +663,16 @@ func deploymentComponent(in Input, p Process) (*component.Component, error) {
 		IncludeWhen(
 			p.Component == ComponentConnectors && registersConnectorsServiceAccount(in),
 			func() component.Resource { return account },
-			accountOption(in.Effective.ConnectorsServiceAccount(), true),
+			accountOptions(in.Effective.ConnectorsServiceAccount(), true)...,
 		).
-		WithResource(workload).
-		WithResource(svc).
-		IncludeWhen(in.ServiceMonitorSupported, func() component.Resource { return monitor }, monitoringGate(in)).
+		WithResource(workload, component.DeleteOnlyIfOwned()).
+		WithResource(svc, component.DeleteOnlyIfOwned()).
+		IncludeWhen(
+			in.ServiceMonitorSupported,
+			func() component.Resource { return monitor },
+			monitoringGate(in),
+			component.DeleteOnlyIfOwned(),
+		).
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Effective.Suspend).
 		Build()

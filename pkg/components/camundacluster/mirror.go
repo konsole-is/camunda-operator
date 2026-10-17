@@ -97,7 +97,9 @@ func MirroredSecretComponent(
 		if err != nil {
 			return nil, fmt.Errorf("building %s component: %w", mirroredComponentName, err)
 		}
-		builder = builder.WithResource(mirrored, component.GatedBy(feature.NewBooleanGate(present)))
+		builder = builder.WithResource(
+			mirrored, component.GatedBy(feature.NewBooleanGate(present)), component.DeleteOnlyIfOwned(),
+		)
 	}
 
 	return builder.Build()

@@ -98,7 +98,7 @@ func keycloakComponents(in Input) (Built, error) {
 		WithName(ComponentKeycloak).
 		WithConditionType(component.ConditionType(v1.ConditionKeycloakReady)).
 		WithFeatureGate(gate).
-		WithResource(resource, component.GatedBy(gate)).
+		WithResource(resource, component.GatedBy(gate), component.DeleteOnlyIfOwned()).
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended).
 		Build()

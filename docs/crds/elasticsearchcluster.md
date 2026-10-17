@@ -110,6 +110,10 @@ spec:
   # ... the rest of your cluster
 ```
 
+While neither the cluster nor its preset sets `spec.serviceAccount` and the snapshot bucket uses no workload identity, the pods need no account. The operator then deletes `<name>-es` only when the cluster owns it, because the operator created it or took it over. A ServiceAccount `<name>-es` that you created stays.
+
+When the cluster needs `<name>-es` and you created a ServiceAccount of that name, the operator takes it over. It adds its owner reference and its annotations. From then on, the operator deletes the account when the cluster no longer needs it, and when you delete the cluster. To keep an account of your own, give it another name, or set `create: false`.
+
 The cloud reads the annotations of the ServiceAccount when a pod starts. So when the annotations that the operator puts on the account change, the Elasticsearch pods restart. This holds for an edit of `spec.serviceAccount.annotations`, and for a snapshot bucket that names another identity. The pod template then carries a new value of the annotation `camunda.io/service-account-hash`. Other changes of the spec, such as `spec.replicas`, keep this value.
 
 With `serviceAccount.create: false`, the operator does not create or change the ServiceAccount, and it does not read its annotations. A change to the annotations of that account restarts no pod. After such a change, restart the pods yourself. Add or change a value in `spec.podAnnotations`, and ECK restarts the pods:

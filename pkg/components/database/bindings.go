@@ -203,7 +203,9 @@ func BindingsComponent(db *v1.Database, rb Bindings) (*component.Component, erro
 
 	builder := bindingsComponentBuilder().
 		WithResource(appSecret).
-		WithResource(backupSecret, component.GatedBy(feature.NewBooleanGate(rb.BackupEnabled))).
+		WithResource(
+			backupSecret, component.GatedBy(feature.NewBooleanGate(rb.BackupEnabled)), component.DeleteOnlyIfOwned(),
+		).
 		WithResource(dbConfig)
 
 	// The SecondaryStorageConfig has no name when the field is unset, so it is
@@ -306,7 +308,7 @@ func bindingsComponentBuilder() *component.Builder {
 
 // WithdrawnBindingsComponent assembles the bindings component with its feature
 // gate off, holding the objects that published names. The component deletes
-// them and reports BindingsReady with reason Disabled. A Database that lost the
+// each of them that db owns and reports BindingsReady with reason Disabled. A Database that lost the
 // claim to its logical database uses it: the winner owns that database and
 // rotates the role passwords, so the credentials this one published open
 // nothing.
@@ -323,7 +325,7 @@ func WithdrawnBindingsComponent(
 		if err != nil {
 			return nil, err
 		}
-		builder = builder.WithResource(res)
+		builder = builder.WithResource(res, component.DeleteOnlyIfOwned())
 	}
 
 	for _, name := range published.DatabaseConfigs {
@@ -333,7 +335,7 @@ func WithdrawnBindingsComponent(
 		if err != nil {
 			return nil, err
 		}
-		builder = builder.WithResource(res)
+		builder = builder.WithResource(res, component.DeleteOnlyIfOwned())
 	}
 
 	for _, name := range published.SecondaryStorageConfigs {
@@ -343,7 +345,7 @@ func WithdrawnBindingsComponent(
 		if err != nil {
 			return nil, err
 		}
-		builder = builder.WithResource(res)
+		builder = builder.WithResource(res, component.DeleteOnlyIfOwned())
 	}
 
 	return builder.Build()
