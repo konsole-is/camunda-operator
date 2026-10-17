@@ -144,9 +144,8 @@ type ServiceAccountRef struct {
 // PluginRegistrationStatus is the observed state of a PluginRegistration.
 type PluginRegistrationStatus struct {
 	// ObservedGeneration is the last generation of the registration that the
-	// plugin controller processed. The plugin controller is its only writer.
-	// The operator never sets it, so the field is absent until the plugin
-	// controller processes the registration.
+	// plugin controller processed. Only the plugin controller sets it, so the
+	// field is absent until the plugin controller processes the registration.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions holds Accepted and Ready. The operator sets Accepted. Its

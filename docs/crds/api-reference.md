@@ -5155,7 +5155,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `observedGeneration` _integer_ | ObservedGeneration is the last generation of the registration that the<br />plugin controller processed. The plugin controller is its only writer.<br />The operator never sets it, so the field is absent until the plugin<br />controller processes the registration. |  | Optional: \{\} <br /> |
+| `observedGeneration` _integer_ | ObservedGeneration is the last generation of the registration that the<br />plugin controller processed. Only the plugin controller sets it, so the<br />field is absent until the plugin controller processes the registration. |  | Optional: \{\} <br /> |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta) array_ | Conditions holds Accepted and Ready. The operator sets Accepted. Its<br />False reasons are SectionMissing, OperatorVersionUnsupported, and<br />DefaultConflict. The plugin controller sets Ready from its health and<br />its credentials. The fleet manager offers the option only when both<br />are True. |  | Optional: \{\} <br /> |
 
 
