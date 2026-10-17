@@ -41,7 +41,8 @@ const podMonitorSuffix = "-metrics"
 //
 // The PodMonitor is derived by name and blocks on a foreign controller, so one
 // that another owner already controls under that name is neither rewritten nor
-// removed, and MonitoringReady names that owner.
+// removed, and MonitoringReady names that owner. A disabled gate also keeps a
+// PodMonitor of that name that the server does not own.
 func MonitoringComponent(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
@@ -64,6 +65,7 @@ func MonitoringComponent(
 			podMonitorSupported,
 			func() component.Resource { return monitor },
 			component.BlockOnForeignController(),
+			component.DeleteOnlyIfOwned(),
 		).
 		Suspend(merged.Suspend).
 		Build()

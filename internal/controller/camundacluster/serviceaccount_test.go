@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -96,6 +97,30 @@ func expectReleasedAndUnchanged(key client.ObjectKey, cluster *v1.CamundaCluster
 		g.Expect(ownedByCluster(&account, cluster.Name)).To(BeFalse())
 		g.Expect(account.Annotations).To(Equal(map[string]string{"example.com/team": "user"}))
 		g.Expect(account.Labels).To(HaveKeyWithValue("example.com/team", "user"))
+	}, 2*time.Second, interval).Should(Succeed())
+}
+
+// createUserAccount creates the ServiceAccount named key without an owner, as a
+// user does, and returns it as created.
+func createUserAccount(key client.ObjectKey) corev1.ServiceAccount {
+	GinkgoHelper()
+	Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Namespace: key.Namespace, Name: key.Name},
+	})).To(Succeed())
+	var created corev1.ServiceAccount
+	Expect(k8sClient.Get(ctx, key, &created)).To(Succeed())
+	return created
+}
+
+// expectUserAccountKept checks that the account named key stays the object
+// that the user created, without an owner reference to the cluster.
+func expectUserAccountKept(key client.ObjectKey, created corev1.ServiceAccount, cluster *v1.CamundaCluster) {
+	GinkgoHelper()
+	Consistently(func(g Gomega) {
+		var account corev1.ServiceAccount
+		g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+		g.Expect(account.UID).To(Equal(created.UID))
+		g.Expect(ownedByCluster(&account, cluster.Name)).To(BeFalse())
 	}, 2*time.Second, interval).Should(Succeed())
 }
 
@@ -630,42 +655,96 @@ var _ = Describe("CamundaCluster ServiceAccount release", func() {
 		}, 2*time.Second, interval).Should(Succeed())
 	})
 
-	// The derived name belongs to the operator, which deletes an account of
-	// that name while the cluster uses none. Connectors that name it as an
-	// account of the user lose it, so the cluster refuses them before it
-	// applies anything.
-	DescribeTable(
-		"refuses connectors that name the reserved cluster account",
-		func(enabled bool) {
-			ns := newNamespace()
-			cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
-			key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda"}
-			Expect(k8sClient.Create(ctx, &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: key.Name},
-			})).To(Succeed())
-			var created corev1.ServiceAccount
-			Expect(k8sClient.Get(ctx, key, &created)).To(Succeed())
+	It("deletes the account that it created once the cluster no longer uses it", func() {
+		ns := newNamespace()
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{
+			Annotations: map[string]string{v1.IRSARoleARNAnnotation: roleCamunda},
+		}
+		createCluster(cluster)
+		key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda"}
+		expectAccountOwned(key, cluster, roleCamunda)
 
-			cluster.Spec.Connectors = &v1.ConnectorsSpec{
-				Enabled:        new(enabled),
-				Version:        "8.9.7",
-				ServiceAccount: &v1.ServiceAccountSpec{Name: key.Name, Create: new(false)},
-			}
-			createCluster(cluster)
-			expectReady(
-				cluster,
-				metav1.ConditionFalse,
-				Equal(v1.ReasonInvalidReference),
-				ContainSubstring("reserved"),
-			)
+		updateCluster(cluster, func(c *v1.CamundaCluster) { c.Spec.ServiceAccount = nil })
 
-			Consistently(func(g Gomega) {
-				var account corev1.ServiceAccount
-				g.Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
-				g.Expect(account.UID).To(Equal(created.UID))
-			}, 2*time.Second, interval).Should(Succeed())
-		},
-		Entry("with connectors enabled", true),
-		Entry("with connectors disabled", false),
-	)
+		Eventually(func(g Gomega) {
+			err := k8sClient.Get(ctx, key, &corev1.ServiceAccount{})
+			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	// The cluster deletes only an account that it owns, so an account of the
+	// user with the derived name survives while the cluster uses none.
+	It("keeps an account of the user with the derived name while the cluster uses none", func() {
+		ns := newNamespace()
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda"}
+		created := createUserAccount(key)
+		createCluster(cluster)
+
+		// The gateway is applied after the brokers, whose component deletes
+		// the account it does not use.
+		expectDeploymentAccount(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"}, "")
+		expectPublishedAccount(cluster, "")
+		expectUserAccountKept(key, created, cluster)
+	})
+
+	It("takes over an account of the user with the derived name once the cluster uses it", func() {
+		ns := newNamespace()
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{
+			Annotations: map[string]string{v1.IRSARoleARNAnnotation: roleCamunda},
+		}
+		key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda"}
+		created := createUserAccount(key)
+		createCluster(cluster)
+
+		expectAccountOwned(key, cluster, roleCamunda)
+		var account corev1.ServiceAccount
+		Expect(k8sClient.Get(ctx, key, &account)).To(Succeed())
+		Expect(account.UID).To(Equal(created.UID))
+	})
+
+	// Connectors that are off run no pod, and the cluster that uses no account
+	// deletes none that it does not own, so the spec is accepted.
+	It("accepts disabled connectors that name an account of the user with the derived cluster name", func() {
+		ns := newNamespace()
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda"}
+		created := createUserAccount(key)
+		cluster.Spec.Connectors = &v1.ConnectorsSpec{
+			Enabled:        new(false),
+			Version:        "8.9.7",
+			ServiceAccount: &v1.ServiceAccountSpec{Name: key.Name, Create: new(false)},
+		}
+		createCluster(cluster)
+
+		// A failed pre-check applies nothing, so the gateway proves that the
+		// spec passed it.
+		expectDeploymentAccount(client.ObjectKey{Namespace: ns, Name: cluster.Name + "-gateway"}, "")
+		expectUserAccountKept(key, created, cluster)
+	})
+
+	// Enabled connectors would run under the cluster identity as soon as the
+	// cluster uses its account.
+	It("refuses enabled connectors that name an account of the user with the derived cluster name", func() {
+		ns := newNamespace()
+		cluster := newCluster(ns, createPlatformConfig(), createBinding(ns, true))
+		key := client.ObjectKey{Namespace: ns, Name: cluster.Name + "-camunda"}
+		created := createUserAccount(key)
+		cluster.Spec.Connectors = &v1.ConnectorsSpec{
+			Enabled:        new(true),
+			Version:        "8.9.7",
+			ServiceAccount: &v1.ServiceAccountSpec{Name: key.Name, Create: new(false)},
+		}
+		createCluster(cluster)
+
+		expectReady(
+			cluster,
+			metav1.ConditionFalse,
+			Equal(v1.ReasonInvalidReference),
+			ContainSubstring("is the ServiceAccount of the cluster"),
+		)
+		expectUserAccountKept(key, created, cluster)
+	})
 })

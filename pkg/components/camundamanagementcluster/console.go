@@ -109,8 +109,8 @@ func consoleComponents(in Input) (Built, error) {
 		// read the OIDC configuration at start, it does not try again until
 		// it restarts.
 		WithPrerequisite(component.DependsOn(component.ConditionType(v1.ConditionIdentityReady))).
-		WithResource(workload, component.GatedBy(gate)).
-		WithResource(svc, component.GatedBy(gate)).
+		WithResource(workload, component.GatedBy(gate), component.DeleteOnlyIfOwned()).
+		WithResource(svc, component.GatedBy(gate), component.DeleteOnlyIfOwned()).
 		WithGracePeriod(in.GracePeriod).
 		Suspend(in.Suspended).
 		Build()

@@ -339,58 +339,13 @@ func TestCheckConnectorsServiceAccountAcceptsAnAccountOfTheirOwn(t *testing.T) {
 	assert.NoError(t, CheckConnectorsServiceAccount(in))
 }
 
-// The derived cluster name belongs to the operator, which deletes an account
-// of that name while the cluster uses none. Connectors that name it as an
-// account of the user are refused, also while they are off.
-func TestCheckConnectorsServiceAccountRefusesTheReservedName(t *testing.T) {
-	t.Parallel()
-
-	for name, enabled := range map[string]bool{"connectors on": true, "connectors off": false} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			in := newInput(t, func(in *Input) {
-				in.Effective = NewEffective(v1.CamundaClusterSpec{
-					Connectors: &v1.ConnectorsSpec{
-						Enabled:        new(enabled),
-						ServiceAccount: &v1.ServiceAccountSpec{Name: "my-cluster-camunda", Create: new(false)},
-					},
-				})
-			})
-
-			err := CheckConnectorsServiceAccount(in)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), `connectors.serviceAccount.name "my-cluster-camunda" is reserved`)
-		})
-	}
-}
-
-// While the cluster runs under the account of that name, the account is not
-// deleted, and connectors that are off do not register it.
-func TestCheckConnectorsServiceAccountAcceptsTheClusterAccountWhileConnectorsAreOff(t *testing.T) {
+// Connectors that are off run no pod under the account, and the cluster deletes
+// no account that it does not own, so an account of the user with the derived
+// cluster name is accepted.
+func TestCheckConnectorsServiceAccountAcceptsTheDerivedClusterNameWhileConnectorsAreOff(t *testing.T) {
 	t.Parallel()
 
 	in := newInput(t, func(in *Input) {
-		in.Effective = NewEffective(v1.CamundaClusterSpec{
-			ServiceAccount: &v1.ServiceAccountSpec{},
-			Connectors: &v1.ConnectorsSpec{
-				Enabled:        new(false),
-				ServiceAccount: &v1.ServiceAccountSpec{Name: "my-cluster-camunda", Create: new(false)},
-			},
-		})
-	})
-
-	assert.NoError(t, CheckConnectorsServiceAccount(in))
-}
-
-// A bucket with workload identity gives the cluster the account of that name,
-// so the account is not deleted, and connectors that are off do not register
-// it.
-func TestCheckConnectorsServiceAccountAcceptsTheReservedNameWithAWorkloadIdentityBucket(t *testing.T) {
-	t.Parallel()
-
-	in := newInput(t, func(in *Input) {
-		in.Backup = s3Bucket()
 		in.Effective = NewEffective(v1.CamundaClusterSpec{
 			Connectors: &v1.ConnectorsSpec{
 				Enabled:        new(false),
@@ -402,19 +357,24 @@ func TestCheckConnectorsServiceAccountAcceptsTheReservedNameWithAWorkloadIdentit
 	assert.NoError(t, CheckConnectorsServiceAccount(in))
 }
 
-// With create true the connectors claim no account of the user, so the name
-// is not refused while they are off.
-func TestCheckConnectorsServiceAccountAcceptsTheReservedNameWithCreate(t *testing.T) {
+// Connectors that run under the derived cluster name would run under the
+// cluster identity as soon as the cluster uses its account, so they are refused
+// also while the cluster uses none.
+func TestCheckConnectorsServiceAccountRefusesTheDerivedClusterNameWithCreateFalse(t *testing.T) {
 	t.Parallel()
 
 	in := newInput(t, func(in *Input) {
 		in.Effective = NewEffective(v1.CamundaClusterSpec{
 			Connectors: &v1.ConnectorsSpec{
-				Enabled:        new(false),
-				ServiceAccount: &v1.ServiceAccountSpec{Name: "my-cluster-camunda"},
+				Enabled:        new(true),
+				ServiceAccount: &v1.ServiceAccountSpec{Name: "my-cluster-camunda", Create: new(false)},
 			},
 		})
 	})
 
-	assert.NoError(t, CheckConnectorsServiceAccount(in))
+	err := CheckConnectorsServiceAccount(in)
+	require.Error(t, err)
+	assert.Contains(
+		t, err.Error(), `connectors.serviceAccount.name "my-cluster-camunda" is the ServiceAccount of the cluster`,
+	)
 }

@@ -262,12 +262,8 @@ type ConnectorsSpec struct {
 	// connectors pods get the label azure.workload.identity/use: "true". The
 	// connectors never run under the cluster ServiceAccount: name must differ
 	// from it, and a spec.serviceAccount.name of default needs this block, or
-	// Ready reports InvalidReference. The name default needs create false.
-	// With create false, name must not be <name>-camunda while
-	// neither the cluster nor its preset sets spec.serviceAccount and no
-	// referenced bucket uses workload identity. Ready then reports
-	// InvalidReference, also while connectors are off. A preset can set this
-	// block, except name.
+	// Ready reports InvalidReference. The name default needs create false. A
+	// preset can set this block, except name.
 	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="connectors.serviceAccount.name default requires create: false"
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
@@ -455,12 +451,12 @@ type CamundaClusterSpec struct {
 	// the account, it adds the identity annotation of each bucket that names
 	// one. When the annotations carry azure.workload.identity/client-id, the
 	// pods of these workloads, the backup Jobs included, get the label
-	// azure.workload.identity/use: "true". The name <name>-camunda
-	// belongs to the operator. While neither the cluster nor its preset sets
-	// this block and no referenced bucket uses workload identity, the
-	// operator deletes an account of that name. It deletes one that it did
-	// not create too, except while connectors.serviceAccount names it with
-	// create false: Ready then reports InvalidReference.
+	// azure.workload.identity/use: "true". When name is unset, the account
+	// is <name>-camunda. The pods need no account while neither the cluster
+	// nor its preset sets this block and no referenced bucket uses workload
+	// identity. The operator then deletes the account only when the cluster
+	// owns it, because the operator created it or took it over. An account
+	// of that name that you created stays.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// Auth holds the credentials of this cluster and the identities that get

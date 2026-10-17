@@ -151,6 +151,8 @@ The API server accepts a resource that names something you did not create yet, s
 
 The operator applies the resources that it keeps in shape, such as the workloads, Services, and Secrets of a cluster, with Server-Side Apply. It owns only the fields that it sets. A field that you set by hand on such a resource stays until the operator sets that field. The Jobs of a backup or a restore are different: the operator creates each one once and does not update it.
 
+The operator gives many objects a name that it derives from the resource, for example the ServiceAccount `my-cluster-camunda` or the Deployment `my-cluster-gateway`. When the resource no longer needs such an object, the operator deletes it only when the resource owns it. An object of that name that you created stays. When the resource needs an object of that name, the operator takes your object over, and from then on the resource owns it. An object that another resource controls is not taken over.
+
 ## The fleet manager
 
 The fleet manager is a web app that the chart installs when `fleetManager.enabled` is `true`, see [Install the fleet manager](fleet-manager/install.md). It runs in the release namespace under its own ServiceAccount. The ClusterRole of that ServiceAccount reads every kind of the operator. It also reads pods, Services, and volume claims. The workloads of a resource carry the labels in [How a feature finds its workloads](#how-a-feature-finds-its-workloads). It can also write the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets. It cannot write a `CamundaCluster` or a `CamundaManagementCluster`.
