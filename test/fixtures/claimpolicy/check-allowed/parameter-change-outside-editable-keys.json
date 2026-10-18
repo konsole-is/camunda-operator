@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "name": "A changed value of a key that is not claim-editable is refused",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "camundaCluster": [
+            "small"
+          ]
+        },
+        "releases": {
+          "allowed": [
+            "8.9.23"
+          ],
+          "default": "8.9.23"
+        }
+      }
+    },
+    "policy": {
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3",
+            "existing-object-storage"
+          ]
+        }
+      },
+      "parameters": {
+        "s3": {
+          "region": {
+            "value": "eu-west-1"
+          },
+          "access": {
+            "claimEditable": true,
+            "allowed": [
+              {
+                "name": "sqs",
+                "label": "SQS access",
+                "value": "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
+              },
+              {
+                "name": "sns",
+                "label": "SNS access",
+                "value": "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+              }
+            ]
+          }
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3",
+        "parameters": {
+          "region": "us-east-1"
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "parameter \"region\" of registration \"s3\" is not claim-editable"
+    }
+  }
+}

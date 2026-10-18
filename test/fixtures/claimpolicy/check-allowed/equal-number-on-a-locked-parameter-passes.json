@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "name": "A value equal as JSON to the policy value passes, also in another number form or key order",
+  "input": {
+    "policy": {
+      "parameters": {
+        "s3": {
+          "limits": {
+            "value": {
+              "replicas": 1,
+              "zones": 3
+            }
+          }
+        }
+      },
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3"
+          ]
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3",
+        "parameters": {
+          "limits": {
+            "zones": 3.0,
+            "replicas": 1
+          }
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}
