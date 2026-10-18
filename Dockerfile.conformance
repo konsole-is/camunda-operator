@@ -1,0 +1,38 @@
+# Build the plugin-conformance binary. The CI of a plugin runs this image
+# against its kind cluster, with the config file and the report directory
+# mounted into the container.
+FROM golang:1.27 AS builder
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /workspace
+# Copy the Go Modules manifests
+COPY conformance/go.mod conformance/go.mod
+COPY conformance/go.sum conformance/go.sum
+# The conformance module replaces the api module with ../api, so its module
+# files must be present too
+COPY api/go.mod api/go.mod
+COPY api/go.sum api/go.sum
+# See Dockerfile.cli for why the download gets a few attempts.
+WORKDIR /workspace/conformance
+RUN for attempt in 1 2 3; do \
+        go mod download && break; \
+        if [ "$attempt" = 3 ]; then echo "go mod download failed after 3 attempts" >&2; exit 1; fi; \
+        echo "go mod download failed, retrying in 5s" >&2; \
+        sleep 5; \
+    done
+
+# Copy the Go source (relies on .dockerignore to filter)
+WORKDIR /workspace
+COPY . .
+
+# Build. See Dockerfile for why GOARCH has no default.
+WORKDIR /workspace/conformance
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o /workspace/plugin-conformance ./cmd/plugin-conformance
+
+FROM gcr.io/distroless/static:nonroot
+WORKDIR /
+COPY --from=builder /workspace/plugin-conformance .
+USER 65532:65532
+
+ENTRYPOINT ["/plugin-conformance"]
