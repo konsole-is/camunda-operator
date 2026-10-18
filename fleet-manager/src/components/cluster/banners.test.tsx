@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
@@ -87,5 +87,19 @@ describe("ActivityBanner", () => {
       screen.getByRole("link", { name: "Open the Backups tab" }),
     );
     expect(onOpenBackups).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the browser from following the link when onOpenBackups is set", () => {
+    render(
+      <ActivityBanner
+        backup={{ kind: "LogicalBackupRDBMS", namespace: "team-a", name: "b" }}
+        backupsHref="?tab=backups"
+        onOpenBackups={() => {}}
+      />,
+    );
+    const followed = fireEvent.click(
+      screen.getByRole("link", { name: "Open the Backups tab" }),
+    );
+    expect(followed).toBe(false);
   });
 });
