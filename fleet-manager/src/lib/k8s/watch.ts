@@ -107,11 +107,13 @@ export interface WatchStreamOptions {
  * that a subscriber of the filter sees (see deltaType). A watch that is not
  * valid gets a frame "failure" with its error, and the stream goes on. A kind
  * that does not sync gets a frame "failure" with the message, and the later
- * kinds of that watch do not start. That frame sets the retry time of EventSource to
- * retryMs, and the stream ends after every watch sent its snapshots or its
- * failure. A comment line goes out every heartbeatMs, so idle proxies keep
- * the connection. The stream also ends when signal aborts, and when more than
- * maxPendingBytes wait unread in its queue or behind a snapshot.
+ * kinds of that watch do not start. That frame sets the retry time of
+ * EventSource to retryMs, and the stream ends after every watch sent its
+ * snapshots or its failure. A comment line goes out every heartbeatMs, so
+ * idle proxies keep the connection. The stream also ends when signal aborts,
+ * at the next write when more than maxPendingBytes wait unread in its queue,
+ * and when the JSON of the changes that wait behind snapshots is longer than
+ * maxPendingBytes.
  */
 export function watchStream(
   cache: ResourceCache,
