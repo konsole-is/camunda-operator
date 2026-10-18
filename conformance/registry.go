@@ -43,18 +43,38 @@ type Check struct {
 	run func(ctx context.Context, s *suite) error
 }
 
-// suite is what a check gets: the config of the run with the timeout
-// defaults filled in, and the connection to the cluster of the run.
+// suite is what a check gets: the config of the run, with the timeout
+// defaults filled in, and the connection to the cluster of the run. It also
+// holds the state that the checks of one run share, and the cleanups that run
+// after the last check.
 type suite struct {
 	cfg        Config
 	restConfig *rest.Config
 	client     client.Client
+	cleanups   []func(ctx context.Context) error
 }
 
 func newSuite(cfg Config, restConfig *rest.Config, c client.Client) *suite {
 	cfg.Timeouts = cfg.Timeouts.withDefaults()
 
 	return &suite{cfg: cfg, restConfig: restConfig, client: c}
+}
+
+// onClose adds a cleanup that close runs after the last check of the run.
+func (s *suite) onClose(fn func(ctx context.Context) error) {
+	s.cleanups = append(s.cleanups, fn)
+}
+
+// close runs the cleanups in the reverse order of onClose. It runs each of
+// them, also after one fails, and returns the errors of all.
+func (s *suite) close(ctx context.Context) error {
+	errs := make([]error, 0, len(s.cleanups))
+	for _, fn := range slices.Backward(s.cleanups) {
+		errs = append(errs, fn(ctx))
+	}
+	s.cleanups = nil
+
+	return errors.Join(errs...)
 }
 
 // registration gets the PluginRegistration that the run checks. The error
