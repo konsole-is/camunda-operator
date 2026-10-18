@@ -59,3 +59,13 @@ func TestWaitForReturnsAtOnceWhenTheContextIsCanceled(t *testing.T) {
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Less(t, time.Since(start), 10*time.Second)
 }
+
+func TestWaitForGivesTheCheckTheContextOfTheCaller(t *testing.T) {
+	err := waitFor(t.Context(), time.Second, "a pass", func(ctx context.Context) error {
+		_, hasDeadline := ctx.Deadline()
+		assert.False(t, hasDeadline, "a call that the timeout cuts short hides the last problem")
+		return nil
+	})
+
+	assert.NoError(t, err)
+}

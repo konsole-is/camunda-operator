@@ -32,7 +32,9 @@ const pollInterval = 500 * time.Millisecond
 // canceled ctx ends the wait at once with the error of ctx.
 func waitFor(ctx context.Context, timeout time.Duration, what string, check func(ctx context.Context) error) error {
 	var last error
-	err := wait.PollUntilContextTimeout(ctx, pollInterval, timeout, true, func(ctx context.Context) (bool, error) {
+	// check gets ctx, not the context of the poll: a call that the timeout
+	// cuts short fails with a deadline error that hides the last problem.
+	err := wait.PollUntilContextTimeout(ctx, pollInterval, timeout, true, func(context.Context) (bool, error) {
 		last = check(ctx)
 		return last == nil, nil
 	})

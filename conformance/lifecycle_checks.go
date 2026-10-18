@@ -200,7 +200,7 @@ func checkLabels(ctx context.Context, s *suite) error {
 			return err
 		}
 
-		objs, err := writtenObjects(ctx, s, life.kinds, r.name)
+		objs, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
 		if err != nil {
 			return err
 		}
@@ -226,7 +226,7 @@ func checkResources(ctx context.Context, s *suite) error {
 			return err
 		}
 
-		objs, err := writtenObjects(ctx, s, life.kinds, r.name)
+		objs, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
 		if err != nil {
 			return err
 		}

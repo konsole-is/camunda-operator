@@ -319,7 +319,7 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(runs, func(r requestRun) error {
-		objs, err := writtenObjects(ctx, s, life.kinds, r.name)
+		objs, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
 		if err != nil {
 			return err
 		}
@@ -367,7 +367,7 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 			return err
 		}
 
-		objs, err := writtenObjects(ctx, s, life.kinds, r.name)
+		objs, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
 		if err != nil {
 			return err
 		}

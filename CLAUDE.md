@@ -127,7 +127,7 @@ others do not. Each gate is a heavy command: run it through `feature-dev-workflo
 make setup-envtest          # writes KUBEBUILDER_ASSETS; every envtest suite fails without it
 go test ./...               # the root module only
 go -C api test ./...        # ./... never crosses a module boundary
-go -C conformance test ./...  # the conformance module, for the same reason
+go -C conformance test ./...  # the conformance module, for the same reason; needs make setup-envtest
 make lint                   # every module, expect 0 issues
 make lint-renovate          # renovate.json5 against the validator of RENOVATE_VERSION; needs npx
 make manifests generate     # then `git status --porcelain config api pkg/images` prints nothing

@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -63,6 +64,9 @@ type lifecycle struct {
 	kinds        []kindInfo
 	runs         []requestRun
 	rec          *recorder
+	// preexisting holds the UIDs of the objects that carried the label of a
+	// request of the run before the run created its requests.
+	preexisting map[types.UID]bool
 	// written holds, for each request name, the objects that the request had
 	// before the deletion checks deleted it.
 	written map[string][]*unstructured.Unstructured
@@ -110,7 +114,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		return nil, err
 	}
 
-	rec, err := startRecorder(ctx, s, kinds, runs)
+	rec, preexisting, err := startRecorder(ctx, s, kinds, runs)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +131,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		kinds:        kinds,
 		runs:         runs,
 		rec:          rec,
+		preexisting:  preexisting,
 		written:      map[string][]*unstructured.Unstructured{},
 	}
 
@@ -212,12 +217,19 @@ func (s *suite) ensureNamespace(ctx context.Context) error {
 }
 
 // startRecorder watches the requests of the run for the cleanup finalizer,
-// and each of kinds for the first object of each request. The watches outlive
-// the check that starts them, until the recorder stops.
-func startRecorder(ctx context.Context, s *suite, kinds []kindInfo, runs []requestRun) (*recorder, error) {
+// and each of kinds for the first object of each request. It also returns the
+// UIDs of the objects that carry the label of a request already. The watches
+// start after them and outlive the check that starts them, until the recorder
+// stops.
+func startRecorder(
+	ctx context.Context,
+	s *suite,
+	kinds []kindInfo,
+	runs []requestRun,
+) (*recorder, map[types.UID]bool, error) {
 	c, err := client.NewWithWatch(s.restConfig, client.Options{Scheme: s.client.Scheme(), Mapper: s.client.RESTMapper()})
 	if err != nil {
-		return nil, fmt.Errorf("connecting the watches of the run: %w", err)
+		return nil, nil, fmt.Errorf("connecting the watches of the run: %w", err)
 	}
 
 	names := make([]string, 0, len(runs))
@@ -227,8 +239,9 @@ func startRecorder(ctx context.Context, s *suite, kinds []kindInfo, runs []reque
 
 	ofRun, err := labels.NewRequirement(pluginsv1alpha1.LabelRequest, selection.In, names)
 	if err != nil {
-		return nil, fmt.Errorf("selecting the objects of the requests: %w", err)
+		return nil, nil, fmt.Errorf("selecting the objects of the requests: %w", err)
 	}
+	ofRunSelector := client.MatchingLabelsSelector{Selector: labels.NewSelector().Add(*ofRun)}
 
 	watchCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	rec := &recorder{stop: cancel}
@@ -241,23 +254,37 @@ func startRecorder(ctx context.Context, s *suite, kinds []kindInfo, runs []reque
 	}, client.InNamespace(s.cfg.Namespace))
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("watching the PluginRequests of the run: %w", err)
+		return nil, nil, fmt.Errorf("watching the PluginRequests of the run: %w", err)
 	}
 
+	preexisting := map[types.UID]bool{}
 	for _, k := range kinds {
+		listKind := k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List")
+		existing := &unstructured.UnstructuredList{}
+		existing.SetGroupVersionKind(listKind)
+		if err := s.client.List(ctx, existing, ofRunSelector); err != nil {
+			cancel()
+			return nil, nil, fmt.Errorf("listing the %s objects of the run: %w", k.gvk.Kind, err)
+		}
+
+		for _, item := range existing.Items {
+			preexisting[item.GetUID()] = true
+		}
+
 		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List"))
+		list.SetGroupVersionKind(listKind)
+		after := &client.ListOptions{Raw: &metav1.ListOptions{ResourceVersion: existing.GetResourceVersion()}}
 
 		err := rec.watch(watchCtx, c, list, func(obj client.Object) string {
 			return objectKey(obj.GetLabels()[pluginsv1alpha1.LabelRequest])
-		}, client.MatchingLabelsSelector{Selector: labels.NewSelector().Add(*ofRun)})
+		}, ofRunSelector, after)
 		if err != nil {
 			cancel()
-			return nil, fmt.Errorf("watching the %s objects of the run: %w", k.gvk.Kind, err)
+			return nil, nil, fmt.Errorf("watching the %s objects of the run: %w", k.gvk.Kind, err)
 		}
 	}
 
-	return rec, nil
+	return rec, preexisting, nil
 }
 
 // deleteRequests deletes the requests of runs that still exist. It does not
