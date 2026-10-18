@@ -70,7 +70,7 @@ func parameters(raw string) *apiextensionsv1.JSON {
 }
 
 func TestSchemaAcceptsABuiltinShapedSchema(t *testing.T) {
-	_, err := parseSchema([]byte(builtinShapedSchema))
+	_, err := parseSchema(t.Context(), []byte(builtinShapedSchema))
 
 	assert.NoError(t, err)
 }
@@ -98,6 +98,22 @@ func TestSchemaRefusesAnInvalidSchema(t *testing.T) {
 		},
 		{"reference", `{"type":"object","properties":{"x":{"$ref":"#/definitions/x"}}}`, "$ref"},
 		{"type of the wrong kind", `{"type":5}`, "type"},
+		{
+			"unknown key under items",
+			`{"type":"object","properties":{"l":{"type":"array","items":{"type":"string","minLenght":3}}}}`,
+			`spec.parameters.properties.l.items: unknown field "minLenght"`,
+		},
+		{
+			"unknown key under additionalProperties",
+			`{"type":"object","additionalProperties":{"type":"string","minLenght":3}}`,
+			`spec.parameters.additionalProperties: unknown field "minLenght"`,
+		},
+		{"unknown type", `{"type":"object","properties":{"m":{"type":"strnig"}}}`, "strnig"},
+		{
+			"default of the wrong type",
+			`{"type":"object","properties":{"n":{"type":"integer","default":"five"}}}`,
+			"spec.parameters.properties[n].default",
+		},
 	}
 
 	for _, tt := range tests {
@@ -108,6 +124,25 @@ func TestSchemaRefusesAnInvalidSchema(t *testing.T) {
 			assert.ErrorContains(t, err, tt.message)
 		})
 	}
+}
+
+// The marker is a schema keyword. A property and a value with the same
+// name are data, and keep their meaning.
+func TestSchemaKeepsAPropertyAndAValueNamedLikeTheMarker(t *testing.T) {
+	property := schemaSuite(
+		t,
+		`{"type":"object","properties":{"x-fleet-template":{"type":"string","maxLength":2}}}`,
+		Case{Name: "long", Parameters: parameters(`{"x-fleet-template":"long"}`)},
+	)
+	enum := schemaSuite(
+		t,
+		`{"type":"object","properties":{"o":{"type":"object","x-kubernetes-preserve-unknown-fields":true,`+
+			`"enum":[{"x-fleet-template":1}]}}}`,
+		Case{Name: "listed", Parameters: parameters(`{"o":{"x-fleet-template":1}}`)},
+	)
+
+	assert.ErrorContains(t, checkSchema(t.Context(), property), `case "long"`)
+	assert.NoError(t, checkSchema(t.Context(), enum))
 }
 
 func TestSchemaChecksEveryCaseAgainstTheSchema(t *testing.T) {
@@ -236,7 +271,7 @@ func TestParameterTemplatesCheck(t *testing.T) {
 // The API server stores only JSON in spec.parameters, so only parseSchema
 // can get text that is not JSON.
 func TestParseSchemaRefusesTextThatIsNotJSON(t *testing.T) {
-	_, err := parseSchema([]byte(`{"type":`))
+	_, err := parseSchema(t.Context(), []byte(`{"type":`))
 
 	assert.ErrorContains(t, err, "spec.parameters: unexpected end of JSON input")
 }

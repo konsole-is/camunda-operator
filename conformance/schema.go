@@ -17,19 +17,23 @@ limitations under the License.
 package conformance
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
+	"strings"
 
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
+	apiextensionsvalidation "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation"
 	"k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utiljson "k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/utils/ptr"
 )
 
 // fleetTemplateKey marks a parameter whose default is a template. The
@@ -52,7 +56,7 @@ func checkSchema(ctx context.Context, s *suite) error {
 		return errors.Join(errs...)
 	}
 
-	parsed, err := parseSchema(reg.Spec.Parameters.Raw)
+	parsed, err := parseSchema(ctx, reg.Spec.Parameters.Raw)
 	if err != nil {
 		return err
 	}
@@ -66,7 +70,8 @@ func checkSchema(ctx context.Context, s *suite) error {
 	for _, tc := range s.cfg.Cases {
 		value := any(map[string]any{})
 		if tc.Parameters != nil && len(tc.Parameters.Raw) > 0 {
-			if err := json.Unmarshal(tc.Parameters.Raw, &value); err != nil {
+			// The API server decodes an integer as int64, as utiljson does.
+			if err := utiljson.Unmarshal(tc.Parameters.Raw, &value); err != nil {
 				errs = append(errs, fmt.Errorf("case %q: parameters: %w", tc.Name, err))
 				continue
 			}
@@ -82,24 +87,35 @@ func checkSchema(ctx context.Context, s *suite) error {
 }
 
 // parseSchema returns raw as a schema that the API server accepts for a
-// CRD: no unknown keys besides x-fleet-template, and structural. Each error
+// field of a CRD, with x-fleet-template as the one extra keyword. Each error
 // names its field under spec.parameters.
-func parseSchema(raw []byte) (*apiextensions.JSONSchemaProps, error) {
+func parseSchema(ctx context.Context, raw []byte) (*apiextensions.JSONSchemaProps, error) {
 	var tree any
 	if err := json.Unmarshal(raw, &tree); err != nil {
 		return nil, fmt.Errorf("spec.parameters: %w", err)
 	}
 
-	// A strict decode refuses the key of the contract.
-	stripped, err := json.Marshal(withoutKey(tree, fleetTemplateKey))
+	// The decode drops an unknown keyword, so it is found first.
+	var errs []error
+	walkSchemas("spec.parameters", tree, func(path string, node map[string]any) {
+		for _, key := range slices.Sorted(maps.Keys(node)) {
+			if !schemaKeywords[key] && key != fleetTemplateKey {
+				errs = append(errs, fmt.Errorf("%s: unknown field %q", path, key))
+			}
+		}
+		delete(node, fleetTemplateKey)
+	})
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
+
+	stripped, err := json.Marshal(tree)
 	if err != nil {
 		return nil, fmt.Errorf("spec.parameters: %w", err)
 	}
 
 	var v1Schema apiextensionsv1.JSONSchemaProps
-	decoder := json.NewDecoder(bytes.NewReader(stripped))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&v1Schema); err != nil {
+	if err := json.Unmarshal(stripped, &v1Schema); err != nil {
 		return nil, fmt.Errorf("spec.parameters: %w", err)
 	}
 
@@ -112,34 +128,94 @@ func parseSchema(raw []byte) (*apiextensions.JSONSchemaProps, error) {
 		return nil, fmt.Errorf("spec.parameters: %w", err)
 	}
 
-	structural, err := schema.NewStructural(&out)
-	if err != nil {
-		return nil, fmt.Errorf("spec.parameters: %w", err)
-	}
-
-	if err := schema.ValidateStructural(field.NewPath("spec", "parameters"), structural).ToAggregate(); err != nil {
+	if err := validateAsCRDField(ctx, &out); err != nil {
 		return nil, err
 	}
 
 	return &out, nil
 }
 
-// withoutKey returns value with each object key named key removed, at any
-// depth. It changes value in place.
-func withoutKey(value any, key string) any {
-	switch v := value.(type) {
-	case map[string]any:
-		delete(v, key)
-		for k, child := range v {
-			v[k] = withoutKey(child, key)
-		}
-	case []any:
-		for i, child := range v {
-			v[i] = withoutKey(child, key)
+// schemaKeywords are the keywords of a CRD schema.
+var schemaKeywords = func() map[string]bool {
+	keywords := map[string]bool{}
+	fields := reflect.TypeFor[apiextensionsv1.JSONSchemaProps]()
+	for i := range fields.NumField() {
+		name, _, _ := strings.Cut(fields.Field(i).Tag.Get("json"), ",")
+		keywords[name] = true
+	}
+
+	return keywords
+}()
+
+// walkSchemas calls visit for node and for each schema under it, with its
+// path. It walks only the keywords that hold schemas, so a default, an
+// enum, or a property name is never read as a schema.
+func walkSchemas(path string, node any, visit func(path string, node map[string]any)) {
+	schemaNode, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+
+	visit(path, schemaNode)
+
+	for _, keyword := range []string{"properties", "patternProperties", "definitions", "dependencies"} {
+		children, _ := schemaNode[keyword].(map[string]any)
+		for _, name := range slices.Sorted(maps.Keys(children)) {
+			walkSchemas(path+"."+keyword+"."+name, children[name], visit)
 		}
 	}
 
-	return value
+	for _, keyword := range []string{"items", "allOf", "anyOf", "oneOf"} {
+		if list, ok := schemaNode[keyword].([]any); ok {
+			for i, item := range list {
+				walkSchemas(fmt.Sprintf("%s.%s[%d]", path, keyword, i), item, visit)
+			}
+			continue
+		}
+		walkSchemas(path+"."+keyword, schemaNode[keyword], visit)
+	}
+
+	for _, keyword := range []string{"additionalProperties", "additionalItems", "not"} {
+		walkSchemas(path+"."+keyword, schemaNode[keyword], visit)
+	}
+}
+
+// crdFieldPath is where validateAsCRDField puts the schema in its CRD.
+const crdFieldPath = "spec.validation.openAPIV3Schema.properties[parameters]"
+
+// validateAsCRDField runs the validation of the API server on a CRD whose
+// one field has the schema props.
+func validateAsCRDField(ctx context.Context, props *apiextensions.JSONSchemaProps) error {
+	crd := &apiextensions.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{Name: "parameters.conformance.plugins.camunda.io"},
+		Spec: apiextensions.CustomResourceDefinitionSpec{
+			Group: "conformance.plugins.camunda.io",
+			Names: apiextensions.CustomResourceDefinitionNames{
+				Plural:   "parameters",
+				Singular: "parameter",
+				Kind:     "Parameter",
+				ListKind: "ParameterList",
+			},
+			Scope:    apiextensions.ClusterScoped,
+			Versions: []apiextensions.CustomResourceDefinitionVersion{{Name: "v1", Served: true, Storage: true}},
+			Validation: &apiextensions.CustomResourceValidation{
+				OpenAPIV3Schema: &apiextensions.JSONSchemaProps{
+					Type:       "object",
+					Properties: map[string]apiextensions.JSONSchemaProps{"parameters": *props},
+				},
+			},
+			PreserveUnknownFields: ptr.To(false),
+		},
+		Status: apiextensions.CustomResourceDefinitionStatus{StoredVersions: []string{"v1"}},
+	}
+
+	var errs []error
+	for _, fieldErr := range apiextensionsvalidation.ValidateCustomResourceDefinition(ctx, crd) {
+		fieldErr.Field = strings.Replace(fieldErr.Field, crdFieldPath, "spec.parameters", 1)
+		errs = append(errs, fieldErr)
+	}
+
+	return errors.Join(errs...)
 }
 
 func checkParameterTemplates(ctx context.Context, s *suite) error {
@@ -160,47 +236,23 @@ func checkParameterTemplates(ctx context.Context, s *suite) error {
 	return errors.Join(templateDefaultErrors("spec.parameters", tree)...)
 }
 
-// templateDefaultErrors checks the default of each schema under node that
-// is marked x-fleet-template. It walks only the keywords that hold schemas,
-// so a default value or an enum is never read as a schema.
-func templateDefaultErrors(path string, node any) []error {
-	schemaNode, ok := node.(map[string]any)
-	if !ok {
-		return nil
-	}
-
+// templateDefaultErrors checks the default of each schema under tree that
+// is marked x-fleet-template.
+func templateDefaultErrors(path string, tree any) []error {
 	var errs []error
-	if marked, _ := schemaNode[fleetTemplateKey].(bool); marked {
-		if def, ok := schemaNode["default"]; ok {
-			raw, err := json.Marshal(def)
-			if err == nil {
-				err = checkJSONTemplates(path+".default", raw, templatePlaceholders)
-			}
-			errs = append(errs, err)
+	walkSchemas(path, tree, func(path string, node map[string]any) {
+		marked, _ := node[fleetTemplateKey].(bool)
+		def, ok := node["default"]
+		if !marked || !ok {
+			return
 		}
-	}
 
-	for _, keyword := range []string{"properties", "patternProperties"} {
-		children, _ := schemaNode[keyword].(map[string]any)
-		for _, name := range slices.Sorted(maps.Keys(children)) {
-			errs = append(errs, templateDefaultErrors(path+"."+keyword+"."+name, children[name])...)
+		raw, err := json.Marshal(def)
+		if err == nil {
+			err = checkJSONTemplates(path+".default", raw, templatePlaceholders)
 		}
-	}
-
-	for _, keyword := range []string{"items", "allOf", "anyOf", "oneOf"} {
-		switch child := schemaNode[keyword].(type) {
-		case []any:
-			for i, item := range child {
-				errs = append(errs, templateDefaultErrors(fmt.Sprintf("%s.%s[%d]", path, keyword, i), item)...)
-			}
-		default:
-			errs = append(errs, templateDefaultErrors(path+"."+keyword, child)...)
-		}
-	}
-
-	for _, keyword := range []string{"additionalProperties", "not"} {
-		errs = append(errs, templateDefaultErrors(path+"."+keyword, schemaNode[keyword])...)
-	}
+		errs = append(errs, err)
+	})
 
 	return errs
 }
