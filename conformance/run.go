@@ -35,6 +35,28 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
+// Outcome is how one check of a run ended.
+type Outcome string
+
+// The outcomes of a check.
+const (
+	OutcomePassed  Outcome = "Passed"
+	OutcomeFailed  Outcome = "Failed"
+	OutcomeSkipped Outcome = "Skipped"
+)
+
+// Result is the outcome of one check of a run.
+type Result struct {
+	ID      CheckID
+	Outcome Outcome
+	// Message is the failure message or the skip reason. It is empty for a
+	// passed check.
+	Message string
+	// Duration is the time that the check ran. It is zero for a check that
+	// did not run.
+	Duration time.Duration
+}
+
 // Run runs every registered check against cfg, in registry order, each as a
 // subtest of t named by its ID, on the cluster of cfg.RESTConfig. A check
 // that cfg skips, or that skips itself, is reported as skipped with its
@@ -46,6 +68,17 @@ func Run(t *testing.T, cfg Config) {
 	runChecks(t, cfg, checks, connect)
 }
 
+// Execute runs every registered check against cfg, in registry order, on
+// the cluster of cfg.RESTConfig, and returns one Result for each check. A
+// failed check is a Result, not an error. Execute returns an error and runs
+// no check when cfg is not valid or when it cannot connect to the cluster. A
+// check that ctx stops before it starts fails with a message that says that
+// the run stopped. When the cleanup at the end of the run fails, Execute
+// returns the results and an error.
+func Execute(ctx context.Context, cfg Config) ([]Result, error) {
+	return execute(ctx, cfg, checks, connect)
+}
+
 func runChecks(
 	t *testing.T,
 	cfg Config,
@@ -54,19 +87,11 @@ func runChecks(
 ) {
 	t.Helper()
 
-	steps, err := plan(cfg, registry)
+	s, steps, err := start(t.Context(), cfg, registry, connect)
 	if err != nil {
-		t.Errorf("conformance: the config of the run is not valid: %v", err)
+		t.Error(err)
 		return
 	}
-
-	restConfig, c, err := connect(t.Context(), cfg.RESTConfig)
-	if err != nil {
-		t.Errorf("conformance: connecting to the cluster: %v", err)
-		return
-	}
-
-	s := newSuite(cfg, restConfig, c)
 	defer func() {
 		if err := s.close(t.Context()); err != nil {
 			t.Errorf("conformance: the cleanup of the run failed: %v", err)
@@ -75,20 +100,59 @@ func runChecks(
 
 	for _, st := range steps {
 		t.Run(string(st.check.ID), func(t *testing.T) {
-			if st.skipReason != "" {
-				t.Skip("skipped by the config: " + st.skipReason)
-			}
-
-			err := st.check.run(t.Context(), s)
-			if reason, skip := skipReasonOf(err); skip {
-				t.Skip(reason)
-			}
-
-			if err != nil {
-				t.Error(err)
+			r := runStep(t.Context(), s, st)
+			switch r.Outcome {
+			case OutcomeSkipped:
+				t.Skip(r.Message)
+			case OutcomeFailed:
+				t.Error(r.Message)
 			}
 		})
 	}
+}
+
+func execute(
+	ctx context.Context,
+	cfg Config,
+	registry []Check,
+	connect func(context.Context, *rest.Config) (*rest.Config, client.Client, error),
+) ([]Result, error) {
+	s, steps, err := start(ctx, cfg, registry, connect)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]Result, 0, len(steps))
+	for _, st := range steps {
+		results = append(results, runStep(ctx, s, st))
+	}
+
+	if err := s.close(ctx); err != nil {
+		return results, fmt.Errorf("conformance: the cleanup of the run failed: %w", err)
+	}
+
+	return results, nil
+}
+
+// start is the setup that Run and Execute share: it checks cfg against
+// registry and connects to the cluster.
+func start(
+	ctx context.Context,
+	cfg Config,
+	registry []Check,
+	connect func(context.Context, *rest.Config) (*rest.Config, client.Client, error),
+) (*suite, []step, error) {
+	steps, err := plan(cfg, registry)
+	if err != nil {
+		return nil, nil, fmt.Errorf("conformance: the config of the run is not valid: %w", err)
+	}
+
+	restConfig, c, err := connect(ctx, cfg.RESTConfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("conformance: connecting to the cluster: %w", err)
+	}
+
+	return newSuite(cfg, restConfig, c), steps, nil
 }
 
 // connect returns the REST config of the run and a client for it, after
@@ -145,6 +209,38 @@ func newScheme() (*runtime.Scheme, error) {
 	}
 
 	return scheme, nil
+}
+
+// runStep is the one place that runs a check, so that Run and Execute
+// report the same outcome for it.
+func runStep(ctx context.Context, s *suite, st step) Result {
+	r := Result{ID: st.check.ID}
+
+	if st.skipReason != "" {
+		r.Outcome, r.Message = OutcomeSkipped, "skipped by the config: "+st.skipReason
+		return r
+	}
+
+	if err := ctx.Err(); err != nil {
+		r.Outcome, r.Message = OutcomeFailed, "the run stopped before this check started: "+err.Error()
+		return r
+	}
+
+	began := time.Now()
+	err := st.check.run(ctx, s)
+	r.Duration = time.Since(began)
+
+	reason, skipped := skipReasonOf(err)
+	switch {
+	case skipped:
+		r.Outcome, r.Message = OutcomeSkipped, reason
+	case err != nil:
+		r.Outcome, r.Message = OutcomeFailed, err.Error()
+	default:
+		r.Outcome = OutcomePassed
+	}
+
+	return r
 }
 
 // step is one check of a run, with the reason from the config when the run

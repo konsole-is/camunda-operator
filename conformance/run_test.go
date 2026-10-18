@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,6 +125,176 @@ func TestPlanReportsEveryError(t *testing.T) {
 
 	assert.ErrorContains(t, err, "namespace is empty")
 	assert.ErrorContains(t, err, `skip "TEST-MANDATORY" names a mandatory check`)
+}
+
+func TestExecuteReportsEachOutcomeInRegistryOrder(t *testing.T) {
+	var ran []CheckID
+	record := func(id CheckID, err error) func(context.Context, *suite) error {
+		return func(context.Context, *suite) error {
+			ran = append(ran, id)
+			return err
+		}
+	}
+
+	cfg := validConfig()
+	cfg.Skip = []Skip{{ID: skippableID, Reason: "the plugin has no Deployment"}}
+	registry := []Check{
+		{ID: mandatoryID, Description: "A check that passes.", run: record(mandatoryID, nil)},
+		{
+			ID:          failingID,
+			Description: "A check that fails.",
+			run:         record(failingID, errors.New("the plugin broke the contract")),
+		},
+		{
+			ID:          runtimeSkipID,
+			Description: "A check that skips itself.",
+			run:         record(runtimeSkipID, SkipCheck("the registration has no grant templates")),
+		},
+		{ID: skippableID, Description: "A skippable check.", Skippable: true, run: record(skippableID, nil)},
+	}
+
+	results, err := execute(t.Context(), cfg, registry, fakeConnect)
+	require.NoError(t, err)
+
+	require.Len(t, results, 4)
+	assert.Equal(t, Result{ID: mandatoryID, Outcome: OutcomePassed}, withoutDuration(results[0]))
+	assert.Equal(
+		t,
+		Result{ID: failingID, Outcome: OutcomeFailed, Message: "the plugin broke the contract"},
+		withoutDuration(results[1]),
+	)
+	assert.Equal(
+		t,
+		Result{ID: runtimeSkipID, Outcome: OutcomeSkipped, Message: "the registration has no grant templates"},
+		withoutDuration(results[2]),
+	)
+	assert.Equal(
+		t,
+		Result{
+			ID:      skippableID,
+			Outcome: OutcomeSkipped,
+			Message: "skipped by the config: the plugin has no Deployment",
+		},
+		results[3],
+	)
+	assert.Equal(t, []CheckID{mandatoryID, failingID, runtimeSkipID}, ran, "a check that the config skips does not run")
+}
+
+func TestExecuteGivesEachCheckTheConfigWithTheTimeoutDefaults(t *testing.T) {
+	var ready time.Duration
+	registry := []Check{{ID: mandatoryID, Description: "A check.", run: func(_ context.Context, s *suite) error {
+		ready = s.cfg.Timeouts.Ready
+		return nil
+	}}}
+
+	_, err := execute(t.Context(), validConfig(), registry, fakeConnect)
+	require.NoError(t, err)
+
+	assert.Equal(t, 10*time.Minute, ready)
+}
+
+func TestExecuteRefusesAnInvalidConfigAndRunsNoCheck(t *testing.T) {
+	ran := false
+	cfg := validConfig()
+	cfg.Skip = []Skip{{ID: mandatoryID, Reason: "too slow"}}
+	registry := []Check{{ID: mandatoryID, Description: "A check.", run: func(context.Context, *suite) error {
+		ran = true
+		return nil
+	}}}
+
+	results, err := execute(t.Context(), cfg, registry, fakeConnect)
+
+	assert.ErrorContains(t, err, "conformance: the config of the run is not valid")
+	assert.ErrorContains(t, err, `skip "TEST-MANDATORY" names a mandatory check`)
+	assert.Nil(t, results)
+	assert.False(t, ran)
+}
+
+func TestExecuteRunsNoCheckWhenItCannotConnect(t *testing.T) {
+	ran := false
+	registry := []Check{{ID: mandatoryID, Description: "A check.", run: func(context.Context, *suite) error {
+		ran = true
+		return nil
+	}}}
+	noKubeconfig := func(context.Context, *rest.Config) (*rest.Config, client.Client, error) {
+		return nil, nil, errors.New("no kubeconfig")
+	}
+
+	results, err := execute(t.Context(), validConfig(), registry, noKubeconfig)
+
+	assert.ErrorContains(t, err, "conformance: connecting to the cluster: no kubeconfig")
+	assert.Nil(t, results)
+	assert.False(t, ran)
+}
+
+func TestExecuteRunsTheCleanupsOfTheRunAfterTheLastCheck(t *testing.T) {
+	var order []string
+	registry := []Check{
+		{ID: mandatoryID, Description: "A check with a cleanup.", run: func(_ context.Context, s *suite) error {
+			s.onClose(func(context.Context) error {
+				order = append(order, "cleanup")
+				return nil
+			})
+			return nil
+		}},
+		{ID: failingID, Description: "The last check.", run: func(context.Context, *suite) error {
+			order = append(order, "last check")
+			return nil
+		}},
+	}
+
+	results, err := execute(t.Context(), validConfig(), registry, fakeConnect)
+
+	require.NoError(t, err)
+	assert.Len(t, results, 2)
+	assert.Equal(t, []string{"last check", "cleanup"}, order)
+}
+
+func TestExecuteReturnsTheResultsAndTheErrorOfAFailedCleanup(t *testing.T) {
+	registry := []Check{
+		{ID: mandatoryID, Description: "A check with a cleanup.", run: func(_ context.Context, s *suite) error {
+			s.onClose(func(context.Context) error { return errors.New("the namespace is still terminating") })
+			return nil
+		}},
+	}
+
+	results, err := execute(t.Context(), validConfig(), registry, fakeConnect)
+
+	assert.ErrorContains(t, err, "conformance: the cleanup of the run failed: the namespace is still terminating")
+	require.Len(t, results, 1)
+	assert.Equal(t, OutcomePassed, results[0].Outcome)
+}
+
+func TestExecuteFailsTheChecksThatAStoppedRunDidNotStart(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	ran := false
+	registry := []Check{
+		{ID: mandatoryID, Description: "A check that stops the run.", run: func(context.Context, *suite) error {
+			cancel()
+			return nil
+		}},
+		{ID: failingID, Description: "A check after the stop.", run: func(context.Context, *suite) error {
+			ran = true
+			return nil
+		}},
+	}
+
+	results, err := execute(ctx, validConfig(), registry, fakeConnect)
+	require.NoError(t, err)
+
+	require.Len(t, results, 2)
+	assert.Equal(t, OutcomePassed, results[0].Outcome)
+	assert.Equal(t, OutcomeFailed, results[1].Outcome)
+	assert.Contains(t, results[1].Message, "the run stopped before this check started")
+	assert.Contains(t, results[1].Message, context.Canceled.Error())
+	assert.False(t, ran)
+}
+
+// withoutDuration returns r with a zero Duration, because a check that runs
+// takes real time.
+func withoutDuration(r Result) Result {
+	r.Duration = 0
+	return r
 }
 
 // helperEnv selects the helper run of TestRunHelper in a subprocess.
