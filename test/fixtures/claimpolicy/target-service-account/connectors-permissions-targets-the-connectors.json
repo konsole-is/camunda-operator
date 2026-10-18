@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "A section with the slot connectorsIdentity targets the Connectors",
+  "input": {
+    "claim": "team-a",
+    "section": {
+      "metadata": {
+        "name": "connectors-permissions"
+      },
+      "spec": {
+        "label": "connectors-permissions",
+        "selection": "One",
+        "appliesTo": [
+          "CamundaClusterClaim"
+        ],
+        "slot": "connectorsIdentity"
+      }
+    }
+  },
+  "result": {
+    "value": {
+      "serviceAccountName": "team-a-connectors"
+    }
+  }
+}

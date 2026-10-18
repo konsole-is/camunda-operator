@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "name": "A section with another slot targets the cluster",
+  "input": {
+    "claim": "team-a",
+    "section": {
+      "metadata": {
+        "name": "cloud-identity"
+      },
+      "spec": {
+        "label": "cloud-identity",
+        "selection": "One",
+        "appliesTo": [
+          "CamundaClusterClaim"
+        ],
+        "slot": "workloadIdentity"
+      }
+    }
+  },
+  "result": {
+    "value": {
+      "serviceAccountName": "team-a-camunda"
+    }
+  }
+}
