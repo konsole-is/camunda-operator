@@ -11,13 +11,15 @@ import {
 
 /**
  * YamlEditor edits a value as YAML text. It is for fields without a
- * structured editor: affinity and extraEnvFrom. Empty text is no value. A
- * YAML error names its line. With a schema, the parsed value is validated
- * against it. onChange gets the value and its schema errors, or undefined
- * and the errors while the text has an error that is not of the schema. It
- * is called when the value or the errors change, not at mount. error
- * is an error of the parent, such as a missing value, and shows while the
- * text has no error of its own.
+ * structured editor: affinity, extraEnvFrom, and a parameter of SectionCards
+ * whose schema names a type other than string, number, integer, or boolean,
+ * and that has no allowed list. Empty text is no value. A YAML error names
+ * its line. With a schema, the parsed value is validated against it.
+ * onChange gets the value and its schema errors, or undefined and the
+ * errors while the text has an error that is not of the schema. It is called
+ * when the value or the errors change, not at mount. error is an error of
+ * the parent, such as a missing value, and shows while the text has no
+ * error of its own.
  */
 export function YamlEditor({
   label,
