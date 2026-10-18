@@ -988,6 +988,28 @@ describe("SectionCards", () => {
       ]);
     });
 
+    it("keeps a parameter named constructor working after a sibling parameter is edited", async () => {
+      const onChange = vi.fn();
+      const option: OptionView = {
+        ...daysOption("a", "Days of a"),
+        parameters: [
+          ...daysOption("a", "Days of a").parameters,
+          ...daysOption("a", "Constructor of a", 30, "constructor").parameters,
+        ],
+      };
+      render(
+        <SectionCards
+          section={prefixedOptions(option)}
+          defaultValue={picked("a")}
+          onChange={onChange}
+        />,
+      );
+      const inA = screen.getByRole("spinbutton", { name: "Days of a" });
+      await userEvent.clear(inA);
+      await userEvent.type(inA, "40");
+      expect(onChange.mock.lastCall![1]).toEqual([]);
+    });
+
     it("names each field by its own label when the registration and parameter names join with a dash", () => {
       render(
         <SectionCards

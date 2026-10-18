@@ -704,7 +704,7 @@ function sectionErrors(
       const key = parameterKey(registration, rule.name);
       const add = (message: string, path = key) =>
         errors.push({ key, error: { path, message } });
-      const parse = parseErrors[registration]?.[rule.name];
+      const parse = ownEntry(ownEntry(parseErrors, registration), rule.name);
       if (parse?.length) {
         for (const e of parse) add(e.message);
         continue;
@@ -755,6 +755,14 @@ function sectionErrors(
     }
   }
   return errors;
+}
+
+/** ownEntry ignores inherited keys, so a name such as "constructor" finds nothing. */
+function ownEntry<T>(
+  record: Record<string, T> | undefined,
+  key: string,
+): T | undefined {
+  return record && Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
 function same(a: unknown, b: unknown): boolean {
