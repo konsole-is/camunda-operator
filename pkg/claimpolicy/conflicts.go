@@ -44,40 +44,80 @@ type slotConflict struct {
 // backupStorageRef have no row, because the API server refuses them in
 // spec.cluster.
 var slotConflicts = []slotConflict{
-	{pluginsv1alpha1.SlotExternalAccess, "spec.cluster.externalUrl", func(o Overrides) bool {
-		return o.Cluster != nil && o.Cluster.ExternalURL != ""
-	}},
-	{pluginsv1alpha1.SlotExternalAccess, "spec.attachments.optimize.externalUrl", func(o Overrides) bool {
-		return o.Optimize != nil && o.Optimize.ExternalURL != ""
-	}},
-	{pluginsv1alpha1.SlotExternalAccess, "spec.management.identityProvider.keycloak.externalUrl", func(o Overrides) bool {
-		return o.Management != nil && o.Management.IdentityProvider.Keycloak != nil &&
-			o.Management.IdentityProvider.Keycloak.ExternalURL != ""
-	}},
-	{pluginsv1alpha1.SlotExternalAccess, "spec.management.identity.externalUrl", func(o Overrides) bool {
-		return o.Management != nil && o.Management.Identity.ExternalURL != ""
-	}},
-	{pluginsv1alpha1.SlotExternalAccess, "spec.management.console.externalUrl", func(o Overrides) bool {
-		return o.Management != nil && o.Management.Console != nil && o.Management.Console.ExternalURL != ""
-	}},
-	{pluginsv1alpha1.SlotExternalAccess, "spec.management.webModeler.externalUrl", func(o Overrides) bool {
-		return o.Management != nil && o.Management.WebModeler != nil && o.Management.WebModeler.ExternalURL != ""
-	}},
-	{pluginsv1alpha1.SlotExternalAccess, "spec.management.webModeler.websocketsExternalUrl", func(o Overrides) bool {
-		return o.Management != nil && o.Management.WebModeler != nil &&
-			o.Management.WebModeler.WebsocketsExternalURL != ""
-	}},
-	{pluginsv1alpha1.SlotWorkloadIdentity, "spec.cluster.serviceAccount.annotations", func(o Overrides) bool {
-		return o.Cluster != nil && o.Cluster.ServiceAccount != nil && len(o.Cluster.ServiceAccount.Annotations) > 0
-	}},
-	{pluginsv1alpha1.SlotConnectorsIdentity, "spec.cluster.connectors.serviceAccount.annotations", func(o Overrides) bool {
-		return o.Cluster != nil && o.Cluster.Connectors != nil && o.Cluster.Connectors.ServiceAccount != nil &&
-			len(o.Cluster.Connectors.ServiceAccount.Annotations) > 0
-	}},
-	{pluginsv1alpha1.SlotVolumeEncryption, "spec.cluster.zeebe.storageClassName", func(o Overrides) bool {
-		return o.Cluster != nil && o.Cluster.Zeebe != nil && o.Cluster.Zeebe.StorageClassName != nil &&
-			*o.Cluster.Zeebe.StorageClassName != ""
-	}},
+	{
+		slot: pluginsv1alpha1.SlotExternalAccess,
+		path: "spec.cluster.externalUrl",
+		isSet: func(o Overrides) bool {
+			return o.Cluster != nil && o.Cluster.ExternalURL != ""
+		},
+	},
+	{
+		slot: pluginsv1alpha1.SlotExternalAccess,
+		path: "spec.attachments.optimize.externalUrl",
+		isSet: func(o Overrides) bool {
+			return o.Optimize != nil && o.Optimize.ExternalURL != ""
+		},
+	},
+	{
+		slot: pluginsv1alpha1.SlotExternalAccess,
+		path: "spec.management.identityProvider.keycloak.externalUrl",
+		isSet: func(o Overrides) bool {
+			return o.Management != nil && o.Management.IdentityProvider.Keycloak != nil &&
+				o.Management.IdentityProvider.Keycloak.ExternalURL != ""
+		},
+	},
+	{
+		slot: pluginsv1alpha1.SlotExternalAccess,
+		path: "spec.management.identity.externalUrl",
+		isSet: func(o Overrides) bool {
+			return o.Management != nil && o.Management.Identity.ExternalURL != ""
+		},
+	},
+	{
+		slot: pluginsv1alpha1.SlotExternalAccess,
+		path: "spec.management.console.externalUrl",
+		isSet: func(o Overrides) bool {
+			return o.Management != nil && o.Management.Console != nil && o.Management.Console.ExternalURL != ""
+		},
+	},
+	{
+		slot: pluginsv1alpha1.SlotExternalAccess,
+		path: "spec.management.webModeler.externalUrl",
+		isSet: func(o Overrides) bool {
+			return o.Management != nil && o.Management.WebModeler != nil && o.Management.WebModeler.ExternalURL != ""
+		},
+	},
+	{
+		slot: pluginsv1alpha1.SlotExternalAccess,
+		path: "spec.management.webModeler.websocketsExternalUrl",
+		isSet: func(o Overrides) bool {
+			return o.Management != nil && o.Management.WebModeler != nil &&
+				o.Management.WebModeler.WebsocketsExternalURL != ""
+		},
+	},
+	{
+		slot: pluginsv1alpha1.SlotWorkloadIdentity,
+		path: "spec.cluster.serviceAccount.annotations",
+		isSet: func(o Overrides) bool {
+			return o.Cluster != nil && o.Cluster.ServiceAccount != nil && len(o.Cluster.ServiceAccount.Annotations) > 0
+		},
+	},
+	{
+		slot: pluginsv1alpha1.SlotConnectorsIdentity,
+		path: "spec.cluster.connectors.serviceAccount.annotations",
+		isSet: func(o Overrides) bool {
+			return o.Cluster != nil && o.Cluster.Connectors != nil && o.Cluster.Connectors.ServiceAccount != nil &&
+				len(o.Cluster.Connectors.ServiceAccount.Annotations) > 0
+		},
+	},
+	{
+		slot: pluginsv1alpha1.SlotVolumeEncryption,
+		path: "spec.cluster.zeebe.storageClassName",
+		isSet: func(o Overrides) bool {
+			return o.Cluster != nil && o.Cluster.Zeebe != nil && o.Cluster.Zeebe.StorageClassName != nil &&
+				*o.Cluster.Zeebe.StorageClassName != ""
+		},
+	},
 }
 
 // CheckSlotConflicts refuses with SlotConflict the first field of overrides

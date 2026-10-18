@@ -95,6 +95,27 @@ type slotField struct {
 	object bool
 }
 
+func (f slotField) value(output string) (*apiextensionsv1.JSON, error) {
+	if f.object {
+		var object map[string]json.RawMessage
+		if json.Unmarshal([]byte(output), &object) != nil || object == nil {
+			return nil, errNotAnObject
+		}
+		raw, err := json.Marshal(object)
+		if err != nil {
+			return nil, err
+		}
+		return &apiextensionsv1.JSON{Raw: raw}, nil
+	}
+
+	raw, err := json.Marshal(f.prefix + output + f.suffix)
+	if err != nil {
+		return nil, err
+	}
+
+	return &apiextensionsv1.JSON{Raw: raw}, nil
+}
+
 var (
 	clusterClaim = pluginsv1alpha1.ClaimKindCamundaClusterClaim
 	planeClaim   = pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim
@@ -227,27 +248,6 @@ func sectionOf(name string, sections []pluginsv1alpha1.PluginSection) (*pluginsv
 	}
 
 	return nil, refuse(v1.ReasonInvalidReference, "PluginSection %q does not exist", name)
-}
-
-func (f slotField) value(output string) (*apiextensionsv1.JSON, error) {
-	if f.object {
-		var object map[string]json.RawMessage
-		if json.Unmarshal([]byte(output), &object) != nil || object == nil {
-			return nil, errNotAnObject
-		}
-		raw, err := json.Marshal(object)
-		if err != nil {
-			return nil, err
-		}
-		return &apiextensionsv1.JSON{Raw: raw}, nil
-	}
-
-	raw, err := json.Marshal(f.prefix + output + f.suffix)
-	if err != nil {
-		return nil, err
-	}
-
-	return &apiextensionsv1.JSON{Raw: raw}, nil
 }
 
 // TargetServiceAccount returns the ServiceAccount that a request of claim in

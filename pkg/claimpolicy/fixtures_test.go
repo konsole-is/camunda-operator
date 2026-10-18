@@ -89,7 +89,11 @@ func TestCheckResult(t *testing.T) {
 
 	f := fixture{Path: "case.json", Result: json.RawMessage(`{"value":{"a":1,"b":[1,2]}}`)}
 
-	assert.NoError(t, checkResult(f, []byte(`{"value":{"b":[1,2],"a":1.0}}`)), "key order and number form do not matter")
+	assert.NoError(
+		t,
+		checkResult(f, []byte(`{"value":{"b":[1,2],"a":1.0}}`)),
+		"key order and number form do not matter",
+	)
 	assert.ErrorContains(t, checkResult(f, []byte(`{"value":{"a":2,"b":[1,2]}}`)), "case.json")
 
 	f.Result = nil
