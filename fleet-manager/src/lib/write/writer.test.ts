@@ -139,6 +139,41 @@ describe("directWriter", () => {
     expect(requests).toBe(0);
   });
 
+  it.each([".", "..", ""])(
+    "refuses the name and the namespace %j without a request",
+    async (segment) => {
+      const result = await directWriter(kc).apply({
+        intent: "Write objects with path segments as names",
+        apply: [
+          {
+            apiVersion: "v1",
+            kind: "Secret",
+            metadata: { name: segment, namespace: "team-a" },
+          },
+          {
+            apiVersion: "v1",
+            kind: "Secret",
+            metadata: { name: "git", namespace: segment },
+          },
+        ],
+        delete: [
+          {
+            apiVersion: "v1",
+            kind: "Secret",
+            namespace: "team-a",
+            name: segment,
+          },
+        ],
+      });
+
+      expect(result).toMatchObject({
+        ok: false,
+        errors: [{ code: "Invalid" }, { code: "Invalid" }, { code: "Invalid" }],
+      });
+      expect(requests).toBe(0);
+    },
+  );
+
   it("returns Unavailable when the API server is not reachable", async () => {
     const result = await directWriter(closed).apply({
       intent: "Create the environment prod",

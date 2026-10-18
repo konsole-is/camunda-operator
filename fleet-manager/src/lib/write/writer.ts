@@ -43,6 +43,8 @@ export const WriteOnlyKindMap = {
   },
 } as const satisfies Record<string, KindInfo>;
 
+const notAName = new Set<string | undefined>(["", ".", ".."]);
+
 const hiddenValue = "(hidden)";
 const changedValue = "(changed)";
 
@@ -329,6 +331,18 @@ function refusalOf(ref: ObjectRef): ApiError[] {
       {
         code: "Invalid",
         message: `The fleet manager does not write ${ref.kind} ${ref.apiVersion}.`,
+        ref,
+      },
+    ];
+  }
+  // objectPath does not encode "." and "..", and new URL resolves them as
+  // path segments, so such a name would address the namespace or the
+  // collection.
+  if ([ref.name, ref.namespace].some((part) => notAName.has(part))) {
+    return [
+      {
+        code: "Invalid",
+        message: `The name or the namespace of the ${ref.kind} is not a valid name.`,
         ref,
       },
     ];
