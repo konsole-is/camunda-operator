@@ -1,7 +1,7 @@
 import type { KubernetesObject } from "@kubernetes/client-node";
 import { describe, expect, it, vi } from "vitest";
 import type { CacheListener, ResourceCache } from "./cache";
-import { parseWatchRequest, watchStream } from "./watch";
+import { parseWatchRequest, parseWatchRequests, watchStream } from "./watch";
 
 const params = (query: string) => new URLSearchParams(query);
 
@@ -38,6 +38,100 @@ describe("parseWatchRequest", () => {
   });
 });
 
+describe("parseWatchRequests", () => {
+  it("reads each watch with the rules of one watch", () => {
+    expect(
+      parseWatchRequests(
+        params(
+          `watch=${encodeURIComponent("kind=Pod&namespace=team")}&watch=${encodeURIComponent("kind=Environment")}`,
+        ),
+      ),
+    ).toEqual([
+      {
+        id: "kind=Pod&namespace=team",
+        request: { kinds: ["Pod"], namespace: "team" },
+      },
+      { id: "kind=Environment", request: { kinds: ["Environment"] } },
+    ]);
+  });
+
+  it.each([
+    ["", "Name at least one watch with the parameter watch"],
+    ["kind=Pod", "Name at least one watch with the parameter watch"],
+    [
+      `watch=${encodeURIComponent("kind=Widget")}`,
+      'The fleet manager does not read the kind "Widget"',
+    ],
+    [
+      "watch=kind%3DPod&watch=kind%3DPod",
+      'The watch "kind=Pod" appears more than once',
+    ],
+  ])("refuses %j with a message that names the problem", (query, message) => {
+    expect(() => parseWatchRequests(params(query))).toThrow(message);
+  });
+});
+
+interface Frame {
+  event: string;
+  retry?: number;
+  data: {
+    watch: string;
+    kind: string;
+    type?: string;
+    message?: string;
+    object?: KubernetesObject;
+    objects?: KubernetesObject[];
+  };
+}
+
+// readFrames reads the SSE frames of a stream until it ends or until it has
+// count frames.
+async function readFrames(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  count = Infinity,
+): Promise<{ frames: Frame[]; done: boolean }> {
+  const decoder = new TextDecoder();
+  const frames: Frame[] = [];
+  let buffer = "";
+  while (frames.length < count) {
+    const { value, done } = await reader.read();
+    if (done) return { frames, done: true };
+    buffer += decoder.decode(value);
+    for (
+      let end = buffer.indexOf("\n\n");
+      end >= 0;
+      end = buffer.indexOf("\n\n")
+    ) {
+      const text = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      if (text.startsWith(":")) continue;
+      const retry = /^retry: (\d+)$/m.exec(text)?.[1];
+      frames.push({
+        retry: retry === undefined ? undefined : Number(retry),
+        event: /^event: (.*)$/m.exec(text)![1],
+        data: JSON.parse(/^data: (.*)$/m.exec(text)![1]),
+      });
+    }
+  }
+  return { frames, done: false };
+}
+
+const object = (namespace: string, name: string) =>
+  ({ metadata: { namespace, name } }) as KubernetesObject;
+
+// fakeCache records the listeners of each kind and answers subscribe from
+// answers, one promise per kind.
+function fakeCache(answers: Partial<Record<string, () => Promise<unknown>>>) {
+  const listeners = new Map<string, CacheListener<"Pod">[]>();
+  const cache = {
+    subscribe: vi.fn((kind: string, listener: CacheListener<"Pod">) => {
+      listeners.set(kind, [...(listeners.get(kind) ?? []), listener]);
+      return answers[kind]!();
+    }),
+  } as unknown as ResourceCache;
+  return { cache, listeners };
+}
+
 describe("watchStream", () => {
   it("releases the subscription when the request aborts after the snapshot", async () => {
     const unsubscribe = vi.fn();
@@ -48,7 +142,7 @@ describe("watchStream", () => {
 
     const reader = watchStream(
       cache,
-      { kinds: ["Pod"] },
+      [{ id: "kind=Pod", request: { kinds: ["Pod"] } }],
       abort.signal,
     ).getReader();
     const first = new TextDecoder().decode((await reader.read()).value);
@@ -69,7 +163,7 @@ describe("watchStream", () => {
 
     const reader = watchStream(
       cache,
-      { kinds: ["Pod"] },
+      [{ id: "kind=Pod", request: { kinds: ["Pod"] } }],
       abort.signal,
     ).getReader();
     await vi.waitFor(() => expect(answer).toBeDefined());
@@ -86,7 +180,7 @@ describe("watchStream", () => {
 
     const stream = watchStream(
       {} as ResourceCache,
-      { kinds: ["Pod"] },
+      [{ id: "kind=Pod", request: { kinds: ["Pod"] } }],
       controller.signal,
     );
 
@@ -108,7 +202,7 @@ describe("watchStream", () => {
 
     const stream = watchStream(
       cache,
-      { kinds: ["Pod"] },
+      [{ id: "kind=Pod", request: { kinds: ["Pod"] } }],
       new AbortController().signal,
       { maxPendingBytes: 1_000 },
     );
@@ -120,6 +214,104 @@ describe("watchStream", () => {
     }
 
     expect(unsubscribe).toHaveBeenCalled();
+    await stream.cancel();
+  });
+  it("frames carry the id of their watch", async () => {
+    const pods = [object("team", "x"), object("other", "y")];
+    const { cache, listeners } = fakeCache({
+      Pod: async () => ({ snapshot: pods, unsubscribe: vi.fn() }),
+    });
+    const abort = new AbortController();
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"], namespace: "team" } },
+        { id: "b", request: { kinds: ["Pod"], namespace: "other" } },
+      ],
+      abort.signal,
+    ).getReader();
+
+    const { frames: snapshots } = await readFrames(reader, 2);
+    const snapshotOf = (id: string) =>
+      snapshots.find((f) => f.event === "snapshot" && f.data.watch === id);
+    expect(snapshotOf("a")?.data.objects).toEqual([object("team", "x")]);
+    expect(snapshotOf("b")?.data.objects).toEqual([object("other", "y")]);
+
+    listeners
+      .get("Pod")!
+      .forEach((l) => l("add", object("team", "z") as never));
+    // The stream ends at the abort and keeps the frames it already sent.
+    abort.abort();
+    const { frames: deltas } = await readFrames(reader);
+    expect(deltas).toEqual([
+      {
+        event: "delta",
+        data: {
+          watch: "a",
+          type: "ADDED",
+          kind: "Pod",
+          object: object("team", "z"),
+        },
+      },
+    ]);
+  });
+
+  it("a failing watch does not hold back the snapshot of another watch", async () => {
+    const unsubscribe = vi.fn();
+    let answer: (s: { snapshot: never[]; unsubscribe: () => void }) => void;
+    const { cache } = fakeCache({
+      Pod: async () => {
+        throw new Error("pods are not served");
+      },
+      Service: () => new Promise((resolve) => (answer = resolve)),
+    });
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+    ).getReader();
+
+    const { frames: first } = await readFrames(reader, 1);
+    expect(first).toEqual([
+      {
+        event: "failure",
+        retry: 5_000,
+        data: { watch: "a", kind: "Pod", message: "pods are not served" },
+      },
+    ]);
+    answer!({ snapshot: [], unsubscribe });
+
+    const { frames: rest, done } = await readFrames(reader);
+    expect(rest).toEqual([
+      {
+        event: "snapshot",
+        data: { watch: "b", kind: "Service", objects: [] },
+      },
+    ]);
+    expect(done).toBe(true);
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it("starts every watch before the first snapshot", async () => {
+    const never = () => new Promise(() => {});
+    const { cache } = fakeCache({ Pod: never, Service: never });
+    const stream = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        vi.mocked(cache.subscribe).mock.calls.map(([kind]) => kind),
+      ).toEqual(["Pod", "Service"]),
+    );
     await stream.cancel();
   });
 });

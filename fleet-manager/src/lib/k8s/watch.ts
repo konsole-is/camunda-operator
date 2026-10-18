@@ -5,7 +5,7 @@ import { deltaType, objectKey, type CacheChange } from "./deltas";
 import { isKindName, KindMap, type KindName } from "./kinds";
 import { parseSelector } from "./selector";
 
-/** WatchRequest is what one SSE connection watches. */
+/** WatchRequest is one watch of an SSE connection. */
 export interface WatchRequest {
   kinds: KindName[];
   namespace?: string;
@@ -58,6 +58,35 @@ export function parseWatchRequest(params: URLSearchParams): WatchRequest {
   return { kinds: kinds as KindName[], namespace, labelSelector, name };
 }
 
+/** WatchEntry is one watch of a connection. id is the raw value of its parameter watch. */
+export interface WatchEntry {
+  id: string;
+  request: WatchRequest;
+}
+
+/**
+ * parseWatchRequests reads each value of the parameter watch as the query
+ * string of one watch, with the rules of parseWatchRequest. It throws
+ * WatchRequestError for no watch, for a value that appears twice, and with
+ * the message of parseWatchRequest for a watch that is not valid.
+ */
+export function parseWatchRequests(params: URLSearchParams): WatchEntry[] {
+  const ids = params.getAll("watch");
+  if (ids.length === 0) {
+    throw new WatchRequestError(
+      "Name at least one watch with the parameter watch",
+    );
+  }
+  const seen = new Set<string>();
+  return ids.map((id) => {
+    if (seen.has(id)) {
+      throw new WatchRequestError(`The watch "${id}" appears more than once`);
+    }
+    seen.add(id);
+    return { id, request: parseWatchRequest(new URLSearchParams(id)) };
+  });
+}
+
 export interface WatchStreamOptions {
   heartbeatMs?: number;
   retryMs?: number;
@@ -65,18 +94,22 @@ export interface WatchStreamOptions {
 }
 
 /**
- * watchStream returns the SSE body of one connection. For each kind it sends
- * a frame "snapshot" with the matching objects, then a frame "delta" for each
- * change that a subscriber of the filter sees (see deltaType). A kind that
- * does not sync gets a frame "failure" with the message, and then the stream
- * ends. The frame sets the retry time of EventSource to retryMs. A comment
- * line goes out every heartbeatMs, so idle proxies keep the connection. The
- * stream also ends when signal aborts, and at the next write when more than
- * maxPendingBytes wait unread in its queue.
+ * watchStream returns the SSE body of one connection that serves watches.
+ * Every frame has the field watch, the id of the entry that it answers. The
+ * watches start at once. For each kind of a watch the stream sends a frame
+ * "snapshot" with the matching objects, then a frame "delta" for each change
+ * that a subscriber of the filter sees (see deltaType). A kind that does not
+ * sync gets a frame "failure" with the message, and the later kinds of that
+ * watch do not start. The frame sets the retry time of EventSource to
+ * retryMs. When a watch failed, the stream ends after every watch sent its
+ * snapshots or its failure. A comment line goes out every heartbeatMs, so
+ * idle proxies keep the connection. The stream also ends when signal aborts,
+ * and at the next write when more than maxPendingBytes wait unread in its
+ * queue.
  */
 export function watchStream(
   cache: ResourceCache,
-  request: WatchRequest,
+  watches: WatchEntry[],
   signal: AbortSignal,
   {
     heartbeatMs = 25_000,
@@ -85,11 +118,6 @@ export function watchStream(
   }: WatchStreamOptions = {},
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const matchesLabels = parseSelector(request.labelSelector ?? "");
-  const inFilter = (o: KubernetesObject) =>
-    (!request.namespace || o.metadata?.namespace === request.namespace) &&
-    (!request.name || o.metadata?.name === request.name) &&
-    matchesLabels(o.metadata?.labels);
   const unsubscribes: (() => void)[] = [];
   let heartbeat: NodeJS.Timeout | undefined;
   let closed = false;
@@ -130,55 +158,72 @@ export function watchStream(
           return;
         }
 
-        for (const kind of request.kinds) {
-          const seen = new Set<string>();
-          // Changes that arrive before the snapshot is sent wait here, so the
-          // snapshot always comes first.
-          let queue: [CacheChange, KubernetesObject][] | undefined = [];
-          const deliver = (change: CacheChange, object: KubernetesObject) => {
-            const type = deltaType(
-              seen,
-              change,
-              objectKey(object),
-              inFilter(object),
-            );
-            if (type) send("delta", { type, kind, object });
-          };
-          try {
-            const { snapshot, unsubscribe } = await cache.subscribe(
-              kind,
-              (change, object) => {
-                if (queue) queue.push([change, object as KubernetesObject]);
-                else deliver(change, object as KubernetesObject);
-              },
-            );
-            if (closed) {
-              unsubscribe();
-              return;
-            }
-            unsubscribes.push(unsubscribe);
-            const objects = (snapshot as KubernetesObject[]).filter(inFilter);
-            objects.forEach((o) => seen.add(objectKey(o)));
-            send("snapshot", { kind, objects });
-            const waiting = queue;
-            queue = undefined;
-            waiting.forEach(([change, object]) => deliver(change, object));
-          } catch (error) {
-            send(
-              "failure",
-              {
+        // runWatch resolves false after it sent a failure frame.
+        const runWatch = async ({ id, request }: WatchEntry) => {
+          const matchesLabels = parseSelector(request.labelSelector ?? "");
+          const inFilter = (o: KubernetesObject) =>
+            (!request.namespace ||
+              o.metadata?.namespace === request.namespace) &&
+            (!request.name || o.metadata?.name === request.name) &&
+            matchesLabels(o.metadata?.labels);
+          for (const kind of request.kinds) {
+            const seen = new Set<string>();
+            // Changes that arrive before the snapshot is sent wait here, so
+            // the snapshot always comes first.
+            let queue: [CacheChange, KubernetesObject][] | undefined = [];
+            const deliver = (change: CacheChange, object: KubernetesObject) => {
+              const type = deltaType(
+                seen,
+                change,
+                objectKey(object),
+                inFilter(object),
+              );
+              if (type) send("delta", { watch: id, type, kind, object });
+            };
+            try {
+              const { snapshot, unsubscribe } = await cache.subscribe(
                 kind,
-                message: error instanceof Error ? error.message : String(error),
-              },
-              `retry: ${retryMs}\n`,
-            );
-            end();
-            return;
+                (change, object) => {
+                  if (queue) queue.push([change, object as KubernetesObject]);
+                  else deliver(change, object as KubernetesObject);
+                },
+              );
+              if (closed) {
+                unsubscribe();
+                return true;
+              }
+              unsubscribes.push(unsubscribe);
+              const objects = (snapshot as KubernetesObject[]).filter(inFilter);
+              objects.forEach((o) => seen.add(objectKey(o)));
+              send("snapshot", { watch: id, kind, objects });
+              const waiting = queue;
+              queue = undefined;
+              waiting.forEach(([change, object]) => deliver(change, object));
+            } catch (error) {
+              send(
+                "failure",
+                {
+                  watch: id,
+                  kind,
+                  message:
+                    error instanceof Error ? error.message : String(error),
+                },
+                `retry: ${retryMs}\n`,
+              );
+              return false;
+            }
           }
+          return true;
+        };
+
+        const results = await Promise.all(watches.map(runWatch));
+        if (closed) return;
+        if (results.includes(false)) {
+          // EventSource connects again after the retry of the failure frame.
+          end();
+          return;
         }
-        if (!closed) {
-          heartbeat = setInterval(() => write(": keep-alive\n\n"), heartbeatMs);
-        }
+        heartbeat = setInterval(() => write(": keep-alive\n\n"), heartbeatMs);
       },
       cancel() {
         close();

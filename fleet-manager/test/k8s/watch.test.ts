@@ -19,6 +19,7 @@ interface Frame {
   event: string;
   retry?: number;
   data: {
+    watch: string;
     type?: string;
     kind: string;
     object?: KubernetesObject;
@@ -82,14 +83,20 @@ class Stream {
   }
 }
 
-function open(query: string): { stream: Stream; abort: () => void } {
+// openMany opens one connection with one parameter watch for each query.
+function openMany(queries: string[]): { stream: Stream; abort: () => void } {
   const controller = new AbortController();
+  const params = new URLSearchParams(queries.map((q) => ["watch", q]));
   const response = GET(
-    new Request(`http://localhost/api/watch?${query}`, {
+    new Request(`http://localhost/api/watch?${params}`, {
       signal: controller.signal,
     }),
   );
   return { stream: new Stream(response), abort: () => controller.abort() };
+}
+
+function open(query: string): { stream: Stream; abort: () => void } {
+  return openMany([query]);
 }
 
 const isDelta = (type: string, name: string) => (f: Frame) =>
@@ -247,7 +254,9 @@ describe("GET /api/watch against envtest", () => {
   });
 
   it("answers 400 with the problem for a kind that the app does not read", async () => {
-    const response = GET(new Request("http://localhost/api/watch?kind=Widget"));
+    const response = GET(
+      new Request("http://localhost/api/watch?watch=kind%3DWidget"),
+    );
 
     expect(response.status).toBe(400);
     expect(await response.text()).toBe(
@@ -256,15 +265,55 @@ describe("GET /api/watch against envtest", () => {
   });
 
   it("names a kind that the API server does not serve, then ends the stream so EventSource connects again", async () => {
-    const { stream } = open(
-      `kind=Secret&kind=HTTPRoute&namespace=${namespace}`,
-    );
+    const query = `kind=Secret&kind=HTTPRoute&namespace=${namespace}`;
+    const { stream } = open(query);
 
     const frame = await stream.next((f) => f.event === "failure", 15_000);
     await stream.closed;
 
+    expect(frame.data.watch).toBe(query);
     expect(frame.data.kind).toBe("HTTPRoute");
     expect(JSON.stringify(frame.data)).toMatch(/does not serve HTTPRoute/);
     expect(frame.retry).toBe(5_000);
+  });
+
+  it("one connection serves two watches, and each delta reaches only its watch", async () => {
+    for (const side of ["left", "right"]) {
+      await api.create({
+        apiVersion: "v1",
+        kind: "Secret",
+        metadata: { name: side, namespace, labels: { side } },
+      });
+    }
+    const left = `kind=Secret&namespace=${namespace}&labelSelector=side%3Dleft`;
+    const right = `kind=Secret&namespace=${namespace}&labelSelector=side%3Dright`;
+    const { stream, abort } = openMany([left, right]);
+    for (const query of [left, right]) {
+      await stream.next(
+        (f) => f.event === "snapshot" && f.data.watch === query,
+        15_000,
+      );
+    }
+
+    await api.create({
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "left-2", namespace, labels: { side: "left" } },
+    });
+
+    await stream.next(
+      (f) => isDelta("ADDED", "left-2")(f) && f.data.watch === left,
+      5_000,
+    );
+    await expect(
+      stream.next(
+        (f) =>
+          f.data.watch === right &&
+          (f.data.object?.metadata?.name === "left-2" ||
+            !!f.data.objects?.some((o) => o.metadata?.name === "left-2")),
+        0,
+      ),
+    ).rejects.toThrow("No matching SSE frame");
+    abort();
   });
 });
