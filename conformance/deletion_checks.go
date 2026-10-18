@@ -34,8 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // The IDs of the ordering and deletion checks.
@@ -147,7 +147,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) error {
 		return err
 	}
 
-	if _, err := waitForOutputsReady(ctx, s, run.name, true); err != nil {
+	if err := waitForOutputsReady(ctx, s, run.name, true); err != nil {
 		return fmt.Errorf("request %s: %w", run.name, err)
 	}
 
@@ -215,7 +215,7 @@ func scaleToZero(ctx context.Context, s *suite, deployments []scaledDeployment) 
 }
 
 func scaleBack(ctx context.Context, s *suite, deployments []scaledDeployment) error {
-	var errs []error
+	errs := make([]error, 0, len(deployments))
 	for _, d := range deployments {
 		errs = append(errs, scale(ctx, s, d.key, d.replicas))
 	}
@@ -256,7 +256,10 @@ func deleteRegistration(ctx context.Context, s *suite, name string) error {
 // startOrderRecorder records when the registration name has Ready=True, and
 // when the request gets the cleanup finalizer or an output.
 func startOrderRecorder(ctx context.Context, s *suite, registration, request string) (*recorder, error) {
-	c, err := client.NewWithWatch(s.restConfig, client.Options{Scheme: s.client.Scheme(), Mapper: s.client.RESTMapper()})
+	c, err := client.NewWithWatch(
+		s.restConfig,
+		client.Options{Scheme: s.client.Scheme(), Mapper: s.client.RESTMapper()},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("connecting the watches of the check: %w", err)
 	}
@@ -264,25 +267,30 @@ func startOrderRecorder(ctx context.Context, s *suite, registration, request str
 	watchCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	rec := &recorder{stop: cancel}
 
-	err = rec.watch(watchCtx, c, &pluginsv1alpha1.PluginRegistrationList{}, func(obj client.Object) string {
-		reg, ok := obj.(*pluginsv1alpha1.PluginRegistration)
-		if ok && meta.IsStatusConditionTrue(reg.Status.Conditions, v1.ConditionReady) {
-			return registrationReadyKey
-		}
-		return ""
-	}, client.MatchingFields{"metadata.name": registration})
+	err = rec.watch(
+		watchCtx, c, &pluginsv1alpha1.PluginRegistrationList{}, func(obj client.Object) string {
+			reg, ok := obj.(*pluginsv1alpha1.PluginRegistration)
+			if ok && meta.IsStatusConditionTrue(reg.Status.Conditions, v1.ConditionReady) {
+				return registrationReadyKey
+			}
+			return ""
+		}, client.MatchingFields{"metadata.name": registration},
+	)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("watching the PluginRegistration %s: %w", registration, err)
 	}
 
-	err = rec.watch(watchCtx, c, &pluginsv1alpha1.PluginRequestList{}, func(obj client.Object) string {
-		req, ok := obj.(*pluginsv1alpha1.PluginRequest)
-		if ok && (controllerutil.ContainsFinalizer(req, pluginsv1alpha1.FinalizerCleanup) || len(req.Status.Outputs) > 0) {
-			return requestServedKey
-		}
-		return ""
-	}, client.InNamespace(s.cfg.Namespace), client.MatchingFields{"metadata.name": request})
+	err = rec.watch(
+		watchCtx, c, &pluginsv1alpha1.PluginRequestList{}, func(obj client.Object) string {
+			req, ok := obj.(*pluginsv1alpha1.PluginRequest)
+			if ok &&
+				(controllerutil.ContainsFinalizer(req, pluginsv1alpha1.FinalizerCleanup) || len(req.Status.Outputs) > 0) {
+				return requestServedKey
+			}
+			return ""
+		}, client.InNamespace(s.cfg.Namespace), client.MatchingFields{"metadata.name": request},
+	)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("watching the PluginRequest %s: %w", request, err)
@@ -329,20 +337,25 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 			return err
 		}
 
-		return waitFor(ctx, s.cfg.Timeouts.Deletion, "the objects of the request to be gone", func(ctx context.Context) error {
-			var problems []string
-			for _, obj := range objs {
-				current, err := s.current(ctx, obj)
-				if err != nil {
-					return err
+		return waitFor(
+			ctx,
+			s.cfg.Timeouts.Deletion,
+			"the objects of the request to be gone",
+			func(ctx context.Context) error {
+				var problems []string
+				for _, obj := range objs {
+					current, err := s.current(ctx, obj)
+					if err != nil {
+						return err
+					}
+					if current != nil {
+						problems = append(problems, objectRef(obj)+" still exists")
+					}
 				}
-				if current != nil {
-					problems = append(problems, objectRef(obj)+" still exists")
-				}
-			}
 
-			return problemsError(problems)
-		})
+				return problemsError(problems)
+			},
+		)
 	})
 }
 
@@ -463,16 +476,23 @@ func checkDeleteRoutes(ctx context.Context, s *suite) error {
 				continue
 			}
 
-			errs = append(errs, waitFor(ctx, s.cfg.Timeouts.Deletion, "the route to be gone", func(ctx context.Context) error {
-				current, err := s.current(ctx, obj)
-				if err != nil {
-					return err
-				}
-				if current != nil {
-					return fmt.Errorf("%s routes to the missing Service %s and still exists", objectRef(obj), missing[0])
-				}
-				return nil
-			}))
+			errs = append(
+				errs,
+				waitFor(ctx, s.cfg.Timeouts.Deletion, "the route to be gone", func(ctx context.Context) error {
+					current, err := s.current(ctx, obj)
+					if err != nil {
+						return err
+					}
+					if current != nil {
+						return fmt.Errorf(
+							"%s routes to the missing Service %s and still exists",
+							objectRef(obj),
+							missing[0],
+						)
+					}
+					return nil
+				}),
+			)
 		}
 
 		return errors.Join(errs...)

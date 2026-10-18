@@ -58,7 +58,12 @@ func pluginKinds(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccoun
 
 		var role rbacv1.ClusterRole
 		if err := s.client.Get(ctx, client.ObjectKey{Name: b.RoleRef.Name}, &role); err != nil {
-			return nil, fmt.Errorf("getting the ClusterRole %s of the ClusterRoleBinding %s: %w", b.RoleRef.Name, b.Name, err)
+			return nil, fmt.Errorf(
+				"getting the ClusterRole %s of the ClusterRoleBinding %s: %w",
+				b.RoleRef.Name,
+				b.Name,
+				err,
+			)
 		}
 		rules = append(rules, role.Rules...)
 	}

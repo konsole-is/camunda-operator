@@ -91,7 +91,7 @@ func TestOrderVerdict(t *testing.T) {
 	registration.Kind = "PluginRegistration"
 	registration.Name = "echo-1"
 	request := testRequest()
-	request.Kind = "PluginRequest"
+	request.Kind = kindPluginRequest
 
 	at := func(obj interface{ SetResourceVersion(string) }, rv string) {
 		obj.SetResourceVersion(rv)
@@ -151,7 +151,11 @@ func TestOrphanProblems(t *testing.T) {
 	req := testRequest()
 	kept := pluginsv1alpha1.ResourceRef{Kind: "ConfigMap", Name: "x", OnOrphan: pluginsv1alpha1.OnOrphanKept}
 	deleted := pluginsv1alpha1.ResourceRef{Kind: "Ingress", Name: "x", OnOrphan: pluginsv1alpha1.OnOrphanDeleted}
-	keptClusterScoped := pluginsv1alpha1.ResourceRef{Kind: "StorageClass", Name: "x", OnOrphan: pluginsv1alpha1.OnOrphanKept}
+	keptClusterScoped := pluginsv1alpha1.ResourceRef{
+		Kind:     "StorageClass",
+		Name:     "x",
+		OnOrphan: pluginsv1alpha1.OnOrphanKept,
+	}
 
 	tests := []struct {
 		name    string

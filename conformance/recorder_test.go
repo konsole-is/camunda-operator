@@ -50,7 +50,7 @@ func TestRecorderKeepsTheEarliestResourceVersionOfAKey(t *testing.T) {
 func TestFinalizerProblem(t *testing.T) {
 	withFinalizer := func(resourceVersion string) *pluginsv1alpha1.PluginRequest {
 		req := &pluginsv1alpha1.PluginRequest{}
-		req.Kind = "PluginRequest"
+		req.Kind = kindPluginRequest
 		req.Name = "basic-delete"
 		req.ResourceVersion = resourceVersion
 		return req

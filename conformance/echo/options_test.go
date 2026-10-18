@@ -44,9 +44,17 @@ func TestNewRefusesAnIncompleteOption(t *testing.T) {
 		{"no registration", func(o *Options) { o.Registration = "" }, "Registration"},
 		{"no sections", func(o *Options) { o.Sections = nil }, "Sections"},
 		{"no ServiceAccount name", func(o *Options) { o.ServiceAccount.Name = "" }, "ServiceAccount.Name"},
-		{"no ServiceAccount namespace", func(o *Options) { o.ServiceAccount.Namespace = "" }, "ServiceAccount.Namespace"},
+		{
+			"no ServiceAccount namespace",
+			func(o *Options) { o.ServiceAccount.Namespace = "" },
+			"ServiceAccount.Namespace",
+		},
 		{"an output without a key", func(o *Options) { o.Outputs[0].Key = "" }, "Outputs[0].Key"},
-		{"an output from an unknown input", func(o *Options) { o.Outputs[0].FromInput = "other" }, `Outputs[0].FromInput`},
+		{
+			"an output from an unknown input",
+			func(o *Options) { o.Outputs[0].FromInput = "other" },
+			`Outputs[0].FromInput`,
+		},
 		{"an unknown defect", func(o *Options) { o.Defect = "Broken" }, `Defect "Broken"`},
 	}
 

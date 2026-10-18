@@ -84,20 +84,27 @@ func TestRequestForWritesTheRequestOfARun(t *testing.T) {
 
 	assert.Equal(t, "basic-orphan", req.Name)
 	assert.Equal(t, "ns", req.Namespace)
-	assert.Equal(t, map[string]string{
-		pluginsv1alpha1.LabelSection:      "echo",
-		pluginsv1alpha1.LabelRegistration: "echo-1",
-		fleetv1alpha1.LabelClaim:          claimName,
-	}, req.Labels)
-	assert.Equal(t, pluginsv1alpha1.PluginRequestSpec{
-		Section:        "echo",
-		Registration:   "echo-1",
-		ClaimRef:       pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: claimName},
-		Target:         run.tc.Target,
-		Inputs:         run.tc.Inputs,
-		Parameters:     params,
-		DeletionPolicy: pluginsv1alpha1.DeletionPolicyOrphan,
-	}, req.Spec)
+	assert.Equal(
+		t, map[string]string{
+			pluginsv1alpha1.LabelSection:      "echo",
+			pluginsv1alpha1.LabelRegistration: "echo-1",
+			fleetv1alpha1.LabelClaim:          claimName,
+		}, req.Labels,
+	)
+	assert.Equal(
+		t, pluginsv1alpha1.PluginRequestSpec{
+			Section:      "echo",
+			Registration: "echo-1",
+			ClaimRef: pluginsv1alpha1.ClaimRef{
+				Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim,
+				Name: claimName,
+			},
+			Target:         run.tc.Target,
+			Inputs:         run.tc.Inputs,
+			Parameters:     params,
+			DeletionPolicy: pluginsv1alpha1.DeletionPolicyOrphan,
+		}, req.Spec,
+	)
 }
 
 func TestRequestForUsesThePlaneClaimForASectionOfPlanesOnly(t *testing.T) {

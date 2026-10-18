@@ -29,8 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
-	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 func TestOutputProblems(t *testing.T) {
@@ -77,11 +77,18 @@ func TestReadyVerdict(t *testing.T) {
 	}{
 		{name: "Ready=True", ready: ready(metav1.ConditionTrue, v1.ReasonHealthy)},
 		{name: "no Ready", message: "has no Ready condition"},
-		{name: "Ready=False with another reason", ready: ready(metav1.ConditionFalse, "EchoDefect"), message: "EchoDefect"},
 		{
-			name:   "GrantRejected with a failed Grant",
-			ready:  ready(metav1.ConditionFalse, pluginsv1alpha1.ReasonGrantRejected),
-			grants: []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue), grantWithReady(metav1.ConditionFalse)},
+			name:    "Ready=False with another reason",
+			ready:   ready(metav1.ConditionFalse, "EchoDefect"),
+			message: "EchoDefect",
+		},
+		{
+			name:  "GrantRejected with a failed Grant",
+			ready: ready(metav1.ConditionFalse, pluginsv1alpha1.ReasonGrantRejected),
+			grants: []pluginsv1alpha1.Grant{
+				grantWithReady(metav1.ConditionTrue),
+				grantWithReady(metav1.ConditionFalse),
+			},
 		},
 		{
 			name:    "GrantRejected without a failed Grant",
@@ -113,7 +120,11 @@ func testRequest() *pluginsv1alpha1.PluginRequest {
 	return req
 }
 
-func written(kind, namespace, name string, labels map[string]string, owners ...metav1.OwnerReference) *unstructured.Unstructured {
+func written(
+	kind, namespace, name string,
+	labels map[string]string,
+	owners ...metav1.OwnerReference,
+) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{}
 	obj.SetKind(kind)
 	obj.SetNamespace(namespace)
@@ -133,7 +144,7 @@ func writerLabels() map[string]string {
 func ownerOf(req *pluginsv1alpha1.PluginRequest) metav1.OwnerReference {
 	return metav1.OwnerReference{
 		APIVersion: pluginsv1alpha1.GroupVersion.String(),
-		Kind:       "PluginRequest",
+		Kind:       kindPluginRequest,
 		Name:       req.Name,
 		UID:        req.UID,
 	}
@@ -165,8 +176,10 @@ func TestLabelProblems(t *testing.T) {
 		},
 		{
 			name: "an object without the registration label",
-			obj: written("ConfigMap", "ns", "x", map[string]string{pluginsv1alpha1.LabelRequest: "basic-delete"},
-				ownerOf(req)),
+			obj: written(
+				"ConfigMap", "ns", "x", map[string]string{pluginsv1alpha1.LabelRequest: "basic-delete"},
+				ownerOf(req),
+			),
 			contains: []string{`ConfigMap ns/x has no label plugins.camunda.io/registration: "echo-1"`},
 		},
 		{
@@ -244,8 +257,11 @@ func TestDisplayProblems(t *testing.T) {
 		{name: "a full status", change: func(*pluginsv1alpha1.PluginRequestStatus) {}},
 		{name: "an empty summary", change: func(s *pluginsv1alpha1.PluginRequestStatus) { s.Summary = nil },
 			message: "status.summary has no item"},
-		{name: "an unknown severity", change: func(s *pluginsv1alpha1.PluginRequestStatus) { s.Summary[0].Severity = "Fatal" },
-			message: `"Fatal"`},
+		{
+			name:    "an unknown severity",
+			change:  func(s *pluginsv1alpha1.PluginRequestStatus) { s.Summary[0].Severity = "Fatal" },
+			message: `"Fatal"`,
+		},
 		{name: "no summaryTime", change: func(s *pluginsv1alpha1.PluginRequestStatus) { s.SummaryTime = nil },
 			message: "status.summaryTime is not set"},
 		{name: "a relative link", change: func(s *pluginsv1alpha1.PluginRequestStatus) { s.Links[0].URL = "/bucket" },
@@ -303,13 +319,22 @@ func TestLogProblems(t *testing.T) {
 
 func TestAcceptedProblem(t *testing.T) {
 	since := metav1.NewTime(time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC))
-	accepted := &metav1.Condition{Type: "Accepted", Status: metav1.ConditionTrue, Reason: "Healthy", LastTransitionTime: since}
+	accepted := &metav1.Condition{
+		Type:               "Accepted",
+		Status:             metav1.ConditionTrue,
+		Reason:             "Healthy",
+		LastTransitionTime: since,
+	}
 	changed := accepted.DeepCopy()
 	changed.Reason = "SectionMissing"
 	changed.Status = metav1.ConditionFalse
 
 	assert.NoError(t, acceptedProblem(accepted, accepted.DeepCopy()))
-	assert.ErrorContains(t, acceptedProblem(nil, accepted), "the registration had no Accepted condition when the run started")
+	assert.ErrorContains(
+		t,
+		acceptedProblem(nil, accepted),
+		"the registration had no Accepted condition when the run started",
+	)
 	assert.ErrorContains(t, acceptedProblem(accepted, nil), "the registration has no Accepted condition any more")
 	assert.ErrorContains(t, acceptedProblem(accepted, changed), "False, reason SectionMissing")
 }

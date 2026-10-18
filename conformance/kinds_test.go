@@ -53,11 +53,13 @@ func TestKindsOfExpandsWildcardsAndDropsSubresources(t *testing.T) {
 
 	got := kindsOf(rules, resources)
 
-	assert.Equal(t, []kindInfo{
-		{gvk: schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, namespaced: true},
-		{gvk: schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "CSIDriver"}},
-		{gvk: schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "StorageClass"}},
-	}, got)
+	assert.Equal(
+		t, []kindInfo{
+			{gvk: schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, namespaced: true},
+			{gvk: schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "CSIDriver"}},
+			{gvk: schema.GroupVersionKind{Group: "storage.k8s.io", Version: "v1", Kind: "StorageClass"}},
+		}, got,
+	)
 }
 
 func TestKindsOfDropsAResourceThatCannotBeListed(t *testing.T) {
@@ -76,6 +78,16 @@ func TestBindsServiceAccountMatchesKindNameAndNamespace(t *testing.T) {
 	sa := rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Name: "echo", Namespace: "plugins"}
 
 	assert.True(t, bindsServiceAccount([]rbacv1.Subject{{Kind: "User", Name: "x"}, sa}, "plugins", "echo"))
-	assert.False(t, bindsServiceAccount([]rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: "echo", Namespace: "other"}}, "plugins", "echo"))
-	assert.False(t, bindsServiceAccount([]rbacv1.Subject{{Kind: "User", Name: "echo", Namespace: "plugins"}}, "plugins", "echo"))
+	assert.False(
+		t,
+		bindsServiceAccount(
+			[]rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: "echo", Namespace: "other"}},
+			"plugins",
+			"echo",
+		),
+	)
+	assert.False(
+		t,
+		bindsServiceAccount([]rbacv1.Subject{{Kind: "User", Name: "echo", Namespace: "plugins"}}, "plugins", "echo"),
+	)
 }

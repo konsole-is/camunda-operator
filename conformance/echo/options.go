@@ -140,9 +140,15 @@ func (o Options) validate() error {
 			errs = append(errs, fmt.Errorf("option Outputs[%d].Key is empty", i))
 		}
 
-		declared := slices.ContainsFunc(o.Inputs, func(in pluginsv1alpha1.InputDecl) bool { return in.Name == out.FromInput })
+		declared := slices.ContainsFunc(
+			o.Inputs,
+			func(in pluginsv1alpha1.InputDecl) bool { return in.Name == out.FromInput },
+		)
 		if out.FromInput != "" && !declared {
-			errs = append(errs, fmt.Errorf("option Outputs[%d].FromInput names %q, which Inputs does not declare", i, out.FromInput))
+			errs = append(
+				errs,
+				fmt.Errorf("option Outputs[%d].FromInput names %q, which Inputs does not declare", i, out.FromInput),
+			)
 		}
 	}
 

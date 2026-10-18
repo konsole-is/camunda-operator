@@ -138,7 +138,13 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 	for _, run := range runs {
 		req := requestFor(reg.Name, &section, s.cfg.Namespace, run)
 		if err := s.client.Create(ctx, req); err != nil {
-			return nil, fmt.Errorf("creating the PluginRequest %s/%s of case %q: %w", req.Namespace, req.Name, run.caseName, err)
+			return nil, fmt.Errorf(
+				"creating the PluginRequest %s/%s of case %q: %w",
+				req.Namespace,
+				req.Name,
+				run.caseName,
+				err,
+			)
 		}
 	}
 
@@ -227,7 +233,10 @@ func startRecorder(
 	kinds []kindInfo,
 	runs []requestRun,
 ) (*recorder, map[types.UID]bool, error) {
-	c, err := client.NewWithWatch(s.restConfig, client.Options{Scheme: s.client.Scheme(), Mapper: s.client.RESTMapper()})
+	c, err := client.NewWithWatch(
+		s.restConfig,
+		client.Options{Scheme: s.client.Scheme(), Mapper: s.client.RESTMapper()},
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connecting the watches of the run: %w", err)
 	}
@@ -246,12 +255,14 @@ func startRecorder(
 	watchCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	rec := &recorder{stop: cancel}
 
-	err = rec.watch(watchCtx, c, &pluginsv1alpha1.PluginRequestList{}, func(obj client.Object) string {
-		if controllerutil.ContainsFinalizer(obj, pluginsv1alpha1.FinalizerCleanup) {
-			return finalizerKey(obj.GetName())
-		}
-		return ""
-	}, client.InNamespace(s.cfg.Namespace))
+	err = rec.watch(
+		watchCtx, c, &pluginsv1alpha1.PluginRequestList{}, func(obj client.Object) string {
+			if controllerutil.ContainsFinalizer(obj, pluginsv1alpha1.FinalizerCleanup) {
+				return finalizerKey(obj.GetName())
+			}
+			return ""
+		}, client.InNamespace(s.cfg.Namespace),
+	)
 	if err != nil {
 		cancel()
 		return nil, nil, fmt.Errorf("watching the PluginRequests of the run: %w", err)
@@ -275,9 +286,11 @@ func startRecorder(
 		list.SetGroupVersionKind(listKind)
 		after := &client.ListOptions{Raw: &metav1.ListOptions{ResourceVersion: existing.GetResourceVersion()}}
 
-		err := rec.watch(watchCtx, c, list, func(obj client.Object) string {
-			return objectKey(obj.GetLabels()[pluginsv1alpha1.LabelRequest])
-		}, ofRunSelector, after)
+		err := rec.watch(
+			watchCtx, c, list, func(obj client.Object) string {
+				return objectKey(obj.GetLabels()[pluginsv1alpha1.LabelRequest])
+			}, ofRunSelector, after,
+		)
 		if err != nil {
 			cancel()
 			return nil, nil, fmt.Errorf("watching the %s objects of the run: %w", k.gvk.Kind, err)
@@ -290,7 +303,7 @@ func startRecorder(
 // deleteRequests deletes the requests of runs that still exist. It does not
 // wait until they are gone.
 func (s *suite) deleteRequests(ctx context.Context, runs []requestRun) error {
-	var errs []error
+	errs := make([]error, 0, len(runs))
 	for _, r := range runs {
 		req := &pluginsv1alpha1.PluginRequest{}
 		req.Namespace = s.cfg.Namespace

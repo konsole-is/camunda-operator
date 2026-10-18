@@ -33,8 +33,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // The IDs of the lifecycle checks.
@@ -51,12 +51,16 @@ const (
 	CheckRequestAcceptedKept CheckID = "REQ-ACCEPTED-KEPT"
 )
 
+// kindPluginRequest is the kind of an owner reference to a request.
+const kindPluginRequest = "PluginRequest"
+
 // lifecycleChecks run for each request of the run, in this order.
 var lifecycleChecks = []Check{
 	{
-		ID:          CheckRequestFinalizer,
-		Description: "The request gets the finalizer plugins.camunda.io/cleanup before any object that the plugin writes for it.",
-		run:         checkFinalizer,
+		ID: CheckRequestFinalizer,
+		Description: "The request gets the finalizer plugins.camunda.io/cleanup before any object that the " +
+			"plugin writes for it.",
+		run: checkFinalizer,
 	},
 	{
 		ID:          CheckRequestOutputsReady,
@@ -104,9 +108,10 @@ var lifecycleChecks = []Check{
 		run:       checkLogs,
 	},
 	{
-		ID:          CheckRequestAcceptedKept,
-		Description: "The registration keeps the Accepted condition of the registry controller while the plugin serves requests.",
-		run:         checkAcceptedKept,
+		ID: CheckRequestAcceptedKept,
+		Description: "The registration keeps the Accepted condition of the registry controller while the " +
+			"plugin serves requests.",
+		run: checkAcceptedKept,
 	},
 }
 
@@ -119,7 +124,7 @@ func checkFinalizer(ctx context.Context, s *suite) error {
 	return eachRun(life.runs, func(r requestRun) error {
 		// A request that never gets outputs fails REQ-OUTPUTS-READY. This
 		// check only needs the plugin to have written its objects.
-		_, _ = waitForOutputsReady(ctx, s, r.name, false)
+		_ = waitForOutputsReady(ctx, s, r.name, false)
 
 		return finalizerProblem(life.rec, r.name)
 	})
@@ -132,8 +137,7 @@ func checkOutputsReady(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(life.runs, func(r requestRun) error {
-		_, err := waitForOutputsReady(ctx, s, r.name, true)
-		return err
+		return waitForOutputsReady(ctx, s, r.name, true)
 	})
 }
 
@@ -144,7 +148,7 @@ func checkOutputs(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(life.runs, func(r requestRun) error {
-		_, _ = waitForOutputsReady(ctx, s, r.name, false)
+		_ = waitForOutputsReady(ctx, s, r.name, false)
 
 		req, err := s.request(ctx, r.name)
 		if err != nil {
@@ -180,7 +184,10 @@ func checkReady(ctx context.Context, s *suite) error {
 			}
 
 			owned := slices.DeleteFunc(grants.Items, func(g pluginsv1alpha1.Grant) bool {
-				return !slices.ContainsFunc(g.OwnerReferences, func(o metav1.OwnerReference) bool { return o.UID == req.UID })
+				return !slices.ContainsFunc(
+					g.OwnerReferences,
+					func(o metav1.OwnerReference) bool { return o.UID == req.UID },
+				)
 			})
 
 			return readyVerdict(meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady), owned)
@@ -304,7 +311,12 @@ func podSelectorProblem(ctx context.Context, s *suite, req *pluginsv1alpha1.Plug
 	}
 
 	var pods corev1.PodList
-	err = s.client.List(ctx, &pods, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: selector})
+	err = s.client.List(
+		ctx,
+		&pods,
+		client.InNamespace(req.Namespace),
+		client.MatchingLabelsSelector{Selector: selector},
+	)
 	if err != nil {
 		return "", fmt.Errorf("listing the pods of status.podSelector: %w", err)
 	}
@@ -317,9 +329,10 @@ func podSelectorProblem(ctx context.Context, s *suite, req *pluginsv1alpha1.Plug
 }
 
 func podRunningAndReady(p corev1.Pod) bool {
-	return p.Status.Phase == corev1.PodRunning && slices.ContainsFunc(p.Status.Conditions, func(c corev1.PodCondition) bool {
-		return c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue
-	})
+	return p.Status.Phase == corev1.PodRunning &&
+		slices.ContainsFunc(p.Status.Conditions, func(c corev1.PodCondition) bool {
+			return c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue
+		})
 }
 
 func checkLogs(ctx context.Context, s *suite) error {
@@ -369,7 +382,13 @@ func controllerLogLines(
 			opts := &corev1.PodLogOptions{Container: c.Name, SinceTime: &since}
 			raw, err := clientset.CoreV1().Pods(p.Namespace).GetLogs(p.Name, opts).DoRaw(ctx)
 			if err != nil {
-				return nil, fmt.Errorf("reading the log of the container %s of the pod %s/%s: %w", c.Name, p.Namespace, p.Name, err)
+				return nil, fmt.Errorf(
+					"reading the log of the container %s of the pod %s/%s: %w",
+					c.Name,
+					p.Namespace,
+					p.Name,
+					err,
+				)
 			}
 			lines = append(lines, strings.Split(string(raw), "\n")...)
 		}
@@ -389,7 +408,10 @@ func checkAcceptedKept(ctx context.Context, s *suite) error {
 		return err
 	}
 
-	return acceptedProblem(life.accepted, meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted))
+	return acceptedProblem(
+		life.accepted,
+		meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted),
+	)
 }
 
 // eachRun calls check for each run, and joins the errors, each prefixed with
@@ -428,23 +450,15 @@ func (s *suite) request(ctx context.Context, name string) (*pluginsv1alpha1.Plug
 
 // waitForOutputsReady waits for OutputsReady=True on the request name, for
 // its current generation when current is true.
-func waitForOutputsReady(
-	ctx context.Context,
-	s *suite,
-	name string,
-	current bool,
-) (*pluginsv1alpha1.PluginRequest, error) {
-	var req *pluginsv1alpha1.PluginRequest
-	err := waitFor(ctx, s.cfg.Timeouts.OutputsReady, "OutputsReady=True", func(ctx context.Context) error {
-		var err error
-		if req, err = s.request(ctx, name); err != nil {
+func waitForOutputsReady(ctx context.Context, s *suite, name string, current bool) error {
+	return waitFor(ctx, s.cfg.Timeouts.OutputsReady, "OutputsReady=True", func(ctx context.Context) error {
+		req, err := s.request(ctx, name)
+		if err != nil {
 			return err
 		}
 
 		return outputsReadyProblem(req, current)
 	})
-
-	return req, err
 }
 
 func outputsReadyProblem(req *pluginsv1alpha1.PluginRequest, current bool) error {
@@ -557,7 +571,7 @@ func labelProblems(obj *unstructured.Unstructured, request *pluginsv1alpha1.Plug
 }
 
 func isPluginRequestOwner(o metav1.OwnerReference) bool {
-	return o.APIVersion == pluginsv1alpha1.GroupVersion.String() && o.Kind == "PluginRequest"
+	return o.APIVersion == pluginsv1alpha1.GroupVersion.String() && o.Kind == kindPluginRequest
 }
 
 // resourceProblems names each written object that rows does not list, and
@@ -628,7 +642,10 @@ func displayProblems(status pluginsv1alpha1.PluginRequestStatus) []string {
 
 	for _, l := range status.Links {
 		if u, err := url.Parse(l.URL); err != nil || u.Scheme == "" || u.Host == "" {
-			problems = append(problems, fmt.Sprintf("status.links item %q has the URL %q, which is not absolute", l.Name, l.URL))
+			problems = append(
+				problems,
+				fmt.Sprintf("status.links item %q has the URL %q, which is not absolute", l.Name, l.URL),
+			)
 		}
 	}
 
@@ -668,7 +685,10 @@ func logProblems(lines []string, request string) []string {
 	}
 
 	if !found {
-		problems = append(problems, fmt.Sprintf("no log line carries the key request with the request name %q", request))
+		problems = append(
+			problems,
+			fmt.Sprintf("no log line carries the key request with the request name %q", request),
+		)
 	}
 
 	return problems

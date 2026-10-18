@@ -157,20 +157,27 @@ func helperRuns() map[string]helperRun {
 	skipMandatory.Skip = []Skip{{ID: mandatoryID, Reason: "too slow"}}
 
 	registerCleanup := func(err error) Check {
-		return Check{ID: "TEST-CLEANUP", Description: "A check that registers a cleanup.", run: func(_ context.Context, s *suite) error {
-			s.onClose(func(context.Context) error {
-				fmt.Println("cleanup ran")
-				return err
-			})
-			return nil
-		}}
+		return Check{
+			ID:          "TEST-CLEANUP",
+			Description: "A check that registers a cleanup.",
+			run: func(_ context.Context, s *suite) error {
+				s.onClose(func(context.Context) error {
+					fmt.Println("cleanup ran")
+					return err
+				})
+				return nil
+			},
+		}
 	}
 
 	return map[string]helperRun{
 		"cleanup": {
-			cfg:      validConfig(),
-			registry: []Check{registerCleanup(nil), {ID: mandatoryID, Description: "A mandatory check.", run: logRan(mandatoryID)}},
-			connect:  fakeConnect,
+			cfg: validConfig(),
+			registry: []Check{
+				registerCleanup(nil),
+				{ID: mandatoryID, Description: "A mandatory check.", run: logRan(mandatoryID)},
+			},
+			connect: fakeConnect,
 		},
 		"cleanup-fails": {
 			cfg: validConfig(),

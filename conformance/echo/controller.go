@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -32,7 +33,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,19 +40,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // The vocabulary of the controller.
 const (
-	fieldManager      = "conformance-echo"
-	sectionAccess     = "access"
-	reasonEchoDefect  = "EchoDefect"
-	eventReasonApply  = "Applied"
-	eventActionApply  = "Apply"
+	fieldManager       = "conformance-echo"
+	sectionAccess      = "access"
+	reasonEchoDefect   = "EchoDefect"
+	eventReasonApply   = "Applied"
+	eventActionApply   = "Apply"
 	storageProvisioner = "conformance.camunda.io/echo"
-	docsURL           = "https://example.com/echo"
+	docsURL            = "https://example.com/echo"
 )
 
 // Controller is one echo controller. It writes its registration when it
@@ -231,8 +231,8 @@ func (c *Controller) objects(
 		Kind:               "PluginRequest",
 		Name:               req.Name,
 		UID:                req.UID,
-		Controller:         ptr.To(true),
-		BlockOwnerDeletion: ptr.To(true),
+		Controller:         new(true),
+		BlockOwnerDeletion: new(true),
 	}}
 	ownerUnless := func(drop bool) []metav1.OwnerReference {
 		if drop {
@@ -242,9 +242,7 @@ func (c *Controller) objects(
 	}
 
 	data := map[string]string{"message": message(req)}
-	for k, v := range c.outputs(req) {
-		data[k] = v
-	}
+	maps.Copy(data, c.outputs(req))
 
 	cm := &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
@@ -355,9 +353,11 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 	}
 	meta.SetStatusCondition(&status.Conditions, ready)
 
-	summary := []pluginsv1alpha1.SummaryItem{{Label: "Message", Value: message(req), Severity: pluginsv1alpha1.SeverityInfo}}
+	summary := []pluginsv1alpha1.SummaryItem{
+		{Label: "Message", Value: message(req), Severity: pluginsv1alpha1.SeverityInfo},
+	}
 	if status.SummaryTime == nil || !equality.Semantic.DeepEqual(status.Summary, summary) {
-		status.SummaryTime = ptr.To(metav1.Now())
+		status.SummaryTime = new(metav1.Now())
 	}
 	status.Summary = summary
 
@@ -407,7 +407,10 @@ func (c *Controller) resources(req *pluginsv1alpha1.PluginRequest) []pluginsv1al
 		if c.opts.Defect == DefectKeepRouteOnOrphan {
 			onOrphan = pluginsv1alpha1.OnOrphanKept
 		}
-		rows = append(rows, pluginsv1alpha1.ResourceRef{Kind: "Ingress", Name: ing.Name, Role: "route", OnOrphan: onOrphan})
+		rows = append(
+			rows,
+			pluginsv1alpha1.ResourceRef{Kind: "Ingress", Name: ing.Name, Role: "route", OnOrphan: onOrphan},
+		)
 	}
 
 	return rows

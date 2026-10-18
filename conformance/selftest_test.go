@@ -60,7 +60,8 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		Expect(got[CheckDeleteOrphan].err).NotTo(HaveOccurred())
 	})
 
-	ginkgo.DescribeTable("fails exactly the check of each defect, and names the defect",
+	ginkgo.DescribeTable(
+		"fails exactly the check of each defect, and names the defect",
 		func(run func(echo.Defect) Config, defect echo.Defect, id CheckID, message string) {
 			got := runAll(run(defect))
 
@@ -71,20 +72,42 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 				}
 			}
 		},
-		ginkgo.Entry("a late finalizer", echoRun, echo.DefectLateFinalizer, CheckRequestFinalizer, "appeared before the finalizer"),
-		ginkgo.Entry("stale OutputsReady", echoRun, echo.DefectStaleOutputsReady, CheckRequestOutputsReady, "observedGeneration"),
+		ginkgo.Entry(
+			"a late finalizer",
+			echoRun,
+			echo.DefectLateFinalizer,
+			CheckRequestFinalizer,
+			"appeared before the finalizer",
+		),
+		ginkgo.Entry(
+			"stale OutputsReady",
+			echoRun,
+			echo.DefectStaleOutputsReady,
+			CheckRequestOutputsReady,
+			"observedGeneration",
+		),
 		ginkgo.Entry("a missing output", echoRun, echo.DefectMissingOutput, CheckRequestOutputs, `"message"`),
 		ginkgo.Entry("Ready=False", echoRun, echo.DefectNotReady, CheckRequestReady, "EchoDefect"),
 		ginkgo.Entry("no owner reference", echoRun, echo.DefectNoOwnerReference, CheckRequestLabels, "ConfigMap"),
-		ginkgo.Entry("an owner reference on a cluster-scoped object", echoRun, echo.DefectClusterOwnerReference,
-			CheckRequestLabels, "StorageClass"),
-		ginkgo.Entry("an unlisted resource", echoRun, echo.DefectUnlistedResource, CheckRequestResources, "StorageClass"),
+		ginkgo.Entry(
+			"an owner reference on a cluster-scoped object", echoRun, echo.DefectClusterOwnerReference,
+			CheckRequestLabels, "StorageClass",
+		),
+		ginkgo.Entry(
+			"an unlisted resource",
+			echoRun,
+			echo.DefectUnlistedResource,
+			CheckRequestResources,
+			"StorageClass",
+		),
 		ginkgo.Entry("no events", echoRun, echo.DefectNoEvents, CheckRequestEvents, "event"),
 		ginkgo.Entry("a relative link", echoRun, echo.DefectRelativeLink, CheckRequestDisplay, "/echo"),
 		ginkgo.Entry("a dropped Accepted", echoRun, echo.DefectDropAccepted, CheckRequestAcceptedKept, "Accepted"),
 		ginkgo.Entry("objects kept on Delete", echoRun, echo.DefectKeepOnDelete, CheckDeleteDelete, "ConfigMap"),
-		ginkgo.Entry("an owner reference kept on Orphan", echoRun, echo.DefectKeepOwnerOnOrphan, CheckDeleteOrphan,
-			"owner reference"),
+		ginkgo.Entry(
+			"an owner reference kept on Orphan", echoRun, echo.DefectKeepOwnerOnOrphan, CheckDeleteOrphan,
+			"owner reference",
+		),
 		ginkgo.Entry("a route kept on Orphan", accessRun, echo.DefectKeepRouteOnOrphan, CheckDeleteRoutes, "Ingress"),
 	)
 })
