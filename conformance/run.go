@@ -17,12 +17,15 @@ limitations under the License.
 package conformance
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,7 +50,7 @@ func runChecks(
 	t *testing.T,
 	cfg Config,
 	registry []Check,
-	connect func(*rest.Config) (*rest.Config, client.Client, error),
+	connect func(context.Context, *rest.Config) (*rest.Config, client.Client, error),
 ) {
 	t.Helper()
 
@@ -57,7 +60,7 @@ func runChecks(
 		return
 	}
 
-	restConfig, c, err := connect(cfg.RESTConfig)
+	restConfig, c, err := connect(t.Context(), cfg.RESTConfig)
 	if err != nil {
 		t.Errorf("conformance: connecting to the cluster: %v", err)
 		return
@@ -83,10 +86,10 @@ func runChecks(
 	}
 }
 
-// connect returns the REST config of the run and a client for it. A nil
-// restConfig is resolved from the kubeconfig, then from the in-cluster
-// config.
-func connect(restConfig *rest.Config) (*rest.Config, client.Client, error) {
+// connect returns the REST config of the run and a client for it, after
+// the API server answered a request. A nil restConfig is resolved from the
+// kubeconfig, then from the in-cluster config.
+func connect(ctx context.Context, restConfig *rest.Config) (*rest.Config, client.Client, error) {
 	if restConfig == nil {
 		var err error
 		if restConfig, err = config.GetConfig(); err != nil {
@@ -104,8 +107,23 @@ func connect(restConfig *rest.Config) (*rest.Config, client.Client, error) {
 		return nil, nil, err
 	}
 
+	// client.New does not contact the API server.
+	dc, err := discovery.NewDiscoveryClientForConfig(restConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+	if err := dc.RESTClient().Get().AbsPath("/version").Do(ctx).Error(); err != nil {
+		return nil, nil, fmt.Errorf("reaching the API server at %s: %w", restConfig.Host, err)
+	}
+
 	return restConfig, c, nil
 }
+
+// connectTimeout bounds the first request of a run.
+const connectTimeout = 30 * time.Second
 
 // newScheme holds the Kubernetes kinds of client-go, the core kinds of the
 // operator, and the plugin kinds.

@@ -63,3 +63,10 @@ func TestNewSchemeKnowsTheKindsOfTheChecks(t *testing.T) {
 		assert.NoError(t, err, "%T", obj)
 	}
 }
+
+// Port 1 on the loopback address refuses each connection.
+func TestConnectFailsWhenTheClusterDoesNotAnswer(t *testing.T) {
+	_, _, err := connect(t.Context(), &rest.Config{Host: "https://127.0.0.1:1"})
+
+	assert.ErrorContains(t, err, "127.0.0.1:1")
+}

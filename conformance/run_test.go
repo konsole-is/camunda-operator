@@ -137,10 +137,10 @@ const (
 type helperRun struct {
 	cfg      Config
 	registry []Check
-	connect  func(*rest.Config) (*rest.Config, client.Client, error)
+	connect  func(context.Context, *rest.Config) (*rest.Config, client.Client, error)
 }
 
-func fakeConnect(restCfg *rest.Config) (*rest.Config, client.Client, error) {
+func fakeConnect(_ context.Context, restCfg *rest.Config) (*rest.Config, client.Client, error) {
 	scheme, err := newScheme()
 	if err != nil {
 		return nil, nil, err
@@ -187,7 +187,7 @@ func helperRuns() map[string]helperRun {
 		"connect-fails": {
 			cfg:      validConfig(),
 			registry: testRegistry,
-			connect: func(*rest.Config) (*rest.Config, client.Client, error) {
+			connect: func(context.Context, *rest.Config) (*rest.Config, client.Client, error) {
 				return nil, nil, errors.New("no kubeconfig")
 			},
 		},
