@@ -64,7 +64,7 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  if (server && server.exitCode === null) {
+  if (server && server.exitCode === null && server.signalCode === null) {
     const exit = new Promise((resolve) => server!.once("exit", resolve));
     server.kill();
     await exit;
