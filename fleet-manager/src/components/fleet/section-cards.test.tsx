@@ -987,5 +987,20 @@ describe("SectionCards", () => {
         { path: "a.b/overrides.days", message: "is required" },
       ]);
     });
+
+    it("names each field by its own label when the registration and parameter names join with a dash", () => {
+      render(
+        <SectionCards
+          section={prefixedOptions(
+            daysOption("a", "Days of a", 30, "b-x"),
+            daysOption("a-b", "Days of a-b", 30, "x"),
+          )}
+          defaultValue={picked("a", "a-b")}
+        />,
+      );
+      const inA = screen.getByRole("spinbutton", { name: "Days of a" });
+      const inAB = screen.getByRole("spinbutton", { name: "Days of a-b" });
+      expect(inA).not.toBe(inAB);
+    });
   });
 });

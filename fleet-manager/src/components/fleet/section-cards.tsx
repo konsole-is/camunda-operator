@@ -162,7 +162,7 @@ export function SectionCards({
             onPick={() => pick([])}
           />
         )}
-        {section.options.map((option) => {
+        {section.options.map((option, index) => {
           const isSelected = selected.includes(option.registration);
           return (
             <OptionCard
@@ -186,7 +186,7 @@ export function SectionCards({
             >
               {isSelected && (
                 <OptionParameters
-                  idPrefix={`${id}-${option.registration}`}
+                  idPrefix={`${id}-${index}`}
                   option={option}
                   values={values[option.registration] ?? {}}
                   generations={generations}
@@ -357,10 +357,10 @@ function OptionParameters({
           )}
         </fieldset>
       )}
-      {rest.map((rule) => (
+      {rest.map((rule, index) => (
         <ParameterField
           key={`${rule.name}-${generations[parameterKey(option.registration, rule.name)] ?? 0}`}
-          id={`${idPrefix}-${rule.name}`}
+          id={`${idPrefix}-${index}`}
           rule={rule}
           value={values[rule.name]}
           error={errorOf(rule.name)}
@@ -420,13 +420,13 @@ function ParameterField({
         className="flex flex-col gap-2"
       >
         <legend className="mb-1 text-sm text-muted">{rule.label}</legend>
-        {allowed.map((choice) => (
+        {allowed.map((choice, index) => (
           <div
             key={choice.name}
             className="flex items-center gap-2 text-sm text-text-2"
           >
             <Checkbox
-              id={`${id}-${choice.name}`}
+              id={`${id}-choice-${index}`}
               aria-label={choice.label}
               checked={names.includes(choice.name)}
               onCheckedChange={(on) =>
@@ -439,7 +439,7 @@ function ParameterField({
                 )
               }
             />
-            <label htmlFor={`${id}-${choice.name}`}>{choice.label}</label>
+            <label htmlFor={`${id}-choice-${index}`}>{choice.label}</label>
           </div>
         ))}
         {message}
