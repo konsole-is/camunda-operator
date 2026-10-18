@@ -65,6 +65,11 @@ var staticChecks = []Check{
 		run:         checkAccepted,
 	},
 	{
+		ID:          RegSchema,
+		Description: "spec.parameters is a valid OpenAPI v3 schema, and the parameters of every case pass it.",
+		run:         checkSchema,
+	},
+	{
 		ID:          RegOutputs,
 		Description: "spec.outputs covers every output of each section in spec.sections.",
 		run:         checkOutputs,
@@ -78,6 +83,11 @@ var staticChecks = []Check{
 		ID:          RegGrants,
 		Description: "Each grant template has a supported format and uses only the placeholders of the contract.",
 		run:         checkGrants,
+	},
+	{
+		ID:          RegTemplates,
+		Description: "Each default of an x-fleet-template parameter uses only the placeholders of the contract.",
+		run:         checkParameterTemplates,
 	},
 	{
 		ID:          RegDeletion,

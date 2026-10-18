@@ -70,7 +70,12 @@ func TestAcceptedCheck(t *testing.T) {
 		{"accepted and ready", unchanged, ""},
 		{
 			"not accepted",
-			setCondition(pluginsv1alpha1.ConditionAccepted, metav1.ConditionFalse, "SectionMissing", "section x is missing"),
+			setCondition(
+				pluginsv1alpha1.ConditionAccepted,
+				metav1.ConditionFalse,
+				"SectionMissing",
+				"section x is missing",
+			),
 			"status.conditions[Accepted] is False, reason SectionMissing: section x is missing",
 		},
 		{
@@ -78,7 +83,11 @@ func TestAcceptedCheck(t *testing.T) {
 			setCondition(v1.ConditionReady, metav1.ConditionFalse, "CredentialsMissing", "no key"),
 			"status.conditions[Ready] is False, reason CredentialsMissing: no key",
 		},
-		{"no Accepted condition", removeCondition(pluginsv1alpha1.ConditionAccepted), "status.conditions[Accepted] is missing"},
+		{
+			"no Accepted condition",
+			removeCondition(pluginsv1alpha1.ConditionAccepted),
+			"status.conditions[Accepted] is missing",
+		},
 		{"no Ready condition", removeCondition(v1.ConditionReady), "status.conditions[Ready] is missing"},
 	})
 }
@@ -205,7 +214,11 @@ func TestMetricsCheck(t *testing.T) {
 		{"service account", setQuery(`up{sa="{{ .serviceAccount }}"}`), ""},
 		{"output", setQuery(`up{bucket="{{ .outputs.x }}"}`), ""},
 		{"unknown placeholder", setQuery(`up{x="{{ .unknown }}"}`), "spec.metricQueries[0].query: {{.unknown}}"},
-		{"if", setQuery(`{{ if .pods }}{{ end }}`), "spec.metricQueries[0].query: {{if .pods}}{{end}}: if is not allowed"},
+		{
+			"if",
+			setQuery(`{{ if .pods }}{{ end }}`),
+			"spec.metricQueries[0].query: {{if .pods}}{{end}}: if is not allowed",
+		},
 	})
 }
 
@@ -248,12 +261,13 @@ func TestRBACCheck(t *testing.T) {
 				[]string{"system:serviceaccounts", "system:serviceaccounts:echo-system", "system:authenticated"},
 				review.Spec.Groups,
 			)
-			assert.Equal(t, &authorizationv1.ResourceAttributes{
+			want := &authorizationv1.ResourceAttributes{
 				Group:    "plugins.camunda.io",
 				Resource: "pluginregistrations",
 				Verb:     "serve",
 				Name:     "echo",
-			}, review.Spec.ResourceAttributes)
+			}
+			assert.Equal(t, want, review.Spec.ResourceAttributes)
 
 			if tt.message == "" {
 				assert.NoError(t, err)
@@ -275,11 +289,22 @@ func TestStaticChecksFailWhenTheRegistrationIsMissing(t *testing.T) {
 }
 
 func TestStaticChecksRunInContractOrder(t *testing.T) {
-	var ids []CheckID
+	ids := make([]CheckID, 0, len(staticChecks))
 	for _, c := range staticChecks {
 		ids = append(ids, c.ID)
 		assert.False(t, c.Skippable, "check %s is mandatory", c.ID)
 	}
 
-	assert.Equal(t, []CheckID{RegAccepted, RegOutputs, RegInputs, RegGrants, RegDeletion, RegRBAC, RegMetrics}, ids)
+	want := []CheckID{
+		RegAccepted,
+		RegSchema,
+		RegOutputs,
+		RegInputs,
+		RegGrants,
+		RegTemplates,
+		RegDeletion,
+		RegRBAC,
+		RegMetrics,
+	}
+	assert.Equal(t, want, ids)
 }
