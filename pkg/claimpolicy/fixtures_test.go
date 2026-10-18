@@ -31,6 +31,8 @@ import (
 	"github.com/stretchr/testify/require"
 	strictjson "sigs.k8s.io/json"
 
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
@@ -120,6 +122,35 @@ func TestEveryFixtureDirectoryHasARunner(t *testing.T) {
 	}
 
 	assert.ElementsMatch(t, fixtureDirs, dirs, "each directory under test/fixtures/claimpolicy needs a table test")
+}
+
+// Not parallel, for the reason of TestEveryFixtureDirectoryHasARunner.
+func TestEveryRefusalReasonHasACase(t *testing.T) {
+	reasons := map[string]bool{}
+	for _, dir := range fixtureDirs {
+		fixtures, err := loadFixtures(dir)
+		require.NoError(t, err)
+
+		for _, f := range fixtures {
+			var r result
+			require.NoError(t, json.Unmarshal(f.Result, &r), f.Path)
+			if r.Refusal != nil {
+				reasons[r.Refusal.Reason] = true
+			}
+		}
+	}
+
+	for _, reason := range []string{
+		fleetv1alpha1.ReasonNoEnvironment,
+		fleetv1alpha1.ReasonUnknownEnvironment,
+		fleetv1alpha1.ReasonNotAllowed,
+		fleetv1alpha1.ReasonMissingInput,
+		fleetv1alpha1.ReasonSlotConflict,
+		fleetv1alpha1.ReasonWiringCycle,
+		v1.ReasonInvalidReference,
+	} {
+		assert.True(t, reasons[reason], "no case under test/fixtures/claimpolicy has the refusal reason %s", reason)
+	}
 }
 
 // runFixtures calls run on the input of every case in dir and compares the
