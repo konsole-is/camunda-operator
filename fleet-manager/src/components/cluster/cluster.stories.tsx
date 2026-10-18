@@ -20,7 +20,7 @@ function pod(
     metadata: {
       name,
       labels: { [COMPONENT_LABEL]: component },
-      deletionTimestamp: terminating ? new Date(0) : undefined,
+      deletionTimestamp: terminating ? "2026-10-18T10:00:00Z" : undefined,
     },
     status,
   } as Resource<"Pod">;

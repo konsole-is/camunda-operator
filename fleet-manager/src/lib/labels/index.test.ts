@@ -87,9 +87,9 @@ it.each([
 
 describe("isManaged", () => {
   it("is true for an object with the claim label", () => {
-    expect(isManaged({ metadata: { labels: { [CLAIM_LABEL]: "orders" } } })).toBe(
-      true,
-    );
+    expect(
+      isManaged({ metadata: { labels: { [CLAIM_LABEL]: "orders" } } }),
+    ).toBe(true);
   });
 
   it.each([

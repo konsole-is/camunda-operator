@@ -216,7 +216,7 @@ describe("podDot", () => {
 
   it("is off for a terminating pod, also when it is ready", () => {
     const p = pod("p", "zeebe");
-    p.metadata!.deletionTimestamp = new Date("2026-10-18T10:00:00Z");
+    p.metadata!.deletionTimestamp = "2026-10-18T10:00:00Z";
     expect(podDot(p)).toMatchObject({ tone: "off", state: "Terminating" });
   });
 
