@@ -1,0 +1,698 @@
+/*
+Copyright 2026.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package conformance
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"slices"
+	"strings"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+)
+
+// The IDs of the lifecycle checks.
+const (
+	CheckRequestFinalizer    CheckID = "REQ-FINALIZER"
+	CheckRequestOutputsReady CheckID = "REQ-OUTPUTS-READY"
+	CheckRequestOutputs      CheckID = "REQ-OUTPUTS"
+	CheckRequestReady        CheckID = "REQ-READY"
+	CheckRequestLabels       CheckID = "REQ-LABELS"
+	CheckRequestResources    CheckID = "REQ-RESOURCES"
+	CheckRequestEvents       CheckID = "REQ-EVENTS"
+	CheckRequestDisplay      CheckID = "REQ-DISPLAY"
+	CheckRequestLogs         CheckID = "REQ-LOGS"
+	CheckRequestAcceptedKept CheckID = "REQ-ACCEPTED-KEPT"
+)
+
+// lifecycleChecks run for each request of the run, in this order.
+var lifecycleChecks = []Check{
+	{
+		ID:          CheckRequestFinalizer,
+		Description: "The request gets the finalizer plugins.camunda.io/cleanup before any object that the plugin writes for it.",
+		run:         checkFinalizer,
+	},
+	{
+		ID:          CheckRequestOutputsReady,
+		Description: "The request gets OutputsReady=True for its current generation within the OutputsReady timeout.",
+		run:         checkOutputsReady,
+	},
+	{
+		ID:          CheckRequestOutputs,
+		Description: "status.outputs has exactly the output keys of the registration, and each value is not empty.",
+		run:         checkOutputs,
+	},
+	{
+		ID: CheckRequestReady,
+		Description: "The request gets Ready=True within the Ready timeout, or Ready=False with the reason " +
+			"GrantRejected while one of its Grants has Ready=False.",
+		run: checkReady,
+	},
+	{
+		ID: CheckRequestLabels,
+		Description: "Each object of the request carries both writer labels, and a namespaced object has an " +
+			"owner reference to the request.",
+		run: checkLabels,
+	},
+	{
+		ID:          CheckRequestResources,
+		Description: "status.resources lists each object of the request, and each row has kind, name, and onOrphan.",
+		run:         checkResources,
+	},
+	{
+		ID:          CheckRequestEvents,
+		Description: "The request has at least one event for each row of status.resources.",
+		run:         checkEvents,
+	},
+	{
+		ID: CheckRequestDisplay,
+		Description: "The summary, summaryTime, links, and podSelector of the request status are complete and " +
+			"valid.",
+		run: checkDisplay,
+	},
+	{
+		ID: CheckRequestLogs,
+		Description: "The controller pods log JSON lines, and a line carries the key request with the name of " +
+			"each request.",
+		Skippable: true,
+		run:       checkLogs,
+	},
+	{
+		ID:          CheckRequestAcceptedKept,
+		Description: "The registration keeps the Accepted condition of the registry controller while the plugin serves requests.",
+		run:         checkAcceptedKept,
+	},
+}
+
+func checkFinalizer(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	return eachRun(life.runs, func(r requestRun) error {
+		// A request that never gets outputs fails REQ-OUTPUTS-READY. This
+		// check only needs the plugin to have written its objects.
+		_, _ = waitForOutputsReady(ctx, s, r.name, false)
+
+		return finalizerProblem(life.rec, r.name)
+	})
+}
+
+func checkOutputsReady(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	return eachRun(life.runs, func(r requestRun) error {
+		_, err := waitForOutputsReady(ctx, s, r.name, true)
+		return err
+	})
+}
+
+func checkOutputs(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	return eachRun(life.runs, func(r requestRun) error {
+		_, _ = waitForOutputsReady(ctx, s, r.name, false)
+
+		req, err := s.request(ctx, r.name)
+		if err != nil {
+			return err
+		}
+
+		return problemsError(outputProblems(life.registration.Spec.Outputs, req.Status.Outputs))
+	})
+}
+
+func checkReady(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	return eachRun(life.runs, func(r requestRun) error {
+		return waitFor(ctx, s.cfg.Timeouts.Ready, "Ready=True", func(ctx context.Context) error {
+			req, err := s.request(ctx, r.name)
+			if err != nil {
+				return err
+			}
+
+			var grants pluginsv1alpha1.GrantList
+			err = s.client.List(
+				ctx,
+				&grants,
+				client.InNamespace(req.Namespace),
+				client.MatchingLabels{pluginsv1alpha1.LabelRequest: req.Name},
+			)
+			if err != nil {
+				return fmt.Errorf("listing the Grants of the request: %w", err)
+			}
+
+			owned := slices.DeleteFunc(grants.Items, func(g pluginsv1alpha1.Grant) bool {
+				return !slices.ContainsFunc(g.OwnerReferences, func(o metav1.OwnerReference) bool { return o.UID == req.UID })
+			})
+
+			return readyVerdict(meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady), owned)
+		})
+	})
+}
+
+func checkLabels(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	return eachRun(life.runs, func(r requestRun) error {
+		req, err := s.request(ctx, r.name)
+		if err != nil {
+			return err
+		}
+
+		objs, err := writtenObjects(ctx, s, life.kinds, r.name)
+		if err != nil {
+			return err
+		}
+
+		var problems []string
+		for _, obj := range objs {
+			problems = append(problems, labelProblems(obj, req)...)
+		}
+
+		return problemsError(problems)
+	})
+}
+
+func checkResources(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	return eachRun(life.runs, func(r requestRun) error {
+		req, err := s.request(ctx, r.name)
+		if err != nil {
+			return err
+		}
+
+		objs, err := writtenObjects(ctx, s, life.kinds, r.name)
+		if err != nil {
+			return err
+		}
+
+		return problemsError(resourceProblems(objs, req.Status.Resources))
+	})
+}
+
+func checkEvents(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	return eachRun(life.runs, func(r requestRun) error {
+		what := "an event for each row of status.resources"
+		return waitFor(ctx, s.cfg.Timeouts.Ready, what, func(ctx context.Context) error {
+			req, err := s.request(ctx, r.name)
+			if err != nil {
+				return err
+			}
+
+			var events corev1.EventList
+			err = s.client.List(
+				ctx,
+				&events,
+				client.InNamespace(req.Namespace),
+				client.MatchingFields{"involvedObject.uid": string(req.UID)},
+			)
+			if err != nil {
+				return fmt.Errorf("listing the events of the request: %w", err)
+			}
+
+			if n, rows := eventCount(events.Items), len(req.Status.Resources); n < rows {
+				return fmt.Errorf("the request has %d events, and status.resources lists %d rows", n, rows)
+			}
+
+			return nil
+		})
+	})
+}
+
+func checkDisplay(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	return eachRun(life.runs, func(r requestRun) error {
+		req, err := s.request(ctx, r.name)
+		if err != nil {
+			return err
+		}
+
+		problems := displayProblems(req.Status)
+
+		if req.Status.PodSelector != nil {
+			problem, err := podSelectorProblem(ctx, s, req)
+			if err != nil {
+				return err
+			}
+			if problem != "" {
+				problems = append(problems, problem)
+			}
+		}
+
+		return problemsError(problems)
+	})
+}
+
+func podSelectorProblem(ctx context.Context, s *suite, req *pluginsv1alpha1.PluginRequest) (string, error) {
+	selector, err := metav1.LabelSelectorAsSelector(req.Status.PodSelector)
+	if err != nil {
+		return "status.podSelector is not a valid label selector: " + err.Error(), nil
+	}
+
+	var pods corev1.PodList
+	err = s.client.List(ctx, &pods, client.InNamespace(req.Namespace), client.MatchingLabelsSelector{Selector: selector})
+	if err != nil {
+		return "", fmt.Errorf("listing the pods of status.podSelector: %w", err)
+	}
+
+	if !slices.ContainsFunc(pods.Items, podRunningAndReady) {
+		return "no pod that status.podSelector selects is Running with Ready=True", nil
+	}
+
+	return "", nil
+}
+
+func podRunningAndReady(p corev1.Pod) bool {
+	return p.Status.Phase == corev1.PodRunning && slices.ContainsFunc(p.Status.Conditions, func(c corev1.PodCondition) bool {
+		return c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue
+	})
+}
+
+func checkLogs(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	sa := life.registration.Spec.ServiceAccount
+	lines, err := controllerLogLines(ctx, s, sa, life.started)
+	if err != nil {
+		return err
+	}
+
+	return eachRun(life.runs, func(r requestRun) error {
+		return problemsError(logProblems(lines, r.name))
+	})
+}
+
+// controllerLogLines reads the log lines since started of each container of
+// each pod that runs under sa.
+func controllerLogLines(
+	ctx context.Context,
+	s *suite,
+	sa pluginsv1alpha1.ServiceAccountRef,
+	started time.Time,
+) ([]string, error) {
+	var pods corev1.PodList
+	if err := s.client.List(ctx, &pods, client.InNamespace(sa.Namespace)); err != nil {
+		return nil, fmt.Errorf("listing the pods of %s: %w", sa.Namespace, err)
+	}
+
+	pods.Items = slices.DeleteFunc(pods.Items, func(p corev1.Pod) bool { return p.Spec.ServiceAccountName != sa.Name })
+	if len(pods.Items) == 0 {
+		return nil, fmt.Errorf("no pod runs under the ServiceAccount %s/%s", sa.Namespace, sa.Name)
+	}
+
+	clientset, err := kubernetes.NewForConfig(s.restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to the pod logs: %w", err)
+	}
+
+	since := metav1.NewTime(started)
+	var lines []string
+	for _, p := range pods.Items {
+		for _, c := range p.Spec.Containers {
+			opts := &corev1.PodLogOptions{Container: c.Name, SinceTime: &since}
+			raw, err := clientset.CoreV1().Pods(p.Namespace).GetLogs(p.Name, opts).DoRaw(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("reading the log of the container %s of the pod %s/%s: %w", c.Name, p.Namespace, p.Name, err)
+			}
+			lines = append(lines, strings.Split(string(raw), "\n")...)
+		}
+	}
+
+	return lines, nil
+}
+
+func checkAcceptedKept(ctx context.Context, s *suite) error {
+	life, err := s.lifecycle(ctx)
+	if err != nil {
+		return err
+	}
+
+	reg, err := s.registration(ctx)
+	if err != nil {
+		return err
+	}
+
+	return acceptedProblem(life.accepted, meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted))
+}
+
+// eachRun calls check for each run, and joins the errors, each prefixed with
+// the name of its request.
+func eachRun(runs []requestRun, check func(r requestRun) error) error {
+	var errs []error
+	for _, r := range runs {
+		if err := check(r); err != nil {
+			errs = append(errs, fmt.Errorf("request %s: %w", r.name, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// problemsError joins problems into one error, or returns nil when there is
+// none.
+func problemsError(problems []string) error {
+	errs := make([]error, 0, len(problems))
+	for _, p := range problems {
+		errs = append(errs, errors.New(p))
+	}
+
+	return errors.Join(errs...)
+}
+
+// request gets the request name of the run.
+func (s *suite) request(ctx context.Context, name string) (*pluginsv1alpha1.PluginRequest, error) {
+	var req pluginsv1alpha1.PluginRequest
+	if err := s.client.Get(ctx, client.ObjectKey{Namespace: s.cfg.Namespace, Name: name}, &req); err != nil {
+		return nil, fmt.Errorf("getting the PluginRequest %s/%s: %w", s.cfg.Namespace, name, err)
+	}
+
+	return &req, nil
+}
+
+// waitForOutputsReady waits for OutputsReady=True on the request name, for
+// its current generation when current is true.
+func waitForOutputsReady(
+	ctx context.Context,
+	s *suite,
+	name string,
+	current bool,
+) (*pluginsv1alpha1.PluginRequest, error) {
+	var req *pluginsv1alpha1.PluginRequest
+	err := waitFor(ctx, s.cfg.Timeouts.OutputsReady, "OutputsReady=True", func(ctx context.Context) error {
+		var err error
+		if req, err = s.request(ctx, name); err != nil {
+			return err
+		}
+
+		return outputsReadyProblem(req, current)
+	})
+
+	return req, err
+}
+
+func outputsReadyProblem(req *pluginsv1alpha1.PluginRequest, current bool) error {
+	c := meta.FindStatusCondition(req.Status.Conditions, pluginsv1alpha1.ConditionOutputsReady)
+
+	switch {
+	case c == nil:
+		return errors.New("the request has no OutputsReady condition")
+	case c.Status != metav1.ConditionTrue:
+		return fmt.Errorf("the OutputsReady condition is %s, reason %s: %s", c.Status, c.Reason, c.Message)
+	case current && c.ObservedGeneration != req.Generation:
+		return fmt.Errorf(
+			"the OutputsReady condition is True at observedGeneration %d, and the request has generation %d",
+			c.ObservedGeneration,
+			req.Generation,
+		)
+	}
+
+	return nil
+}
+
+// outputProblems names each declared output that outputs lacks or holds
+// empty, and each key of outputs that is not declared.
+func outputProblems(declared []pluginsv1alpha1.OutputDecl, outputs map[string]string) []string {
+	var problems []string
+	keys := make(map[string]bool, len(declared))
+	for _, d := range declared {
+		keys[d.Key] = true
+
+		value, ok := outputs[d.Key]
+		switch {
+		case !ok:
+			problems = append(problems, fmt.Sprintf("output %q is missing", d.Key))
+		case value == "":
+			problems = append(problems, fmt.Sprintf("output %q is empty", d.Key))
+		}
+	}
+
+	extra := make([]string, 0, len(outputs))
+	for k := range outputs {
+		if !keys[k] {
+			extra = append(extra, k)
+		}
+	}
+	slices.Sort(extra)
+
+	for _, k := range extra {
+		problems = append(problems, fmt.Sprintf("output %q is not declared in spec.outputs of the registration", k))
+	}
+
+	return problems
+}
+
+// readyVerdict passes Ready=True, and Ready=False with the reason
+// GrantRejected while one of grants has Ready=False.
+func readyVerdict(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) error {
+	switch {
+	case ready == nil:
+		return errors.New("the request has no Ready condition")
+	case ready.Status == metav1.ConditionTrue:
+		return nil
+	case ready.Status == metav1.ConditionFalse && ready.Reason == pluginsv1alpha1.ReasonGrantRejected:
+		failed := slices.ContainsFunc(grants, func(g pluginsv1alpha1.Grant) bool {
+			return meta.IsStatusConditionFalse(g.Status.Conditions, v1.ConditionReady)
+		})
+		if failed {
+			return nil
+		}
+
+		return errors.New(
+			"the Ready condition is False with the reason GrantRejected while no Grant of the request has Ready=False",
+		)
+	}
+
+	return fmt.Errorf("the Ready condition is %s, reason %s: %s", ready.Status, ready.Reason, ready.Message)
+}
+
+// labelProblems names each writer rule of the contract that obj breaks. A
+// namespaced object is in the namespace of request and has an owner
+// reference to it. A cluster-scoped object has no owner reference to a
+// PluginRequest.
+func labelProblems(obj *unstructured.Unstructured, request *pluginsv1alpha1.PluginRequest) []string {
+	ref := objectRef(obj)
+	var problems []string
+
+	if obj.GetLabels()[pluginsv1alpha1.LabelRegistration] != request.Spec.Registration {
+		problems = append(problems, fmt.Sprintf(
+			"%s has no label %s: %q",
+			ref,
+			pluginsv1alpha1.LabelRegistration,
+			request.Spec.Registration,
+		))
+	}
+
+	switch {
+	case obj.GetNamespace() == "":
+		if slices.ContainsFunc(obj.GetOwnerReferences(), isPluginRequestOwner) {
+			problems = append(problems, ref+" is cluster-scoped and has an owner reference to the request. "+
+				"A cluster-scoped object carries the labels only")
+		}
+	case obj.GetNamespace() != request.Namespace:
+		problems = append(problems, ref+" is outside the namespace of the request")
+	case !slices.ContainsFunc(obj.GetOwnerReferences(), func(o metav1.OwnerReference) bool {
+		return isPluginRequestOwner(o) && o.Name == request.Name && o.UID == request.UID
+	}):
+		problems = append(problems, ref+" has no owner reference to the request")
+	}
+
+	return problems
+}
+
+func isPluginRequestOwner(o metav1.OwnerReference) bool {
+	return o.APIVersion == pluginsv1alpha1.GroupVersion.String() && o.Kind == "PluginRequest"
+}
+
+// resourceProblems names each written object that rows does not list, and
+// each row without kind, name, or onOrphan. A row without an object is a
+// resource outside the cluster.
+func resourceProblems(written []*unstructured.Unstructured, rows []pluginsv1alpha1.ResourceRef) []string {
+	var problems []string
+	for _, obj := range written {
+		listed := slices.ContainsFunc(rows, func(r pluginsv1alpha1.ResourceRef) bool {
+			return r.Kind == obj.GetKind() && r.Name == obj.GetName()
+		})
+		if !listed {
+			problems = append(problems, objectRef(obj)+" is not listed in status.resources")
+		}
+	}
+
+	for _, r := range rows {
+		fields := []struct{ name, value string }{{"kind", r.Kind}, {"name", r.Name}, {"onOrphan", string(r.OnOrphan)}}
+		for _, f := range fields {
+			if f.value == "" {
+				problems = append(problems, fmt.Sprintf("status.resources row %s %q has no %s", r.Kind, r.Name, f.name))
+			}
+		}
+	}
+
+	return problems
+}
+
+// eventCount counts how many times events happened: the series count of a
+// series, else the count, and at least 1 for each event.
+func eventCount(events []corev1.Event) int {
+	n := 0
+	for _, e := range events {
+		switch {
+		case e.Series != nil && e.Series.Count > 0:
+			n += int(e.Series.Count)
+		default:
+			n += max(int(e.Count), 1)
+		}
+	}
+
+	return n
+}
+
+// displayProblems names each display field of status that breaks the
+// contract. An empty severity is Info, the default of the CRD.
+func displayProblems(status pluginsv1alpha1.PluginRequestStatus) []string {
+	var problems []string
+	if len(status.Summary) == 0 {
+		problems = append(problems, "status.summary has no item")
+	}
+
+	for _, item := range status.Summary {
+		switch item.Severity {
+		case "", pluginsv1alpha1.SeverityInfo, pluginsv1alpha1.SeverityWarning, pluginsv1alpha1.SeverityError:
+		default:
+			problems = append(problems, fmt.Sprintf(
+				"status.summary item %q has the severity %q, which is not Info, Warning, or Error",
+				item.Label,
+				item.Severity,
+			))
+		}
+	}
+
+	if status.SummaryTime == nil {
+		problems = append(problems, "status.summaryTime is not set")
+	}
+
+	for _, l := range status.Links {
+		if u, err := url.Parse(l.URL); err != nil || u.Scheme == "" || u.Host == "" {
+			problems = append(problems, fmt.Sprintf("status.links item %q has the URL %q, which is not absolute", l.Name, l.URL))
+		}
+	}
+
+	return problems
+}
+
+// maxQuotedLine is the length at which a log problem cuts the line it quotes.
+const maxQuotedLine = 120
+
+// logProblems names the first line of lines that is not a JSON object, and
+// says when no line carries the key request with the name request, as a
+// string or as an object with that name.
+func logProblems(lines []string, request string) []string {
+	var problems []string
+	found := false
+
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			if len(problems) == 0 {
+				quoted := line[:min(len(line), maxQuotedLine)]
+				problems = append(problems, fmt.Sprintf("the log line %q is not a JSON object", quoted))
+			}
+			continue
+		}
+
+		switch v := entry["request"].(type) {
+		case string:
+			found = found || v == request
+		case map[string]any:
+			found = found || v["name"] == request
+		}
+	}
+
+	if !found {
+		problems = append(problems, fmt.Sprintf("no log line carries the key request with the request name %q", request))
+	}
+
+	return problems
+}
+
+// acceptedProblem says whether now is the Accepted condition kept, with the
+// same status, reason, and lastTransitionTime.
+func acceptedProblem(kept, now *metav1.Condition) error {
+	switch {
+	case kept == nil:
+		return errors.New("the registration had no Accepted condition when the run started")
+	case now == nil:
+		return errors.New("the registration has no Accepted condition any more")
+	case now.Status != kept.Status || now.Reason != kept.Reason || !now.LastTransitionTime.Equal(&kept.LastTransitionTime):
+		return fmt.Errorf(
+			"the Accepted condition of the registration was %s, reason %s, since %s, and is now %s, reason %s, since %s",
+			kept.Status,
+			kept.Reason,
+			kept.LastTransitionTime.UTC().Format(time.RFC3339),
+			now.Status,
+			now.Reason,
+			now.LastTransitionTime.UTC().Format(time.RFC3339),
+		)
+	}
+
+	return nil
+}

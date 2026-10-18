@@ -90,7 +90,7 @@ func (s *suite) registration(ctx context.Context) (*pluginsv1alpha1.PluginRegist
 }
 
 // checks is the registry, in run order.
-var checks = slices.Concat(staticChecks)
+var checks = slices.Concat(staticChecks, lifecycleChecks, deletionChecks)
 
 // Checks returns the registered checks in run order. A change to the result
 // does not change the registry.
