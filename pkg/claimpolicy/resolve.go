@@ -289,8 +289,8 @@ func valuesOfNames(value json.RawMessage, choices []fleetv1alpha1.NamedValue) js
 		return valueOfName(name, choices)
 	}
 
-	var names []string
-	if json.Unmarshal(value, &names) != nil || names == nil {
+	names, ok := listOfNames(value)
+	if !ok {
 		return value
 	}
 
@@ -315,6 +315,25 @@ func nameOf(value json.RawMessage) (string, bool) {
 	}
 
 	return name, true
+}
+
+// listOfNames returns the names of a JSON list whose every item is a name.
+func listOfNames(value json.RawMessage) ([]string, bool) {
+	var items []json.RawMessage
+	if json.Unmarshal(value, &items) != nil || items == nil {
+		return nil, false
+	}
+
+	names := make([]string, 0, len(items))
+	for _, item := range items {
+		name, ok := nameOf(item)
+		if !ok {
+			return nil, false
+		}
+		names = append(names, name)
+	}
+
+	return names, true
 }
 
 func valueOfName(name string, choices []fleetv1alpha1.NamedValue) json.RawMessage {

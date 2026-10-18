@@ -166,12 +166,11 @@ func equalJSON(a, b json.RawMessage) bool {
 }
 
 func checkNames(key, registration string, value json.RawMessage, choices []fleetv1alpha1.NamedValue) error {
-	var names []string
-	name, isName := nameOf(value)
-	switch {
-	case isName:
-		names = []string{name}
-	case json.Unmarshal(value, &names) != nil || names == nil:
+	names, ok := listOfNames(value)
+	if name, isName := nameOf(value); isName {
+		names, ok = []string{name}, true
+	}
+	if !ok {
 		return refuse(
 			fleetv1alpha1.ReasonNotAllowed,
 			"parameter %q of registration %q takes a name of its choices or a list of names",
