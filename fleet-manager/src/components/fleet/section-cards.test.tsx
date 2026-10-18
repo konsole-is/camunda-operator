@@ -182,7 +182,7 @@ describe("SectionCards", () => {
       "must be <= 365",
     );
     expect(onChange.mock.lastCall![1]).toEqual([
-      { path: "aws-connectors-role.retentionDays", message: "must be <= 365" },
+      { path: "aws-connectors-role/retentionDays", message: "must be <= 365" },
     ]);
   });
 
@@ -277,7 +277,7 @@ describe("SectionCards", () => {
     );
     const [, errors] = onChange.mock.lastCall!;
     expect(errors).toEqual([
-      { path: "tuning.overrides", message: expect.stringMatching(/^Line 1: /) },
+      { path: "tuning/overrides", message: expect.stringMatching(/^Line 1: /) },
     ]);
   });
 
@@ -419,7 +419,7 @@ describe("SectionCards", () => {
     for (const name of clicks)
       await userEvent.click(within(group).getByRole("checkbox", { name }));
     expect(onChange.mock.lastCall![1]).toEqual([
-      { path: "aws-connectors-role.policies", message },
+      { path: "aws-connectors-role/policies", message },
     ]);
   });
 
@@ -471,7 +471,7 @@ describe("SectionCards", () => {
       await userEvent.clear(screen.getByRole("textbox", { name: "Prefix" }));
       expect(onChange.mock.lastCall![1]).toEqual([
         {
-          path: "naming.prefix",
+          path: "naming/prefix",
           message: "must NOT have fewer than 1 characters",
         },
       ]);
@@ -524,7 +524,7 @@ describe("SectionCards", () => {
     // user-event reads "[" as the start of a key name, so "[[" types one "[".
     await userEvent.type(zones, "[[]");
     expect(onChange.mock.lastCall![1]).toEqual([
-      { path: "tuning.zones", message: "must NOT have fewer than 1 items" },
+      { path: "tuning/zones", message: "must NOT have fewer than 1 items" },
     ]);
   });
 
@@ -551,7 +551,7 @@ describe("SectionCards", () => {
     );
     expect(onChange.mock.lastCall![1]).toEqual([
       {
-        path: "aws-connectors-role.policies",
+        path: "aws-connectors-role/policies",
         message: "s3 is not an allowed choice",
       },
     ]);
@@ -708,7 +708,7 @@ describe("SectionCards", () => {
     rerender(<SectionCards section={storage(["small"])} onChange={onChange} />);
     expect(onChange.mock.lastCall![1]).toEqual([
       {
-        path: "elasticsearch.preset",
+        path: "elasticsearch/preset",
         message: "large is not an available choice",
       },
     ]);
@@ -771,5 +771,221 @@ describe("SectionCards", () => {
       ],
       [],
     );
+  });
+
+  describe("registrations whose names start the same", () => {
+    // A number parameter of one registration, invalid above 365.
+    const daysOption = (
+      registration: string,
+      label: string,
+      value: unknown = 30,
+      name = "b",
+    ): OptionView => ({
+      registration,
+      label: `Option ${registration}`,
+      isDefault: false,
+      parameters: [
+        {
+          name,
+          label,
+          schema: { type: "integer", minimum: 1, maximum: 365 },
+          claimEditable: true,
+          value,
+        },
+      ],
+    });
+    const prefixedOptions = (...options: OptionView[]) =>
+      section({ selection: "Many", options });
+    const picked = (...registrations: string[]) =>
+      registrations.map((registration) => ({
+        section: "connectors-permissions",
+        registration,
+      }));
+
+    it("shows the error of a parameter only under its own registration", async () => {
+      const onChange = vi.fn();
+      render(
+        <SectionCards
+          section={prefixedOptions(
+            daysOption("a", "Days of a"),
+            daysOption("a.b", "Days of a.b"),
+          )}
+          defaultValue={picked("a", "a.b")}
+          onChange={onChange}
+        />,
+      );
+      const inAB = screen.getByRole("spinbutton", { name: "Days of a.b" });
+      await userEvent.clear(inAB);
+      await userEvent.type(inAB, "500");
+      expect(inAB.getAttribute("aria-invalid")).toBe("true");
+      expect(
+        screen
+          .getByRole("spinbutton", { name: "Days of a" })
+          .getAttribute("aria-invalid"),
+      ).toBeNull();
+      expect(onChange.mock.lastCall![1]).toEqual([
+        { path: "a.b/b", message: "must be <= 365" },
+      ]);
+    });
+
+    it("leaves a.b untouched when a parameter of a is edited", async () => {
+      const onChange = vi.fn();
+      const options = (defaultOfAB: number) =>
+        prefixedOptions(
+          daysOption("a", "Days of a"),
+          daysOption("a.b", "Days of a.b", defaultOfAB),
+        );
+      const { rerender } = render(
+        <SectionCards
+          section={options(500)}
+          defaultValue={picked("a", "a.b")}
+          onChange={onChange}
+        />,
+      );
+      const inA = screen.getByRole("spinbutton", { name: "Days of a" });
+      await userEvent.clear(inA);
+      await userEvent.type(inA, "40");
+      // The page gets the error of the policy value, but nobody edited the field.
+      expect(onChange.mock.lastCall![1]).toEqual([
+        { path: "a.b/b", message: "must be <= 365" },
+      ]);
+      expect(
+        screen
+          .getByRole("spinbutton", { name: "Days of a.b" })
+          .getAttribute("aria-invalid"),
+      ).toBeNull();
+      rerender(
+        <SectionCards
+          section={options(200)}
+          defaultValue={picked("a", "a.b")}
+          onChange={onChange}
+        />,
+      );
+      expect(
+        (
+          screen.getByRole("spinbutton", {
+            name: "Days of a.b",
+          }) as HTMLInputElement
+        ).value,
+      ).toBe("200");
+      expect(
+        (
+          screen.getByRole("spinbutton", {
+            name: "Days of a",
+          }) as HTMLInputElement
+        ).value,
+      ).toBe("40");
+    });
+
+    it("follows a new policy default in a parameter whose registration and name join like an edited one", async () => {
+      const onChange = vi.fn();
+      const options = (start: number) =>
+        prefixedOptions(
+          daysOption("a", "Days of a", start, "b.c"),
+          daysOption("a.b", "Days of a.b", start, "c"),
+        );
+      const { rerender } = render(
+        <SectionCards
+          section={options(30)}
+          defaultValue={picked("a", "a.b")}
+          onChange={onChange}
+        />,
+      );
+      const inAB = screen.getByRole("spinbutton", { name: "Days of a.b" });
+      await userEvent.clear(inAB);
+      await userEvent.type(inAB, "40");
+      rerender(
+        <SectionCards
+          section={options(60)}
+          defaultValue={picked("a", "a.b")}
+          onChange={onChange}
+        />,
+      );
+      expect(
+        (
+          screen.getByRole("spinbutton", {
+            name: "Days of a",
+          }) as HTMLInputElement
+        ).value,
+      ).toBe("60");
+      expect(
+        (
+          screen.getByRole("spinbutton", {
+            name: "Days of a.b",
+          }) as HTMLInputElement
+        ).value,
+      ).toBe("40");
+    });
+
+    it("forgets the YAML error of a.b when a.b leaves the selection and a stays", async () => {
+      const onChange = vi.fn();
+      const yamlOption = (registration: string): OptionView => ({
+        registration,
+        label: `Option ${registration}`,
+        isDefault: false,
+        parameters: [
+          {
+            name: "overrides",
+            label: `Overrides of ${registration}`,
+            schema: { type: "object" },
+            claimEditable: true,
+          },
+        ],
+      });
+      render(
+        <SectionCards
+          section={prefixedOptions(yamlOption("a"), yamlOption("a.b"))}
+          defaultValue={picked("a", "a.b")}
+          onChange={onChange}
+        />,
+      );
+      // user-event reads "[" as the start of a key name, so "[[" types one "[".
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Overrides of a.b" }),
+        "a: [[",
+      );
+      await userEvent.click(
+        screen.getByRole("checkbox", { name: "Option a.b" }),
+      );
+      await userEvent.click(
+        screen.getByRole("checkbox", { name: "Option a.b" }),
+      );
+      expect(onChange.mock.lastCall![1]).toEqual([]);
+    });
+
+    it("reports a schema error inside an object parameter under the registration and the parameter", async () => {
+      const onChange = vi.fn();
+      const option: OptionView = {
+        registration: "a.b",
+        label: "Option a.b",
+        isDefault: false,
+        parameters: [
+          {
+            name: "overrides",
+            label: "Overrides",
+            schema: {
+              type: "object",
+              required: ["days"],
+              properties: { days: { type: "integer" } },
+            },
+            claimEditable: true,
+          },
+        ],
+      };
+      render(
+        <SectionCards
+          section={prefixedOptions(option)}
+          defaultValue={picked("a.b")}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Overrides" }),
+        "x: 1",
+      );
+      expect(onChange.mock.lastCall![1]).toEqual([
+        { path: "a.b/overrides.days", message: "is required" },
+      ]);
+    });
   });
 });

@@ -30,8 +30,22 @@ import { YamlEditor } from "./yaml-editor";
 /** Values holds the parameter values that the form edits, by registration and parameter. */
 type Values = Record<string, Record<string, unknown>>;
 
-/** ParseErrors holds the errors of YAML that does not parse, by "<registration>.<parameter>". */
-type ParseErrors = Record<string, ValidationError[]>;
+/** ParseErrors holds the errors of YAML that does not parse, by registration and parameter. */
+type ParseErrors = Record<string, Record<string, ValidationError[]>>;
+
+/** FieldError is an error of the form, with the key of its parameter. An error of the section has no key. */
+type FieldError = { key?: string; error: ValidationError };
+
+/**
+ * parameterKey names one parameter of one registration in the touched set,
+ * the generations, and the errors. A Kubernetes object name cannot hold "/",
+ * so a registration whose name starts with another name never shares a key
+ * with it. The merge FieldPath and the schema error path have other roots
+ * and stay other grammars on purpose.
+ */
+function parameterKey(registration: string, parameter: string): string {
+  return `${registration}/${parameter}`;
+}
 
 /**
  * SectionCards is one section of a create flow: a card for each allowed
@@ -44,7 +58,9 @@ type ParseErrors = Record<string, ValidationError[]>;
  * one of its names. A selection holds only the parameters that differ from
  * the policy. A selected option that new options no longer hold, or
  * disable, leaves the selection. onChange gets the initial selections and
- * errors once, then each change.
+ * errors once, then each change. An error path is
+ * `<registration>/<parameter>`, then `.<path>` for an error inside the
+ * value, or the section name when a required section has no selection.
  */
 export function SectionCards({
   section,
@@ -67,8 +83,8 @@ export function SectionCards({
     () =>
       new Set(
         (defaultValue ?? []).flatMap((s) =>
-          Object.keys(s.parameters ?? {}).map(
-            (name) => `${s.registration}.${name}`,
+          Object.keys(s.parameters ?? {}).map((name) =>
+            parameterKey(s.registration, name),
           ),
         ),
       ),
@@ -91,7 +107,8 @@ export function SectionCards({
   }
 
   const selections = selectionsOf(section, selected, values);
-  const errors = sectionErrors(section, selected, values, parseErrors);
+  const fieldErrors = sectionErrors(section, selected, values, parseErrors);
+  const errors = fieldErrors.map((f) => f.error);
   const report = JSON.stringify([selections, errors]);
   const reported = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -112,13 +129,15 @@ export function SectionCards({
     value: unknown,
     parse: ValidationError[] = [],
   ) => {
-    const key = `${registration}.${name}`;
     setValues({
       ...values,
       [registration]: { ...values[registration], [name]: value },
     });
-    setParseErrors({ ...parseErrors, [key]: parse });
-    setTouched(new Set(touched).add(key));
+    setParseErrors({
+      ...parseErrors,
+      [registration]: { ...parseErrors[registration], [name]: parse },
+    });
+    setTouched(new Set(touched).add(parameterKey(registration, name)));
   };
 
   const many = section.selection === "Many";
@@ -171,10 +190,8 @@ export function SectionCards({
                   option={option}
                   values={values[option.registration] ?? {}}
                   generations={generations}
-                  errors={errors.filter((e) =>
-                    [...touched].some(
-                      (key) => e.path === key || e.path.startsWith(`${key}.`),
-                    ),
+                  errors={fieldErrors.filter(
+                    (f) => f.key !== undefined && touched.has(f.key),
                   )}
                   onValue={(name, value, parse) =>
                     setParameter(option.registration, name, value, parse)
@@ -271,7 +288,7 @@ function OptionParameters({
   option: OptionView;
   values: Record<string, unknown>;
   generations: Record<string, number>;
-  errors: ValidationError[];
+  errors: FieldError[];
   onValue: (name: string, value: unknown, parse?: ValidationError[]) => void;
 }) {
   const choiceRule =
@@ -280,11 +297,9 @@ function OptionParameters({
   // A locked pick shows as a locked field, because it has no value to mark.
   const choices =
     choiceRule?.claimEditable === false ? undefined : option.choices;
-  const errorOf = (name: string) => {
-    const key = `${option.registration}.${name}`;
-    return errors.find((e) => e.path === key || e.path.startsWith(`${key}.`))
-      ?.message;
-  };
+  const errorOf = (name: string) =>
+    errors.find((f) => f.key === parameterKey(option.registration, name))?.error
+      .message;
   const rest = option.parameters.filter((r) => r.name !== choices?.parameter);
   const choiceError = choices && errorOf(choices.parameter);
   if (!choices && rest.length === 0) return null;
@@ -344,7 +359,7 @@ function OptionParameters({
       )}
       {rest.map((rule) => (
         <ParameterField
-          key={`${rule.name}-${generations[`${option.registration}.${rule.name}`] ?? 0}`}
+          key={`${rule.name}-${generations[parameterKey(option.registration, rule.name)] ?? 0}`}
           id={`${idPrefix}-${rule.name}`}
           rule={rule}
           value={values[rule.name]}
@@ -588,8 +603,8 @@ function errorsOf(
   registrations: string[],
 ): ParseErrors {
   return Object.fromEntries(
-    Object.entries(parseErrors).filter(([key]) =>
-      registrations.some((registration) => key.startsWith(`${registration}.`)),
+    Object.entries(parseErrors).filter(([registration]) =>
+      registrations.includes(registration),
     ),
   );
 }
@@ -605,7 +620,7 @@ function withPolicy(
       Object.fromEntries(
         Object.entries(starts).map(([name, start]) => [
           name,
-          touched.has(`${registration}.${name}`) &&
+          touched.has(parameterKey(registration, name)) &&
           Object.hasOwn(values[registration] ?? {}, name)
             ? values[registration][name]
             : start,
@@ -623,7 +638,7 @@ function nextGenerations(
   const next = { ...generations };
   for (const option of section.options) {
     for (const rule of option.parameters) {
-      const key = `${option.registration}.${rule.name}`;
+      const key = parameterKey(option.registration, rule.name);
       if (!touched.has(key)) next[key] = (next[key] ?? 0) + 1;
     }
   }
@@ -677,18 +692,21 @@ function sectionErrors(
   selected: string[],
   values: Values,
   parseErrors: ParseErrors,
-): ValidationError[] {
-  const errors: ValidationError[] = [];
+): FieldError[] {
+  const errors: FieldError[] = [];
   if (section.required && selected.length === 0)
-    errors.push({ path: section.name, message: "Choose an option" });
+    errors.push({ error: { path: section.name, message: "Choose an option" } });
   for (const registration of selected) {
     const option = findOption(section, registration);
     if (!option) continue;
     for (const rule of option.parameters.filter(isEditable)) {
       const value = values[registration]?.[rule.name];
-      const path = `${registration}.${rule.name}`;
-      if (parseErrors[path]?.length) {
-        errors.push(...parseErrors[path].map((e) => ({ ...e, path })));
+      const key = parameterKey(registration, rule.name);
+      const add = (message: string, path = key) =>
+        errors.push({ key, error: { path, message } });
+      const parse = parseErrors[registration]?.[rule.name];
+      if (parse?.length) {
+        for (const e of parse) add(e.message);
         continue;
       }
       const emptyList = Array.isArray(value) && value.length === 0;
@@ -696,7 +714,7 @@ function sectionErrors(
         value === undefined ||
         ((value === "" || emptyList) && rule.required)
       ) {
-        if (rule.required) errors.push({ path, message: "is required" });
+        if (rule.required) add("is required");
         continue;
       }
       const choices = option.choices;
@@ -704,17 +722,14 @@ function sectionErrors(
         choices?.parameter === rule.name &&
         !choices.items.some((item) => item.name === value)
       ) {
-        errors.push({ path, message: `${value} is not an available choice` });
+        add(`${value} is not an available choice`);
         continue;
       }
       if (rule.allowed) {
         const names = new Set(rule.allowed.map((a) => a.name));
         for (const picked of Array.isArray(value) ? value : [value])
           if (!names.has(picked as string))
-            errors.push({
-              path,
-              message: `${picked} is not an allowed choice`,
-            });
+            add(`${picked} is not an allowed choice`);
         // The schema checks only the count: its items are the names, and
         // the values of the choices stay on the server.
         const { minItems, maxItems } = rule.schema ?? {};
@@ -723,23 +738,20 @@ function sectionErrors(
           typeof minItems === "number" &&
           value.length < minItems
         )
-          errors.push({ path, message: `Choose at least ${minItems}` });
+          add(`Choose at least ${minItems}`);
         if (
           Array.isArray(value) &&
           typeof maxItems === "number" &&
           value.length > maxItems
         )
-          errors.push({ path, message: `Choose at most ${maxItems}` });
+          add(`Choose at most ${maxItems}`);
         continue;
       }
       if (!rule.schema) continue;
       const result = validate(rule.schema, value);
       if (!result.ok)
         for (const e of result.errors)
-          errors.push({
-            path: e.path ? `${path}.${e.path}` : path,
-            message: e.message,
-          });
+          add(e.message, e.path ? `${key}.${e.path}` : key);
     }
   }
   return errors;
