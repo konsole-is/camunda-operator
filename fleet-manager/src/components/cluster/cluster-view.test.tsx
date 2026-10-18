@@ -17,6 +17,11 @@ const live = vi.hoisted(() => ({
   calls: [] as { kind: string; opts: unknown }[],
   errors: {} as Record<string, string>,
 }));
+// The App Router keeps useSearchParams in step with history.replaceState, so
+// the fake reads the URL of the window.
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, opts: unknown, initial: unknown[]) => {
     live.calls.push({ kind, opts });
@@ -145,7 +150,7 @@ const waitingLine = () =>
     .find((text) => text?.includes("waiting for GitOps"));
 
 const view = (props: Partial<Parameters<typeof ClusterView>[0]> = {}) => (
-  <ClusterView initial={data()} tab="overview" now={now} {...props} />
+  <ClusterView initial={data()} now={now} {...props} />
 );
 
 const filled: ActionSlots = Object.fromEntries(
@@ -255,7 +260,8 @@ describe("ClusterView", () => {
   });
 
   it("opens on the tab of the URL", () => {
-    render(view({ tab: "claim" }));
+    window.history.replaceState(null, "", "?tab=claim");
+    render(view());
     expect(
       screen.getByRole("tab", { name: "Claim" }).getAttribute("aria-selected"),
     ).toBe("true");
@@ -331,12 +337,25 @@ describe("ClusterView", () => {
     ).toEqual([["Operate", "https://o.example.com"]]);
   });
 
-  it("follows a new tab of the URL without a remount", () => {
-    const { rerender } = render(view({ tab: "overview" }));
-    rerender(view({ tab: "backups" }));
+  it("follows a navigation to another tab without a remount", () => {
+    const { rerender } = render(view());
+    window.history.replaceState(null, "", "?tab=backups");
+    rerender(view());
     expect(
       screen
         .getByRole("tab", { name: "Backups" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("follows a navigation back to the first tab after a click", async () => {
+    const { rerender } = render(view());
+    await userEvent.click(screen.getByRole("tab", { name: "Backups" }));
+    window.history.replaceState(null, "", "?tab=overview");
+    rerender(view());
+    expect(
+      screen
+        .getByRole("tab", { name: "Overview" })
         .getAttribute("aria-selected"),
     ).toBe("true");
   });

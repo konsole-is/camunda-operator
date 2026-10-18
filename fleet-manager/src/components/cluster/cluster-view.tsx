@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import {
   GitWaitingLine,
@@ -57,34 +58,31 @@ export type ClusterPageData = {
 
 /**
  * ClusterView is the cluster page. It follows the objects of initial live,
- * and selects tab, also when tab changes. A click on a tab replaces the
- * tab query parameter of the URL. slots fill the action slots of a managed cluster, and an
+ * and selects the tab that the tab query parameter of the URL names. A
+ * click on a tab replaces that parameter. slots fill the action slots of a managed cluster, and an
  * unmanaged cluster ignores them. pushedClaim is the claim file that the
  * fleet manager pushed in Git mode. When the cluster is deleted, the page
  * says so and shows nothing else.
  */
 export function ClusterView({
   initial,
-  tab: initialTab,
   now,
   slots,
   pushedClaim,
 }: {
   initial: ClusterPageData;
-  tab: ClusterTab;
   now: string;
   slots?: ActionSlots;
   pushedClaim?: PushedObject;
 }) {
   const { namespace, name } = initial.cluster.metadata ?? {};
   const ns = namespace ?? "";
-  const [tab, setTab] = useState<ClusterTab>(initialTab);
-  // A navigation to another ?tab= of this route renders the page again with
-  // a new tab prop, but it does not remount the view.
-  const [shownTab, setShownTab] = useState(initialTab);
-  if (initialTab !== shownTab) {
-    setShownTab(initialTab);
-    setTab(initialTab);
+  const urlTab = clusterTabOf(useSearchParams().get("tab") ?? undefined);
+  const [tab, setTab] = useState<ClusterTab>(urlTab);
+  const [seenUrlTab, setSeenUrlTab] = useState(urlTab);
+  if (urlTab !== seenUrlTab) {
+    setSeenUrlTab(urlTab);
+    setTab(urlTab);
   }
 
   const cluster = useResource(
