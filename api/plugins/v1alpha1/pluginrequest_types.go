@@ -150,6 +150,19 @@ type PluginRequest struct {
 	Status PluginRequestStatus `json:"status,omitzero"`
 }
 
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *PluginRequest) GetStatusConditions() *[]metav1.Condition { return &in.Status.Conditions }
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *PluginRequest) GetKind() string { return "PluginRequest" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *PluginRequest) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
+
 // +kubebuilder:object:root=true
 
 // PluginRequestList contains a list of PluginRequest

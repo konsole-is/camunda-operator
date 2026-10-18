@@ -95,6 +95,14 @@ type Grant struct {
 	Status GrantStatus `json:"status,omitzero"`
 }
 
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *Grant) GetStatusConditions() *[]metav1.Condition { return &in.Status.Conditions }
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *Grant) GetKind() string { return "Grant" }
+
 // +kubebuilder:object:root=true
 
 // GrantList contains a list of Grant
