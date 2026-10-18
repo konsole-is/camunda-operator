@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="plugin-conformance" tests="3" failures="1" errors="0" skipped="1" time="4.500">
+  <testsuite name="s3-backup-bucket" tests="3" failures="1" errors="0" skipped="1" time="4.500">
+    <testcase name="REG-ACCEPTED" classname="s3-backup-bucket" time="1.250"></testcase>
+    <testcase name="REG-SCHEMA" classname="s3-backup-bucket" time="3.250">
+      <failure message="case &#34;default&#34;: parameters.retentionDays: Invalid value: 0: must be &gt;= 1&#xA;case &#34;orphan&#34;: parameters: Required value &amp; &lt;none&gt; given">case &#34;default&#34;: parameters.retentionDays: Invalid value: 0: must be &gt;= 1&#xA;case &#34;orphan&#34;: parameters: Required value &amp; &lt;none&gt; given</failure>
+    </testcase>
+    <testcase name="ORDER-REGISTRATION-FIRST" classname="s3-backup-bucket" time="0.000">
+      <skipped message="skipped by the config: the plugin has no Deployment"></skipped>
+    </testcase>
+  </testsuite>
+</testsuites>
