@@ -181,4 +181,53 @@ describe("apiErrorsOf", () => {
       },
     ]);
   });
+
+  it("keeps no API message for a Secret, so no value reaches the page", () => {
+    const secret = {
+      apiVersion: "v1",
+      kind: "Secret",
+      namespace: "team-a",
+      name: "git",
+    };
+    const value = "s3cret-value";
+    const encoded = Buffer.from(value).toString("base64");
+    const failures = [
+      failure(422, {
+        message: `Secret "git" is invalid: data[token]: Invalid value: "${value}"`,
+      }),
+      failure(422, {
+        message: "invalid",
+        details: {
+          causes: [{ field: "data[token]", message: `bad value ${encoded}` }],
+        },
+      }),
+      failure(409, {
+        message: `conflict ${value}`,
+        details: {
+          causes: [
+            {
+              reason: "FieldManagerConflict",
+              field: ".data.token",
+              message: `conflict with "kubectl" ${value}`,
+            },
+          ],
+        },
+      }),
+      failure(403, { message: `forbidden ${value}` }),
+      failure(500, { message: `admission webhook said ${encoded}` }),
+    ];
+
+    const errors = failures.flatMap((f) => apiErrorsOf(f, secret, false));
+
+    expect(errors.map((e) => [e.code, e.path, e.manager])).toEqual([
+      ["Invalid", "data[token]", undefined],
+      ["Invalid", "data[token]", undefined],
+      ["Conflict", "data.token", "kubectl"],
+      ["Forbidden", undefined, undefined],
+      ["Unavailable", undefined, undefined],
+    ]);
+    const shown = JSON.stringify(errors);
+    expect(shown).not.toContain(value);
+    expect(shown).not.toContain(encoded);
+  });
 });

@@ -179,6 +179,20 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         : { preconditions }),
     });
 
+  // The app may not delete every kind that it writes, such as a Namespace.
+  // Then the object stays, and the page shows the error of the delete.
+  const undoCreate = async (ref: ObjectRef, uid: string) => {
+    try {
+      await deleteObject(ref, { uid }, false);
+      return [staleError(ref)];
+    } catch (error) {
+      if (error instanceof KubernetesRequestError && error.statusCode === 404) {
+        return [staleError(ref)];
+      }
+      return [staleError(ref), ...apiErrorsOf(error, ref, false)];
+    }
+  };
+
   // uids holds the uid of each object of the apply list that exists.
   const dryRun = async (
     change: Change,
@@ -255,8 +269,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           typeof uid === "string" &&
           uid !== uids.get(refKey(ref))
         ) {
-          await deleteObject(ref, { uid }, false);
-          return { ok: false, errors: [staleError(ref)] };
+          return { ok: false, errors: await undoCreate(ref, uid) };
         }
       } catch (error) {
         return {

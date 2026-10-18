@@ -10,9 +10,33 @@ const pathOfMessage = /is invalid: ([A-Za-z][\w.[\]"=/-]*): /;
  * page shows. hasPrecondition tells that the request carried the
  * resourceVersion that the page read: a 409 or a 404 then means that the
  * object changed or was deleted since, and gives Stale. A field manager
- * conflict gives Conflict in both cases. Every error carries ref.
+ * conflict gives Conflict in both cases. Every error carries ref. An error
+ * of a Secret has a fixed message, with no text of the API server.
  */
 export function apiErrorsOf(
+  error: unknown,
+  ref: ObjectRef,
+  hasPrecondition: boolean,
+): ApiError[] {
+  const errors = errorsOfAnswer(error, ref, hasPrecondition);
+  return ref.kind === "Secret" ? errors.map(withSecretMessage) : errors;
+}
+
+// An API server message or an admission webhook can quote the object, and
+// no Secret value may leave the app server (contract 6.2).
+function withSecretMessage(error: ApiError): ApiError {
+  const name = error.ref?.name ?? "";
+  const messages: Record<ApiError["code"], string> = {
+    Stale: error.message,
+    Conflict: `Another field manager owns a field of the Secret ${name}.`,
+    Invalid: `The API server refused the Secret ${name}.`,
+    Forbidden: `The fleet manager may not write the Secret ${name}.`,
+    Unavailable: `The API server did not write the Secret ${name}.`,
+  };
+  return { ...error, message: messages[error.code] };
+}
+
+function errorsOfAnswer(
   error: unknown,
   ref: ObjectRef,
   hasPrecondition: boolean,

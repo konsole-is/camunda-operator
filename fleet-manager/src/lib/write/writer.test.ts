@@ -165,6 +165,7 @@ describe("directWriter when an object is deleted after the preview", () => {
   let race: http.Server;
   let raceKc: KubeConfig;
   let deletes: unknown[];
+  let deleteStatus: number;
 
   beforeAll(async () => {
     race = http.createServer((request, response) => {
@@ -175,6 +176,13 @@ describe("directWriter when an object is deleted after the preview", () => {
         const uid = request.method === "PATCH" && !dryRun ? "new" : "old";
         if (request.method === "DELETE") {
           deletes.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+          if (deleteStatus !== 200) {
+            response.writeHead(deleteStatus, {
+              "Content-Type": "application/json",
+            });
+            response.end(JSON.stringify({ message: "delete is forbidden" }));
+            return;
+          }
         }
         response.writeHead(200, { "Content-Type": "application/json" });
         response.end(
@@ -199,6 +207,7 @@ describe("directWriter when an object is deleted after the preview", () => {
 
   beforeEach(() => {
     deletes = [];
+    deleteStatus = 200;
   });
 
   it("an apply with a precondition fails with Stale and deletes the object that it created", async () => {
@@ -222,6 +231,31 @@ describe("directWriter when an object is deleted after the preview", () => {
     expect(deletes).toEqual([
       expect.objectContaining({ preconditions: { uid: "new" } }),
     ]);
+  });
+
+  it("fails with Stale and the error of the delete when the app may not delete the object that it created", async () => {
+    deleteStatus = 403;
+
+    const result = await directWriter(raceKc).apply({
+      intent: "Rename from the old form",
+      apply: [
+        {
+          apiVersion: "fleet.camunda.io/v1alpha1",
+          kind: "Environment",
+          metadata: { name: "prod" },
+          spec: {},
+        },
+      ],
+      preconditions: { "Environment//prod": "7" },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({ code: "Stale" }),
+        expect.objectContaining({ code: "Forbidden" }),
+      ],
+    });
   });
 });
 
