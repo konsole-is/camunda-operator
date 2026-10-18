@@ -33,7 +33,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utiljson "k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/utils/ptr"
 )
 
 // fleetTemplateKey marks a parameter whose default is a template. The
@@ -138,9 +137,8 @@ func parseSchema(ctx context.Context, raw []byte) (*apiextensions.JSONSchemaProp
 // schemaKeywords are the keywords of a CRD schema.
 var schemaKeywords = func() map[string]bool {
 	keywords := map[string]bool{}
-	fields := reflect.TypeFor[apiextensionsv1.JSONSchemaProps]()
-	for i := range fields.NumField() {
-		name, _, _ := strings.Cut(fields.Field(i).Tag.Get("json"), ",")
+	for f := range reflect.TypeFor[apiextensionsv1.JSONSchemaProps]().Fields() {
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
 		keywords[name] = true
 	}
 
@@ -204,13 +202,14 @@ func validateAsCRDField(ctx context.Context, props *apiextensions.JSONSchemaProp
 					Properties: map[string]apiextensions.JSONSchemaProps{"parameters": *props},
 				},
 			},
-			PreserveUnknownFields: ptr.To(false),
+			PreserveUnknownFields: new(false),
 		},
 		Status: apiextensions.CustomResourceDefinitionStatus{StoredVersions: []string{"v1"}},
 	}
 
-	var errs []error
-	for _, fieldErr := range apiextensionsvalidation.ValidateCustomResourceDefinition(ctx, crd) {
+	fieldErrs := apiextensionsvalidation.ValidateCustomResourceDefinition(ctx, crd)
+	errs := make([]error, 0, len(fieldErrs))
+	for _, fieldErr := range fieldErrs {
 		fieldErr.Field = strings.Replace(fieldErr.Field, crdFieldPath, "spec.parameters", 1)
 		errs = append(errs, fieldErr)
 	}
