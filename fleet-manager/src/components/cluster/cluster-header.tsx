@@ -54,6 +54,9 @@ export function ClusterHeader({
             {name}
           </h1>
           <StatusChip condition={ready} />
+          {ready?.status === "True" && ready.reason && (
+            <span className="text-sm text-muted">{ready.reason}</span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {links.map((link) => (

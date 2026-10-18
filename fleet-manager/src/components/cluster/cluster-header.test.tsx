@@ -37,6 +37,11 @@ describe("ClusterHeader", () => {
     }
   });
 
+  it("shows the reason of a True Ready condition", () => {
+    render(header({ ready: { status: "True", reason: "Suspended" } }));
+    expect(screen.getByText("Suspended")).toBeTruthy();
+  });
+
   it("says No environment for a namespace without the label", () => {
     render(header({ environment: undefined }));
     expect(screen.getByText("No environment")).toBeTruthy();
