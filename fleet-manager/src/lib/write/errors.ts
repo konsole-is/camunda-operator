@@ -39,11 +39,11 @@ export function apiErrorsOf(
           };
         });
       }
-      if (hasPrecondition) return [stale(ref)];
+      if (hasPrecondition) return [staleError(ref)];
       return [{ code: "Conflict", message: error.message, ref }];
     }
     case 404:
-      if (hasPrecondition) return [stale(ref)];
+      if (hasPrecondition) return [staleError(ref)];
       return [
         {
           code: "Unavailable",
@@ -80,7 +80,8 @@ export function apiErrorsOf(
   }
 }
 
-function stale(ref: ObjectRef): ApiError {
+/** staleError is the error of a write of ref whose object changed or was deleted since the page read it. */
+export function staleError(ref: ObjectRef): ApiError {
   return {
     code: "Stale",
     message: `The ${ref.kind} ${ref.name} changed since you opened it.`,

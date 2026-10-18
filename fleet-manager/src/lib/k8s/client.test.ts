@@ -84,6 +84,15 @@ describe("requestJSON", () => {
     expect(seen).toMatchObject({ contentType: undefined, body: undefined });
   });
 
+  it("sends the body of a DELETE", async () => {
+    await requestJSON(kc, {
+      method: "DELETE",
+      path: "/x",
+      body: { preconditions: { resourceVersion: "7" } },
+    });
+    expect(seen.body).toEqual({ preconditions: { resourceVersion: "7" } });
+  });
+
   it("resolves an empty answer to undefined", async () => {
     answer = { status: 200, body: "" };
     await expect(

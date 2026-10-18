@@ -83,9 +83,12 @@ export async function requestJSON<T>(
     );
   }
   const url = new URL(cluster.server + path);
+  const payload = body === undefined ? undefined : JSON.stringify(body);
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (body !== undefined) {
+  if (payload !== undefined) {
     headers["Content-Type"] = contentType ?? "application/json";
+    // Node sends no body for a DELETE without a Content-Length.
+    headers["Content-Length"] = String(Buffer.byteLength(payload));
   }
   const options: https.RequestOptions = { method, headers };
   await kc.applyToHTTPSOptions(options);
@@ -132,7 +135,7 @@ export async function requestJSON<T>(
       );
       request.on("close", () => clearTimeout(timer));
     }
-    request.end(body === undefined ? undefined : JSON.stringify(body));
+    request.end(payload);
   });
 }
 
