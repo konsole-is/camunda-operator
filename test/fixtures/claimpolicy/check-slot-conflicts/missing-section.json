@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "A selection in a section that does not exist is refused",
+  "input": {
+    "sections": [
+      {
+        "metadata": {
+          "name": "cloud-identity"
+        },
+        "spec": {
+          "label": "cloud-identity",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "workloadIdentity"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "access",
+        "registration": "ingress"
+      }
+    ],
+    "overrides": {
+      "cluster": {
+        "externalUrl": "https://custom.example.com"
+      }
+    }
+  },
+  "result": {
+    "refusal": {
+      "reason": "InvalidReference",
+      "message": "PluginSection \"access\" does not exist"
+    }
+  }
+}
