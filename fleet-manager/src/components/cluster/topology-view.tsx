@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ConditionLike } from "@/components/fleet/status";
+import { type ConditionLike, DOT_TONE } from "@/components/fleet/status";
 import { StatusDot } from "@/components/fleet/status-dot";
 import type { PodDot, TopologyBox } from "./topology";
 
@@ -63,7 +63,17 @@ export function TopologyView({
 }
 
 function PodState({ pod }: { pod: PodDot }) {
-  if (pod.tone === "off") return <StatusDot label={pod.name} off />;
+  // StatusDot names an off dot "Not used", but a pod in this state is going
+  // away, so its name says its own state.
+  if (pod.tone === "off") {
+    return (
+      <span
+        role="img"
+        aria-label={`${pod.name}: ${pod.state}`}
+        className={`inline-block size-2 shrink-0 rounded-full ${DOT_TONE.off}`}
+      />
+    );
+  }
   const condition: ConditionLike =
     pod.tone === "ok"
       ? { status: "True" }

@@ -43,7 +43,7 @@ describe("TopologyView", () => {
       "orders-zeebe-0: Ready",
       "orders-zeebe-1: Not ready (CrashLoopBackOff)",
       "orders-zeebe-2: Unknown (Pending)",
-      "orders-zeebe-3: Not used",
+      "orders-zeebe-3: Terminating",
     ]);
   });
 
