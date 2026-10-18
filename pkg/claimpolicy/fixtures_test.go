@@ -136,6 +136,12 @@ func TestEveryRefusalReasonHasACase(t *testing.T) {
 		require.NoError(t, err)
 
 		for _, f := range fixtures {
+			// A case without a result is a new case: the table test fails on
+			// it, and with -update it gets its result after this test.
+			if len(f.Result) == 0 {
+				continue
+			}
+
 			var r result
 			require.NoError(t, json.Unmarshal(f.Result, &r), f.Path)
 			if r.Refusal != nil {
