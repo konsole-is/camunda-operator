@@ -127,9 +127,6 @@
         "externalUrl": "",
         "serviceAccount": {
           "annotations": {}
-        },
-        "zeebe": {
-          "storageClassName": ""
         }
       }
     }

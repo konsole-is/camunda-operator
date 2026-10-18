@@ -36,7 +36,7 @@ type slotConflict struct {
 	slot pluginsv1alpha1.Slot
 	path string
 	// isSet reports whether the claim sets the field: a string that is not
-	// empty, or a map with a key.
+	// empty, a pointer that is not nil, or a map with a key.
 	isSet func(Overrides) bool
 }
 
@@ -114,8 +114,7 @@ var slotConflicts = []slotConflict{
 		slot: pluginsv1alpha1.SlotVolumeEncryption,
 		path: "spec.cluster.zeebe.storageClassName",
 		isSet: func(o Overrides) bool {
-			return o.Cluster != nil && o.Cluster.Zeebe != nil && o.Cluster.Zeebe.StorageClassName != nil &&
-				*o.Cluster.Zeebe.StorageClassName != ""
+			return o.Cluster != nil && o.Cluster.Zeebe != nil && o.Cluster.Zeebe.StorageClassName != nil
 		},
 	},
 }
