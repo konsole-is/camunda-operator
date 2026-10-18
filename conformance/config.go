@@ -41,8 +41,9 @@ type Config struct {
 	// Skip names the checks that the run does not run. Only a skippable
 	// check can be skipped, and each skip needs a reason.
 	Skip []Skip
-	// RESTConfig is the connection to the cluster of the run. Nil uses the
-	// kubeconfig, then the in-cluster config.
+	// RESTConfig is the connection to the cluster of the run. Nil takes the
+	// first of the --kubeconfig flag, the KUBECONFIG file, the in-cluster
+	// config, and $HOME/.kube/config, as controller-runtime GetConfig does.
 	RESTConfig *rest.Config
 }
 

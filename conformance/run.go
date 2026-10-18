@@ -87,8 +87,8 @@ func runChecks(
 }
 
 // connect returns the REST config of the run and a client for it, after
-// the API server answered a request. A nil restConfig is resolved from the
-// kubeconfig, then from the in-cluster config.
+// the API server answered a request. A nil restConfig is resolved as
+// Config.RESTConfig says.
 func connect(ctx context.Context, restConfig *rest.Config) (*rest.Config, client.Client, error) {
 	if restConfig == nil {
 		var err error
