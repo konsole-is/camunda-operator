@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "name": "An input waits while the request of its producer does not exist",
+  "input": {
+    "registration": {
+      "metadata": {
+        "name": "elasticsearch"
+      },
+      "spec": {
+        "sections": [
+          "secondary-storage"
+        ],
+        "mode": "Optional",
+        "inputs": [
+          {
+            "name": "storageClassName",
+            "from": "volume-encryption/storageClassName"
+          },
+          {
+            "name": "objectStorageConfig",
+            "from": "backup-storage/objectStorageConfig"
+          }
+        ]
+      }
+    },
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      },
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      }
+    ],
+    "requests": []
+  },
+  "result": {
+    "value": {
+      "waiting": [
+        "backup-storage"
+      ]
+    }
+  }
+}

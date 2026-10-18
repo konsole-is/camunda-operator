@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "name": "An input waits while the producer has not written its output",
+  "input": {
+    "registration": {
+      "metadata": {
+        "name": "elasticsearch"
+      },
+      "spec": {
+        "sections": [
+          "secondary-storage"
+        ],
+        "mode": "Optional",
+        "inputs": [
+          {
+            "name": "storageClassName",
+            "from": "volume-encryption/storageClassName"
+          },
+          {
+            "name": "objectStorageConfig",
+            "from": "backup-storage/objectStorageConfig"
+          }
+        ]
+      }
+    },
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      },
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      }
+    ],
+    "requests": [
+      {
+        "metadata": {
+          "name": "team-a-backup-storage",
+          "generation": 3
+        },
+        "spec": {
+          "section": "backup-storage",
+          "registration": "s3"
+        },
+        "status": {
+          "conditions": [
+            {
+              "type": "OutputsReady",
+              "status": "True",
+              "reason": "Written",
+              "message": "",
+              "lastTransitionTime": "2026-10-18T00:00:00Z",
+              "observedGeneration": 3
+            }
+          ],
+          "outputs": {
+            "other": "x"
+          }
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "waiting": [
+        "backup-storage"
+      ]
+    }
+  }
+}
