@@ -49,18 +49,17 @@ function parameterKey(registration: string, parameter: string): string {
 
 /**
  * SectionCards is one section of a create flow: a card for each allowed
- * option, the empty option unless the section is required, the Default label
- * on the option that the environment preselects, and, under each selected
- * option, its parameters. A claim-editable parameter is a field that
- * is checked against its schema, or, with an allowed list, a select or a
- * checkbox group for an array that shows the labels and submits the names.
- * Nothing is preselected in an allowed list unless the environment value is
- * one of its names. A selection holds only the parameters that differ from
- * the policy. A selected option that new options no longer hold, or
+ * option, the Default label on the option that the environment preselects,
+ * and, under each selected option, its parameters. A claim-editable parameter
+ * is a field that is checked against its schema, or, with an allowed list, a
+ * select or a checkbox group for an array that shows the labels and submits
+ * the names. Nothing is preselected in an allowed list unless the environment
+ * value is one of its names. A selection holds only the parameters that differ
+ * from the policy. A selected option that new options no longer hold, or
  * disable, leaves the selection. onChange gets the initial selections and
  * errors once, then each change. An error path is
- * `<registration>/<parameter>`, then `.<path>` for an error inside the
- * value, or the section name when a required section has no selection.
+ * `<registration>/<parameter>`, then `.<path>` for an error inside the value,
+ * or the section name when a required section has no selection.
  */
 export function SectionCards({
   section,
