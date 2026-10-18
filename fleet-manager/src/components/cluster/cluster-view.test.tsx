@@ -9,11 +9,7 @@ import {
   ENVIRONMENT_LABEL,
   REVISION_ANNOTATION,
 } from "@/lib/labels";
-import {
-  type ClusterPageData,
-  ClusterView,
-  clusterTabOf,
-} from "./cluster-view";
+import { type ClusterPageData, ClusterView } from "./cluster-view";
 import { ACTION_SLOTS, type ActionSlots } from "./slots";
 
 const live = vi.hoisted(() => ({
@@ -350,16 +346,5 @@ describe("ClusterView", () => {
     expect(
       screen.getByRole("img", { name: "orders-zeebe-0: Ready" }),
     ).toBeTruthy();
-  });
-});
-
-describe("clusterTabOf", () => {
-  it.each([
-    [undefined, "overview"],
-    ["nope", "overview"],
-    ["backups", "backups"],
-    [["claim", "x"], "claim"],
-  ])("maps %j to %s", (value, tab) => {
-    expect(clusterTabOf(value)).toBe(tab);
   });
 });

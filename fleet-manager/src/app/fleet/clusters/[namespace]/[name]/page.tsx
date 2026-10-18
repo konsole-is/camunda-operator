@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { ClusterView, clusterTabOf } from "@/components/cluster/cluster-view";
+import { ClusterView } from "@/components/cluster/cluster-view";
+import { clusterTabOf } from "@/components/cluster/tabs";
 import { loadClusterPage } from "./load";
 
 export default async function ClusterPage({
