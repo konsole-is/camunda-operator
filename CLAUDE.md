@@ -137,7 +137,7 @@ make test-version-stamp     # a stamped build reports its version, and the image
 go vet -tags=e2e ./test/e2e/  # go test ./... never compiles this package
 mkdocs build --strict       # catches a broken link or a missing nav entry
 make fleet-lint             # fleet-manager/ only: eslint, prettier --check, tsc --noEmit
-make fleet-test             # fleet-manager/ only: vitest; needs make setup-envtest
+make fleet-test             # fleet-manager/ only: vitest; needs make setup-envtest; keeps the log and a JUnit report in fleet-manager/test-reports
 make fleet-build            # fleet-manager/ only: next build
 make fleet-generate         # then `git status --porcelain fleet-manager/src/generated` prints nothing
 make fleet-gallery          # fleet-manager/ only: screenshots of each gallery story into fleet-manager/ui-gallery, axe check
