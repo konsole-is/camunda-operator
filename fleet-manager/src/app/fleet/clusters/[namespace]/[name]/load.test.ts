@@ -5,6 +5,7 @@ import { loadClusterPage } from "./load";
 const k8s = vi.hoisted(() => ({
   cluster: undefined as unknown,
   lists: [] as { kind: string; opts: unknown }[],
+  failing: "",
 }));
 vi.mock("@/lib/k8s/read", () => ({
   get: async (kind: string, _namespace: string, name: string) =>
@@ -16,12 +17,14 @@ vi.mock("@/lib/k8s/read", () => ({
       : undefined,
   list: async (kind: string, opts: unknown) => {
     k8s.lists.push({ kind, opts });
+    if (kind === k8s.failing) throw new Error(`${kind} is forbidden`);
     return [];
   },
 }));
 
 beforeEach(() => {
   k8s.lists = [];
+  k8s.failing = "";
 });
 
 const named = (name: string) => {
@@ -89,5 +92,13 @@ describe("loadClusterPage", () => {
       namespace: "team-a",
       labelSelector: `camunda.io/cluster=${long.value}`,
     });
+  });
+
+  it("gives an empty list for a read that fails, and keeps the cluster", async () => {
+    named("orders");
+    k8s.failing = "LogicalBackupRDBMS";
+    const data = await loadClusterPage("team-a", "orders");
+    expect(data?.cluster.metadata?.name).toBe("orders");
+    expect(data?.backups.rdbms).toEqual([]);
   });
 });
