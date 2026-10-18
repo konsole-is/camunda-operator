@@ -49,11 +49,7 @@ export type Change = {
  * does not serve the kind.
  */
 export type ApiErrorCode =
-  | "Stale"
-  | "Conflict"
-  | "Invalid"
-  | "Forbidden"
-  | "Unavailable";
+  "Stale" | "Conflict" | "Invalid" | "Forbidden" | "Unavailable";
 
 /**
  * ApiError is one refusal. path is the field path, without a leading dot,

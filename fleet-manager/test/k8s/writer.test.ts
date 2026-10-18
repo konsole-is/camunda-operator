@@ -111,7 +111,9 @@ describe("the direct writer against envtest", () => {
       { op: "removed", text: "  displayName: One" },
       { op: "added", text: "  displayName: Two" },
     ]);
-    expect((await live(name)).spec).toMatchObject({ displayName: "One" });
+    expect(await live(name)).toMatchObject({
+      spec: { displayName: "One" },
+    });
   });
 
   it("an apply of a field that another manager owns fails with Conflict and the name of that manager", async () => {
@@ -137,7 +139,9 @@ describe("the direct writer against envtest", () => {
         }),
       ],
     });
-    expect((await live(name)).spec).toMatchObject({ displayName: "Theirs" });
+    expect(await live(name)).toMatchObject({
+      spec: { displayName: "Theirs" },
+    });
   });
 
   it("an apply with the resourceVersion of an older copy fails with Stale and leaves the object unchanged", async () => {
@@ -161,7 +165,9 @@ describe("the direct writer against envtest", () => {
       ok: false,
       errors: [expect.objectContaining({ code: "Stale" })],
     });
-    expect((await live(name)).spec).toMatchObject({ displayName: "Two" });
+    expect(await live(name)).toMatchObject({
+      spec: { displayName: "Two" },
+    });
   });
 
   it("an apply with the current resourceVersion succeeds", async () => {
@@ -178,7 +184,9 @@ describe("the direct writer against envtest", () => {
     });
 
     expect(result).toEqual({ ok: true, mode: "direct" });
-    expect((await live(name)).spec).toMatchObject({ displayName: "Two" });
+    expect(await live(name)).toMatchObject({
+      spec: { displayName: "Two" },
+    });
   });
 
   it("an apply with a precondition for a deleted object fails with Stale and creates nothing", async () => {
@@ -263,7 +271,9 @@ describe("the direct writer against envtest", () => {
       ok: false,
       errors: [expect.objectContaining({ code: "Stale" })],
     });
-    expect((await live(name)).spec).toMatchObject({ displayName: "Two" });
+    expect(await live(name)).toMatchObject({
+      spec: { displayName: "Two" },
+    });
   });
 
   it("a delete of a missing object succeeds", async () => {

@@ -63,8 +63,14 @@ describe("apiErrorsOf", () => {
 
   it("keeps a 400 that names no field as one Invalid without a path", () => {
     expect(
-      apiErrorsOf(failure(400, { message: "the body is not YAML" }), claim, false),
-    ).toEqual([{ code: "Invalid", message: "the body is not YAML", ref: claim }]);
+      apiErrorsOf(
+        failure(400, { message: "the body is not YAML" }),
+        claim,
+        false,
+      ),
+    ).toEqual([
+      { code: "Invalid", message: "the body is not YAML", ref: claim },
+    ]);
   });
 
   it("names the manager of a field manager conflict, also with a precondition", () => {
@@ -111,7 +117,11 @@ describe("apiErrorsOf", () => {
 
   it("maps a 404 on an object with a precondition to Stale", () => {
     expect(
-      apiErrorsOf(failure(404, { reason: "NotFound", message: "gone" }), claim, true),
+      apiErrorsOf(
+        failure(404, { reason: "NotFound", message: "gone" }),
+        claim,
+        true,
+      ),
     ).toEqual([
       {
         code: "Stale",
@@ -124,13 +134,21 @@ describe("apiErrorsOf", () => {
   it("keeps another 409 without a precondition as a Conflict with no manager", () => {
     const message = 'camundaclusterclaims "orders" already exists';
     expect(
-      apiErrorsOf(failure(409, { reason: "AlreadyExists", message }), claim, false),
+      apiErrorsOf(
+        failure(409, { reason: "AlreadyExists", message }),
+        claim,
+        false,
+      ),
     ).toEqual([{ code: "Conflict", message, ref: claim }]);
   });
 
   it("maps a 404 without a precondition to Unavailable for a kind the API server does not serve", () => {
     expect(
-      apiErrorsOf(failure(404, { reason: "NotFound", message: "x" }), claim, false),
+      apiErrorsOf(
+        failure(404, { reason: "NotFound", message: "x" }),
+        claim,
+        false,
+      ),
     ).toEqual([
       {
         code: "Unavailable",

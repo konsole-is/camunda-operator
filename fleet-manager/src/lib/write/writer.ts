@@ -73,20 +73,20 @@ export function applyBody(
   object: KubeObject,
   resourceVersion?: string,
 ): KubeObject {
-  const { status: _status, ...rest } = object;
-  const {
-    managedFields: _managedFields,
-    uid: _uid,
-    creationTimestamp: _creationTimestamp,
-    generation: _generation,
-    resourceVersion: _resourceVersion,
-    ...metadata
-  } = object.metadata;
+  const metadata = omit(object.metadata, [
+    "managedFields",
+    "uid",
+    "creationTimestamp",
+    "generation",
+    "resourceVersion",
+  ]);
   return {
-    ...rest,
+    ...omit(object, ["status"]),
     metadata:
-      resourceVersion === undefined ? metadata : { ...metadata, resourceVersion },
-  };
+      resourceVersion === undefined
+        ? metadata
+        : { ...metadata, resourceVersion },
+  } as KubeObject;
 }
 
 /**
@@ -97,15 +97,14 @@ export function diffView(
   object: KubeObject | undefined,
 ): KubeObject | undefined {
   if (object === undefined) return undefined;
-  const {
-    managedFields: _managedFields,
-    resourceVersion: _resourceVersion,
-    generation: _generation,
-    uid: _uid,
-    creationTimestamp: _creationTimestamp,
-    ...metadata
-  } = object.metadata;
-  return { ...object, metadata };
+  const metadata = omit(object.metadata, [
+    "managedFields",
+    "resourceVersion",
+    "generation",
+    "uid",
+    "creationTimestamp",
+  ]);
+  return { ...object, metadata } as KubeObject;
 }
 
 /**
@@ -166,17 +165,13 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     resourceVersion: string | undefined,
     dryRun: boolean,
   ) =>
-    send<unknown>(
-      "DELETE",
-      `${pathOf(ref)}${dryRun ? "?dryRun=All" : ""}`,
-      {
-        apiVersion: "v1",
-        kind: "DeleteOptions",
-        ...(resourceVersion === undefined
-          ? {}
-          : { preconditions: { resourceVersion } }),
-      },
-    );
+    send<unknown>("DELETE", `${pathOf(ref)}${dryRun ? "?dryRun=All" : ""}`, {
+      apiVersion: "v1",
+      kind: "DeleteOptions",
+      ...(resourceVersion === undefined
+        ? {}
+        : { preconditions: { resourceVersion } }),
+    });
 
   const preview = async (change: Change): Promise<Preview> => {
     const refusals = refsOf(change).flatMap(refusalOf);
@@ -329,18 +324,18 @@ function hideSecretValues(
     shown: (key: string, value: unknown) => string,
   ): KubeObject | undefined => {
     if (object === undefined) return undefined;
-    const {
-      "kubectl.kubernetes.io/last-applied-configuration": _lastApplied,
-      ...annotations
-    } = (object.metadata.annotations ?? {}) as Record<string, unknown>;
-    const { stringData: _stringData, ...rest } = object;
+    const annotations = omit(
+      (object.metadata.annotations ?? {}) as Record<string, unknown>,
+      ["kubectl.kubernetes.io/last-applied-configuration"],
+    );
+    const rest = omit(object, ["stringData"]);
     const data = Object.fromEntries(
       Object.entries((object.data ?? {}) as Record<string, unknown>).map(
         ([key, value]) => [key, shown(key, value)],
       ),
     );
     return {
-      ...rest,
+      ...(rest as KubeObject),
       metadata: {
         ...object.metadata,
         ...(object.metadata.annotations === undefined ? {} : { annotations }),
@@ -351,7 +346,18 @@ function hideSecretValues(
   return [
     hide(before, () => hiddenValue),
     hide(after, (key, value) =>
-      Object.hasOwn(old, key) && old[key] === value ? hiddenValue : changedValue,
+      Object.hasOwn(old, key) && old[key] === value
+        ? hiddenValue
+        : changedValue,
     ),
   ];
+}
+
+function omit<T extends Record<string, unknown>>(
+  record: T,
+  keys: string[],
+): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([key]) => !keys.includes(key)),
+  ) as Partial<T>;
 }
