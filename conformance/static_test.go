@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	authorizationv1 "k8s.io/api/authorization/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -151,6 +152,63 @@ func TestDeletionCheck(t *testing.T) {
 	})
 }
 
+func TestGrantsCheck(t *testing.T) {
+	setTemplate := func(raw string) func(*pluginsv1alpha1.PluginRegistration) {
+		return func(r *pluginsv1alpha1.PluginRegistration) {
+			r.Spec.GrantTemplates[0].Template = &apiextensionsv1.JSON{Raw: []byte(raw)}
+		}
+	}
+
+	runStaticCases(t, checkGrants, []staticCase{
+		{"contract placeholders", unchanged, ""},
+		{"no grant templates", func(r *pluginsv1alpha1.PluginRegistration) { r.Spec.GrantTemplates = nil }, ""},
+		{
+			"unsupported format",
+			func(r *pluginsv1alpha1.PluginRegistration) { r.Spec.GrantTemplates[0].Format = "gcp-iam-binding" },
+			"spec.grantTemplates[0].format: gcp-iam-binding is not a supported format",
+		},
+		{
+			"unknown placeholder",
+			setTemplate(`{"Resource":"{{ .unknown }}"}`),
+			"spec.grantTemplates[0].template.Resource: {{.unknown}}: the placeholder .unknown",
+		},
+		{"pods", setTemplate(`{"Resource":"{{ .pods }}"}`), ".pods is not in the contract"},
+		{"not an object", setTemplate(`[]`), "spec.grantTemplates[0].template is not a JSON object"},
+		{
+			"no template",
+			func(r *pluginsv1alpha1.PluginRegistration) { r.Spec.GrantTemplates[0].Template = nil },
+			"spec.grantTemplates[0].template is not a JSON object",
+		},
+	})
+}
+
+func TestGrantsCheckNamesEveryBrokenTemplate(t *testing.T) {
+	reg := validRegistration()
+	broken := reg.Spec.GrantTemplates[0]
+	broken.Template = &apiextensionsv1.JSON{Raw: []byte(`{"Resource":"{{ .unknown }}"}`)}
+	reg.Spec.GrantTemplates = []pluginsv1alpha1.GrantTemplate{broken, broken}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, reg)
+
+	err := checkGrants(t.Context(), s)
+
+	assert.ErrorContains(t, err, "spec.grantTemplates[0].template.Resource")
+	assert.ErrorContains(t, err, "spec.grantTemplates[1].template.Resource")
+}
+
+func TestMetricsCheck(t *testing.T) {
+	setQuery := func(query string) func(*pluginsv1alpha1.PluginRegistration) {
+		return func(r *pluginsv1alpha1.PluginRegistration) { r.Spec.MetricQueries[0].Query = query }
+	}
+
+	runStaticCases(t, checkMetrics, []staticCase{
+		{"namespace and pods", unchanged, ""},
+		{"service account", setQuery(`up{sa="{{ .serviceAccount }}"}`), ""},
+		{"output", setQuery(`up{bucket="{{ .outputs.x }}"}`), ""},
+		{"unknown placeholder", setQuery(`up{x="{{ .unknown }}"}`), "spec.metricQueries[0].query: {{.unknown}}"},
+		{"if", setQuery(`{{ if .pods }}{{ end }}`), "spec.metricQueries[0].query: {{if .pods}}{{end}}: if is not allowed"},
+	})
+}
+
 func TestRBACCheck(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -223,5 +281,5 @@ func TestStaticChecksRunInContractOrder(t *testing.T) {
 		assert.False(t, c.Skippable, "check %s is mandatory", c.ID)
 	}
 
-	assert.Equal(t, []CheckID{RegAccepted, RegOutputs, RegInputs, RegDeletion, RegRBAC}, ids)
+	assert.Equal(t, []CheckID{RegAccepted, RegOutputs, RegInputs, RegGrants, RegDeletion, RegRBAC, RegMetrics}, ids)
 }

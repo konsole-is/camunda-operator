@@ -18,6 +18,7 @@ package conformance
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -74,6 +75,11 @@ var staticChecks = []Check{
 		run:         checkInputs,
 	},
 	{
+		ID:          RegGrants,
+		Description: "Each grant template has a supported format and uses only the placeholders of the contract.",
+		run:         checkGrants,
+	},
+	{
 		ID:          RegDeletion,
 		Description: "spec.deletionPolicies holds Delete.",
 		run:         checkDeletion,
@@ -82,6 +88,11 @@ var staticChecks = []Check{
 		ID:          RegRBAC,
 		Description: "The ServiceAccount of the registration has the verb serve on the registration name.",
 		run:         checkRBAC,
+	},
+	{
+		ID:          RegMetrics,
+		Description: "Each metric query uses only the placeholders of the contract and .pods.",
+		run:         checkMetrics,
 	},
 }
 
@@ -187,6 +198,42 @@ func checkInputs(ctx context.Context, s *suite) error {
 	return errors.Join(errs...)
 }
 
+// supportedGrantFormats are the formats of a grant template that an identity
+// extension renders.
+var supportedGrantFormats = []pluginsv1alpha1.GrantFormat{pluginsv1alpha1.GrantFormatAWSIAMStatement}
+
+func checkGrants(ctx context.Context, s *suite) error {
+	reg, err := s.registration(ctx)
+	if err != nil {
+		return err
+	}
+
+	var errs []error
+	for i, tmpl := range reg.Spec.GrantTemplates {
+		if !slices.Contains(supportedGrantFormats, tmpl.Format) {
+			errs = append(
+				errs,
+				fmt.Errorf("spec.grantTemplates[%d].format: %s is not a supported format", i, tmpl.Format),
+			)
+		}
+
+		path := fmt.Sprintf("spec.grantTemplates[%d].template", i)
+		if tmpl.Template == nil || !isJSONObject(tmpl.Template.Raw) {
+			errs = append(errs, fmt.Errorf("%s is not a JSON object", path))
+			continue
+		}
+
+		errs = append(errs, checkJSONTemplates(path, tmpl.Template.Raw, templatePlaceholders))
+	}
+
+	return errors.Join(errs...)
+}
+
+func isJSONObject(raw []byte) bool {
+	var object map[string]any
+	return json.Unmarshal(raw, &object) == nil && object != nil
+}
+
 func checkDeletion(ctx context.Context, s *suite) error {
 	reg, err := s.registration(ctx)
 	if err != nil {
@@ -251,4 +298,20 @@ func checkRBAC(ctx context.Context, s *suite) error {
 	}
 
 	return errors.New(denied)
+}
+
+func checkMetrics(ctx context.Context, s *suite) error {
+	reg, err := s.registration(ctx)
+	if err != nil {
+		return err
+	}
+
+	var errs []error
+	for i, q := range reg.Spec.MetricQueries {
+		if err := checkTemplate(q.Query, metricPlaceholders); err != nil {
+			errs = append(errs, fmt.Errorf("spec.metricQueries[%d].query: %w", i, err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
