@@ -142,7 +142,7 @@ export function watchStream(
   return new ReadableStream<Uint8Array>(
     {
       // start does not wait for the watches: the stream calls pull only
-      // after start resolved, and the snapshots wait for pull.
+      // after start resolved, and sendWhenRoom waits for pull.
       start(controller) {
         const end = () => {
           close();
@@ -169,10 +169,15 @@ export function watchStream(
         };
         const send = (event: string, data: unknown, fields = "") =>
           write(frame(event, data, fields));
-        // The snapshots of all watches can be ready at once. A snapshot that
-        // waits for room keeps them from passing maxPendingBytes together.
-        const sendSnapshot = async (data: unknown) => {
-          const bytes = frame("snapshot", data);
+        // The snapshots and failures of all watches can be ready at once. A
+        // frame that waits for room keeps them from passing maxPendingBytes
+        // together.
+        const sendWhenRoom = async (
+          event: string,
+          data: unknown,
+          fields = "",
+        ) => {
+          const bytes = frame(event, data, fields);
           const room = Math.min(bytes.byteLength, maxPendingBytes);
           while (!closed && (controller.desiredSize ?? 0) < room) {
             await new Promise<void>((wake) => drained.push(wake));
@@ -189,7 +194,11 @@ export function watchStream(
           const { id } = entry;
           if ("error" in entry) {
             const kind = new URLSearchParams(id).get("kind") ?? "";
-            send("failure", { watch: id, kind, message: entry.error });
+            await sendWhenRoom("failure", {
+              watch: id,
+              kind,
+              message: entry.error,
+            });
             return true;
           }
           const { request } = entry;
@@ -236,13 +245,13 @@ export function watchStream(
               unsubscribes.push(unsubscribe);
               const objects = (snapshot as KubernetesObject[]).filter(inFilter);
               objects.forEach((o) => seen.add(objectKey(o)));
-              await sendSnapshot({ watch: id, kind, objects });
+              await sendWhenRoom("snapshot", { watch: id, kind, objects });
               const waiting = queue;
               queue = undefined;
               queuedBytes -= ownBytes;
               waiting.forEach(([change, object]) => deliver(change, object));
             } catch (error) {
-              send(
+              await sendWhenRoom(
                 "failure",
                 {
                   watch: id,

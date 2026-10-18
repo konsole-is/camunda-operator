@@ -422,4 +422,44 @@ describe("watchStream", () => {
     await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalled());
     await stream.cancel();
   });
+  it("a failure frame waits for room as a snapshot does, so a large snapshot does not drop it", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    const { cache } = fakeCache({
+      Pod: async () => ({
+        snapshot: [padded("large", 1_500)],
+        unsubscribe: vi.fn(),
+      }),
+      Service: () =>
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("services are not served")), 5),
+        ),
+      Secret: async () => ({
+        snapshot: [padded("small", 10)],
+        unsubscribe: vi.fn(),
+      }),
+    });
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+        { id: "c", request: { kinds: ["Secret"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+    await new Promise((wake) => setTimeout(wake, 20));
+
+    const { frames, done } = await readFrames(reader);
+    expect(done).toBe(true);
+    expect(frames.map((f) => `${f.event} ${f.data.watch}`).sort()).toEqual([
+      "failure b",
+      "snapshot a",
+      "snapshot c",
+    ]);
+  });
 });
