@@ -17,6 +17,7 @@ limitations under the License.
 package claimpolicy
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -284,13 +285,12 @@ func valuesOfNames(value json.RawMessage, choices []fleetv1alpha1.NamedValue) js
 		return value
 	}
 
-	var name string
-	if json.Unmarshal(value, &name) == nil {
+	if name, ok := nameOf(value); ok {
 		return valueOfName(name, choices)
 	}
 
 	var names []string
-	if json.Unmarshal(value, &names) != nil {
+	if json.Unmarshal(value, &names) != nil || names == nil {
 		return value
 	}
 
@@ -304,6 +304,17 @@ func valuesOfNames(value json.RawMessage, choices []fleetv1alpha1.NamedValue) js
 	}
 
 	return raw
+}
+
+// nameOf returns the JSON string value. null is not a name, although it
+// decodes into a string.
+func nameOf(value json.RawMessage) (string, bool) {
+	var name string
+	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &name) != nil {
+		return "", false
+	}
+
+	return name, true
 }
 
 func valueOfName(name string, choices []fleetv1alpha1.NamedValue) json.RawMessage {
