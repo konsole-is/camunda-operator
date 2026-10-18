@@ -58,6 +58,11 @@ func TestCheckTemplateAllowsOnlyContractFieldReferences(t *testing.T) {
 		{"dot", "{{ . }}", templatePlaceholders, "not allowed"},
 		{"constant", `{{ "text" }}`, templatePlaceholders, "not allowed"},
 		{"define", `{{ define "x" }}{{ end }}`, templatePlaceholders, "define is not allowed"},
+		{"define named template", `{{ define "template" }}{{ .unknown }}{{ end }}`, templatePlaceholders, "define"},
+		{"empty define named template", `{{ .namespace }}{{ define "template" }}{{ end }}`, templatePlaceholders, "define"},
+		{"empty define named a", `{{ .namespace }}{{ define "a" }}{{ end }}`, templatePlaceholders, "define"},
+		{"empty define named b", `{{ .namespace }}{{ define "b" }}{{ end }}`, templatePlaceholders, "define"},
+		{"block", `{{ block "x" . }}{{ end }}`, templatePlaceholders, "not allowed"},
 		{"comment", "{{/* note */}}", templatePlaceholders, "comment is not allowed"},
 		{"parse error", "{{ .namespace", templatePlaceholders, "unclosed action"},
 	}

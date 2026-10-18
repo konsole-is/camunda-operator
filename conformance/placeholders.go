@@ -106,21 +106,14 @@ func appendLeaves(leaves []jsonLeaf, path string, value any) []jsonLeaf {
 // action of it is anything but one field reference of allowed. The error
 // names each such action.
 func checkTemplate(text string, allowed placeholders) error {
-	const name = "template"
-
-	tree := parse.New(name)
-	// Comments and unknown functions parse, so that the walk names them.
-	tree.Mode = parse.ParseComments | parse.SkipFuncCheck
-	treeSet := map[string]*parse.Tree{}
-	if _, err := tree.Parse(text, "", "", treeSet); err != nil {
+	tree, defines, err := parseTemplate(text)
+	if err != nil {
 		return err
 	}
 
 	var errs []error
-	for _, defined := range slices.Sorted(maps.Keys(treeSet)) {
-		if defined != name {
-			errs = append(errs, fmt.Errorf("define %q: define is not allowed, %s", defined, onlyFieldReferences))
-		}
+	for _, name := range defines {
+		errs = append(errs, fmt.Errorf("define %q: define is not allowed, %s", name, onlyFieldReferences))
 	}
 
 	for _, node := range tree.Root.Nodes {
@@ -130,6 +123,38 @@ func checkTemplate(text string, allowed placeholders) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// parseTemplate returns the main tree of text and the names of the
+// templates that text defines.
+func parseTemplate(text string) (*parse.Tree, []string, error) {
+	var main *parse.Tree
+	defines := map[string]bool{}
+
+	// A define with the name of the main tree takes its place, or is dropped
+	// when it is empty. No define has both names, so one of the two parses
+	// shows it.
+	for _, name := range []string{"a", "b"} {
+		tree := parse.New(name)
+		// Comments and unknown functions parse, so that the walk names them.
+		tree.Mode = parse.ParseComments | parse.SkipFuncCheck
+		treeSet := map[string]*parse.Tree{}
+		if _, err := tree.Parse(text, "", "", treeSet); err != nil {
+			return nil, nil, err
+		}
+
+		for defined, t := range treeSet {
+			if t != tree {
+				defines[defined] = true
+			}
+		}
+
+		if main == nil {
+			main = tree
+		}
+	}
+
+	return main, slices.Sorted(maps.Keys(defines)), nil
 }
 
 const onlyFieldReferences = "only a field reference such as {{ .namespace }}"
