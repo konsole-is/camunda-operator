@@ -58,17 +58,18 @@ export function parseWatchRequest(params: URLSearchParams): WatchRequest {
   return { kinds: kinds as KindName[], namespace, labelSelector, name };
 }
 
-/** WatchEntry is one watch of a connection. id is the raw value of its parameter watch. */
-export interface WatchEntry {
-  id: string;
-  request: WatchRequest;
-}
+/**
+ * WatchEntry is one watch of a connection. id is the raw value of its
+ * parameter watch. A watch that is not valid has error in place of request.
+ */
+export type WatchEntry =
+  { id: string; request: WatchRequest } | { id: string; error: string };
 
 /**
  * parseWatchRequests reads each value of the parameter watch as the query
- * string of one watch, with the rules of parseWatchRequest. It throws
- * WatchRequestError for no watch, for a value that appears twice, and with
- * the message of parseWatchRequest for a watch that is not valid.
+ * string of one watch, with the rules of parseWatchRequest. A watch that is
+ * not valid gets the message of parseWatchRequest as its error. It throws
+ * WatchRequestError for no watch and for a value that appears twice.
  */
 export function parseWatchRequests(params: URLSearchParams): WatchEntry[] {
   const ids = params.getAll("watch");
@@ -83,7 +84,12 @@ export function parseWatchRequests(params: URLSearchParams): WatchEntry[] {
       throw new WatchRequestError(`The watch "${id}" appears more than once`);
     }
     seen.add(id);
-    return { id, request: parseWatchRequest(new URLSearchParams(id)) };
+    try {
+      return { id, request: parseWatchRequest(new URLSearchParams(id)) };
+    } catch (error) {
+      if (!(error instanceof WatchRequestError)) throw error;
+      return { id, error: error.message };
+    }
   });
 }
 
@@ -98,14 +104,14 @@ export interface WatchStreamOptions {
  * Every frame has the field watch, the id of the entry that it answers. The
  * watches start at once. For each kind of a watch the stream sends a frame
  * "snapshot" with the matching objects, then a frame "delta" for each change
- * that a subscriber of the filter sees (see deltaType). A kind that does not
- * sync gets a frame "failure" with the message, and the later kinds of that
- * watch do not start. The frame sets the retry time of EventSource to
- * retryMs. When a watch failed, the stream ends after every watch sent its
- * snapshots or its failure. A comment line goes out every heartbeatMs, so
- * idle proxies keep the connection. The stream also ends when signal aborts,
- * and at the next write when more than maxPendingBytes wait unread in its
- * queue.
+ * that a subscriber of the filter sees (see deltaType). A watch that is not
+ * valid gets a frame "failure" with its error, and the stream goes on. A kind
+ * that does not sync gets a frame "failure" with the message, and the later
+ * kinds of that watch do not start. That frame sets the retry time of EventSource to
+ * retryMs, and the stream ends after every watch sent its snapshots or its
+ * failure. A comment line goes out every heartbeatMs, so idle proxies keep
+ * the connection. The stream also ends when signal aborts, and at the next
+ * write when more than maxPendingBytes wait unread in its queue.
  */
 export function watchStream(
   cache: ResourceCache,
@@ -119,6 +125,7 @@ export function watchStream(
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const unsubscribes: (() => void)[] = [];
+  const drained: (() => void)[] = [];
   let heartbeat: NodeJS.Timeout | undefined;
   let closed = false;
 
@@ -126,11 +133,14 @@ export function watchStream(
     closed = true;
     clearInterval(heartbeat);
     unsubscribes.splice(0).forEach((unsubscribe) => unsubscribe());
+    drained.splice(0).forEach((wake) => wake());
   };
 
   return new ReadableStream<Uint8Array>(
     {
-      async start(controller) {
+      // start does not wait for the watches: the stream calls pull only
+      // after start resolved, and the snapshots wait for pull.
+      start(controller) {
         const end = () => {
           close();
           try {
@@ -139,27 +149,47 @@ export function watchStream(
             // cancel already closed the stream.
           }
         };
+        const frame = (event: string, data: unknown, fields = "") =>
+          encoder.encode(
+            `${fields}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+          );
         // The shared informer does not wait for its listener, so a write
         // cannot wait for a slow client. desiredSize is below 0 when more
         // than maxPendingBytes wait in the queue.
-        const write = (text: string) => {
+        const write = (bytes: Uint8Array) => {
           if (closed) return;
           if ((controller.desiredSize ?? 0) < 0) {
             end();
             return;
           }
-          controller.enqueue(encoder.encode(text));
+          controller.enqueue(bytes);
         };
         const send = (event: string, data: unknown, fields = "") =>
-          write(`${fields}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+          write(frame(event, data, fields));
+        // The snapshots of all watches can be ready at once. A snapshot that
+        // waits for room keeps them from passing maxPendingBytes together.
+        const sendSnapshot = async (data: unknown) => {
+          const bytes = frame("snapshot", data);
+          const room = Math.min(bytes.byteLength, maxPendingBytes);
+          while (!closed && (controller.desiredSize ?? 0) < room) {
+            await new Promise<void>((wake) => drained.push(wake));
+          }
+          write(bytes);
+        };
         signal.addEventListener("abort", end, { once: true });
         if (signal.aborted) {
           end();
           return;
         }
 
-        // runWatch resolves false after it sent a failure frame.
-        const runWatch = async ({ id, request }: WatchEntry) => {
+        const runWatch = async (entry: WatchEntry) => {
+          const { id } = entry;
+          if ("error" in entry) {
+            const kind = new URLSearchParams(id).get("kind") ?? "";
+            send("failure", { watch: id, kind, message: entry.error });
+            return true;
+          }
+          const { request } = entry;
           const matchesLabels = parseSelector(request.labelSelector ?? "");
           const inFilter = (o: KubernetesObject) =>
             (!request.namespace ||
@@ -195,7 +225,7 @@ export function watchStream(
               unsubscribes.push(unsubscribe);
               const objects = (snapshot as KubernetesObject[]).filter(inFilter);
               objects.forEach((o) => seen.add(objectKey(o)));
-              send("snapshot", { watch: id, kind, objects });
+              await sendSnapshot({ watch: id, kind, objects });
               const waiting = queue;
               queue = undefined;
               waiting.forEach(([change, object]) => deliver(change, object));
@@ -216,14 +246,21 @@ export function watchStream(
           return true;
         };
 
-        const results = await Promise.all(watches.map(runWatch));
-        if (closed) return;
-        if (results.includes(false)) {
-          // EventSource connects again after the retry of the failure frame.
-          end();
-          return;
-        }
-        heartbeat = setInterval(() => write(": keep-alive\n\n"), heartbeatMs);
+        void Promise.all(watches.map(runWatch)).then((results) => {
+          if (closed) return;
+          if (results.includes(false)) {
+            // EventSource connects again after the retry of the failure frame.
+            end();
+            return;
+          }
+          heartbeat = setInterval(
+            () => write(encoder.encode(": keep-alive\n\n")),
+            heartbeatMs,
+          );
+        });
+      },
+      pull() {
+        drained.splice(0).forEach((wake) => wake());
       },
       cancel() {
         close();

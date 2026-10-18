@@ -253,15 +253,37 @@ describe("GET /api/watch against envtest", () => {
     await stream.closed;
   });
 
-  it("answers 400 with the problem for a kind that the app does not read", async () => {
-    const response = GET(
-      new Request("http://localhost/api/watch?watch=kind%3DWidget"),
-    );
+  it("answers 400 with the problem for a request without a watch", async () => {
+    const response = GET(new Request("http://localhost/api/watch?kind=Pod"));
 
     expect(response.status).toBe(400);
     expect(await response.text()).toBe(
-      'The fleet manager does not read the kind "Widget"',
+      "Name at least one watch with the parameter watch",
     );
+  });
+
+  it("names a watch that is not valid in a failure frame, and serves the other watch", async () => {
+    const secrets = `kind=Secret&namespace=${namespace}`;
+    const { stream, abort } = openMany(["kind=Widget", secrets]);
+
+    const failure = await stream.next((f) => f.event === "failure", 15_000);
+    await stream.next(
+      (f) => f.event === "snapshot" && f.data.watch === secrets,
+      15_000,
+    );
+    await api.create({
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "after-widget", namespace },
+    });
+
+    expect(failure.data).toEqual({
+      watch: "kind=Widget",
+      kind: "Widget",
+      message: 'The fleet manager does not read the kind "Widget"',
+    });
+    await stream.next(isDelta("ADDED", "after-widget"), 5_000);
+    abort();
   });
 
   it("names a kind that the API server does not serve, then ends the stream so EventSource connects again", async () => {
