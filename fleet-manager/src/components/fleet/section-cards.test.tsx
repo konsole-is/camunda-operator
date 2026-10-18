@@ -423,6 +423,31 @@ describe("SectionCards", () => {
     ]);
   });
 
+  it("describes an allowed list by its error when a choice is named error", async () => {
+    const option = awsRole(["s3"]);
+    option.parameters = option.parameters.map((rule) =>
+      rule.name === "policies"
+        ? {
+            ...rule,
+            schema: { type: "array", items: { type: "string" }, minItems: 1 },
+            allowed: [
+              { name: "error", label: "Error log" },
+              { name: "s3", label: "S3 read" },
+            ],
+          }
+        : rule,
+    );
+    render(<SectionCards section={section({}, option)} />);
+    const group = screen.getByRole("group", { name: "Policies" });
+    await userEvent.click(
+      within(group).getByRole("checkbox", { name: "S3 read" }),
+    );
+    expect(
+      document.getElementById(group.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe("Choose at least 1");
+  });
+
   describe("an empty string", () => {
     const option = (
       schema: Record<string, unknown>,
@@ -1007,6 +1032,20 @@ describe("SectionCards", () => {
       const inA = screen.getByRole("spinbutton", { name: "Days of a" });
       await userEvent.clear(inA);
       await userEvent.type(inA, "40");
+      expect(onChange.mock.lastCall![1]).toEqual([]);
+    });
+
+    it("keeps a registration named constructor working", () => {
+      const onChange = vi.fn();
+      render(
+        <SectionCards
+          section={prefixedOptions(
+            daysOption("constructor", "Keys of constructor", 30, "keys"),
+          )}
+          defaultValue={picked("constructor")}
+          onChange={onChange}
+        />,
+      );
       expect(onChange.mock.lastCall![1]).toEqual([]);
     });
 
