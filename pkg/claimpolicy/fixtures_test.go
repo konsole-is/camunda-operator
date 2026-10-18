@@ -46,7 +46,7 @@ const fixturesRoot = "../../test/fixtures/claimpolicy"
 
 // fixtureDirs are the case directories that have a runner. Each table test
 // adds its directory here.
-var fixtureDirs = []string{"environment-of"}
+var fixtureDirs = []string{"environment-of", "resolve"}
 
 // fixture is one case: the input of a function and its result. The field
 // order is the order that writeFixture writes.

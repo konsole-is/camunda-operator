@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "name": "A claim value of a key that is not claim-editable does not reach the request",
+  "input": {
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameterValues": {
+            "region": "eu-west-1",
+            "tier": "standard"
+          },
+          "claimEditable": [
+            "tier"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3",
+        "parameters": {
+          "region": "us-east-1"
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "policy": {
+        "sections": {
+          "backup-storage": {
+            "default": "s3",
+            "allowed": [
+              "existing-object-storage",
+              "s3"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "region": {
+              "value": "eu-west-1"
+            },
+            "tier": {
+              "value": "standard",
+              "claimEditable": true
+            }
+          }
+        },
+        "deletionPolicy": "Delete"
+      },
+      "requests": [
+        {
+          "section": "backup-storage",
+          "registration": "s3",
+          "parameters": {
+            "region": "eu-west-1",
+            "tier": "standard"
+          }
+        }
+      ]
+    }
+  }
+}
