@@ -51,6 +51,7 @@ type suite struct {
 	cfg        Config
 	restConfig *rest.Config
 	client     client.Client
+	life       *lifecycle
 	cleanups   []func(ctx context.Context) error
 }
 
