@@ -372,10 +372,16 @@ describe("ClusterView", () => {
     });
   });
 
-  it("shows the pods of the cluster as dots", () => {
+  it("shows the pods of the cluster", () => {
     render(view());
     expect(
-      screen.getByRole("img", { name: "orders-zeebe-0: Ready" }),
-    ).toBeTruthy();
+      within(screen.getByRole("list", { name: "Pods of Brokers" }))
+        .getAllByRole("listitem")
+        .map((pod) => pod.textContent),
+    ).toEqual([
+      "orders-zeebe-0 Ready",
+      "orders-zeebe-1 Ready",
+      "orders-zeebe-2 Ready",
+    ]);
   });
 });

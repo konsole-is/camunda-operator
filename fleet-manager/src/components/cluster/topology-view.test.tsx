@@ -29,21 +29,24 @@ const boxes: TopologyBox[] = [
 ];
 
 describe("TopologyView", () => {
-  it("shows a box for each process with its embedded chips and pod dots", () => {
+  it("shows a box for each process with its embedded chips and the name and state of each pod", () => {
     render(<TopologyView boxes={boxes} />);
     const topology = screen.getByRole("region", { name: "Topology" });
     expect(within(topology).getByText("Brokers")).toBeTruthy();
     expect(within(topology).getByText("StatefulSet")).toBeTruthy();
     expect(within(topology).getByText("Embedded: Gateway")).toBeTruthy();
+    const pods = within(topology).getByRole("list", {
+      name: "Pods of Brokers",
+    });
     expect(
-      within(topology)
-        .getAllByRole("img")
-        .map((dot) => dot.getAttribute("aria-label")),
+      within(pods)
+        .getAllByRole("listitem")
+        .map((pod) => pod.textContent),
     ).toEqual([
-      "orders-zeebe-0: Ready",
-      "orders-zeebe-1: Not ready (CrashLoopBackOff)",
-      "orders-zeebe-2: Unknown (Pending)",
-      "orders-zeebe-3: Terminating",
+      "orders-zeebe-0 Ready",
+      "orders-zeebe-1 CrashLoopBackOff",
+      "orders-zeebe-2 Pending",
+      "orders-zeebe-3 Terminating",
     ]);
   });
 

@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
-import { type ConditionLike, DOT_TONE } from "@/components/fleet/status";
-import { StatusDot } from "@/components/fleet/status-dot";
+import { DOT_TONE, TEXT_TONE } from "@/components/fleet/status";
 import type { PodDot, TopologyBox } from "./topology";
 
 /**
  * TopologyView draws the boxes of a cluster with their embedded processes
- * and one dot for each pod. actions is the content of the
+ * and the name and state of each pod. actions is the content of the
  * cluster.topology.actions slot.
  */
 export function TopologyView({
@@ -47,11 +46,14 @@ export function TopologyView({
               </ul>
             )}
             {box.pods.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
+              <ul
+                aria-label={`Pods of ${box.label}`}
+                className="flex flex-col gap-1"
+              >
                 {box.pods.map((pod) => (
                   <PodState key={pod.name} pod={pod} />
                 ))}
-              </div>
+              </ul>
             ) : (
               <p className="text-xs text-muted">No pods</p>
             )}
@@ -63,22 +65,14 @@ export function TopologyView({
 }
 
 function PodState({ pod }: { pod: PodDot }) {
-  // StatusDot names an off dot "Not used", but a pod in this state is going
-  // away, so its name says its own state.
-  if (pod.tone === "off") {
-    return (
+  return (
+    <li className="flex min-w-0 items-center gap-2 text-xs">
       <span
-        role="img"
-        aria-label={`${pod.name}: ${pod.state}`}
-        className={`inline-block size-2 shrink-0 rounded-full ${DOT_TONE.off}`}
+        aria-hidden
+        className={`inline-block size-2 shrink-0 rounded-full ${DOT_TONE[pod.tone]}`}
       />
-    );
-  }
-  const condition: ConditionLike =
-    pod.tone === "ok"
-      ? { status: "True" }
-      : pod.tone === "bad"
-        ? { status: "False", reason: pod.state }
-        : { status: "Unknown", reason: pod.state };
-  return <StatusDot label={pod.name} condition={condition} />;
+      <span className="truncate text-text-2">{pod.name}</span>{" "}
+      <span className={`shrink-0 ${TEXT_TONE[pod.tone]}`}>{pod.state}</span>
+    </li>
+  );
 }
