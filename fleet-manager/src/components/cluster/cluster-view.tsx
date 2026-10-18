@@ -57,8 +57,8 @@ export type ClusterPageData = {
 
 /**
  * ClusterView is the cluster page. It follows the objects of initial live,
- * and opens on tab. A change of the tab replaces the tab query parameter of
- * the URL. slots fill the action slots of a managed cluster, and an
+ * and selects tab, also when tab changes. A click on a tab replaces the
+ * tab query parameter of the URL. slots fill the action slots of a managed cluster, and an
  * unmanaged cluster ignores them. pushedClaim is the claim file that the
  * fleet manager pushed in Git mode. When the cluster is deleted, the page
  * says so and shows nothing else.
@@ -79,6 +79,13 @@ export function ClusterView({
   const { namespace, name } = initial.cluster.metadata ?? {};
   const ns = namespace ?? "";
   const [tab, setTab] = useState<ClusterTab>(initialTab);
+  // A navigation to another ?tab= of this route renders the page again with
+  // a new tab prop, but it does not remount the view.
+  const [shownTab, setShownTab] = useState(initialTab);
+  if (initialTab !== shownTab) {
+    setShownTab(initialTab);
+    setTab(initialTab);
+  }
 
   const cluster = useResource(
     "CamundaCluster",
@@ -169,7 +176,9 @@ export function ClusterView({
   const claimName = live.metadata?.labels?.[CLAIM_LABEL];
   const claim = claims.items.find((c) => c.metadata?.name === claimName);
   const access = accessRequests.items.find(
-    (r) => claimName && r.metadata?.labels?.[CLAIM_LABEL] === claimName,
+    (r) =>
+      r.spec.claimRef.kind === "CamundaClusterClaim" &&
+      r.spec.claimRef.name === claimName,
   );
   const preset = presets.items.find(
     (p) => p.metadata?.name === live.spec.presetRef,

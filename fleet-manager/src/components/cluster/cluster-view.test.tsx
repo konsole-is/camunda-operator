@@ -280,16 +280,21 @@ describe("ClusterView", () => {
     expect(within(topology).getByText("Embedded: Gateway")).toBeTruthy();
   });
 
-  it("shows the launch links of the access request without externalUrl", () => {
-    const request = (claimName: string, name: string, url: string) =>
+  it("shows the launch links of the access request of the cluster claim without externalUrl", () => {
+    const request = (
+      kind: string,
+      claimName: string,
+      name: string,
+      url: string,
+    ) =>
       ({
         kind: "PluginRequest",
         metadata: {
           namespace: "team-a",
-          name: `${claimName}-access`,
+          name: `${kind}-${claimName}-access`,
           labels: { [CLAIM_LABEL]: claimName },
         },
-        spec: {},
+        spec: { claimRef: { kind, name: claimName } },
         status: { links: [{ name, url }] },
       }) as unknown as Resource<"PluginRequest">;
     render(
@@ -297,8 +302,24 @@ describe("ClusterView", () => {
         initial: data({
           cluster: cluster({ spec: { externalUrl: undefined } }),
           accessRequests: [
-            request("payments", "tasklist", "https://t.example.com"),
-            request("orders", "operate", "https://o.example.com"),
+            request(
+              "CamundaManagementClusterClaim",
+              "orders",
+              "admin",
+              "https://plane.example.com",
+            ),
+            request(
+              "CamundaClusterClaim",
+              "payments",
+              "tasklist",
+              "https://t.example.com",
+            ),
+            request(
+              "CamundaClusterClaim",
+              "orders",
+              "operate",
+              "https://o.example.com",
+            ),
           ],
         }),
       }),
@@ -308,6 +329,16 @@ describe("ClusterView", () => {
         .getAllByRole("link", { name: /Operate|Tasklist|Admin/ })
         .map((l) => [l.textContent, l.getAttribute("href")]),
     ).toEqual([["Operate", "https://o.example.com"]]);
+  });
+
+  it("follows a new tab of the URL without a remount", () => {
+    const { rerender } = render(view({ tab: "overview" }));
+    rerender(view({ tab: "backups" }));
+    expect(
+      screen
+        .getByRole("tab", { name: "Backups" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
   });
 
   it("shows a failed read with its kind and keeps the page", () => {
