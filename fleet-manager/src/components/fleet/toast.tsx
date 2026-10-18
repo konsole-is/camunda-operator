@@ -3,6 +3,7 @@
 import { CircleCheck, CircleAlert, GitCommitHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { WriteResult } from "@/lib/write/types";
 
 /**
  * ToastResult is the result of a write as the user sees it: saved to the
@@ -13,6 +14,26 @@ export type ToastResult =
   | { kind: "waiting"; commit: string }
   | { kind: "applied"; message: string; commit?: string }
   | { kind: "error"; message: string };
+
+/**
+ * toastResultOf returns the toast of a write. message is the text of a
+ * direct save. A refusal shows the messages of all its errors.
+ */
+export function toastResultOf(
+  result: WriteResult,
+  message: string,
+): ToastResult {
+  if (!result.ok) {
+    return {
+      kind: "error",
+      message: result.errors.map((e) => e.message).join(" "),
+    };
+  }
+  if (result.mode === "git") {
+    return { kind: "waiting", commit: result.commit };
+  }
+  return { kind: "saved", message };
+}
 
 /**
  * Toast shows the result of a write. An error is an alert. Every other
