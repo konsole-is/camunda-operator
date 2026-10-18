@@ -34,6 +34,7 @@ export const changeSchema: z.ZodType<Change> = z
         z.string(),
       )
       .optional(),
+    force: z.boolean().optional(),
     directOnly: z.boolean().optional(),
   })
   .refine((c) => c.apply.length + (c.delete?.length ?? 0) > 0, {

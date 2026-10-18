@@ -2,7 +2,14 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { KubeConfig } from "@kubernetes/client-node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { applyBody, directWriter, getWriter, refKey } from "./writer";
+import { objectPath } from "@/lib/k8s/kinds";
+import {
+  WriteOnlyKindMap,
+  applyBody,
+  directWriter,
+  getWriter,
+  refKey,
+} from "./writer";
 
 function configFor(server: string): KubeConfig {
   const kc = new KubeConfig();
@@ -149,6 +156,20 @@ describe("directWriter", () => {
       ok: false,
       errors: [{ code: "Unavailable" }],
     });
+  });
+});
+
+describe("WriteOnlyKindMap", () => {
+  it("holds the namespaced core ConfigMap, and objectPath names one", () => {
+    expect(WriteOnlyKindMap.ConfigMap).toEqual({
+      group: "",
+      version: "v1",
+      plural: "configmaps",
+      scope: "Namespaced",
+    });
+    expect(
+      objectPath(WriteOnlyKindMap.ConfigMap, "fleet", "fleet-manager-settings"),
+    ).toBe("/api/v1/namespaces/fleet/configmaps/fleet-manager-settings");
   });
 });
 

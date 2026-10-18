@@ -144,6 +144,73 @@ describe("the direct writer against envtest", () => {
     });
   });
 
+  it("a forced apply takes a field that another manager owns", async () => {
+    await api.create(
+      environment(name, { displayName: "Theirs" }),
+      undefined,
+      undefined,
+      "other-writer",
+    );
+
+    const result = await writer.apply({
+      intent: "Rename",
+      apply: [environment(name, { displayName: "Ours" })],
+      force: true,
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    expect(await live(name)).toMatchObject({
+      spec: { displayName: "Ours" },
+    });
+  });
+
+  it("a forced apply with the resourceVersion of an older copy still fails with Stale", async () => {
+    await writer.apply({
+      intent: "Create",
+      apply: [environment(name, { displayName: "One" })],
+    });
+    const old = (await live(name)).metadata!.resourceVersion!;
+    await writer.apply({
+      intent: "Rename",
+      apply: [environment(name, { displayName: "Two" })],
+    });
+
+    const result = await writer.apply({
+      intent: "Rename from the old form",
+      apply: [environment(name, { displayName: "Three" })],
+      preconditions: { [refKey({ kind: "Environment", name })]: old },
+      force: true,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(await live(name)).toMatchObject({
+      spec: { displayName: "Two" },
+    });
+  });
+
+  it("a forced apply that the API server refuses fails with Invalid", async () => {
+    await writer.apply({
+      intent: "Create",
+      apply: [environment(name, { displayName: "One" })],
+    });
+
+    const result = await writer.apply({
+      intent: "Change the releases",
+      apply: [
+        environment(name, {
+          displayName: "One",
+          releases: { allowed: ["r1"], default: "r2" },
+        }),
+      ],
+      force: true,
+    });
+
+    expect(result).toMatchObject({ ok: false, errors: [{ code: "Invalid" }] });
+  });
+
   it("an apply with the resourceVersion of an older copy fails with Stale and leaves the object unchanged", async () => {
     await writer.apply({
       intent: "Create",

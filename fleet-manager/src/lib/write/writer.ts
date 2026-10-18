@@ -30,16 +30,18 @@ import type {
 /** WRITE_TIMEOUT_MS bounds each request of a write. */
 export const WRITE_TIMEOUT_MS = 15_000;
 
-// The app writes its settings ConfigMap but may not list or watch
-// ConfigMaps, so ConfigMap is not in KindMap, which the cache reads.
-const writeOnlyKinds: Record<string, KindInfo> = {
+/**
+ * WriteOnlyKindMap is every kind that the direct writer writes beside the
+ * kinds of KindMap. The cache does not list or watch these kinds.
+ */
+export const WriteOnlyKindMap = {
   ConfigMap: {
     group: "",
     version: "v1",
     plural: "configmaps",
     scope: "Namespaced",
   },
-};
+} as const satisfies Record<string, KindInfo>;
 
 const hiddenValue = "(hidden)";
 const changedValue = "(changed)";
@@ -109,9 +111,10 @@ export function diffView(
 
 /**
  * directWriter writes to the API server of kc, kubeConfig() by default,
- * with server-side apply and the field manager fleet-manager. It writes
- * only the kinds of KindMap and ConfigMap, and refuses any other object
- * with Invalid before it sends a request.
+ * with server-side apply and the field manager fleet-manager, with
+ * force=false unless the change sets force. It writes only the kinds of
+ * KindMap and WriteOnlyKindMap, and refuses any other object with Invalid
+ * before it sends a request.
  *
  * apply runs the preview of the whole change first and writes nothing
  * when any object fails it. Then it applies the objects and deletes the
@@ -151,11 +154,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   const applyObject = (
     object: KubeObject,
     resourceVersion: string | undefined,
+    force: boolean,
     dryRun: boolean,
   ) =>
     send<KubeObject>(
       "PATCH",
-      `${pathOf(refOf(object))}?fieldManager=${APP_FIELD_MANAGER}&force=false${dryRun ? "&dryRun=All" : ""}`,
+      `${pathOf(refOf(object))}?fieldManager=${APP_FIELD_MANAGER}&force=${force}${dryRun ? "&dryRun=All" : ""}`,
       applyBody(object, resourceVersion),
       "application/apply-patch+yaml",
     );
@@ -190,7 +194,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           errors.push(staleError(ref));
           continue;
         }
-        const after = await applyObject(object, resourceVersion, true);
+        const after = await applyObject(
+          object,
+          resourceVersion,
+          change.force ?? false,
+          true,
+        );
         objects.push(previewObject(ref, before, after));
       } catch (error) {
         errors.push(...apiErrorsOf(error, ref, resourceVersion !== undefined));
@@ -218,7 +227,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       const ref = refOf(object);
       const resourceVersion = change.preconditions?.[refKey(ref)];
       try {
-        await applyObject(object, resourceVersion, false);
+        await applyObject(
+          object,
+          resourceVersion,
+          change.force ?? false,
+          false,
+        );
       } catch (error) {
         return {
           ok: false,
@@ -256,7 +270,9 @@ export async function getWriter(): Promise<Writer> {
 
 function kindInfoOf(kind: string): KindInfo | undefined {
   if (isKindName(kind)) return KindMap[kind];
-  return Object.hasOwn(writeOnlyKinds, kind) ? writeOnlyKinds[kind] : undefined;
+  return Object.hasOwn(WriteOnlyKindMap, kind)
+    ? WriteOnlyKindMap[kind as keyof typeof WriteOnlyKindMap]
+    : undefined;
 }
 
 // pathOf takes a ref that refusalOf accepted.

@@ -31,13 +31,16 @@ export type RefKey = `${string}/${string}/${string}`;
  * Change is one save of a page: the objects to apply and the objects to
  * delete. preconditions holds the resourceVersion that the page read for
  * an object. A write of that object fails with Stale when the object
- * changed since. A change with directOnly goes to the API in Git mode too.
+ * changed since. force takes the fields that another field manager owns,
+ * instead of failing with Conflict. A change with directOnly goes to the
+ * API in Git mode too.
  */
 export type Change = {
   intent: string;
   apply: KubeObject[];
   delete?: ObjectRef[];
   preconditions?: Record<RefKey, string>;
+  force?: boolean;
   directOnly?: boolean;
 };
 
