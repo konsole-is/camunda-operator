@@ -17,8 +17,16 @@ limitations under the License.
 package conformance
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"slices"
-	"testing"
+
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
 // CheckID names one check. The report, a skip, and the docs use the same ID.
@@ -30,20 +38,66 @@ type Check struct {
 	ID          CheckID
 	Description string
 	Skippable   bool
-	run         func(t *testing.T, s *suite)
+	// run returns nil when the check passes, an error that says what is
+	// wrong when it fails, and the error of SkipCheck to skip.
+	run func(ctx context.Context, s *suite) error
 }
 
-// suite is what a check gets: the config of the run, with the timeout
-// defaults filled in.
+// suite is what a check gets: the config of the run with the timeout
+// defaults filled in, and the connection to the cluster of the run.
 type suite struct {
-	cfg Config
+	cfg        Config
+	restConfig *rest.Config
+	client     client.Client
+}
+
+func newSuite(cfg Config, restConfig *rest.Config, c client.Client) *suite {
+	cfg.Timeouts = cfg.Timeouts.withDefaults()
+
+	return &suite{cfg: cfg, restConfig: restConfig, client: c}
+}
+
+// registration gets the PluginRegistration that the run checks. The error
+// names it.
+func (s *suite) registration(ctx context.Context) (*pluginsv1alpha1.PluginRegistration, error) {
+	var reg pluginsv1alpha1.PluginRegistration
+	if err := s.client.Get(ctx, types.NamespacedName{Name: s.cfg.Registration}, &reg); err != nil {
+		return nil, fmt.Errorf("PluginRegistration %q: %w", s.cfg.Registration, err)
+	}
+
+	return &reg, nil
 }
 
 // checks is the registry, in run order.
-var checks []Check
+var checks = slices.Concat(staticChecks)
 
 // Checks returns the registered checks in run order. A change to the result
 // does not change the registry.
 func Checks() []Check {
 	return slices.Clone(checks)
+}
+
+// SkipCheck returns the error that a check returns to skip itself at run
+// time. The report shows reason.
+func SkipCheck(reason string) error {
+	return &skipError{reason: reason}
+}
+
+type skipError struct {
+	reason string
+}
+
+func (e *skipError) Error() string {
+	return "check skipped: " + e.reason
+}
+
+// skipReasonOf returns the reason of the SkipCheck error in the chain of
+// err, and false when err holds none.
+func skipReasonOf(err error) (string, bool) {
+	var skip *skipError
+	if !errors.As(err, &skip) {
+		return "", false
+	}
+
+	return skip.reason, true
 }

@@ -17,7 +17,9 @@ limitations under the License.
 package conformance
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,6 +27,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -32,16 +37,21 @@ const (
 	skippableID CheckID = "TEST-SKIPPABLE"
 )
 
-// testRegistry holds one mandatory and one skippable check. Each check logs
-// a line with its subtest name and the Ready timeout it got, so a test can
-// see which checks ran and with which config.
+// testRegistry holds one mandatory and one skippable check. Each check prints
+// a line with its ID and the Ready timeout it got, so a test can see which
+// checks ran and with which config.
 var testRegistry = []Check{
-	{ID: mandatoryID, Description: "A mandatory check.", run: logRan},
-	{ID: skippableID, Description: "A skippable check.", Skippable: true, run: logRan},
+	{ID: mandatoryID, Description: "A mandatory check.", run: logRan(mandatoryID)},
+	{ID: skippableID, Description: "A skippable check.", Skippable: true, run: logRan(skippableID)},
 }
 
-func logRan(t *testing.T, s *suite) {
-	t.Logf("check ran: %s, ready timeout %s", t.Name(), s.cfg.Timeouts.Ready)
+// logRan prints to stdout, because a check has no *testing.T. The output of
+// runHelper holds it.
+func logRan(id CheckID) func(context.Context, *suite) error {
+	return func(_ context.Context, s *suite) error {
+		fmt.Printf("check ran: %s, ready timeout %s\n", id, s.cfg.Timeouts.Ready)
+		return nil
+	}
 }
 
 func TestPlanRunsEveryCheckInRegistryOrder(t *testing.T) {
@@ -119,11 +129,24 @@ func TestPlanReportsEveryError(t *testing.T) {
 // helperEnv selects the helper run of TestRunHelper in a subprocess.
 const helperEnv = "CONFORMANCE_RUN_HELPER"
 
-const failingID CheckID = "TEST-FAILING"
+const (
+	failingID     CheckID = "TEST-FAILING"
+	runtimeSkipID CheckID = "TEST-RUNTIME-SKIP"
+)
 
 type helperRun struct {
 	cfg      Config
 	registry []Check
+	connect  func(*rest.Config) (*rest.Config, client.Client, error)
+}
+
+func fakeConnect(restCfg *rest.Config) (*rest.Config, client.Client, error) {
+	scheme, err := newScheme()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return restCfg, fake.NewClientBuilder().WithScheme(scheme).Build(), nil
 }
 
 func helperRuns() map[string]helperRun {
@@ -134,16 +157,38 @@ func helperRuns() map[string]helperRun {
 	skipMandatory.Skip = []Skip{{ID: mandatoryID, Reason: "too slow"}}
 
 	return map[string]helperRun{
-		"clean":          {cfg: validConfig(), registry: testRegistry},
-		"skip-skippable": {cfg: skipSkippable, registry: testRegistry},
-		"skip-mandatory": {cfg: skipMandatory, registry: testRegistry},
+		"clean":          {cfg: validConfig(), registry: testRegistry, connect: fakeConnect},
+		"skip-skippable": {cfg: skipSkippable, registry: testRegistry, connect: fakeConnect},
+		"skip-mandatory": {cfg: skipMandatory, registry: testRegistry, connect: fakeConnect},
 		"failing-check": {
 			cfg: validConfig(),
 			registry: []Check{
-				{ID: failingID, Description: "A check that fails.", run: func(t *testing.T, _ *suite) {
-					t.Error("the plugin broke the contract")
+				{ID: failingID, Description: "A check that fails.", run: func(context.Context, *suite) error {
+					return errors.New("the plugin broke the contract")
 				}},
-				{ID: mandatoryID, Description: "A mandatory check.", run: logRan},
+				{ID: mandatoryID, Description: "A mandatory check.", run: logRan(mandatoryID)},
+			},
+			connect: fakeConnect,
+		},
+		"skip-at-run-time": {
+			cfg: validConfig(),
+			registry: []Check{
+				{
+					ID:          runtimeSkipID,
+					Description: "A check that skips itself.",
+					run: func(context.Context, *suite) error {
+						return SkipCheck("the plugin has no Deployment")
+					},
+				},
+				{ID: mandatoryID, Description: "A mandatory check.", run: logRan(mandatoryID)},
+			},
+			connect: fakeConnect,
+		},
+		"connect-fails": {
+			cfg:      validConfig(),
+			registry: testRegistry,
+			connect: func(*rest.Config) (*rest.Config, client.Client, error) {
+				return nil, nil, errors.New("no kubeconfig")
 			},
 		},
 	}
@@ -163,7 +208,7 @@ func TestRunHelper(t *testing.T) {
 		return
 	}
 
-	runChecks(t, run.cfg, run.registry)
+	runChecks(t, run.cfg, run.registry, run.connect)
 }
 
 // runHelper runs the helper run name in a subprocess and returns its verbose
@@ -201,7 +246,7 @@ func TestRunReportsTheReasonOfASkippedCheck(t *testing.T) {
 	assert.True(t, passed, out)
 	assert.Contains(t, out, "--- SKIP: TestRunHelper/TEST-SKIPPABLE")
 	assert.Contains(t, out, "the plugin has no Deployment")
-	assert.NotContains(t, out, "check ran: TestRunHelper/TEST-SKIPPABLE")
+	assert.NotContains(t, out, "check ran: TEST-SKIPPABLE")
 	assert.Contains(t, out, "--- PASS: TestRunHelper/TEST-MANDATORY")
 }
 
@@ -221,4 +266,21 @@ func TestRunKeepsRunningAfterAFailedCheck(t *testing.T) {
 	assert.Contains(t, out, "--- FAIL: TestRunHelper/TEST-FAILING")
 	assert.Contains(t, out, "the plugin broke the contract")
 	assert.Contains(t, out, "--- PASS: TestRunHelper/TEST-MANDATORY")
+}
+
+func TestRunSkipsACheckThatReturnsSkipCheck(t *testing.T) {
+	out, passed := runHelper(t, "skip-at-run-time")
+
+	assert.True(t, passed, out)
+	assert.Contains(t, out, "--- SKIP: TestRunHelper/TEST-RUNTIME-SKIP")
+	assert.Contains(t, out, "the plugin has no Deployment")
+	assert.Contains(t, out, "--- PASS: TestRunHelper/TEST-MANDATORY")
+}
+
+func TestRunFailsAndRunsNoCheckWhenItCannotConnect(t *testing.T) {
+	out, passed := runHelper(t, "connect-fails")
+
+	assert.False(t, passed, out)
+	assert.Contains(t, out, "conformance: connecting to the cluster: no kubeconfig")
+	assert.NotContains(t, out, "check ran:")
 }
