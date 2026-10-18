@@ -19,11 +19,12 @@ import { ACTION_SLOTS, type ActionSlots } from "./slots";
 const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
   calls: [] as { kind: string; opts: unknown }[],
+  errors: {} as Record<string, string>,
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, opts: unknown, initial: unknown[]) => {
     live.calls.push({ kind, opts });
-    return { items: live.objects[kind] ?? initial };
+    return { items: live.objects[kind] ?? initial, error: live.errors[kind] };
   },
   useResource: (kind: string, ref: { name: string }, initial?: unknown) => {
     live.calls.push({ kind, opts: ref });
@@ -38,6 +39,7 @@ vi.mock("@/lib/k8s/hooks", () => ({
 beforeEach(() => {
   live.objects = {};
   live.calls = [];
+  live.errors = {};
   window.history.replaceState(null, "", "/fleet/clusters/team-a/orders");
 });
 afterEach(cleanup);
@@ -310,6 +312,17 @@ describe("ClusterView", () => {
         .getAllByRole("link", { name: /Operate|Tasklist|Admin/ })
         .map((l) => [l.textContent, l.getAttribute("href")]),
     ).toEqual([["Operate", "https://o.example.com"]]);
+  });
+
+  it("shows a failed read with its kind and keeps the page", () => {
+    live.errors.LogicalBackupRDBMS = "forbidden";
+    render(view());
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read LogicalBackupRDBMS: forbidden",
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "orders" }),
+    ).toBeTruthy();
   });
 
   it("says the cluster no longer exists when it goes away", () => {
