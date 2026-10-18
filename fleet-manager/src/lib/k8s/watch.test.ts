@@ -386,4 +386,40 @@ describe("watchStream", () => {
     expect(frames.map((f) => f.data.watch).sort()).toEqual(["a", "b", "c"]);
     abort.abort();
   });
+  it("ends the stream when the changes behind a waiting snapshot pass maxPendingBytes", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    const unsubscribe = vi.fn();
+    const { cache, listeners } = fakeCache({
+      Pod: async () => ({
+        snapshot: [padded("first", 800)],
+        unsubscribe: vi.fn(),
+      }),
+      Service: async () => ({
+        snapshot: [padded("waiting", 500)],
+        unsubscribe,
+      }),
+    });
+    const stream = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    );
+    await vi.waitFor(() => expect(listeners.get("Service")).toBeDefined());
+    await new Promise((wake) => setTimeout(wake, 10));
+
+    for (let i = 0; i < 20; i++) {
+      listeners.get("Service")![0]("add", padded(`change-${i}`, 100) as never);
+    }
+
+    await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalled());
+    await stream.cancel();
+  });
 });

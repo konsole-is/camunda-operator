@@ -110,8 +110,8 @@ export interface WatchStreamOptions {
  * kinds of that watch do not start. That frame sets the retry time of EventSource to
  * retryMs, and the stream ends after every watch sent its snapshots or its
  * failure. A comment line goes out every heartbeatMs, so idle proxies keep
- * the connection. The stream also ends when signal aborts, and at the next
- * write when more than maxPendingBytes wait unread in its queue.
+ * the connection. The stream also ends when signal aborts, and when more than
+ * maxPendingBytes wait unread in its queue or behind a snapshot.
  */
 export function watchStream(
   cache: ResourceCache,
@@ -126,6 +126,9 @@ export function watchStream(
   const encoder = new TextEncoder();
   const unsubscribes: (() => void)[] = [];
   const drained: (() => void)[] = [];
+  // queuedBytes counts the changes of all watches that wait behind their
+  // snapshot. They are not in the stream queue yet, so they count here.
+  let queuedBytes = 0;
   let heartbeat: NodeJS.Timeout | undefined;
   let closed = false;
 
@@ -201,6 +204,7 @@ export function watchStream(
             // Changes that arrive before the snapshot is sent wait here, so
             // the snapshot always comes first.
             let queue: [CacheChange, KubernetesObject][] | undefined = [];
+            let ownBytes = 0;
             const deliver = (change: CacheChange, object: KubernetesObject) => {
               const type = deltaType(
                 seen,
@@ -214,8 +218,15 @@ export function watchStream(
               const { snapshot, unsubscribe } = await cache.subscribe(
                 kind,
                 (change, object) => {
-                  if (queue) queue.push([change, object as KubernetesObject]);
-                  else deliver(change, object as KubernetesObject);
+                  if (!queue) {
+                    deliver(change, object as KubernetesObject);
+                    return;
+                  }
+                  queue.push([change, object as KubernetesObject]);
+                  const bytes = JSON.stringify(object).length;
+                  ownBytes += bytes;
+                  queuedBytes += bytes;
+                  if (queuedBytes > maxPendingBytes) end();
                 },
               );
               if (closed) {
@@ -228,6 +239,7 @@ export function watchStream(
               await sendSnapshot({ watch: id, kind, objects });
               const waiting = queue;
               queue = undefined;
+              queuedBytes -= ownBytes;
               waiting.forEach(([change, object]) => deliver(change, object));
             } catch (error) {
               send(
