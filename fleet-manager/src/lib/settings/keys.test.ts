@@ -1,0 +1,123 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  SEED_VARIABLES,
+  SETTING_KEYS,
+  appNamespace,
+  checkPatch,
+  seedFromEnv,
+  settingsFromData,
+} from "./keys";
+
+const empty = Object.fromEntries(SETTING_KEYS.map((k) => [k, ""]));
+
+describe("seed variables", () => {
+  it("the seed variables are the ones the chart sets", () => {
+    const deployment = readFileSync(
+      fileURLToPath(
+        new URL("../../../deploy/chart/deployment.yaml", import.meta.url),
+      ),
+      "utf8",
+    );
+    for (const name of Object.values(SEED_VARIABLES)) {
+      expect(deployment).toContain(`- name: ${name}\n`);
+    }
+    expect(Object.keys(SEED_VARIABLES).sort()).toEqual(
+      [...SETTING_KEYS].sort(),
+    );
+  });
+
+  it("a missing seed variable gives an empty setting", () => {
+    expect(seedFromEnv({ FLEET_SETTINGS_GIT_BRANCH: "main" })).toEqual({
+      ...empty,
+      "git.branch": "main",
+    });
+  });
+});
+
+describe("settingsFromData", () => {
+  it("fills missing keys and ignores unknown ones", () => {
+    const s = settingsFromData({
+      "prometheus.url": "http://prom:9090",
+      extra: "x",
+    });
+    expect(s["prometheus.url"]).toBe("http://prom:9090");
+    expect(s["git.path"]).toBe("");
+    expect(s).not.toHaveProperty("extra");
+  });
+
+  it("gives empty settings for a ConfigMap without data", () => {
+    expect(settingsFromData(undefined)).toEqual(empty);
+  });
+});
+
+describe("checkPatch", () => {
+  it("refuses an unknown key", () => {
+    expect(checkPatch({ "git.token": "x" })).toEqual([
+      expect.objectContaining({ code: "Invalid", path: "git.token" }),
+    ]);
+  });
+
+  it("refuses a value that is not a string", () => {
+    expect(checkPatch({ "git.branch": 3 })).toEqual([
+      expect.objectContaining({ code: "Invalid", path: "git.branch" }),
+    ]);
+  });
+
+  it("refuses a store kind that ExternalSecret does not know", () => {
+    expect(checkPatch({ "secretStore.kind": "Vault" })).toEqual([
+      expect.objectContaining({ code: "Invalid", path: "secretStore.kind" }),
+    ]);
+  });
+
+  it("accepts both store kinds", () => {
+    expect(checkPatch({ "secretStore.kind": "SecretStore" })).toEqual([]);
+    expect(checkPatch({ "secretStore.kind": "ClusterSecretStore" })).toEqual(
+      [],
+    );
+  });
+
+  it.each(["git.repository", "prometheus.url"])(
+    "refuses a %s that holds credentials",
+    (key) => {
+      const errors = checkPatch({
+        [key]: "https://me:t0ken@git.example.com/fleet.git",
+      });
+      expect(errors).toEqual([
+        expect.objectContaining({ code: "Invalid", path: key }),
+      ]);
+      expect(JSON.stringify(errors)).not.toContain("t0ken");
+    },
+  );
+
+  it("refuses a URL that does not parse", () => {
+    expect(checkPatch({ "prometheus.url": "not a url" })).toEqual([
+      expect.objectContaining({ code: "Invalid", path: "prometheus.url" }),
+    ]);
+  });
+
+  it("accepts empty values, which unset a setting", () => {
+    expect(
+      checkPatch({ "git.repository": "", "secretStore.kind": "" }),
+    ).toEqual([]);
+  });
+});
+
+describe("appNamespace", () => {
+  const saved = process.env.FLEET_NAMESPACE;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.FLEET_NAMESPACE;
+    else process.env.FLEET_NAMESPACE = saved;
+  });
+
+  it("returns the namespace of the pod", () => {
+    process.env.FLEET_NAMESPACE = "camunda-system";
+    expect(appNamespace()).toBe("camunda-system");
+  });
+
+  it("names the variable when it is missing", () => {
+    delete process.env.FLEET_NAMESPACE;
+    expect(() => appNamespace()).toThrow(/FLEET_NAMESPACE/);
+  });
+});
