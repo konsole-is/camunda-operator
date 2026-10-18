@@ -29,10 +29,13 @@ import (
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsvalidation "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation"
+	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
+	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel"
 	"k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utiljson "k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	celconfig "k8s.io/apiserver/pkg/apis/cel"
 )
 
 // fleetTemplateKey marks a parameter whose default is a template. The
@@ -65,6 +68,13 @@ func checkSchema(ctx context.Context, s *suite) error {
 		return fmt.Errorf("spec.parameters: %w", err)
 	}
 
+	// The schema validator does not run x-kubernetes-validations.
+	structural, err := schema.NewStructural(parsed)
+	if err != nil {
+		return fmt.Errorf("spec.parameters: %w", err)
+	}
+	rules := cel.NewValidator(structural, false, celconfig.PerCallLimit)
+
 	var errs []error
 	for _, tc := range s.cfg.Cases {
 		value := any(map[string]any{})
@@ -76,7 +86,12 @@ func checkSchema(ctx context.Context, s *suite) error {
 			}
 		}
 
-		fieldErrs := validation.ValidateCustomResource(field.NewPath("parameters"), value, validator)
+		path := field.NewPath("parameters")
+		fieldErrs := validation.ValidateCustomResource(path, value, validator)
+		if rules != nil {
+			ruleErrs, _ := rules.Validate(ctx, path, structural, value, nil, celconfig.RuntimeCELCostBudget)
+			fieldErrs = append(fieldErrs, ruleErrs...)
+		}
 		if err := fieldErrs.ToAggregate(); err != nil {
 			errs = append(errs, fmt.Errorf("case %q: %w", tc.Name, err))
 		}
@@ -89,8 +104,9 @@ func checkSchema(ctx context.Context, s *suite) error {
 // field of a CRD, with x-fleet-template as the one extra keyword. Each error
 // names its field under spec.parameters.
 func parseSchema(ctx context.Context, raw []byte) (*apiextensions.JSONSchemaProps, error) {
+	// utiljson keeps an integer as int64, where encoding/json rounds it.
 	var tree any
-	if err := json.Unmarshal(raw, &tree); err != nil {
+	if err := utiljson.Unmarshal(raw, &tree); err != nil {
 		return nil, fmt.Errorf("spec.parameters: %w", err)
 	}
 

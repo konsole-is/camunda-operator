@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
@@ -158,6 +160,33 @@ func TestSchemaChecksEveryCaseAgainstTheSchema(t *testing.T) {
 	assert.ErrorContains(t, err, `case "bad"`)
 	assert.ErrorContains(t, err, "parameters.message")
 	assert.NotContains(t, err.Error(), `case "good"`)
+}
+
+func TestSchemaChecksTheValidationRulesOfEachCase(t *testing.T) {
+	s := schemaSuite(
+		t,
+		`{"type":"object","properties":{"n":{"type":"integer",`+
+			`"x-kubernetes-validations":[{"rule":"self > 0","message":"n must be positive"}]}}}`,
+		Case{Name: "positive", Parameters: parameters(`{"n":1}`)},
+		Case{Name: "negative", Parameters: parameters(`{"n":-1}`)},
+	)
+
+	err := checkSchema(t.Context(), s)
+
+	assert.ErrorContains(t, err, `case "negative"`)
+	assert.ErrorContains(t, err, "n must be positive")
+	assert.NotContains(t, err.Error(), `case "positive"`)
+}
+
+// 2^53 + 1 has no exact float64.
+func TestParseSchemaKeepsALargeInteger(t *testing.T) {
+	parsed, err := parseSchema(
+		t.Context(),
+		[]byte(`{"type":"object","properties":{"n":{"type":"integer","enum":[9007199254740993]}}}`),
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, []apiextensions.JSON{int64(9007199254740993)}, parsed.Properties["n"].Enum)
 }
 
 func TestSchemaChecksACaseWithoutParametersAsAnEmptyObject(t *testing.T) {
