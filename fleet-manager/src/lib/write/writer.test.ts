@@ -159,6 +159,72 @@ describe("directWriter", () => {
   });
 });
 
+describe("directWriter when an object is deleted after the preview", () => {
+  // The object has the uid "old" at the preview. Before the write, another
+  // client deletes it, so the write creates a new object, with the uid "new".
+  let race: http.Server;
+  let raceKc: KubeConfig;
+  let deletes: unknown[];
+
+  beforeAll(async () => {
+    race = http.createServer((request, response) => {
+      const chunks: Buffer[] = [];
+      request.on("data", (chunk: Buffer) => chunks.push(chunk));
+      request.on("end", () => {
+        const dryRun = request.url?.includes("dryRun=All") ?? false;
+        const uid = request.method === "PATCH" && !dryRun ? "new" : "old";
+        if (request.method === "DELETE") {
+          deletes.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        }
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            apiVersion: "fleet.camunda.io/v1alpha1",
+            kind: "Environment",
+            metadata: { name: "prod", uid, resourceVersion: "9" },
+            spec: {},
+          }),
+        );
+      });
+    });
+    await new Promise<void>((resolve) => race.listen(0, "127.0.0.1", resolve));
+    raceKc = configFor(
+      `http://127.0.0.1:${(race.address() as AddressInfo).port}`,
+    );
+  });
+
+  afterAll(async () => {
+    await new Promise((resolve) => race.close(resolve));
+  });
+
+  beforeEach(() => {
+    deletes = [];
+  });
+
+  it("an apply with a precondition fails with Stale and deletes the object that it created", async () => {
+    const result = await directWriter(raceKc).apply({
+      intent: "Rename from the old form",
+      apply: [
+        {
+          apiVersion: "fleet.camunda.io/v1alpha1",
+          kind: "Environment",
+          metadata: { name: "prod" },
+          spec: {},
+        },
+      ],
+      preconditions: { "Environment//prod": "7" },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(deletes).toEqual([
+      expect.objectContaining({ preconditions: { uid: "new" } }),
+    ]);
+  });
+});
+
 describe("WriteOnlyKindMap", () => {
   it("holds the namespaced core ConfigMap, and objectPath names one", () => {
     expect(WriteOnlyKindMap.ConfigMap).toEqual({

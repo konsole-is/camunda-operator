@@ -390,11 +390,15 @@ describe("the direct writer against envtest", () => {
     expect(await read()).toMatchObject({ data: { key: "two" } });
   });
 
-  it("applies a Secret, and its preview holds no value", async () => {
+  it("applies a Secret, and its preview holds no value, also not in an annotation", async () => {
     const secret = (value: string): KubeObject => ({
       apiVersion: "v1",
       kind: "Secret",
-      metadata: { name, namespace },
+      metadata: {
+        name,
+        namespace,
+        annotations: { "example.com/copy": `token=${value}` },
+      },
       stringData: { token: value },
     });
     expect(

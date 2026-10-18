@@ -120,10 +120,11 @@ export function diffView(
  * when any object fails it. Then it applies the objects and deletes the
  * refs in the order of the change. When a write fails after that, the
  * objects written before it stay written. A delete of an object that is
- * already gone succeeds.
+ * already gone succeeds. An apply with a precondition fails when the
+ * object was deleted since the page read it.
  *
  * A preview of a Secret shows "(hidden)" for each value, and "(changed)"
- * for a value that the change sets to a new one.
+ * for a value that the change sets to a new one. It holds no annotation.
  */
 export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   const send = <T>(
@@ -166,20 +167,25 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 
   const deleteObject = (
     ref: ObjectRef,
-    resourceVersion: string | undefined,
+    preconditions: { resourceVersion?: string; uid?: string },
     dryRun: boolean,
   ) =>
     send<unknown>("DELETE", `${pathOf(ref)}${dryRun ? "?dryRun=All" : ""}`, {
       apiVersion: "v1",
       kind: "DeleteOptions",
-      ...(resourceVersion === undefined
+      ...(preconditions.resourceVersion === undefined &&
+      preconditions.uid === undefined
         ? {}
-        : { preconditions: { resourceVersion } }),
+        : { preconditions }),
     });
 
-  const preview = async (change: Change): Promise<Preview> => {
+  // uids holds the uid of each object of the apply list that exists.
+  const dryRun = async (
+    change: Change,
+  ): Promise<Preview & { uids: Map<RefKey, string> }> => {
+    const uids = new Map<RefKey, string>();
     const refusals = refsOf(change).flatMap(refusalOf);
-    if (refusals.length > 0) return { objects: [], errors: refusals };
+    if (refusals.length > 0) return { objects: [], errors: refusals, uids };
 
     const objects: PreviewObject[] = [];
     const errors: ApiError[] = [];
@@ -193,6 +199,9 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         if (before === undefined && resourceVersion !== undefined) {
           errors.push(staleError(ref));
           continue;
+        }
+        if (typeof before?.metadata.uid === "string") {
+          uids.set(refKey(ref), before.metadata.uid);
         }
         const after = await applyObject(
           object,
@@ -210,29 +219,45 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       try {
         const before = await read(pathOf(ref));
         if (before === undefined) continue;
-        await deleteObject(ref, resourceVersion, true);
+        await deleteObject(ref, { resourceVersion }, true);
         objects.push(previewObject(ref, before, undefined));
       } catch (error) {
         errors.push(...apiErrorsOf(error, ref, resourceVersion !== undefined));
       }
     }
+    return { objects, errors, uids };
+  };
+
+  const preview = async (change: Change): Promise<Preview> => {
+    const { objects, errors } = await dryRun(change);
     return { objects, errors };
   };
 
   const apply = async (change: Change): Promise<WriteResult> => {
-    const { errors } = await preview(change);
+    const { errors, uids } = await dryRun(change);
     if (errors.length > 0) return { ok: false, errors };
 
     for (const object of change.apply) {
       const ref = refOf(object);
       const resourceVersion = change.preconditions?.[refKey(ref)];
       try {
-        await applyObject(
+        const written = await applyObject(
           object,
           resourceVersion,
           change.force ?? false,
           false,
         );
+        const uid = written.metadata.uid;
+        // A new uid means that the object was deleted after the dry run
+        // and the apply created it again.
+        if (
+          resourceVersion !== undefined &&
+          typeof uid === "string" &&
+          uid !== uids.get(refKey(ref))
+        ) {
+          await deleteObject(ref, { uid }, false);
+          return { ok: false, errors: [staleError(ref)] };
+        }
       } catch (error) {
         return {
           ok: false,
@@ -243,7 +268,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     for (const ref of change.delete ?? []) {
       const resourceVersion = change.preconditions?.[refKey(ref)];
       try {
-        await deleteObject(ref, resourceVersion, false);
+        await deleteObject(ref, { resourceVersion }, false);
       } catch (error) {
         if (
           error instanceof KubernetesRequestError &&
@@ -328,8 +353,8 @@ function previewObject(
 }
 
 // A preview goes to the browser, and no Secret value may leave the app
-// server (contract 6.2). The last-applied annotation of kubectl holds the
-// values too.
+// server (contract 6.2). An annotation can hold a copy of a value, as the
+// last-applied annotation of kubectl does.
 function hideSecretValues(
   before: KubeObject | undefined,
   after: KubeObject | undefined,
@@ -340,10 +365,6 @@ function hideSecretValues(
     shown: (key: string, value: unknown) => string,
   ): KubeObject | undefined => {
     if (object === undefined) return undefined;
-    const annotations = omit(
-      (object.metadata.annotations ?? {}) as Record<string, unknown>,
-      ["kubectl.kubernetes.io/last-applied-configuration"],
-    );
     const rest = omit(object, ["stringData"]);
     const data = Object.fromEntries(
       Object.entries((object.data ?? {}) as Record<string, unknown>).map(
@@ -352,10 +373,9 @@ function hideSecretValues(
     );
     return {
       ...(rest as KubeObject),
-      metadata: {
-        ...object.metadata,
-        ...(object.metadata.annotations === undefined ? {} : { annotations }),
-      },
+      metadata: omit(object.metadata, [
+        "annotations",
+      ]) as KubeObject["metadata"],
       ...(object.data === undefined ? {} : { data }),
     };
   };
