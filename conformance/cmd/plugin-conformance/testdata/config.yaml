@@ -1,0 +1,25 @@
+registration: s3-backup-bucket
+namespace: conformance-s3-backup-bucket
+timeouts:
+  outputsReady: 2m
+  ready: 5m
+  deletion: 90s
+skip:
+  - id: ORDER-REGISTRATION-FIRST
+    reason: the plugin has no Deployment
+cases:
+  - name: default
+    inputs:
+      bucket-region: eu-west-1
+    parameters:
+      retentionDays: 30
+      versioning: true
+    target:
+      kind: CamundaCluster
+      name: orders
+      serviceAccountName: orders-camunda
+  - name: orphan
+    target:
+      kind: CamundaCluster
+      name: orders
+    deletionPolicy: Orphan
