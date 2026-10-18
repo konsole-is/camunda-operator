@@ -107,9 +107,31 @@ func TestSchemaRefusesAnInvalidSchema(t *testing.T) {
 		},
 		{
 			"unknown key under additionalProperties",
-			`{"type":"object","additionalProperties":{"type":"string","minLenght":3}}`,
-			`spec.parameters.additionalProperties: unknown field "minLenght"`,
+			`{"type":"object","properties":{"m":{"type":"object","additionalProperties":{"type":"string","minLenght":3}}}}`,
+			`spec.parameters.properties.m.additionalProperties: unknown field "minLenght"`,
 		},
+		{
+			"unknown key of a validation rule",
+			`{"type":"object","x-kubernetes-validations":[{"rule":"true","messageExpresion":"'x'"}]}`,
+			`spec.parameters.x-kubernetes-validations[0]: unknown field "messageExpresion"`,
+		},
+		{
+			"unknown key of a validation rule under items",
+			`{"type":"object","properties":{"l":{"type":"array","items":{"type":"string",` +
+				`"x-kubernetes-validations":[{"rule":"true","messageExpresion":"'x'"}]}}}}`,
+			`spec.parameters.properties.l.items.x-kubernetes-validations[0]: unknown field "messageExpresion"`,
+		},
+		{
+			"unknown key of the external docs",
+			`{"type":"object","externalDocs":{"url":"https://example.com","summary":"x"}}`,
+			`spec.parameters.externalDocs: unknown field "summary"`,
+		},
+		{
+			"additionalProperties at the root",
+			`{"type":"object","additionalProperties":{"type":"string"}}`,
+			"spec.parameters.additionalProperties: Forbidden: must not be used at the root",
+		},
+		{"root that is not an object", `{"type":"string"}`, "spec.parameters.type: Invalid value"},
 		{"unknown type", `{"type":"object","properties":{"m":{"type":"strnig"}}}`, "strnig"},
 		{
 			"default of the wrong type",
@@ -263,8 +285,9 @@ func TestParameterTemplatesCheck(t *testing.T) {
 		},
 		{
 			"marked default under additionalProperties",
-			`{"type":"object","additionalProperties":{"type":"string","x-fleet-template":true,"default":"{{ .unknown }}"}}`,
-			"spec.parameters.additionalProperties.default",
+			`{"type":"object","properties":{"m":{"type":"object","additionalProperties":` +
+				`{"type":"string","x-fleet-template":true,"default":"{{ .unknown }}"}}}}`,
+			"spec.parameters.properties.m.additionalProperties.default",
 		},
 		{
 			"marked default under allOf",

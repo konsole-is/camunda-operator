@@ -100,9 +100,9 @@ func checkSchema(ctx context.Context, s *suite) error {
 	return errors.Join(errs...)
 }
 
-// parseSchema returns raw as a schema that the API server accepts for a
-// field of a CRD, with x-fleet-template as the one extra keyword. Each error
-// names its field under spec.parameters.
+// parseSchema returns raw as a schema that the API server accepts as the
+// root schema of a CRD, with x-fleet-template as the one extra keyword. Each
+// error names its field under spec.parameters.
 func parseSchema(ctx context.Context, raw []byte) (*apiextensions.JSONSchemaProps, error) {
 	// utiljson keeps an integer as int64, where encoding/json rounds it.
 	var tree any
@@ -113,12 +113,20 @@ func parseSchema(ctx context.Context, raw []byte) (*apiextensions.JSONSchemaProp
 	// The decode drops an unknown keyword, so it is found first.
 	var errs []error
 	walkSchemas("spec.parameters", tree, func(path string, node map[string]any) {
-		for _, key := range slices.Sorted(maps.Keys(node)) {
-			if !schemaKeywords[key] && key != fleetTemplateKey {
-				errs = append(errs, fmt.Errorf("%s: unknown field %q", path, key))
+		errs = append(errs, unknownFields(path, node, schemaKeywords, fleetTemplateKey)...)
+		delete(node, fleetTemplateKey)
+
+		rules, _ := node["x-kubernetes-validations"].([]any)
+		for i, rule := range rules {
+			if fields, ok := rule.(map[string]any); ok {
+				rulePath := fmt.Sprintf("%s.x-kubernetes-validations[%d]", path, i)
+				errs = append(errs, unknownFields(rulePath, fields, ruleKeywords)...)
 			}
 		}
-		delete(node, fleetTemplateKey)
+
+		if docs, ok := node["externalDocs"].(map[string]any); ok {
+			errs = append(errs, unknownFields(path+".externalDocs", docs, externalDocsKeywords)...)
+		}
 	})
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
@@ -147,19 +155,49 @@ func parseSchema(ctx context.Context, raw []byte) (*apiextensions.JSONSchemaProp
 		return nil, err
 	}
 
+	// The CRD validation sees the schema as a field, so the rules of a root
+	// schema run here.
+	structural, err := schema.NewStructural(&out)
+	if err != nil {
+		return nil, fmt.Errorf("spec.parameters: %w", err)
+	}
+
+	if err := schema.ValidateStructural(field.NewPath("spec", "parameters"), structural).ToAggregate(); err != nil {
+		return nil, err
+	}
+
 	return &out, nil
 }
 
-// schemaKeywords are the keywords of a CRD schema.
-var schemaKeywords = func() map[string]bool {
-	keywords := map[string]bool{}
-	for f := range reflect.TypeFor[apiextensionsv1.JSONSchemaProps]().Fields() {
+// The keywords of a schema, of a validation rule, and of external docs.
+var (
+	schemaKeywords       = jsonFields[apiextensionsv1.JSONSchemaProps]()
+	ruleKeywords         = jsonFields[apiextensionsv1.ValidationRule]()
+	externalDocsKeywords = jsonFields[apiextensionsv1.ExternalDocumentation]()
+)
+
+func jsonFields[T any]() map[string]bool {
+	names := map[string]bool{}
+	for f := range reflect.TypeFor[T]().Fields() {
 		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
-		keywords[name] = true
+		names[name] = true
 	}
 
-	return keywords
-}()
+	return names
+}
+
+// unknownFields returns an error for each key of object that is not in
+// known or extra.
+func unknownFields(path string, object map[string]any, known map[string]bool, extra ...string) []error {
+	var errs []error
+	for _, key := range slices.Sorted(maps.Keys(object)) {
+		if !known[key] && !slices.Contains(extra, key) {
+			errs = append(errs, fmt.Errorf("%s: unknown field %q", path, key))
+		}
+	}
+
+	return errs
+}
 
 // walkSchemas calls visit for node and for each schema under it, with its
 // path. It walks only the keywords that hold schemas, so a default, an
