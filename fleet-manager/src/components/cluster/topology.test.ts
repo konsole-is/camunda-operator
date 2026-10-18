@@ -246,6 +246,25 @@ describe("podDot", () => {
     expect(podDot(p)).toMatchObject({ tone, state: reason });
   });
 
+  it("shows the waiting reason of an init container before that of the app", () => {
+    const status = (name: string, reason: string) => ({
+      name,
+      image: name,
+      imageID: "",
+      ready: false,
+      restartCount: 0,
+      state: { waiting: { reason } },
+    });
+    const p = pod("p", "zeebe", {
+      status: {
+        phase: "Pending",
+        initContainerStatuses: [status("es-truststore", "CrashLoopBackOff")],
+        containerStatuses: [status("zeebe", "PodInitializing")],
+      },
+    });
+    expect(podDot(p)).toMatchObject({ tone: "bad", state: "CrashLoopBackOff" });
+  });
+
   it("is bad for a Failed pod", () => {
     expect(
       podDot(pod("p", "zeebe", { status: { phase: "Failed" } })),

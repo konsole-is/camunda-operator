@@ -100,9 +100,10 @@ export function podDot(pod: Resource<"Pod">): PodDot {
     return { name, tone: "off", state: "Terminating" };
   }
 
-  const reason = pod.status?.containerStatuses?.find(
-    (c) => c.state?.waiting?.reason,
-  )?.state?.waiting?.reason;
+  const reason = [
+    ...(pod.status?.initContainerStatuses ?? []),
+    ...(pod.status?.containerStatuses ?? []),
+  ].find((c) => c.state?.waiting?.reason)?.state?.waiting?.reason;
   if (reason) {
     return {
       name,
