@@ -165,18 +165,20 @@ export function watchStream(
             `${fields}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
           );
         // All frames of all watches share one queue. A frame that waits for
-        // room keeps them from passing maxPendingBytes together.
-        const sendWhenRoom = async (
-          event: string,
-          data: unknown,
-          fields = "",
-        ) => {
+        // room keeps them from passing maxPendingBytes together, and the
+        // frames go in the order they wait, so small ones cannot starve a
+        // large one.
+        let tail = Promise.resolve();
+        const sendWhenRoom = (event: string, data: unknown, fields = "") => {
           const bytes = frame(event, data, fields);
           const room = Math.min(bytes.byteLength, maxPendingBytes);
-          while (!closed && (controller.desiredSize ?? 0) < room) {
-            await new Promise<void>((wake) => drained.push(wake));
-          }
-          if (!closed) controller.enqueue(bytes);
+          tail = tail.then(async () => {
+            while (!closed && (controller.desiredSize ?? 0) < room) {
+              await new Promise<void>((wake) => drained.push(wake));
+            }
+            if (!closed) controller.enqueue(bytes);
+          });
+          return tail;
         };
         signal.addEventListener("abort", end, { once: true });
         if (signal.aborted) {

@@ -248,10 +248,11 @@ describe("watchStream", () => {
     listeners
       .get("Pod")!
       .forEach((l) => l("add", object("team", "z") as never));
+    const { frames: deltas } = await readFrames(reader, 1);
     // The stream ends at the abort and keeps the frames it already sent.
     abort.abort();
-    const { frames: deltas } = await readFrames(reader);
-    expect(deltas).toEqual([
+    const { frames: rest } = await readFrames(reader);
+    expect([...deltas, ...rest]).toEqual([
       {
         event: "delta",
         data: {
@@ -603,6 +604,53 @@ describe("watchStream", () => {
     expect(done).toBe(false);
     expect(frames.map((f) => f.event)).toEqual(["snapshot", "delta"]);
     expect(frames[1].data.object?.metadata?.name).toBe("mine");
+    await reader.cancel();
+  });
+  it("sends frames in the order they wait, so small deltas cannot starve a large snapshot", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    const { cache, listeners } = fakeCache({
+      Pod: async () => ({
+        snapshot: [padded("first", 400)],
+        unsubscribe: vi.fn(),
+      }),
+      Service: () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                snapshot: [padded("large", 700)],
+                unsubscribe: vi.fn(),
+              }),
+            5,
+          ),
+        ),
+    });
+    const tick = () => new Promise((wake) => setTimeout(wake, 5));
+    const reader = watchStream(
+      cache,
+      [
+        { id: "b", request: { kinds: ["Pod"] } },
+        { id: "a", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+    await tick();
+    await tick();
+
+    const order: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      listeners.get("Pod")![0]("add", padded(`change-${i}`, 200) as never);
+      await tick();
+      const { frames } = await readFrames(reader, 1);
+      order.push(`${frames[0].event} ${frames[0].data.watch}`);
+    }
+
+    expect(order.slice(0, 2)).toEqual(["snapshot b", "snapshot a"]);
     await reader.cancel();
   });
 });
