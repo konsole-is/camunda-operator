@@ -259,8 +259,13 @@ func (s *suite) ensureNamespace(ctx context.Context) error {
 	if err := s.client.Create(ctx, &ns); err != nil {
 		return fmt.Errorf("creating the namespace %s: %w", s.cfg.Namespace, err)
 	}
+	uid := ns.UID
 	s.onClose(func(ctx context.Context) error {
-		return client.IgnoreNotFound(s.client.Delete(ctx, &ns))
+		err := s.client.Delete(ctx, &ns, client.Preconditions{UID: &uid})
+		if apierrors.IsNotFound(err) || apierrors.IsConflict(err) {
+			return nil
+		}
+		return err
 	})
 
 	return nil

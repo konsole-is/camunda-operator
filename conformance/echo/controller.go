@@ -212,7 +212,7 @@ func (c *Controller) cleanUp(ctx context.Context, req *pluginsv1alpha1.PluginReq
 	}
 
 	if c.opts.Defect != DefectKeepOwnerOnOrphan {
-		if err := c.apply(ctx, cm); err != nil {
+		if err := c.releaseOwner(ctx, cm, req.UID); err != nil {
 			return err
 		}
 	}
@@ -221,10 +221,34 @@ func (c *Controller) cleanUp(ctx context.Context, req *pluginsv1alpha1.PluginReq
 	case ing == nil:
 		return nil
 	case c.opts.Defect == DefectKeepRouteOnOrphan:
-		return c.apply(ctx, ing)
+		return c.releaseOwner(ctx, ing, req.UID)
 	default:
 		return c.delete(ctx, ing)
 	}
+}
+
+// releaseOwner removes the owner reference with uid from obj, and keeps the
+// rest of obj. It never creates obj: an object that is gone stays gone.
+func (c *Controller) releaseOwner(ctx context.Context, obj client.Object, uid types.UID) error {
+	if err := c.client.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+
+	before, ok := obj.DeepCopyObject().(client.Object)
+	if !ok {
+		return fmt.Errorf("copying the %T %s", obj, obj.GetName())
+	}
+
+	obj.SetOwnerReferences(slices.DeleteFunc(obj.GetOwnerReferences(), func(o metav1.OwnerReference) bool {
+		return o.UID == uid
+	}))
+
+	err := c.client.Patch(ctx, obj, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{}))
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("removing the owner reference of the %T %s: %w", obj, obj.GetName(), err)
+	}
+
+	return nil
 }
 
 func (c *Controller) applyObjects(ctx context.Context, req *pluginsv1alpha1.PluginRequest) error {
