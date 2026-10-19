@@ -1,7 +1,7 @@
 import type { KubernetesObject } from "@kubernetes/client-node";
 import { describe, expect, it, vi } from "vitest";
 import type { CacheListener, ResourceCache } from "./cache";
-import { parseWatchRequest, watchStream } from "./watch";
+import { parseWatchRequest, parseWatchRequests, watchStream } from "./watch";
 
 const params = (query: string) => new URLSearchParams(query);
 
@@ -38,6 +38,108 @@ describe("parseWatchRequest", () => {
   });
 });
 
+describe("parseWatchRequests", () => {
+  it("reads each watch with the rules of one watch", () => {
+    expect(
+      parseWatchRequests(
+        params(
+          `watch=${encodeURIComponent("kind=Pod&namespace=team")}&watch=${encodeURIComponent("kind=Environment")}`,
+        ),
+      ),
+    ).toEqual([
+      {
+        id: "kind=Pod&namespace=team",
+        request: { kinds: ["Pod"], namespace: "team" },
+      },
+      { id: "kind=Environment", request: { kinds: ["Environment"] } },
+    ]);
+  });
+
+  it.each([
+    ["", "Name at least one watch with the parameter watch"],
+    ["kind=Pod", "Name at least one watch with the parameter watch"],
+    [
+      "watch=kind%3DPod&watch=kind%3DPod",
+      'The watch "kind=Pod" appears more than once',
+    ],
+  ])("refuses %j with a message that names the problem", (query, message) => {
+    expect(() => parseWatchRequests(params(query))).toThrow(message);
+  });
+
+  it("keeps a watch that is not valid, with its problem", () => {
+    expect(
+      parseWatchRequests(params("watch=kind%3DWidget&watch=kind%3DPod")),
+    ).toEqual([
+      {
+        id: "kind=Widget",
+        error: 'The fleet manager does not read the kind "Widget"',
+      },
+      { id: "kind=Pod", request: { kinds: ["Pod"] } },
+    ]);
+  });
+});
+
+interface Frame {
+  event: string;
+  retry?: number;
+  data: {
+    watch: string;
+    kind: string;
+    type?: string;
+    message?: string;
+    object?: KubernetesObject;
+    objects?: KubernetesObject[];
+  };
+}
+
+// readFrames reads the SSE frames of a stream until it ends or until it has
+// count frames.
+async function readFrames(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  count = Infinity,
+): Promise<{ frames: Frame[]; done: boolean }> {
+  const decoder = new TextDecoder();
+  const frames: Frame[] = [];
+  let buffer = "";
+  while (frames.length < count) {
+    const { value, done } = await reader.read();
+    if (done) return { frames, done: true };
+    buffer += decoder.decode(value);
+    for (
+      let end = buffer.indexOf("\n\n");
+      end >= 0;
+      end = buffer.indexOf("\n\n")
+    ) {
+      const text = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      if (text.startsWith(":")) continue;
+      const retry = /^retry: (\d+)$/m.exec(text)?.[1];
+      frames.push({
+        retry: retry === undefined ? undefined : Number(retry),
+        event: /^event: (.*)$/m.exec(text)![1],
+        data: JSON.parse(/^data: (.*)$/m.exec(text)![1]),
+      });
+    }
+  }
+  return { frames, done: false };
+}
+
+const object = (namespace: string, name: string) =>
+  ({ metadata: { namespace, name } }) as KubernetesObject;
+
+// fakeCache records the listeners of each kind and answers subscribe from
+// answers, one promise per kind.
+function fakeCache(answers: Partial<Record<string, () => Promise<unknown>>>) {
+  const listeners = new Map<string, CacheListener<"Pod">[]>();
+  const cache = {
+    subscribe: vi.fn((kind: string, listener: CacheListener<"Pod">) => {
+      listeners.set(kind, [...(listeners.get(kind) ?? []), listener]);
+      return answers[kind]!();
+    }),
+  } as unknown as ResourceCache;
+  return { cache, listeners };
+}
+
 describe("watchStream", () => {
   it("releases the subscription when the request aborts after the snapshot", async () => {
     const unsubscribe = vi.fn();
@@ -48,7 +150,7 @@ describe("watchStream", () => {
 
     const reader = watchStream(
       cache,
-      { kinds: ["Pod"] },
+      [{ id: "kind=Pod", request: { kinds: ["Pod"] } }],
       abort.signal,
     ).getReader();
     const first = new TextDecoder().decode((await reader.read()).value);
@@ -69,7 +171,7 @@ describe("watchStream", () => {
 
     const reader = watchStream(
       cache,
-      { kinds: ["Pod"] },
+      [{ id: "kind=Pod", request: { kinds: ["Pod"] } }],
       abort.signal,
     ).getReader();
     await vi.waitFor(() => expect(answer).toBeDefined());
@@ -86,7 +188,7 @@ describe("watchStream", () => {
 
     const stream = watchStream(
       {} as ResourceCache,
-      { kinds: ["Pod"] },
+      [{ id: "kind=Pod", request: { kinds: ["Pod"] } }],
       controller.signal,
     );
 
@@ -108,7 +210,7 @@ describe("watchStream", () => {
 
     const stream = watchStream(
       cache,
-      { kinds: ["Pod"] },
+      [{ id: "kind=Pod", request: { kinds: ["Pod"] } }],
       new AbortController().signal,
       { maxPendingBytes: 1_000 },
     );
@@ -119,7 +221,475 @@ describe("watchStream", () => {
       } as KubernetesObject as never);
     }
 
-    expect(unsubscribe).toHaveBeenCalled();
+    await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalled());
     await stream.cancel();
   });
+  it("frames carry the id of their watch", async () => {
+    const pods = [object("team", "x"), object("other", "y")];
+    const { cache, listeners } = fakeCache({
+      Pod: async () => ({ snapshot: pods, unsubscribe: vi.fn() }),
+    });
+    const abort = new AbortController();
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"], namespace: "team" } },
+        { id: "b", request: { kinds: ["Pod"], namespace: "other" } },
+      ],
+      abort.signal,
+    ).getReader();
+
+    const { frames: snapshots } = await readFrames(reader, 2);
+    const snapshotOf = (id: string) =>
+      snapshots.find((f) => f.event === "snapshot" && f.data.watch === id);
+    expect(snapshotOf("a")?.data.objects).toEqual([object("team", "x")]);
+    expect(snapshotOf("b")?.data.objects).toEqual([object("other", "y")]);
+
+    listeners
+      .get("Pod")!
+      .forEach((l) => l("add", object("team", "z") as never));
+    const { frames: deltas } = await readFrames(reader, 1);
+    // The stream ends at the abort and keeps the frames it already sent.
+    abort.abort();
+    const { frames: rest } = await readFrames(reader);
+    expect([...deltas, ...rest]).toEqual([
+      {
+        event: "delta",
+        data: {
+          watch: "a",
+          type: "ADDED",
+          kind: "Pod",
+          object: object("team", "z"),
+        },
+      },
+    ]);
+  });
+
+  it("a failing watch does not hold back the snapshot of another watch", async () => {
+    const unsubscribe = vi.fn();
+    let answer: (s: { snapshot: never[]; unsubscribe: () => void }) => void;
+    const { cache } = fakeCache({
+      Pod: async () => {
+        throw new Error("pods are not served");
+      },
+      Service: () => new Promise((resolve) => (answer = resolve)),
+    });
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+    ).getReader();
+
+    const { frames: first } = await readFrames(reader, 1);
+    expect(first).toEqual([
+      {
+        event: "failure",
+        retry: 5_000,
+        data: { watch: "a", kind: "Pod", message: "pods are not served" },
+      },
+    ]);
+    answer!({ snapshot: [], unsubscribe });
+
+    const { frames: rest } = await readFrames(reader, 1);
+    expect(rest).toEqual([
+      {
+        event: "snapshot",
+        data: { watch: "b", kind: "Service", objects: [] },
+      },
+    ]);
+    await reader.cancel();
+  });
+
+  it("a watch that fails tries again after retryMs, and the stream stays open for the other watches", async () => {
+    let podCalls = 0;
+    const { cache, listeners } = fakeCache({
+      Pod: async () => {
+        podCalls++;
+        if (podCalls === 1) throw new Error("pods are not served");
+        return { snapshot: [object("team", "x")], unsubscribe: vi.fn() };
+      },
+      Service: async () => ({ snapshot: [], unsubscribe: vi.fn() }),
+    });
+    const abort = new AbortController();
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      abort.signal,
+      { retryMs: 20 },
+    ).getReader();
+
+    const { frames: first } = await readFrames(reader, 2);
+    expect(first.map((f) => `${f.event} ${f.data.watch}`).sort()).toEqual([
+      "failure a",
+      "snapshot b",
+    ]);
+    const { frames: retried } = await readFrames(reader, 1);
+    expect(retried).toEqual([
+      {
+        event: "snapshot",
+        data: { watch: "a", kind: "Pod", objects: [object("team", "x")] },
+      },
+    ]);
+    listeners.get("Service")![0]("add", object("team", "y") as never);
+    const { frames: deltas, done } = await readFrames(reader, 1);
+    expect(done).toBe(false);
+    expect(deltas[0].data).toMatchObject({ watch: "b", type: "ADDED" });
+    abort.abort();
+  });
+
+  it("starts every watch before the first snapshot", async () => {
+    const never = () => new Promise(() => {});
+    const { cache } = fakeCache({ Pod: never, Service: never });
+    const stream = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+    );
+
+    await vi.waitFor(() =>
+      expect(
+        vi.mocked(cache.subscribe).mock.calls.map(([kind]) => kind),
+      ).toEqual(["Pod", "Service"]),
+    );
+    await stream.cancel();
+  });
+  it("a watch that is not valid gets a failure frame, and the other watches stay live", async () => {
+    const { cache, listeners } = fakeCache({
+      Pod: async () => ({ snapshot: [], unsubscribe: vi.fn() }),
+    });
+    const abort = new AbortController();
+    const reader = watchStream(
+      cache,
+      [
+        { id: "kind=Widget", error: "bad" },
+        { id: "a", request: { kinds: ["Pod"] } },
+      ],
+      abort.signal,
+    ).getReader();
+
+    const { frames } = await readFrames(reader, 2);
+    expect(frames).toEqual([
+      {
+        event: "failure",
+        data: { watch: "kind=Widget", kind: "Widget", message: "bad" },
+      },
+      { event: "snapshot", data: { watch: "a", kind: "Pod", objects: [] } },
+    ]);
+    listeners.get("Pod")![0]("add", object("team", "x") as never);
+    const { frames: deltas } = await readFrames(reader, 1);
+    expect(deltas[0].data).toMatchObject({ watch: "a", type: "ADDED" });
+    abort.abort();
+  });
+
+  it("holds a snapshot until the queue has room, so a slow reader gets every snapshot", async () => {
+    const big = (name: string) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(500),
+      }) as KubernetesObject;
+    const answer = (name: string) => async () => ({
+      snapshot: [big(name)],
+      unsubscribe: vi.fn(),
+    });
+    const { cache } = fakeCache({
+      Pod: answer("p"),
+      Service: answer("s"),
+      Secret: answer("c"),
+    });
+    const abort = new AbortController();
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+        { id: "c", request: { kinds: ["Secret"] } },
+      ],
+      abort.signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+    await vi.waitFor(() =>
+      expect(vi.mocked(cache.subscribe)).toHaveBeenCalledTimes(3),
+    );
+    await new Promise((wake) => setTimeout(wake, 10));
+
+    const { frames, done } = await readFrames(reader, 3);
+    expect(done).toBe(false);
+    expect(frames.map((f) => f.data.watch).sort()).toEqual(["a", "b", "c"]);
+    abort.abort();
+  });
+  it("ends the stream when the changes behind a waiting snapshot pass maxPendingBytes", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    const unsubscribe = vi.fn();
+    const { cache, listeners } = fakeCache({
+      Pod: async () => ({
+        snapshot: [padded("first", 800)],
+        unsubscribe: vi.fn(),
+      }),
+      Service: async () => ({
+        snapshot: [padded("waiting", 500)],
+        unsubscribe,
+      }),
+    });
+    const stream = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    );
+    await vi.waitFor(() => expect(listeners.get("Service")).toBeDefined());
+    await new Promise((wake) => setTimeout(wake, 10));
+
+    for (let i = 0; i < 20; i++) {
+      listeners.get("Service")![0]("add", padded(`change-${i}`, 100) as never);
+    }
+
+    await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalled());
+    await stream.cancel();
+  });
+  it("a failure frame waits for room as a snapshot does, so a large snapshot does not drop it", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    const { cache } = fakeCache({
+      Pod: async () => ({
+        snapshot: [padded("large", 1_500)],
+        unsubscribe: vi.fn(),
+      }),
+      Service: () =>
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("services are not served")), 5),
+        ),
+      Secret: async () => ({
+        snapshot: [padded("small", 10)],
+        unsubscribe: vi.fn(),
+      }),
+    });
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+        { id: "c", request: { kinds: ["Secret"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+    await new Promise((wake) => setTimeout(wake, 20));
+
+    const { frames, done } = await readFrames(reader, 3);
+    expect(done).toBe(false);
+    expect(frames.map((f) => `${f.event} ${f.data.watch}`).sort()).toEqual([
+      "failure b",
+      "snapshot a",
+      "snapshot c",
+    ]);
+    await reader.cancel();
+  });
+  it("the changes behind a large snapshot wait for room, so the other watches keep their snapshots", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    const cache = {
+      subscribe: async (kind: string, listener: CacheListener<"Pod">) => {
+        if (kind === "Secret") {
+          return { snapshot: [padded("small", 10)], unsubscribe: vi.fn() };
+        }
+        // A change that arrives before the snapshot goes out waits behind it.
+        listener("add", padded("change", 10) as never);
+        return { snapshot: [padded("large", 1_500)], unsubscribe: vi.fn() };
+      },
+    } as unknown as ResourceCache;
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "c", request: { kinds: ["Secret"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+    await new Promise((wake) => setTimeout(wake, 20));
+
+    const { frames, done } = await readFrames(reader, 3);
+    expect(done).toBe(false);
+    expect(frames.map((f) => `${f.event} ${f.data.watch}`).sort()).toEqual([
+      "delta a",
+      "snapshot a",
+      "snapshot c",
+    ]);
+    await reader.cancel();
+  });
+  it("a live delta waits for room behind a large snapshot of another watch", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    let answer: (s: {
+      snapshot: KubernetesObject[];
+      unsubscribe: () => void;
+    }) => void;
+    const { cache, listeners } = fakeCache({
+      Pod: async () => ({ snapshot: [], unsubscribe: vi.fn() }),
+      Service: () => new Promise((resolve) => (answer = resolve)),
+    });
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+    const { frames: first } = await readFrames(reader, 1);
+    expect(first[0].data.watch).toBe("a");
+
+    answer!({ snapshot: [padded("large", 1_500)], unsubscribe: vi.fn() });
+    await new Promise((wake) => setTimeout(wake, 10));
+    listeners.get("Pod")![0]("add", object("team", "x") as never);
+    await new Promise((wake) => setTimeout(wake, 10));
+
+    const { frames, done } = await readFrames(reader, 2);
+    expect(done).toBe(false);
+    expect(frames.map((f) => `${f.event} ${f.data.watch}`)).toEqual([
+      "snapshot b",
+      "delta a",
+    ]);
+    await reader.cancel();
+  });
+  it("changes in another namespace do not count against maxPendingBytes", async () => {
+    const padded = (namespace: string, name: string) =>
+      ({
+        metadata: { namespace, name },
+        data: "x".repeat(100),
+      }) as KubernetesObject;
+    const cache = {
+      subscribe: async (_kind: string, listener: CacheListener<"Pod">) => {
+        for (let i = 0; i < 20; i++) {
+          listener("add", padded("other", `pod-${i}`) as never);
+        }
+        listener("add", padded("team", "mine") as never);
+        return { snapshot: [], unsubscribe: vi.fn() };
+      },
+    } as unknown as ResourceCache;
+    const reader = watchStream(
+      cache,
+      [{ id: "a", request: { kinds: ["Pod"], namespace: "team" } }],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+
+    const { frames, done } = await readFrames(reader, 2);
+    expect(done).toBe(false);
+    expect(frames.map((f) => f.event)).toEqual(["snapshot", "delta"]);
+    expect(frames[1].data.object?.metadata?.name).toBe("mine");
+    await reader.cancel();
+  });
+  it("sends frames in the order they wait, so small deltas cannot starve a large snapshot", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    const { cache, listeners } = fakeCache({
+      Pod: async () => ({
+        snapshot: [padded("first", 400)],
+        unsubscribe: vi.fn(),
+      }),
+      Service: () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                snapshot: [padded("large", 700)],
+                unsubscribe: vi.fn(),
+              }),
+            5,
+          ),
+        ),
+    });
+    const tick = () => new Promise((wake) => setTimeout(wake, 5));
+    const reader = watchStream(
+      cache,
+      [
+        { id: "b", request: { kinds: ["Pod"] } },
+        { id: "a", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+    await tick();
+    await tick();
+
+    const order: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      listeners.get("Pod")![0]("add", padded(`change-${i}`, 200) as never);
+      await tick();
+      const { frames } = await readFrames(reader, 1);
+      order.push(`${frames[0].event} ${frames[0].data.watch}`);
+    }
+
+    expect(order.slice(0, 2)).toEqual(["snapshot b", "snapshot a"]);
+    await reader.cancel();
+  });
+  it.each([
+    ["a change that waits for room still counts", "x", 250, 4],
+    ["the count is in UTF-8 bytes", "中", 150, 3],
+  ])(
+    "ends the stream when the waiting changes pass maxPendingBytes: %s",
+    async (_name, char, size, changes) => {
+      const unsubscribe = vi.fn();
+      const { cache, listeners } = fakeCache({
+        Pod: async () => ({
+          snapshot: [
+            {
+              metadata: { namespace: "team", name: "large" },
+              data: "x".repeat(1_500),
+            },
+          ],
+          unsubscribe,
+        }),
+      });
+      const stream = watchStream(
+        cache,
+        [{ id: "a", request: { kinds: ["Pod"] } }],
+        new AbortController().signal,
+        { maxPendingBytes: 1_000 },
+      );
+      await vi.waitFor(() => expect(listeners.get("Pod")).toBeDefined());
+      await new Promise((wake) => setTimeout(wake, 10));
+
+      for (let i = 0; i < changes; i++) {
+        listeners.get("Pod")![0]("add", {
+          metadata: { namespace: "team", name: `change-${i}` },
+          data: char.repeat(size),
+        } as never);
+        await new Promise((wake) => setTimeout(wake, 1));
+      }
+
+      await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalled());
+      await stream.cancel();
+    },
+  );
 });

@@ -689,9 +689,9 @@ fleet-playwright: fleet-install ## Install the Chromium browser that the fleet m
 	$(FLEET_PNPM) exec playwright install chromium $(FLEET_PLAYWRIGHT_FLAGS)
 
 .PHONY: fleet-gallery
-fleet-gallery: fleet-build fleet-playwright ## Screenshot each fleet manager gallery story at 1440 px and 390 px into fleet-manager/ui-gallery, and fail on a serious or critical axe violation.
+fleet-gallery: fleet-build fleet-playwright setup-envtest ## Screenshot each fleet manager gallery story at 1440 px and 390 px into fleet-manager/ui-gallery, fail on a serious or critical axe violation, and check that a page of 8 data hooks opens one watch connection.
 	$(FLEET_PNPM) run build:gallery
-	$(FLEET_PNPM) run gallery
+	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run gallery
 
 .PHONY: docker-build-fleet
 docker-build-fleet: ## Build the fleet manager image.
