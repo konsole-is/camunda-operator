@@ -236,6 +236,29 @@ describe("testGit", () => {
     await vi.waitFor(() => expect(closed).toBe(true));
   }, 20_000);
 
+  it("does not follow a redirect with the credentials", async () => {
+    const paths: string[] = [];
+    const base = await serve((req, res) => {
+      paths.push(req.url ?? "");
+      if (!req.headers.authorization) {
+        res.writeHead(401, { "WWW-Authenticate": 'Basic realm="git"' }).end();
+        return;
+      }
+      res.writeHead(302, { Location: `${base}/moved${req.url}` }).end();
+    });
+    const url = base.replace(/^http:/, "https:") + "/fleet.git";
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({ "git.repository": url, "git.credentialsSecretRef": "git" }),
+    );
+    vi.mocked(readSecretValues).mockResolvedValue({
+      username: "bot",
+      token: "tok-1",
+    });
+
+    expect((await testGit()).ok).toBe(false);
+    expect(paths.filter((p) => p.startsWith("/moved"))).toEqual([]);
+  });
+
   it("refuses to send credentials over plain HTTP", async () => {
     let requests = 0;
     const url =

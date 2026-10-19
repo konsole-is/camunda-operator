@@ -53,10 +53,18 @@ export async function testGit(): Promise<TestResult> {
   }
   try {
     // The deadline also closes the request, so a server that never ends
-    // its answer keeps no socket open.
+    // its answer keeps no socket open. The transport keeps the credentials
+    // on a redirect to the same host, also to http://, so it follows none.
     const signal = AbortSignal.timeout(TIMEOUT_MS);
     const refs = await listServerRefs({
-      http: { request: (request) => gitHttp.request({ ...request, signal }) },
+      http: {
+        request: (request) =>
+          gitHttp.request({
+            ...request,
+            signal,
+            fetchOptions: { maxRedirects: 0 },
+          }),
+      },
       url,
       prefix: "refs/heads/",
       protocolVersion: 1,
