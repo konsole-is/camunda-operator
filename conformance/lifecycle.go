@@ -100,9 +100,9 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		return nil, err
 	}
 
-	var section pluginsv1alpha1.PluginSection
-	if err := s.client.Get(ctx, client.ObjectKey{Name: reg.Spec.Sections[0]}, &section); err != nil {
-		return nil, fmt.Errorf("PluginSection %q of the registration: %w", reg.Spec.Sections[0], err)
+	section, err := s.section(ctx, reg.Spec.Sections[0])
+	if err != nil {
+		return nil, err
 	}
 
 	kinds, err := pluginKinds(ctx, s, reg.Spec.ServiceAccount)
@@ -127,7 +127,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		started:      time.Now(),
 		registration: reg,
 		accepted:     meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted),
-		section:      &section,
+		section:      section,
 		kinds:        kinds,
 		runs:         runs,
 		rec:          rec,
@@ -136,7 +136,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 	}
 
 	for _, run := range runs {
-		req := requestFor(reg.Name, &section, s.cfg.Namespace, run)
+		req := requestFor(reg.Name, section, s.cfg.Namespace, run)
 		if err := s.client.Create(ctx, req); err != nil {
 			return nil, fmt.Errorf(
 				"creating the PluginRequest %s/%s of case %q: %w",

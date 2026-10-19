@@ -37,18 +37,29 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// The IDs of the lifecycle checks.
+// The IDs of the lifecycle checks, which check what the plugin writes for
+// each request of the run.
 const (
-	CheckRequestFinalizer    CheckID = "REQ-FINALIZER"
-	CheckRequestOutputsReady CheckID = "REQ-OUTPUTS-READY"
-	CheckRequestOutputs      CheckID = "REQ-OUTPUTS"
-	CheckRequestReady        CheckID = "REQ-READY"
-	CheckRequestLabels       CheckID = "REQ-LABELS"
-	CheckRequestResources    CheckID = "REQ-RESOURCES"
-	CheckRequestEvents       CheckID = "REQ-EVENTS"
-	CheckRequestDisplay      CheckID = "REQ-DISPLAY"
-	CheckRequestLogs         CheckID = "REQ-LOGS"
-	CheckRequestAcceptedKept CheckID = "REQ-ACCEPTED-KEPT"
+	// ReqFinalizer checks that the finalizer comes before any object.
+	ReqFinalizer CheckID = "REQ-FINALIZER"
+	// ReqOutputsReady checks OutputsReady for the current generation.
+	ReqOutputsReady CheckID = "REQ-OUTPUTS-READY"
+	// ReqOutputs checks the keys and the values of status.outputs.
+	ReqOutputs CheckID = "REQ-OUTPUTS"
+	// ReqReady checks the Ready condition of each request.
+	ReqReady CheckID = "REQ-READY"
+	// ReqLabels checks the writer labels and the owner references.
+	ReqLabels CheckID = "REQ-LABELS"
+	// ReqResources checks that status.resources lists each object.
+	ReqResources CheckID = "REQ-RESOURCES"
+	// ReqEvents checks the events of each request.
+	ReqEvents CheckID = "REQ-EVENTS"
+	// ReqDisplay checks the display fields of the request status.
+	ReqDisplay CheckID = "REQ-DISPLAY"
+	// ReqLogs checks the log lines of the controller pods. It is skippable.
+	ReqLogs CheckID = "REQ-LOGS"
+	// ReqAcceptedKept checks that the registration keeps Accepted.
+	ReqAcceptedKept CheckID = "REQ-ACCEPTED-KEPT"
 )
 
 // kindPluginRequest is the kind of an owner reference to a request.
@@ -57,58 +68,58 @@ const kindPluginRequest = "PluginRequest"
 // lifecycleChecks run for each request of the run, in this order.
 var lifecycleChecks = []Check{
 	{
-		ID: CheckRequestFinalizer,
+		ID: ReqFinalizer,
 		Description: "The request gets the finalizer plugins.camunda.io/cleanup before any object that the " +
 			"plugin writes for it.",
 		run: checkFinalizer,
 	},
 	{
-		ID:          CheckRequestOutputsReady,
+		ID:          ReqOutputsReady,
 		Description: "The request gets OutputsReady=True for its current generation within the OutputsReady timeout.",
 		run:         checkOutputsReady,
 	},
 	{
-		ID:          CheckRequestOutputs,
+		ID:          ReqOutputs,
 		Description: "status.outputs has exactly the output keys of the registration, and each value is not empty.",
-		run:         checkOutputs,
+		run:         checkRequestOutputs,
 	},
 	{
-		ID: CheckRequestReady,
+		ID: ReqReady,
 		Description: "The request gets Ready=True within the Ready timeout, or Ready=False with the reason " +
 			"GrantRejected while one of its Grants has Ready=False.",
 		run: checkReady,
 	},
 	{
-		ID: CheckRequestLabels,
+		ID: ReqLabels,
 		Description: "Each object of the request carries both writer labels, and a namespaced object has an " +
 			"owner reference to the request.",
 		run: checkLabels,
 	},
 	{
-		ID:          CheckRequestResources,
+		ID:          ReqResources,
 		Description: "status.resources lists each object of the request, and each row has kind, name, and onOrphan.",
 		run:         checkResources,
 	},
 	{
-		ID:          CheckRequestEvents,
+		ID:          ReqEvents,
 		Description: "The request has at least one event for each row of status.resources.",
 		run:         checkEvents,
 	},
 	{
-		ID: CheckRequestDisplay,
+		ID: ReqDisplay,
 		Description: "The summary, summaryTime, links, and podSelector of the request status are complete and " +
 			"valid.",
 		run: checkDisplay,
 	},
 	{
-		ID: CheckRequestLogs,
+		ID: ReqLogs,
 		Description: "The controller pods log JSON lines, and a line carries the key request with the name of " +
 			"each request.",
 		Skippable: true,
 		run:       checkLogs,
 	},
 	{
-		ID: CheckRequestAcceptedKept,
+		ID: ReqAcceptedKept,
 		Description: "The registration keeps the Accepted condition of the registry controller while the " +
 			"plugin serves requests.",
 		run: checkAcceptedKept,
@@ -141,7 +152,7 @@ func checkOutputsReady(ctx context.Context, s *suite) error {
 	})
 }
 
-func checkOutputs(ctx context.Context, s *suite) error {
+func checkRequestOutputs(ctx context.Context, s *suite) error {
 	life, err := s.lifecycle(ctx)
 	if err != nil {
 		return err

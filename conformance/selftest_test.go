@@ -33,9 +33,9 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(CheckRequestLogs, CheckOrderRegistrationFirst, CheckDeleteRoutes))
-		Expect(got[CheckDeleteDelete].skipped).To(BeEmpty())
-		Expect(got[CheckDeleteOrphan].skipped).To(BeEmpty())
+		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, DeleteRoutes))
+		Expect(got[DeleteDelete].skipped).To(BeEmpty())
+		Expect(got[DeleteOrphan].skipped).To(BeEmpty())
 	})
 
 	ginkgo.It("passes every check when it serves the access section", func() {
@@ -44,7 +44,7 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(CheckRequestLogs, CheckOrderRegistrationFirst))
+		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst))
 	})
 
 	ginkgo.It("passes REQ-LABELS and DELETE-ORPHAN with a cluster-scoped object that carries the labels only", func() {
@@ -56,8 +56,8 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		Expect(sc.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRequest, "basic-orphan"))
 		Expect(sc.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRegistration, cfg.Registration))
 		Expect(sc.OwnerReferences).To(BeEmpty())
-		Expect(got[CheckRequestLabels].err).NotTo(HaveOccurred())
-		Expect(got[CheckDeleteOrphan].err).NotTo(HaveOccurred())
+		Expect(got[ReqLabels].err).NotTo(HaveOccurred())
+		Expect(got[DeleteOrphan].err).NotTo(HaveOccurred())
 	})
 
 	ginkgo.DescribeTable(
@@ -76,38 +76,38 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			"a late finalizer",
 			echoRun,
 			echo.DefectLateFinalizer,
-			CheckRequestFinalizer,
+			ReqFinalizer,
 			"appeared before the finalizer",
 		),
 		ginkgo.Entry(
 			"stale OutputsReady",
 			echoRun,
 			echo.DefectStaleOutputsReady,
-			CheckRequestOutputsReady,
+			ReqOutputsReady,
 			"observedGeneration",
 		),
-		ginkgo.Entry("a missing output", echoRun, echo.DefectMissingOutput, CheckRequestOutputs, `"message"`),
-		ginkgo.Entry("Ready=False", echoRun, echo.DefectNotReady, CheckRequestReady, "EchoDefect"),
-		ginkgo.Entry("no owner reference", echoRun, echo.DefectNoOwnerReference, CheckRequestLabels, "ConfigMap"),
+		ginkgo.Entry("a missing output", echoRun, echo.DefectMissingOutput, ReqOutputs, `"message"`),
+		ginkgo.Entry("Ready=False", echoRun, echo.DefectNotReady, ReqReady, "EchoDefect"),
+		ginkgo.Entry("no owner reference", echoRun, echo.DefectNoOwnerReference, ReqLabels, "ConfigMap"),
 		ginkgo.Entry(
 			"an owner reference on a cluster-scoped object", echoRun, echo.DefectClusterOwnerReference,
-			CheckRequestLabels, "StorageClass",
+			ReqLabels, "StorageClass",
 		),
 		ginkgo.Entry(
 			"an unlisted resource",
 			echoRun,
 			echo.DefectUnlistedResource,
-			CheckRequestResources,
+			ReqResources,
 			"StorageClass",
 		),
-		ginkgo.Entry("no events", echoRun, echo.DefectNoEvents, CheckRequestEvents, "event"),
-		ginkgo.Entry("a relative link", echoRun, echo.DefectRelativeLink, CheckRequestDisplay, "/echo"),
-		ginkgo.Entry("a dropped Accepted", echoRun, echo.DefectDropAccepted, CheckRequestAcceptedKept, "Accepted"),
-		ginkgo.Entry("objects kept on Delete", echoRun, echo.DefectKeepOnDelete, CheckDeleteDelete, "ConfigMap"),
+		ginkgo.Entry("no events", echoRun, echo.DefectNoEvents, ReqEvents, "event"),
+		ginkgo.Entry("a relative link", echoRun, echo.DefectRelativeLink, ReqDisplay, "/echo"),
+		ginkgo.Entry("a dropped Accepted", echoRun, echo.DefectDropAccepted, ReqAcceptedKept, "Accepted"),
+		ginkgo.Entry("objects kept on Delete", echoRun, echo.DefectKeepOnDelete, DeleteDelete, "ConfigMap"),
 		ginkgo.Entry(
-			"an owner reference kept on Orphan", echoRun, echo.DefectKeepOwnerOnOrphan, CheckDeleteOrphan,
+			"an owner reference kept on Orphan", echoRun, echo.DefectKeepOwnerOnOrphan, DeleteOrphan,
 			"owner reference",
 		),
-		ginkgo.Entry("a route kept on Orphan", accessRun, echo.DefectKeepRouteOnOrphan, CheckDeleteRoutes, "Ingress"),
+		ginkgo.Entry("a route kept on Orphan", accessRun, echo.DefectKeepRouteOnOrphan, DeleteRoutes, "Ingress"),
 	)
 })

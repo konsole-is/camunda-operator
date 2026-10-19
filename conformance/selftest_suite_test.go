@@ -331,8 +331,8 @@ func pluginRun(opts echo.Options) Config {
 		}},
 		Timeouts: Timeouts{OutputsReady: selfTestTimeout, Ready: selfTestTimeout, Deletion: selfTestTimeout},
 		Skip: []Skip{
-			{ID: CheckRequestLogs, Reason: "envtest runs no pods"},
-			{ID: CheckOrderRegistrationFirst, Reason: "envtest runs no pods"},
+			{ID: ReqLogs, Reason: "envtest runs no pods"},
+			{ID: OrderRegistrationFirst, Reason: "envtest runs no pods"},
 		},
 		RESTConfig: restCfg,
 	}

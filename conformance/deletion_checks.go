@@ -38,12 +38,18 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// The IDs of the ordering and deletion checks.
+// The IDs of the ordering and deletion checks, which run after the
+// lifecycle checks and delete the requests of the run.
 const (
-	CheckOrderRegistrationFirst CheckID = "ORDER-REGISTRATION-FIRST"
-	CheckDeleteDelete           CheckID = "DELETE-DELETE"
-	CheckDeleteOrphan           CheckID = "DELETE-ORPHAN"
-	CheckDeleteRoutes           CheckID = "DELETE-ROUTES"
+	// OrderRegistrationFirst checks that the plugin writes its registration
+	// before it serves a request. It is skippable.
+	OrderRegistrationFirst CheckID = "ORDER-REGISTRATION-FIRST"
+	// DeleteDelete checks the deletion policy Delete.
+	DeleteDelete CheckID = "DELETE-DELETE"
+	// DeleteOrphan checks the deletion policy Orphan.
+	DeleteOrphan CheckID = "DELETE-ORPHAN"
+	// DeleteRoutes checks that a route to a missing Service is deleted.
+	DeleteRoutes CheckID = "DELETE-ROUTES"
 )
 
 // sectionAccess is the core section of the external access of a cluster. The
@@ -69,26 +75,26 @@ const (
 // checks delete the requests of the run.
 var deletionChecks = []Check{
 	{
-		ID: CheckOrderRegistrationFirst,
+		ID: OrderRegistrationFirst,
 		Description: "A request that is created while the plugin is down gets no finalizer and no output " +
 			"before the plugin wrote its registration again with Ready=True.",
 		Skippable: true,
 		run:       checkRegistrationFirst,
 	},
 	{
-		ID: CheckDeleteDelete,
+		ID: DeleteDelete,
 		Description: "With the deletion policy Delete, the request is gone within the Deletion timeout, " +
 			"and so is each of its objects.",
 		run: checkDeleteDelete,
 	},
 	{
-		ID: CheckDeleteOrphan,
+		ID: DeleteOrphan,
 		Description: "With the deletion policy Orphan, each row with onOrphan Kept stays with both writer " +
 			"labels and no owner reference to the request, and each row with onOrphan Deleted is gone.",
 		run: checkDeleteOrphan,
 	},
 	{
-		ID:          CheckDeleteRoutes,
+		ID:          DeleteRoutes,
 		Description: "For the access section, a route to a Service that is gone is deleted under both deletion policies.",
 		run:         checkDeleteRoutes,
 	},
