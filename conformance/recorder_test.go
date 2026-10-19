@@ -17,12 +17,16 @@ limitations under the License.
 package conformance
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
@@ -138,4 +142,24 @@ func TestRecorderCaughtUpComparesTheLastResourceVersionOfAStream(t *testing.T) {
 	assert.True(t, r.caughtUp("registration", "10"))
 	assert.False(t, r.caughtUp("registration", "11"))
 	assert.False(t, r.caughtUp("other", "1"))
+}
+
+func TestRecorderWatchWithoutAStartObservesTheCurrentObjects(t *testing.T) {
+	scheme, err := newScheme()
+	require.NoError(t, err)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(configMap("existing", "")).Build()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	r := &recorder{}
+
+	err = r.watch(
+		ctx, c, func() client.ObjectList { return &corev1.ConfigMapList{} }, func(client.Object) string {
+			return "current"
+		}, "",
+	)
+
+	require.NoError(t, err)
+	got, ok := r.first("current")
+	require.True(t, ok)
+	assert.Contains(t, got.ref, "ns/existing")
 }

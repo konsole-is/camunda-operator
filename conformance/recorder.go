@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/resourceversion"
@@ -54,9 +55,9 @@ type mark struct {
 }
 
 // watch starts a watch of the lists that newList returns, with opts, at the
-// resource version from, or after the current state when from is empty. Each
-// object of an event that keyOf gives a key is
-// observed under that key. A watch that the API server closes starts again.
+// resource version from. When from is empty, it observes the current objects
+// first and starts after them. Each object of an event that keyOf gives a key
+// is observed under that key. A watch that the API server closes starts again.
 // A watch that fails after it started is a failure of the recorder. The
 // watch runs until ctx ends or it fails.
 func (r *recorder) watch(
@@ -79,6 +80,18 @@ func (r *recorder) watch(
 			return err
 		}
 		from = list.GetResourceVersion()
+
+		items, err := meta.ExtractList(list)
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			if obj, ok := item.(client.Object); ok {
+				if key := keyOf(obj); key != "" {
+					r.observe(obj, key)
+				}
+			}
+		}
 	}
 
 	w, err := c.Watch(ctx, newList(), after(from)...)

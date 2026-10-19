@@ -392,10 +392,11 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(runs, func(r requestRun) error {
-		objs, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
+		now, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
 		if err != nil {
 			return err
 		}
+		objs := mergeObjects(life.seen[r.name], now)
 		life.written[r.name] = objs
 
 		if err := deleteRequest(ctx, s, r.name, life.uids[r.name]); err != nil {

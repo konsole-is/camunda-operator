@@ -348,7 +348,7 @@ func startRecorder(
 			rec.advance(registrationStream, obj.GetResourceVersion())
 			return acceptedKey(accepted)(obj)
 		},
-		reg.ResourceVersion,
+		"",
 		client.MatchingFields{"metadata.name": reg.Name},
 	)
 	if err != nil {
