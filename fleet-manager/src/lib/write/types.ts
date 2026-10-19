@@ -48,8 +48,8 @@ export type Change = {
  * ApiErrorCode is why a write failed. Stale: the object changed or was
  * deleted since the page read it. Conflict: another field manager owns a
  * field. Invalid: the API server or the app refused the object. Forbidden:
- * the app may not write it. Unavailable: the API server did not answer or
- * does not serve the kind.
+ * the app may not write it. Unavailable: the API server did not answer,
+ * does not serve the kind, or has no such namespace.
  */
 export type ApiErrorCode =
   "Stale" | "Conflict" | "Invalid" | "Forbidden" | "Unavailable";

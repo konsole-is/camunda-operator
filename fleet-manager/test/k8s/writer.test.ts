@@ -353,6 +353,32 @@ describe("the direct writer against envtest", () => {
     ).toEqual({ ok: true, mode: "direct" });
   });
 
+  it("an apply into a missing namespace names that namespace", async () => {
+    const missing = `gone-${randomUUID().slice(0, 8)}`;
+
+    const result = await writer.apply({
+      intent: "Create",
+      apply: [
+        {
+          apiVersion: "v1",
+          kind: "ConfigMap",
+          metadata: { name, namespace: missing },
+          data: { key: "one" },
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Unavailable",
+          message: expect.stringContaining(`namespaces "${missing}" not found`),
+        }),
+      ],
+    });
+  });
+
   it("applies a ConfigMap with the field manager fleet-manager, and a stale resourceVersion fails with Stale", async () => {
     const configMap = (value: string): KubeObject => ({
       apiVersion: "v1",

@@ -71,7 +71,9 @@ function errorsOfAnswer(
       return [
         {
           code: "Unavailable",
-          message: `The API server does not serve ${ref.kind} (${ref.apiVersion}).`,
+          message:
+            error.status?.message ??
+            `The API server does not serve ${ref.kind} (${ref.apiVersion}).`,
           ref,
         },
       ];

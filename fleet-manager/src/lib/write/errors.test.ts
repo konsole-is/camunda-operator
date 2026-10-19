@@ -142,13 +142,16 @@ describe("apiErrorsOf", () => {
     ).toEqual([{ code: "Conflict", message, ref: claim }]);
   });
 
-  it("maps a 404 without a precondition to Unavailable for a kind the API server does not serve", () => {
+  it("keeps the message of a 404 without a precondition, which can name a missing namespace", () => {
+    const message = 'namespaces "team-a" not found';
     expect(
-      apiErrorsOf(
-        failure(404, { reason: "NotFound", message: "x" }),
-        claim,
-        false,
-      ),
+      apiErrorsOf(failure(404, { reason: "NotFound", message }), claim, false),
+    ).toEqual([{ code: "Unavailable", message, ref: claim }]);
+  });
+
+  it("says that the API server does not serve the kind for a 404 without a Status", () => {
+    expect(
+      apiErrorsOf(new KubernetesRequestError(404, "HTTP 404"), claim, false),
     ).toEqual([
       {
         code: "Unavailable",
