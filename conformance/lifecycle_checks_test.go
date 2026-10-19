@@ -24,7 +24,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,6 +33,7 @@ import (
 )
 
 func TestOutputProblems(t *testing.T) {
+	section := []pluginsv1alpha1.OutputDecl{{Key: "message"}}
 	declared := []pluginsv1alpha1.OutputDecl{{Key: "message"}, {Key: "url"}}
 
 	tests := []struct {
@@ -41,19 +41,24 @@ func TestOutputProblems(t *testing.T) {
 		outputs  map[string]string
 		problems []string
 	}{
-		{"exact keys", map[string]string{"message": "hi", "url": "https://x"}, nil},
-		{"a missing key", map[string]string{"message": "hi"}, []string{`output "url" is missing`}},
+		{"the outputs of the section", map[string]string{"message": "hi"}, nil},
+		{"a declared output of another section", map[string]string{"message": "hi", "url": "https://x"}, nil},
 		{
-			"an extra key",
-			map[string]string{"message": "hi", "url": "https://x", "extra": "y"},
+			"a missing output of the section",
+			map[string]string{"url": "https://x"},
+			[]string{`output "message" is missing`},
+		},
+		{
+			"an undeclared key",
+			map[string]string{"message": "hi", "extra": "y"},
 			[]string{`output "extra" is not declared in spec.outputs of the registration`},
 		},
-		{"an empty value", map[string]string{"message": "", "url": "https://x"}, []string{`output "message" is empty`}},
+		{"an empty value", map[string]string{"message": "hi", "url": ""}, []string{`output "url" is empty`}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.problems, outputProblems(declared, tt.outputs))
+			assert.Equal(t, tt.problems, outputProblems(section, declared, tt.outputs))
 		})
 	}
 }
@@ -229,16 +234,6 @@ func TestResourceProblemsNamesAnIncompleteRow(t *testing.T) {
 	assert.Equal(t, []string{`status.resources row S3Bucket "b" has no onOrphan`}, resourceProblems(nil, rows))
 }
 
-func TestEventCount(t *testing.T) {
-	events := []corev1.Event{
-		{Count: 0},
-		{Count: 3},
-		{Count: 1, Series: &corev1.EventSeries{Count: 5}},
-	}
-
-	assert.Equal(t, 9, eventCount(events))
-}
-
 func TestDisplayProblems(t *testing.T) {
 	now := metav1.NewTime(time.Now())
 	full := func() pluginsv1alpha1.PluginRequestStatus {
@@ -336,6 +331,24 @@ func TestAcceptedProblemNamesAnOverwrittenMessageOrGeneration(t *testing.T) {
 
 	assert.ErrorContains(t, acceptedProblem(accepted, message), "Served by echo")
 	assert.ErrorContains(t, acceptedProblem(accepted, generation), "generation 7")
+}
+
+func TestLateAtNamesTheVerdict(t *testing.T) {
+	created := metav1.NewTime(time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC))
+
+	err := lateAt(
+		"Ready became False with the reason GrantRejected",
+		metav1.NewTime(created.Add(time.Minute)),
+		created,
+		20*time.Second,
+	)
+
+	assert.EqualError(
+		t,
+		err,
+		"Ready became False with the reason GrantRejected 1m0s after the request was created, "+
+			"which is more than the timeout of 20s",
+	)
 }
 
 func TestLateProblem(t *testing.T) {

@@ -53,6 +53,9 @@ type Output struct {
 	FromInput string
 	// Value is the output when FromInput is empty.
 	Value string
+	// Section is the section whose requests get the output. When it is
+	// empty, every request gets it.
+	Section string
 }
 
 // Defect makes the controller break one rule of the plugin contract.
@@ -148,6 +151,13 @@ func (o Options) validate() error {
 			errs = append(
 				errs,
 				fmt.Errorf("option Outputs[%d].FromInput names %q, which Inputs does not declare", i, out.FromInput),
+			)
+		}
+
+		if out.Section != "" && !slices.Contains(o.Sections, out.Section) {
+			errs = append(
+				errs,
+				fmt.Errorf("option Outputs[%d].Section names %q, which Sections does not hold", i, out.Section),
 			)
 		}
 	}

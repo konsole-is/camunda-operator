@@ -363,7 +363,9 @@ func message(req *pluginsv1alpha1.PluginRequest) string {
 
 // outputs are the outputs of req: each copies its input or holds its value.
 func (c *Controller) outputs(req *pluginsv1alpha1.PluginRequest) map[string]string {
-	declared := c.opts.Outputs
+	declared := slices.DeleteFunc(slices.Clone(c.opts.Outputs), func(o Output) bool {
+		return o.Section != "" && o.Section != req.Spec.Section
+	})
 	if c.opts.Defect == DefectMissingOutput && len(declared) > 0 {
 		declared = declared[:len(declared)-1]
 	}

@@ -55,6 +55,11 @@ func TestNewRefusesAnIncompleteOption(t *testing.T) {
 			func(o *Options) { o.Outputs[0].FromInput = "other" },
 			`Outputs[0].FromInput`,
 		},
+		{
+			"an output of a section that is not served",
+			func(o *Options) { o.Outputs[0].Section = "access" },
+			"Outputs[0].Section",
+		},
 		{"an unknown defect", func(o *Options) { o.Defect = "Broken" }, `Defect "Broken"`},
 	}
 
@@ -113,4 +118,18 @@ func TestServesReadsTheRegistrationOfTheSpecNotTheLabel(t *testing.T) {
 
 	assert.True(t, c.serves(relabelled))
 	assert.False(t, c.serves(other))
+}
+
+func TestOutputsGiveARequestOnlyTheOutputsOfItsSection(t *testing.T) {
+	opts := validOptions()
+	opts.Sections = []string{"echo", "access"}
+	opts.Outputs = append(opts.Outputs, Output{Key: "externalUrl", Section: "access", Value: "https://x"})
+	opts.Outputs[0].Section = "echo"
+	c, err := New(opts)
+	require.NoError(t, err)
+
+	req := &pluginsv1alpha1.PluginRequest{}
+	req.Spec.Section = "access"
+
+	assert.Equal(t, map[string]string{"externalUrl": "https://x"}, c.outputs(req))
 }

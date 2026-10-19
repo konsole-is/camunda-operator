@@ -423,3 +423,28 @@ func TestInventoryFailsAfterAFailedWatch(t *testing.T) {
 
 	assert.ErrorContains(t, err, "a watch failed: gone")
 }
+
+func routeSuite(t *testing.T, written map[string][]*unstructured.Unstructured) *suite {
+	t.Helper()
+
+	reg := &pluginsv1alpha1.PluginRegistration{}
+	reg.Spec.Sections = []string{sectionAccess}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{})
+	s.life = &lifecycle{registration: reg, runs: []requestRun{{name: testRequestName}}, written: written}
+	return s
+}
+
+func TestDeleteRoutesFailsWhenTheDeletionChecksRecordedNoObjects(t *testing.T) {
+	err := checkDeleteRoutes(t.Context(), routeSuite(t, map[string][]*unstructured.Unstructured{}))
+
+	assert.ErrorContains(t, err, "the deletion checks did not record the objects of the request")
+}
+
+func TestDeleteRoutesSkipsWhenThePluginWroteNoRoute(t *testing.T) {
+	written := map[string][]*unstructured.Unstructured{testRequestName: {written("ConfigMap", "ns", "x", nil)}}
+
+	reason, skipped := skipReasonOf(checkDeleteRoutes(t.Context(), routeSuite(t, written)))
+
+	assert.True(t, skipped)
+	assert.Equal(t, "the plugin wrote no route", reason)
+}

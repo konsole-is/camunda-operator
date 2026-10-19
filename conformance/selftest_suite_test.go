@@ -238,6 +238,15 @@ type outcome struct {
 // runAll runs every registered check against cfg, and returns the outcome of
 // each, so a spec can assert on each check.
 func runAll(cfg Config) map[CheckID]outcome {
+	got, s := runOpen(cfg)
+	Expect(s.close(ctx)).To(Succeed())
+
+	return got
+}
+
+// runOpen is runAll without the cleanups of the run, so a spec can read what
+// the run left before it calls close of the suite.
+func runOpen(cfg Config) (map[CheckID]outcome, *suite) {
 	steps, err := plan(cfg, Checks())
 	Expect(err).NotTo(HaveOccurred())
 
@@ -257,9 +266,7 @@ func runAll(cfg Config) map[CheckID]outcome {
 		got[st.check.ID] = outcome{err: err}
 	}
 
-	Expect(s.close(ctx)).To(Succeed())
-
-	return got
+	return got, s
 }
 
 // skippedIDs returns the checks of got that were skipped.
@@ -310,10 +317,10 @@ func twoSectionRun() Config {
 		Sections: []string{"echo", "access"},
 		Inputs:   []pluginsv1alpha1.InputDecl{{Name: "source", From: "echo-source/value"}},
 		Outputs: []echo.Output{
-			{Key: "message", FromInput: "source"},
-			{Key: "externalUrl", Value: "https://camunda.example.com"},
-			{Key: "grpcHost", Value: "grpc.camunda.example.com"},
-			{Key: "optimizeUrl", Value: "https://camunda.example.com/optimize"},
+			{Key: "message", FromInput: "source", Section: "echo"},
+			{Key: "externalUrl", Value: "https://camunda.example.com", Section: "access"},
+			{Key: "grpcHost", Value: "grpc.camunda.example.com", Section: "access"},
+			{Key: "optimizeUrl", Value: "https://camunda.example.com/optimize", Section: "access"},
 		},
 	})
 }

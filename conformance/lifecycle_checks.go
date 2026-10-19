@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"slices"
 	"strings"
@@ -220,7 +221,8 @@ func checkRequestOutputs(ctx context.Context, s *suite) error {
 			return err
 		}
 
-		return problemsError(outputProblems(life.registration.Spec.Outputs, req.Status.Outputs))
+		section := life.sections[r.section].Spec.Outputs
+		return problemsError(outputProblems(section, life.registration.Spec.Outputs, req.Status.Outputs))
 	})
 }
 
@@ -290,7 +292,12 @@ func (s *suite) lateReady(ctx context.Context, name string) error {
 		return nil
 	}
 
-	return lateAt(v1.ConditionReady, readySince(ready, grants), req.CreationTimestamp, s.cfg.Timeouts.Ready)
+	verdict := "Ready became " + string(ready.Status)
+	if ready.Status != metav1.ConditionTrue {
+		verdict += " with the reason " + ready.Reason
+	}
+
+	return lateAt(verdict, readySince(ready, grants), req.CreationTimestamp, s.cfg.Timeouts.Ready)
 }
 
 // readySince is when ready reached its verdict: its own transition, or for
@@ -390,7 +397,7 @@ func checkEvents(ctx context.Context, s *suite) error {
 				return fmt.Errorf("listing the events of the request: %w", err)
 			}
 
-			if n, rows := eventCount(events.Items), len(req.Status.Resources); n < rows {
+			if n, rows := len(events.Items), len(req.Status.Resources); n < rows {
 				return fmt.Errorf("the request has %d events, and status.resources lists %d rows", n, rows)
 			}
 
@@ -655,33 +662,24 @@ func outputsReadyProblem(req *pluginsv1alpha1.PluginRequest, current bool) error
 	return nil
 }
 
-// outputProblems names each declared output that outputs lacks or holds
-// empty, and each key of outputs that is not declared.
-func outputProblems(declared []pluginsv1alpha1.OutputDecl, outputs map[string]string) []string {
+// outputProblems names each key of section that outputs lacks, each key of
+// outputs not in declared, and each declared key with an empty value.
+func outputProblems(section, declared []pluginsv1alpha1.OutputDecl, outputs map[string]string) []string {
 	var problems []string
-	keys := make(map[string]bool, len(declared))
-	for _, d := range declared {
-		keys[d.Key] = true
-
-		value, ok := outputs[d.Key]
-		switch {
-		case !ok:
+	for _, d := range section {
+		if _, ok := outputs[d.Key]; !ok {
 			problems = append(problems, fmt.Sprintf("output %q is missing", d.Key))
-		case value == "":
-			problems = append(problems, fmt.Sprintf("output %q is empty", d.Key))
 		}
 	}
 
-	extra := make([]string, 0, len(outputs))
-	for k := range outputs {
-		if !keys[k] {
-			extra = append(extra, k)
+	keys := slices.Sorted(maps.Keys(outputs))
+	for _, k := range keys {
+		switch {
+		case !slices.ContainsFunc(declared, func(d pluginsv1alpha1.OutputDecl) bool { return d.Key == k }):
+			problems = append(problems, fmt.Sprintf("output %q is not declared in spec.outputs of the registration", k))
+		case outputs[k] == "":
+			problems = append(problems, fmt.Sprintf("output %q is empty", k))
 		}
-	}
-	slices.Sort(extra)
-
-	for _, k := range extra {
-		problems = append(problems, fmt.Sprintf("output %q is not declared in spec.outputs of the registration", k))
 	}
 
 	return problems
@@ -773,22 +771,6 @@ func resourceProblems(written []*unstructured.Unstructured, rows []pluginsv1alph
 	}
 
 	return problems
-}
-
-// eventCount counts how many times events happened: the series count of a
-// series, else the count, and at least 1 for each event.
-func eventCount(events []corev1.Event) int {
-	n := 0
-	for _, e := range events {
-		switch {
-		case e.Series != nil && e.Series.Count > 0:
-			n += int(e.Series.Count)
-		default:
-			n += max(int(e.Count), 1)
-		}
-	}
-
-	return n
 }
 
 // displayProblems names each display field of status that breaks the
@@ -907,17 +889,17 @@ func lateProblem(cond *metav1.Condition, created metav1.Time, timeout time.Durat
 		return nil
 	}
 
-	return lateAt(cond.Type, cond.LastTransitionTime, created, timeout)
+	return lateAt(cond.Type+" became True", cond.LastTransitionTime, created, timeout)
 }
 
-// lateAt says whether the condition condType reached its verdict at a time
-// later than timeout after created.
-func lateAt(condType string, at, created metav1.Time, timeout time.Duration) error {
+// lateAt says whether the verdict, for example "Ready became True", came at
+// a time later than timeout after created.
+func lateAt(verdict string, at, created metav1.Time, timeout time.Duration) error {
 	// The times have whole seconds.
 	if after := at.Sub(created.Time); after > timeout+time.Second {
 		return fmt.Errorf(
-			"%s became True %s after the request was created, which is more than the timeout of %s",
-			condType,
+			"%s %s after the request was created, which is more than the timeout of %s",
+			verdict,
 			after,
 			timeout,
 		)

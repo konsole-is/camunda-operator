@@ -76,8 +76,9 @@ const (
 var deletionChecks = []Check{
 	{
 		ID: OrderRegistrationFirst,
-		Description: "A request that is created while the plugin is down gets no finalizer and no output " +
-			"before the plugin wrote its registration again with Ready=True.",
+		Description: "The suite scales the plugin Deployment to zero, deletes the registration, and creates " +
+			"a request. The plugin must write its registration again with Ready=True when it starts, " +
+			"before the request gets a finalizer or an output.",
 		Skippable: true,
 		run:       checkRegistrationFirst,
 	},
@@ -565,39 +566,54 @@ func checkDeleteRoutes(ctx context.Context, s *suite) error {
 		return SkipCheck("the registration does not serve the access section")
 	}
 
-	return eachRun(life.runs, func(r requestRun) error {
-		var errs []error
-		for _, obj := range life.written[r.name] {
+	var problems []error
+	routes := 0
+	for _, r := range life.runs {
+		written, recorded := life.written[r.name]
+		if !recorded {
+			problems = append(problems, fmt.Errorf(
+				"request %s: the deletion checks did not record the objects of the request",
+				r.name,
+			))
+			continue
+		}
+
+		for _, obj := range written {
 			if !isRoute(obj) {
 				continue
 			}
+			routes++
 
 			// The route that survived the deletion can point at other
 			// backends than the copy from before it.
-			errs = append(
-				errs,
-				waitFor(ctx, s.cfg.Timeouts.Deletion, "the route to be gone", func(ctx context.Context) error {
-					current, err := s.current(ctx, obj)
-					if err != nil || current == nil {
-						return err
-					}
+			err := waitFor(ctx, s.cfg.Timeouts.Deletion, "the route to be gone", func(ctx context.Context) error {
+				current, err := s.current(ctx, obj)
+				if err != nil || current == nil {
+					return err
+				}
 
-					missing, err := missingBackends(ctx, s, current)
-					if err != nil || len(missing) == 0 {
-						return err
-					}
+				missing, err := missingBackends(ctx, s, current)
+				if err != nil || len(missing) == 0 {
+					return err
+				}
 
-					return fmt.Errorf(
-						"%s routes to the missing Service %s and still exists",
-						objectRef(obj),
-						missing[0],
-					)
-				}),
-			)
+				return fmt.Errorf(
+					"%s routes to the missing Service %s and still exists",
+					objectRef(obj),
+					missing[0],
+				)
+			})
+			if err != nil {
+				problems = append(problems, fmt.Errorf("request %s: %w", r.name, err))
+			}
 		}
+	}
 
-		return errors.Join(errs...)
-	})
+	if len(problems) == 0 && routes == 0 {
+		return SkipCheck("the plugin wrote no route")
+	}
+
+	return errors.Join(problems...)
 }
 
 func isRoute(obj *unstructured.Unstructured) bool {

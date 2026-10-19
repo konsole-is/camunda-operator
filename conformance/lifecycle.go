@@ -128,6 +128,11 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 	if err != nil {
 		return nil, err
 	}
+	// This cleanup runs after the next one, when the requests are deleted,
+	// so that a rerun in the namespace finds no object of this run.
+	s.onClose(func(ctx context.Context) error {
+		return s.deleteRunObjects(ctx, kinds, runs)
+	})
 	var created []*pluginsv1alpha1.PluginRequest
 	s.onClose(func(ctx context.Context) error {
 		rec.stop()
@@ -388,6 +393,30 @@ func startRecorder(
 	}
 
 	return rec, nil
+}
+
+// deleteRunObjects deletes each object that carries a request label of runs,
+// such as an object that an Orphan request kept. It keeps an object that
+// changed its UID meanwhile, and ignores an object that is gone.
+func (s *suite) deleteRunObjects(ctx context.Context, kinds []kindInfo, runs []requestRun) error {
+	var errs []error
+	for _, r := range runs {
+		objs, err := writtenObjects(ctx, s, kinds, r.name)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		for _, obj := range objs {
+			uid := obj.GetUID()
+			err := s.client.Delete(ctx, obj, client.Preconditions{UID: &uid})
+			if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+				errs = append(errs, fmt.Errorf("deleting %s: %w", objectRef(obj), err))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // deleteCreated deletes the requests that the run created and that still

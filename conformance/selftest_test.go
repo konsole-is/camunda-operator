@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -50,7 +51,8 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 
 	ginkgo.It("runs each case for each section of a registration that serves two", func() {
 		cfg := twoSectionRun()
-		got := runAll(cfg)
+		got, s := runOpen(cfg)
+		ginkgo.DeferCleanup(func() { Expect(s.close(ctx)).To(Succeed()) })
 
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
@@ -68,7 +70,8 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 
 	ginkgo.It("passes REQ-LABELS and DELETE-ORPHAN with a cluster-scoped object that carries the labels only", func() {
 		cfg := echoRun(echo.DefectNone)
-		got := runAll(cfg)
+		got, s := runOpen(cfg)
+		ginkgo.DeferCleanup(func() { Expect(s.close(ctx)).To(Succeed()) })
 
 		var sc storagev1.StorageClass
 		request := requestName("basic", "", "orphan", runIDOf(cfg.Namespace))
@@ -80,9 +83,32 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		Expect(got[DeleteOrphan].err).NotTo(HaveOccurred())
 	})
 
-	ginkgo.It("refuses a second run in the namespace of an earlier run", func() {
+	ginkgo.It("passes a second run in the namespace of an earlier run", func() {
 		cfg := echoRun(echo.DefectNone)
-		runAll(cfg)
+		// The suite deletes a namespace that it created, and envtest never
+		// finishes the deletion of a namespace.
+		Expect(
+			k8sClient.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: cfg.Namespace}}),
+		).To(Succeed())
+
+		for range 2 {
+			got := runAll(cfg)
+			for id, o := range got {
+				Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
+			}
+		}
+	})
+
+	ginkgo.It("refuses a run when an object of an earlier run is left", func() {
+		cfg := echoRun(echo.DefectNone)
+		left := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      cfg.Registration + "-left",
+			Labels: map[string]string{
+				pluginsv1alpha1.LabelRequest: requestName("basic", "", "delete", runIDOf(cfg.Namespace)),
+			},
+		}}
+		Expect(k8sClient.Create(ctx, left)).To(Succeed())
 
 		got := runAll(cfg)
 
