@@ -132,6 +132,7 @@ func TestSchemaRefusesAnInvalidSchema(t *testing.T) {
 			"spec.parameters.additionalProperties: Forbidden: must not be used at the root",
 		},
 		{"root that is not an object", `{"type":"string"}`, "spec.parameters.type: Invalid value"},
+		{"nullable root", `{"type":"object","nullable":true}`, "spec.parameters.nullable: Forbidden"},
 		{
 			"validation rule that does not compile",
 			`{"type":"object","properties":{"n":{"type":"integer","x-kubernetes-validations":[{"rule":"self >"}]}}}`,
@@ -225,6 +226,49 @@ func TestParseSchemaKeepsALargeInteger(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, []apiextensions.JSON{int64(9007199254740993)}, parsed.Properties["n"].Enum)
+}
+
+func TestSchemaChecksTheListsAndEmbeddedResourcesOfEachCase(t *testing.T) {
+	const schema = `{"type":"object","properties":{` +
+		`"tags":{"type":"array","x-kubernetes-list-type":"set","items":{"type":"string"}},` +
+		`"ports":{"type":"array","x-kubernetes-list-type":"map","x-kubernetes-list-map-keys":["name"],` +
+		`"items":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}},` +
+		`"object":{"type":"object","x-kubernetes-embedded-resource":true,"x-kubernetes-preserve-unknown-fields":true}}}`
+	tests := []struct {
+		name       string
+		parameters string
+		message    string
+	}{
+		{"valid", `{"tags":["a","b"],"ports":[{"name":"a"},{"name":"b"}],` +
+			`"object":{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"a"}}}`, ""},
+		{"duplicate set element", `{"tags":["a","a"]}`, `parameters.tags[1]: Duplicate value: "a"`},
+		{"duplicate map key", `{"ports":[{"name":"a"},{"name":"a"}]}`, "parameters.ports[1]: Duplicate value"},
+		{
+			"embedded resource without a kind",
+			`{"object":{"apiVersion":"v1"}}`,
+			"parameters.object.kind: Required value",
+		},
+		{
+			"embedded resource with a name that is not a path segment",
+			`{"object":{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"a/b"}}}`,
+			"parameters.object.metadata.name: Invalid value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := schemaSuite(t, schema, Case{Name: "case", Parameters: parameters(tt.parameters)})
+
+			err := checkSchema(t.Context(), s)
+
+			if tt.message == "" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorContains(t, err, `case "case"`)
+			assert.ErrorContains(t, err, tt.message)
+		})
+	}
 }
 
 func TestSchemaChecksACaseWithoutParametersAsAnEmptyObject(t *testing.T) {

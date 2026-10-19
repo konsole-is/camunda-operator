@@ -31,6 +31,8 @@ import (
 	apiextensionsvalidation "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/validation"
 	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel"
+	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/listtype"
+	"k8s.io/apiextensions-apiserver/pkg/apiserver/schema/objectmeta"
 	"k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utiljson "k8s.io/apimachinery/pkg/util/json"
@@ -68,7 +70,8 @@ func checkSchema(ctx context.Context, s *suite) error {
 		return fmt.Errorf("spec.parameters: %w", err)
 	}
 
-	// The schema validator does not run x-kubernetes-validations.
+	// The schema validator does not run x-kubernetes-validations, the list
+	// types, or the checks of an embedded resource.
 	structural, err := schema.NewStructural(parsed)
 	if err != nil {
 		return fmt.Errorf("spec.parameters: %w", err)
@@ -92,6 +95,10 @@ func checkSchema(ctx context.Context, s *suite) error {
 			ruleErrs, _ := rules.Validate(ctx, path, structural, value, nil, celconfig.RuntimeCELCostBudget)
 			fieldErrs = append(fieldErrs, ruleErrs...)
 		}
+		if object, ok := value.(map[string]any); ok {
+			fieldErrs = append(fieldErrs, listtype.ValidateListSetsAndMaps(path, structural, object)...)
+		}
+		fieldErrs = append(fieldErrs, objectmeta.Validate(ctx, path, value, structural, false)...)
 		if err := fieldErrs.ToAggregate(); err != nil {
 			errs = append(errs, fmt.Errorf("case %q: %w", tc.Name, err))
 		}
@@ -162,7 +169,12 @@ func parseSchema(ctx context.Context, raw []byte) (*apiextensions.JSONSchemaProp
 		return nil, fmt.Errorf("spec.parameters: %w", err)
 	}
 
-	if err := schema.ValidateStructural(field.NewPath("spec", "parameters"), structural).ToAggregate(); err != nil {
+	root := field.NewPath("spec", "parameters")
+	rootErrs := schema.ValidateStructural(root, structural)
+	if out.Nullable {
+		rootErrs = append(rootErrs, field.Forbidden(root.Child("nullable"), "nullable cannot be true at the root"))
+	}
+	if err := rootErrs.ToAggregate(); err != nil {
 		return nil, err
 	}
 
