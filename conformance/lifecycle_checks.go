@@ -397,13 +397,24 @@ func checkEvents(ctx context.Context, s *suite) error {
 				return fmt.Errorf("listing the events of the request: %w", err)
 			}
 
-			if n, rows := len(events.Items), len(req.Status.Resources); n < rows {
-				return fmt.Errorf("the request has %d events, and status.resources lists %d rows", n, rows)
-			}
-
-			return nil
+			return eventProblem(events.Items, len(req.Status.Resources))
 		})
 	})
+}
+
+// eventProblem says whether events holds at least one Event object for each
+// of rows. The repeats of a series count as one.
+func eventProblem(events []corev1.Event, rows int) error {
+	if len(events) < rows {
+		return fmt.Errorf(
+			"the request has %d events, and status.resources lists %d rows: each row needs an Event of its own, "+
+				"for example with the object of the row as its related object",
+			len(events),
+			rows,
+		)
+	}
+
+	return nil
 }
 
 func checkDisplay(ctx context.Context, s *suite) error {

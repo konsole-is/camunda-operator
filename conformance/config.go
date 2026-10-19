@@ -122,8 +122,8 @@ type Timeouts struct {
 	// Ready is the wait for Ready=True on a request. The default is 10
 	// minutes.
 	Ready time.Duration
-	// Deletion is the wait for a deleted request and its objects to be gone,
-	// or kept as onOrphan says. The default is 5 minutes.
+	// Deletion bounds each wait for a deletion: of a request and its objects,
+	// of a terminating namespace, and of the cleanups. The default is 5 minutes.
 	Deletion time.Duration
 }
 

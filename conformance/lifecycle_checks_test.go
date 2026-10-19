@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -232,6 +233,13 @@ func TestResourceProblemsNamesAnIncompleteRow(t *testing.T) {
 	rows := []pluginsv1alpha1.ResourceRef{{Kind: "S3Bucket", Name: "b"}}
 
 	assert.Equal(t, []string{`status.resources row S3Bucket "b" has no onOrphan`}, resourceProblems(nil, rows))
+}
+
+func TestEventProblemCountsEventObjectsNotTheRepeatsOfASeries(t *testing.T) {
+	series := []corev1.Event{{Count: 3, Series: &corev1.EventSeries{Count: 3}}}
+
+	assert.ErrorContains(t, eventProblem(series, 3), "each row needs an Event of its own")
+	assert.NoError(t, eventProblem([]corev1.Event{{}, {}, {}}, 3))
 }
 
 func TestDisplayProblems(t *testing.T) {
