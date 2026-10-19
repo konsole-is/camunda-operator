@@ -286,17 +286,39 @@ describe("GET /api/watch against envtest", () => {
     abort();
   });
 
-  it("names a kind that the API server does not serve, then ends the stream so EventSource connects again", async () => {
-    const query = `kind=Secret&kind=HTTPRoute&namespace=${namespace}`;
-    const { stream } = open(query);
+  it("a kind that the API server does not serve gets failure frames, and the other watch of the connection keeps its deltas", async () => {
+    const routes = `kind=HTTPRoute&namespace=${namespace}`;
+    const secrets = `kind=Secret&namespace=${namespace}`;
+    const { stream, abort } = openMany([routes, secrets]);
+    let closed = false;
+    void stream.closed.then(() => (closed = true));
 
-    const frame = await stream.next((f) => f.event === "failure", 15_000);
-    await stream.closed;
+    const failure = await stream.next(
+      (f) => f.event === "failure" && f.data.watch === routes,
+      15_000,
+    );
+    await stream.next(
+      (f) => f.event === "snapshot" && f.data.watch === secrets,
+      15_000,
+    );
+    await api.create({
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "beside-route", namespace },
+    });
+    await stream.next(
+      (f) => isDelta("ADDED", "beside-route")(f) && f.data.watch === secrets,
+      5_000,
+    );
+    await stream.next(
+      (f) => f.event === "failure" && f.data.watch === routes && f !== failure,
+      15_000,
+    );
 
-    expect(frame.data.watch).toBe(query);
-    expect(frame.data.kind).toBe("HTTPRoute");
-    expect(JSON.stringify(frame.data)).toMatch(/does not serve HTTPRoute/);
-    expect(frame.retry).toBe(5_000);
+    expect(failure.data.kind).toBe("HTTPRoute");
+    expect(JSON.stringify(failure.data)).toMatch(/does not serve HTTPRoute/);
+    expect(closed).toBe(false);
+    abort();
   });
 
   it("one connection serves two watches, and each delta reaches only its watch", async () => {
@@ -325,6 +347,17 @@ describe("GET /api/watch against envtest", () => {
 
     await stream.next(
       (f) => isDelta("ADDED", "left-2")(f) && f.data.watch === left,
+      5_000,
+    );
+    // Frames of one connection keep their order, so once right-2 arrived on
+    // the right watch, a misrouted left-2 frame would have arrived too.
+    await api.create({
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "right-2", namespace, labels: { side: "right" } },
+    });
+    await stream.next(
+      (f) => isDelta("ADDED", "right-2")(f) && f.data.watch === right,
       5_000,
     );
     await expect(
