@@ -52,9 +52,8 @@ export async function testGit(): Promise<TestResult> {
     }
   }
   try {
-    // The deadline also closes the request, so a server that never ends
-    // its answer keeps no socket open. The transport keeps the credentials
-    // on a redirect to the same host, also to http://, so it follows none.
+    // The signal also closes a request that never ends. The transport keeps
+    // the credentials on a redirect, also to http://, so it follows none.
     const signal = AbortSignal.timeout(TIMEOUT_MS);
     const refs = await listServerRefs({
       http: {
@@ -127,7 +126,11 @@ export async function testPrometheus(): Promise<TestResult> {
   try {
     const response = await fetch(
       `${url.replace(/\/+$/, "")}/api/v1/query?query=vector(1)`,
-      { headers, signal: AbortSignal.timeout(TIMEOUT_MS) },
+      {
+        headers,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        redirect: "manual",
+      },
     );
     if (response.status === 401 || response.status === 403) {
       return { ok: false, message: `${at} refused the credentials.` };
@@ -150,8 +153,10 @@ export async function testPrometheus(): Promise<TestResult> {
 }
 
 function settingsFailure(error: unknown): TestResult {
-  const reason = error instanceof Error ? error.message : String(error);
-  return { ok: false, message: `Could not read the settings: ${reason}` };
+  return {
+    ok: false,
+    message: `Could not read the settings: ${reasonOf(error)}`,
+  };
 }
 
 async function readCredentials(secret: string): Promise<Credentials> {
@@ -161,9 +166,7 @@ async function readCredentials(secret: string): Promise<Credentials> {
   try {
     values = await readSecretValues(namespace, secret);
   } catch (error) {
-    // A Status of the API server holds no value of the Secret.
-    const reason =
-      error instanceof KubernetesRequestError ? error.message : reasonOf(error);
+    const reason = reasonOf(error);
     return {
       ok: false,
       result: {
@@ -185,9 +188,12 @@ async function readCredentials(secret: string): Promise<Credentials> {
 }
 
 // A library message can quote the answer of the server, and the answer can
-// hold the credentials. So a message names only the error code of the
-// network or a timeout, never the text of the error.
+// hold the credentials. So a message names only an error code, an HTTP
+// status, or a timeout, never the text of the error.
 function reasonOf(error: unknown): string {
+  if (error instanceof KubernetesRequestError) {
+    return `the API server answered HTTP ${error.statusCode}`;
+  }
   const cause = error instanceof Error && error.cause ? error.cause : error;
   const name = (cause as { name?: unknown }).name;
   const message = (cause as { message?: unknown }).message;

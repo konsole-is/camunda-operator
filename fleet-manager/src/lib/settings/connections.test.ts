@@ -286,22 +286,26 @@ describe("testGit", () => {
       }),
     );
     vi.mocked(readSecretValues).mockRejectedValue(
-      new KubernetesRequestError(403, 'secrets "git" is forbidden'),
+      new KubernetesRequestError(403, 'secrets "git" is forbidden: tok-1'),
     );
 
     expect(await testGit()).toEqual({
       ok: false,
       message:
-        'Could not read the Secret git in namespace fleet: secrets "git" is forbidden',
+        "Could not read the Secret git in namespace fleet: the API server answered HTTP 403",
     });
   });
 
   it("settings that cannot be read give a failed result", async () => {
-    vi.mocked(getSettings).mockRejectedValue(new Error("connect ECONNREFUSED"));
+    vi.mocked(getSettings).mockRejectedValue(
+      Object.assign(new Error("connect ECONNREFUSED 10.0.0.1:443"), {
+        code: "ECONNREFUSED",
+      }),
+    );
 
     expect(await testGit()).toEqual({
       ok: false,
-      message: "Could not read the settings: connect ECONNREFUSED",
+      message: "Could not read the settings: ECONNREFUSED",
     });
   });
 
@@ -412,6 +416,27 @@ describe("testPrometheus", () => {
     expect((await testPrometheus()).ok).toBe(true);
   });
 
+  it("does not follow a redirect with the credentials", async () => {
+    const paths: string[] = [];
+    const url = await serve((req, res) => {
+      paths.push(req.url ?? "");
+      res.writeHead(302, { Location: `/moved${req.url}` }).end();
+    });
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({
+        "prometheus.url": url,
+        "prometheus.credentialsSecretRef": "prom",
+      }),
+    );
+    vi.mocked(readSecretValues).mockResolvedValue({ token: "tok-1" });
+
+    expect(await testPrometheus()).toEqual({
+      ok: false,
+      message: `Prometheus at ${url} answered HTTP 302.`,
+    });
+    expect(paths.filter((p) => p.startsWith("/moved"))).toEqual([]);
+  });
+
   it("an HTTP 500 names the status", async () => {
     const url = await serve((_req, res) => res.writeHead(500).end("boom"));
     vi.mocked(getSettings).mockResolvedValue(
@@ -503,7 +528,7 @@ describe("testPrometheus", () => {
 
     expect(await testPrometheus()).toEqual({
       ok: false,
-      message: "Could not read the settings: configmaps is forbidden",
+      message: "Could not read the settings: the API server answered HTTP 403",
     });
   });
 
