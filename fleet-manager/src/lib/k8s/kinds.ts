@@ -353,9 +353,27 @@ export function apiVersionOf(info: KindInfo): string {
 
 /** collectionPath returns the path of all objects of a kind, in every namespace. */
 export function collectionPath(info: KindInfo): string {
-  const base =
-    info.group === ""
-      ? `/api/${info.version}`
-      : `/apis/${info.group}/${info.version}`;
-  return `${base}/${info.plural}`;
+  return `${versionPath(info)}/${info.plural}`;
+}
+
+/**
+ * objectPath returns the path of one object. namespace must be set for a
+ * Namespaced kind and unset for a Cluster kind.
+ */
+export function objectPath(
+  info: KindInfo,
+  namespace: string | undefined,
+  name: string,
+): string {
+  const scope =
+    namespace === undefined
+      ? ""
+      : `/namespaces/${encodeURIComponent(namespace)}`;
+  return `${versionPath(info)}${scope}/${info.plural}/${encodeURIComponent(name)}`;
+}
+
+function versionPath(info: KindInfo): string {
+  return info.group === ""
+    ? `/api/${info.version}`
+    : `/apis/${info.group}/${info.version}`;
 }
