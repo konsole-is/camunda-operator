@@ -17,6 +17,7 @@ limitations under the License.
 package conformance
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,10 +27,10 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
-func configMap(namespace, name, resourceVersion string) *corev1.ConfigMap {
+func configMap(name, resourceVersion string) *corev1.ConfigMap {
 	cm := &corev1.ConfigMap{}
 	cm.Kind = "ConfigMap"
-	cm.Namespace = namespace
+	cm.Namespace = "ns"
 	cm.Name = name
 	cm.ResourceVersion = resourceVersion
 	return cm
@@ -38,9 +39,9 @@ func configMap(namespace, name, resourceVersion string) *corev1.ConfigMap {
 func TestRecorderKeepsTheEarliestResourceVersionOfAKey(t *testing.T) {
 	r := &recorder{}
 
-	r.observe(configMap("ns", "late", "20"), "object/basic")
-	r.observe(configMap("ns", "early", "9"), "object/basic")
-	r.observe(configMap("ns", "later", "30"), "object/basic")
+	r.observe(configMap("late", "20"), "object/basic")
+	r.observe(configMap("early", "9"), "object/basic")
+	r.observe(configMap("later", "30"), "object/basic")
 
 	got, ok := r.first("object/basic")
 	assert.True(t, ok)
@@ -109,4 +110,22 @@ func TestFinalizerProblem(t *testing.T) {
 			assert.EqualError(t, err, tt.message)
 		})
 	}
+}
+
+func TestRecorderSawOnlyTheObjectsThatItObserved(t *testing.T) {
+	r := &recorder{}
+	cm := configMap("x", "4")
+	cm.UID = "observed"
+
+	r.observe(cm, objectKey("basic-delete"))
+
+	assert.True(t, r.saw("observed"))
+	assert.False(t, r.saw("other"))
+}
+
+func TestFinalizerProblemReportsAFailedWatch(t *testing.T) {
+	r := &recorder{}
+	r.fail(errors.New("a watch failed: too old resource version"))
+
+	assert.ErrorContains(t, finalizerProblem(r, "basic-delete"), "too old resource version")
 }

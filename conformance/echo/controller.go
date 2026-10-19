@@ -29,6 +29,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -37,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -144,6 +146,14 @@ func (c *Controller) reconcileRequest(ctx context.Context, key ctrl.Request) (ct
 		return requeueOnConflict(c.client.Update(ctx, &req))
 	}
 
+	ready, err := c.registrationReady(ctx)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !ready {
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
+
 	if !controllerutil.ContainsFinalizer(&req, pluginsv1alpha1.FinalizerCleanup) {
 		if c.opts.Defect == DefectLateFinalizer {
 			if _, applied := c.lateApplied.LoadOrStore(req.UID, true); !applied {
@@ -163,6 +173,21 @@ func (c *Controller) reconcileRequest(ctx context.Context, key ctrl.Request) (ct
 	}
 
 	return c.writeStatus(ctx, &req)
+}
+
+// registrationReady says whether the registration has Ready=True, so a
+// request is served only after the registration, as the contract orders.
+func (c *Controller) registrationReady(ctx context.Context) (bool, error) {
+	var reg pluginsv1alpha1.PluginRegistration
+	err := c.client.Get(ctx, types.NamespacedName{Name: c.opts.Registration}, &reg)
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return meta.IsStatusConditionTrue(reg.Status.Conditions, v1.ConditionReady), nil
 }
 
 // cleanUp applies the deletion policy of req to its objects.
@@ -378,6 +403,7 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 	if err := c.client.Status().Update(ctx, req); err != nil {
 		return requeueOnConflict(err)
 	}
+	log.FromContext(ctx).Info("Wrote the status of the PluginRequest", "request", req.Name)
 
 	if c.opts.Defect == DefectDropAccepted {
 		return c.dropAccepted(ctx)

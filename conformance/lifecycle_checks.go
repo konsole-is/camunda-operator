@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -137,7 +138,45 @@ func checkFinalizer(ctx context.Context, s *suite) error {
 		// check only needs the plugin to have written its objects.
 		_ = waitForOutputsReady(ctx, s, r.name, false)
 
+		if err := waitForRecorder(ctx, s, life, r.name); err != nil {
+			return err
+		}
+
 		return finalizerProblem(life.rec, r.name)
+	})
+}
+
+// waitForRecorder waits until the watches of the run saw the finalizer of
+// the request name, when it has one, and each object of the request, so
+// that their marks are complete.
+func waitForRecorder(ctx context.Context, s *suite, life *lifecycle, name string) error {
+	what := "the watches of the run to see the request and its objects"
+	return waitFor(ctx, s.cfg.Timeouts.OutputsReady, what, func(ctx context.Context) error {
+		if err := life.rec.err(); err != nil {
+			return err
+		}
+
+		req, err := s.request(ctx, name)
+		if err != nil {
+			return err
+		}
+
+		if controllerutil.ContainsFinalizer(req, pluginsv1alpha1.FinalizerCleanup) && !life.rec.saw(req.UID) {
+			return errors.New("the watch has not seen the finalizer of the request yet")
+		}
+
+		objs, err := writtenObjects(ctx, s, life.kinds, name, life.preexisting)
+		if err != nil {
+			return err
+		}
+
+		for _, obj := range objs {
+			if !life.rec.saw(obj.GetUID()) {
+				return fmt.Errorf("the watch has not seen %s yet", objectRef(obj))
+			}
+		}
+
+		return nil
 	})
 }
 

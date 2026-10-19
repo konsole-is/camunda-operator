@@ -17,6 +17,7 @@ limitations under the License.
 package conformance
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -120,6 +121,21 @@ func TestOrderVerdict(t *testing.T) {
 				r.observe(request, requestServedKey)
 			},
 			message: "the plugin served the request before it wrote the registration with Ready=True",
+		},
+		{
+			name: "the request is never served",
+			events: func(r *recorder) {
+				at(registration, "10")
+				r.observe(registration, registrationReadyKey)
+			},
+			message: "the watch did not see the request get the finalizer",
+		},
+		{
+			name: "a failed watch",
+			events: func(r *recorder) {
+				r.fail(errors.New("a watch failed: gone"))
+			},
+			message: "a watch failed: gone",
 		},
 		{
 			name: "the registration is never Ready",

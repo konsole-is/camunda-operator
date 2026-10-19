@@ -118,9 +118,10 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 	if err != nil {
 		return nil, err
 	}
+	var created []*pluginsv1alpha1.PluginRequest
 	s.onClose(func(ctx context.Context) error {
 		rec.stop()
-		return s.deleteRequests(ctx, runs)
+		return s.deleteCreated(ctx, created)
 	})
 
 	life := &lifecycle{
@@ -146,6 +147,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 				err,
 			)
 		}
+		created = append(created, req)
 	}
 
 	return life, nil
@@ -256,12 +258,17 @@ func startRecorder(
 	rec := &recorder{stop: cancel}
 
 	err = rec.watch(
-		watchCtx, c, &pluginsv1alpha1.PluginRequestList{}, func(obj client.Object) string {
+		watchCtx,
+		c,
+		func() client.ObjectList { return &pluginsv1alpha1.PluginRequestList{} },
+		func(obj client.Object) string {
 			if controllerutil.ContainsFinalizer(obj, pluginsv1alpha1.FinalizerCleanup) {
 				return finalizerKey(obj.GetName())
 			}
 			return ""
-		}, client.InNamespace(s.cfg.Namespace),
+		},
+		"",
+		client.InNamespace(s.cfg.Namespace),
 	)
 	if err != nil {
 		cancel()
@@ -282,14 +289,16 @@ func startRecorder(
 			preexisting[item.GetUID()] = true
 		}
 
-		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(listKind)
-		after := &client.ListOptions{Raw: &metav1.ListOptions{ResourceVersion: existing.GetResourceVersion()}}
+		newList := func() client.ObjectList {
+			list := &unstructured.UnstructuredList{}
+			list.SetGroupVersionKind(listKind)
+			return list
+		}
 
 		err := rec.watch(
-			watchCtx, c, list, func(obj client.Object) string {
+			watchCtx, c, newList, func(obj client.Object) string {
 				return objectKey(obj.GetLabels()[pluginsv1alpha1.LabelRequest])
-			}, ofRunSelector, after,
+			}, existing.GetResourceVersion(), ofRunSelector,
 		)
 		if err != nil {
 			cancel()
@@ -300,15 +309,16 @@ func startRecorder(
 	return rec, preexisting, nil
 }
 
-// deleteRequests deletes the requests of runs that still exist. It does not
-// wait until they are gone.
-func (s *suite) deleteRequests(ctx context.Context, runs []requestRun) error {
-	errs := make([]error, 0, len(runs))
-	for _, r := range runs {
-		req := &pluginsv1alpha1.PluginRequest{}
-		req.Namespace = s.cfg.Namespace
-		req.Name = r.name
-		errs = append(errs, client.IgnoreNotFound(s.client.Delete(ctx, req)))
+// deleteCreated deletes the requests that the run created and that still
+// exist. A request of the same name that the run did not create stays. It
+// does not wait until they are gone.
+func (s *suite) deleteCreated(ctx context.Context, created []*pluginsv1alpha1.PluginRequest) error {
+	errs := make([]error, 0, len(created))
+	for _, req := range created {
+		err := s.client.Delete(ctx, req, client.Preconditions{UID: &req.UID})
+		if !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			errs = append(errs, err)
+		}
 	}
 
 	return errors.Join(errs...)

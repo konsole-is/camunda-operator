@@ -27,15 +27,21 @@ import (
 // pollInterval is the wait between two calls of the check of waitFor.
 const pollInterval = 500 * time.Millisecond
 
+// callGrace is how long a call of the check can run after the timeout of
+// waitFor. A call that the timeout cut short would fail with a deadline error
+// that hides the last problem.
+const callGrace = 10 * time.Second
+
 // waitFor calls check until it returns nil, for at most timeout. On a timeout
 // the error names what the wait was for and holds the last error of check. A
 // canceled ctx ends the wait at once with the error of ctx.
 func waitFor(ctx context.Context, timeout time.Duration, what string, check func(ctx context.Context) error) error {
+	callCtx, cancel := context.WithTimeout(ctx, timeout+callGrace)
+	defer cancel()
+
 	var last error
-	// check gets ctx, not the context of the poll: a call that the timeout
-	// cuts short fails with a deadline error that hides the last problem.
 	err := wait.PollUntilContextTimeout(ctx, pollInterval, timeout, true, func(context.Context) (bool, error) {
-		last = check(ctx)
+		last = check(callCtx)
 		return last == nil, nil
 	})
 

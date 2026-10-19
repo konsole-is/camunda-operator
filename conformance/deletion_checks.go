@@ -120,7 +120,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) error {
 		return scaleBack(ctx, s, deployments)
 	})
 
-	if err := scaleToZero(ctx, s, deployments); err != nil {
+	if err := scaleToZero(ctx, s, sa, deployments); err != nil {
 		return err
 	}
 
@@ -146,7 +146,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) error {
 		return fmt.Errorf("creating the PluginRequest %s/%s: %w", req.Namespace, req.Name, err)
 	}
 	s.onClose(func(ctx context.Context) error {
-		return s.deleteRequests(ctx, []requestRun{run})
+		return s.deleteCreated(ctx, []*pluginsv1alpha1.PluginRequest{req})
 	})
 
 	if err := scaleBack(ctx, s, deployments); err != nil {
@@ -157,7 +157,10 @@ func checkRegistrationFirst(ctx context.Context, s *suite) error {
 		return fmt.Errorf("request %s: %w", run.name, err)
 	}
 
-	verdict := orderVerdict(rec, life.registration.Name)
+	what := "the watches of the check to see the registration and the request"
+	verdict := waitFor(ctx, s.cfg.Timeouts.OutputsReady, what, func(context.Context) error {
+		return orderVerdict(rec, life.registration.Name)
+	})
 
 	return errors.Join(verdict, deleteRequest(ctx, s, run.name))
 }
@@ -197,7 +200,14 @@ func pluginDeployments(
 	return deployments, nil
 }
 
-func scaleToZero(ctx context.Context, s *suite, deployments []scaledDeployment) error {
+// scaleToZero scales deployments to zero and waits until no pod runs under
+// sa, terminating pods too.
+func scaleToZero(
+	ctx context.Context,
+	s *suite,
+	sa pluginsv1alpha1.ServiceAccountRef,
+	deployments []scaledDeployment,
+) error {
 	for _, d := range deployments {
 		if err := scale(ctx, s, d.key, 0); err != nil {
 			return err
@@ -213,6 +223,17 @@ func scaleToZero(ctx context.Context, s *suite, deployments []scaledDeployment) 
 
 			if current.Status.Replicas != 0 {
 				return fmt.Errorf("the Deployment %s still has %d pods", d.key, current.Status.Replicas)
+			}
+		}
+
+		var pods corev1.PodList
+		if err := s.client.List(ctx, &pods, client.InNamespace(sa.Namespace)); err != nil {
+			return fmt.Errorf("listing the pods of %s: %w", sa.Namespace, err)
+		}
+
+		for _, p := range pods.Items {
+			if p.Spec.ServiceAccountName == sa.Name {
+				return fmt.Errorf("the pod %s/%s of the plugin still runs", p.Namespace, p.Name)
 			}
 		}
 
@@ -274,13 +295,18 @@ func startOrderRecorder(ctx context.Context, s *suite, registration, request str
 	rec := &recorder{stop: cancel}
 
 	err = rec.watch(
-		watchCtx, c, &pluginsv1alpha1.PluginRegistrationList{}, func(obj client.Object) string {
+		watchCtx,
+		c,
+		func() client.ObjectList { return &pluginsv1alpha1.PluginRegistrationList{} },
+		func(obj client.Object) string {
 			reg, ok := obj.(*pluginsv1alpha1.PluginRegistration)
 			if ok && meta.IsStatusConditionTrue(reg.Status.Conditions, v1.ConditionReady) {
 				return registrationReadyKey
 			}
 			return ""
-		}, client.MatchingFields{"metadata.name": registration},
+		},
+		"",
+		client.MatchingFields{"metadata.name": registration},
 	)
 	if err != nil {
 		cancel()
@@ -288,14 +314,20 @@ func startOrderRecorder(ctx context.Context, s *suite, registration, request str
 	}
 
 	err = rec.watch(
-		watchCtx, c, &pluginsv1alpha1.PluginRequestList{}, func(obj client.Object) string {
+		watchCtx,
+		c,
+		func() client.ObjectList { return &pluginsv1alpha1.PluginRequestList{} },
+		func(obj client.Object) string {
 			req, ok := obj.(*pluginsv1alpha1.PluginRequest)
 			if ok &&
 				(controllerutil.ContainsFinalizer(req, pluginsv1alpha1.FinalizerCleanup) || len(req.Status.Outputs) > 0) {
 				return requestServedKey
 			}
 			return ""
-		}, client.InNamespace(s.cfg.Namespace), client.MatchingFields{"metadata.name": request},
+		},
+		"",
+		client.InNamespace(s.cfg.Namespace),
+		client.MatchingFields{"metadata.name": request},
 	)
 	if err != nil {
 		cancel()
@@ -308,12 +340,22 @@ func startOrderRecorder(ctx context.Context, s *suite, registration, request str
 // orderVerdict passes when the recorder saw the registration with Ready=True
 // before the request got the finalizer or an output.
 func orderVerdict(r *recorder, registration string) error {
+	if err := r.err(); err != nil {
+		return err
+	}
+
 	ready, ok := r.first(registrationReadyKey)
 	if !ok {
 		return fmt.Errorf("the plugin did not write the registration %s again with Ready=True", registration)
 	}
 
-	if served, ok := r.first(requestServedKey); ok && served.before(ready) {
+	served, ok := r.first(requestServedKey)
+	if !ok {
+		return errors.New("the watch did not see the request get the finalizer " +
+			pluginsv1alpha1.FinalizerCleanup + " or an output")
+	}
+
+	if served.before(ready) {
 		return errors.New("the plugin served the request before it wrote the registration with Ready=True: " +
 			"the request got the finalizer " + pluginsv1alpha1.FinalizerCleanup + " or an output first")
 	}
