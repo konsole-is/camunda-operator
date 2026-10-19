@@ -407,6 +407,17 @@ func (s *suite) deleteRunObjects(
 	var errs []error
 	var deleted []*unstructured.Unstructured
 	for _, req := range created {
+		var current pluginsv1alpha1.PluginRequest
+		err := s.client.Get(ctx, client.ObjectKeyFromObject(req), &current)
+		switch {
+		case err == nil && current.UID != req.UID:
+			// The objects of that name belong to the request that replaced it.
+			continue
+		case err != nil && !apierrors.IsNotFound(err):
+			errs = append(errs, err)
+			continue
+		}
+
 		objs, err := writtenObjects(ctx, s, kinds, req.Name)
 		if err != nil {
 			errs = append(errs, err)

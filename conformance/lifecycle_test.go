@@ -21,7 +21,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -180,4 +185,41 @@ func TestRunIDOfGivesEachNamespaceItsOwnRequestNames(t *testing.T) {
 
 func TestRunIDOfKeepsApartTwoNamespacesThatCollidedBefore(t *testing.T) {
 	assert.NotEqual(t, runIDOf("ci-plugin-18"), runIDOf("ci-plugin-920"))
+}
+
+func TestDeleteRunObjectsKeepsTheObjectsOfAReplacement(t *testing.T) {
+	replacement := &pluginsv1alpha1.PluginRequest{}
+	replacement.Namespace = "conformance-echo"
+	replacement.Name = "basic-delete"
+	replacement.UID = "replacement-uid"
+	cm := &corev1.ConfigMap{}
+	cm.Namespace = "conformance-echo"
+	cm.Name = "basic-delete-echo"
+	cm.Labels = map[string]string{pluginsv1alpha1.LabelRequest: "basic-delete"}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, replacement, cm)
+	created := replacement.DeepCopy()
+	created.UID = "run-uid"
+	kinds := []kindInfo{{gvk: schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, namespaced: true}}
+
+	require.NoError(t, s.deleteRunObjects(t.Context(), kinds, []*pluginsv1alpha1.PluginRequest{created}))
+
+	assert.NoError(t, s.client.Get(t.Context(), client.ObjectKeyFromObject(cm), &corev1.ConfigMap{}))
+}
+
+func TestDeleteRunObjectsDeletesTheObjectsOfACreatedRequest(t *testing.T) {
+	cm := &corev1.ConfigMap{}
+	cm.Namespace = "conformance-echo"
+	cm.Name = "basic-delete-echo"
+	cm.Labels = map[string]string{pluginsv1alpha1.LabelRequest: "basic-delete"}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, cm)
+	created := &pluginsv1alpha1.PluginRequest{}
+	created.Namespace = "conformance-echo"
+	created.Name = "basic-delete"
+	created.UID = "run-uid"
+	kinds := []kindInfo{{gvk: schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, namespaced: true}}
+
+	require.NoError(t, s.deleteRunObjects(t.Context(), kinds, []*pluginsv1alpha1.PluginRequest{created}))
+
+	err := s.client.Get(t.Context(), client.ObjectKeyFromObject(cm), &corev1.ConfigMap{})
+	assert.True(t, apierrors.IsNotFound(err), "got %v", err)
 }
