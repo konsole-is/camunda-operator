@@ -73,8 +73,8 @@ func Run(t *testing.T, cfg Config) {
 // failed check is a Result, not an error. Execute returns an error and runs
 // no check when cfg is not valid or when it cannot connect to the cluster. A
 // check that ctx stops before it starts fails with a message that says that
-// the run stopped. When the cleanup at the end of the run fails, Execute
-// returns the results and an error.
+// the run stopped. The cleanup at the end of the run runs also when ctx is
+// done. When it fails, Execute returns the results and an error.
 func Execute(ctx context.Context, cfg Config) ([]Result, error) {
 	return execute(ctx, cfg, checks, connect)
 }
@@ -127,7 +127,8 @@ func execute(
 		results = append(results, runStep(ctx, s, st))
 	}
 
-	if err := s.close(ctx); err != nil {
+	// Each wait of a cleanup is bounded by Timeouts.Deletion.
+	if err := s.close(context.WithoutCancel(ctx)); err != nil {
 		return results, fmt.Errorf("conformance: the cleanup of the run failed: %w", err)
 	}
 

@@ -250,6 +250,28 @@ func TestExecuteRunsTheCleanupsOfTheRunAfterTheLastCheck(t *testing.T) {
 	assert.Equal(t, []string{"last check", "cleanup"}, order)
 }
 
+func TestExecuteRunsTheCleanupsOfAStoppedRun(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	var cleanupErr error
+	cleanedUp := false
+	registry := []Check{
+		{ID: mandatoryID, Description: "A check that stops the run.", run: func(_ context.Context, s *suite) error {
+			s.onClose(func(ctx context.Context) error {
+				cleanedUp, cleanupErr = true, ctx.Err()
+				return nil
+			})
+			cancel()
+			return nil
+		}},
+	}
+
+	_, err := execute(ctx, validConfig(), registry, fakeConnect)
+
+	require.NoError(t, err)
+	assert.True(t, cleanedUp)
+	assert.NoError(t, cleanupErr, "the cleanup gets a context that the stop did not cancel")
+}
+
 func TestExecuteReturnsTheResultsAndTheErrorOfAFailedCleanup(t *testing.T) {
 	registry := []Check{
 		{ID: mandatoryID, Description: "A check with a cleanup.", run: func(_ context.Context, s *suite) error {
