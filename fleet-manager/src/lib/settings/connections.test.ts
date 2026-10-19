@@ -158,6 +158,27 @@ describe("testGit", () => {
     expect(message).not.toContain(basic("bot", "tok-secret").slice(6));
   });
 
+  it("an answer that is not Git holds no credential in the message", async () => {
+    const token = "tok-" + "x".repeat(400);
+    const url =
+      (await serve((req, res) => {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end(`${req.headers.authorization} ${token} bot`);
+      })) + "/fleet.git";
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({ "git.repository": url, "git.credentialsSecretRef": "git" }),
+    );
+    vi.mocked(readSecretValues).mockResolvedValue({ username: "bot", token });
+
+    const result = await testGit();
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(new RegExp(`^Could not reach ${url}: .+`));
+    expect(result.message).not.toContain("tok-");
+    expect(result.message).not.toContain("Basic");
+    expect(result.message).not.toContain("bot");
+  });
+
   it("an unreachable repository names it", async () => {
     const url = (await closedAddress()) + "/fleet.git";
     vi.mocked(getSettings).mockResolvedValue(

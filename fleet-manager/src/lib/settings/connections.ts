@@ -65,11 +65,7 @@ export async function testGit(): Promise<TestResult> {
     if (code === "UserCanceledError" || status === 401 || status === 403) {
       return { ok: false, message: `${url} refused the credentials.` };
     }
-    // An HttpError message holds only the status. Its response stays out.
-    return {
-      ok: false,
-      message: `Could not reach ${url}: ${redact(messageOf(error), values)}`,
-    };
+    return { ok: false, message: `Could not reach ${url}: ${reasonOf(error)}` };
   }
 }
 
@@ -123,7 +119,7 @@ export async function testPrometheus(): Promise<TestResult> {
   } catch (error) {
     return {
       ok: false,
-      message: `Could not reach ${at}: ${redact(messageOf(error), values)}`,
+      message: `Could not reach ${at}: ${reasonOf(error)}`,
     };
   }
 }
@@ -144,28 +140,21 @@ async function readCredentials(secret: string): Promise<Credentials> {
   return { ok: true, values };
 }
 
-// A library message can quote a header, so each token and password and its
-// basic auth form are removed before a message leaves this module.
-function redact(
-  message: string,
-  values: Record<string, string> | undefined,
-): string {
-  const secrets: string[] = [];
-  for (const v of [values?.token, values?.password]) {
-    if (!v) continue;
-    secrets.push(v);
-    if (values?.username) {
-      secrets.push(Buffer.from(`${values.username}:${v}`).toString("base64"));
-    }
+// A library message can quote the answer of the server, and the answer can
+// hold the credentials. So a message names only the error code of the
+// network or a timeout, never the text of the error.
+function reasonOf(error: unknown): string {
+  const cause = error instanceof Error && error.cause ? error.cause : error;
+  const name = (cause as { name?: unknown }).name;
+  const message = (cause as { message?: unknown }).message;
+  if (
+    name === "AbortError" ||
+    name === "TimeoutError" ||
+    message === "Request timed out"
+  ) {
+    return "the server did not answer in time";
   }
-  return secrets
-    .sort((a, b) => b.length - a.length)
-    .reduce((text, secret) => text.split(secret).join("***"), message);
-}
-
-function messageOf(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-  // fetch rejects with "fetch failed" and puts the reason in cause.
-  const cause = error.cause;
-  return cause instanceof Error ? cause.message : error.message;
+  const code = (cause as { code?: unknown }).code;
+  if (typeof code === "string" && /^E[A-Z_]+$/.test(code)) return code;
+  return "the server did not give a valid answer";
 }
