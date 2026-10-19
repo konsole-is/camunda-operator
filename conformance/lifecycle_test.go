@@ -18,12 +18,14 @@ package conformance
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -230,4 +232,34 @@ func TestDeleteRunObjectsDeletesTheObjectsOfACreatedRequest(t *testing.T) {
 
 	err := s.client.Get(t.Context(), client.ObjectKeyFromObject(cm), &corev1.ConfigMap{})
 	assert.True(t, apierrors.IsNotFound(err), "got %v", err)
+}
+
+func TestEnsureNamespaceWaitsForATerminatingNamespace(t *testing.T) {
+	cfg := validConfig()
+	cfg.Timeouts.Deletion = time.Second
+	ns := &corev1.Namespace{}
+	ns.Name = cfg.Namespace
+	ns.Finalizers = []string{"kubernetes"}
+	now := metav1.Now()
+	ns.DeletionTimestamp = &now
+	s := newTestSuite(t, cfg, interceptor.Funcs{}, ns)
+
+	err := s.ensureNamespace(t.Context())
+
+	assert.ErrorContains(t, err, "is still terminating")
+}
+
+func TestDeleteCreatedWaitsUntilTheRequestsAreGone(t *testing.T) {
+	cfg := validConfig()
+	cfg.Timeouts.Deletion = time.Second
+	stuck := &pluginsv1alpha1.PluginRequest{}
+	stuck.Namespace = cfg.Namespace
+	stuck.Name = testRequestName
+	stuck.UID = runUID
+	stuck.Finalizers = []string{pluginsv1alpha1.FinalizerCleanup}
+	s := newTestSuite(t, cfg, interceptor.Funcs{}, stuck)
+
+	err := s.deleteCreated(t.Context(), []*pluginsv1alpha1.PluginRequest{stuck.DeepCopy()})
+
+	assert.ErrorContains(t, err, "still exists")
 }

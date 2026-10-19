@@ -263,13 +263,35 @@ func runIDOf(namespace string) string {
 func (s *suite) ensureNamespace(ctx context.Context) error {
 	var ns corev1.Namespace
 	err := s.client.Get(ctx, client.ObjectKey{Name: s.cfg.Namespace}, &ns)
-	if err == nil {
+	switch {
+	case err == nil && ns.DeletionTimestamp.IsZero():
 		return nil
-	}
-
-	if !apierrors.IsNotFound(err) {
+	case err == nil:
+		// The namespace of an earlier run can still be terminating, and
+		// the API server refuses new objects in it.
+		err := waitFor(
+			ctx,
+			s.cfg.Timeouts.Deletion,
+			"the terminating namespace to be gone",
+			func(ctx context.Context) error {
+				err := s.client.Get(ctx, client.ObjectKey{Name: s.cfg.Namespace}, &corev1.Namespace{})
+				if apierrors.IsNotFound(err) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				return fmt.Errorf("the namespace %s is still terminating", s.cfg.Namespace)
+			},
+		)
+		if err != nil {
+			return err
+		}
+	case !apierrors.IsNotFound(err):
 		return fmt.Errorf("getting the namespace %s: %w", s.cfg.Namespace, err)
 	}
+
+	ns = corev1.Namespace{}
 
 	ns.Name = s.cfg.Namespace
 	if err := s.client.Create(ctx, &ns); err != nil {
@@ -461,16 +483,43 @@ func (s *suite) deleteRunObjects(
 }
 
 // deleteCreated deletes the requests that the run created and that still
-// exist. A request of the same name that the run did not create stays. It
-// does not wait until they are gone.
+// exist, and waits within the Deletion timeout until they are gone. A
+// request of the same name that the run did not create stays.
 func (s *suite) deleteCreated(ctx context.Context, created []*pluginsv1alpha1.PluginRequest) error {
-	errs := make([]error, 0, len(created))
+	errs := make([]error, 0, len(created)+1)
+	var deleted []*pluginsv1alpha1.PluginRequest
 	for _, req := range created {
 		err := s.client.Delete(ctx, req, client.Preconditions{UID: &req.UID})
-		if !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+		switch {
+		case err == nil:
+			deleted = append(deleted, req)
+		case !apierrors.IsNotFound(err) && !apierrors.IsConflict(err):
 			errs = append(errs, err)
 		}
 	}
+
+	errs = append(
+		errs,
+		waitFor(ctx, s.cfg.Timeouts.Deletion, "the requests of the run to be gone", func(ctx context.Context) error {
+			var problems []string
+			for _, req := range deleted {
+				var got pluginsv1alpha1.PluginRequest
+				err := s.client.Get(ctx, client.ObjectKeyFromObject(req), &got)
+				switch {
+				case apierrors.IsNotFound(err):
+				case err != nil:
+					return err
+				case got.UID == req.UID:
+					problems = append(
+						problems,
+						fmt.Sprintf("the PluginRequest %s/%s still exists", req.Namespace, req.Name),
+					)
+				}
+			}
+
+			return problemsError(problems)
+		}),
+	)
 
 	return errors.Join(errs...)
 }
