@@ -20,10 +20,10 @@ type ConfigMap = KubeObject & { data?: Record<string, string> };
  * FLEET_SETTINGS_* variables first. It never changes a ConfigMap that
  * exists. It throws when the API server refuses the read or the create.
  */
-export function getSettings(): Promise<Settings> {
-  return inOrder(SETTINGS_CONFIGMAP, async () =>
-    settingsFromData((await readOrCreate()).data),
-  );
+export async function getSettings(): Promise<Settings> {
+  const live =
+    (await read()) ?? (await inOrder(SETTINGS_CONFIGMAP, readOrCreate));
+  return settingsFromData(live.data);
 }
 
 /**
@@ -66,34 +66,35 @@ async function writePatch(patch: Partial<Settings>): Promise<WriteResult> {
   });
 }
 
+// An apply cannot create only a missing ConfigMap, so callers hold
+// inOrder: a late first create would undo an update.
 async function readOrCreate(): Promise<ConfigMap> {
-  const namespace = appNamespace();
-  const path = `/api/v1/namespaces/${encodeURIComponent(namespace)}/configmaps/${SETTINGS_CONFIGMAP}`;
-  const kc = kubeConfig();
-  try {
-    return await getJSON<ConfigMap>(kc, path, WRITE_TIMEOUT_MS);
-  } catch (error) {
-    if (
-      !(error instanceof KubernetesRequestError) ||
-      error.statusCode !== 404
-    ) {
-      throw error;
-    }
-  }
-  // An apply cannot create the ConfigMap only when it is missing. So each
-  // read and write of the settings runs under inOrder, and a late first
-  // create of this process cannot undo an update.
+  const live = await read();
+  if (live) return live;
   const result = await (
     await getWriter()
   ).apply({
     intent: "Create the settings from the chart values",
-    force: true,
     apply: [settingsObject(seedFromEnv(process.env))],
   });
   if (!result.ok) {
     throw new Error(result.errors.map((e) => e.message).join(" "));
   }
-  return getJSON<ConfigMap>(kc, path, WRITE_TIMEOUT_MS);
+  const created = await read();
+  if (!created) throw new Error(`The ConfigMap ${SETTINGS_CONFIGMAP} is gone`);
+  return created;
+}
+
+async function read(): Promise<ConfigMap | undefined> {
+  const path = `/api/v1/namespaces/${encodeURIComponent(appNamespace())}/configmaps/${SETTINGS_CONFIGMAP}`;
+  try {
+    return await getJSON<ConfigMap>(kubeConfig(), path, WRITE_TIMEOUT_MS);
+  } catch (error) {
+    if (error instanceof KubernetesRequestError && error.statusCode === 404) {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 function settingsObject(data: Record<string, string>): ConfigMap {

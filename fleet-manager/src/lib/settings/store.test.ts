@@ -48,6 +48,48 @@ describe("getSettings", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
+  it("a first create does not take over keys that an admin set at the same time", async () => {
+    vi.mocked(getJSON).mockRejectedValue(
+      new KubernetesRequestError(404, "not found"),
+    );
+    apply.mockImplementation(async (change) =>
+      change.force
+        ? { ok: true, mode: "direct" }
+        : {
+            ok: false,
+            errors: [
+              {
+                code: "Conflict",
+                message: 'conflict with "kubectl-create"',
+                manager: "kubectl-create",
+              },
+            ],
+          },
+    );
+
+    await expect(getSettings()).rejects.toThrow(
+      'conflict with "kubectl-create"',
+    );
+  });
+
+  it("reads wait for no write", async () => {
+    vi.mocked(getJSON).mockResolvedValue(configMap({ "git.path": "a" }, "1"));
+    let release = () => {};
+    apply.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ ok: true, mode: "direct" });
+        }),
+    );
+
+    const update = updateSettings({ "git.path": "b" });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect((await getSettings())["git.path"]).toBe("a");
+    release();
+    await update;
+  });
+
   it("a refused create throws with the message of the API server", async () => {
     vi.mocked(getJSON).mockRejectedValue(
       new KubernetesRequestError(404, "not found"),
