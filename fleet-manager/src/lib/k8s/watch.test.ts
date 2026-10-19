@@ -292,15 +292,54 @@ describe("watchStream", () => {
     ]);
     answer!({ snapshot: [], unsubscribe });
 
-    const { frames: rest, done } = await readFrames(reader);
+    const { frames: rest } = await readFrames(reader, 1);
     expect(rest).toEqual([
       {
         event: "snapshot",
         data: { watch: "b", kind: "Service", objects: [] },
       },
     ]);
-    expect(done).toBe(true);
-    expect(unsubscribe).toHaveBeenCalledOnce();
+    await reader.cancel();
+  });
+
+  it("a watch that fails tries again after retryMs, and the stream stays open for the other watches", async () => {
+    let podCalls = 0;
+    const { cache, listeners } = fakeCache({
+      Pod: async () => {
+        podCalls++;
+        if (podCalls === 1) throw new Error("pods are not served");
+        return { snapshot: [object("team", "x")], unsubscribe: vi.fn() };
+      },
+      Service: async () => ({ snapshot: [], unsubscribe: vi.fn() }),
+    });
+    const abort = new AbortController();
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      abort.signal,
+      { retryMs: 20 },
+    ).getReader();
+
+    const { frames: first } = await readFrames(reader, 2);
+    expect(first.map((f) => `${f.event} ${f.data.watch}`).sort()).toEqual([
+      "failure a",
+      "snapshot b",
+    ]);
+    const { frames: retried } = await readFrames(reader, 1);
+    expect(retried).toEqual([
+      {
+        event: "snapshot",
+        data: { watch: "a", kind: "Pod", objects: [object("team", "x")] },
+      },
+    ]);
+    listeners.get("Service")![0]("add", object("team", "y") as never);
+    const { frames: deltas, done } = await readFrames(reader, 1);
+    expect(done).toBe(false);
+    expect(deltas[0].data).toMatchObject({ watch: "b", type: "ADDED" });
+    abort.abort();
   });
 
   it("starts every watch before the first snapshot", async () => {
@@ -454,12 +493,13 @@ describe("watchStream", () => {
     ).getReader();
     await new Promise((wake) => setTimeout(wake, 20));
 
-    const { frames, done } = await readFrames(reader);
-    expect(done).toBe(true);
+    const { frames, done } = await readFrames(reader, 3);
+    expect(done).toBe(false);
     expect(frames.map((f) => `${f.event} ${f.data.watch}`).sort()).toEqual([
       "failure b",
       "snapshot a",
       "snapshot c",
     ]);
+    await reader.cancel();
   });
 });

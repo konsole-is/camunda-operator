@@ -100,20 +100,14 @@ export interface WatchStreamOptions {
 }
 
 /**
- * watchStream returns the SSE body of one connection that serves watches.
- * Every frame has the field watch, the id of the entry that it answers. The
- * watches start at once. For each kind of a watch the stream sends a frame
- * "snapshot" with the matching objects, then a frame "delta" for each change
- * that a subscriber of the filter sees (see deltaType). A watch that is not
- * valid gets a frame "failure" with its error, and the stream goes on. A kind
- * that does not sync gets a frame "failure" with the message, and the later
- * kinds of that watch do not start. That frame sets the retry time of
- * EventSource to retryMs, and the stream ends after every watch sent its
- * snapshots or its failure. A comment line goes out every heartbeatMs, so
- * idle proxies keep the connection. The stream also ends when signal aborts,
- * at the next write when more than maxPendingBytes wait unread in its queue,
- * and when the JSON of the changes that wait behind snapshots is longer than
- * maxPendingBytes.
+ * watchStream returns the SSE body of one connection. Every frame has the
+ * field watch, the id of the entry that it answers. Each kind of a watch gets
+ * a frame "snapshot" with the matching objects, then a frame "delta" for each
+ * change that a subscriber of the filter sees (see deltaType). A watch that
+ * is not valid gets a frame "failure" with its error. A kind that does not
+ * sync gets a frame "failure" with the message and tries again retryMs later.
+ * A failure does not end the stream. The stream ends when signal aborts, and
+ * when a client that does not read falls more than maxPendingBytes behind.
  */
 export function watchStream(
   cache: ResourceCache,
@@ -128,6 +122,7 @@ export function watchStream(
   const encoder = new TextEncoder();
   const unsubscribes: (() => void)[] = [];
   const drained: (() => void)[] = [];
+  const stops = new Set<() => void>();
   // queuedBytes counts the changes of all watches that wait behind their
   // snapshot. They are not in the stream queue yet, so they count here.
   let queuedBytes = 0;
@@ -139,7 +134,18 @@ export function watchStream(
     clearInterval(heartbeat);
     unsubscribes.splice(0).forEach((unsubscribe) => unsubscribe());
     drained.splice(0).forEach((wake) => wake());
+    stops.forEach((stop) => stop());
   };
+  const pause = (ms: number) =>
+    new Promise<void>((wake) => {
+      const stop = () => {
+        clearTimeout(timer);
+        stops.delete(stop);
+        wake();
+      };
+      const timer = setTimeout(stop, ms);
+      stops.add(stop);
+    });
 
   return new ReadableStream<Uint8Array>(
     {
@@ -191,6 +197,12 @@ export function watchStream(
           end();
           return;
         }
+        // A comment line every heartbeatMs keeps idle proxies from closing
+        // the connection.
+        heartbeat = setInterval(
+          () => write(encoder.encode(": keep-alive\n\n")),
+          heartbeatMs,
+        );
 
         const runWatch = async (entry: WatchEntry) => {
           const { id } = entry;
@@ -201,7 +213,7 @@ export function watchStream(
               kind,
               message: entry.error,
             });
-            return true;
+            return;
           }
           const { request } = entry;
           const matchesLabels = parseSelector(request.labelSelector ?? "");
@@ -210,7 +222,8 @@ export function watchStream(
               o.metadata?.namespace === request.namespace) &&
             (!request.name || o.metadata?.name === request.name) &&
             matchesLabels(o.metadata?.labels);
-          for (const kind of request.kinds) {
+          // subscribeKind resolves false after it sent a failure frame.
+          const subscribeKind = async (kind: KindName) => {
             const seen = new Set<string>();
             // Changes that arrive before the snapshot is sent wait here, so
             // the snapshot always comes first.
@@ -265,22 +278,19 @@ export function watchStream(
               );
               return false;
             }
+            return true;
+          };
+          // A kind that the API server does not serve stays in its own watch,
+          // so the other watches of the page keep their data.
+          for (const kind of request.kinds) {
+            while (!(await subscribeKind(kind))) {
+              await pause(retryMs);
+              if (closed) return;
+            }
           }
-          return true;
         };
 
-        void Promise.all(watches.map(runWatch)).then((results) => {
-          if (closed) return;
-          if (results.includes(false)) {
-            // EventSource connects again after the retry of the failure frame.
-            end();
-            return;
-          }
-          heartbeat = setInterval(
-            () => write(encoder.encode(": keep-alive\n\n")),
-            heartbeatMs,
-          );
-        });
+        watches.forEach((entry) => void runWatch(entry));
       },
       pull() {
         drained.splice(0).forEach((wake) => wake());
