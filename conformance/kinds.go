@@ -39,9 +39,9 @@ type kindInfo struct {
 	namespaced bool
 }
 
-// pluginKinds returns the kinds that the ClusterRoles bound to the
-// ServiceAccount sa can create. A group that discovery cannot read is left
-// out. It is an error when no ClusterRoleBinding binds sa.
+// pluginKinds returns the kinds that the roles bound to the ServiceAccount sa
+// can create. A group that discovery cannot read is left out. The list is
+// empty for a plugin that writes no Kubernetes object.
 func pluginKinds(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccountRef) ([]kindInfo, error) {
 	rules, err := pluginRules(ctx, s, sa)
 	if err != nil {
@@ -58,16 +58,7 @@ func pluginKinds(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccoun
 		return nil, fmt.Errorf("reading the resources of the cluster: %w", err)
 	}
 
-	kinds := kindsOf(rules, resources)
-	if len(kinds) == 0 {
-		return nil, fmt.Errorf(
-			"no binding lets the ServiceAccount %s/%s of the registration create a kind",
-			sa.Namespace,
-			sa.Name,
-		)
-	}
-
-	return kinds, nil
+	return kindsOf(rules, resources), nil
 }
 
 // pluginRules returns the rules of each ClusterRoleBinding and RoleBinding
@@ -94,7 +85,16 @@ func pluginRules(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccoun
 		}
 	}
 	for _, b := range bindings.Items {
-		if bindsServiceAccount(b.Subjects, sa.Namespace, sa.Name) {
+		// A ServiceAccount subject of a RoleBinding without a namespace is in
+		// the namespace of the RoleBinding.
+		subjects := slices.Clone(b.Subjects)
+		for i := range subjects {
+			if subjects[i].Kind == rbacv1.ServiceAccountKind && subjects[i].Namespace == "" {
+				subjects[i].Namespace = b.Namespace
+			}
+		}
+
+		if bindsServiceAccount(subjects, sa.Namespace, sa.Name) {
 			refs = append(refs, bound{namespace: b.Namespace, ref: b.RoleRef})
 		}
 	}

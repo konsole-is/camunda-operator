@@ -28,6 +28,8 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
 func newFakeController(t *testing.T, objs ...client.Object) *Controller {
@@ -79,4 +81,43 @@ func TestReleaseOwnerKeepsTheContentAndOtherOwners(t *testing.T) {
 	require.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(existing), &got))
 	assert.Equal(t, []metav1.OwnerReference{other}, got.OwnerReferences)
 	assert.Equal(t, map[string]string{"message": "hi"}, got.Data)
+}
+
+func TestDeleteKeepsAnObjectThatIsNotOfTheRequest(t *testing.T) {
+	replacement := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "basic-delete-echo"}}
+	c := newFakeController(t, replacement)
+	req := &pluginsv1alpha1.PluginRequest{}
+	req.Namespace = "ns"
+	req.Name = "basic-delete"
+
+	require.NoError(t, c.deleteOwn(t.Context(), req, &corev1.ConfigMap{ObjectMeta: replacement.ObjectMeta}))
+
+	assert.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(replacement), &corev1.ConfigMap{}))
+}
+
+func TestDeleteRemovesAnObjectOfTheRequest(t *testing.T) {
+	own := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "ns",
+		Name:      "basic-delete-echo",
+		Labels: map[string]string{
+			pluginsv1alpha1.LabelRegistration: "echo",
+			pluginsv1alpha1.LabelRequest:      "basic-delete",
+		},
+	}}
+	c := newFakeController(t, own)
+	req := &pluginsv1alpha1.PluginRequest{}
+	req.Namespace = "ns"
+	req.Name = "basic-delete"
+
+	require.NoError(
+		t,
+		c.deleteOwn(
+			t.Context(),
+			req,
+			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: own.Name}},
+		),
+	)
+
+	err := c.client.Get(t.Context(), client.ObjectKeyFromObject(own), &corev1.ConfigMap{})
+	assert.True(t, apierrors.IsNotFound(err), "got %v", err)
 }

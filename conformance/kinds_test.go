@@ -161,3 +161,23 @@ func TestPluginRulesTakesClusterRoleAndRoleBindings(t *testing.T) {
 	require.NoError(t, err)
 	assert.ElementsMatch(t, append(cluster.Rules, role.Rules...), rules)
 }
+
+func TestPluginRulesTakesASubjectWithoutNamespaceInTheNamespaceOfTheRoleBinding(t *testing.T) {
+	role := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: "edit-configmaps"},
+		Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"}},
+		},
+	}
+	binding := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "plugins", Name: "echo"},
+		RoleRef:    rbacv1.RoleRef{Kind: "ClusterRole", Name: "edit-configmaps"},
+		Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: "echo"}},
+	}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, role, binding)
+
+	rules, err := pluginRules(t.Context(), s, pluginsv1alpha1.ServiceAccountRef{Namespace: "plugins", Name: "echo"})
+
+	require.NoError(t, err)
+	assert.Equal(t, role.Rules, rules)
+}

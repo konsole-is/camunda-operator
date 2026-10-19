@@ -18,9 +18,10 @@ package conformance
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"slices"
 	"strings"
 	"time"
@@ -250,10 +251,8 @@ func requestName(caseName, section, policy, runID string) string {
 // at the same time use two namespaces, so their requests, and the objects
 // that carry the names of their requests, stay apart.
 func runIDOf(namespace string) string {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(namespace))
-
-	return fmt.Sprintf("%06x", h.Sum32()&0xffffff)
+	sum := sha256.Sum256([]byte(namespace))
+	return hex.EncodeToString(sum[:5])
 }
 
 func (s *suite) ensureNamespace(ctx context.Context) error {

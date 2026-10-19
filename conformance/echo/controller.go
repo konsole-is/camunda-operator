@@ -208,7 +208,7 @@ func (c *Controller) cleanUp(ctx context.Context, req *pluginsv1alpha1.PluginReq
 		if ing != nil {
 			objs = append(objs, ing)
 		}
-		return c.delete(ctx, objs...)
+		return c.deleteOwn(ctx, req, objs...)
 	}
 
 	if c.opts.Defect != DefectKeepOwnerOnOrphan {
@@ -223,7 +223,7 @@ func (c *Controller) cleanUp(ctx context.Context, req *pluginsv1alpha1.PluginReq
 	case c.opts.Defect == DefectKeepRouteOnOrphan:
 		return c.releaseOwner(ctx, ing, req.UID)
 	default:
-		return c.delete(ctx, ing)
+		return c.deleteOwn(ctx, req, ing)
 	}
 }
 
@@ -541,11 +541,27 @@ func (c *Controller) apply(ctx context.Context, obj client.Object) error {
 	return nil
 }
 
-// delete deletes each of objs, and ignores an object that is gone.
-func (c *Controller) delete(ctx context.Context, objs ...client.Object) error {
+// deleteOwn deletes each of objs that carries the labels of req, and
+// ignores an object that is gone.
+func (c *Controller) deleteOwn(ctx context.Context, req *pluginsv1alpha1.PluginRequest, objs ...client.Object) error {
 	for _, obj := range objs {
-		if err := client.IgnoreNotFound(c.client.Delete(ctx, obj)); err != nil {
-			return fmt.Errorf("deleting the %s %s: %w", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), err)
+		if err := c.client.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+
+		labels := obj.GetLabels()
+		if labels[pluginsv1alpha1.LabelRequest] != req.Name ||
+			labels[pluginsv1alpha1.LabelRegistration] != c.opts.Registration {
+			continue
+		}
+
+		uid := obj.GetUID()
+		err := c.client.Delete(ctx, obj, client.Preconditions{UID: &uid})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting the %T %s: %w", obj, obj.GetName(), err)
 		}
 	}
 

@@ -177,3 +177,7 @@ func TestRunIDOfGivesEachNamespaceItsOwnRequestNames(t *testing.T) {
 	assert.NotEqual(t, first[0].name, second[0].name)
 	assert.Equal(t, runIDOf("ci-plugin-a"), runIDOf("ci-plugin-a"), "the same namespace gives the same names")
 }
+
+func TestRunIDOfKeepsApartTwoNamespacesThatCollidedBefore(t *testing.T) {
+	assert.NotEqual(t, runIDOf("ci-plugin-18"), runIDOf("ci-plugin-920"))
+}
