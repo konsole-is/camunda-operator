@@ -132,6 +132,22 @@ func TestSchemaRefusesAnInvalidSchema(t *testing.T) {
 			"spec.parameters.additionalProperties: Forbidden: must not be used at the root",
 		},
 		{"root that is not an object", `{"type":"string"}`, "spec.parameters.type: Invalid value"},
+		{
+			"validation rule that does not compile",
+			`{"type":"object","properties":{"n":{"type":"integer","x-kubernetes-validations":[{"rule":"self >"}]}}}`,
+			"Syntax error",
+		},
+		{
+			"validation rule on a field that an integer does not have",
+			`{"type":"object","properties":{"n":{"type":"integer","x-kubernetes-validations":[{"rule":"self.foo > 0"}]}}}`,
+			"does not support field selection",
+		},
+		{
+			"map list without keys",
+			`{"type":"object","properties":{"l":{"type":"array","x-kubernetes-list-type":"map",` +
+				`"items":{"type":"object","properties":{"name":{"type":"string"}}}}}}`,
+			"spec.parameters.properties[l].x-kubernetes-list-map-keys: Required value",
+		},
 		{"unknown type", `{"type":"object","properties":{"m":{"type":"strnig"}}}`, "strnig"},
 		{
 			"default of the wrong type",
