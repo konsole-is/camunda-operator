@@ -1,6 +1,8 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import type { HttpClient } from "isomorphic-git";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { KubernetesRequestError } from "@/lib/k8s/client";
 import { readSecretValues } from "@/lib/secrets/values";
 import { SETTING_KEYS, type Settings } from "./keys";
 import { getSettings } from "./store";
@@ -8,6 +10,17 @@ import { testGit, testPrometheus } from "./connections";
 
 vi.mock("./store", () => ({ getSettings: vi.fn() }));
 vi.mock("@/lib/secrets/values", () => ({ readSecretValues: vi.fn() }));
+// The test servers speak plain HTTP. This Git transport sends an https://
+// address to them over HTTP, so testGit sees an HTTPS repository.
+vi.mock("isomorphic-git/http/node", async (real) => {
+  const transport = (await real<{ default: HttpClient }>()).default;
+  return {
+    default: {
+      request: (r: Parameters<HttpClient["request"]>[0]) =>
+        transport.request({ ...r, url: r.url.replace(/^https:/, "http:") }),
+    },
+  };
+});
 
 const settings = (values: Partial<Settings>): Settings => ({
   ...(Object.fromEntries(SETTING_KEYS.map((k) => [k, ""])) as Settings),
@@ -21,6 +34,11 @@ async function serve(handler: Handler): Promise<string> {
   server = http.createServer(handler);
   await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+// serveGit is serve with an https:// address, for the Git transport above.
+async function serveGit(handler: Handler): Promise<string> {
+  return (await serve(handler)).replace(/^http:/, "https:");
 }
 
 async function closedAddress(): Promise<string> {
@@ -78,7 +96,8 @@ afterEach(async () => {
 describe("testGit", () => {
   it("connects with the token of the Secret", async () => {
     const url =
-      (await serve(gitServer(["main"], basic("bot", "tok-1")))) + "/fleet.git";
+      (await serveGit(gitServer(["main"], basic("bot", "tok-1")))) +
+      "/fleet.git";
     vi.mocked(getSettings).mockResolvedValue(
       settings({
         "git.repository": url,
@@ -124,7 +143,8 @@ describe("testGit", () => {
 
   it("a wrong token is refused", async () => {
     const url =
-      (await serve(gitServer(["main"], basic("bot", "right")))) + "/fleet.git";
+      (await serveGit(gitServer(["main"], basic("bot", "right")))) +
+      "/fleet.git";
     vi.mocked(getSettings).mockResolvedValue(
       settings({ "git.repository": url, "git.credentialsSecretRef": "git" }),
     );
@@ -141,7 +161,7 @@ describe("testGit", () => {
 
   it("a refusal message holds no credential", async () => {
     const url =
-      (await serve((req, res) => {
+      (await serveGit((req, res) => {
         res.writeHead(403);
         res.end(`token tok-secret in ${req.headers.authorization}`);
       })) + "/fleet.git";
@@ -161,7 +181,7 @@ describe("testGit", () => {
   it("an answer that is not Git holds no credential in the message", async () => {
     const token = "tok-" + "x".repeat(400);
     const url =
-      (await serve((req, res) => {
+      (await serveGit((req, res) => {
         res.writeHead(200, { "Content-Type": "text/plain" });
         res.end(`${req.headers.authorization} ${token} bot`);
       })) + "/fleet.git";
@@ -215,6 +235,52 @@ describe("testGit", () => {
     expect(result.message).toMatch(new RegExp(`^Could not reach ${url}: .+`));
     await vi.waitFor(() => expect(closed).toBe(true));
   }, 20_000);
+
+  it("refuses to send credentials over plain HTTP", async () => {
+    let requests = 0;
+    const url =
+      (await serve((_req, res) => {
+        requests++;
+        res.writeHead(401).end();
+      })) + "/fleet.git";
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({ "git.repository": url, "git.credentialsSecretRef": "git" }),
+    );
+
+    expect(await testGit()).toEqual({
+      ok: false,
+      message: `${url} must start with https:// to use the credentials of the Secret git.`,
+    });
+    expect(readSecretValues).not.toHaveBeenCalled();
+    expect(requests).toBe(0);
+  });
+
+  it("a Secret that cannot be read gives a failed result", async () => {
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({
+        "git.repository": "https://git.example.com/fleet.git",
+        "git.credentialsSecretRef": "git",
+      }),
+    );
+    vi.mocked(readSecretValues).mockRejectedValue(
+      new KubernetesRequestError(403, 'secrets "git" is forbidden'),
+    );
+
+    expect(await testGit()).toEqual({
+      ok: false,
+      message:
+        'Could not read the Secret git in namespace fleet: secrets "git" is forbidden',
+    });
+  });
+
+  it("settings that cannot be read give a failed result", async () => {
+    vi.mocked(getSettings).mockRejectedValue(new Error("connect ECONNREFUSED"));
+
+    expect(await testGit()).toEqual({
+      ok: false,
+      message: "Could not read the settings: connect ECONNREFUSED",
+    });
+  });
 
   it("no repository set", async () => {
     vi.mocked(getSettings).mockResolvedValue(settings({}));
@@ -389,6 +455,33 @@ describe("testPrometheus", () => {
     expect(result.message).toMatch(
       new RegExp(`^Could not reach Prometheus at ${url}: .+`),
     );
+  });
+
+  it("a Secret that cannot be read gives a failed result", async () => {
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({
+        "prometheus.url": "http://prom:9090",
+        "prometheus.credentialsSecretRef": "prom",
+      }),
+    );
+    vi.mocked(readSecretValues).mockRejectedValue(new Error("socket hang up"));
+
+    expect(await testPrometheus()).toEqual({
+      ok: false,
+      message:
+        "Could not read the Secret prom in namespace fleet: the server did not give a valid answer",
+    });
+  });
+
+  it("settings that cannot be read give a failed result", async () => {
+    vi.mocked(getSettings).mockRejectedValue(
+      new KubernetesRequestError(403, "configmaps is forbidden"),
+    );
+
+    expect(await testPrometheus()).toEqual({
+      ok: false,
+      message: "Could not read the settings: configmaps is forbidden",
+    });
   });
 
   it("no address set", async () => {

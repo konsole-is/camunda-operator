@@ -73,7 +73,7 @@ The fleet manager reads the ConfigMap each time that it needs a setting, so an e
 
 ## Git credentials
 
-The fleet manager connects to the Git repository over HTTPS. The Secret of `git.credentialsSecretRef` holds the keys `username` and `token`. Create it in the release namespace:
+The fleet manager connects to the Git repository over HTTPS. It does not send the credentials to an address that starts with `http://`. The Secret of `git.credentialsSecretRef` holds the keys `username` and `token`. Create it in the release namespace:
 
 ```bash
 kubectl -n camunda-operator-system create secret generic fleet-git \

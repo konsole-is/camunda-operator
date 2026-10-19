@@ -1,8 +1,9 @@
 import "server-only";
 import { listServerRefs } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
+import { KubernetesRequestError } from "@/lib/k8s/client";
 import { readSecretValues } from "@/lib/secrets/values";
-import { appNamespace } from "./keys";
+import { type Settings, appNamespace } from "./keys";
 import { getSettings } from "./store";
 
 /** TestResult is the outcome of a connection test, with a message for the page. */
@@ -15,18 +16,29 @@ type Credentials =
   | { ok: false; result: TestResult };
 
 /**
- * testGit lists the branches of git.repository over HTTPS, with the
- * username and token of the Secret of git.credentialsSecretRef when it is
- * set. It fails when git.branch is set and the repository does not have
- * it. The message never holds a credential or a response body.
+ * testGit lists the branches of git.repository, with the username and
+ * token of the Secret of git.credentialsSecretRef when it is set. It fails
+ * when git.branch is set and the repository does not have it, and it
+ * refuses to send credentials to an address that is not https://. The
+ * message never holds a credential or a response body.
  */
 export async function testGit(): Promise<TestResult> {
-  const settings = await getSettings();
+  let settings: Settings;
+  try {
+    settings = await getSettings();
+  } catch (error) {
+    return settingsFailure(error);
+  }
   const url = settings["git.repository"];
   if (!url) return { ok: false, message: "No Git repository is set." };
-  const credentials = await readCredentials(
-    settings["git.credentialsSecretRef"],
-  );
+  const secret = settings["git.credentialsSecretRef"];
+  if (secret && URL.parse(url)?.protocol !== "https:") {
+    return {
+      ok: false,
+      message: `${url} must start with https:// to use the credentials of the Secret ${secret}.`,
+    };
+  }
+  const credentials = await readCredentials(secret);
   if (!credentials.ok) return credentials.result;
   const values = credentials.values;
   if (values) {
@@ -34,7 +46,7 @@ export async function testGit(): Promise<TestResult> {
       if (!values[key]) {
         return {
           ok: false,
-          message: `The Secret ${settings["git.credentialsSecretRef"]} has no key ${key}.`,
+          message: `The Secret ${secret} has no key ${key}.`,
         };
       }
     }
@@ -76,7 +88,12 @@ export async function testGit(): Promise<TestResult> {
  * never holds a credential or a response body.
  */
 export async function testPrometheus(): Promise<TestResult> {
-  const settings = await getSettings();
+  let settings: Settings;
+  try {
+    settings = await getSettings();
+  } catch (error) {
+    return settingsFailure(error);
+  }
   const url = settings["prometheus.url"];
   if (!url) return { ok: false, message: "No Prometheus address is set." };
   const secret = settings["prometheus.credentialsSecretRef"];
@@ -124,10 +141,29 @@ export async function testPrometheus(): Promise<TestResult> {
   }
 }
 
+function settingsFailure(error: unknown): TestResult {
+  const reason = error instanceof Error ? error.message : String(error);
+  return { ok: false, message: `Could not read the settings: ${reason}` };
+}
+
 async function readCredentials(secret: string): Promise<Credentials> {
   if (!secret) return { ok: true, values: undefined };
   const namespace = appNamespace();
-  const values = await readSecretValues(namespace, secret);
+  let values;
+  try {
+    values = await readSecretValues(namespace, secret);
+  } catch (error) {
+    // A Status of the API server holds no value of the Secret.
+    const reason =
+      error instanceof KubernetesRequestError ? error.message : reasonOf(error);
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        message: `Could not read the Secret ${secret} in namespace ${namespace}: ${reason}`,
+      },
+    };
+  }
   if (!values) {
     return {
       ok: false,
