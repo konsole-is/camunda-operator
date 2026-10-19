@@ -45,6 +45,8 @@ Without an `Environment`, a new cluster claim selects `elasticsearch` for its se
 
 Every input of a built-in registration is optional. Every built-in registration supports the deletion policies `Delete` and `Orphan`. The registrations of existing resources write nothing, so both policies keep everything in place.
 
+The operator serves the requests of `existing-object-storage`, `existing-secondary-storage`, and `existing-database-configs`. See [Built-in requests](pluginrequest.md#built-in-requests).
+
 Each built-in registration has `controller.name: camunda-operator`, and `controller.version` is the version of the operator. `serviceAccount` names the ServiceAccount of the operator. `operatorVersions` is empty, because the operator serves these options itself.
 
 The operator writes the built-in registrations each time the manager starts:

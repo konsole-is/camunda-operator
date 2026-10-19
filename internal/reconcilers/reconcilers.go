@@ -45,6 +45,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalrestorerdbms"
 	"github.com/konsole-is/camunda-operator/internal/controller/managementauthconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/objectstorageconfig"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin"
 	"github.com/konsole-is/camunda-operator/internal/controller/plugins/pluginregistration"
 	"github.com/konsole-is/camunda-operator/internal/controller/pointintimerestore"
 	"github.com/konsole-is/camunda-operator/internal/controller/secondarystorageconfig"
@@ -219,6 +220,14 @@ func Setup(mgr ctrl.Manager, opts Options) error {
 				Client:          c,
 				Scheme:          scheme,
 				OperatorVersion: opts.OperatorVersion,
+			}).SetupWithManager(mgr)
+		}},
+		{"PluginRequest", func() error {
+			return (&builtin.Reconciler{
+				Client:        c,
+				APIReader:     reader,
+				Scheme:        scheme,
+				Registrations: pluginstartup.Registrations(opts.OperatorVersion, opts.ServiceAccount),
 			}).SetupWithManager(mgr)
 		}},
 		{"Environment", func() error {
