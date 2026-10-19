@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -73,4 +75,31 @@ func TestSkipReasonOfFindsTheReasonOfSkipCheck(t *testing.T) {
 			assert.Equal(t, tt.reason, reason)
 		})
 	}
+}
+
+func TestRegistryRunsTheChecksInContractOrder(t *testing.T) {
+	want := []CheckID{
+		"REQ-FINALIZER", "REQ-OUTPUTS-READY", "REQ-OUTPUTS", "REQ-READY", "REQ-LABELS", "REQ-RESOURCES",
+		"REQ-EVENTS", "REQ-DISPLAY", "REQ-LOGS", "REQ-ACCEPTED-KEPT",
+		"ORDER-REGISTRATION-FIRST", "DELETE-DELETE", "DELETE-ORPHAN", "DELETE-ROUTES",
+	}
+	skippable := []CheckID{"REQ-LOGS", "ORDER-REGISTRATION-FIRST"}
+
+	var got []CheckID
+	lastStatic := -1
+	firstLifecycle := -1
+	for i, c := range Checks() {
+		if strings.HasPrefix(string(c.ID), "REG-") {
+			lastStatic = i
+			continue
+		}
+		if firstLifecycle == -1 {
+			firstLifecycle = i
+		}
+		got = append(got, c.ID)
+		assert.Equal(t, slices.Contains(skippable, c.ID), c.Skippable, "check %s", c.ID)
+	}
+
+	assert.Equal(t, want, got)
+	assert.Less(t, lastStatic, firstLifecycle, "the lifecycle checks run after every static check")
 }

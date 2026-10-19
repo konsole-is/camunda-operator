@@ -67,6 +67,11 @@ func runChecks(
 	}
 
 	s := newSuite(cfg, restConfig, c)
+	defer func() {
+		if err := s.close(t.Context()); err != nil {
+			t.Errorf("conformance: the cleanup of the run failed: %v", err)
+		}
+	}()
 
 	for _, st := range steps {
 		t.Run(string(st.check.ID), func(t *testing.T) {

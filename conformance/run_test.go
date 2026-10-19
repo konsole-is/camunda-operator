@@ -156,7 +156,37 @@ func helperRuns() map[string]helperRun {
 	skipMandatory := validConfig()
 	skipMandatory.Skip = []Skip{{ID: mandatoryID, Reason: "too slow"}}
 
+	registerCleanup := func(err error) Check {
+		return Check{
+			ID:          "TEST-CLEANUP",
+			Description: "A check that registers a cleanup.",
+			run: func(_ context.Context, s *suite) error {
+				s.onClose(func(context.Context) error {
+					fmt.Println("cleanup ran")
+					return err
+				})
+				return nil
+			},
+		}
+	}
+
 	return map[string]helperRun{
+		"cleanup": {
+			cfg: validConfig(),
+			registry: []Check{
+				registerCleanup(nil),
+				{ID: mandatoryID, Description: "A mandatory check.", run: logRan(mandatoryID)},
+			},
+			connect: fakeConnect,
+		},
+		"cleanup-fails": {
+			cfg: validConfig(),
+			registry: []Check{
+				registerCleanup(errors.New("the namespace could not be deleted")),
+				{ID: mandatoryID, Description: "A mandatory check.", run: logRan(mandatoryID)},
+			},
+			connect: fakeConnect,
+		},
 		"clean":          {cfg: validConfig(), registry: testRegistry, connect: fakeConnect},
 		"skip-skippable": {cfg: skipSkippable, registry: testRegistry, connect: fakeConnect},
 		"skip-mandatory": {cfg: skipMandatory, registry: testRegistry, connect: fakeConnect},
@@ -283,4 +313,35 @@ func TestRunFailsAndRunsNoCheckWhenItCannotConnect(t *testing.T) {
 	assert.False(t, passed, out)
 	assert.Contains(t, out, "conformance: connecting to the cluster: no kubeconfig")
 	assert.NotContains(t, out, "check ran:")
+}
+
+func TestCloseRunsEveryCleanupInReverseOrder(t *testing.T) {
+	s := &suite{}
+	var order []string
+	s.onClose(func(context.Context) error { order = append(order, "first"); return nil })
+	s.onClose(func(context.Context) error { order = append(order, "second"); return errors.New("second failed") })
+	s.onClose(func(context.Context) error { order = append(order, "third"); return nil })
+
+	err := s.close(t.Context())
+
+	assert.Equal(t, []string{"third", "second", "first"}, order)
+	assert.ErrorContains(t, err, "second failed")
+}
+
+func TestRunChecksRunsCleanupsAfterTheLastCheck(t *testing.T) {
+	out, passed := runHelper(t, "cleanup")
+
+	assert.True(t, passed, out)
+	last := strings.Index(out, "check ran: TEST-MANDATORY")
+	cleanup := strings.Index(out, "cleanup ran")
+	assert.NotEqual(t, -1, last, out)
+	assert.Greater(t, cleanup, last, "the cleanup runs after the last check")
+}
+
+func TestRunChecksFailsWhenACleanupFails(t *testing.T) {
+	out, passed := runHelper(t, "cleanup-fails")
+
+	assert.False(t, passed, out)
+	assert.Contains(t, out, "conformance: the cleanup of the run failed: the namespace could not be deleted")
+	assert.Contains(t, out, "--- PASS: TestRunHelper/TEST-MANDATORY")
 }
