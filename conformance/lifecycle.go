@@ -67,6 +67,9 @@ type lifecycle struct {
 	rec          *recorder
 	// uids holds the UID of each request that the run created, by name.
 	uids map[string]types.UID
+	// createdAt holds when the run created each request, by name. The
+	// OutputsReady and Ready timeouts count from it.
+	createdAt map[string]time.Time
 	// preexisting holds the UIDs of the objects that carried the label of a
 	// request of the run before the run created its requests.
 	preexisting map[types.UID]bool
@@ -119,7 +122,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		return nil, err
 	}
 
-	rec, preexisting, err := startRecorder(ctx, s, kinds, runs)
+	rec, preexisting, err := startRecorder(ctx, s, kinds, runs, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +142,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		rec:          rec,
 		preexisting:  preexisting,
 		uids:         map[string]types.UID{},
+		createdAt:    map[string]time.Time{},
 		written:      map[string][]*unstructured.Unstructured{},
 	}
 
@@ -155,6 +159,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		}
 		created = append(created, req)
 		life.uids[run.name] = req.UID
+		life.createdAt[run.name] = time.Now()
 	}
 
 	return life, nil
@@ -208,12 +213,31 @@ func runsOf(
 				}
 
 				caseOf[name] = tc.Name
-				runs = append(runs, requestRun{caseName: tc.Name, section: section, policy: policy, name: name, tc: tc})
+				run := requestRun{caseName: tc.Name, section: section, policy: policy, name: name, tc: tc}
+				if len(casePolicies) > 1 {
+					run.tc.Target = targetOfVariant(tc.Target, policy)
+				}
+				runs = append(runs, run)
 			}
 		}
 	}
 
 	return runs, errors.Join(errs...)
+}
+
+// targetOfVariant gives the policy variant of a case a target of its own, so
+// that the Delete variant does not delete what the Orphan variant keeps.
+func targetOfVariant(
+	target pluginsv1alpha1.TargetRef,
+	policy pluginsv1alpha1.DeletionPolicy,
+) pluginsv1alpha1.TargetRef {
+	suffix := "-" + strings.ToLower(string(policy))
+	target.Name += suffix
+	if target.ServiceAccountName != "" {
+		target.ServiceAccountName += suffix
+	}
+
+	return target
 }
 
 // requestName is the name of the request of a case for a section, which can
@@ -255,6 +279,7 @@ func startRecorder(
 	s *suite,
 	kinds []kindInfo,
 	runs []requestRun,
+	reg *pluginsv1alpha1.PluginRegistration,
 ) (*recorder, map[types.UID]bool, error) {
 	c, err := client.NewWithWatch(
 		s.restConfig,
@@ -294,6 +319,20 @@ func startRecorder(
 	if err != nil {
 		cancel()
 		return nil, nil, fmt.Errorf("watching the PluginRequests of the run: %w", err)
+	}
+
+	accepted := meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted)
+	err = rec.watch(
+		watchCtx,
+		c,
+		func() client.ObjectList { return &pluginsv1alpha1.PluginRegistrationList{} },
+		acceptedKey(accepted),
+		reg.ResourceVersion,
+		client.MatchingFields{"metadata.name": reg.Name},
+	)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("watching the PluginRegistration %s: %w", reg.Name, err)
 	}
 
 	preexisting := map[types.UID]bool{}

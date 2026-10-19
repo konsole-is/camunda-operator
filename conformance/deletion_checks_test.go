@@ -274,3 +274,10 @@ func TestDeleteRequestKeepsARequestThatReplacedTheOneOfTheRun(t *testing.T) {
 	var kept pluginsv1alpha1.PluginRequest
 	assert.NoError(t, s.client.Get(t.Context(), client.ObjectKeyFromObject(replacement), &kept))
 }
+
+func TestIsKindOfThePluginTellsAnObjectFromACloudResource(t *testing.T) {
+	kinds := []kindInfo{{gvk: schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, namespaced: true}}
+
+	assert.True(t, isKindOfThePlugin("ConfigMap", kinds))
+	assert.False(t, isKindOfThePlugin("S3Bucket", kinds))
+}

@@ -469,6 +469,12 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 					return o.GetKind() == row.Kind && o.GetName() == row.Name
 				})
 				if i == -1 {
+					if row.OnOrphan == pluginsv1alpha1.OnOrphanKept && isKindOfThePlugin(row.Kind, life.kinds) {
+						problems = append(
+							problems,
+							fmt.Sprintf("%s %s has onOrphan Kept and is gone", row.Kind, row.Name),
+						)
+					}
 					continue
 				}
 
@@ -573,6 +579,12 @@ func checkDeleteRoutes(ctx context.Context, s *suite) error {
 
 		return errors.Join(errs...)
 	})
+}
+
+// isKindOfThePlugin says whether a row of status.resources names a kind that
+// the plugin writes in the cluster, and not a resource outside it.
+func isKindOfThePlugin(kind string, kinds []kindInfo) bool {
+	return slices.ContainsFunc(kinds, func(k kindInfo) bool { return k.gvk.Kind == kind })
 }
 
 func isRoute(obj *unstructured.Unstructured) bool {

@@ -385,3 +385,19 @@ func TestLifecycleChecksReportThePrepareError(t *testing.T) {
 		assert.ErrorIs(t, err, prepareErr, "check %s", c.ID)
 	}
 }
+
+func TestAcceptedKeyMarksARegistrationWhoseAcceptedChanged(t *testing.T) {
+	kept := metav1.Condition{Type: pluginsv1alpha1.ConditionAccepted, Status: metav1.ConditionTrue, Reason: "Healthy"}
+	registration := func(accepted metav1.Condition) *pluginsv1alpha1.PluginRegistration {
+		reg := &pluginsv1alpha1.PluginRegistration{}
+		reg.Status.Conditions = []metav1.Condition{accepted}
+		return reg
+	}
+	changed := kept
+	changed.Message = "Served by echo"
+
+	keyOf := acceptedKey(&kept)
+
+	assert.Empty(t, keyOf(registration(kept)))
+	assert.Equal(t, acceptedChangedKey, keyOf(registration(changed)))
+}

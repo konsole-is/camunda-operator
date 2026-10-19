@@ -136,7 +136,7 @@ func checkFinalizer(ctx context.Context, s *suite) error {
 	return eachRun(life.runs, func(r requestRun) error {
 		// A request that never gets outputs fails REQ-OUTPUTS-READY. This
 		// check only needs the plugin to have written its objects.
-		_ = waitForOutputsReady(ctx, s, r.name, life.started, false)
+		_ = waitForOutputsReady(ctx, s, r.name, life.createdAt[r.name], false)
 
 		if err := waitForRecorder(ctx, s, life, r.name); err != nil {
 			return err
@@ -187,7 +187,7 @@ func checkOutputsReady(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(life.runs, func(r requestRun) error {
-		if err := waitForOutputsReady(ctx, s, r.name, life.started, true); err != nil {
+		if err := waitForOutputsReady(ctx, s, r.name, life.createdAt[r.name], true); err != nil {
 			return err
 		}
 
@@ -213,7 +213,7 @@ func checkRequestOutputs(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(life.runs, func(r requestRun) error {
-		_ = waitForOutputsReady(ctx, s, r.name, life.started, false)
+		_ = waitForOutputsReady(ctx, s, r.name, life.createdAt[r.name], false)
 
 		req, err := s.request(ctx, r.name)
 		if err != nil {
@@ -231,7 +231,7 @@ func checkReady(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(life.runs, func(r requestRun) error {
-		deadline := life.started.Add(s.cfg.Timeouts.Ready)
+		deadline := life.createdAt[r.name].Add(s.cfg.Timeouts.Ready)
 		err := waitUntil(ctx, deadline, s.cfg.Timeouts.Ready, "Ready=True", func(ctx context.Context) error {
 			req, err := s.request(ctx, r.name)
 			if err != nil {
@@ -479,10 +479,47 @@ func checkAcceptedKept(ctx context.Context, s *suite) error {
 		return err
 	}
 
-	return acceptedProblem(
+	err = acceptedProblem(
 		life.accepted,
 		meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted),
 	)
+	if err != nil {
+		return err
+	}
+
+	if err := life.rec.err(); err != nil {
+		return err
+	}
+
+	if m, ok := life.rec.first(acceptedChangedKey); ok {
+		return fmt.Errorf(
+			"the Accepted condition of the registration changed during the run, at resource version %s",
+			m.resourceVersion,
+		)
+	}
+
+	return nil
+}
+
+// acceptedChangedKey is the recorder key of a registration whose Accepted
+// condition is not the one that the run started with.
+const acceptedChangedKey = "accepted-changed"
+
+// acceptedKey gives a registration whose Accepted condition is not kept the
+// key acceptedChangedKey.
+func acceptedKey(kept *metav1.Condition) func(client.Object) string {
+	return func(obj client.Object) string {
+		reg, ok := obj.(*pluginsv1alpha1.PluginRegistration)
+		if !ok ||
+			acceptedProblem(
+				kept,
+				meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted),
+			) == nil {
+			return ""
+		}
+
+		return acceptedChangedKey
+	}
 }
 
 // eachRun calls check for each run, and joins the errors, each prefixed with

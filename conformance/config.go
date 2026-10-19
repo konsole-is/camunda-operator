@@ -99,7 +99,9 @@ type Case struct {
 	// Target is the resource that the request serves.
 	Target pluginsv1alpha1.TargetRef
 	// DeletionPolicy is the deletion policy of the request. It is empty,
-	// Delete, or Orphan.
+	// Delete, or Orphan. An empty policy runs the case once for each policy
+	// of the registration, and the target name and the ServiceAccount name
+	// of each of these runs end in -delete or -orphan.
 	DeletionPolicy pluginsv1alpha1.DeletionPolicy
 }
 

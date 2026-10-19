@@ -59,6 +59,29 @@ func TestRunsOfRunsACaseOnceForEachSectionOfARegistrationWithSeveral(t *testing.
 	assert.Equal(t, "access", runs[1].section)
 }
 
+func TestRunsOfGivesEachPolicyVariantOfACaseATargetOfItsOwn(t *testing.T) {
+	target := pluginsv1alpha1.TargetRef{
+		Kind:               "CamundaCluster",
+		Name:               "echo-target",
+		ServiceAccountName: "echo-target-camunda",
+	}
+	runs, err := runsOf(
+		[]Case{
+			{Name: "basic", Target: target},
+			{Name: "kept", Target: target, DeletionPolicy: pluginsv1alpha1.DeletionPolicyOrphan},
+		},
+		[]string{"echo"},
+		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan},
+	)
+	require.NoError(t, err)
+
+	require.Len(t, runs, 3)
+	assert.Equal(t, "echo-target-delete", runs[0].tc.Target.Name)
+	assert.Equal(t, "echo-target-camunda-delete", runs[0].tc.Target.ServiceAccountName)
+	assert.Equal(t, "echo-target-orphan", runs[1].tc.Target.Name)
+	assert.Equal(t, target, runs[2].tc.Target, "a case with its own policy keeps its target")
+}
+
 func TestRunsOfRefusesCaseNamesThatGiveOneRequestName(t *testing.T) {
 	_, err := runsOf(
 		[]Case{{Name: "Basic"}, {Name: "basic"}},

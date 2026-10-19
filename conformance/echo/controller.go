@@ -399,6 +399,9 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 	status.Resources = c.resources(req)
 
 	if equality.Semantic.DeepEqual(*status, req.Status) {
+		if c.opts.Defect == DefectDropAccepted {
+			return c.dropAccepted(ctx)
+		}
 		return ctrl.Result{}, nil
 	}
 
