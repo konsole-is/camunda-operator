@@ -124,14 +124,11 @@ export async function testPrometheus(): Promise<TestResult> {
   }
   const at = `Prometheus at ${url}`;
   try {
-    const response = await fetch(
-      `${url.replace(/\/+$/, "")}/api/v1/query?query=vector(1)`,
-      {
-        headers,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-        redirect: "manual",
-      },
-    );
+    const response = await fetch(queryURL(url), {
+      headers,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      redirect: "manual",
+    });
     if (response.status === 401 || response.status === 403) {
       return { ok: false, message: `${at} refused the credentials.` };
     }
@@ -157,6 +154,14 @@ function settingsFailure(error: unknown): TestResult {
     ok: false,
     message: `Could not read the settings: ${reasonOf(error)}`,
   };
+}
+
+function queryURL(address: string): URL {
+  const url = new URL(address);
+  url.pathname = url.pathname.replace(/\/+$/, "") + "/api/v1/query";
+  url.searchParams.set("query", "vector(1)");
+  url.hash = "";
+  return url;
 }
 
 async function readCredentials(secret: string): Promise<Credentials> {

@@ -357,7 +357,11 @@ function promServer(auth: string | undefined): Handler {
       res.writeHead(401).end(`bad ${req.headers.authorization}`);
       return;
     }
-    if (req.url !== "/api/v1/query?query=vector(1)") {
+    const asked = new URL(req.url ?? "", "http://x");
+    if (
+      asked.pathname !== "/api/v1/query" ||
+      asked.searchParams.get("query") !== "vector(1)"
+    ) {
       res.writeHead(404).end();
       return;
     }
@@ -435,6 +439,27 @@ describe("testPrometheus", () => {
       message: `Prometheus at ${url} answered HTTP 302.`,
     });
     expect(paths.filter((p) => p.startsWith("/moved"))).toEqual([]);
+  });
+
+  it.each([
+    [
+      "/prom/?tenant=orders",
+      "/prom/api/v1/query?tenant=orders&query=vector%281%29",
+    ],
+    ["/prom#top", "/prom/api/v1/query?query=vector%281%29"],
+  ])("keeps the path and the query of the address %s", async (suffix, want) => {
+    let seen = "";
+    const base = await serve((req, res) => {
+      seen = req.url ?? "";
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "success" }));
+    });
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({ "prometheus.url": base + suffix }),
+    );
+
+    expect((await testPrometheus()).ok).toBe(true);
+    expect(seen).toBe(want);
   });
 
   it("an HTTP 500 names the status", async () => {
