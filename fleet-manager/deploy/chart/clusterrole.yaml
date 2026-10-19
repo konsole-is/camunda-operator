@@ -36,7 +36,7 @@ rules:
   # cache watches Secrets and drops their values before it keeps them.
   - apiGroups: [""]
     resources: [secrets]
-    verbs: [get, list, watch, create, update]
+    verbs: [get, list, watch, create, update, patch]
   # The kinds that the app reads.
   - apiGroups: [core.camunda.io]
     resources:

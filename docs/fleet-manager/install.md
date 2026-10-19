@@ -37,6 +37,8 @@ Then open <http://localhost:3000> in a browser.
 
 In this version, the Fleet page and the Setup page show only their title. This is expected, and the install works.
 
+To set the cluster name, the Git repository, and the Prometheus address, see [Fleet manager settings](settings.md).
+
 ## Who can reach it
 
 !!! warning "Give `pods/portforward`, `pods/proxy`, and `services/proxy` only to the people who manage the fleet"

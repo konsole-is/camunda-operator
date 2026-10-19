@@ -93,6 +93,7 @@ nav:
   - Observability: observability.md
   - Fleet manager:
       - Install the fleet manager: fleet-manager/install.md
+      - Fleet manager settings: fleet-manager/settings.md
   - Guides:
       - Presets: guides/presets.md
       - Secondary storage: guides/secondary-storage.md

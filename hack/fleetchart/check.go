@@ -291,7 +291,7 @@ func checkSettingsRole(rules []rbacv1.PolicyRule) []string {
 	if !allows(rules, "", "configmaps", "create", "") {
 		problems = append(problems, "the Role does not allow create on configmaps")
 	}
-	for _, verb := range []string{"get", "update"} {
+	for _, verb := range []string{"get", "update", "patch"} {
 		if !allows(rules, "", "configmaps", verb, settingsConfigMap) {
 			problems = append(
 				problems,
