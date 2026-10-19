@@ -117,7 +117,7 @@ func validChart() chart {
 					APIGroups:     []string{""},
 					Resources:     []string{"configmaps"},
 					ResourceNames: []string{settingsConfigMap},
-					Verbs:         []string{"get", "update"},
+					Verbs:         []string{"get", "update", "patch"},
 				},
 			},
 		},
@@ -247,6 +247,20 @@ func TestCheckEnabledRequiresTheSettingsRoleToNameTheConfigMap(t *testing.T) {
 
 	assert.Contains(t, problems, "the Role allows get on every ConfigMap, want only fleet-manager-settings")
 	assert.Contains(t, problems, "the Role allows update on every ConfigMap, want only fleet-manager-settings")
+	assert.Contains(t, problems, "the Role allows patch on every ConfigMap, want only fleet-manager-settings")
+}
+
+func TestCheckEnabledRequiresPatchOnTheSettingsConfigMap(t *testing.T) {
+	t.Parallel()
+
+	c := validChart()
+	c.role.Rules[1].Verbs = []string{"get", "update"}
+
+	assert.Equal(
+		t,
+		[]string{"the Role does not allow patch on the ConfigMap fleet-manager-settings"},
+		checkEnabled(render(t, c), testKinds),
+	)
 }
 
 func TestCheckEnabledRequiresTheSettingsRoleInTheAppNamespace(t *testing.T) {
