@@ -123,7 +123,10 @@ export function diffView(
  * refs in the order of the change. When a write fails after that, the
  * objects written before it stay written. A delete of an object that is
  * already gone succeeds. An apply with a precondition fails when the
- * object was deleted since the page read it.
+ * object was deleted since the page read it. When the object is deleted
+ * after the preview, an object of a kind that the app may not delete, such
+ * as a Namespace or a Secret, can exist again, and the errors hold the
+ * error of that delete beside Stale.
  *
  * A preview of a Secret shows "(hidden)" for each value, and "(changed)"
  * for a value that the change sets to a new one. It holds no annotation.
@@ -181,8 +184,6 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         : { preconditions }),
     });
 
-  // The app may not delete every kind that it writes, such as a Namespace.
-  // Then the object stays, and the page shows the error of the delete.
   const undoCreate = async (ref: ObjectRef, uid: string) => {
     try {
       await deleteObject(ref, { uid }, false);
