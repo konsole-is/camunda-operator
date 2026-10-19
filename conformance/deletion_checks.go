@@ -403,7 +403,10 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 		if err != nil {
 			return err
 		}
-		objs := life.inventory(r.name, now)
+		objs, err := life.inventory(r.name, now)
+		if err != nil {
+			return err
+		}
 		life.written[r.name] = objs
 
 		deadline := time.Now().Add(s.cfg.Timeouts.Deletion)
@@ -475,7 +478,10 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 		}
 		// An object that the run saw and that is gone now is still checked
 		// against its row.
-		objs := life.inventory(r.name, now)
+		objs, err := life.inventory(r.name, now)
+		if err != nil {
+			return err
+		}
 		life.written[r.name] = objs
 
 		deadline := time.Now().Add(s.cfg.Timeouts.Deletion)
@@ -741,8 +747,13 @@ func (s *suite) current(ctx context.Context, obj *unstructured.Unstructured) (*u
 }
 
 // inventory returns each object of the request name that the watches, the
-// lifecycle checks, or now found, with the newest copy of each.
-func (life *lifecycle) inventory(name string, now []*unstructured.Unstructured) []*unstructured.Unstructured {
+// lifecycle checks, or now found, with the newest copy of each. It fails
+// when a watch of the run failed.
+func (life *lifecycle) inventory(name string, now []*unstructured.Unstructured) ([]*unstructured.Unstructured, error) {
+	if err := life.rec.err(); err != nil {
+		return nil, err
+	}
+
 	watched := life.rec.objectsOf(objectKey(name))
-	return mergeObjects(mergeObjects(watched, life.seen[name]), now)
+	return mergeObjects(mergeObjects(watched, life.seen[name]), now), nil
 }

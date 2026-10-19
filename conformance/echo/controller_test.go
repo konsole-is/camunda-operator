@@ -26,17 +26,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
+// requestName is the name of the request of the tests.
+const requestName = "basic-delete"
+
 func newFakeController(t *testing.T, objs ...client.Object) *Controller {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+	require.NoError(t, pluginsv1alpha1.AddToScheme(scheme))
 
 	c, err := New(validOptions())
 	require.NoError(t, err)
@@ -88,7 +93,7 @@ func TestDeleteKeepsAnObjectThatIsNotOfTheRequest(t *testing.T) {
 	c := newFakeController(t, replacement)
 	req := &pluginsv1alpha1.PluginRequest{}
 	req.Namespace = "ns"
-	req.Name = "basic-delete"
+	req.Name = requestName
 
 	require.NoError(t, c.deleteOwn(t.Context(), req, &corev1.ConfigMap{ObjectMeta: replacement.ObjectMeta}))
 
@@ -101,13 +106,13 @@ func TestDeleteRemovesAnObjectOfTheRequest(t *testing.T) {
 		Name:      "basic-delete-echo",
 		Labels: map[string]string{
 			pluginsv1alpha1.LabelRegistration: "echo",
-			pluginsv1alpha1.LabelRequest:      "basic-delete",
+			pluginsv1alpha1.LabelRequest:      requestName,
 		},
 	}}
 	c := newFakeController(t, own)
 	req := &pluginsv1alpha1.PluginRequest{}
 	req.Namespace = "ns"
-	req.Name = "basic-delete"
+	req.Name = requestName
 
 	require.NoError(
 		t,
@@ -120,4 +125,19 @@ func TestDeleteRemovesAnObjectOfTheRequest(t *testing.T) {
 
 	err := c.client.Get(t.Context(), client.ObjectKeyFromObject(own), &corev1.ConfigMap{})
 	assert.True(t, apierrors.IsNotFound(err), "got %v", err)
+}
+
+func TestReconcileRequestLeavesARequestOfAnotherRegistration(t *testing.T) {
+	other := &pluginsv1alpha1.PluginRequest{}
+	other.Namespace = "ns"
+	other.Name = requestName
+	other.Spec.Registration = otherRegistration
+	c := newFakeController(t, other)
+
+	_, err := c.reconcileRequest(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(other)})
+
+	require.NoError(t, err)
+	var got pluginsv1alpha1.PluginRequest
+	require.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(other), &got))
+	assert.Empty(t, got.Finalizers)
 }

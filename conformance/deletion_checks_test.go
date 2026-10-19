@@ -413,3 +413,13 @@ func TestDeleteRequestEndsAtItsDeadline(t *testing.T) {
 	assert.ErrorContains(t, err, "the request still exists")
 	assert.Less(t, time.Since(start), 10*time.Second, "a passed deadline checks one time")
 }
+
+func TestInventoryFailsAfterAFailedWatch(t *testing.T) {
+	rec := &recorder{}
+	rec.fail(errors.New("a watch failed: gone"))
+	life := &lifecycle{rec: rec}
+
+	_, err := life.inventory(testRequestName, nil)
+
+	assert.ErrorContains(t, err, "a watch failed: gone")
+}

@@ -138,6 +138,11 @@ func (c *Controller) reconcileRequest(ctx context.Context, key ctrl.Request) (ct
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// The key can name a replacement that another registration serves.
+	if !c.serves(&req) {
+		return ctrl.Result{}, nil
+	}
+
 	if !req.DeletionTimestamp.IsZero() {
 		if !controllerutil.ContainsFinalizer(&req, pluginsv1alpha1.FinalizerCleanup) {
 			return ctrl.Result{}, nil

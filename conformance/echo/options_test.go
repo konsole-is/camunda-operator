@@ -97,15 +97,18 @@ func TestNewAcceptsTheOptionsOfTheAppHarness(t *testing.T) {
 	assert.NotNil(t, c)
 }
 
+// otherRegistration is a registration that echo does not serve.
+const otherRegistration = "other"
+
 func TestServesReadsTheRegistrationOfTheSpecNotTheLabel(t *testing.T) {
 	c, err := New(validOptions())
 	require.NoError(t, err)
 
 	relabelled := &pluginsv1alpha1.PluginRequest{}
 	relabelled.Spec.Registration = "echo"
-	relabelled.Labels = map[string]string{pluginsv1alpha1.LabelRegistration: "other"}
+	relabelled.Labels = map[string]string{pluginsv1alpha1.LabelRegistration: otherRegistration}
 	other := &pluginsv1alpha1.PluginRequest{}
-	other.Spec.Registration = "other"
+	other.Spec.Registration = otherRegistration
 	other.Labels = map[string]string{pluginsv1alpha1.LabelRegistration: "echo"}
 
 	assert.True(t, c.serves(relabelled))
