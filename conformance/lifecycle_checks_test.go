@@ -321,6 +321,38 @@ func TestLogProblems(t *testing.T) {
 	}
 }
 
+func TestAcceptedProblemNamesAnOverwrittenMessageOrGeneration(t *testing.T) {
+	accepted := &metav1.Condition{
+		Type:    "Accepted",
+		Status:  metav1.ConditionTrue,
+		Reason:  "Healthy",
+		Message: "Accepted",
+	}
+
+	message := accepted.DeepCopy()
+	message.Message = "Served by echo"
+	generation := accepted.DeepCopy()
+	generation.ObservedGeneration = 7
+
+	assert.ErrorContains(t, acceptedProblem(accepted, message), "Served by echo")
+	assert.ErrorContains(t, acceptedProblem(accepted, generation), "generation 7")
+}
+
+func TestLateProblem(t *testing.T) {
+	created := metav1.NewTime(time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC))
+	at := func(after time.Duration, status metav1.ConditionStatus) *metav1.Condition {
+		return &metav1.Condition{Type: "Ready", Status: status, LastTransitionTime: metav1.NewTime(created.Add(after))}
+	}
+
+	assert.NoError(t, lateProblem(at(20*time.Second, metav1.ConditionTrue), created, 20*time.Second))
+	assert.NoError(t, lateProblem(at(time.Minute, metav1.ConditionFalse), created, 20*time.Second))
+	assert.ErrorContains(
+		t,
+		lateProblem(at(25*time.Second, metav1.ConditionTrue), created, 20*time.Second),
+		"Ready became True 25s after the request was created, which is more than the timeout of 20s",
+	)
+}
+
 func TestAcceptedProblem(t *testing.T) {
 	since := metav1.NewTime(time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC))
 	accepted := &metav1.Condition{

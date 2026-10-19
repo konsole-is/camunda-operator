@@ -107,18 +107,23 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("adding the registration controller: %w", err)
 	}
 
-	ofRegistration := predicate.NewPredicateFuncs(func(obj client.Object) bool {
-		return obj.GetLabels()[pluginsv1alpha1.LabelRegistration] == c.opts.Registration
-	})
 	err = ctrl.NewControllerManagedBy(mgr).
 		Named(name).
-		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(ofRegistration)).
+		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(c.serves))).
 		Complete(reconcileFunc(c.reconcileRequest))
 	if err != nil {
 		return fmt.Errorf("adding the request controller: %w", err)
 	}
 
 	return nil
+}
+
+// serves says whether obj is a request of the registration. It reads the
+// immutable spec.registration, so a changed label does not strand a request
+// that holds the finalizer.
+func (c *Controller) serves(obj client.Object) bool {
+	req, ok := obj.(*pluginsv1alpha1.PluginRequest)
+	return ok && req.Spec.Registration == c.opts.Registration
 }
 
 type reconcileFunc func(ctx context.Context, req ctrl.Request) (ctrl.Result, error)

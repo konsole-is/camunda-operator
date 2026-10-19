@@ -187,8 +187,23 @@ func checkOutputsReady(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(life.runs, func(r requestRun) error {
-		return waitForOutputsReady(ctx, s, r.name, life.started, true)
+		if err := waitForOutputsReady(ctx, s, r.name, life.started, true); err != nil {
+			return err
+		}
+
+		return s.lateCondition(ctx, r.name, pluginsv1alpha1.ConditionOutputsReady, s.cfg.Timeouts.OutputsReady)
 	})
+}
+
+// lateCondition fails when the condition condType of the request name became
+// True after timeout, also when an earlier check waited past that timeout.
+func (s *suite) lateCondition(ctx context.Context, name, condType string, timeout time.Duration) error {
+	req, err := s.request(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	return lateProblem(meta.FindStatusCondition(req.Status.Conditions, condType), req.CreationTimestamp, timeout)
 }
 
 func checkRequestOutputs(ctx context.Context, s *suite) error {
@@ -217,7 +232,7 @@ func checkReady(ctx context.Context, s *suite) error {
 
 	return eachRun(life.runs, func(r requestRun) error {
 		deadline := life.started.Add(s.cfg.Timeouts.Ready)
-		return waitUntil(ctx, deadline, s.cfg.Timeouts.Ready, "Ready=True", func(ctx context.Context) error {
+		err := waitUntil(ctx, deadline, s.cfg.Timeouts.Ready, "Ready=True", func(ctx context.Context) error {
 			req, err := s.request(ctx, r.name)
 			if err != nil {
 				return err
@@ -243,6 +258,11 @@ func checkReady(ctx context.Context, s *suite) error {
 
 			return readyVerdict(meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady), owned)
 		})
+		if err != nil {
+			return err
+		}
+
+		return s.lateCondition(ctx, r.name, v1.ConditionReady, s.cfg.Timeouts.Ready)
 	})
 }
 
@@ -755,15 +775,43 @@ func acceptedProblem(kept, now *metav1.Condition) error {
 		return errors.New("the registration had no Accepted condition when the run started")
 	case now == nil:
 		return errors.New("the registration has no Accepted condition any more")
-	case now.Status != kept.Status || now.Reason != kept.Reason || !now.LastTransitionTime.Equal(&kept.LastTransitionTime):
+	case now.Status != kept.Status || now.Reason != kept.Reason || now.Message != kept.Message ||
+		now.ObservedGeneration != kept.ObservedGeneration || !now.LastTransitionTime.Equal(&kept.LastTransitionTime):
 		return fmt.Errorf(
-			"the Accepted condition of the registration was %s, reason %s, since %s, and is now %s, reason %s, since %s",
-			kept.Status,
-			kept.Reason,
-			kept.LastTransitionTime.UTC().Format(time.RFC3339),
-			now.Status,
-			now.Reason,
-			now.LastTransitionTime.UTC().Format(time.RFC3339),
+			"the Accepted condition of the registration was %s, and is now %s",
+			describeCondition(kept),
+			describeCondition(now),
+		)
+	}
+
+	return nil
+}
+
+func describeCondition(c *metav1.Condition) string {
+	return fmt.Sprintf(
+		"%s, reason %s, message %q, generation %d, since %s",
+		c.Status,
+		c.Reason,
+		c.Message,
+		c.ObservedGeneration,
+		c.LastTransitionTime.UTC().Format(time.RFC3339),
+	)
+}
+
+// lateProblem says whether cond became True later than timeout after created.
+// Both times come from the API server. A condition that is not True passes.
+func lateProblem(cond *metav1.Condition, created metav1.Time, timeout time.Duration) error {
+	if cond == nil || cond.Status != metav1.ConditionTrue {
+		return nil
+	}
+
+	// The times have whole seconds.
+	if after := cond.LastTransitionTime.Sub(created.Time); after > timeout+time.Second {
+		return fmt.Errorf(
+			"%s became True %s after the request was created, which is more than the timeout of %s",
+			cond.Type,
+			after,
+			timeout,
 		)
 	}
 

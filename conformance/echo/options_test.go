@@ -96,3 +96,18 @@ func TestNewAcceptsTheOptionsOfTheAppHarness(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, c)
 }
+
+func TestServesReadsTheRegistrationOfTheSpecNotTheLabel(t *testing.T) {
+	c, err := New(validOptions())
+	require.NoError(t, err)
+
+	relabelled := &pluginsv1alpha1.PluginRequest{}
+	relabelled.Spec.Registration = "echo"
+	relabelled.Labels = map[string]string{pluginsv1alpha1.LabelRegistration: "other"}
+	other := &pluginsv1alpha1.PluginRequest{}
+	other.Spec.Registration = "other"
+	other.Labels = map[string]string{pluginsv1alpha1.LabelRegistration: "echo"}
+
+	assert.True(t, c.serves(relabelled))
+	assert.False(t, c.serves(other))
+}
