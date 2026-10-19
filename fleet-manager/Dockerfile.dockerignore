@@ -6,5 +6,6 @@
 fleet-manager/node_modules/
 fleet-manager/.next/
 fleet-manager/coverage/
+fleet-manager/test-reports/
 fleet-manager/next-env.d.ts
 fleet-manager/*.tsbuildinfo
