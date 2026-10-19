@@ -22,6 +22,7 @@ import (
 	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/client-go/rest"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
@@ -40,6 +41,10 @@ type Config struct {
 	// Skip names the checks that the run does not run. Only a skippable
 	// check can be skipped, and each skip needs a reason.
 	Skip []Skip
+	// RESTConfig is the connection to the cluster of the run. Nil takes the
+	// first of the --kubeconfig flag, the KUBECONFIG file, the in-cluster
+	// config, and $HOME/.kube/config, as controller-runtime GetConfig does.
+	RESTConfig *rest.Config
 }
 
 func (c Config) validate() error {

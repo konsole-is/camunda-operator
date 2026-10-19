@@ -17,6 +17,8 @@ limitations under the License.
 package conformance
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -48,4 +50,27 @@ func TestChecksReturnsACopyOfTheRegistry(t *testing.T) {
 	got[0].ID = "TEST-CHANGED"
 
 	assert.Equal(t, CheckID("TEST-COPY"), checks[0].ID)
+}
+
+func TestSkipReasonOfFindsTheReasonOfSkipCheck(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		reason string
+		skip   bool
+	}{
+		{"skip", SkipCheck("no Deployment"), "no Deployment", true},
+		{"wrapped skip", fmt.Errorf("checking pods: %w", SkipCheck("no Deployment")), "no Deployment", true},
+		{"failure", errors.New("the plugin broke the contract"), "", false},
+		{"pass", nil, "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reason, skip := skipReasonOf(tt.err)
+
+			assert.Equal(t, tt.skip, skip)
+			assert.Equal(t, tt.reason, reason)
+		})
+	}
 }
