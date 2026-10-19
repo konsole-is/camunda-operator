@@ -620,9 +620,12 @@ fleet-install: $(FLEET_PNPM_BIN) ## Install the fleet manager dependencies from 
 fleet-lint: fleet-install ## Run eslint, prettier --check, and tsc --noEmit on the fleet manager.
 	$(FLEET_PNPM) run lint
 
+# The shell runs with pipefail, so a failed test still fails the target through tee.
 .PHONY: fleet-test
-fleet-test: fleet-install setup-envtest ## Run the fleet manager tests with Vitest. The tests of fleet-manager/test/k8s run against envtest.
-	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run test
+fleet-test: fleet-install setup-envtest ## Run the fleet manager tests with Vitest. The tests of fleet-manager/test/k8s run against envtest. The output and a JUnit report go to fleet-manager/test-reports.
+	rm -rf $(FLEET_DIR)/test-reports && mkdir -p $(FLEET_DIR)/test-reports
+	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && \
+		$(FLEET_PNPM) run test --reporter=default --reporter=junit --outputFile.junit=test-reports/junit.xml 2>&1 | tee test-reports/vitest.log
 
 .PHONY: fleet-build
 fleet-build: fleet-install ## Build the fleet manager with next build.
