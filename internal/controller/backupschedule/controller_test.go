@@ -544,6 +544,7 @@ var _ = Describe("BackupSchedule controller", func() {
 
 			var current v1.BackupSchedule
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), &current)).To(Succeed())
+			g.Expect(current.Status.LastScheduleTime).NotTo(BeNil())
 			g.Expect(current.Status.LastScheduleTime.Time).To(BeTemporally("==", second))
 		}, timeout, interval).Should(Succeed())
 		Expect(scheduledOf(schedule)).To(HaveLen(1))
