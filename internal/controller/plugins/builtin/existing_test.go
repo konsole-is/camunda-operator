@@ -197,6 +197,36 @@ func TestExistingCleanupWritesNothing(t *testing.T) {
 	}
 }
 
+func TestExistingReadsOnlyTheExactParameterNames(t *testing.T) {
+	tests := []struct {
+		registration, parameters string
+		want                     []contractRef
+	}{
+		{
+			pluginstartup.RegistrationExistingObjectStorage, `{"name":"bucket-a","NAME":"bucket-b"}`,
+			[]contractRef{{
+				output: pluginstartup.OutputObjectStorageConfig, kind: kindObjectStorageConfig, name: "bucket-a",
+			}},
+		},
+		{
+			pluginstartup.RegistrationExistingObjectStorage, `{"name":"bucket-a","NAME":3}`,
+			[]contractRef{{
+				output: pluginstartup.OutputObjectStorageConfig, kind: kindObjectStorageConfig, name: "bucket-a",
+			}},
+		},
+		{
+			pluginstartup.RegistrationExistingDatabaseConfigs, `{"KEYCLOAK":"kc","identity":"id"}`,
+			[]contractRef{{output: pluginstartup.OutputIdentityDatabaseConfig, kind: kindDatabaseConfig, name: "id"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.parameters, func(t *testing.T) {
+			assert.Equal(t, tt.want, handlers()[tt.registration].contracts(requestFor(tt.registration, tt.parameters)))
+		})
+	}
+}
+
 func TestContractsOfUnparsableParametersAreEmpty(t *testing.T) {
 	for name, h := range handlers() {
 		t.Run(name, func(t *testing.T) {

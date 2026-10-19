@@ -104,14 +104,12 @@ func (e existing) contracts(request *pluginsv1alpha1.PluginRequest) []contractRe
 // which name one contract of kind that the request publishes as output.
 func oneContract(output, kind string) func(*apiextensionsv1.JSON) ([]contractRef, error) {
 	return func(parameters *apiextensionsv1.JSON) ([]contractRef, error) {
-		var p struct {
-			Name string `json:"name"`
-		}
-		if err := decodeParameters(parameters, &p); err != nil {
+		p, err := decodeParameters(parameters, "name")
+		if err != nil {
 			return nil, err
 		}
 
-		return []contractRef{{output: output, kind: kind, name: p.Name}}, nil
+		return []contractRef{{output: output, kind: kind, name: p["name"]}}, nil
 	}
 }
 
@@ -120,33 +118,30 @@ func oneContract(output, kind string) func(*apiextensionsv1.JSON) ([]contractRef
 // with one name return a *conditions.PreCheckFailure with reason
 // InvalidParameters.
 func databaseConfigs(parameters *apiextensionsv1.JSON) ([]contractRef, error) {
-	var p struct {
-		Keycloak   string `json:"keycloak"`
-		Identity   string `json:"identity"`
-		WebModeler string `json:"webModeler"`
-	}
-	if err := decodeParameters(parameters, &p); err != nil {
+	p, err := decodeParameters(parameters, "keycloak", "identity", "webModeler")
+	if err != nil {
 		return nil, err
 	}
 
-	fields := []struct{ field, output, name string }{
-		{"keycloak", pluginstartup.OutputKeycloakDatabaseConfig, p.Keycloak},
-		{"identity", pluginstartup.OutputIdentityDatabaseConfig, p.Identity},
-		{"webModeler", pluginstartup.OutputWebModelerDatabaseConfig, p.WebModeler},
+	fields := []struct{ field, output string }{
+		{"keycloak", pluginstartup.OutputKeycloakDatabaseConfig},
+		{"identity", pluginstartup.OutputIdentityDatabaseConfig},
+		{"webModeler", pluginstartup.OutputWebModelerDatabaseConfig},
 	}
 
 	var refs []contractRef
 	fieldsOf := map[string][]string{}
 	var names []string
 	for _, f := range fields {
-		if f.name == "" {
+		name := p[f.field]
+		if name == "" {
 			continue
 		}
-		refs = append(refs, contractRef{output: f.output, kind: kindDatabaseConfig, name: f.name})
-		if len(fieldsOf[f.name]) == 0 {
-			names = append(names, f.name)
+		refs = append(refs, contractRef{output: f.output, kind: kindDatabaseConfig, name: name})
+		if len(fieldsOf[name]) == 0 {
+			names = append(names, name)
 		}
-		fieldsOf[f.name] = append(fieldsOf[f.name], "spec.parameters."+f.field)
+		fieldsOf[name] = append(fieldsOf[name], "spec.parameters."+f.field)
 	}
 
 	var shared []string
@@ -165,17 +160,33 @@ func databaseConfigs(parameters *apiextensionsv1.JSON) ([]contractRef, error) {
 	return refs, nil
 }
 
-// decodeParameters decodes parameters into out. Absent parameters leave out
-// as it is.
-func decodeParameters(parameters *apiextensionsv1.JSON, out any) error {
+// decodeParameters returns the string value of each of keys in parameters,
+// matched by exact name. A key that is absent is missing from the result. A
+// key whose value is not a string is an error.
+func decodeParameters(parameters *apiextensionsv1.JSON, keys ...string) (map[string]string, error) {
+	values := map[string]string{}
 	if parameters == nil || len(parameters.Raw) == 0 {
-		return nil
-	}
-	if err := json.Unmarshal(parameters.Raw, out); err != nil {
-		return fmt.Errorf("decoding the parameters: %w", err)
+		return values, nil
 	}
 
-	return nil
+	var object map[string]any
+	if err := json.Unmarshal(parameters.Raw, &object); err != nil {
+		return nil, fmt.Errorf("decoding the parameters: %w", err)
+	}
+
+	for _, key := range keys {
+		value, ok := object[key]
+		if !ok {
+			continue
+		}
+		s, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("decoding the parameters: spec.parameters.%s is not a string", key)
+		}
+		values[key] = s
+	}
+
+	return values, nil
 }
 
 // readContract returns a read of the contract of ref in namespace, and the
