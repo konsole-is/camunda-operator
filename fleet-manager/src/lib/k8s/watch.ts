@@ -225,30 +225,30 @@ export function watchStream(
           // subscribeKind resolves false after it sent a failure frame.
           const subscribeKind = async (kind: KindName) => {
             const seen = new Set<string>();
-            // Changes that arrive before the snapshot is sent wait here, so
-            // the snapshot always comes first.
-            let queue: [CacheChange, KubernetesObject][] | undefined = [];
-            let ownBytes = 0;
-            const deliver = (change: CacheChange, object: KubernetesObject) => {
+            // Changes that arrive before the snapshot and its waiting changes
+            // are sent wait here, so the order of the cache stays.
+            let queue: [CacheChange, KubernetesObject, number][] | undefined =
+              [];
+            const delta = (change: CacheChange, object: KubernetesObject) => {
               const type = deltaType(
                 seen,
                 change,
                 objectKey(object),
                 inFilter(object),
               );
-              if (type) send("delta", { watch: id, type, kind, object });
+              return type && { watch: id, type, kind, object };
             };
             try {
               const { snapshot, unsubscribe } = await cache.subscribe(
                 kind,
                 (change, object) => {
                   if (!queue) {
-                    deliver(change, object as KubernetesObject);
+                    const data = delta(change, object as KubernetesObject);
+                    if (data) send("delta", data);
                     return;
                   }
-                  queue.push([change, object as KubernetesObject]);
                   const bytes = JSON.stringify(object).length;
-                  ownBytes += bytes;
+                  queue.push([change, object as KubernetesObject, bytes]);
                   queuedBytes += bytes;
                   if (queuedBytes > maxPendingBytes) end();
                 },
@@ -261,10 +261,13 @@ export function watchStream(
               const objects = (snapshot as KubernetesObject[]).filter(inFilter);
               objects.forEach((o) => seen.add(objectKey(o)));
               await sendWhenRoom("snapshot", { watch: id, kind, objects });
-              const waiting = queue;
+              while (queue.length > 0) {
+                const [change, object, bytes] = queue.shift()!;
+                queuedBytes -= bytes;
+                const data = delta(change, object);
+                if (data) await sendWhenRoom("delta", data);
+              }
               queue = undefined;
-              queuedBytes -= ownBytes;
-              waiting.forEach(([change, object]) => deliver(change, object));
             } catch (error) {
               await sendWhenRoom(
                 "failure",

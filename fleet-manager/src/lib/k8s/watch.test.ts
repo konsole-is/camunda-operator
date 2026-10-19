@@ -502,4 +502,40 @@ describe("watchStream", () => {
     ]);
     await reader.cancel();
   });
+  it("the changes behind a large snapshot wait for room, so the other watches keep their snapshots", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    const cache = {
+      subscribe: async (kind: string, listener: CacheListener<"Pod">) => {
+        if (kind === "Secret") {
+          return { snapshot: [padded("small", 10)], unsubscribe: vi.fn() };
+        }
+        // A change that arrives before the snapshot goes out waits behind it.
+        listener("add", padded("change", 10) as never);
+        return { snapshot: [padded("large", 1_500)], unsubscribe: vi.fn() };
+      },
+    } as unknown as ResourceCache;
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "c", request: { kinds: ["Secret"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+    await new Promise((wake) => setTimeout(wake, 20));
+
+    const { frames, done } = await readFrames(reader, 3);
+    expect(done).toBe(false);
+    expect(frames.map((f) => `${f.event} ${f.data.watch}`).sort()).toEqual([
+      "delta a",
+      "snapshot a",
+      "snapshot c",
+    ]);
+    await reader.cancel();
+  });
 });
