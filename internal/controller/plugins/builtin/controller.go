@@ -86,8 +86,9 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile serves a request whose registration label and
-// spec.registration name the same built-in registration with a handler. It
-// leaves every other request alone. A request under deletion gets the
+// spec.registration name the same built-in registration with a handler, and
+// a request that holds the finalizer after its label changed. It leaves
+// every other request alone. A request under deletion gets the
 // deletion policy applied and loses the finalizer. Otherwise the finalizer
 // is added first, the parameters are checked against the schema and the
 // rules of the registration, and the components of the handler converge.
@@ -108,10 +109,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		return ctrl.Result{}, err
 	}
 
-	// The label selects the request for the watch, and the spec says which
-	// registration serves it. A request where the two differ is not ours.
 	h, ok := r.handlers[request.Spec.Registration]
-	if !ok || request.Labels[pluginsv1alpha1.LabelRegistration] != request.Spec.Registration {
+	if !ok || !r.owns(&request) {
 		return ctrl.Result{}, nil
 	}
 
@@ -243,9 +242,10 @@ func (r *Reconciler) finalize(
 }
 
 // SetupWithManager returns an error that names each handler without a
-// registration in Registrations. Then it registers the contractsField index and the
-// controller. The controller runs for a request whose registration label
-// names a handler, and for every request that reads a contract that changed.
+// registration in Registrations. Then it registers the contractsField index
+// and the controller. The controller runs for a request whose registration
+// label names a handler, and for every request that reads a contract that
+// changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -314,10 +314,26 @@ func (r *Reconciler) contractKeys(o client.Object) []string {
 	return keys
 }
 
-// serves reports whether the registration label of o names a handler.
+// serves reports whether the registration label of o names a handler, or
+// whether o is a request that the controller owns.
 func (r *Reconciler) serves(o client.Object) bool {
-	_, ok := r.handlers[o.GetLabels()[pluginsv1alpha1.LabelRegistration]]
-	return ok
+	if _, ok := r.handlers[o.GetLabels()[pluginsv1alpha1.LabelRegistration]]; ok {
+		return true
+	}
+
+	request, ok := o.(*pluginsv1alpha1.PluginRequest)
+	return ok && r.owns(request)
+}
+
+// A request that already holds the finalizer stays owned when its label
+// changes later, so that its deletion still completes.
+func (r *Reconciler) owns(request *pluginsv1alpha1.PluginRequest) bool {
+	if _, ok := r.handlers[request.Spec.Registration]; !ok {
+		return false
+	}
+
+	return request.Labels[pluginsv1alpha1.LabelRegistration] == request.Spec.Registration ||
+		controllerutil.ContainsFinalizer(request, pluginsv1alpha1.FinalizerCleanup)
 }
 
 func keyOf(kind string) func(client.Object) string {

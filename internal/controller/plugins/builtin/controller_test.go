@@ -193,6 +193,38 @@ var _ = Describe("Built-in requests", func() {
 	)
 
 	DescribeTable(
+		"finishes the deletion of a request whose label changed",
+		func(change func(labels map[string]string)) {
+			contract := newObjectStorageConfig()
+			createContract(contract)
+			request := newRequest(
+				pluginstartup.RegistrationExistingObjectStorage,
+				`{"name":"`+contract.Name+`"}`,
+				pluginsv1alpha1.DeletionPolicyDelete,
+			)
+			expectCondition(request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionTrue, v1.ReasonHealthy)
+
+			Eventually(func() error {
+				live := &pluginsv1alpha1.PluginRequest{}
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(request), live); err != nil {
+					return err
+				}
+				change(live.Labels)
+				return k8sClient.Update(ctx, live)
+			}, timeout, interval).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, request)).To(Succeed())
+
+			expectGone(request)
+		},
+		Entry("label removed", func(labels map[string]string) {
+			delete(labels, pluginsv1alpha1.LabelRegistration)
+		}),
+		Entry("label replaced", func(labels map[string]string) {
+			labels[pluginsv1alpha1.LabelRegistration] = "s3-backup-bucket"
+		}),
+	)
+
+	DescribeTable(
 		"leaves alone a request that the operator does not serve",
 		func(label, registration string) {
 			request := createRequest(label, registration, `{"name":"x"}`, pluginsv1alpha1.DeletionPolicyDelete)
