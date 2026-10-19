@@ -70,7 +70,7 @@ fleetManager:
       cpu: 50m
       memory: 256Mi
 
-  ## The settings of the fleet manager. It reads them at its first start
+  ## The settings of the fleet manager. It reads them at its first read
   ## only. Later changes go in the ConfigMap fleet-manager-settings.
   ##
   settings:

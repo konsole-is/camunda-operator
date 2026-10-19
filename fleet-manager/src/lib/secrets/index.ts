@@ -54,8 +54,7 @@ export async function writeSecretValue(
   const writer = await getWriter();
   if (writer.mode === "git") return writeToGit(writer, ref);
   // An apply of a missing Secret holds only the new key, so a second apply
-  // at the same time would remove the key of the first. The writes of one
-  // Secret in this process run one at a time.
+  // at the same time would remove the key of the first.
   return inOrder(`${ref.namespace}/${ref.name}`, () =>
     writeDirect(writer, ref, value),
   );
@@ -84,8 +83,8 @@ async function writeDirect(
     ...live?.data,
     [ref.key]: Buffer.from(value, "utf8").toString("base64"),
   };
-  // The apply holds every field of the live Secret. A field that it leaves
-  // out and that only the fleet manager set would be removed.
+  // A field that the apply leaves out and that only the fleet manager set
+  // would be removed.
   const object: KubeObject = live
     ? { ...live, data }
     : {
@@ -97,8 +96,6 @@ async function writeDirect(
   const resourceVersion = live?.metadata.resourceVersion;
   return writer.apply({
     intent: `Set the key ${ref.key} of the Secret ${ref.namespace}/${ref.name}`,
-    // force takes over a key that another manager, such as kubectl edit,
-    // set. The resourceVersion of the read still refuses a stale write.
     force: true,
     apply: [object],
     ...(resourceVersion && {

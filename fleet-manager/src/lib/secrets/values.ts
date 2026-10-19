@@ -6,8 +6,7 @@ import { WRITE_TIMEOUT_MS } from "@/lib/write/writer";
 /**
  * readSecretValues returns the decoded values of a Secret, or undefined
  * when it does not exist. Only modules under src/lib/ may import it, and no
- * caller may return its result or a part of it. values.test.ts checks the
- * imports.
+ * caller may return its result or a part of it.
  */
 export async function readSecretValues(
   namespace: string,

@@ -42,8 +42,9 @@ function assertNoValue(text: string): void {
 }
 
 // echo refuses each request and sends back what it got, as a careless
-// server would. A test of a connection then sees the credentials in the
-// answer.
+// server would, so testPrometheus sees the credentials in the answer. The
+// address is http://, so testGit stops before a request: connections.test.ts
+// covers the Git answer.
 let echo: http.Server;
 
 beforeAll(async () => {
@@ -85,7 +86,7 @@ afterAll(async () => {
 });
 
 // watchText reads the stream of /api/watch until it holds the Secret leak,
-// writes a value to it, reads until the next frame, and then stops.
+// writes a key to it, reads until a frame names that key, and then stops.
 async function watchText(watch: string): Promise<string> {
   const abort = new AbortController();
   const response = watchRoute(
@@ -123,7 +124,7 @@ async function watchText(watch: string): Promise<string> {
     undefined,
     PatchStrategy.MergePatch,
   );
-  await readUntil(() => text.slice(seen).includes("\n\n"));
+  await readUntil(() => text.slice(seen).includes('"extra"'));
   abort.abort();
   await reader.cancel().catch(() => {});
   return text;

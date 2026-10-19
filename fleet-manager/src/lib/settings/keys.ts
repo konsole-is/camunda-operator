@@ -42,12 +42,12 @@ const URL_KEYS: Partial<Record<SettingKey, string>> = {
   "prometheus.url": "prometheus.credentialsSecretRef",
 };
 
-/** seedFromEnv returns the settings that the seed variables of env give, without the credentials of an address. An address that is not http or https is empty. */
+/** seedFromEnv returns the settings that the seed variables of env give. */
 export function seedFromEnv(env: Record<string, string | undefined>): Settings {
   return fill((key) => env[SEED_VARIABLES[key]]);
 }
 
-/** settingsFromData returns the settings of the data of the ConfigMap, without the credentials of an address. An address that is not http or https is empty. Unknown keys are left out. */
+/** settingsFromData returns the settings of the data of the ConfigMap. Unknown keys are left out. */
 export function settingsFromData(
   data: Record<string, string> | undefined,
 ): Settings {
@@ -64,8 +64,8 @@ function fill(value: (key: SettingKey) => string | undefined): Settings {
 }
 
 // The chart values and a hand edit of the ConfigMap skip checkPatch, and
-// the pages show the settings. An address that is not http or https can
-// hide credentials from URL.
+// the pages show the settings. An address that is not http or https is
+// dropped, so credentials in an address that URL cannot parse never show.
 function withoutCredentials(value: string): string {
   const url = httpURL(value);
   if (!url) return "";
