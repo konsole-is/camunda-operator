@@ -572,29 +572,26 @@ func checkDeleteRoutes(ctx context.Context, s *suite) error {
 				continue
 			}
 
-			missing, err := missingBackends(ctx, s, obj)
-			if err != nil {
-				return err
-			}
-			if len(missing) == 0 {
-				continue
-			}
-
+			// The route that survived the deletion can point at other
+			// backends than the copy from before it.
 			errs = append(
 				errs,
 				waitFor(ctx, s.cfg.Timeouts.Deletion, "the route to be gone", func(ctx context.Context) error {
 					current, err := s.current(ctx, obj)
-					if err != nil {
+					if err != nil || current == nil {
 						return err
 					}
-					if current != nil {
-						return fmt.Errorf(
-							"%s routes to the missing Service %s and still exists",
-							objectRef(obj),
-							missing[0],
-						)
+
+					missing, err := missingBackends(ctx, s, current)
+					if err != nil || len(missing) == 0 {
+						return err
 					}
-					return nil
+
+					return fmt.Errorf(
+						"%s routes to the missing Service %s and still exists",
+						objectRef(obj),
+						missing[0],
+					)
 				}),
 			)
 		}
