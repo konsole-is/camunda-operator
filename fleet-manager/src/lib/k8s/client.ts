@@ -17,27 +17,64 @@ export function kubeConfig(): KubeConfig {
   return loaded;
 }
 
-/** KubernetesRequestError is an answer of the API server outside 2xx. */
+/** KubeStatus is the Status object of an API server answer outside 2xx. */
+export interface KubeStatus {
+  code?: number;
+  reason?: string;
+  message?: string;
+  details?: {
+    causes?: { reason?: string; message?: string; field?: string }[];
+  };
+}
+
+/**
+ * KubernetesRequestError is an answer of the API server outside 2xx.
+ * status is unset when the answer holds no Status.
+ */
 export class KubernetesRequestError extends Error {
   constructor(
     readonly statusCode: number,
     message: string,
+    readonly status?: KubeStatus,
   ) {
     super(message);
     this.name = "KubernetesRequestError";
   }
 }
 
+/** RequestOptions is one request to the API server. path holds the query string. */
+export interface RequestOptions {
+  method: "GET" | "PATCH" | "DELETE" | "POST" | "PUT";
+  path: string;
+  /** body is sent as JSON. */
+  body?: unknown;
+  /** contentType is the Content-Type of the body, "application/json" by default. */
+  contentType?: string;
+  timeoutMs?: number;
+}
+
 /**
  * getJSON sends a GET of path to the API server of kc and returns the body
- * as plain JSON. It rejects with KubernetesRequestError, which carries the
- * message of the Status of the API server, when the status is not 2xx. It
- * rejects when the answer does not end within timeoutMs, if given.
+ * as plain JSON. It fails as requestJSON does.
  */
 export async function getJSON<T>(
   kc: KubeConfig,
   path: string,
   timeoutMs?: number,
+): Promise<T> {
+  return requestJSON<T>(kc, { method: "GET", path, timeoutMs });
+}
+
+/**
+ * requestJSON sends one request to the API server of kc and returns the
+ * body as plain JSON, or undefined for an empty body. It rejects with
+ * KubernetesRequestError, which carries the Status of the API server, when
+ * the status is not 2xx. It rejects when the answer does not end within
+ * timeoutMs, if given.
+ */
+export async function requestJSON<T>(
+  kc: KubeConfig,
+  { method, path, body, contentType, timeoutMs }: RequestOptions,
 ): Promise<T> {
   const cluster = kc.getCurrentCluster();
   if (!cluster) {
@@ -46,10 +83,14 @@ export async function getJSON<T>(
     );
   }
   const url = new URL(cluster.server + path);
-  const options: https.RequestOptions = {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  };
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (payload !== undefined) {
+    headers["Content-Type"] = contentType ?? "application/json";
+    // Node sends no body for a DELETE without a Content-Length.
+    headers["Content-Length"] = String(Buffer.byteLength(payload));
+  }
+  const options: https.RequestOptions = { method, headers };
   await kc.applyToHTTPSOptions(options);
   const transport = url.protocol === "http:" ? http : https;
 
@@ -60,14 +101,20 @@ export async function getJSON<T>(
       response.on("error", reject);
       response.on("end", () => {
         const text = Buffer.concat(chunks).toString("utf8");
-        const status = response.statusCode ?? 0;
-        if (status < 200 || status > 299) {
+        const code = response.statusCode ?? 0;
+        if (code < 200 || code > 299) {
+          const status = parseStatus(text);
           reject(
             new KubernetesRequestError(
+              code,
+              status?.message ?? `HTTP ${code}`,
               status,
-              statusMessage(text) ?? `HTTP ${status}`,
             ),
           );
+          return;
+        }
+        if (text === "") {
+          resolve(undefined as T);
           return;
         }
         try {
@@ -88,14 +135,16 @@ export async function getJSON<T>(
       );
       request.on("close", () => clearTimeout(timer));
     }
-    request.end();
+    request.end(payload);
   });
 }
 
-function statusMessage(text: string): string | undefined {
+function parseStatus(text: string): KubeStatus | undefined {
   try {
-    const status = JSON.parse(text) as { message?: unknown };
-    return typeof status.message === "string" ? status.message : undefined;
+    const status = JSON.parse(text) as unknown;
+    if (typeof status !== "object" || status === null) return undefined;
+    const message = (status as { message?: unknown }).message;
+    return typeof message === "string" ? (status as KubeStatus) : undefined;
   } catch {
     return undefined;
   }

@@ -3,7 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, parseAllDocuments } from "yaml";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { KindMap, collectionPath, type KindName, type Resource } from "./kinds";
+import {
+  KindMap,
+  collectionPath,
+  objectPath,
+  type KindName,
+  type Resource,
+} from "./kinds";
 
 const appDir = fileURLToPath(new URL("../../..", import.meta.url));
 const crdDir = path.join(appDir, "..", "config", "crd", "bases");
@@ -78,6 +84,23 @@ describe("KindMap", () => {
     expect(collectionPath(KindMap.Secret)).toBe("/api/v1/secrets");
     expect(collectionPath(KindMap.Environment)).toBe(
       "/apis/fleet.camunda.io/v1alpha1/environments",
+    );
+  });
+});
+
+describe("objectPath", () => {
+  it("names one object of a cluster-scoped and of a namespaced kind", () => {
+    expect(objectPath(KindMap.Environment, undefined, "prod")).toBe(
+      "/apis/fleet.camunda.io/v1alpha1/environments/prod",
+    );
+    expect(objectPath(KindMap.Secret, "team-a", "git")).toBe(
+      "/api/v1/namespaces/team-a/secrets/git",
+    );
+  });
+
+  it("encodes the namespace and the name", () => {
+    expect(objectPath(KindMap.Secret, "a b", "c/d")).toBe(
+      "/api/v1/namespaces/a%20b/secrets/c%2Fd",
     );
   });
 });

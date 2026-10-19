@@ -1,0 +1,236 @@
+import { describe, expect, it } from "vitest";
+import { KubernetesRequestError, type KubeStatus } from "@/lib/k8s/client";
+import { apiErrorsOf } from "./errors";
+
+const claim = {
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaClusterClaim",
+  namespace: "team-a",
+  name: "orders",
+};
+const failure = (statusCode: number, status: KubeStatus) =>
+  new KubernetesRequestError(statusCode, status.message ?? "", status);
+
+describe("apiErrorsOf", () => {
+  it("puts a message that names spec.cluster.version on that field path", () => {
+    const message =
+      'CamundaClusterClaim.fleet.camunda.io "orders" is invalid: spec.cluster.version: Invalid value: "8.7": must be at least 8.9';
+    expect(
+      apiErrorsOf(failure(422, { reason: "Invalid", message }), claim, false),
+    ).toEqual([
+      { code: "Invalid", message, path: "spec.cluster.version", ref: claim },
+    ]);
+  });
+
+  it("puts each cause with a field on its own path", () => {
+    const errors = apiErrorsOf(
+      failure(422, {
+        reason: "Invalid",
+        message: "two errors",
+        details: {
+          causes: [
+            {
+              reason: "FieldValueInvalid",
+              field: "spec.cluster.version",
+              message: "Invalid value: must be at least 8.9",
+            },
+            {
+              reason: "FieldValueRequired",
+              field: "spec.presetRef",
+              message: "Required value",
+            },
+          ],
+        },
+      }),
+      claim,
+      false,
+    );
+    expect(errors).toEqual([
+      {
+        code: "Invalid",
+        path: "spec.cluster.version",
+        message: "Invalid value: must be at least 8.9",
+        ref: claim,
+      },
+      {
+        code: "Invalid",
+        path: "spec.presetRef",
+        message: "Required value",
+        ref: claim,
+      },
+    ]);
+  });
+
+  it("keeps a 400 that names no field as one Invalid without a path", () => {
+    expect(
+      apiErrorsOf(
+        failure(400, { message: "the body is not YAML" }),
+        claim,
+        false,
+      ),
+    ).toEqual([
+      { code: "Invalid", message: "the body is not YAML", ref: claim },
+    ]);
+  });
+
+  it("names the manager of a field manager conflict, also with a precondition", () => {
+    const status: KubeStatus = {
+      reason: "Conflict",
+      message:
+        'Apply failed with 1 conflict: conflict with "kubectl-edit" using fleet.camunda.io/v1alpha1: .spec.displayName',
+      details: {
+        causes: [
+          {
+            reason: "FieldManagerConflict",
+            field: ".spec.displayName",
+            message:
+              'conflict with "kubectl-edit" using fleet.camunda.io/v1alpha1',
+          },
+        ],
+      },
+    };
+    expect(apiErrorsOf(failure(409, status), claim, true)).toEqual([
+      {
+        code: "Conflict",
+        manager: "kubectl-edit",
+        path: "spec.displayName",
+        message: 'conflict with "kubectl-edit" using fleet.camunda.io/v1alpha1',
+        ref: claim,
+      },
+    ]);
+  });
+
+  it("maps another 409 on an object with a precondition to Stale", () => {
+    const status = {
+      reason: "Conflict",
+      message:
+        'Operation cannot be fulfilled on camundaclusterclaims.fleet.camunda.io "orders": the object has been modified',
+    };
+    expect(apiErrorsOf(failure(409, status), claim, true)).toEqual([
+      {
+        code: "Stale",
+        message: "The CamundaClusterClaim orders changed since you opened it.",
+        ref: claim,
+      },
+    ]);
+  });
+
+  it("maps a 404 on an object with a precondition to Stale", () => {
+    expect(
+      apiErrorsOf(
+        failure(404, { reason: "NotFound", message: "gone" }),
+        claim,
+        true,
+      ),
+    ).toEqual([
+      {
+        code: "Stale",
+        message: "The CamundaClusterClaim orders changed since you opened it.",
+        ref: claim,
+      },
+    ]);
+  });
+
+  it("keeps another 409 without a precondition as a Conflict with no manager", () => {
+    const message = 'camundaclusterclaims "orders" already exists';
+    expect(
+      apiErrorsOf(
+        failure(409, { reason: "AlreadyExists", message }),
+        claim,
+        false,
+      ),
+    ).toEqual([{ code: "Conflict", message, ref: claim }]);
+  });
+
+  it("keeps the message of a 404 without a precondition, which can name a missing namespace", () => {
+    const message = 'namespaces "team-a" not found';
+    expect(
+      apiErrorsOf(failure(404, { reason: "NotFound", message }), claim, false),
+    ).toEqual([{ code: "Unavailable", message, ref: claim }]);
+  });
+
+  it("says that the API server does not serve the kind for a 404 without a Status", () => {
+    expect(
+      apiErrorsOf(new KubernetesRequestError(404, "HTTP 404"), claim, false),
+    ).toEqual([
+      {
+        code: "Unavailable",
+        message:
+          "The API server does not serve CamundaClusterClaim (fleet.camunda.io/v1alpha1).",
+        ref: claim,
+      },
+    ]);
+  });
+
+  it("maps a 401 and a 403 to Forbidden", () => {
+    for (const code of [401, 403]) {
+      expect(
+        apiErrorsOf(failure(code, { message: "forbidden" }), claim, false),
+      ).toEqual([{ code: "Forbidden", message: "forbidden", ref: claim }]);
+    }
+  });
+
+  it("maps another status and a lost connection to Unavailable", () => {
+    expect(
+      apiErrorsOf(failure(500, { message: "etcd timeout" }), claim, false),
+    ).toEqual([{ code: "Unavailable", message: "etcd timeout", ref: claim }]);
+    expect(
+      apiErrorsOf(new Error("connect ECONNREFUSED 127.0.0.1:1"), claim, false),
+    ).toEqual([
+      {
+        code: "Unavailable",
+        message: "connect ECONNREFUSED 127.0.0.1:1",
+        ref: claim,
+      },
+    ]);
+  });
+
+  it("keeps no API message for a Secret, so no value reaches the page", () => {
+    const secret = {
+      apiVersion: "v1",
+      kind: "Secret",
+      namespace: "team-a",
+      name: "git",
+    };
+    const value = "s3cret-value";
+    const encoded = Buffer.from(value).toString("base64");
+    const failures = [
+      failure(422, {
+        message: `Secret "git" is invalid: data[token]: Invalid value: "${value}"`,
+      }),
+      failure(422, {
+        message: "invalid",
+        details: {
+          causes: [{ field: "data[token]", message: `bad value ${encoded}` }],
+        },
+      }),
+      failure(409, {
+        message: `conflict ${value}`,
+        details: {
+          causes: [
+            {
+              reason: "FieldManagerConflict",
+              field: ".data.token",
+              message: `conflict with "kubectl" ${value}`,
+            },
+          ],
+        },
+      }),
+      failure(403, { message: `forbidden ${value}` }),
+      failure(500, { message: `admission webhook said ${encoded}` }),
+    ];
+
+    const errors = failures.flatMap((f) => apiErrorsOf(f, secret, false));
+
+    expect(errors.map((e) => [e.code, e.path, e.manager])).toEqual([
+      ["Invalid", "data[token]", undefined],
+      ["Invalid", "data[token]", undefined],
+      ["Conflict", "data.token", "kubectl"],
+      ["Forbidden", undefined, undefined],
+      ["Unavailable", undefined, undefined],
+    ]);
+    const shown = JSON.stringify(errors);
+    expect(shown).not.toContain(value);
+    expect(shown).not.toContain(encoded);
+  });
+});

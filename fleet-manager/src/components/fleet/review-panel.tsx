@@ -5,10 +5,8 @@ import { useId } from "react";
 import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DiffLine } from "@/lib/diff";
+import type { WriteMode } from "@/lib/write/types";
 import { DiffView } from "./diff-view";
-
-/** WriteMode is how the app saves: to the API, or as a commit in Git. */
-export type WriteMode = "direct" | "git";
 
 /**
  * ReviewPanel is the last screen before a write: the diff of the object, the
