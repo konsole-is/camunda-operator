@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 package builtin
 
 import (
@@ -44,7 +43,12 @@ func TestCheckParameters(t *testing.T) {
 			"a name of the wrong type", pluginstartup.RegistrationExistingObjectStorage,
 			`{"name":3}`, []string{"spec.parameters.name"},
 		},
-		{"an empty name", pluginstartup.RegistrationExistingObjectStorage, `{"name":""}`, []string{"spec.parameters.name"}},
+		{
+			"an empty name",
+			pluginstartup.RegistrationExistingObjectStorage,
+			`{"name":""}`,
+			[]string{"spec.parameters.name"},
+		},
 		{"no database config name passes", pluginstartup.RegistrationExistingDatabaseConfigs, `{}`, nil},
 		{
 			"two fields fail together", pluginstartup.RegistrationExistingDatabaseConfigs,
@@ -110,6 +114,19 @@ func TestCheckParametersRunsTheValidationRulesOfTheSchema(t *testing.T) {
 			assert.Contains(t, failure.Message, tt.want)
 		})
 	}
+}
+
+func TestCheckParametersChecksNullParametersAsAnEmptyObject(t *testing.T) {
+	schema := &apiextensionsv1.JSON{Raw: []byte(
+		`{"type":"object","nullable":true,"required":["message"],"properties":{"message":{"type":"string"}}}`,
+	)}
+
+	err := checkParameters(t.Context(), schema, &apiextensionsv1.JSON{Raw: []byte(`null`)})
+
+	var failure *conditions.PreCheckFailure
+	require.ErrorAs(t, err, &failure)
+	assert.Equal(t, pluginsv1alpha1.ReasonInvalidParameters, failure.Reason)
+	assert.Contains(t, failure.Message, "spec.parameters.message")
 }
 
 func TestCheckParametersReportsABrokenSchemaAsAnError(t *testing.T) {

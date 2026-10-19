@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 package builtin
 
 import (
@@ -39,11 +38,12 @@ import (
 )
 
 // checkParameters checks parameters against schema as the API server checks
-// a custom resource, x-kubernetes-validations included. A nil parameters is
-// checked as an empty object. Parameters that fail return a
-// *conditions.PreCheckFailure with reason InvalidParameters, whose message
-// names each field under spec.parameters. A schema that cannot be read
-// returns a plain error, because it is a defect of the registration.
+// a custom resource, x-kubernetes-validations included. Absent parameters,
+// and parameters that are null, are checked as an empty object. Parameters
+// that fail return a *conditions.PreCheckFailure with reason
+// InvalidParameters, whose message names each field under spec.parameters.
+// A schema that cannot be read returns a plain error, because it is a defect
+// of the registration.
 func checkParameters(ctx context.Context, schemaJSON, parameters *apiextensionsv1.JSON) error {
 	var props apiextensionsv1.JSONSchemaProps
 	if err := json.Unmarshal(schemaJSON.Raw, &props); err != nil {
@@ -77,6 +77,10 @@ func checkParameters(ctx context.Context, schemaJSON, parameters *apiextensionsv
 		if err := utiljson.Unmarshal(parameters.Raw, &value); err != nil {
 			return fmt.Errorf("decoding the parameters: %w", err)
 		}
+	}
+	// A literal null decodes to nil.
+	if value == nil {
+		value = map[string]any{}
 	}
 
 	path := field.NewPath("spec", "parameters")
