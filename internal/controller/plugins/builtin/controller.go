@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 // Package builtin serves the PluginRequests of the built-in
 // PluginRegistrations. Each registration that it serves has a handler.
 package builtin

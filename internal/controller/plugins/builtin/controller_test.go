@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 package builtin
 
 import (
@@ -35,7 +34,8 @@ import (
 )
 
 var _ = Describe("Built-in requests", func() {
-	DescribeTable("publishes the output once the contract exists",
+	DescribeTable(
+		"publishes the output once the contract exists",
 		func(registration, output string, contract func() client.Object) {
 			obj := contract()
 			request := newRequest(registration, `{"name":"`+obj.GetName()+`"}`, pluginsv1alpha1.DeletionPolicyDelete)
@@ -47,18 +47,27 @@ var _ = Describe("Built-in requests", func() {
 
 			createContract(obj)
 
-			live = expectCondition(request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionTrue, v1.ReasonHealthy)
+			live = expectCondition(
+				request,
+				pluginsv1alpha1.ConditionOutputsReady,
+				metav1.ConditionTrue,
+				v1.ReasonHealthy,
+			)
 			live = expectCondition(live, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
 			Expect(live.Status.ObservedGeneration).To(Equal(live.Generation))
 			Expect(live.Status.Outputs).To(Equal(map[string]string{output: obj.GetName()}))
 			Expect(live.Status.Resources).To(BeEmpty())
 		},
-		Entry(pluginstartup.RegistrationExistingObjectStorage,
+		Entry(
+			pluginstartup.RegistrationExistingObjectStorage,
 			pluginstartup.RegistrationExistingObjectStorage, pluginstartup.OutputObjectStorageConfig,
-			func() client.Object { return newObjectStorageConfig() }),
-		Entry(pluginstartup.RegistrationExistingSecondaryStorage,
+			func() client.Object { return newObjectStorageConfig() },
+		),
+		Entry(
+			pluginstartup.RegistrationExistingSecondaryStorage,
 			pluginstartup.RegistrationExistingSecondaryStorage, pluginstartup.OutputSecondaryStorageConfig,
-			func() client.Object { return newSecondaryStorageConfig() }),
+			func() client.Object { return newSecondaryStorageConfig() },
+		),
 	)
 
 	It("withdraws the output when the contract is deleted", func() {
@@ -120,9 +129,17 @@ var _ = Describe("Built-in requests", func() {
 		)
 
 		expectCondition(
-			request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionFalse, pluginsv1alpha1.ReasonInvalidParameters,
+			request,
+			pluginsv1alpha1.ConditionOutputsReady,
+			metav1.ConditionFalse,
+			pluginsv1alpha1.ReasonInvalidParameters,
 		)
-		live := expectCondition(request, v1.ConditionReady, metav1.ConditionFalse, pluginsv1alpha1.ReasonInvalidParameters)
+		live := expectCondition(
+			request,
+			v1.ConditionReady,
+			metav1.ConditionFalse,
+			pluginsv1alpha1.ReasonInvalidParameters,
+		)
 		ready := meta.FindStatusCondition(live.Status.Conditions, v1.ConditionReady)
 		Expect(ready.Message).To(ContainSubstring("spec.parameters.keycloak"))
 		Expect(ready.Message).To(ContainSubstring("spec.parameters.identity"))
@@ -130,21 +147,38 @@ var _ = Describe("Built-in requests", func() {
 	})
 
 	It("refuses parameters that do not pass the schema", func() {
-		request := newRequest(pluginstartup.RegistrationExistingObjectStorage, `{}`, pluginsv1alpha1.DeletionPolicyDelete)
+		request := newRequest(
+			pluginstartup.RegistrationExistingObjectStorage,
+			`{}`,
+			pluginsv1alpha1.DeletionPolicyDelete,
+		)
 
 		expectCondition(
-			request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionFalse, pluginsv1alpha1.ReasonInvalidParameters,
+			request,
+			pluginsv1alpha1.ConditionOutputsReady,
+			metav1.ConditionFalse,
+			pluginsv1alpha1.ReasonInvalidParameters,
 		)
-		live := expectCondition(request, v1.ConditionReady, metav1.ConditionFalse, pluginsv1alpha1.ReasonInvalidParameters)
+		live := expectCondition(
+			request,
+			v1.ConditionReady,
+			metav1.ConditionFalse,
+			pluginsv1alpha1.ReasonInvalidParameters,
+		)
 		Expect(meta.FindStatusCondition(live.Status.Conditions, v1.ConditionReady).Message).
 			To(ContainSubstring("spec.parameters.name"))
 	})
 
-	DescribeTable("removes the finalizer and keeps the contract on deletion",
+	DescribeTable(
+		"removes the finalizer and keeps the contract on deletion",
 		func(policy pluginsv1alpha1.DeletionPolicy) {
 			contract := newObjectStorageConfig()
 			createContract(contract)
-			request := newRequest(pluginstartup.RegistrationExistingObjectStorage, `{"name":"`+contract.Name+`"}`, policy)
+			request := newRequest(
+				pluginstartup.RegistrationExistingObjectStorage,
+				`{"name":"`+contract.Name+`"}`,
+				policy,
+			)
 			expectCondition(request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionTrue, v1.ReasonHealthy)
 
 			Expect(k8sClient.Delete(ctx, request)).To(Succeed())
@@ -158,7 +192,8 @@ var _ = Describe("Built-in requests", func() {
 		Entry("Orphan", pluginsv1alpha1.DeletionPolicyOrphan),
 	)
 
-	DescribeTable("leaves alone a request that the operator does not serve",
+	DescribeTable(
+		"leaves alone a request that the operator does not serve",
 		func(label, registration string) {
 			request := createRequest(label, registration, `{"name":"x"}`, pluginsv1alpha1.DeletionPolicyDelete)
 

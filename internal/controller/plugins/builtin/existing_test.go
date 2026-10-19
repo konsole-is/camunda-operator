@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 package builtin
 
 import (
@@ -72,10 +71,12 @@ func TestDatabaseConfigsReadEachNamedConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Nil(t, s.backing)
-	assert.Equal(t, []contractRef{
-		{output: pluginstartup.OutputKeycloakDatabaseConfig, kind: kindDatabaseConfig, name: "kc"},
-		{output: pluginstartup.OutputWebModelerDatabaseConfig, kind: kindDatabaseConfig, name: "wm"},
-	}, h.contracts(request))
+	assert.Equal(
+		t, []contractRef{
+			{output: pluginstartup.OutputKeycloakDatabaseConfig, kind: kindDatabaseConfig, name: "kc"},
+			{output: pluginstartup.OutputWebModelerDatabaseConfig, kind: kindDatabaseConfig, name: "wm"},
+		}, h.contracts(request),
+	)
 	for _, name := range []string{"kc", "wm"} {
 		_, ok := s.outputs.Resource("core.camunda.io/v1/DatabaseConfig/my-cluster-ns/" + name)
 		assert.True(t, ok, name)
@@ -123,9 +124,11 @@ func TestExistingPublishesTheOutputAndTheReadyStateOfTheContract(t *testing.T) {
 
 	assert.Equal(t, metav1.ConditionTrue, s.outputs.GetCondition(request).Status)
 	assert.Equal(t, map[string]string{pluginstartup.OutputObjectStorageConfig: "my-bucket"}, s.report().outputs)
-	assert.Equal(t, []pluginsv1alpha1.SummaryItem{{
-		Label: kindObjectStorageConfig, Value: "my-bucket, Ready", Severity: pluginsv1alpha1.SeverityInfo,
-	}}, s.report().summary)
+	assert.Equal(
+		t, []pluginsv1alpha1.SummaryItem{{
+			Label: kindObjectStorageConfig, Value: "my-bucket, Ready", Severity: pluginsv1alpha1.SeverityInfo,
+		}}, s.report().summary,
+	)
 	assert.Empty(t, s.report().resources)
 }
 
@@ -139,9 +142,11 @@ func TestExistingWaitsForAMissingContract(t *testing.T) {
 	cond := s.outputs.GetCondition(request)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, string(component.GuardBlocked), cond.Reason)
-	assert.Equal(t, []pluginsv1alpha1.SummaryItem{{
-		Label: kindObjectStorageConfig, Value: "my-bucket, waiting", Severity: pluginsv1alpha1.SeverityWarning,
-	}}, s.report().summary)
+	assert.Equal(
+		t, []pluginsv1alpha1.SummaryItem{{
+			Label: kindObjectStorageConfig, Value: "my-bucket, waiting", Severity: pluginsv1alpha1.SeverityWarning,
+		}}, s.report().summary,
+	)
 }
 
 func TestExistingReportsAContractThatIsNotReady(t *testing.T) {
@@ -166,9 +171,11 @@ func TestExistingReportsAContractThatIsNotReady(t *testing.T) {
 
 			reconcileOutputs(t, s, request, fakeReader(t, objectStorageConfig("my-bucket", tt.ready)))
 
-			assert.Equal(t, []pluginsv1alpha1.SummaryItem{{
-				Label: kindObjectStorageConfig, Value: tt.want, Severity: pluginsv1alpha1.SeverityWarning,
-			}}, s.report().summary)
+			assert.Equal(
+				t, []pluginsv1alpha1.SummaryItem{{
+					Label: kindObjectStorageConfig, Value: tt.want, Severity: pluginsv1alpha1.SeverityWarning,
+				}}, s.report().summary,
+			)
 		})
 	}
 }

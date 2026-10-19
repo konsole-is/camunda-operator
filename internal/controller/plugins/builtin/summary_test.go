@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 package builtin
 
 import (
@@ -47,7 +46,11 @@ func TestSetSummaryStampsAChangedSummary(t *testing.T) {
 	changed := []pluginsv1alpha1.SummaryItem{{Label: "ObjectStorageConfig", Value: "my-bucket, Ready"}}
 	status := pluginsv1alpha1.PluginRequestStatus{}
 
-	setSummary(&status, []pluginsv1alpha1.SummaryItem{{Label: "ObjectStorageConfig", Value: "my-bucket, waiting"}}, first)
+	setSummary(
+		&status,
+		[]pluginsv1alpha1.SummaryItem{{Label: "ObjectStorageConfig", Value: "my-bucket, waiting"}},
+		first,
+	)
 	setSummary(&status, changed, later)
 
 	assert.Equal(t, changed, status.Summary)

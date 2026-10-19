@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-
 package builtin
 
 import (
@@ -64,9 +63,12 @@ func createRequest(
 			},
 		},
 		Spec: pluginsv1alpha1.PluginRequestSpec{
-			Section:        section,
-			Registration:   registration,
-			ClaimRef:       pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: "orders"},
+			Section:      section,
+			Registration: registration,
+			ClaimRef: pluginsv1alpha1.ClaimRef{
+				Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim,
+				Name: "orders",
+			},
 			Target:         pluginsv1alpha1.TargetRef{Kind: "CamundaCluster", Name: "orders"},
 			DeletionPolicy: policy,
 		},
