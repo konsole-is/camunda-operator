@@ -538,4 +538,43 @@ describe("watchStream", () => {
     ]);
     await reader.cancel();
   });
+  it("a live delta waits for room behind a large snapshot of another watch", async () => {
+    const padded = (name: string, size: number) =>
+      ({
+        metadata: { namespace: "team", name },
+        data: "x".repeat(size),
+      }) as KubernetesObject;
+    let answer: (s: {
+      snapshot: KubernetesObject[];
+      unsubscribe: () => void;
+    }) => void;
+    const { cache, listeners } = fakeCache({
+      Pod: async () => ({ snapshot: [], unsubscribe: vi.fn() }),
+      Service: () => new Promise((resolve) => (answer = resolve)),
+    });
+    const reader = watchStream(
+      cache,
+      [
+        { id: "a", request: { kinds: ["Pod"] } },
+        { id: "b", request: { kinds: ["Service"] } },
+      ],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+    const { frames: first } = await readFrames(reader, 1);
+    expect(first[0].data.watch).toBe("a");
+
+    answer!({ snapshot: [padded("large", 1_500)], unsubscribe: vi.fn() });
+    await new Promise((wake) => setTimeout(wake, 10));
+    listeners.get("Pod")![0]("add", object("team", "x") as never);
+    await new Promise((wake) => setTimeout(wake, 10));
+
+    const { frames, done } = await readFrames(reader, 2);
+    expect(done).toBe(false);
+    expect(frames.map((f) => `${f.event} ${f.data.watch}`)).toEqual([
+      "snapshot b",
+      "delta a",
+    ]);
+    await reader.cancel();
+  });
 });

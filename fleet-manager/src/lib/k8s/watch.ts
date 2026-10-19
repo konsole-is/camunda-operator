@@ -123,8 +123,8 @@ export function watchStream(
   const unsubscribes: (() => void)[] = [];
   const drained: (() => void)[] = [];
   const stops = new Set<() => void>();
-  // queuedBytes counts the changes of all watches that wait behind their
-  // snapshot. They are not in the stream queue yet, so they count here.
+  // queuedBytes counts the changes of all watches that wait for room. They
+  // are not in the stream queue yet, so they count here.
   let queuedBytes = 0;
   let heartbeat: NodeJS.Timeout | undefined;
   let closed = false;
@@ -164,22 +164,8 @@ export function watchStream(
           encoder.encode(
             `${fields}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
           );
-        // The shared informer does not wait for its listener, so a write
-        // cannot wait for a slow client. desiredSize is below 0 when more
-        // than maxPendingBytes wait in the queue.
-        const write = (bytes: Uint8Array) => {
-          if (closed) return;
-          if ((controller.desiredSize ?? 0) < 0) {
-            end();
-            return;
-          }
-          controller.enqueue(bytes);
-        };
-        const send = (event: string, data: unknown, fields = "") =>
-          write(frame(event, data, fields));
-        // The snapshots and failures of all watches can be ready at once. A
-        // frame that waits for room keeps them from passing maxPendingBytes
-        // together.
+        // All frames of all watches share one queue. A frame that waits for
+        // room keeps them from passing maxPendingBytes together.
         const sendWhenRoom = async (
           event: string,
           data: unknown,
@@ -190,7 +176,7 @@ export function watchStream(
           while (!closed && (controller.desiredSize ?? 0) < room) {
             await new Promise<void>((wake) => drained.push(wake));
           }
-          write(bytes);
+          if (!closed) controller.enqueue(bytes);
         };
         signal.addEventListener("abort", end, { once: true });
         if (signal.aborted) {
@@ -198,11 +184,11 @@ export function watchStream(
           return;
         }
         // A comment line every heartbeatMs keeps idle proxies from closing
-        // the connection.
-        heartbeat = setInterval(
-          () => write(encoder.encode(": keep-alive\n\n")),
-          heartbeatMs,
-        );
+        // the connection. A full queue has data for the proxy already.
+        const keepAlive = encoder.encode(": keep-alive\n\n");
+        heartbeat = setInterval(() => {
+          if ((controller.desiredSize ?? 0) > 0) controller.enqueue(keepAlive);
+        }, heartbeatMs);
 
         const runWatch = async (entry: WatchEntry) => {
           const { id } = entry;
@@ -225,32 +211,42 @@ export function watchStream(
           // subscribeKind resolves false after it sent a failure frame.
           const subscribeKind = async (kind: KindName) => {
             const seen = new Set<string>();
-            // Changes that arrive before the snapshot and its waiting changes
-            // are sent wait here, so the order of the cache stays.
-            let queue: [CacheChange, KubernetesObject, number][] | undefined =
-              [];
-            const delta = (change: CacheChange, object: KubernetesObject) => {
-              const type = deltaType(
-                seen,
-                change,
-                objectKey(object),
-                inFilter(object),
-              );
-              return type && { watch: id, type, kind, object };
+            // The shared informer does not wait for its listener.
+            const queue: [CacheChange, KubernetesObject, number][] = [];
+            let ready = false;
+            let pumping = false;
+            const pump = async () => {
+              if (!ready || pumping) return;
+              pumping = true;
+              while (queue.length > 0 && !closed) {
+                const [change, object, bytes] = queue.shift()!;
+                queuedBytes -= bytes;
+                const type = deltaType(
+                  seen,
+                  change,
+                  objectKey(object),
+                  inFilter(object),
+                );
+                if (type) {
+                  await sendWhenRoom("delta", {
+                    watch: id,
+                    type,
+                    kind,
+                    object,
+                  });
+                }
+              }
+              pumping = false;
             };
             try {
               const { snapshot, unsubscribe } = await cache.subscribe(
                 kind,
                 (change, object) => {
-                  if (!queue) {
-                    const data = delta(change, object as KubernetesObject);
-                    if (data) send("delta", data);
-                    return;
-                  }
                   const bytes = JSON.stringify(object).length;
                   queue.push([change, object as KubernetesObject, bytes]);
                   queuedBytes += bytes;
                   if (queuedBytes > maxPendingBytes) end();
+                  else void pump();
                 },
               );
               if (closed) {
@@ -261,13 +257,8 @@ export function watchStream(
               const objects = (snapshot as KubernetesObject[]).filter(inFilter);
               objects.forEach((o) => seen.add(objectKey(o)));
               await sendWhenRoom("snapshot", { watch: id, kind, objects });
-              while (queue.length > 0) {
-                const [change, object, bytes] = queue.shift()!;
-                queuedBytes -= bytes;
-                const data = delta(change, object);
-                if (data) await sendWhenRoom("delta", data);
-              }
-              queue = undefined;
+              ready = true;
+              await pump();
             } catch (error) {
               await sendWhenRoom(
                 "failure",
