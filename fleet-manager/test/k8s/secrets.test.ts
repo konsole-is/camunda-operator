@@ -124,6 +124,24 @@ describe("writeSecretValue against envtest", () => {
     });
   });
 
+  it("writes of different keys at once to a missing Secret keep every key", async () => {
+    const keys = ["a", "b", "c", "d"];
+
+    const results = await Promise.all(
+      keys.map((key) =>
+        writeSecretValue({ namespace, name: "burst", key }, `v-${key}`),
+      ),
+    );
+
+    expect(results).toEqual(keys.map(() => ({ ok: true, mode: "direct" })));
+    expect(await readSecretByHand("burst")).toEqual({
+      a: "v-a",
+      b: "v-b",
+      c: "v-c",
+      d: "v-d",
+    });
+  });
+
   it("the result of a write holds no value", async () => {
     const result = await writeSecretValue(
       { namespace, name: "git2", key: "token" },

@@ -122,3 +122,28 @@ describe("updateSettings", () => {
     });
   });
 });
+
+describe("a first read beside an update", () => {
+  it("a slow first create does not undo an update", async () => {
+    let live: Record<string, string> | undefined;
+    vi.mocked(getJSON).mockImplementation(async () => {
+      if (!live) throw new KubernetesRequestError(404, "not found");
+      return configMap(live, "1");
+    });
+    let release = () => {};
+    const slow = new Promise<void>((resolve) => (release = resolve));
+    apply.mockImplementation(async (change) => {
+      if (apply.mock.calls.length === 1) await slow;
+      live = change.apply[0].data as Record<string, string>;
+      return { ok: true, mode: "direct" };
+    });
+
+    const first = getSettings();
+    const update = updateSettings({ "git.path": "fleet" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    await Promise.all([first, update]);
+
+    expect(live?.["git.path"]).toBe("fleet");
+  });
+});

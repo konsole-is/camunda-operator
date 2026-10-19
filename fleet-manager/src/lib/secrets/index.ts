@@ -1,5 +1,6 @@
 import "server-only";
 import { list } from "@/lib/k8s/read";
+import { inOrder } from "@/lib/serial";
 import { getSettings } from "@/lib/settings";
 import type { WriteResult, Writer } from "@/lib/write/types";
 import { getWriter, refKey } from "@/lib/write/writer";
@@ -52,6 +53,19 @@ export async function writeSecretValue(
   }
   const writer = await getWriter();
   if (writer.mode === "git") return writeToGit(writer, ref);
+  // An apply of a missing Secret holds only the new key, so a second apply
+  // at the same time would remove the key of the first. The writes of one
+  // Secret in this process run one at a time.
+  return inOrder(`${ref.namespace}/${ref.name}`, () =>
+    writeDirect(writer, ref, value),
+  );
+}
+
+async function writeDirect(
+  writer: Writer,
+  ref: SecretRef,
+  value: string,
+): Promise<WriteResult> {
   let live;
   try {
     live = await readSecret(ref.namespace, ref.name);

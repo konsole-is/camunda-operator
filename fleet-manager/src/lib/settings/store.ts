@@ -1,5 +1,6 @@
 import "server-only";
 import { KubernetesRequestError, getJSON, kubeConfig } from "@/lib/k8s/client";
+import { inOrder } from "@/lib/serial";
 import type { KubeObject, WriteResult } from "@/lib/write/types";
 import { getWriter, refKey } from "@/lib/write/writer";
 import {
@@ -19,8 +20,10 @@ type ConfigMap = KubeObject & { data?: Record<string, string> };
  * FLEET_SETTINGS_* variables first. It never changes a ConfigMap that
  * exists. It throws when the API server refuses the read or the create.
  */
-export async function getSettings(): Promise<Settings> {
-  return settingsFromData((await readOrCreate()).data);
+export function getSettings(): Promise<Settings> {
+  return inOrder(SETTINGS_CONFIGMAP, async () =>
+    settingsFromData((await readOrCreate()).data),
+  );
 }
 
 /**
@@ -35,6 +38,10 @@ export async function updateSettings(
 ): Promise<WriteResult> {
   const errors = checkPatch(patch);
   if (errors.length) return { ok: false, errors };
+  return inOrder(SETTINGS_CONFIGMAP, () => writePatch(patch));
+}
+
+async function writePatch(patch: Partial<Settings>): Promise<WriteResult> {
   let live: ConfigMap;
   try {
     live = await readOrCreate();
@@ -73,8 +80,9 @@ async function readOrCreate(): Promise<ConfigMap> {
       throw error;
     }
   }
-  // Two first reads at once both apply the same seed with the same field
-  // manager, so the second apply changes nothing.
+  // An apply cannot create the ConfigMap only when it is missing. So each
+  // read and write of the settings runs under inOrder, and a late first
+  // create of this process cannot undo an update.
   const result = await (
     await getWriter()
   ).apply({
