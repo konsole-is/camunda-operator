@@ -32,7 +32,8 @@ import (
 )
 
 // The exit codes of the binary: no check failed, at least one check failed,
-// and the run could not start or the report could not be written.
+// and the run could not start, the report could not be written, or the
+// cleanup of the run failed.
 const (
 	exitPassed = 0
 	exitFailed = 1
@@ -99,9 +100,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, execute e
 		return exitError
 	}
 
-	results, err := execute(ctx, cfg)
-	if err != nil {
-		_, _ = fmt.Fprintln(stderr, err)
+	results, runErr := execute(ctx, cfg)
+	if runErr != nil && results == nil {
+		_, _ = fmt.Fprintln(stderr, runErr)
 		_ = report.Close()
 		_ = os.Remove(*reportPath)
 		return exitError
@@ -111,6 +112,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, execute e
 
 	if err := errors.Join(writeJUnit(report, cfg.Registration, results), report.Close()); err != nil {
 		_, _ = fmt.Fprintf(stderr, "report %s: %v\n", *reportPath, err)
+		return exitError
+	}
+
+	// The checks ran, but the run left objects in the cluster.
+	if runErr != nil {
+		_, _ = fmt.Fprintln(stderr, runErr)
 		return exitError
 	}
 

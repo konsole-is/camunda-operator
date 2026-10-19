@@ -156,6 +156,23 @@ func TestRunStopsWhenTheRunCannotStart(t *testing.T) {
 	assert.NoFileExists(t, report)
 }
 
+func TestRunWritesTheReportAndExitsTwoWhenTheCleanupFails(t *testing.T) {
+	report := filepath.Join(t.TempDir(), "report.xml")
+	fake := &fakeRun{
+		results: []conformance.Result{{ID: "REG-ACCEPTED", Outcome: conformance.OutcomePassed}},
+		err:     errors.New("conformance: the cleanup of the run failed: the namespace is still terminating"),
+	}
+
+	got := invoke(t, fake, "--config", sampleConfigPath, "--report", report)
+
+	assert.Equal(t, 2, got.code)
+	assert.Contains(t, got.stderr, "the namespace is still terminating")
+	assert.Contains(t, got.stdout, "PASS REG-ACCEPTED")
+	written, err := os.ReadFile(report)
+	require.NoError(t, err)
+	assert.Contains(t, string(written), `<testcase name="REG-ACCEPTED"`)
+}
+
 func TestRunPrintsTheUsageForHelp(t *testing.T) {
 	got := invoke(t, &fakeRun{}, "-h")
 
