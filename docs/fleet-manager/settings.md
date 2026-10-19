@@ -35,11 +35,18 @@ The fleet manager creates the ConfigMap `fleet-manager-settings` from these valu
 | `prometheus.url` | `fleetManager.settings.prometheus.url` | The address of Prometheus. |
 | `prometheus.credentialsSecretRef` | `fleetManager.settings.prometheus.credentialsSecretRef` | The name of the Secret with the Prometheus credentials. See [Prometheus credentials](#prometheus-credentials). |
 
-An empty value means that the setting is not set. An address in `git.repository` or `prometheus.url` must not hold a user name or a password, as in `https://user:token@git.example.com`. The pages show the settings, so put the credentials in a Secret.
+An empty value means that the setting is not set. An address in `git.repository` or `prometheus.url` must not hold a user name or a password, as in `https://user:token@git.example.com`. The pages show the settings, so put the credentials in a Secret. The fleet manager drops a user name and a password from an address when it reads the settings.
 
 ## Change a setting
 
-The ConfigMap holds one key for each setting:
+In this version, no page reads the settings, so the ConfigMap does not exist after the install. Create it before you change a setting. Each key that you leave out is not set:
+
+```bash
+kubectl -n camunda-operator-system create configmap fleet-manager-settings \
+  --from-literal=kubernetesClusterName=prod-eu
+```
+
+When the ConfigMap exists, the fleet manager uses it and does not read the `fleetManager.settings.*` values. A ConfigMap that the fleet manager created holds one key for each setting:
 
 ```bash
 kubectl -n camunda-operator-system get configmap fleet-manager-settings -o yaml
