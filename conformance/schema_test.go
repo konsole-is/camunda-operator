@@ -126,13 +126,7 @@ func TestSchemaRefusesAnInvalidSchema(t *testing.T) {
 			`{"type":"object","externalDocs":{"url":"https://example.com","summary":"x"}}`,
 			`spec.parameters.externalDocs: unknown field "summary"`,
 		},
-		{
-			"additionalProperties at the root",
-			`{"type":"object","additionalProperties":{"type":"string"}}`,
-			"spec.parameters.additionalProperties: Forbidden: must not be used at the root",
-		},
 		{"root that is not an object", `{"type":"string"}`, "spec.parameters.type: Invalid value"},
-		{"nullable root", `{"type":"object","nullable":true}`, "spec.parameters.nullable: Forbidden"},
 		{
 			"validation rule that does not compile",
 			`{"type":"object","properties":{"n":{"type":"integer","x-kubernetes-validations":[{"rule":"self >"}]}}}`,
@@ -184,6 +178,28 @@ func TestSchemaKeepsAPropertyAndAValueNamedLikeTheMarker(t *testing.T) {
 
 	assert.ErrorContains(t, checkSchema(t.Context(), property), `case "long"`)
 	assert.NoError(t, checkSchema(t.Context(), enum))
+}
+
+// The operator checks request parameters against the schema as a field, so
+// a rule of a CRD root alone does not refuse a schema.
+func TestSchemaAcceptsWhatOnlyACRDRootRefuses(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+	}{
+		{"additionalProperties at the root", `{"type":"object","additionalProperties":{"type":"string"}}`},
+		{"nullable root", `{"type":"object","nullable":true}`},
+		{
+			"default of a property named kind",
+			`{"type":"object","properties":{"kind":{"type":"string","default":"Echo"}}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NoError(t, checkSchema(t.Context(), schemaSuite(t, tt.schema)))
+		})
+	}
 }
 
 func TestSchemaChecksEveryCaseAgainstTheSchema(t *testing.T) {

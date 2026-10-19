@@ -107,8 +107,8 @@ func checkSchema(ctx context.Context, s *suite) error {
 	return errors.Join(errs...)
 }
 
-// parseSchema returns raw as a schema that the API server accepts as the
-// root schema of a CRD, with x-fleet-template as the one extra keyword. Each
+// parseSchema returns raw as an object schema that the API server accepts
+// for a field of a CRD, with x-fleet-template as the one extra keyword. Each
 // error names its field under spec.parameters.
 func parseSchema(ctx context.Context, raw []byte) (*apiextensions.JSONSchemaProps, error) {
 	// utiljson keeps an integer as int64, where encoding/json rounds it.
@@ -162,20 +162,8 @@ func parseSchema(ctx context.Context, raw []byte) (*apiextensions.JSONSchemaProp
 		return nil, err
 	}
 
-	// The CRD validation sees the schema as a field, so the rules of a root
-	// schema run here.
-	structural, err := schema.NewStructural(&out)
-	if err != nil {
-		return nil, fmt.Errorf("spec.parameters: %w", err)
-	}
-
-	root := field.NewPath("spec", "parameters")
-	rootErrs := schema.ValidateStructural(root, structural)
-	if out.Nullable {
-		rootErrs = append(rootErrs, field.Forbidden(root.Child("nullable"), "nullable cannot be true at the root"))
-	}
-	if err := rootErrs.ToAggregate(); err != nil {
-		return nil, err
+	if out.Type != "object" {
+		return nil, field.Invalid(field.NewPath("spec", "parameters", "type"), out.Type, "must be object")
 	}
 
 	return &out, nil
