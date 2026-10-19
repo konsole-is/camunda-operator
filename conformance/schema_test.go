@@ -306,6 +306,19 @@ func TestSchemaRefusesCaseParametersThatAreNotJSON(t *testing.T) {
 	assert.ErrorContains(t, checkSchema(t.Context(), s), `case "broken"`)
 }
 
+func TestSchemaChecksNullCaseParametersAsAnEmptyObject(t *testing.T) {
+	s := schemaSuite(
+		t,
+		`{"type":"object","nullable":true,"required":["message"],"properties":{"message":{"type":"string"}}}`,
+		Case{Name: "null", Parameters: parameters(`null`)},
+	)
+
+	err := checkSchema(t.Context(), s)
+
+	assert.ErrorContains(t, err, `case "null"`)
+	assert.ErrorContains(t, err, "message")
+}
+
 func TestSchemaWithoutASchemaRefusesCaseParameters(t *testing.T) {
 	withParameters := schemaSuite(t, "", Case{Name: "default", Parameters: parameters(`{"message":"hi"}`)})
 	withoutParameters := schemaSuite(t, "")

@@ -88,6 +88,9 @@ func checkSchema(ctx context.Context, s *suite) error {
 				continue
 			}
 		}
+		if value == nil {
+			value = map[string]any{}
+		}
 
 		path := field.NewPath("parameters")
 		fieldErrs := validation.ValidateCustomResource(path, value, validator)
