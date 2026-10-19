@@ -72,9 +72,6 @@ type lifecycle struct {
 	// createdAt holds when the run created each request, by name. The
 	// OutputsReady and Ready timeouts count from it.
 	createdAt map[string]time.Time
-	// preexisting holds the UIDs of the objects that carried the label of a
-	// request of the run before the run created its requests.
-	preexisting map[types.UID]bool
 	// seen holds, for each request name, the objects that the lifecycle
 	// checks found.
 	seen map[string][]*unstructured.Unstructured
@@ -127,7 +124,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		return nil, err
 	}
 
-	rec, preexisting, err := startRecorder(ctx, s, kinds, runs, reg)
+	rec, err := startRecorder(ctx, s, kinds, runs, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +142,6 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		kinds:        kinds,
 		runs:         runs,
 		rec:          rec,
-		preexisting:  preexisting,
 		uids:         map[string]types.UID{},
 		createdAt:    map[string]time.Time{},
 		written:      map[string][]*unstructured.Unstructured{},
@@ -287,23 +283,23 @@ func (s *suite) ensureNamespace(ctx context.Context) error {
 }
 
 // startRecorder watches the requests of the run for the cleanup finalizer,
-// and each of kinds for the first object of each request. It also returns the
-// UIDs of the objects that carry the label of a request already, and fails
-// when one of them is in the namespace of the run. The watches start after
-// them and outlive the check that starts them, until the recorder stops.
+// and each of kinds for the first object of each request. It fails when an
+// object carries the label of a request already, which an earlier run in the
+// namespace left. The watches outlive the check that starts them, until the
+// recorder stops.
 func startRecorder(
 	ctx context.Context,
 	s *suite,
 	kinds []kindInfo,
 	runs []requestRun,
 	reg *pluginsv1alpha1.PluginRegistration,
-) (*recorder, map[types.UID]bool, error) {
+) (*recorder, error) {
 	c, err := client.NewWithWatch(
 		s.restConfig,
 		client.Options{Scheme: s.client.Scheme(), Mapper: s.client.RESTMapper()},
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("connecting the watches of the run: %w", err)
+		return nil, fmt.Errorf("connecting the watches of the run: %w", err)
 	}
 
 	names := make([]string, 0, len(runs))
@@ -313,7 +309,7 @@ func startRecorder(
 
 	ofRun, err := labels.NewRequirement(pluginsv1alpha1.LabelRequest, selection.In, names)
 	if err != nil {
-		return nil, nil, fmt.Errorf("selecting the objects of the requests: %w", err)
+		return nil, fmt.Errorf("selecting the objects of the requests: %w", err)
 	}
 	ofRunSelector := client.MatchingLabelsSelector{Selector: labels.NewSelector().Add(*ofRun)}
 
@@ -335,7 +331,7 @@ func startRecorder(
 	)
 	if err != nil {
 		cancel()
-		return nil, nil, fmt.Errorf("watching the PluginRequests of the run: %w", err)
+		return nil, fmt.Errorf("watching the PluginRequests of the run: %w", err)
 	}
 
 	accepted := meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted)
@@ -353,31 +349,25 @@ func startRecorder(
 	)
 	if err != nil {
 		cancel()
-		return nil, nil, fmt.Errorf("watching the PluginRegistration %s: %w", reg.Name, err)
+		return nil, fmt.Errorf("watching the PluginRegistration %s: %w", reg.Name, err)
 	}
 
-	preexisting := map[types.UID]bool{}
 	for _, k := range kinds {
 		listKind := k.gvk.GroupVersion().WithKind(k.gvk.Kind + "List")
 		existing := &unstructured.UnstructuredList{}
 		existing.SetGroupVersionKind(listKind)
 		if err := s.client.List(ctx, existing, ofRunSelector); err != nil {
 			cancel()
-			return nil, nil, fmt.Errorf("listing the %s objects of the run: %w", k.gvk.Kind, err)
+			return nil, fmt.Errorf("listing the %s objects of the run: %w", k.gvk.Kind, err)
 		}
 
-		earlier := make(map[types.UID]bool, len(existing.Items))
-		for _, item := range existing.Items {
-			if item.GetNamespace() == s.cfg.Namespace {
-				cancel()
-				return nil, nil, fmt.Errorf(
-					"the namespace %s holds %s of an earlier run: use a new namespace",
-					s.cfg.Namespace,
-					objectRef(&item),
-				)
-			}
-			earlier[item.GetUID()] = true
-			preexisting[item.GetUID()] = true
+		if len(existing.Items) > 0 {
+			cancel()
+			return nil, fmt.Errorf(
+				"%s is of an earlier run in the namespace %s: use a new namespace",
+				objectRef(&existing.Items[0]),
+				s.cfg.Namespace,
+			)
 		}
 
 		newList := func() client.ObjectList {
@@ -388,19 +378,16 @@ func startRecorder(
 
 		err := rec.watch(
 			watchCtx, c, newList, func(obj client.Object) string {
-				if earlier[obj.GetUID()] {
-					return ""
-				}
 				return objectKey(obj.GetLabels()[pluginsv1alpha1.LabelRequest])
 			}, existing.GetResourceVersion(), ofRunSelector,
 		)
 		if err != nil {
 			cancel()
-			return nil, nil, fmt.Errorf("watching the %s objects of the run: %w", k.gvk.Kind, err)
+			return nil, fmt.Errorf("watching the %s objects of the run: %w", k.gvk.Kind, err)
 		}
 	}
 
-	return rec, preexisting, nil
+	return rec, nil
 }
 
 // deleteCreated deletes the requests that the run created and that still

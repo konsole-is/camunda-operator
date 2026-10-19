@@ -26,7 +26,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -182,15 +181,12 @@ func allowsCreate(rules []rbacv1.PolicyRule, group, resource string) bool {
 }
 
 // writtenObjects lists, over every namespace, the objects of kinds that carry
-// the label of the request. It leaves out the objects of preexisting, which
-// existed before the run created its requests, for example the orphaned
-// objects of an earlier run.
+// the label of the request.
 func writtenObjects(
 	ctx context.Context,
 	s *suite,
 	kinds []kindInfo,
 	request string,
-	preexisting map[types.UID]bool,
 ) ([]*unstructured.Unstructured, error) {
 	var objs []*unstructured.Unstructured
 	for _, k := range kinds {
@@ -202,9 +198,7 @@ func writtenObjects(
 		}
 
 		for i := range list.Items {
-			if !preexisting[list.Items[i].GetUID()] {
-				objs = append(objs, &list.Items[i])
-			}
+			objs = append(objs, &list.Items[i])
 		}
 	}
 

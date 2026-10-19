@@ -165,7 +165,7 @@ func waitForRecorder(ctx context.Context, s *suite, life *lifecycle, name string
 			return errors.New("the watch has not seen the finalizer of the request yet")
 		}
 
-		objs, err := writtenObjects(ctx, s, life.kinds, name, life.preexisting)
+		objs, err := writtenObjects(ctx, s, life.kinds, name)
 		if err != nil {
 			return err
 		}
@@ -329,7 +329,7 @@ func checkLabels(ctx context.Context, s *suite) error {
 			return err
 		}
 
-		objs, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
+		objs, err := writtenObjects(ctx, s, life.kinds, r.name)
 		if err != nil {
 			return err
 		}
@@ -355,7 +355,7 @@ func checkResources(ctx context.Context, s *suite) error {
 			return err
 		}
 
-		objs, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
+		objs, err := writtenObjects(ctx, s, life.kinds, r.name)
 		if err != nil {
 			return err
 		}

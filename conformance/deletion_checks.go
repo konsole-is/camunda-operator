@@ -392,7 +392,7 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(runs, func(r requestRun) error {
-		now, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
+		now, err := writtenObjects(ctx, s, life.kinds, r.name)
 		if err != nil {
 			return err
 		}
@@ -410,7 +410,7 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 			func(ctx context.Context) error {
 				// An object that the plugin wrote while it deleted the
 				// request has the label too.
-				later, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
+				later, err := writtenObjects(ctx, s, life.kinds, r.name)
 				if err != nil {
 					return err
 				}
@@ -460,7 +460,7 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 			)
 		}
 
-		now, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
+		now, err := writtenObjects(ctx, s, life.kinds, r.name)
 		if err != nil {
 			return err
 		}
