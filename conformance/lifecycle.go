@@ -226,9 +226,9 @@ func (s *suite) ensureNamespace(ctx context.Context) error {
 
 // startRecorder watches the requests of the run for the cleanup finalizer,
 // and each of kinds for the first object of each request. It also returns the
-// UIDs of the objects that carry the label of a request already. The watches
-// start after them and outlive the check that starts them, until the recorder
-// stops.
+// UIDs of the objects that carry the label of a request already, and fails
+// when one of them is in the namespace of the run. The watches start after
+// them and outlive the check that starts them, until the recorder stops.
 func startRecorder(
 	ctx context.Context,
 	s *suite,
@@ -285,7 +285,17 @@ func startRecorder(
 			return nil, nil, fmt.Errorf("listing the %s objects of the run: %w", k.gvk.Kind, err)
 		}
 
+		earlier := make(map[types.UID]bool, len(existing.Items))
 		for _, item := range existing.Items {
+			if item.GetNamespace() == s.cfg.Namespace {
+				cancel()
+				return nil, nil, fmt.Errorf(
+					"the namespace %s holds %s of an earlier run: use a new namespace",
+					s.cfg.Namespace,
+					objectRef(&item),
+				)
+			}
+			earlier[item.GetUID()] = true
 			preexisting[item.GetUID()] = true
 		}
 
@@ -297,6 +307,9 @@ func startRecorder(
 
 		err := rec.watch(
 			watchCtx, c, newList, func(obj client.Object) string {
+				if earlier[obj.GetUID()] {
+					return ""
+				}
 				return objectKey(obj.GetLabels()[pluginsv1alpha1.LabelRequest])
 			}, existing.GetResourceVersion(), ofRunSelector,
 		)

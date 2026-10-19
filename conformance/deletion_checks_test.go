@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -194,6 +195,12 @@ func TestOrphanProblems(t *testing.T) {
 		{name: "a kept object without the request label", row: kept,
 			current: written("ConfigMap", "ns", "x", map[string]string{pluginsv1alpha1.LabelRegistration: "echo-1"}),
 			message: "ConfigMap ns/x lost the label plugins.camunda.io/request"},
+		{name: "a kept object that was written again", row: kept,
+			current: withUID(written("ConfigMap", "ns", "x", writerLabels()), "new-uid"),
+			message: "ConfigMap ns/x was deleted and written again"},
+		{name: "a kept object that is being deleted", row: kept,
+			current: deleting(written("ConfigMap", "ns", "x", writerLabels())),
+			message: "ConfigMap ns/x is being deleted"},
 		{name: "a deleted object that stays", row: deleted,
 			current: written("Ingress", "ns", "x", writerLabels()),
 			message: "Ingress ns/x has onOrphan Deleted and still exists"},
@@ -217,4 +224,15 @@ func TestOrphanProblems(t *testing.T) {
 			assert.Contains(t, problems[0], tt.message)
 		})
 	}
+}
+
+func withUID(obj *unstructured.Unstructured, uid types.UID) *unstructured.Unstructured {
+	obj.SetUID(uid)
+	return obj
+}
+
+func deleting(obj *unstructured.Unstructured) *unstructured.Unstructured {
+	now := metav1.Now()
+	obj.SetDeletionTimestamp(&now)
+	return obj
 }

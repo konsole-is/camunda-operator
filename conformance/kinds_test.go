@@ -62,6 +62,18 @@ func TestKindsOfExpandsWildcardsAndDropsSubresources(t *testing.T) {
 	)
 }
 
+func TestKindsOfDropsAResourceThatTheAPICannotCreate(t *testing.T) {
+	rules := []rbacv1.PolicyRule{{APIGroups: []string{"*"}, Resources: []string{"*"}, Verbs: []string{"*"}}}
+	resources := []*metav1.APIResourceList{{
+		GroupVersion: "metrics.k8s.io/v1beta1",
+		APIResources: []metav1.APIResource{
+			{Name: "pods", Kind: "PodMetrics", Namespaced: true, Verbs: []string{"get", "list"}},
+		},
+	}}
+
+	assert.Empty(t, kindsOf(rules, resources))
+}
+
 func TestKindsOfDropsAResourceThatCannotBeListed(t *testing.T) {
 	rules := []rbacv1.PolicyRule{{APIGroups: []string{"*"}, Resources: []string{"*"}, Verbs: []string{"create"}}}
 	resources := []*metav1.APIResourceList{{

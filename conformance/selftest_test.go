@@ -60,6 +60,19 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		Expect(got[DeleteOrphan].err).NotTo(HaveOccurred())
 	})
 
+	ginkgo.It("refuses a second run in the namespace of an earlier run", func() {
+		cfg := echoRun(echo.DefectNone)
+		runAll(cfg)
+
+		got := runAll(cfg)
+
+		for _, c := range append(lifecycleChecks, deletionChecks...) {
+			if got[c.ID].skipped == "" {
+				Expect(got[c.ID].err).To(MatchError(ContainSubstring("of an earlier run")), "check %s", c.ID)
+			}
+		}
+	})
+
 	ginkgo.DescribeTable(
 		"fails exactly the check of each defect, and names the defect",
 		func(run func(echo.Defect) Config, defect echo.Defect, id CheckID, message string) {

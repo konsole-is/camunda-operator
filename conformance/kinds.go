@@ -96,7 +96,7 @@ func bindsServiceAccount(subjects []rbacv1.Subject, namespace, name string) bool
 }
 
 // kindsOf returns each kind of resources that rules allow to create and that
-// the API can list, one time, sorted by group and then kind. A subresource is
+// the API can create and list, one time, sorted by group and then kind. A subresource is
 // not a kind.
 func kindsOf(rules []rbacv1.PolicyRule, resources []*metav1.APIResourceList) []kindInfo {
 	seen := map[schema.GroupKind]bool{}
@@ -110,7 +110,8 @@ func kindsOf(rules []rbacv1.PolicyRule, resources []*metav1.APIResourceList) []k
 
 		for _, r := range list.APIResources {
 			gk := schema.GroupKind{Group: gv.Group, Kind: r.Kind}
-			if strings.Contains(r.Name, "/") || !slices.Contains(r.Verbs, "list") || seen[gk] ||
+			if strings.Contains(r.Name, "/") || !slices.Contains(r.Verbs, "list") ||
+				!slices.Contains(r.Verbs, "create") || seen[gk] ||
 				!allowsCreate(rules, gv.Group, r.Name) {
 				continue
 			}

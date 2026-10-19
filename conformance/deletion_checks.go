@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -100,7 +101,7 @@ var deletionChecks = []Check{
 	},
 }
 
-func checkRegistrationFirst(ctx context.Context, s *suite) error {
+func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 	life, err := s.lifecycle(ctx)
 	if err != nil {
 		return err
@@ -116,9 +117,11 @@ func checkRegistrationFirst(ctx context.Context, s *suite) error {
 		return SkipCheck(fmt.Sprintf("no Deployment in %s runs under the ServiceAccount %s", sa.Namespace, sa.Name))
 	}
 
-	s.onClose(func(ctx context.Context) error {
-		return scaleBack(ctx, s, deployments)
-	})
+	defer func() {
+		restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restoreTimeout)
+		defer cancel()
+		err = errors.Join(err, scaleBack(restoreCtx, s, deployments))
+	}()
 
 	if err := scaleToZero(ctx, s, sa, deployments); err != nil {
 		return err
@@ -164,6 +167,10 @@ func checkRegistrationFirst(ctx context.Context, s *suite) error {
 
 	return errors.Join(verdict, deleteRequest(ctx, s, run.name))
 }
+
+// restoreTimeout bounds the scale back of the plugin, which also runs when
+// the context of the check ended.
+const restoreTimeout = 30 * time.Second
 
 // scaledDeployment is a plugin Deployment with the replica count that it had
 // before the check scaled it to zero.
@@ -478,8 +485,13 @@ func orphanProblems(
 		return nil
 	}
 
-	if current == nil {
+	switch {
+	case current == nil:
 		return []string{ref + " has onOrphan Kept and is gone"}
+	case current.GetUID() != before.GetUID():
+		return []string{ref + " was deleted and written again"}
+	case current.GetDeletionTimestamp() != nil:
+		return []string{ref + " is being deleted"}
 	}
 
 	var problems []string
