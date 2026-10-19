@@ -222,7 +222,6 @@ export function watchStream(
               pumping = true;
               while (queue.length > 0 && !closed) {
                 const [change, object, bytes] = queue.shift()!;
-                queuedBytes -= bytes;
                 const type = deltaType(
                   seen,
                   change,
@@ -237,6 +236,7 @@ export function watchStream(
                     object,
                   });
                 }
+                queuedBytes -= bytes;
               }
               pumping = false;
             };
@@ -255,7 +255,7 @@ export function watchStream(
                   ) {
                     return;
                   }
-                  const bytes = JSON.stringify(object).length;
+                  const bytes = Buffer.byteLength(JSON.stringify(object));
                   queue.push([change, object as KubernetesObject, bytes]);
                   queuedBytes += bytes;
                   if (queuedBytes > maxPendingBytes) end();

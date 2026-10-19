@@ -653,4 +653,43 @@ describe("watchStream", () => {
     expect(order.slice(0, 2)).toEqual(["snapshot b", "snapshot a"]);
     await reader.cancel();
   });
+  it.each([
+    ["a change that waits for room still counts", "x", 250, 4],
+    ["the count is in UTF-8 bytes", "中", 150, 3],
+  ])(
+    "ends the stream when the waiting changes pass maxPendingBytes: %s",
+    async (_name, char, size, changes) => {
+      const unsubscribe = vi.fn();
+      const { cache, listeners } = fakeCache({
+        Pod: async () => ({
+          snapshot: [
+            {
+              metadata: { namespace: "team", name: "large" },
+              data: "x".repeat(1_500),
+            },
+          ],
+          unsubscribe,
+        }),
+      });
+      const stream = watchStream(
+        cache,
+        [{ id: "a", request: { kinds: ["Pod"] } }],
+        new AbortController().signal,
+        { maxPendingBytes: 1_000 },
+      );
+      await vi.waitFor(() => expect(listeners.get("Pod")).toBeDefined());
+      await new Promise((wake) => setTimeout(wake, 10));
+
+      for (let i = 0; i < changes; i++) {
+        listeners.get("Pod")![0]("add", {
+          metadata: { namespace: "team", name: `change-${i}` },
+          data: char.repeat(size),
+        } as never);
+        await new Promise((wake) => setTimeout(wake, 1));
+      }
+
+      await vi.waitFor(() => expect(unsubscribe).toHaveBeenCalled());
+      await stream.cancel();
+    },
+  );
 });
