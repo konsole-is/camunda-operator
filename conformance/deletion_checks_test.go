@@ -281,3 +281,23 @@ func TestIsKindOfThePluginTellsAnObjectFromACloudResource(t *testing.T) {
 	assert.True(t, isKindOfThePlugin("ConfigMap", kinds))
 	assert.False(t, isKindOfThePlugin("S3Bucket", kinds))
 }
+
+func TestOrderRunHasATargetOfItsOwn(t *testing.T) {
+	first := requestRun{
+		caseName: "basic",
+		section:  "echo",
+		policy:   pluginsv1alpha1.DeletionPolicyOrphan,
+		name:     "basic-orphan",
+		tc: Case{
+			Name:   "basic",
+			Target: pluginsv1alpha1.TargetRef{Name: "echo-target", ServiceAccountName: "echo-sa"},
+		},
+	}
+
+	run := orderRun(first)
+
+	assert.Equal(t, "basic-order", run.name)
+	assert.Equal(t, pluginsv1alpha1.DeletionPolicyDelete, run.policy)
+	assert.Equal(t, "echo-target-order", run.tc.Target.Name)
+	assert.Equal(t, "echo-sa-order", run.tc.Target.ServiceAccountName)
+}

@@ -129,3 +129,13 @@ func TestFinalizerProblemReportsAFailedWatch(t *testing.T) {
 
 	assert.ErrorContains(t, finalizerProblem(r, "basic-delete"), "too old resource version")
 }
+
+func TestRecorderCaughtUpComparesTheLastResourceVersionOfAStream(t *testing.T) {
+	r := &recorder{}
+	r.advance("registration", "10")
+
+	assert.True(t, r.caughtUp("registration", "9"))
+	assert.True(t, r.caughtUp("registration", "10"))
+	assert.False(t, r.caughtUp("registration", "11"))
+	assert.False(t, r.caughtUp("other", "1"))
+}

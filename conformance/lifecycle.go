@@ -215,7 +215,7 @@ func runsOf(
 				caseOf[name] = tc.Name
 				run := requestRun{caseName: tc.Name, section: section, policy: policy, name: name, tc: tc}
 				if len(casePolicies) > 1 {
-					run.tc.Target = targetOfVariant(tc.Target, policy)
+					run.tc.Target = targetWithSuffix(tc.Target, strings.ToLower(string(policy)))
 				}
 				runs = append(runs, run)
 			}
@@ -225,16 +225,13 @@ func runsOf(
 	return runs, errors.Join(errs...)
 }
 
-// targetOfVariant gives the policy variant of a case a target of its own, so
-// that the Delete variant does not delete what the Orphan variant keeps.
-func targetOfVariant(
-	target pluginsv1alpha1.TargetRef,
-	policy pluginsv1alpha1.DeletionPolicy,
-) pluginsv1alpha1.TargetRef {
-	suffix := "-" + strings.ToLower(string(policy))
-	target.Name += suffix
+// targetWithSuffix gives a run that shares a case with another run a target
+// of its own, so that the deletion of one does not delete what the other
+// keeps.
+func targetWithSuffix(target pluginsv1alpha1.TargetRef, suffix string) pluginsv1alpha1.TargetRef {
+	target.Name += "-" + suffix
 	if target.ServiceAccountName != "" {
-		target.ServiceAccountName += suffix
+		target.ServiceAccountName += "-" + suffix
 	}
 
 	return target
@@ -322,11 +319,15 @@ func startRecorder(
 	}
 
 	accepted := meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted)
+	rec.advance(registrationStream, reg.ResourceVersion)
 	err = rec.watch(
 		watchCtx,
 		c,
 		func() client.ObjectList { return &pluginsv1alpha1.PluginRegistrationList{} },
-		acceptedKey(accepted),
+		func(obj client.Object) string {
+			rec.advance(registrationStream, obj.GetResourceVersion())
+			return acceptedKey(accepted)(obj)
+		},
 		reg.ResourceVersion,
 		client.MatchingFields{"metadata.name": reg.Name},
 	)

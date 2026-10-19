@@ -41,6 +41,7 @@ type recorder struct {
 	seq      int
 	marks    map[string]mark
 	seen     map[types.UID]bool
+	latest   map[string]string
 	failures []error
 	stop     context.CancelFunc
 }
@@ -131,6 +132,33 @@ func (r *recorder) drain(
 			}
 		}
 	}
+}
+
+// advance records rv as the last resource version that the watch stream
+// gave.
+func (r *recorder) advance(stream, rv string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.latest == nil {
+		r.latest = map[string]string{}
+	}
+	r.latest[stream] = rv
+}
+
+// caughtUp says whether the watch stream gave the resource version rv or a
+// later one.
+func (r *recorder) caughtUp(stream, rv string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	latest, ok := r.latest[stream]
+	if !ok {
+		return false
+	}
+
+	cmp, err := resourceversion.CompareResourceVersion(latest, rv)
+	return err == nil && cmp >= 0
 }
 
 func (r *recorder) fail(err error) {

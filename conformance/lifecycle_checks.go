@@ -487,7 +487,17 @@ func checkAcceptedKept(ctx context.Context, s *suite) error {
 		return err
 	}
 
-	if err := life.rec.err(); err != nil {
+	what := "the watch of the registration to reach the read of the check"
+	err = waitFor(ctx, s.cfg.Timeouts.OutputsReady, what, func(context.Context) error {
+		if err := life.rec.err(); err != nil {
+			return err
+		}
+		if !life.rec.caughtUp(registrationStream, reg.ResourceVersion) {
+			return fmt.Errorf("the watch has not seen resource version %s yet", reg.ResourceVersion)
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 
@@ -500,6 +510,9 @@ func checkAcceptedKept(ctx context.Context, s *suite) error {
 
 	return nil
 }
+
+// registrationStream names the watch of the registration in the recorder.
+const registrationStream = "registration"
 
 // acceptedChangedKey is the recorder key of a registration whose Accepted
 // condition is not the one that the run started with.

@@ -131,13 +131,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 		return err
 	}
 
-	run := requestRun{
-		caseName: life.runs[0].caseName,
-		section:  life.runs[0].section,
-		policy:   pluginsv1alpha1.DeletionPolicyDelete,
-		name:     strings.ToLower(life.runs[0].caseName) + "-order",
-		tc:       life.runs[0].tc,
-	}
+	run := orderRun(life.runs[0])
 
 	rec, err := startOrderRecorder(ctx, s, life.registration.Name, run.name)
 	if err != nil {
@@ -168,6 +162,17 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 	})
 
 	return errors.Join(verdict, deleteRequest(ctx, s, run.name, req.UID))
+}
+
+// orderRun is the run of the request of the check, made from first, with a
+// target of its own.
+func orderRun(first requestRun) requestRun {
+	run := first
+	run.policy = pluginsv1alpha1.DeletionPolicyDelete
+	run.name = strings.ToLower(first.caseName) + "-order"
+	run.tc.Target = targetWithSuffix(first.tc.Target, "order")
+
+	return run
 }
 
 // restoreTimeout bounds the scale back of the plugin, which also runs when
