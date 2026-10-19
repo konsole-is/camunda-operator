@@ -278,11 +278,14 @@ func TestDeleteRequestKeepsARequestThatReplacedTheOneOfTheRun(t *testing.T) {
 	assert.NoError(t, s.client.Get(t.Context(), client.ObjectKeyFromObject(replacement), &kept))
 }
 
-func TestIsKindOfThePluginTellsAnObjectFromACloudResource(t *testing.T) {
-	kinds := []kindInfo{{gvk: schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, namespaced: true}}
+func TestMergeObjectsKeepsEachUIDOnceAndTheNewestCopy(t *testing.T) {
+	early := withUID(written("ConfigMap", "ns", "kept", nil), "kept-uid")
+	gone := withUID(written("ConfigMap", "ns", "gone", nil), "gone-uid")
+	later := withUID(written("ConfigMap", "ns", "kept", writerLabels()), "kept-uid")
 
-	assert.True(t, isKindOfThePlugin("ConfigMap", kinds))
-	assert.False(t, isKindOfThePlugin("S3Bucket", kinds))
+	got := mergeObjects([]*unstructured.Unstructured{early, gone}, []*unstructured.Unstructured{later})
+
+	assert.Equal(t, []*unstructured.Unstructured{later, gone}, got)
 }
 
 func TestOrderRunHasATargetOfItsOwn(t *testing.T) {

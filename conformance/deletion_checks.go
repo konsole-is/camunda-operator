@@ -459,10 +459,13 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 			)
 		}
 
-		objs, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
+		now, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
 		if err != nil {
 			return err
 		}
+		// An object that the lifecycle checks saw and that is gone now is
+		// still checked against its row.
+		objs := mergeObjects(life.seen[r.name], now)
 		life.written[r.name] = objs
 
 		if err := deleteRequest(ctx, s, r.name, life.uids[r.name]); err != nil {
@@ -477,12 +480,6 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 					return o.GetKind() == row.Kind && o.GetName() == row.Name
 				})
 				if i == -1 {
-					if row.OnOrphan == pluginsv1alpha1.OnOrphanKept && isKindOfThePlugin(row.Kind, life.kinds) {
-						problems = append(
-							problems,
-							fmt.Sprintf("%s %s has onOrphan Kept and is gone", row.Kind, row.Name),
-						)
-					}
 					continue
 				}
 
@@ -587,12 +584,6 @@ func checkDeleteRoutes(ctx context.Context, s *suite) error {
 
 		return errors.Join(errs...)
 	})
-}
-
-// isKindOfThePlugin says whether a row of status.resources names a kind that
-// the plugin writes in the cluster, and not a resource outside it.
-func isKindOfThePlugin(kind string, kinds []kindInfo) bool {
-	return slices.ContainsFunc(kinds, func(k kindInfo) bool { return k.gvk.Kind == kind })
 }
 
 func isRoute(obj *unstructured.Unstructured) bool {
@@ -703,6 +694,19 @@ func deleteRequest(ctx context.Context, s *suite, name string, uid types.UID) er
 
 		return fmt.Errorf("the request still exists, with the finalizers %v", req.Finalizers)
 	})
+}
+
+// mergeObjects returns the objects of earlier and later, one time for each
+// UID, with the copy of later where both have one.
+func mergeObjects(earlier, later []*unstructured.Unstructured) []*unstructured.Unstructured {
+	merged := slices.Clone(later)
+	for _, obj := range earlier {
+		if !slices.ContainsFunc(merged, func(o *unstructured.Unstructured) bool { return o.GetUID() == obj.GetUID() }) {
+			merged = append(merged, obj)
+		}
+	}
+
+	return merged
 }
 
 // current gets obj again, and returns nil when it is gone.

@@ -359,6 +359,7 @@ func checkResources(ctx context.Context, s *suite) error {
 		if err != nil {
 			return err
 		}
+		life.seen[r.name] = mergeObjects(life.seen[r.name], objs)
 
 		return problemsError(resourceProblems(objs, req.Status.Resources))
 	})

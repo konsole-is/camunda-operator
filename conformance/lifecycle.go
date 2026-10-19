@@ -75,6 +75,9 @@ type lifecycle struct {
 	// preexisting holds the UIDs of the objects that carried the label of a
 	// request of the run before the run created its requests.
 	preexisting map[types.UID]bool
+	// seen holds, for each request name, the objects that the lifecycle
+	// checks found.
+	seen map[string][]*unstructured.Unstructured
 	// written holds, for each request name, the objects that the request had
 	// before the deletion checks deleted it.
 	written map[string][]*unstructured.Unstructured
@@ -146,6 +149,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		uids:         map[string]types.UID{},
 		createdAt:    map[string]time.Time{},
 		written:      map[string][]*unstructured.Unstructured{},
+		seen:         map[string][]*unstructured.Unstructured{},
 	}
 
 	for _, run := range runs {

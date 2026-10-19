@@ -54,7 +54,8 @@ type mark struct {
 }
 
 // watch starts a watch of the lists that newList returns, with opts, at the
-// resource version from. Each object of an event that keyOf gives a key is
+// resource version from, or after the current state when from is empty. Each
+// object of an event that keyOf gives a key is
 // observed under that key. A watch that the API server closes starts again.
 // A watch that fails after it started is a failure of the recorder. The
 // watch runs until ctx ends or it fails.
@@ -68,6 +69,16 @@ func (r *recorder) watch(
 ) error {
 	after := func(rv string) []client.ListOption {
 		return append(slices.Clone(opts), &client.ListOptions{Raw: &metav1.ListOptions{ResourceVersion: rv}})
+	}
+
+	// A watch without a resource version has no boundary to start again
+	// from, before its first event.
+	if from == "" {
+		list := newList()
+		if err := c.List(ctx, list, opts...); err != nil {
+			return err
+		}
+		from = list.GetResourceVersion()
 	}
 
 	w, err := c.Watch(ctx, newList(), after(from)...)
