@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { inOrder } from "./serial";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
@@ -39,5 +39,26 @@ describe("inOrder", () => {
     expect(await inOrder("d", async () => "free")).toBe("free");
     release();
     await blocked;
+  });
+
+  it("two loads of the module share the order of a key", async () => {
+    const first = await import("./serial");
+    vi.resetModules();
+    const second = await import("./serial");
+    expect(second.inOrder).not.toBe(first.inOrder);
+    const events: string[] = [];
+
+    await Promise.all([
+      first.inOrder("e", async () => {
+        events.push("start 1");
+        await tick();
+        events.push("end 1");
+      }),
+      second.inOrder("e", async () => {
+        events.push("start 2");
+      }),
+    ]);
+
+    expect(events).toEqual(["start 1", "end 1", "start 2"]);
   });
 });
