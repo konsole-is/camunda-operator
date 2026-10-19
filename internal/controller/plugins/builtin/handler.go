@@ -55,6 +55,15 @@ type served struct {
 	report func() report
 }
 
+// readiness returns the component that Ready follows.
+func (s served) readiness() *component.Component {
+	if s.backing != nil {
+		return s.backing
+	}
+
+	return s.outputs
+}
+
 // report holds the status fields that a handler fills.
 type report struct {
 	outputs     map[string]string

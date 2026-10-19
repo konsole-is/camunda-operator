@@ -268,9 +268,26 @@ rules:
   - plugins.camunda.io
   resources:
   - pluginregistrations/status
+  - pluginrequests/status
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - plugins.camunda.io
+  resources:
+  - pluginrequests
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - plugins.camunda.io
+  resources:
+  - pluginrequests/finalizers
+  verbs:
   - update
 - apiGroups:
   - postgresql.cnpg.io
