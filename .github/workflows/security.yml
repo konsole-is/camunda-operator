@@ -122,9 +122,8 @@ jobs:
       security-events: write   # upload SARIF to code scanning
     # The release images are multi-platform. The arch list is the PLATFORMS
     # of the Makefile, and the suffix is the one that release.yml gives the
-    # image name. A release from before the fleet manager has no fleet
-    # manager image, and a release from before the conformance binary has no
-    # plugin conformance image, so optional lets those entries skip the scan.
+    # image name. A release from before the fleet manager or the conformance
+    # binary lacks that image, so optional lets the entry skip the scan.
     strategy:
       fail-fast: false
       matrix:

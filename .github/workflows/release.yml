@@ -131,8 +131,8 @@ jobs:
       # CLI_IMG is the companion image that the Jobs of the operator run. The
       # chart and install.yaml pass it to the manager through
       # --camunda-operator-cli-image. FLEET_IMG is the image of the chart value
-      # fleetManager.enabled. CONFORMANCE_IMG is the image of the
-      # plugin-conformance binary, for the CI of a plugin.
+      # fleetManager.enabled. CONFORMANCE_IMG is the image of
+      # plugin-conformance.
       - name: Derive the version from the tag
         run: |
           num='(0|[1-9][0-9]*)'
