@@ -247,9 +247,9 @@ func deleting(obj *unstructured.Unstructured) *unstructured.Unstructured {
 
 func TestDeleteRequestKeepsARequestThatReplacedTheOneOfTheRun(t *testing.T) {
 	replacement := &pluginsv1alpha1.PluginRequest{}
-	replacement.Namespace = "conformance-echo"
+	replacement.Namespace = validConfig().Namespace
 	replacement.Name = testRequestName
-	replacement.UID = "replacement-uid"
+	replacement.UID = replacementUID
 
 	// The fake client ignores a UID precondition, so the interceptor
 	// answers as the API server does.
@@ -271,7 +271,7 @@ func TestDeleteRequestKeepsARequestThatReplacedTheOneOfTheRun(t *testing.T) {
 	}
 	s := newTestSuite(t, validConfig(), funcs, replacement)
 
-	err := deleteRequest(t.Context(), s, testRequestName, "run-uid", time.Now().Add(time.Minute))
+	err := deleteRequest(t.Context(), s, testRequestName, runUID, time.Now().Add(time.Minute))
 
 	assert.ErrorContains(t, err, "is not the request that the run created")
 	var kept pluginsv1alpha1.PluginRequest
@@ -366,7 +366,7 @@ func TestCurrentTakesAnUnrelatedReplacementAsGone(t *testing.T) {
 	replacement := &corev1.ConfigMap{}
 	replacement.Namespace = "ns"
 	replacement.Name = "x"
-	replacement.UID = "replacement-uid"
+	replacement.UID = replacementUID
 	sameLabels := replacement.DeepCopy()
 	sameLabels.Name = "y"
 	sameLabels.Labels = writerLabels()
@@ -401,14 +401,14 @@ func TestPluginDeploymentsRefusesADeploymentThatRunsNoReplica(t *testing.T) {
 
 func TestDeleteRequestEndsAtItsDeadline(t *testing.T) {
 	stuck := &pluginsv1alpha1.PluginRequest{}
-	stuck.Namespace = "conformance-echo"
+	stuck.Namespace = validConfig().Namespace
 	stuck.Name = testRequestName
-	stuck.UID = "run-uid"
+	stuck.UID = runUID
 	stuck.Finalizers = []string{pluginsv1alpha1.FinalizerCleanup}
 	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, stuck)
 
 	start := time.Now()
-	err := deleteRequest(t.Context(), s, testRequestName, "run-uid", time.Now().Add(-time.Second))
+	err := deleteRequest(t.Context(), s, testRequestName, runUID, time.Now().Add(-time.Second))
 
 	assert.ErrorContains(t, err, "the request still exists")
 	assert.Less(t, time.Since(start), 10*time.Second, "a passed deadline checks one time")

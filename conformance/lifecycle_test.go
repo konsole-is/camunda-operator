@@ -25,6 +25,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -187,18 +188,25 @@ func TestRunIDOfKeepsApartTwoNamespacesThatCollidedBefore(t *testing.T) {
 	assert.NotEqual(t, runIDOf("ci-plugin-18"), runIDOf("ci-plugin-920"))
 }
 
+// The UIDs of a request that the run created and of a request that replaced
+// it.
+const (
+	runUID         types.UID = "run-uid"
+	replacementUID types.UID = "replacement-uid"
+)
+
 func TestDeleteRunObjectsKeepsTheObjectsOfAReplacement(t *testing.T) {
 	replacement := &pluginsv1alpha1.PluginRequest{}
-	replacement.Namespace = "conformance-echo"
+	replacement.Namespace = validConfig().Namespace
 	replacement.Name = "basic-delete"
-	replacement.UID = "replacement-uid"
+	replacement.UID = replacementUID
 	cm := &corev1.ConfigMap{}
-	cm.Namespace = "conformance-echo"
+	cm.Namespace = validConfig().Namespace
 	cm.Name = "basic-delete-echo"
 	cm.Labels = map[string]string{pluginsv1alpha1.LabelRequest: "basic-delete"}
 	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, replacement, cm)
 	created := replacement.DeepCopy()
-	created.UID = "run-uid"
+	created.UID = runUID
 	kinds := []kindInfo{{gvk: schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, namespaced: true}}
 
 	require.NoError(t, s.deleteRunObjects(t.Context(), kinds, []*pluginsv1alpha1.PluginRequest{created}))
@@ -208,14 +216,14 @@ func TestDeleteRunObjectsKeepsTheObjectsOfAReplacement(t *testing.T) {
 
 func TestDeleteRunObjectsDeletesTheObjectsOfACreatedRequest(t *testing.T) {
 	cm := &corev1.ConfigMap{}
-	cm.Namespace = "conformance-echo"
+	cm.Namespace = validConfig().Namespace
 	cm.Name = "basic-delete-echo"
 	cm.Labels = map[string]string{pluginsv1alpha1.LabelRequest: "basic-delete"}
 	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, cm)
 	created := &pluginsv1alpha1.PluginRequest{}
-	created.Namespace = "conformance-echo"
+	created.Namespace = validConfig().Namespace
 	created.Name = "basic-delete"
-	created.UID = "run-uid"
+	created.UID = runUID
 	kinds := []kindInfo{{gvk: schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, namespaced: true}}
 
 	require.NoError(t, s.deleteRunObjects(t.Context(), kinds, []*pluginsv1alpha1.PluginRequest{created}))
