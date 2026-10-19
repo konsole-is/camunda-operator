@@ -42,12 +42,12 @@ const URL_KEYS: Partial<Record<SettingKey, string>> = {
   "prometheus.url": "prometheus.credentialsSecretRef",
 };
 
-/** seedFromEnv returns the settings that the seed variables of env give, without the credentials of an address. */
+/** seedFromEnv returns the settings that the seed variables of env give, without the credentials of an address. An address that is not http or https is empty. */
 export function seedFromEnv(env: Record<string, string | undefined>): Settings {
   return fill((key) => env[SEED_VARIABLES[key]]);
 }
 
-/** settingsFromData returns the settings of the data of the ConfigMap, without the credentials of an address. Unknown keys are left out. */
+/** settingsFromData returns the settings of the data of the ConfigMap, without the credentials of an address. An address that is not http or https is empty. Unknown keys are left out. */
 export function settingsFromData(
   data: Record<string, string> | undefined,
 ): Settings {
@@ -64,13 +64,22 @@ function fill(value: (key: SettingKey) => string | undefined): Settings {
 }
 
 // The chart values and a hand edit of the ConfigMap skip checkPatch, and
-// the pages show the settings.
+// the pages show the settings. An address that is not http or https can
+// hide credentials from URL.
 function withoutCredentials(value: string): string {
-  const url = URL.parse(value);
-  if (!url || (!url.username && !url.password)) return value;
+  const url = httpURL(value);
+  if (!url) return "";
+  if (!url.username && !url.password) return value;
   url.username = "";
   url.password = "";
   return url.href;
+}
+
+function httpURL(value: string): URL | undefined {
+  const url = URL.parse(value);
+  return url && (url.protocol === "http:" || url.protocol === "https:")
+    ? url
+    : undefined;
 }
 
 function isSettingKey(key: string): key is SettingKey {
@@ -97,9 +106,9 @@ export function checkPatch(patch: Record<string, unknown>): ApiError[] {
         "secretStore.kind must be SecretStore or ClusterSecretStore",
       );
     } else if (URL_KEYS[key] && value !== "") {
-      const url = URL.parse(value);
+      const url = httpURL(value);
       if (!url) {
-        invalid(key, `${key} must be a URL`);
+        invalid(key, `${key} must be an http:// or https:// address`);
       } else if (url.username || url.password) {
         invalid(
           key,

@@ -35,7 +35,7 @@ The fleet manager creates the ConfigMap `fleet-manager-settings` from these valu
 | `prometheus.url` | `fleetManager.settings.prometheus.url` | The address of Prometheus. |
 | `prometheus.credentialsSecretRef` | `fleetManager.settings.prometheus.credentialsSecretRef` | The name of the Secret with the Prometheus credentials. See [Prometheus credentials](#prometheus-credentials). |
 
-An empty value means that the setting is not set. An address in `git.repository` or `prometheus.url` must not hold a user name or a password, as in `https://user:token@git.example.com`. The pages show the settings, so put the credentials in a Secret. The fleet manager drops a user name and a password from an address when it reads the settings.
+An empty value means that the setting is not set. An address in `git.repository` or `prometheus.url` starts with `http://` or `https://`, and it must not hold a user name or a password, as in `https://user:token@git.example.com`. The fleet manager treats another address as not set. The pages show the settings, so put the credentials in a Secret. The fleet manager drops a user name and a password from an address when it reads the settings.
 
 ## Change a setting
 

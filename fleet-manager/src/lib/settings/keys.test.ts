@@ -72,16 +72,29 @@ describe("credentials in a URL setting", () => {
     expect(JSON.stringify(s)).not.toContain("t0ken");
   });
 
-  it("keeps an address without credentials and a value that is not a URL", () => {
+  it("keeps an http or https address without credentials", () => {
     expect(
       settingsFromData({
         "git.repository": "https://git.example.com/fleet.git",
-        "prometheus.url": "prom:9090",
+        "prometheus.url": "http://prom:9090",
       }),
     ).toMatchObject({
       "git.repository": "https://git.example.com/fleet.git",
-      "prometheus.url": "prom:9090",
+      "prometheus.url": "http://prom:9090",
     });
+  });
+
+  it.each([
+    "https://bot:t0ken@git.example.com:bad/fleet.git",
+    "bot:t0ken@git.example.com/fleet.git",
+    "ssh://bot:t0ken@git.example.com/fleet.git",
+  ])("an address that is not http or https is not set (%s)", (value) => {
+    expect(
+      settingsFromData({ "git.repository": value })["git.repository"],
+    ).toBe("");
+    expect(
+      seedFromEnv({ FLEET_SETTINGS_GIT_REPOSITORY: value })["git.repository"],
+    ).toBe("");
   });
 });
 
@@ -123,6 +136,14 @@ describe("checkPatch", () => {
       expect(JSON.stringify(errors)).not.toContain("t0ken");
     },
   );
+
+  it("refuses an address that is not http or https", () => {
+    expect(
+      checkPatch({ "git.repository": "ssh://git.example.com/fleet.git" }),
+    ).toEqual([
+      expect.objectContaining({ code: "Invalid", path: "git.repository" }),
+    ]);
+  });
 
   it("refuses a URL that does not parse", () => {
     expect(checkPatch({ "prometheus.url": "not a url" })).toEqual([
