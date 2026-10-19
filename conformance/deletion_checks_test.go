@@ -193,7 +193,7 @@ func TestOrphanProblems(t *testing.T) {
 		{name: "a kept cluster-scoped object is checked by its labels only", row: keptClusterScoped,
 			current: written("StorageClass", "", "x", writerLabels(), ownerOf(req))},
 		{name: "a kept cluster-scoped object without the registration label", row: keptClusterScoped,
-			current: written("StorageClass", "", "x", map[string]string{pluginsv1alpha1.LabelRequest: "basic-delete"}),
+			current: written("StorageClass", "", "x", map[string]string{pluginsv1alpha1.LabelRequest: testRequestName}),
 			message: "StorageClass x lost the label plugins.camunda.io/registration"},
 		{name: "a deleted object that is gone", row: deleted},
 		{name: "a kept object that is gone", row: kept, message: "ConfigMap ns/x has onOrphan Kept and is gone"},
@@ -248,7 +248,7 @@ func deleting(obj *unstructured.Unstructured) *unstructured.Unstructured {
 func TestDeleteRequestKeepsARequestThatReplacedTheOneOfTheRun(t *testing.T) {
 	replacement := &pluginsv1alpha1.PluginRequest{}
 	replacement.Namespace = "conformance-echo"
-	replacement.Name = "basic-delete"
+	replacement.Name = testRequestName
 	replacement.UID = "replacement-uid"
 
 	// The fake client ignores a UID precondition, so the interceptor
@@ -271,7 +271,7 @@ func TestDeleteRequestKeepsARequestThatReplacedTheOneOfTheRun(t *testing.T) {
 	}
 	s := newTestSuite(t, validConfig(), funcs, replacement)
 
-	err := deleteRequest(t.Context(), s, "basic-delete", "run-uid")
+	err := deleteRequest(t.Context(), s, testRequestName, "run-uid", time.Now().Add(time.Minute))
 
 	assert.ErrorContains(t, err, "is not the request that the run created")
 	var kept pluginsv1alpha1.PluginRequest
@@ -397,4 +397,19 @@ func TestPluginDeploymentsRefusesADeploymentThatRunsNoReplica(t *testing.T) {
 	_, err := pluginDeployments(t.Context(), s, pluginsv1alpha1.ServiceAccountRef{Namespace: "plugins", Name: "plugin"})
 
 	assert.ErrorContains(t, err, "the Deployment plugins/plugin runs no replica")
+}
+
+func TestDeleteRequestEndsAtItsDeadline(t *testing.T) {
+	stuck := &pluginsv1alpha1.PluginRequest{}
+	stuck.Namespace = "conformance-echo"
+	stuck.Name = testRequestName
+	stuck.UID = "run-uid"
+	stuck.Finalizers = []string{pluginsv1alpha1.FinalizerCleanup}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, stuck)
+
+	start := time.Now()
+	err := deleteRequest(t.Context(), s, testRequestName, "run-uid", time.Now().Add(-time.Second))
+
+	assert.ErrorContains(t, err, "the request still exists")
+	assert.Less(t, time.Since(start), 10*time.Second, "a passed deadline checks one time")
 }

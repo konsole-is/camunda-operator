@@ -57,7 +57,7 @@ func TestFinalizerProblem(t *testing.T) {
 	withFinalizer := func(resourceVersion string) *pluginsv1alpha1.PluginRequest {
 		req := &pluginsv1alpha1.PluginRequest{}
 		req.Kind = kindPluginRequest
-		req.Name = "basic-delete"
+		req.Name = testRequestName
 		req.ResourceVersion = resourceVersion
 		return req
 	}
@@ -74,28 +74,28 @@ func TestFinalizerProblem(t *testing.T) {
 		{
 			name: "finalizer before the first object",
 			events: func(r *recorder) {
-				r.observe(withFinalizer("4"), finalizerKey("basic-delete"))
-				r.observe(sc, objectKey("basic-delete"))
+				r.observe(withFinalizer("4"), finalizerKey(testRequestName))
+				r.observe(sc, objectKey(testRequestName))
 			},
 		},
 		{
 			name: "finalizer and no object",
 			events: func(r *recorder) {
-				r.observe(withFinalizer("4"), finalizerKey("basic-delete"))
+				r.observe(withFinalizer("4"), finalizerKey(testRequestName))
 			},
 		},
 		{
 			name: "an object before the finalizer, seen after it",
 			events: func(r *recorder) {
-				r.observe(withFinalizer("6"), finalizerKey("basic-delete"))
-				r.observe(sc, objectKey("basic-delete"))
+				r.observe(withFinalizer("6"), finalizerKey(testRequestName))
+				r.observe(sc, objectKey(testRequestName))
 			},
 			message: "StorageClass ns-basic-delete-echo appeared before the finalizer plugins.camunda.io/cleanup",
 		},
 		{
 			name: "no finalizer",
 			events: func(r *recorder) {
-				r.observe(sc, objectKey("basic-delete"))
+				r.observe(sc, objectKey(testRequestName))
 			},
 			message: "the request never got the finalizer plugins.camunda.io/cleanup",
 		},
@@ -106,7 +106,7 @@ func TestFinalizerProblem(t *testing.T) {
 			r := &recorder{}
 			tt.events(r)
 
-			err := finalizerProblem(r, "basic-delete")
+			err := finalizerProblem(r, testRequestName)
 
 			if tt.message == "" {
 				assert.NoError(t, err)
@@ -122,7 +122,7 @@ func TestRecorderSawOnlyTheObjectsThatItObserved(t *testing.T) {
 	cm := configMap("x", "4")
 	cm.UID = "observed"
 
-	r.observe(cm, objectKey("basic-delete"))
+	r.observe(cm, objectKey(testRequestName))
 
 	assert.True(t, r.saw("observed"))
 	assert.False(t, r.saw("other"))
@@ -132,7 +132,7 @@ func TestFinalizerProblemReportsAFailedWatch(t *testing.T) {
 	r := &recorder{}
 	r.fail(errors.New("a watch failed: too old resource version"))
 
-	assert.ErrorContains(t, finalizerProblem(r, "basic-delete"), "too old resource version")
+	assert.ErrorContains(t, finalizerProblem(r, testRequestName), "too old resource version")
 }
 
 func TestRecorderCaughtUpComparesTheLastResourceVersionOfAStream(t *testing.T) {

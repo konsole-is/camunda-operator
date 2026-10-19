@@ -160,7 +160,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 		return orderVerdict(rec, life.registration.Name)
 	})
 
-	return errors.Join(verdict, deleteRequest(ctx, s, run.name, req.UID))
+	return errors.Join(verdict, deleteRequest(ctx, s, run.name, req.UID, time.Now().Add(s.cfg.Timeouts.Deletion)))
 }
 
 // orderRun is the run of the request of the check, made from first, with a
@@ -406,12 +406,14 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 		objs := life.inventory(r.name, now)
 		life.written[r.name] = objs
 
-		if err := deleteRequest(ctx, s, r.name, life.uids[r.name]); err != nil {
+		deadline := time.Now().Add(s.cfg.Timeouts.Deletion)
+		if err := deleteRequest(ctx, s, r.name, life.uids[r.name], deadline); err != nil {
 			return err
 		}
 
-		return waitFor(
+		return waitUntil(
 			ctx,
+			deadline,
 			s.cfg.Timeouts.Deletion,
 			"the objects of the request to be gone",
 			func(ctx context.Context) error {
@@ -476,12 +478,13 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 		objs := life.inventory(r.name, now)
 		life.written[r.name] = objs
 
-		if err := deleteRequest(ctx, s, r.name, life.uids[r.name]); err != nil {
+		deadline := time.Now().Add(s.cfg.Timeouts.Deletion)
+		if err := deleteRequest(ctx, s, r.name, life.uids[r.name], deadline); err != nil {
 			return err
 		}
 
 		what := "the objects of the request to follow onOrphan"
-		return waitFor(ctx, s.cfg.Timeouts.Deletion, what, func(ctx context.Context) error {
+		return waitUntil(ctx, deadline, s.cfg.Timeouts.Deletion, what, func(ctx context.Context) error {
 			var problems []string
 			for _, row := range req.Status.Resources {
 				i := slices.IndexFunc(objs, func(o *unstructured.Unstructured) bool {
@@ -676,9 +679,9 @@ func runsWith(runs []requestRun, policy pluginsv1alpha1.DeletionPolicy) []reques
 }
 
 // deleteRequest deletes the request name that the run created with uid, and
-// waits until it is gone. It fails, and deletes nothing, when another
-// request of that name replaced it.
-func deleteRequest(ctx context.Context, s *suite, name string, uid types.UID) error {
+// waits until it is gone, at most until deadline. It fails, and deletes
+// nothing, when another request of that name replaced it.
+func deleteRequest(ctx context.Context, s *suite, name string, uid types.UID, deadline time.Time) error {
 	req := &pluginsv1alpha1.PluginRequest{}
 	req.Namespace = s.cfg.Namespace
 	req.Name = name
@@ -691,7 +694,7 @@ func deleteRequest(ctx context.Context, s *suite, name string, uid types.UID) er
 		return fmt.Errorf("deleting the PluginRequest %s/%s: %w", req.Namespace, name, err)
 	}
 
-	return waitFor(ctx, s.cfg.Timeouts.Deletion, "the request to be gone", func(ctx context.Context) error {
+	return waitUntil(ctx, deadline, s.cfg.Timeouts.Deletion, "the request to be gone", func(ctx context.Context) error {
 		err := s.client.Get(ctx, client.ObjectKeyFromObject(req), req)
 		if apierrors.IsNotFound(err) || (err == nil && req.UID != uid) {
 			return nil
