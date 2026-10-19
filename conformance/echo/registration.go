@@ -18,6 +18,7 @@ package echo
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -59,7 +60,10 @@ func (c *Controller) publish(ctx context.Context) error {
 func (c *Controller) registration() *pluginsv1alpha1.PluginRegistration {
 	outputs := make([]pluginsv1alpha1.OutputDecl, 0, len(c.opts.Outputs))
 	for _, o := range c.opts.Outputs {
-		outputs = append(outputs, pluginsv1alpha1.OutputDecl{Key: o.Key})
+		// spec.outputs is a list map by key, and two sections can share one.
+		if !slices.ContainsFunc(outputs, func(d pluginsv1alpha1.OutputDecl) bool { return d.Key == o.Key }) {
+			outputs = append(outputs, pluginsv1alpha1.OutputDecl{Key: o.Key})
+		}
 	}
 
 	return &pluginsv1alpha1.PluginRegistration{

@@ -143,8 +143,12 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 	if err := s.client.Create(ctx, req); err != nil {
 		return fmt.Errorf("creating the PluginRequest %s/%s: %w", req.Namespace, req.Name, err)
 	}
+	created := []*pluginsv1alpha1.PluginRequest{req}
 	s.onClose(func(ctx context.Context) error {
-		return s.deleteCreated(ctx, []*pluginsv1alpha1.PluginRequest{req})
+		return s.deleteRunObjects(ctx, life.kinds, created)
+	})
+	s.onClose(func(ctx context.Context) error {
+		return s.deleteCreated(ctx, created)
 	})
 
 	if err := scaleBack(ctx, s, deployments); err != nil {

@@ -128,12 +128,12 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 	if err != nil {
 		return nil, err
 	}
+	var created []*pluginsv1alpha1.PluginRequest
 	// This cleanup runs after the next one, when the requests are deleted,
 	// so that a rerun in the namespace finds no object of this run.
 	s.onClose(func(ctx context.Context) error {
-		return s.deleteRunObjects(ctx, kinds, runs)
+		return s.deleteRunObjects(ctx, kinds, created)
 	})
-	var created []*pluginsv1alpha1.PluginRequest
 	s.onClose(func(ctx context.Context) error {
 		rec.stop()
 		return s.deleteCreated(ctx, created)
@@ -395,13 +395,19 @@ func startRecorder(
 	return rec, nil
 }
 
-// deleteRunObjects deletes each object that carries a request label of runs,
-// such as an object that an Orphan request kept. It keeps an object that
-// changed its UID meanwhile, and ignores an object that is gone.
-func (s *suite) deleteRunObjects(ctx context.Context, kinds []kindInfo, runs []requestRun) error {
+// deleteRunObjects deletes each object that carries the request label of one
+// of created, such as an object that an Orphan request kept, and waits within
+// the Deletion timeout until they are gone. It keeps an object that changed
+// its UID meanwhile.
+func (s *suite) deleteRunObjects(
+	ctx context.Context,
+	kinds []kindInfo,
+	created []*pluginsv1alpha1.PluginRequest,
+) error {
 	var errs []error
-	for _, r := range runs {
-		objs, err := writtenObjects(ctx, s, kinds, r.name)
+	var deleted []*unstructured.Unstructured
+	for _, req := range created {
+		objs, err := writtenObjects(ctx, s, kinds, req.Name)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -410,11 +416,35 @@ func (s *suite) deleteRunObjects(ctx context.Context, kinds []kindInfo, runs []r
 		for _, obj := range objs {
 			uid := obj.GetUID()
 			err := s.client.Delete(ctx, obj, client.Preconditions{UID: &uid})
-			if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			switch {
+			case err == nil:
+				deleted = append(deleted, obj)
+			case !apierrors.IsNotFound(err) && !apierrors.IsConflict(err):
 				errs = append(errs, fmt.Errorf("deleting %s: %w", objectRef(obj), err))
 			}
 		}
 	}
+
+	errs = append(
+		errs,
+		waitFor(ctx, s.cfg.Timeouts.Deletion, "the objects of the run to be gone", func(ctx context.Context) error {
+			var problems []string
+			for _, obj := range deleted {
+				got := &unstructured.Unstructured{}
+				got.SetGroupVersionKind(obj.GroupVersionKind())
+				err := s.client.Get(ctx, client.ObjectKeyFromObject(obj), got)
+				switch {
+				case apierrors.IsNotFound(err):
+				case err != nil:
+					return err
+				case got.GetUID() == obj.GetUID():
+					problems = append(problems, objectRef(obj)+" still exists")
+				}
+			}
+
+			return problemsError(problems)
+		}),
+	)
 
 	return errors.Join(errs...)
 }

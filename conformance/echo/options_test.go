@@ -133,3 +133,16 @@ func TestOutputsGiveARequestOnlyTheOutputsOfItsSection(t *testing.T) {
 
 	assert.Equal(t, map[string]string{"externalUrl": "https://x"}, c.outputs(req))
 }
+
+func TestRegistrationDeclaresAKeyOfTwoSectionsOneTime(t *testing.T) {
+	opts := validOptions()
+	opts.Sections = []string{"echo", "access"}
+	opts.Outputs = []Output{
+		{Key: "url", Section: "echo", Value: "https://echo"},
+		{Key: "url", Section: "access", Value: "https://access"},
+	}
+	c, err := New(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, []pluginsv1alpha1.OutputDecl{{Key: "url"}}, c.registration().Spec.Outputs)
+}
