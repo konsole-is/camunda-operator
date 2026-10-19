@@ -577,4 +577,32 @@ describe("watchStream", () => {
     ]);
     await reader.cancel();
   });
+  it("changes in another namespace do not count against maxPendingBytes", async () => {
+    const padded = (namespace: string, name: string) =>
+      ({
+        metadata: { namespace, name },
+        data: "x".repeat(100),
+      }) as KubernetesObject;
+    const cache = {
+      subscribe: async (_kind: string, listener: CacheListener<"Pod">) => {
+        for (let i = 0; i < 20; i++) {
+          listener("add", padded("other", `pod-${i}`) as never);
+        }
+        listener("add", padded("team", "mine") as never);
+        return { snapshot: [], unsubscribe: vi.fn() };
+      },
+    } as unknown as ResourceCache;
+    const reader = watchStream(
+      cache,
+      [{ id: "a", request: { kinds: ["Pod"], namespace: "team" } }],
+      new AbortController().signal,
+      { maxPendingBytes: 1_000 },
+    ).getReader();
+
+    const { frames, done } = await readFrames(reader, 2);
+    expect(done).toBe(false);
+    expect(frames.map((f) => f.event)).toEqual(["snapshot", "delta"]);
+    expect(frames[1].data.object?.metadata?.name).toBe("mine");
+    await reader.cancel();
+  });
 });

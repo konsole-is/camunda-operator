@@ -242,6 +242,17 @@ export function watchStream(
               const { snapshot, unsubscribe } = await cache.subscribe(
                 kind,
                 (change, object) => {
+                  // An object never changes its namespace or name, so a change
+                  // outside them can never reach this watch. A change of the
+                  // labels can, as DELETED.
+                  const { metadata } = object as KubernetesObject;
+                  if (
+                    (request.namespace &&
+                      metadata?.namespace !== request.namespace) ||
+                    (request.name && metadata?.name !== request.name)
+                  ) {
+                    return;
+                  }
                   const bytes = JSON.stringify(object).length;
                   queue.push([change, object as KubernetesObject, bytes]);
                   queuedBytes += bytes;
