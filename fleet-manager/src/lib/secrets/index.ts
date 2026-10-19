@@ -1,7 +1,9 @@
 import "server-only";
 import { list } from "@/lib/k8s/read";
-import type { WriteResult } from "@/lib/write/types";
+import { getSettings } from "@/lib/settings";
+import type { WriteResult, Writer } from "@/lib/write/types";
 import { getWriter, refKey } from "@/lib/write/writer";
+import { externalSecretFor } from "./external-secret";
 import { readSecret } from "./values";
 
 /** SecretRef names one key of one Secret. */
@@ -26,6 +28,11 @@ export async function listSecretRefs(
  * request for a key name that a Secret cannot hold, and Stale when the
  * Secret changed between its read and its write. The result never holds
  * the value.
+ *
+ * In Git mode it commits an ExternalSecret that reads the Secret from the
+ * store of the settings, and value is not used: the admin puts it in the
+ * store entry <namespace>/<name>. It returns Invalid when the settings
+ * name no store.
  */
 export async function writeSecretValue(
   ref: SecretRef,
@@ -44,17 +51,7 @@ export async function writeSecretValue(
     };
   }
   const writer = await getWriter();
-  if (writer.mode !== "direct") {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "Unavailable",
-          message: "Secrets in Git mode come with the Git writer",
-        },
-      ],
-    };
-  }
+  if (writer.mode === "git") return writeToGit(writer, ref);
   let live;
   try {
     live = await readSecret(ref.namespace, ref.name);
@@ -92,5 +89,33 @@ export async function writeSecretValue(
         [refKey({ kind: "Secret", ...object.metadata })]: resourceVersion,
       },
     }),
+  });
+}
+
+async function writeToGit(
+  writer: Writer,
+  ref: SecretRef,
+): Promise<WriteResult> {
+  const settings = await getSettings();
+  const store = {
+    kind: settings["secretStore.kind"],
+    name: settings["secretStore.name"],
+  };
+  if (!store.kind || !store.name) {
+    return {
+      ok: false,
+      errors: [
+        {
+          code: "Invalid",
+          path: "secretStore",
+          message:
+            "Set secretStore.kind and secretStore.name in the settings before you write a Secret in Git mode",
+        },
+      ],
+    };
+  }
+  return writer.apply({
+    intent: `Set the Secret ${ref.namespace}/${ref.name} from the store`,
+    apply: [externalSecretFor(ref, store)],
   });
 }
