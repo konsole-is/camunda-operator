@@ -17,6 +17,7 @@ limitations under the License.
 package builtin
 
 import (
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,6 +32,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 var _ = Describe("Built-in requests", func() {
@@ -118,6 +120,23 @@ var _ = Describe("Built-in requests", func() {
 				Label: "ObjectStorageConfig", Value: contract.Name + ", Ready", Severity: pluginsv1alpha1.SeverityInfo,
 			}))
 			g.Expect(live.Status.SummaryTime).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("reports a missing contract whose name is longer than a condition message", func() {
+		name := strings.Repeat("a", 40000)
+		request := newRequest(
+			pluginstartup.RegistrationExistingObjectStorage,
+			`{"name":"`+name+`"}`,
+			pluginsv1alpha1.DeletionPolicyDelete,
+		)
+
+		Eventually(func(g Gomega) {
+			live := liveRequest(g, request)
+			cond := meta.FindStatusCondition(live.Status.Conditions, pluginsv1alpha1.ConditionOutputsReady)
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(len(cond.Message)).To(BeNumerically("<=", conditions.MaxMessageLength))
 		}, timeout, interval).Should(Succeed())
 	})
 

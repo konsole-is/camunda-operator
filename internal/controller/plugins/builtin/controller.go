@@ -155,6 +155,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		errs = append(errs, s.backing.Reconcile(ctx, rec))
 	}
 	errs = append(errs, s.outputs.Reconcile(ctx, rec))
+	// The message of OutputsReady can carry a contract name from the
+	// parameters, whose length the schema does not bound.
+	if outputs := meta.FindStatusCondition(
+		request.Status.Conditions,
+		pluginsv1alpha1.ConditionOutputsReady,
+	); outputs != nil {
+		outputs.Message = conditions.BoundMessage(outputs.Message)
+	}
 
 	conditions.Stage(&request, conditions.Aggregate(&request, s.readiness()))
 
