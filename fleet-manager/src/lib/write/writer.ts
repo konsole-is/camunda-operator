@@ -147,7 +147,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     try {
       return await send<KubeObject>("GET", path);
     } catch (error) {
-      if (error instanceof KubernetesRequestError && error.statusCode === 404) {
+      if (isNotFound(error)) {
         return undefined;
       }
       throw error;
@@ -188,7 +188,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       await deleteObject(ref, { uid }, false);
       return [staleError(ref)];
     } catch (error) {
-      if (error instanceof KubernetesRequestError && error.statusCode === 404) {
+      if (isNotFound(error)) {
         return [staleError(ref)];
       }
       return [staleError(ref), ...apiErrorsOf(error, ref, false)];
@@ -238,6 +238,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         await deleteObject(ref, { resourceVersion }, true);
         objects.push(previewObject(ref, before, undefined));
       } catch (error) {
+        if (isNotFound(error)) continue;
         errors.push(...apiErrorsOf(error, ref, resourceVersion !== undefined));
       }
     }
@@ -285,10 +286,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       try {
         await deleteObject(ref, { resourceVersion }, false);
       } catch (error) {
-        if (
-          error instanceof KubernetesRequestError &&
-          error.statusCode === 404
-        ) {
+        if (isNotFound(error)) {
           continue;
         }
         return {
@@ -306,6 +304,10 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 /** getWriter returns the writer of the app: the direct writer of kubeConfig(). */
 export async function getWriter(): Promise<Writer> {
   return directWriter();
+}
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof KubernetesRequestError && error.statusCode === 404;
 }
 
 function kindInfoOf(kind: string): KindInfo | undefined {

@@ -294,6 +294,69 @@ describe("directWriter when an object is deleted after the preview", () => {
   });
 });
 
+describe("directWriter when a target of a delete is gone before the dry run", () => {
+  // The GET still finds the object, but another client deletes it before
+  // the dry-run DELETE, so every DELETE answers 404.
+  let gone: http.Server;
+  let goneKc: KubeConfig;
+
+  beforeAll(async () => {
+    gone = http.createServer((request, response) => {
+      request.resume();
+      request.on("end", () => {
+        const found = request.method === "GET";
+        response.writeHead(found ? 200 : 404, {
+          "Content-Type": "application/json",
+        });
+        response.end(
+          JSON.stringify(
+            found
+              ? {
+                  apiVersion: "fleet.camunda.io/v1alpha1",
+                  kind: "Environment",
+                  metadata: { name: "prod", uid: "old" },
+                }
+              : { reason: "NotFound", message: "not found" },
+          ),
+        );
+      });
+    });
+    await new Promise<void>((resolve) => gone.listen(0, "127.0.0.1", resolve));
+    goneKc = configFor(
+      `http://127.0.0.1:${(gone.address() as AddressInfo).port}`,
+    );
+  });
+
+  afterAll(async () => {
+    await new Promise((resolve) => gone.close(resolve));
+  });
+
+  it("the delete succeeds, also with a precondition", async () => {
+    const ref = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      name: "prod",
+    };
+    const writer = directWriter(goneKc);
+
+    expect(
+      await writer.apply({ intent: "Delete", apply: [], delete: [ref] }),
+    ).toEqual({ ok: true, mode: "direct" });
+    expect(
+      await writer.apply({
+        intent: "Delete",
+        apply: [],
+        delete: [ref],
+        preconditions: { "Environment//prod": "7" },
+      }),
+    ).toEqual({ ok: true, mode: "direct" });
+    expect(
+      (await writer.preview({ intent: "Delete", apply: [], delete: [ref] }))
+        .objects,
+    ).toEqual([]);
+  });
+});
+
 describe("WriteOnlyKindMap", () => {
   it("holds the namespaced core ConfigMap, and objectPath names one", () => {
     expect(WriteOnlyKindMap.ConfigMap).toEqual({
