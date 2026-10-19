@@ -238,23 +238,10 @@ func checkReady(ctx context.Context, s *suite) error {
 				return err
 			}
 
-			var grants pluginsv1alpha1.GrantList
-			err = s.client.List(
-				ctx,
-				&grants,
-				client.InNamespace(req.Namespace),
-				client.MatchingLabels{pluginsv1alpha1.LabelRequest: req.Name},
-			)
+			owned, err := s.ownedGrants(ctx, req)
 			if err != nil {
-				return fmt.Errorf("listing the Grants of the request: %w", err)
+				return err
 			}
-
-			owned := slices.DeleteFunc(grants.Items, func(g pluginsv1alpha1.Grant) bool {
-				return !slices.ContainsFunc(
-					g.OwnerReferences,
-					func(o metav1.OwnerReference) bool { return o.UID == req.UID },
-				)
-			})
 
 			return readyVerdict(meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady), owned)
 		})
@@ -262,8 +249,72 @@ func checkReady(ctx context.Context, s *suite) error {
 			return err
 		}
 
-		return s.lateCondition(ctx, r.name, v1.ConditionReady, s.cfg.Timeouts.Ready)
+		return s.lateReady(ctx, r.name)
 	})
+}
+
+// ownedGrants returns the Grants that carry the label of req and have an
+// owner reference to it.
+func (s *suite) ownedGrants(ctx context.Context, req *pluginsv1alpha1.PluginRequest) ([]pluginsv1alpha1.Grant, error) {
+	var grants pluginsv1alpha1.GrantList
+	err := s.client.List(
+		ctx,
+		&grants,
+		client.InNamespace(req.Namespace),
+		client.MatchingLabels{pluginsv1alpha1.LabelRequest: req.Name},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("listing the Grants of the request: %w", err)
+	}
+
+	return slices.DeleteFunc(grants.Items, func(g pluginsv1alpha1.Grant) bool {
+		return !slices.ContainsFunc(g.OwnerReferences, func(o metav1.OwnerReference) bool { return o.UID == req.UID })
+	}), nil
+}
+
+// lateReady fails when the request name reached the verdict of REQ-READY
+// later than the Ready timeout after its creation.
+func (s *suite) lateReady(ctx context.Context, name string) error {
+	req, err := s.request(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	grants, err := s.ownedGrants(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	ready := meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady)
+	if ready == nil {
+		return nil
+	}
+
+	return lateAt(v1.ConditionReady, readySince(ready, grants), req.CreationTimestamp, s.cfg.Timeouts.Ready)
+}
+
+// readySince is when ready reached its verdict: its own transition, or for
+// GrantRejected, the later of that and the first failure of a Grant.
+func readySince(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) metav1.Time {
+	since := ready.LastTransitionTime
+	if ready.Status == metav1.ConditionTrue {
+		return since
+	}
+
+	var firstFailure *metav1.Time
+	for _, g := range grants {
+		c := meta.FindStatusCondition(g.Status.Conditions, v1.ConditionReady)
+		if c != nil && c.Status == metav1.ConditionFalse &&
+			(firstFailure == nil || c.LastTransitionTime.Before(firstFailure)) {
+			firstFailure = &c.LastTransitionTime
+		}
+	}
+
+	if firstFailure != nil && since.Before(firstFailure) {
+		return *firstFailure
+	}
+
+	return since
 }
 
 func checkLabels(ctx context.Context, s *suite) error {
@@ -855,11 +906,17 @@ func lateProblem(cond *metav1.Condition, created metav1.Time, timeout time.Durat
 		return nil
 	}
 
+	return lateAt(cond.Type, cond.LastTransitionTime, created, timeout)
+}
+
+// lateAt says whether the condition condType reached its verdict at a time
+// later than timeout after created.
+func lateAt(condType string, at, created metav1.Time, timeout time.Duration) error {
 	// The times have whole seconds.
-	if after := cond.LastTransitionTime.Sub(created.Time); after > timeout+time.Second {
+	if after := at.Sub(created.Time); after > timeout+time.Second {
 		return fmt.Errorf(
 			"%s became True %s after the request was created, which is more than the timeout of %s",
-			cond.Type,
+			condType,
 			after,
 			timeout,
 		)

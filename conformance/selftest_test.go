@@ -59,7 +59,8 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 
 		// The orphaned ConfigMap of each section shows that a request of
 		// each section ran.
-		for _, name := range []string{"basic-echo-orphan-echo", "basic-access-orphan-echo"} {
+		for _, section := range []string{"echo", "access"} {
+			name := requestName("basic", section, "orphan", runIDOf(cfg.Namespace)) + "-echo"
 			var cm corev1.ConfigMap
 			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: cfg.Namespace, Name: name}, &cm)).To(Succeed())
 		}
@@ -70,8 +71,9 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		got := runAll(cfg)
 
 		var sc storagev1.StorageClass
-		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: cfg.Namespace + "-basic-orphan-echo"}, &sc)).To(Succeed())
-		Expect(sc.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRequest, "basic-orphan"))
+		request := requestName("basic", "", "orphan", runIDOf(cfg.Namespace))
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: cfg.Namespace + "-" + request + "-echo"}, &sc)).To(Succeed())
+		Expect(sc.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRequest, request))
 		Expect(sc.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRegistration, cfg.Registration))
 		Expect(sc.OwnerReferences).To(BeEmpty())
 		Expect(got[ReqLabels].err).NotTo(HaveOccurred())

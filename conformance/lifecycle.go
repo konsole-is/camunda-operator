@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"slices"
 	"strings"
 	"time"
@@ -101,7 +102,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		return nil, err
 	}
 
-	runs, err := runsOf(s.cfg.Cases, reg.Spec.Sections, reg.Spec.DeletionPolicies)
+	runs, err := runsOf(s.cfg.Cases, reg.Spec.Sections, reg.Spec.DeletionPolicies, runIDOf(s.cfg.Namespace))
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +175,7 @@ func runsOf(
 	cases []Case,
 	sections []string,
 	policies []pluginsv1alpha1.DeletionPolicy,
+	runID string,
 ) ([]requestRun, error) {
 	var runs []requestRun
 	var errs []error
@@ -191,7 +193,7 @@ func runsOf(
 				if len(sections) > 1 {
 					nameSection = section
 				}
-				name := requestName(tc.Name, nameSection, policy)
+				name := requestName(tc.Name, nameSection, string(policy), runID)
 				if problems := validation.IsDNS1123Label(name); len(problems) > 0 {
 					errs = append(errs, fmt.Errorf(
 						"case %q gives the request name %q, which is not a DNS label: %s",
@@ -237,11 +239,21 @@ func targetWithSuffix(target pluginsv1alpha1.TargetRef, suffix string) pluginsv1
 	return target
 }
 
-// requestName is the name of the request of a case for a section, which can
-// be empty, under one policy.
-func requestName(caseName, section string, policy pluginsv1alpha1.DeletionPolicy) string {
-	parts := []string{strings.ToLower(caseName), section, strings.ToLower(string(policy))}
+// requestName is the name of the request of a case for a section under one
+// policy, in the run runID. The section and runID can be empty.
+func requestName(caseName, section, policy, runID string) string {
+	parts := []string{strings.ToLower(caseName), section, strings.ToLower(policy), runID}
 	return strings.Join(slices.DeleteFunc(parts, func(p string) bool { return p == "" }), "-")
+}
+
+// runIDOf is the part of the request names of a run in namespace. Two runs
+// at the same time use two namespaces, so their requests, and the objects
+// that carry the names of their requests, stay apart.
+func runIDOf(namespace string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(namespace))
+
+	return fmt.Sprintf("%06x", h.Sum32()&0xffffff)
 }
 
 func (s *suite) ensureNamespace(ctx context.Context) error {

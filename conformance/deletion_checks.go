@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -131,7 +130,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 		return err
 	}
 
-	run := orderRun(life.runs[0])
+	run := orderRun(life.runs[0], runIDOf(s.cfg.Namespace))
 
 	rec, err := startOrderRecorder(ctx, s, life.registration.Name, run.name)
 	if err != nil {
@@ -166,10 +165,10 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 
 // orderRun is the run of the request of the check, made from first, with a
 // target of its own.
-func orderRun(first requestRun) requestRun {
+func orderRun(first requestRun, runID string) requestRun {
 	run := first
 	run.policy = pluginsv1alpha1.DeletionPolicyDelete
-	run.name = strings.ToLower(first.caseName) + "-order"
+	run.name = requestName(first.caseName, "", "order", runID)
 	run.tc.Target = targetWithSuffix(first.tc.Target, "order")
 
 	return run
@@ -200,7 +199,11 @@ func pluginDeployments(
 
 	var deployments []scaledDeployment
 	for _, d := range list.Items {
-		if d.Spec.Template.Spec.ServiceAccountName != sa.Name {
+		account := d.Spec.Template.Spec.ServiceAccountName
+		if account == "" {
+			account = "default"
+		}
+		if account != sa.Name {
 			continue
 		}
 
@@ -596,22 +599,21 @@ func isRoute(obj *unstructured.Unstructured) bool {
 	return slices.Contains(routeKinds, obj.GroupVersionKind().GroupKind())
 }
 
-// missingBackends returns the backend Services of route when none of them
-// exists, and nil when one exists or the route has none.
+// missingBackends returns the backend Services of route that do not exist.
 func missingBackends(ctx context.Context, s *suite, route *unstructured.Unstructured) ([]types.NamespacedName, error) {
-	backends := routeBackends(route)
-	for _, b := range backends {
+	var missing []types.NamespacedName
+	for _, b := range routeBackends(route) {
 		var svc corev1.Service
 		err := s.client.Get(ctx, b, &svc)
-		if err == nil {
-			return nil, nil
-		}
-		if !apierrors.IsNotFound(err) {
+		switch {
+		case apierrors.IsNotFound(err):
+			missing = append(missing, b)
+		case err != nil:
 			return nil, fmt.Errorf("getting the Service %s: %w", b, err)
 		}
 	}
 
-	return backends, nil
+	return missing, nil
 }
 
 // routeBackends returns the Services that route sends traffic to, each one

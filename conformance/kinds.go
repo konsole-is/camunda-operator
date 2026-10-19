@@ -43,27 +43,9 @@ type kindInfo struct {
 // ServiceAccount sa can create. A group that discovery cannot read is left
 // out. It is an error when no ClusterRoleBinding binds sa.
 func pluginKinds(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccountRef) ([]kindInfo, error) {
-	var bindings rbacv1.ClusterRoleBindingList
-	if err := s.client.List(ctx, &bindings); err != nil {
-		return nil, fmt.Errorf("listing the ClusterRoleBindings: %w", err)
-	}
-
-	var rules []rbacv1.PolicyRule
-	for _, b := range bindings.Items {
-		if b.RoleRef.Kind != "ClusterRole" || !bindsServiceAccount(b.Subjects, sa.Namespace, sa.Name) {
-			continue
-		}
-
-		var role rbacv1.ClusterRole
-		if err := s.client.Get(ctx, client.ObjectKey{Name: b.RoleRef.Name}, &role); err != nil {
-			return nil, fmt.Errorf(
-				"getting the ClusterRole %s of the ClusterRoleBinding %s: %w",
-				b.RoleRef.Name,
-				b.Name,
-				err,
-			)
-		}
-		rules = append(rules, role.Rules...)
+	rules, err := pluginRules(ctx, s, sa)
+	if err != nil {
+		return nil, err
 	}
 
 	dc, err := discovery.NewDiscoveryClientForConfig(s.restConfig)
@@ -79,13 +61,63 @@ func pluginKinds(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccoun
 	kinds := kindsOf(rules, resources)
 	if len(kinds) == 0 {
 		return nil, fmt.Errorf(
-			"no ClusterRoleBinding lets the ServiceAccount %s/%s of the registration create a kind",
+			"no binding lets the ServiceAccount %s/%s of the registration create a kind",
 			sa.Namespace,
 			sa.Name,
 		)
 	}
 
 	return kinds, nil
+}
+
+// pluginRules returns the rules of each ClusterRoleBinding and RoleBinding
+// that binds sa.
+func pluginRules(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccountRef) ([]rbacv1.PolicyRule, error) {
+	var clusterBindings rbacv1.ClusterRoleBindingList
+	if err := s.client.List(ctx, &clusterBindings); err != nil {
+		return nil, fmt.Errorf("listing the ClusterRoleBindings: %w", err)
+	}
+
+	var bindings rbacv1.RoleBindingList
+	if err := s.client.List(ctx, &bindings); err != nil {
+		return nil, fmt.Errorf("listing the RoleBindings: %w", err)
+	}
+
+	type bound struct {
+		namespace string
+		ref       rbacv1.RoleRef
+	}
+	var refs []bound
+	for _, b := range clusterBindings.Items {
+		if bindsServiceAccount(b.Subjects, sa.Namespace, sa.Name) {
+			refs = append(refs, bound{ref: b.RoleRef})
+		}
+	}
+	for _, b := range bindings.Items {
+		if bindsServiceAccount(b.Subjects, sa.Namespace, sa.Name) {
+			refs = append(refs, bound{namespace: b.Namespace, ref: b.RoleRef})
+		}
+	}
+
+	var rules []rbacv1.PolicyRule
+	for _, r := range refs {
+		switch r.ref.Kind {
+		case "ClusterRole":
+			var role rbacv1.ClusterRole
+			if err := s.client.Get(ctx, client.ObjectKey{Name: r.ref.Name}, &role); err != nil {
+				return nil, fmt.Errorf("getting the ClusterRole %s: %w", r.ref.Name, err)
+			}
+			rules = append(rules, role.Rules...)
+		case "Role":
+			var role rbacv1.Role
+			if err := s.client.Get(ctx, client.ObjectKey{Namespace: r.namespace, Name: r.ref.Name}, &role); err != nil {
+				return nil, fmt.Errorf("getting the Role %s/%s: %w", r.namespace, r.ref.Name, err)
+			}
+			rules = append(rules, role.Rules...)
+		}
+	}
+
+	return rules, nil
 }
 
 // bindsServiceAccount says whether subjects name the ServiceAccount, its

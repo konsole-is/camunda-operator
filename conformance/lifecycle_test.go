@@ -32,6 +32,7 @@ func TestRunsOfRunsAnEmptyPolicyOnceForEachSupportedPolicy(t *testing.T) {
 		[]Case{{Name: "basic"}, {Name: "kept", DeletionPolicy: pluginsv1alpha1.DeletionPolicyOrphan}},
 		[]string{"echo"},
 		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan},
+		"",
 	)
 	require.NoError(t, err)
 
@@ -49,6 +50,7 @@ func TestRunsOfRunsACaseOnceForEachSectionOfARegistrationWithSeveral(t *testing.
 		[]Case{{Name: "basic", DeletionPolicy: pluginsv1alpha1.DeletionPolicyDelete}},
 		[]string{"backup-storage", "access"},
 		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete},
+		"",
 	)
 	require.NoError(t, err)
 
@@ -72,6 +74,7 @@ func TestRunsOfGivesEachPolicyVariantOfACaseATargetOfItsOwn(t *testing.T) {
 		},
 		[]string{"echo"},
 		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan},
+		"",
 	)
 	require.NoError(t, err)
 
@@ -87,6 +90,7 @@ func TestRunsOfRefusesCaseNamesThatGiveOneRequestName(t *testing.T) {
 		[]Case{{Name: "Basic"}, {Name: "basic"}},
 		[]string{"echo"},
 		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete},
+		"",
 	)
 
 	assert.ErrorContains(t, err, `case "basic" gives the request name "basic-delete", which case "Basic" also gives`)
@@ -97,6 +101,7 @@ func TestRunsOfRefusesARequestNameThatIsNotADNSLabel(t *testing.T) {
 		[]Case{{Name: "with space"}},
 		[]string{"echo"},
 		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete},
+		"",
 	)
 
 	assert.ErrorContains(t, err, `case "with space"`)
@@ -158,4 +163,17 @@ func TestRequestForUsesThePlaneClaimForASectionOfPlanesOnly(t *testing.T) {
 	req := requestFor("echo-1", section, "ns", requestRun{name: "basic-delete"})
 
 	assert.Equal(t, pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim, req.Spec.ClaimRef.Kind)
+}
+
+func TestRunIDOfGivesEachNamespaceItsOwnRequestNames(t *testing.T) {
+	policies := []pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete}
+
+	first, err := runsOf([]Case{{Name: "basic"}}, []string{"echo"}, policies, runIDOf("ci-plugin-a"))
+	require.NoError(t, err)
+	second, err := runsOf([]Case{{Name: "basic"}}, []string{"echo"}, policies, runIDOf("ci-plugin-b"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "basic-delete-"+runIDOf("ci-plugin-a"), first[0].name)
+	assert.NotEqual(t, first[0].name, second[0].name)
+	assert.Equal(t, runIDOf("ci-plugin-a"), runIDOf("ci-plugin-a"), "the same namespace gives the same names")
 }

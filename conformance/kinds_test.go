@@ -20,9 +20,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
 func TestKindsOfExpandsWildcardsAndDropsSubresources(t *testing.T) {
@@ -119,4 +124,40 @@ func TestBindsServiceAccount(t *testing.T) {
 			assert.Equal(t, tt.binds, bindsServiceAccount([]rbacv1.Subject{tt.subject}, "plugins", "echo"))
 		})
 	}
+}
+
+func TestPluginRulesTakesClusterRoleAndRoleBindings(t *testing.T) {
+	sa := rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Name: "echo", Namespace: "plugins"}
+	cluster := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: "echo"},
+		Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{"storage.k8s.io"}, Resources: []string{"storageclasses"}, Verbs: []string{"create"}},
+		},
+	}
+	role := &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "run", Name: "echo-configmaps"},
+		Rules: []rbacv1.PolicyRule{
+			{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create"}},
+		},
+	}
+	objs := []client.Object{
+		cluster,
+		role,
+		&rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: "echo"},
+			RoleRef:    rbacv1.RoleRef{Kind: "ClusterRole", Name: "echo"},
+			Subjects:   []rbacv1.Subject{sa},
+		},
+		&rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "run", Name: "echo"},
+			RoleRef:    rbacv1.RoleRef{Kind: "Role", Name: "echo-configmaps"},
+			Subjects:   []rbacv1.Subject{sa},
+		},
+	}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, objs...)
+
+	rules, err := pluginRules(t.Context(), s, pluginsv1alpha1.ServiceAccountRef{Namespace: "plugins", Name: "echo"})
+
+	require.NoError(t, err)
+	assert.ElementsMatch(t, append(cluster.Rules, role.Rules...), rules)
 }

@@ -20,9 +20,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -294,10 +297,64 @@ func TestOrderRunHasATargetOfItsOwn(t *testing.T) {
 		},
 	}
 
-	run := orderRun(first)
+	run := orderRun(first, "")
 
 	assert.Equal(t, "basic-order", run.name)
 	assert.Equal(t, pluginsv1alpha1.DeletionPolicyDelete, run.policy)
 	assert.Equal(t, "echo-target-order", run.tc.Target.Name)
 	assert.Equal(t, "echo-sa-order", run.tc.Target.ServiceAccountName)
+}
+
+func TestMissingBackendsNamesEachServiceThatIsGone(t *testing.T) {
+	live := &corev1.Service{}
+	live.Namespace = "ns"
+	live.Name = "web"
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, live)
+	mixed := route(t, "networking.k8s.io/v1", "Ingress", `{"rules":[{"http":{"paths":[
+		{"path":"/a","backend":{"service":{"name":"web"}}},
+		{"path":"/b","backend":{"service":{"name":"gone"}}}]}}]}`)
+
+	missing, err := missingBackends(t.Context(), s, mixed)
+
+	require.NoError(t, err)
+	assert.Equal(t, []types.NamespacedName{{Namespace: "ns", Name: "gone"}}, missing)
+}
+
+func TestPluginDeploymentsTakesAnEmptyServiceAccountAsDefault(t *testing.T) {
+	d := &appsv1.Deployment{}
+	d.Namespace = "plugins"
+	d.Name = "echo"
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, d)
+
+	got, err := pluginDeployments(
+		t.Context(),
+		s,
+		pluginsv1alpha1.ServiceAccountRef{Namespace: "plugins", Name: "default"},
+	)
+
+	require.NoError(t, err)
+	assert.Len(t, got, 1)
+}
+
+func TestReadySinceIsWhenTheRejectionAndTheFailedGrantBothHold(t *testing.T) {
+	base := time.Date(2026, 10, 18, 10, 0, 0, 0, time.UTC)
+	ready := &metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		Reason:             pluginsv1alpha1.ReasonGrantRejected,
+		LastTransitionTime: metav1.NewTime(base.Add(5 * time.Second)),
+	}
+	failed := grantWithReady(metav1.ConditionFalse)
+	failed.Status.Conditions[0].LastTransitionTime = metav1.NewTime(base.Add(30 * time.Second))
+
+	assert.Equal(t, base.Add(30*time.Second), readySince(ready, []pluginsv1alpha1.Grant{failed}).Time)
+
+	ready.Status = metav1.ConditionTrue
+	assert.Equal(t, base.Add(5*time.Second), readySince(ready, nil).Time)
+}
+
+func TestOrderRunNameHoldsTheRunID(t *testing.T) {
+	run := orderRun(requestRun{caseName: "Basic", name: "basic-delete-abc123"}, "abc123")
+
+	assert.Equal(t, "basic-order-abc123", run.name)
 }
