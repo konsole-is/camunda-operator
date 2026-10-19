@@ -30,6 +30,7 @@ import (
 func TestRunsOfRunsAnEmptyPolicyOnceForEachSupportedPolicy(t *testing.T) {
 	runs, err := runsOf(
 		[]Case{{Name: "basic"}, {Name: "kept", DeletionPolicy: pluginsv1alpha1.DeletionPolicyOrphan}},
+		[]string{"echo"},
 		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan},
 	)
 	require.NoError(t, err)
@@ -43,9 +44,25 @@ func TestRunsOfRunsAnEmptyPolicyOnceForEachSupportedPolicy(t *testing.T) {
 	assert.Equal(t, "basic", runs[1].tc.Name)
 }
 
+func TestRunsOfRunsACaseOnceForEachSectionOfARegistrationWithSeveral(t *testing.T) {
+	runs, err := runsOf(
+		[]Case{{Name: "basic", DeletionPolicy: pluginsv1alpha1.DeletionPolicyDelete}},
+		[]string{"backup-storage", "access"},
+		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete},
+	)
+	require.NoError(t, err)
+
+	require.Len(t, runs, 2)
+	assert.Equal(t, "basic-backup-storage-delete", runs[0].name)
+	assert.Equal(t, "backup-storage", runs[0].section)
+	assert.Equal(t, "basic-access-delete", runs[1].name)
+	assert.Equal(t, "access", runs[1].section)
+}
+
 func TestRunsOfRefusesCaseNamesThatGiveOneRequestName(t *testing.T) {
 	_, err := runsOf(
 		[]Case{{Name: "Basic"}, {Name: "basic"}},
+		[]string{"echo"},
 		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete},
 	)
 
@@ -55,6 +72,7 @@ func TestRunsOfRefusesCaseNamesThatGiveOneRequestName(t *testing.T) {
 func TestRunsOfRefusesARequestNameThatIsNotADNSLabel(t *testing.T) {
 	_, err := runsOf(
 		[]Case{{Name: "with space"}},
+		[]string{"echo"},
 		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete},
 	)
 

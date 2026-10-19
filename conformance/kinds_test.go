@@ -88,51 +88,35 @@ func TestKindsOfDropsAResourceThatCannotBeListed(t *testing.T) {
 
 func TestBindsServiceAccount(t *testing.T) {
 	tests := []struct {
-		name          string
-		subject       rbacv1.Subject
-		direct, group bool
+		name    string
+		subject rbacv1.Subject
+		binds   bool
 	}{
 		{
 			"the ServiceAccount",
 			rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Name: "echo", Namespace: "plugins"},
 			true,
-			false,
 		},
-		{
-			"its user name",
-			rbacv1.Subject{Kind: rbacv1.UserKind, Name: "system:serviceaccount:plugins:echo"},
-			true,
-			false,
-		},
-		{"all ServiceAccounts", rbacv1.Subject{Kind: rbacv1.GroupKind, Name: "system:serviceaccounts"}, false, true},
+		{"its user name", rbacv1.Subject{Kind: rbacv1.UserKind, Name: "system:serviceaccount:plugins:echo"}, true},
+		{"all ServiceAccounts", rbacv1.Subject{Kind: rbacv1.GroupKind, Name: "system:serviceaccounts"}, true},
 		{
 			"the ServiceAccounts of its namespace",
 			rbacv1.Subject{Kind: rbacv1.GroupKind, Name: "system:serviceaccounts:plugins"},
-			false,
 			true,
 		},
-		{"every authenticated user", rbacv1.Subject{Kind: rbacv1.GroupKind, Name: "system:authenticated"}, false, true},
-		{
-			"another namespace",
-			rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Name: "echo", Namespace: "other"},
-			false,
-			false,
-		},
-		{"a user of the same name", rbacv1.Subject{Kind: rbacv1.UserKind, Name: "echo"}, false, false},
+		{"every authenticated user", rbacv1.Subject{Kind: rbacv1.GroupKind, Name: "system:authenticated"}, true},
+		{"another namespace", rbacv1.Subject{Kind: rbacv1.ServiceAccountKind, Name: "echo", Namespace: "other"}, false},
+		{"a user of the same name", rbacv1.Subject{Kind: rbacv1.UserKind, Name: "echo"}, false},
 		{
 			"the ServiceAccounts of another namespace",
 			rbacv1.Subject{Kind: rbacv1.GroupKind, Name: "system:serviceaccounts:other"},
-			false,
 			false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			direct, group := bindsServiceAccount([]rbacv1.Subject{tt.subject}, "plugins", "echo")
-
-			assert.Equal(t, tt.direct, direct)
-			assert.Equal(t, tt.group, group)
+			assert.Equal(t, tt.binds, bindsServiceAccount([]rbacv1.Subject{tt.subject}, "plugins", "echo"))
 		})
 	}
 }

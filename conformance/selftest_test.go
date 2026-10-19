@@ -19,6 +19,7 @@ package conformance
 import (
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -45,6 +46,23 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
 		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst))
+	})
+
+	ginkgo.It("runs each case for each section of a registration that serves two", func() {
+		cfg := twoSectionRun()
+		got := runAll(cfg)
+
+		for id, o := range got {
+			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
+		}
+		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst))
+
+		// The orphaned ConfigMap of each section shows that a request of
+		// each section ran.
+		for _, name := range []string{"basic-echo-orphan-echo", "basic-access-orphan-echo"} {
+			var cm corev1.ConfigMap
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: cfg.Namespace, Name: name}, &cm)).To(Succeed())
+		}
 	})
 
 	ginkgo.It("passes REQ-LABELS and DELETE-ORPHAN with a cluster-scoped object that carries the labels only", func() {

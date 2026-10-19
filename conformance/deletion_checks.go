@@ -133,6 +133,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 
 	run := requestRun{
 		caseName: life.runs[0].caseName,
+		section:  life.runs[0].section,
 		policy:   pluginsv1alpha1.DeletionPolicyDelete,
 		name:     strings.ToLower(life.runs[0].caseName) + "-order",
 		tc:       life.runs[0].tc,
@@ -144,7 +145,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 	}
 	defer rec.stop()
 
-	req := requestFor(life.registration.Name, life.section, s.cfg.Namespace, run)
+	req := requestFor(life.registration.Name, life.sections[run.section], s.cfg.Namespace, run)
 	if err := s.client.Create(ctx, req); err != nil {
 		return fmt.Errorf("creating the PluginRequest %s/%s: %w", req.Namespace, req.Name, err)
 	}

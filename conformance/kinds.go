@@ -49,13 +49,10 @@ func pluginKinds(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccoun
 	}
 
 	var rules []rbacv1.PolicyRule
-	bound := false
 	for _, b := range bindings.Items {
-		direct, group := bindsServiceAccount(b.Subjects, sa.Namespace, sa.Name)
-		if b.RoleRef.Kind != "ClusterRole" || (!direct && !group) {
+		if b.RoleRef.Kind != "ClusterRole" || !bindsServiceAccount(b.Subjects, sa.Namespace, sa.Name) {
 			continue
 		}
-		bound = bound || direct
 
 		var role rbacv1.ClusterRole
 		if err := s.client.Get(ctx, client.ObjectKey{Name: b.RoleRef.Name}, &role); err != nil {
@@ -69,14 +66,6 @@ func pluginKinds(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccoun
 		rules = append(rules, role.Rules...)
 	}
 
-	if !bound {
-		return nil, fmt.Errorf(
-			"no ClusterRoleBinding binds the ServiceAccount %s/%s of the registration",
-			sa.Namespace,
-			sa.Name,
-		)
-	}
-
 	dc, err := discovery.NewDiscoveryClientForConfig(s.restConfig)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to the discovery API: %w", err)
@@ -87,25 +76,34 @@ func pluginKinds(ctx context.Context, s *suite, sa pluginsv1alpha1.ServiceAccoun
 		return nil, fmt.Errorf("reading the resources of the cluster: %w", err)
 	}
 
-	return kindsOf(rules, resources), nil
-}
-
-// bindsServiceAccount says whether subjects name the ServiceAccount, as
-// itself or as its user name (direct), or name one of its groups (group).
-func bindsServiceAccount(subjects []rbacv1.Subject, namespace, name string) (direct, group bool) {
-	groups := []string{"system:serviceaccounts", "system:serviceaccounts:" + namespace, "system:authenticated"}
-
-	for _, s := range subjects {
-		switch {
-		case s.Kind == rbacv1.ServiceAccountKind && s.Namespace == namespace && s.Name == name,
-			s.Kind == rbacv1.UserKind && s.Name == "system:serviceaccount:"+namespace+":"+name:
-			direct = true
-		case s.Kind == rbacv1.GroupKind && slices.Contains(groups, s.Name):
-			group = true
-		}
+	kinds := kindsOf(rules, resources)
+	if len(kinds) == 0 {
+		return nil, fmt.Errorf(
+			"no ClusterRoleBinding lets the ServiceAccount %s/%s of the registration create a kind",
+			sa.Namespace,
+			sa.Name,
+		)
 	}
 
-	return direct, group
+	return kinds, nil
+}
+
+// bindsServiceAccount says whether subjects name the ServiceAccount, its
+// user name, or one of its groups.
+func bindsServiceAccount(subjects []rbacv1.Subject, namespace, name string) bool {
+	groups := []string{"system:serviceaccounts", "system:serviceaccounts:" + namespace, "system:authenticated"}
+
+	return slices.ContainsFunc(subjects, func(s rbacv1.Subject) bool {
+		switch s.Kind {
+		case rbacv1.ServiceAccountKind:
+			return s.Namespace == namespace && s.Name == name
+		case rbacv1.UserKind:
+			return s.Name == "system:serviceaccount:"+namespace+":"+name
+		case rbacv1.GroupKind:
+			return slices.Contains(groups, s.Name)
+		}
+		return false
+	})
 }
 
 // kindsOf returns each kind of resources that rules allow to create and that

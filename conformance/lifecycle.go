@@ -44,9 +44,10 @@ import (
 // exists.
 const claimName = "conformance"
 
-// requestRun is one request of the run: a case with one deletion policy.
+// requestRun is one request of the run: one case, section and deletion policy.
 type requestRun struct {
 	caseName string
+	section  string
 	policy   pluginsv1alpha1.DeletionPolicy
 	name     string
 	tc       Case
@@ -60,7 +61,7 @@ type lifecycle struct {
 	started      time.Time
 	registration *pluginsv1alpha1.PluginRegistration
 	accepted     *metav1.Condition
-	section      *pluginsv1alpha1.PluginSection
+	sections     map[string]*pluginsv1alpha1.PluginSection
 	kinds        []kindInfo
 	runs         []requestRun
 	rec          *recorder
@@ -97,14 +98,16 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		return nil, err
 	}
 
-	runs, err := runsOf(s.cfg.Cases, reg.Spec.DeletionPolicies)
+	runs, err := runsOf(s.cfg.Cases, reg.Spec.Sections, reg.Spec.DeletionPolicies)
 	if err != nil {
 		return nil, err
 	}
 
-	section, err := s.section(ctx, reg.Spec.Sections[0])
-	if err != nil {
-		return nil, err
+	sections := make(map[string]*pluginsv1alpha1.PluginSection, len(reg.Spec.Sections))
+	for _, name := range reg.Spec.Sections {
+		if sections[name], err = s.section(ctx, name); err != nil {
+			return nil, err
+		}
 	}
 
 	kinds, err := pluginKinds(ctx, s, reg.Spec.ServiceAccount)
@@ -130,7 +133,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		started:      time.Now(),
 		registration: reg,
 		accepted:     meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted),
-		section:      section,
+		sections:     sections,
 		kinds:        kinds,
 		runs:         runs,
 		rec:          rec,
@@ -140,7 +143,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 	}
 
 	for _, run := range runs {
-		req := requestFor(reg.Name, section, s.cfg.Namespace, run)
+		req := requestFor(reg.Name, sections[run.section], s.cfg.Namespace, run)
 		if err := s.client.Create(ctx, req); err != nil {
 			return nil, fmt.Errorf(
 				"creating the PluginRequest %s/%s of case %q: %w",
@@ -157,10 +160,16 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 	return life, nil
 }
 
-// runsOf gives each case one run, or one run for each of policies when the
-// case leaves its deletion policy empty. It refuses a request name that is
-// not a DNS label, and two runs with one request name.
-func runsOf(cases []Case, policies []pluginsv1alpha1.DeletionPolicy) ([]requestRun, error) {
+// runsOf gives each case one run for each of sections, with its deletion
+// policy, or with each of policies when the case leaves its deletion policy
+// empty. A request name holds the section only when there are several. It
+// refuses a request name that is not a DNS label, and two runs with one
+// request name.
+func runsOf(
+	cases []Case,
+	sections []string,
+	policies []pluginsv1alpha1.DeletionPolicy,
+) ([]requestRun, error) {
 	var runs []requestRun
 	var errs []error
 	caseOf := map[string]string{}
@@ -171,39 +180,47 @@ func runsOf(cases []Case, policies []pluginsv1alpha1.DeletionPolicy) ([]requestR
 			casePolicies = policies
 		}
 
-		for _, policy := range casePolicies {
-			name := requestName(tc.Name, policy)
-			if problems := validation.IsDNS1123Label(name); len(problems) > 0 {
-				errs = append(errs, fmt.Errorf(
-					"case %q gives the request name %q, which is not a DNS label: %s",
-					tc.Name,
-					name,
-					strings.Join(problems, ", "),
-				))
-				continue
-			}
+		for _, section := range sections {
+			for _, policy := range casePolicies {
+				nameSection := ""
+				if len(sections) > 1 {
+					nameSection = section
+				}
+				name := requestName(tc.Name, nameSection, policy)
+				if problems := validation.IsDNS1123Label(name); len(problems) > 0 {
+					errs = append(errs, fmt.Errorf(
+						"case %q gives the request name %q, which is not a DNS label: %s",
+						tc.Name,
+						name,
+						strings.Join(problems, ", "),
+					))
+					continue
+				}
 
-			if other, ok := caseOf[name]; ok {
-				errs = append(errs, fmt.Errorf(
-					"case %q gives the request name %q, which case %q also gives",
-					tc.Name,
-					name,
-					other,
-				))
-				continue
-			}
+				if other, ok := caseOf[name]; ok {
+					errs = append(errs, fmt.Errorf(
+						"case %q gives the request name %q, which case %q also gives",
+						tc.Name,
+						name,
+						other,
+					))
+					continue
+				}
 
-			caseOf[name] = tc.Name
-			runs = append(runs, requestRun{caseName: tc.Name, policy: policy, name: name, tc: tc})
+				caseOf[name] = tc.Name
+				runs = append(runs, requestRun{caseName: tc.Name, section: section, policy: policy, name: name, tc: tc})
+			}
 		}
 	}
 
 	return runs, errors.Join(errs...)
 }
 
-// requestName is the name of the request of a case under one policy.
-func requestName(caseName string, policy pluginsv1alpha1.DeletionPolicy) string {
-	return strings.ToLower(caseName) + "-" + strings.ToLower(string(policy))
+// requestName is the name of the request of a case for a section, which can
+// be empty, under one policy.
+func requestName(caseName, section string, policy pluginsv1alpha1.DeletionPolicy) string {
+	parts := []string{strings.ToLower(caseName), section, strings.ToLower(string(policy))}
+	return strings.Join(slices.DeleteFunc(parts, func(p string) bool { return p == "" }), "-")
 }
 
 func (s *suite) ensureNamespace(ctx context.Context) error {

@@ -303,6 +303,21 @@ func accessRun(defect echo.Defect) Config {
 	})
 }
 
+// twoSectionRun starts an echo controller of the echo and the access
+// sections, and returns the config of a run against it.
+func twoSectionRun() Config {
+	return pluginRun(echo.Options{
+		Sections: []string{"echo", "access"},
+		Inputs:   []pluginsv1alpha1.InputDecl{{Name: "source", From: "echo-source/value"}},
+		Outputs: []echo.Output{
+			{Key: "message", FromInput: "source"},
+			{Key: "externalUrl", Value: "https://camunda.example.com"},
+			{Key: "grpcHost", Value: "grpc.camunda.example.com"},
+			{Key: "optimizeUrl", Value: "https://camunda.example.com/optimize"},
+		},
+	})
+}
+
 func pluginRun(opts echo.Options) Config {
 	name := fmt.Sprintf("echo-%d", pluginSeq.Add(1))
 	opts.Registration = name
