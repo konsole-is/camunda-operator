@@ -52,6 +52,39 @@ describe("settingsFromData", () => {
   });
 });
 
+describe("credentials in a URL setting", () => {
+  const withCredentials = "https://bot:t0ken@git.example.com/fleet.git";
+
+  it("the seed drops the user name and the password of an address", () => {
+    const seed = seedFromEnv({
+      FLEET_SETTINGS_GIT_REPOSITORY: withCredentials,
+      FLEET_SETTINGS_PROMETHEUS_URL: "http://admin:pw@prom:9090/",
+    });
+
+    expect(seed["git.repository"]).toBe("https://git.example.com/fleet.git");
+    expect(seed["prometheus.url"]).toBe("http://prom:9090/");
+  });
+
+  it("settings read from the ConfigMap drop them too", () => {
+    const s = settingsFromData({ "git.repository": withCredentials });
+
+    expect(s["git.repository"]).toBe("https://git.example.com/fleet.git");
+    expect(JSON.stringify(s)).not.toContain("t0ken");
+  });
+
+  it("keeps an address without credentials and a value that is not a URL", () => {
+    expect(
+      settingsFromData({
+        "git.repository": "https://git.example.com/fleet.git",
+        "prometheus.url": "prom:9090",
+      }),
+    ).toMatchObject({
+      "git.repository": "https://git.example.com/fleet.git",
+      "prometheus.url": "prom:9090",
+    });
+  });
+});
+
 describe("checkPatch", () => {
   it("refuses an unknown key", () => {
     expect(checkPatch({ "git.token": "x" })).toEqual([

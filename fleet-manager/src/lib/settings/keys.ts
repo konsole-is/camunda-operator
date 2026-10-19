@@ -42,12 +42,12 @@ const URL_KEYS: Partial<Record<SettingKey, string>> = {
   "prometheus.url": "prometheus.credentialsSecretRef",
 };
 
-/** seedFromEnv returns the settings that the seed variables of env give. */
+/** seedFromEnv returns the settings that the seed variables of env give, without the credentials of an address. */
 export function seedFromEnv(env: Record<string, string | undefined>): Settings {
   return fill((key) => env[SEED_VARIABLES[key]]);
 }
 
-/** settingsFromData returns the settings of the data of the ConfigMap. Unknown keys are left out. */
+/** settingsFromData returns the settings of the data of the ConfigMap, without the credentials of an address. Unknown keys are left out. */
 export function settingsFromData(
   data: Record<string, string> | undefined,
 ): Settings {
@@ -56,8 +56,21 @@ export function settingsFromData(
 
 function fill(value: (key: SettingKey) => string | undefined): Settings {
   return Object.fromEntries(
-    SETTING_KEYS.map((key) => [key, value(key) ?? ""]),
+    SETTING_KEYS.map((key) => {
+      const v = value(key) ?? "";
+      return [key, URL_KEYS[key] ? withoutCredentials(v) : v];
+    }),
   ) as Settings;
+}
+
+// The chart values and a hand edit of the ConfigMap skip checkPatch, and
+// the pages show the settings.
+function withoutCredentials(value: string): string {
+  const url = URL.parse(value);
+  if (!url || (!url.username && !url.password)) return value;
+  url.username = "";
+  url.password = "";
+  return url.href;
 }
 
 function isSettingKey(key: string): key is SettingKey {
