@@ -112,21 +112,18 @@ export function diffView(
 }
 
 /**
- * directWriter writes to the API server of kc, kubeConfig() by default,
- * with server-side apply and the field manager fleet-manager, with
- * force=false unless the change sets force. It writes only the kinds of
- * KindMap and WriteOnlyKindMap, and refuses any other object with Invalid
- * before it sends a request.
+ * directWriter writes to the API server of kc, kubeConfig() by default, by
+ * server-side apply with the field manager fleet-manager and force=false
+ * unless the change sets force. It refuses a kind outside KindMap and
+ * WriteOnlyKindMap with Invalid, before any request.
  *
- * apply runs the preview of the whole change first and writes nothing
- * when any object fails it. Then it applies the objects and deletes the
- * refs in the order of the change. When a write fails after that, the
- * objects written before it stay written. A delete of an object that is
- * already gone succeeds. An apply with a precondition fails when the
- * object was deleted since the page read it. When the object is deleted
- * after the preview, an object of a kind that the app may not delete, such
- * as a Namespace or a Secret, can exist again, and the errors hold the
- * error of that delete beside Stale.
+ * apply writes nothing when the preview of any object fails. Then it
+ * applies and deletes in the order of the change, and a failure keeps the
+ * objects written before it. A delete of an object that is gone succeeds.
+ * An apply with a precondition fails with Stale when the object was
+ * deleted since the page read it. After a delete between the preview and
+ * the write, a kind that the app may not delete, such as a Namespace, can
+ * exist again, with the error of that delete beside Stale.
  *
  * A preview of a Secret shows "(hidden)" for each value, and "(changed)"
  * for a value that the change sets to a new one. It holds no annotation.
