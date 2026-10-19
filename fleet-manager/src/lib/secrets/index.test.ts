@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getJSON, requestJSON } from "@/lib/k8s/client";
+import { KubernetesRequestError, getJSON, requestJSON } from "@/lib/k8s/client";
 import { getSettings } from "@/lib/settings";
 import { SETTING_KEYS, type Settings } from "@/lib/settings/keys";
 import type { Change, WriteResult, Writer } from "@/lib/write/types";
@@ -110,4 +110,53 @@ describe("writeSecretValue in Git mode", () => {
       expect(gitWriter.apply).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("writeSecretValue checks", () => {
+  const directWriter: Writer = {
+    mode: "direct",
+    preview: vi.fn(),
+    apply: vi.fn(),
+  };
+
+  it.each([
+    [{ namespace: "orders", name: "..", key: "k" }, "name"],
+    [{ namespace: "orders", name: "", key: "k" }, "name"],
+    [{ namespace: "orders", name: "a/b", key: "k" }, "name"],
+    [{ namespace: "..", name: "db", key: "k" }, "namespace"],
+    [{ namespace: "Orders", name: "db", key: "k" }, "namespace"],
+  ])("refuses %j before any request", async (ref, path) => {
+    vi.mocked(getWriter).mockResolvedValue(directWriter);
+
+    expect(await writeSecretValue(ref, "v")).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Invalid", path })],
+    });
+    expect(getJSON).not.toHaveBeenCalled();
+    expect(directWriter.apply).not.toHaveBeenCalled();
+  });
+
+  it("a failed read names no text of the API server", async () => {
+    vi.mocked(getWriter).mockResolvedValue(directWriter);
+    vi.mocked(getJSON).mockRejectedValue(
+      new KubernetesRequestError(500, "decode failed near pw-123"),
+    );
+
+    const result = await writeSecretValue(
+      { namespace: "orders", name: "db", key: "password" },
+      "v",
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Unavailable",
+          message:
+            "Could not read the Secret orders/db: the API server answered HTTP 500",
+        },
+      ],
+    });
+    expect(directWriter.apply).not.toHaveBeenCalled();
+  });
 });

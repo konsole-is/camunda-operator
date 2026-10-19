@@ -1,4 +1,5 @@
 import "server-only";
+import { KubernetesRequestError } from "@/lib/k8s/client";
 import { list } from "@/lib/k8s/read";
 import { inOrder } from "@/lib/serial";
 import { getSettings } from "@/lib/settings";
@@ -11,6 +12,9 @@ import { readSecret } from "./values";
 export type SecretRef = { namespace: string; name: string; key: string };
 
 const SECRET_KEY = /^[-._a-zA-Z0-9]+$/;
+const LABEL = "[a-z0-9]([-a-z0-9]*[a-z0-9])?";
+const SECRET_NAME = new RegExp(`^${LABEL}(\\.${LABEL})*$`);
+const NAMESPACE = new RegExp(`^${LABEL}$`);
 
 /**
  * listSecretRefs returns the Secrets of namespace by name, each with the
@@ -26,7 +30,8 @@ export async function listSecretRefs(
 /**
  * writeSecretValue sets one key of a Secret and keeps its other keys. It
  * creates the Secret when it is missing. It returns Invalid without a
- * request for a key name that a Secret cannot hold, and Stale when the
+ * request for a name, a namespace, or a key that a Secret cannot have, and
+ * Stale when the
  * Secret changed between its read and its write. The result never holds
  * the value.
  *
@@ -39,18 +44,8 @@ export async function writeSecretValue(
   ref: SecretRef,
   value: string,
 ): Promise<WriteResult> {
-  if (!SECRET_KEY.test(ref.key)) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "Invalid",
-          path: "key",
-          message: `${ref.key} is not a valid Secret key`,
-        },
-      ],
-    };
-  }
+  const refusal = refusalOf(ref);
+  if (refusal) return { ok: false, errors: [{ code: "Invalid", ...refusal }] };
   const writer = await getWriter();
   if (writer.mode === "git") return writeToGit(writer, ref);
   // An apply of a missing Secret holds only the new key, so a second apply
@@ -58,6 +53,24 @@ export async function writeSecretValue(
   return inOrder(`${ref.namespace}/${ref.name}`, () =>
     writeDirect(writer, ref, value),
   );
+}
+
+function refusalOf(
+  ref: SecretRef,
+): { path: string; message: string } | undefined {
+  if (!SECRET_NAME.test(ref.name) || ref.name.length > 253) {
+    return { path: "name", message: `${ref.name} is not a valid Secret name` };
+  }
+  if (!NAMESPACE.test(ref.namespace) || ref.namespace.length > 63) {
+    return {
+      path: "namespace",
+      message: `${ref.namespace} is not a valid namespace`,
+    };
+  }
+  if (!SECRET_KEY.test(ref.key)) {
+    return { path: "key", message: `${ref.key} is not a valid Secret key` };
+  }
+  return undefined;
 }
 
 async function writeDirect(
@@ -69,12 +82,17 @@ async function writeDirect(
   try {
     live = await readSecret(ref.namespace, ref.name);
   } catch (error) {
+    // The text of a failed read can quote the Secret.
+    const reason =
+      error instanceof KubernetesRequestError
+        ? `the API server answered HTTP ${error.statusCode}`
+        : "the API server did not answer";
     return {
       ok: false,
       errors: [
         {
           code: "Unavailable",
-          message: error instanceof Error ? error.message : String(error),
+          message: `Could not read the Secret ${ref.namespace}/${ref.name}: ${reason}`,
         },
       ],
     };
