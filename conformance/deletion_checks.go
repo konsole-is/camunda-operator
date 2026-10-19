@@ -396,7 +396,7 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 		if err != nil {
 			return err
 		}
-		objs := mergeObjects(life.seen[r.name], now)
+		objs := life.inventory(r.name, now)
 		life.written[r.name] = objs
 
 		if err := deleteRequest(ctx, s, r.name, life.uids[r.name]); err != nil {
@@ -464,9 +464,9 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 		if err != nil {
 			return err
 		}
-		// An object that the lifecycle checks saw and that is gone now is
-		// still checked against its row.
-		objs := mergeObjects(life.seen[r.name], now)
+		// An object that the run saw and that is gone now is still checked
+		// against its row.
+		objs := life.inventory(r.name, now)
 		life.written[r.name] = objs
 
 		if err := deleteRequest(ctx, s, r.name, life.uids[r.name]); err != nil {
@@ -710,7 +710,8 @@ func mergeObjects(earlier, later []*unstructured.Unstructured) []*unstructured.U
 	return merged
 }
 
-// current gets obj again, and returns nil when it is gone.
+// current gets obj again, and returns nil when it is gone, or when another
+// object without its request label took its name.
 func (s *suite) current(ctx context.Context, obj *unstructured.Unstructured) (*unstructured.Unstructured, error) {
 	got := &unstructured.Unstructured{}
 	got.SetGroupVersionKind(obj.GroupVersionKind())
@@ -721,7 +722,17 @@ func (s *suite) current(ctx context.Context, obj *unstructured.Unstructured) (*u
 		return nil, nil
 	case err != nil:
 		return nil, fmt.Errorf("getting %s: %w", objectRef(obj), err)
+	case got.GetUID() != obj.GetUID() &&
+		got.GetLabels()[pluginsv1alpha1.LabelRequest] != obj.GetLabels()[pluginsv1alpha1.LabelRequest]:
+		return nil, nil
 	}
 
 	return got, nil
+}
+
+// inventory returns each object of the request name that the watches, the
+// lifecycle checks, or now found, with the newest copy of each.
+func (life *lifecycle) inventory(name string, now []*unstructured.Unstructured) []*unstructured.Unstructured {
+	watched := life.rec.objectsOf(objectKey(name))
+	return mergeObjects(mergeObjects(watched, life.seen[name]), now)
 }

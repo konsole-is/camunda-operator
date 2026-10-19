@@ -361,3 +361,27 @@ func TestOrderRunNameHoldsTheRunID(t *testing.T) {
 
 	assert.Equal(t, "basic-order-abc123", run.name)
 }
+
+func TestCurrentTakesAnUnrelatedReplacementAsGone(t *testing.T) {
+	replacement := &corev1.ConfigMap{}
+	replacement.Namespace = "ns"
+	replacement.Name = "x"
+	replacement.UID = "replacement-uid"
+	sameLabels := replacement.DeepCopy()
+	sameLabels.Name = "y"
+	sameLabels.Labels = writerLabels()
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, replacement, sameLabels)
+	before := func(name string) *unstructured.Unstructured {
+		obj := withUID(written("ConfigMap", "ns", name, writerLabels()), "original-uid")
+		obj.SetAPIVersion("v1")
+		return obj
+	}
+
+	gone, err := s.current(t.Context(), before("x"))
+	require.NoError(t, err)
+	assert.Nil(t, gone)
+
+	kept, err := s.current(t.Context(), before("y"))
+	require.NoError(t, err)
+	assert.NotNil(t, kept, "a replacement with the labels of the request still counts")
+}

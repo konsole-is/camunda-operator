@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -162,4 +163,23 @@ func TestRecorderWatchWithoutAStartObservesTheCurrentObjects(t *testing.T) {
 	got, ok := r.first("current")
 	require.True(t, ok)
 	assert.Contains(t, got.ref, "ns/existing")
+}
+
+func TestRecorderKeepsTheNewestCopyOfEachObservedObject(t *testing.T) {
+	r := &recorder{}
+	first := &unstructured.Unstructured{}
+	first.SetKind("ConfigMap")
+	first.SetName("x")
+	first.SetUID("x-uid")
+	first.SetResourceVersion("4")
+	second := first.DeepCopy()
+	second.SetResourceVersion("7")
+
+	r.observe(first, objectKey("basic-orphan"))
+	r.observe(second, objectKey("basic-orphan"))
+
+	got := r.objectsOf(objectKey("basic-orphan"))
+	require.Len(t, got, 1)
+	assert.Equal(t, "7", got[0].GetResourceVersion())
+	assert.Empty(t, r.objectsOf(objectKey("other")))
 }

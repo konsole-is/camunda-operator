@@ -26,6 +26,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/resourceversion"
 	"k8s.io/apimachinery/pkg/watch"
@@ -43,6 +44,7 @@ type recorder struct {
 	marks    map[string]mark
 	seen     map[types.UID]bool
 	latest   map[string]string
+	objects  map[string][]*unstructured.Unstructured
 	failures []error
 	stop     context.CancelFunc
 }
@@ -212,6 +214,13 @@ func (r *recorder) observe(obj client.Object, key string) {
 	}
 	r.seen[obj.GetUID()] = true
 
+	if u, ok := obj.(*unstructured.Unstructured); ok {
+		if r.objects == nil {
+			r.objects = map[string][]*unstructured.Unstructured{}
+		}
+		r.objects[key] = mergeObjects(r.objects[key], []*unstructured.Unstructured{u.DeepCopy()})
+	}
+
 	r.seq++
 	m := mark{resourceVersion: obj.GetResourceVersion(), seq: r.seq, ref: objectRef(obj)}
 
@@ -223,6 +232,15 @@ func (r *recorder) observe(obj client.Object, key string) {
 		r.marks = map[string]mark{}
 	}
 	r.marks[key] = m
+}
+
+// objectsOf returns the newest copy of each unstructured object that the
+// recorder observed under key.
+func (r *recorder) objectsOf(key string) []*unstructured.Unstructured {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return slices.Clone(r.objects[key])
 }
 
 // saw says whether the recorder observed the object uid under a key.
