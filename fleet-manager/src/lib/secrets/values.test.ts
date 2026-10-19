@@ -1,7 +1,15 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { getJSON } from "@/lib/k8s/client";
+import { readSecretValues } from "./values";
 import { srcPath, valueImports } from "../../../test/imports/scan";
+
+vi.mock("@/lib/k8s/client", async (real) => ({
+  ...(await real<typeof import("@/lib/k8s/client")>()),
+  kubeConfig: vi.fn(),
+  getJSON: vi.fn(),
+}));
 
 const VALUES = srcPath("lib/secrets/values");
 
@@ -39,5 +47,17 @@ describe("the Secret value reader", () => {
       valueImports('import { readSecretValues } from "@/lib/secrets/values";'),
     ).toEqual(["@/lib/secrets/values"]);
     expect(importsValues(srcPath("lib/secrets/index.ts"))).toBe(true);
+  });
+});
+
+describe("readSecretValues", () => {
+  it("decodes the values and has a deadline for its read", async () => {
+    vi.mocked(getJSON).mockResolvedValue({
+      metadata: {},
+      data: { token: Buffer.from("t-1").toString("base64") },
+    });
+
+    expect(await readSecretValues("fleet", "git")).toEqual({ token: "t-1" });
+    expect(vi.mocked(getJSON).mock.calls[0][2]).toBeGreaterThan(0);
   });
 });

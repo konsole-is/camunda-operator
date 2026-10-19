@@ -2,7 +2,7 @@ import "server-only";
 import { KubernetesRequestError, getJSON, kubeConfig } from "@/lib/k8s/client";
 import { inOrder } from "@/lib/serial";
 import type { KubeObject, WriteResult } from "@/lib/write/types";
-import { getWriter, refKey } from "@/lib/write/writer";
+import { WRITE_TIMEOUT_MS, getWriter, refKey } from "@/lib/write/writer";
 import {
   SETTINGS_CONFIGMAP,
   type Settings,
@@ -71,7 +71,7 @@ async function readOrCreate(): Promise<ConfigMap> {
   const path = `/api/v1/namespaces/${encodeURIComponent(namespace)}/configmaps/${SETTINGS_CONFIGMAP}`;
   const kc = kubeConfig();
   try {
-    return await getJSON<ConfigMap>(kc, path);
+    return await getJSON<ConfigMap>(kc, path, WRITE_TIMEOUT_MS);
   } catch (error) {
     if (
       !(error instanceof KubernetesRequestError) ||
@@ -93,7 +93,7 @@ async function readOrCreate(): Promise<ConfigMap> {
   if (!result.ok) {
     throw new Error(result.errors.map((e) => e.message).join(" "));
   }
-  return getJSON<ConfigMap>(kc, path);
+  return getJSON<ConfigMap>(kc, path, WRITE_TIMEOUT_MS);
 }
 
 function settingsObject(data: Record<string, string>): ConfigMap {

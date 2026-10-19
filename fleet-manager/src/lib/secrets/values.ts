@@ -1,5 +1,6 @@
 import "server-only";
 import { KubernetesRequestError, getJSON, kubeConfig } from "@/lib/k8s/client";
+import { WRITE_TIMEOUT_MS } from "@/lib/write/writer";
 
 /**
  * readSecretValues returns the decoded values of a Secret, or undefined
@@ -36,6 +37,7 @@ export async function readSecret(
     return await getJSON<RawSecret>(
       kubeConfig(),
       `/api/v1/namespaces/${encodeURIComponent(namespace)}/secrets/${encodeURIComponent(name)}`,
+      WRITE_TIMEOUT_MS,
     );
   } catch (error) {
     if (error instanceof KubernetesRequestError && error.statusCode === 404) {

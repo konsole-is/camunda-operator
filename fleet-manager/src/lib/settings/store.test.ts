@@ -61,6 +61,21 @@ describe("getSettings", () => {
   });
 });
 
+describe("reads of the ConfigMap", () => {
+  it("each read has a deadline, so a stalled answer cannot hold the settings", async () => {
+    vi.mocked(getJSON)
+      .mockRejectedValueOnce(new KubernetesRequestError(404, "not found"))
+      .mockResolvedValue(configMap({}, "1"));
+
+    await getSettings();
+
+    expect(getJSON).toHaveBeenCalledTimes(2);
+    for (const call of vi.mocked(getJSON).mock.calls) {
+      expect(call[2]).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("updateSettings", () => {
   it("applies the read data with the patch and the resourceVersion it read", async () => {
     vi.mocked(getJSON).mockResolvedValue(
