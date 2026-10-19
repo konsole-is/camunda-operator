@@ -169,6 +169,32 @@ describe("testGit", () => {
     expect(result.message).toMatch(new RegExp(`^Could not reach ${url}: .+`));
   });
 
+  it("a repository that never ends its answer gets its connection closed", async () => {
+    let closed = false;
+    const url =
+      (await serve((req, res) => {
+        // One byte each second keeps the socket busy, so only the deadline
+        // of the test ends the request.
+        res.writeHead(200, {
+          "Content-Type": "application/x-git-upload-pack-advertisement",
+        });
+        const timer = setInterval(() => res.write("0"), 1000);
+        req.socket.on("close", () => {
+          clearInterval(timer);
+          closed = true;
+        });
+      })) + "/fleet.git";
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({ "git.repository": url }),
+    );
+
+    const result = await testGit();
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(new RegExp(`^Could not reach ${url}: .+`));
+    await vi.waitFor(() => expect(closed).toBe(true));
+  }, 20_000);
+
   it("no repository set", async () => {
     vi.mocked(getSettings).mockResolvedValue(settings({}));
 

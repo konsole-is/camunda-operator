@@ -40,18 +40,19 @@ export async function testGit(): Promise<TestResult> {
     }
   }
   try {
-    const refs = await withTimeout(
-      listServerRefs({
-        http: gitHttp,
-        url,
-        prefix: "refs/heads/",
-        protocolVersion: 1,
-        onAuth: () =>
-          values ? { username: values.username, password: values.token } : {},
-        // Without cancel, a refused token makes isomorphic-git ask again.
-        onAuthFailure: () => ({ cancel: true }),
-      }),
-    );
+    // The deadline also closes the request, so a server that never ends
+    // its answer keeps no socket open.
+    const signal = AbortSignal.timeout(TIMEOUT_MS);
+    const refs = await listServerRefs({
+      http: { request: (request) => gitHttp.request({ ...request, signal }) },
+      url,
+      prefix: "refs/heads/",
+      protocolVersion: 1,
+      onAuth: () =>
+        values ? { username: values.username, password: values.token } : {},
+      // Without cancel, a refused token makes isomorphic-git ask again.
+      onAuthFailure: () => ({ cancel: true }),
+    });
     const branch = settings["git.branch"];
     if (branch && !refs.some((r) => r.ref === `refs/heads/${branch}`)) {
       return { ok: false, message: `${url} has no branch ${branch}.` };
@@ -141,17 +142,6 @@ async function readCredentials(secret: string): Promise<Credentials> {
     };
   }
   return { ok: true, values };
-}
-
-function withTimeout<T>(promise: Promise<T>): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`no answer in ${TIMEOUT_MS / 1000} seconds`)),
-      TIMEOUT_MS,
-    );
-  });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 // A library message can quote a header, so each token and password and its
