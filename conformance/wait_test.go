@@ -60,6 +60,23 @@ func TestWaitForReturnsAtOnceWhenTheContextIsCanceled(t *testing.T) {
 	assert.Less(t, time.Since(start), 10*time.Second)
 }
 
+func TestWaitUntilChecksOnceAfterThePassedDeadline(t *testing.T) {
+	calls := 0
+	err := waitUntil(
+		t.Context(),
+		time.Now().Add(-time.Second),
+		20*time.Second,
+		"OutputsReady=True",
+		func(context.Context) error {
+			calls++
+			return errors.New("the request has no OutputsReady condition")
+		},
+	)
+
+	assert.Equal(t, 1, calls)
+	assert.EqualError(t, err, "OutputsReady=True within 20s: the request has no OutputsReady condition")
+}
+
 func TestWaitForBoundsEachCallOfTheCheckJustAfterTheTimeout(t *testing.T) {
 	start := time.Now()
 	err := waitFor(t.Context(), time.Second, "a pass", func(ctx context.Context) error {

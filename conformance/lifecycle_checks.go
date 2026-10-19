@@ -136,7 +136,7 @@ func checkFinalizer(ctx context.Context, s *suite) error {
 	return eachRun(life.runs, func(r requestRun) error {
 		// A request that never gets outputs fails REQ-OUTPUTS-READY. This
 		// check only needs the plugin to have written its objects.
-		_ = waitForOutputsReady(ctx, s, r.name, false)
+		_ = waitForOutputsReady(ctx, s, r.name, life.started, false)
 
 		if err := waitForRecorder(ctx, s, life, r.name); err != nil {
 			return err
@@ -187,7 +187,7 @@ func checkOutputsReady(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(life.runs, func(r requestRun) error {
-		return waitForOutputsReady(ctx, s, r.name, true)
+		return waitForOutputsReady(ctx, s, r.name, life.started, true)
 	})
 }
 
@@ -198,7 +198,7 @@ func checkRequestOutputs(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(life.runs, func(r requestRun) error {
-		_ = waitForOutputsReady(ctx, s, r.name, false)
+		_ = waitForOutputsReady(ctx, s, r.name, life.started, false)
 
 		req, err := s.request(ctx, r.name)
 		if err != nil {
@@ -216,7 +216,8 @@ func checkReady(ctx context.Context, s *suite) error {
 	}
 
 	return eachRun(life.runs, func(r requestRun) error {
-		return waitFor(ctx, s.cfg.Timeouts.Ready, "Ready=True", func(ctx context.Context) error {
+		deadline := life.started.Add(s.cfg.Timeouts.Ready)
+		return waitUntil(ctx, deadline, s.cfg.Timeouts.Ready, "Ready=True", func(ctx context.Context) error {
 			req, err := s.request(ctx, r.name)
 			if err != nil {
 				return err
@@ -499,9 +500,11 @@ func (s *suite) request(ctx context.Context, name string) (*pluginsv1alpha1.Plug
 }
 
 // waitForOutputsReady waits for OutputsReady=True on the request name, for
-// its current generation when current is true.
-func waitForOutputsReady(ctx context.Context, s *suite, name string, current bool) error {
-	return waitFor(ctx, s.cfg.Timeouts.OutputsReady, "OutputsReady=True", func(ctx context.Context) error {
+// its current generation when current is true, until the OutputsReady
+// timeout after since.
+func waitForOutputsReady(ctx context.Context, s *suite, name string, since time.Time, current bool) error {
+	deadline := since.Add(s.cfg.Timeouts.OutputsReady)
+	return waitUntil(ctx, deadline, s.cfg.Timeouts.OutputsReady, "OutputsReady=True", func(ctx context.Context) error {
 		req, err := s.request(ctx, name)
 		if err != nil {
 			return err
@@ -718,7 +721,7 @@ func logProblems(lines []string, request string) []string {
 		}
 
 		var entry map[string]any
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		if err := json.Unmarshal([]byte(line), &entry); err != nil || entry == nil {
 			if len(problems) == 0 {
 				quoted := line[:min(len(line), maxQuotedLine)]
 				problems = append(problems, fmt.Sprintf("the log line %q is not a JSON object", quoted))

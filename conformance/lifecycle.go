@@ -64,6 +64,8 @@ type lifecycle struct {
 	kinds        []kindInfo
 	runs         []requestRun
 	rec          *recorder
+	// uids holds the UID of each request that the run created, by name.
+	uids map[string]types.UID
 	// preexisting holds the UIDs of the objects that carried the label of a
 	// request of the run before the run created its requests.
 	preexisting map[types.UID]bool
@@ -133,6 +135,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 		runs:         runs,
 		rec:          rec,
 		preexisting:  preexisting,
+		uids:         map[string]types.UID{},
 		written:      map[string][]*unstructured.Unstructured{},
 	}
 
@@ -148,6 +151,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 			)
 		}
 		created = append(created, req)
+		life.uids[run.name] = req.UID
 	}
 
 	return life, nil

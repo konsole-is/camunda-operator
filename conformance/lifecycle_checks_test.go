@@ -111,10 +111,13 @@ func TestReadyVerdict(t *testing.T) {
 	}
 }
 
+// testRequestName is the name of the request of testRequest.
+const testRequestName = "basic-delete"
+
 func testRequest() *pluginsv1alpha1.PluginRequest {
 	req := &pluginsv1alpha1.PluginRequest{}
 	req.Namespace = "ns"
-	req.Name = "basic-delete"
+	req.Name = testRequestName
 	req.UID = types.UID("request-uid")
 	req.Spec.Registration = "echo-1"
 	return req
@@ -137,7 +140,7 @@ func written(
 func writerLabels() map[string]string {
 	return map[string]string{
 		pluginsv1alpha1.LabelRegistration: "echo-1",
-		pluginsv1alpha1.LabelRequest:      "basic-delete",
+		pluginsv1alpha1.LabelRequest:      testRequestName,
 	}
 }
 
@@ -177,7 +180,7 @@ func TestLabelProblems(t *testing.T) {
 		{
 			name: "an object without the registration label",
 			obj: written(
-				"ConfigMap", "ns", "x", map[string]string{pluginsv1alpha1.LabelRequest: "basic-delete"},
+				"ConfigMap", "ns", "x", map[string]string{pluginsv1alpha1.LabelRequest: testRequestName},
 				ownerOf(req),
 			),
 			contains: []string{`ConfigMap ns/x has no label plugins.camunda.io/registration: "echo-1"`},
@@ -298,13 +301,14 @@ func TestLogProblems(t *testing.T) {
 			lines: []string{`{"request":{"name":"basic-delete","namespace":"ns"}}`}},
 		{name: "a line that is not JSON", lines: []string{`{"request":"basic-delete"}`, long},
 			message: `"not json xxx`},
+		{name: "a null line", lines: []string{`{"request":"basic-delete"}`, `null`}, message: `"null"`},
 		{name: "JSON lines without the request", lines: []string{`{"request":"other"}`, `{"msg":"x"}`},
 			message: `no log line carries the key request with the request name "basic-delete"`},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			problems := logProblems(tt.lines, "basic-delete")
+			problems := logProblems(tt.lines, testRequestName)
 
 			if tt.message == "" {
 				assert.Empty(t, problems)

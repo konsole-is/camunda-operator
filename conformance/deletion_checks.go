@@ -155,8 +155,9 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 	if err := scaleBack(ctx, s, deployments); err != nil {
 		return err
 	}
+	scaledBack := time.Now()
 
-	if err := waitForOutputsReady(ctx, s, run.name, true); err != nil {
+	if err := waitForOutputsReady(ctx, s, run.name, scaledBack, true); err != nil {
 		return fmt.Errorf("request %s: %w", run.name, err)
 	}
 
@@ -165,7 +166,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 		return orderVerdict(rec, life.registration.Name)
 	})
 
-	return errors.Join(verdict, deleteRequest(ctx, s, run.name))
+	return errors.Join(verdict, deleteRequest(ctx, s, run.name, req.UID))
 }
 
 // restoreTimeout bounds the scale back of the plugin, which also runs when
@@ -388,7 +389,7 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 		}
 		life.written[r.name] = objs
 
-		if err := deleteRequest(ctx, s, r.name); err != nil {
+		if err := deleteRequest(ctx, s, r.name, life.uids[r.name]); err != nil {
 			return err
 		}
 
@@ -397,8 +398,15 @@ func checkDeleteDelete(ctx context.Context, s *suite) error {
 			s.cfg.Timeouts.Deletion,
 			"the objects of the request to be gone",
 			func(ctx context.Context) error {
+				// An object that the plugin wrote while it deleted the
+				// request has the label too.
+				later, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
+				if err != nil {
+					return err
+				}
+
 				var problems []string
-				for _, obj := range objs {
+				for _, obj := range append(slices.Clone(objs), later...) {
 					current, err := s.current(ctx, obj)
 					if err != nil {
 						return err
@@ -434,6 +442,13 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 		if err != nil {
 			return err
 		}
+		if req.UID != life.uids[r.name] {
+			return fmt.Errorf(
+				"the PluginRequest %s/%s is not the request that the run created",
+				req.Namespace,
+				req.Name,
+			)
+		}
 
 		objs, err := writtenObjects(ctx, s, life.kinds, r.name, life.preexisting)
 		if err != nil {
@@ -441,7 +456,7 @@ func checkDeleteOrphan(ctx context.Context, s *suite) error {
 		}
 		life.written[r.name] = objs
 
-		if err := deleteRequest(ctx, s, r.name); err != nil {
+		if err := deleteRequest(ctx, s, r.name, life.uids[r.name]); err != nil {
 			return err
 		}
 
@@ -641,20 +656,25 @@ func runsWith(runs []requestRun, policy pluginsv1alpha1.DeletionPolicy) []reques
 	return slices.DeleteFunc(slices.Clone(runs), func(r requestRun) bool { return r.policy != policy })
 }
 
-// deleteRequest deletes the request name and waits until it is gone.
-func deleteRequest(ctx context.Context, s *suite, name string) error {
-	req, err := s.request(ctx, name)
-	if err != nil {
-		return err
-	}
+// deleteRequest deletes the request name that the run created with uid, and
+// waits until it is gone. It fails, and deletes nothing, when another
+// request of that name replaced it.
+func deleteRequest(ctx context.Context, s *suite, name string, uid types.UID) error {
+	req := &pluginsv1alpha1.PluginRequest{}
+	req.Namespace = s.cfg.Namespace
+	req.Name = name
 
-	if err := client.IgnoreNotFound(s.client.Delete(ctx, req)); err != nil {
-		return fmt.Errorf("deleting the PluginRequest %s/%s: %w", req.Namespace, req.Name, err)
+	err := s.client.Delete(ctx, req, client.Preconditions{UID: &uid})
+	switch {
+	case apierrors.IsConflict(err):
+		return fmt.Errorf("the PluginRequest %s/%s is not the request that the run created", req.Namespace, name)
+	case err != nil && !apierrors.IsNotFound(err):
+		return fmt.Errorf("deleting the PluginRequest %s/%s: %w", req.Namespace, name, err)
 	}
 
 	return waitFor(ctx, s.cfg.Timeouts.Deletion, "the request to be gone", func(ctx context.Context) error {
 		err := s.client.Get(ctx, client.ObjectKeyFromObject(req), req)
-		if apierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) || (err == nil && req.UID != uid) {
 			return nil
 		}
 		if err != nil {

@@ -36,11 +36,24 @@ const callGrace = 10 * time.Second
 // the error names what the wait was for and holds the last error of check. A
 // canceled ctx ends the wait at once with the error of ctx.
 func waitFor(ctx context.Context, timeout time.Duration, what string, check func(ctx context.Context) error) error {
-	callCtx, cancel := context.WithTimeout(ctx, timeout+callGrace)
+	return waitUntil(ctx, time.Now().Add(timeout), timeout, what, check)
+}
+
+// waitUntil is waitFor with a timeout that started at deadline less timeout.
+// It calls check at least once, also when deadline passed.
+func waitUntil(
+	ctx context.Context,
+	deadline time.Time,
+	timeout time.Duration,
+	what string,
+	check func(ctx context.Context) error,
+) error {
+	remaining := max(time.Until(deadline), time.Millisecond)
+	callCtx, cancel := context.WithTimeout(ctx, remaining+callGrace)
 	defer cancel()
 
 	var last error
-	err := wait.PollUntilContextTimeout(ctx, pollInterval, timeout, true, func(context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, pollInterval, remaining, true, func(context.Context) (bool, error) {
 		last = check(callCtx)
 		return last == nil, nil
 	})

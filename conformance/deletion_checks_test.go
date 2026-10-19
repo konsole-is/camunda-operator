@@ -17,14 +17,19 @@ limitations under the License.
 package conformance
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
@@ -235,4 +240,37 @@ func deleting(obj *unstructured.Unstructured) *unstructured.Unstructured {
 	now := metav1.Now()
 	obj.SetDeletionTimestamp(&now)
 	return obj
+}
+
+func TestDeleteRequestKeepsARequestThatReplacedTheOneOfTheRun(t *testing.T) {
+	replacement := &pluginsv1alpha1.PluginRequest{}
+	replacement.Namespace = "conformance-echo"
+	replacement.Name = "basic-delete"
+	replacement.UID = "replacement-uid"
+
+	// The fake client ignores a UID precondition, so the interceptor
+	// answers as the API server does.
+	funcs := interceptor.Funcs{
+		Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+			var del client.DeleteOptions
+			del.ApplyOptions(opts)
+
+			var current pluginsv1alpha1.PluginRequest
+			if err := c.Get(ctx, client.ObjectKeyFromObject(obj), &current); err != nil {
+				return err
+			}
+			if del.Preconditions != nil && *del.Preconditions.UID != current.UID {
+				return apierrors.NewConflict(schema.GroupResource{}, obj.GetName(), errors.New("UID differs"))
+			}
+
+			return c.Delete(ctx, obj, opts...)
+		},
+	}
+	s := newTestSuite(t, validConfig(), funcs, replacement)
+
+	err := deleteRequest(t.Context(), s, "basic-delete", "run-uid")
+
+	assert.ErrorContains(t, err, "is not the request that the run created")
+	var kept pluginsv1alpha1.PluginRequest
+	assert.NoError(t, s.client.Get(t.Context(), client.ObjectKeyFromObject(replacement), &kept))
 }
