@@ -76,7 +76,7 @@ type Reconciler struct {
 	Metrics component.MetricsRecorder
 
 	handlers map[string]handler
-	schemas  map[string]*apiextensionsv1.JSON
+	schemas  map[string]*parameterSchema
 }
 
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests,verbs=get;list;watch;update;patch
@@ -180,7 +180,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 
 // build checks the parameters of request and returns the components of h.
 func (r *Reconciler) build(ctx context.Context, request *pluginsv1alpha1.PluginRequest, h handler) (served, error) {
-	if err := checkParameters(ctx, r.schemas[request.Spec.Registration], request.Spec.Parameters); err != nil {
+	if err := r.schemas[request.Spec.Registration].check(ctx, request.Spec.Parameters); err != nil {
 		return served{}, err
 	}
 
@@ -250,10 +250,10 @@ func (r *Reconciler) finalize(
 }
 
 // SetupWithManager returns an error that names each handler without a
-// registration in Registrations. Then it registers the contractsField index
-// and the controller. The controller runs for a request whose registration
-// label names a handler, and for every request that reads a contract that
-// changed.
+// registration in Registrations, or with a parameter schema that it cannot
+// read. Then it registers the contractsField index and the controller. The
+// controller runs for a request whose registration label names a handler,
+// and for every request that reads a contract that changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -263,19 +263,26 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	r.handlers = handlers()
-	r.schemas = map[string]*apiextensionsv1.JSON{}
+	parameters := map[string]*apiextensionsv1.JSON{}
 	for _, reg := range r.Registrations {
-		if _, ok := r.handlers[reg.Name]; ok {
-			r.schemas[reg.Name] = reg.Spec.Parameters
-		}
+		parameters[reg.Name] = reg.Spec.Parameters
 	}
-	var missing []error
+	r.schemas = map[string]*parameterSchema{}
+	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(r.handlers)) {
-		if _, ok := r.schemas[name]; !ok {
-			missing = append(missing, fmt.Errorf("no built-in registration %q for its handler", name))
+		raw, ok := parameters[name]
+		if !ok {
+			errs = append(errs, fmt.Errorf("no built-in registration %q for its handler", name))
+			continue
 		}
+		schema, err := newParameterSchema(raw)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("built-in registration %q: %w", name, err))
+			continue
+		}
+		r.schemas[name] = schema
 	}
-	if err := errors.Join(missing...); err != nil {
+	if err := errors.Join(errs...); err != nil {
 		return err
 	}
 

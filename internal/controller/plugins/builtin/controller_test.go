@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -269,5 +270,25 @@ var _ = Describe("Built-in requests", func() {
 		}).SetupWithManager(mgr)
 
 		Expect(err).To(MatchError(ContainSubstring(pluginstartup.RegistrationExistingObjectStorage)))
+	})
+
+	It("refuses to start with a parameter schema that it cannot read", func() {
+		mgr, err := ctrl.NewManager(env.Cfg, ctrl.Options{Metrics: metricsserver.Options{BindAddress: "0"}})
+		Expect(err).NotTo(HaveOccurred())
+		registrations := pluginstartup.Registrations("0.3.0", testServiceAccount)
+		for i := range registrations {
+			if registrations[i].Name == pluginstartup.RegistrationExistingSecondaryStorage {
+				registrations[i].Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(`{"type":`)}
+			}
+		}
+
+		err = (&Reconciler{
+			Client:        mgr.GetClient(),
+			APIReader:     mgr.GetAPIReader(),
+			Scheme:        mgr.GetScheme(),
+			Registrations: registrations,
+		}).SetupWithManager(mgr)
+
+		Expect(err).To(MatchError(ContainSubstring(pluginstartup.RegistrationExistingSecondaryStorage)))
 	})
 })

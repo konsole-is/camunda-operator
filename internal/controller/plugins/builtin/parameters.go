@@ -19,6 +19,7 @@ package builtin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -37,17 +38,24 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// checkParameters checks parameters against schema as the API server checks
-// a custom resource, x-kubernetes-validations included. Absent parameters,
-// and parameters that are null, are checked as an empty object. Parameters
-// that fail return a *conditions.PreCheckFailure with reason
-// InvalidParameters, whose message names each field under spec.parameters.
-// A schema that cannot be read returns a plain error, because it is a defect
-// of the registration.
-func checkParameters(ctx context.Context, schemaJSON, parameters *apiextensionsv1.JSON) error {
+// parameterSchema checks the parameters of a request against the parameter
+// schema of one registration.
+type parameterSchema struct {
+	validator  validation.SchemaValidator
+	structural *schema.Structural
+	rules      *cel.Validator
+}
+
+// newParameterSchema reads the parameter schema raw. A schema that cannot be
+// read returns an error.
+func newParameterSchema(raw *apiextensionsv1.JSON) (*parameterSchema, error) {
+	if raw == nil {
+		return nil, errors.New("decoding the parameter schema: no schema")
+	}
+
 	var props apiextensionsv1.JSONSchemaProps
-	if err := json.Unmarshal(schemaJSON.Raw, &props); err != nil {
-		return fmt.Errorf("decoding the parameter schema: %w", err)
+	if err := json.Unmarshal(raw.Raw, &props); err != nil {
+		return nil, fmt.Errorf("decoding the parameter schema: %w", err)
 	}
 
 	var internal apiextensions.JSONSchemaProps
@@ -56,21 +64,34 @@ func checkParameters(ctx context.Context, schemaJSON, parameters *apiextensionsv
 		&internal,
 		nil,
 	); err != nil {
-		return fmt.Errorf("converting the parameter schema: %w", err)
+		return nil, fmt.Errorf("converting the parameter schema: %w", err)
 	}
 
 	validator, _, err := validation.NewSchemaValidator(&internal)
 	if err != nil {
-		return fmt.Errorf("reading the parameter schema: %w", err)
+		return nil, fmt.Errorf("reading the parameter schema: %w", err)
 	}
 
 	// The schema validator does not run x-kubernetes-validations, the list
 	// types, or the checks of an embedded resource.
 	structural, err := schema.NewStructural(&internal)
 	if err != nil {
-		return fmt.Errorf("reading the parameter schema: %w", err)
+		return nil, fmt.Errorf("reading the parameter schema: %w", err)
 	}
 
+	return &parameterSchema{
+		validator:  validator,
+		structural: structural,
+		rules:      cel.NewValidator(structural, false, celconfig.PerCallLimit),
+	}, nil
+}
+
+// check checks parameters as the API server checks a custom resource,
+// x-kubernetes-validations included. Absent parameters, and parameters that
+// are null, are checked as an empty object. Parameters that fail return a
+// *conditions.PreCheckFailure with reason InvalidParameters, whose message
+// names each field under spec.parameters.
+func (p *parameterSchema) check(ctx context.Context, parameters *apiextensionsv1.JSON) error {
 	value := any(map[string]any{})
 	if parameters != nil && len(parameters.Raw) > 0 {
 		// The API server decodes an integer as int64, as utiljson does.
@@ -84,15 +105,15 @@ func checkParameters(ctx context.Context, schemaJSON, parameters *apiextensionsv
 	}
 
 	path := field.NewPath("spec", "parameters")
-	errs := validation.ValidateCustomResource(path, value, validator)
-	if rules := cel.NewValidator(structural, false, celconfig.PerCallLimit); rules != nil {
-		ruleErrs, _ := rules.Validate(ctx, path, structural, value, nil, celconfig.RuntimeCELCostBudget)
+	errs := validation.ValidateCustomResource(path, value, p.validator)
+	if p.rules != nil {
+		ruleErrs, _ := p.rules.Validate(ctx, path, p.structural, value, nil, celconfig.RuntimeCELCostBudget)
 		errs = append(errs, ruleErrs...)
 	}
 	if object, ok := value.(map[string]any); ok {
-		errs = append(errs, listtype.ValidateListSetsAndMaps(path, structural, object)...)
+		errs = append(errs, listtype.ValidateListSetsAndMaps(path, p.structural, object)...)
 	}
-	errs = append(errs, objectmeta.Validate(ctx, path, value, structural, false)...)
+	errs = append(errs, objectmeta.Validate(ctx, path, value, p.structural, false)...)
 	if len(errs) == 0 {
 		return nil
 	}
@@ -104,6 +125,6 @@ func checkParameters(ctx context.Context, schemaJSON, parameters *apiextensionsv
 
 	return &conditions.PreCheckFailure{
 		Reason:  pluginsv1alpha1.ReasonInvalidParameters,
-		Message: conditions.BoundMessage(strings.Join(messages, ". ")),
+		Message: strings.Join(messages, ". "),
 	}
 }

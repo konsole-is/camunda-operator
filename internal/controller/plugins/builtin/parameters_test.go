@@ -63,7 +63,7 @@ func TestCheckParameters(t *testing.T) {
 				parameters = &apiextensionsv1.JSON{Raw: []byte(tt.parameters)}
 			}
 
-			err := checkParameters(t.Context(), schemaOf(t, tt.registration), parameters)
+			err := checkParameters(t, schemaOf(t, tt.registration), parameters)
 			if tt.wantFields == nil {
 				assert.NoError(t, err)
 				return
@@ -101,7 +101,7 @@ func TestCheckParametersRunsTheValidationRulesOfTheSchema(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkParameters(t.Context(), schema, &apiextensionsv1.JSON{Raw: []byte(tt.parameters)})
+			err := checkParameters(t, schema, &apiextensionsv1.JSON{Raw: []byte(tt.parameters)})
 			if tt.want == "" {
 				assert.NoError(t, err)
 				return
@@ -121,7 +121,7 @@ func TestCheckParametersChecksNullParametersAsAnEmptyObject(t *testing.T) {
 		`{"type":"object","nullable":true,"required":["message"],"properties":{"message":{"type":"string"}}}`,
 	)}
 
-	err := checkParameters(t.Context(), schema, &apiextensionsv1.JSON{Raw: []byte(`null`)})
+	err := checkParameters(t, schema, &apiextensionsv1.JSON{Raw: []byte(`null`)})
 
 	var failure *conditions.PreCheckFailure
 	require.ErrorAs(t, err, &failure)
@@ -129,10 +129,24 @@ func TestCheckParametersChecksNullParametersAsAnEmptyObject(t *testing.T) {
 	assert.Contains(t, failure.Message, "spec.parameters.message")
 }
 
-func TestCheckParametersReportsABrokenSchemaAsAnError(t *testing.T) {
-	err := checkParameters(t.Context(), &apiextensionsv1.JSON{Raw: []byte(`{"type":`)}, nil)
+func TestNewParameterSchemaRefusesASchemaThatItCannotRead(t *testing.T) {
+	for name, raw := range map[string]*apiextensionsv1.JSON{
+		"not JSON":  {Raw: []byte(`{"type":`)},
+		"no schema": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := newParameterSchema(raw)
 
-	require.Error(t, err)
-	var failure *conditions.PreCheckFailure
-	assert.False(t, errors.As(err, &failure), "a broken schema is not the fault of the request")
+			require.Error(t, err)
+			var failure *conditions.PreCheckFailure
+			assert.False(t, errors.As(err, &failure), "a broken schema is not the fault of the request")
+		})
+	}
+}
+
+func checkParameters(t *testing.T, schema, parameters *apiextensionsv1.JSON) error {
+	p, err := newParameterSchema(schema)
+	require.NoError(t, err)
+
+	return p.check(t.Context(), parameters)
 }
