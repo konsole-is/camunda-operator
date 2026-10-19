@@ -1,5 +1,6 @@
 import "server-only";
 import { KubernetesRequestError, getJSON, kubeConfig } from "@/lib/k8s/client";
+import type { KubeObject } from "@/lib/write/types";
 import { WRITE_TIMEOUT_MS } from "@/lib/write/writer";
 
 /**
@@ -23,10 +24,7 @@ export async function readSecretValues(
 }
 
 /** RawSecret is a Secret as the API server returns it, with base64 data. */
-export type RawSecret = {
-  metadata: { resourceVersion?: string };
-  data?: Record<string, string>;
-};
+export type RawSecret = KubeObject & { data?: Record<string, string> };
 
 /** readSecret returns the Secret with its base64 data, or undefined when it does not exist. */
 export async function readSecret(

@@ -2,7 +2,7 @@ import "server-only";
 import { list } from "@/lib/k8s/read";
 import { inOrder } from "@/lib/serial";
 import { getSettings } from "@/lib/settings";
-import type { WriteResult, Writer } from "@/lib/write/types";
+import type { KubeObject, WriteResult, Writer } from "@/lib/write/types";
 import { getWriter, refKey } from "@/lib/write/writer";
 import { externalSecretFor } from "./external-secret";
 import { readSecret } from "./values";
@@ -80,17 +80,20 @@ async function writeDirect(
       ],
     };
   }
-  const object = {
-    apiVersion: "v1",
-    kind: "Secret",
-    metadata: { name: ref.name, namespace: ref.namespace },
-    // The apply holds every key of the live Secret. A key that it leaves
-    // out and that only the fleet manager set would be removed.
-    data: {
-      ...live?.data,
-      [ref.key]: Buffer.from(value, "utf8").toString("base64"),
-    },
+  const data = {
+    ...live?.data,
+    [ref.key]: Buffer.from(value, "utf8").toString("base64"),
   };
+  // The apply holds every field of the live Secret. A field that it leaves
+  // out and that only the fleet manager set would be removed.
+  const object: KubeObject = live
+    ? { ...live, data }
+    : {
+        apiVersion: "v1",
+        kind: "Secret",
+        metadata: { name: ref.name, namespace: ref.namespace },
+        data,
+      };
   const resourceVersion = live?.metadata.resourceVersion;
   return writer.apply({
     intent: `Set the key ${ref.key} of the Secret ${ref.namespace}/${ref.name}`,

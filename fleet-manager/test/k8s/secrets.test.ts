@@ -7,6 +7,7 @@ import {
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { defaultCache } from "@/lib/k8s/cache";
 import { listSecretRefs, writeSecretValue } from "@/lib/secrets";
+import { directWriter } from "@/lib/write/writer";
 
 // The data layer reads KUBECONFIG through kubeConfig, on its first call.
 process.env.KUBECONFIG = inject("kubeconfig");
@@ -139,6 +140,42 @@ describe("writeSecretValue against envtest", () => {
       b: "v-b",
       c: "v-c",
       d: "v-d",
+    });
+  });
+
+  it("a key update keeps the type and the labels that the writer set", async () => {
+    expect(
+      await directWriter(kc).apply({
+        intent: "Create a typed Secret",
+        apply: [
+          {
+            apiVersion: "v1",
+            kind: "Secret",
+            metadata: { name: "typed", namespace, labels: { team: "a" } },
+            type: "kubernetes.io/basic-auth",
+            data: { username: Buffer.from("me").toString("base64") },
+          },
+        ],
+      }),
+    ).toEqual({ ok: true, mode: "direct" });
+
+    expect(
+      await writeSecretValue(
+        { namespace, name: "typed", key: "password" },
+        "pw",
+      ),
+    ).toEqual({ ok: true, mode: "direct" });
+
+    const live = await api.read<V1Secret>({
+      apiVersion: "v1",
+      kind: "Secret",
+      metadata: { name: "typed", namespace },
+    });
+    expect(live.type).toBe("kubernetes.io/basic-auth");
+    expect(live.metadata?.labels).toEqual({ team: "a" });
+    expect(await readSecretByHand("typed")).toEqual({
+      username: "me",
+      password: "pw",
     });
   });
 
