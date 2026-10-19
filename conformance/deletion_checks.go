@@ -186,7 +186,7 @@ type scaledDeployment struct {
 }
 
 // pluginDeployments returns the Deployments of the namespace of sa whose pods
-// run under sa.
+// run under sa, and fails for one with no replica.
 func pluginDeployments(
 	ctx context.Context,
 	s *suite,
@@ -210,6 +210,13 @@ func pluginDeployments(
 		replicas := int32(1)
 		if d.Spec.Replicas != nil {
 			replicas = *d.Spec.Replicas
+		}
+		if replicas == 0 {
+			return nil, fmt.Errorf(
+				"the Deployment %s/%s runs no replica: another run of the suite can hold it, so run one at a time",
+				d.Namespace,
+				d.Name,
+			)
 		}
 		deployments = append(deployments, scaledDeployment{key: client.ObjectKeyFromObject(&d), replicas: replicas})
 	}

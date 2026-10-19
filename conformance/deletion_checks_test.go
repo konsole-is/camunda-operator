@@ -385,3 +385,16 @@ func TestCurrentTakesAnUnrelatedReplacementAsGone(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, kept, "a replacement with the labels of the request still counts")
 }
+
+func TestPluginDeploymentsRefusesADeploymentThatRunsNoReplica(t *testing.T) {
+	d := &appsv1.Deployment{}
+	d.Namespace = "plugins"
+	d.Name = "plugin"
+	d.Spec.Replicas = new(int32(0))
+	d.Spec.Template.Spec.ServiceAccountName = "plugin"
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, d)
+
+	_, err := pluginDeployments(t.Context(), s, pluginsv1alpha1.ServiceAccountRef{Namespace: "plugins", Name: "plugin"})
+
+	assert.ErrorContains(t, err, "the Deployment plugins/plugin runs no replica")
+}
