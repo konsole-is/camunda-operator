@@ -256,21 +256,39 @@ func (c *Controller) releaseOwner(ctx context.Context, obj client.Object, uid ty
 	return nil
 }
 
+// applyObjects applies the objects of req. It fails, and writes nothing,
+// when an object of one of their names exists without the request label of
+// req.
 func (c *Controller) applyObjects(ctx context.Context, req *pluginsv1alpha1.PluginRequest) error {
 	cm, sc, ing := c.objects(req, false)
-	if err := c.apply(ctx, cm); err != nil {
-		return err
+	objs := []client.Object{cm, sc}
+	if ing != nil {
+		objs = append(objs, ing)
 	}
 
-	if err := c.apply(ctx, sc); err != nil {
-		return err
+	for _, obj := range objs {
+		current, ok := obj.DeepCopyObject().(client.Object)
+		if !ok {
+			return fmt.Errorf("copying the %T %s", obj, obj.GetName())
+		}
+
+		err := c.client.Get(ctx, client.ObjectKeyFromObject(obj), current)
+		switch {
+		case apierrors.IsNotFound(err):
+		case err != nil:
+			return err
+		case current.GetLabels()[pluginsv1alpha1.LabelRequest] != req.Name:
+			return fmt.Errorf("the %T %s is not an object of the request", obj, obj.GetName())
+		}
 	}
 
-	if ing == nil {
-		return nil
+	for _, obj := range objs {
+		if err := c.apply(ctx, obj); err != nil {
+			return err
+		}
 	}
 
-	return c.apply(ctx, ing)
+	return nil
 }
 
 // objects returns the ConfigMap, the StorageClass, and the Ingress of req.

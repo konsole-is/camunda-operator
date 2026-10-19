@@ -141,3 +141,22 @@ func TestReconcileRequestLeavesARequestOfAnotherRegistration(t *testing.T) {
 	require.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(other), &got))
 	assert.Empty(t, got.Finalizers)
 }
+
+func TestApplyObjectsRefusesAnObjectOfAnotherWriter(t *testing.T) {
+	other := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: requestName + "-echo"},
+		Data:       map[string]string{"owner": "someone else"},
+	}
+	c := newFakeController(t, other)
+	req := &pluginsv1alpha1.PluginRequest{}
+	req.Namespace = "ns"
+	req.Name = requestName
+
+	err := c.applyObjects(t.Context(), req)
+
+	assert.ErrorContains(t, err, "is not an object of the request")
+	var got corev1.ConfigMap
+	require.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(other), &got))
+	assert.Equal(t, other.Data, got.Data)
+	assert.Empty(t, got.Labels)
+}
