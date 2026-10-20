@@ -26,6 +26,7 @@ jobs:
       IMG: camunda-operator:scan
       CLI_IMG: camunda-operator-cli:scan
       FLEET_IMG: camunda-operator-fleet-manager:scan
+      CONFORMANCE_IMG: camunda-operator-plugin-conformance:scan
 
     steps:
       - name: Clone the code
@@ -44,6 +45,7 @@ jobs:
           make docker-buildx "IMG=${IMG}" "PLATFORMS=${{ matrix.platform }}" BUILDX_OUTPUT=--load
           make docker-buildx-cli "CLI_IMG=${CLI_IMG}" "PLATFORMS=${{ matrix.platform }}" BUILDX_OUTPUT=--load
           make docker-buildx-fleet "FLEET_IMG=${FLEET_IMG}" "PLATFORMS=${{ matrix.platform }}" BUILDX_OUTPUT=--load
+          make docker-buildx-conformance "CONFORMANCE_IMG=${CONFORMANCE_IMG}" "PLATFORMS=${{ matrix.platform }}" BUILDX_OUTPUT=--load
 
       # The Security workflow explains the pin of trivy-action.
       - name: Scan the operator image
@@ -70,6 +72,15 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.FLEET_IMG }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Scan the plugin conformance image
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.CONFORMANCE_IMG }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
@@ -115,11 +126,13 @@ jobs:
         run: |
           hack/ci-retry.sh go mod download
           hack/ci-retry.sh go -C api mod download
+          hack/ci-retry.sh go -C conformance mod download
 
       # CLI_IMG is the companion image that the Jobs of the operator run. The
       # chart and install.yaml pass it to the manager through
       # --camunda-operator-cli-image. FLEET_IMG is the image of the chart value
-      # fleetManager.enabled.
+      # fleetManager.enabled. CONFORMANCE_IMG is the image of
+      # plugin-conformance.
       - name: Derive the version from the tag
         run: |
           num='(0|[1-9][0-9]*)'
@@ -134,6 +147,7 @@ jobs:
             echo "IMG=ghcr.io/${GITHUB_REPOSITORY}:${version}"
             echo "CLI_IMG=ghcr.io/${GITHUB_REPOSITORY}-cli:${version}"
             echo "FLEET_IMG=ghcr.io/${GITHUB_REPOSITORY}-fleet-manager:${version}"
+            echo "CONFORMANCE_IMG=ghcr.io/${GITHUB_REPOSITORY}-plugin-conformance:${version}"
           } >> "${GITHUB_ENV}"
 
       # The api module lives in a subdirectory, so its Go tag carries the
@@ -246,6 +260,17 @@ jobs:
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "fleet manager image digest: ${digest}"
 
+      - name: Build and push the plugin conformance image
+        run: make docker-buildx-conformance CONFORMANCE_IMG=${CONFORMANCE_IMG}
+
+      - name: Resolve the plugin conformance image digest
+        id: conformance
+        run: |
+          digest=$(docker buildx imagetools inspect "${CONFORMANCE_IMG}" \
+            --format '{{.Manifest.Digest}}')
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "plugin conformance image digest: ${digest}"
+
       - name: Package and push the chart
         id: chart
         run: |
@@ -295,8 +320,14 @@ jobs:
       - name: Sign the fleet manager image
         run: cosign sign --yes "ghcr.io/${{ github.repository }}-fleet-manager@${{ steps.fleet.outputs.digest }}"
 
+      - name: Sign the plugin conformance image
+        run: cosign sign --yes "ghcr.io/${{ github.repository }}-plugin-conformance@${{ steps.conformance.outputs.digest }}"
+
       - name: Sign the chart
         run: cosign sign --yes "${CHART_REPO}@${{ steps.chart.outputs.digest }}"
+
+      - name: Build the plugin conformance binaries
+        run: make dist-conformance
 
       # gh release upload looks up the release and then uses the asset API.
       # Unlike softprops/action-gh-release, it does not edit the release; GitHub
@@ -308,7 +339,8 @@ jobs:
           gh release upload "${TAG}" --clobber \
             dist/install.yaml \
             dist/crds.yaml \
-            "dist/camunda-operator-${VERSION}.tgz"
+            "dist/camunda-operator-${VERSION}.tgz" \
+            dist/plugin-conformance-*
 
   docs:
     name: Publish the docs site

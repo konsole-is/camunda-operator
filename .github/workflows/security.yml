@@ -67,6 +67,9 @@ jobs:
           - image: fleet-manager
             target: docker-build-fleet
             variable: FLEET_IMG
+          - image: plugin-conformance
+            target: docker-build-conformance
+            variable: CONFORMANCE_IMG
     env:
       REF: camunda-operator-${{ matrix.image }}:scan
     steps:
@@ -119,12 +122,12 @@ jobs:
       security-events: write   # upload SARIF to code scanning
     # The release images are multi-platform. The arch list is the PLATFORMS
     # of the Makefile, and the suffix is the one that release.yml gives the
-    # image name. A release from before the fleet manager has no fleet
-    # manager image, so optional lets that entry skip the scan.
+    # image name. A release from before the fleet manager or the conformance
+    # binary lacks that image, so optional lets the entry skip the scan.
     strategy:
       fail-fast: false
       matrix:
-        image: [manager, cli, fleet-manager]
+        image: [manager, cli, fleet-manager, plugin-conformance]
         arch: [amd64, arm64]
         include:
           - image: manager
@@ -135,6 +138,9 @@ jobs:
             optional: false
           - image: fleet-manager
             suffix: "-fleet-manager"
+            optional: true
+          - image: plugin-conformance
+            suffix: "-plugin-conformance"
             optional: true
     env:
       TRIVY_PLATFORM: linux/${{ matrix.arch }}

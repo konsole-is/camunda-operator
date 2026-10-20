@@ -388,6 +388,8 @@ export CLI_IMG=<registry>/<project>-cli:<version>
 make docker-build-cli docker-push-cli CLI_IMG=$CLI_IMG
 export FLEET_IMG=<registry>/<project>-fleet-manager:<version>
 make docker-build-fleet docker-push-fleet FLEET_IMG=$FLEET_IMG
+export CONFORMANCE_IMG=<registry>/<project>-plugin-conformance:<version>
+make docker-build-conformance docker-push-conformance CONFORMANCE_IMG=$CONFORMANCE_IMG
 ```
 
 The manager needs `--camunda-operator-cli-image` (env `CAMUNDA_OPERATOR_CLI_IMAGE`)
