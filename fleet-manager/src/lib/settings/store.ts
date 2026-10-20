@@ -17,8 +17,8 @@ type ConfigMap = KubeObject & { data?: Record<string, string> };
 /**
  * getSettings returns the settings from the ConfigMap fleet-manager-settings
  * in FLEET_NAMESPACE. When the ConfigMap is missing, it creates it from the
- * FLEET_SETTINGS_* variables first. It never changes a ConfigMap that
- * exists. It throws when the API server refuses the read or the create.
+ * FLEET_SETTINGS_* variables first, on the API server also in Git mode.
+ * It never changes a ConfigMap that exists. It throws when the API server refuses the read or the create.
  */
 export async function getSettings(): Promise<Settings> {
   const live =
@@ -31,7 +31,8 @@ export async function getSettings(): Promise<Settings> {
  * ConfigMap, also a key that the fleet manager does not know. An empty
  * string unsets a setting. It returns Invalid without a request for a patch
  * that checkPatch refuses, and Stale when the ConfigMap changed between its
- * read and its write. It never retries.
+ * read and its write. It never retries. It writes to the API server, also
+ * in Git mode.
  */
 export async function updateSettings(
   patch: Partial<Settings>,
@@ -55,6 +56,7 @@ async function writePatch(patch: Partial<Settings>): Promise<WriteResult> {
   const writer = await getWriter();
   return writer.apply({
     intent: `Change the settings ${Object.keys(patch).join(", ")}`,
+    directOnly: true,
     // force takes over a key that another manager, such as kubectl edit,
     // set. The resourceVersion of the read still refuses a stale write.
     force: true,
@@ -75,6 +77,7 @@ async function readOrCreate(): Promise<ConfigMap> {
     await getWriter()
   ).apply({
     intent: "Create the settings from the chart values",
+    directOnly: true,
     apply: [settingsObject(seedFromEnv(process.env))],
   });
   if (!result.ok) {
