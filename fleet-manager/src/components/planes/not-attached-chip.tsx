@@ -42,35 +42,45 @@ export function NotAttachedChip({
     if (!open || !inBrowser) return;
     const update = () => {
       if (anchor.current && panel.current)
-        setPlace(placeBelowOrAbove(anchor.current, panel.current));
+        setPlace(placeNear(anchor.current, panel.current));
+    };
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (panel.current?.contains(document.activeElement))
+        trigger.current?.focus();
+      setOpen(false);
     };
     update();
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
+    window.addEventListener("keydown", close);
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
+      window.removeEventListener("keydown", close);
     };
   }, [open, inBrowser]);
+  const holds = (node: Node | null) =>
+    Boolean(
+      node && (anchor.current?.contains(node) || panel.current?.contains(node)),
+    );
   if (clusters.length === 0) return null;
   return (
     <span
       ref={anchor}
       className="inline-flex align-middle"
       onMouseEnter={() => setOpen(true)}
-      onMouseLeave={(event) => {
-        if (!event.currentTarget.contains(document.activeElement))
-          setOpen(false);
+      onMouseLeave={() => {
+        if (!holds(document.activeElement)) setOpen(false);
       }}
       onFocus={() => setOpen(true)}
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-          setOpen(false);
+        if (!holds(event.relatedTarget as Node | null)) setOpen(false);
       }}
       onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
-        trigger.current?.focus();
-        setOpen(false);
+        if (event.key !== "ArrowDown" || !panel.current) return;
+        event.preventDefault();
+        panel.current.querySelector<HTMLElement>("[role=note]")?.focus();
       }}
     >
       <button
@@ -92,11 +102,16 @@ export function NotAttachedChip({
         // not a margin: a gap outside the box ends the hover before the
         // pointer reaches it.
         createPortal(
-          <span ref={panel} style={place} className="fixed z-50 py-1">
+          <span
+            ref={panel}
+            style={place}
+            className="fixed z-50 flex flex-col py-1"
+          >
             <span
               id={id}
               role="note"
-              className="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-panel-2 p-3 text-sm font-normal break-words text-text-2 shadow-lg"
+              tabIndex={0}
+              className="flex min-h-0 w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto rounded-md border border-border bg-panel-2 p-3 text-sm font-normal break-words text-text-2 shadow-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {clusters.map((cluster) => (
                 <span
@@ -119,20 +134,21 @@ function noChange() {
   return () => {};
 }
 
-function placeBelowOrAbove(
-  anchor: HTMLElement,
-  panel: HTMLElement,
-): CSSProperties {
+function placeNear(anchor: HTMLElement, panel: HTMLElement): CSSProperties {
   const chip = anchor.getBoundingClientRect();
   const { width, height } = panel.getBoundingClientRect();
   const margin = 8;
-  const below = chip.bottom + height <= window.innerHeight;
+  const roomBelow = window.innerHeight - chip.bottom - margin;
+  const roomAbove = chip.top - margin;
+  const below = height <= roomBelow || roomBelow >= roomAbove;
+  const room = below ? roomBelow : roomAbove;
   return {
-    top: below || chip.top < height ? chip.bottom : chip.top - height,
+    top: below ? chip.bottom : chip.top - Math.min(height, room),
     left: Math.max(
       margin,
       Math.min(chip.right - width, window.innerWidth - width - margin),
     ),
+    maxHeight: room,
   };
 }
 
