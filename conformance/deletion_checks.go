@@ -114,7 +114,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 	}
 
 	if len(deployments) == 0 {
-		return SkipCheck(fmt.Sprintf("no Deployment in %s runs under the ServiceAccount %s", sa.Namespace, sa.Name))
+		return SkipCheck(fmt.Sprintf("no Deployment in %q runs under the ServiceAccount %q", sa.Namespace, sa.Name))
 	}
 
 	defer func() {
@@ -157,7 +157,7 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 	scaledBack := time.Now()
 
 	if err := waitForOutputsReady(ctx, s, run.name, scaledBack, true); err != nil {
-		return fmt.Errorf("request %s: %w", run.name, err)
+		return fmt.Errorf("request %q: %w", run.name, err)
 	}
 
 	what := "the watches of the check to see the registration and the request"
@@ -199,7 +199,7 @@ func pluginDeployments(
 ) ([]scaledDeployment, error) {
 	var list appsv1.DeploymentList
 	if err := s.client.List(ctx, &list, client.InNamespace(sa.Namespace)); err != nil {
-		return nil, fmt.Errorf("listing the Deployments of %s: %w", sa.Namespace, err)
+		return nil, fmt.Errorf("listing the Deployments of %q: %w", sa.Namespace, err)
 	}
 
 	var deployments []scaledDeployment
@@ -257,7 +257,7 @@ func scaleToZero(
 
 		var pods corev1.PodList
 		if err := s.client.List(ctx, &pods, client.InNamespace(sa.Namespace)); err != nil {
-			return fmt.Errorf("listing the pods of %s: %w", sa.Namespace, err)
+			return fmt.Errorf("listing the pods of %q: %w", sa.Namespace, err)
 		}
 
 		for _, p := range pods.Items {
@@ -296,7 +296,7 @@ func deleteRegistration(ctx context.Context, s *suite, name string) error {
 	reg := &pluginsv1alpha1.PluginRegistration{}
 	reg.Name = name
 	if err := client.IgnoreNotFound(s.client.Delete(ctx, reg)); err != nil {
-		return fmt.Errorf("deleting the PluginRegistration %s: %w", name, err)
+		return fmt.Errorf("deleting the PluginRegistration %q: %w", name, err)
 	}
 
 	return waitFor(ctx, s.cfg.Timeouts.Deletion, "the PluginRegistration to be gone", func(ctx context.Context) error {
@@ -305,7 +305,7 @@ func deleteRegistration(ctx context.Context, s *suite, name string) error {
 			return nil
 		}
 
-		return fmt.Errorf("the PluginRegistration %s still exists", name)
+		return fmt.Errorf("the PluginRegistration %q still exists", name)
 	})
 }
 
@@ -339,7 +339,7 @@ func startOrderRecorder(ctx context.Context, s *suite, registration, request str
 	)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("watching the PluginRegistration %s: %w", registration, err)
+		return nil, fmt.Errorf("watching the PluginRegistration %q: %w", registration, err)
 	}
 
 	err = rec.watch(
@@ -360,7 +360,7 @@ func startOrderRecorder(ctx context.Context, s *suite, registration, request str
 	)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("watching the PluginRequest %s: %w", request, err)
+		return nil, fmt.Errorf("watching the PluginRequest %q: %w", request, err)
 	}
 
 	return rec, nil
@@ -375,7 +375,7 @@ func orderVerdict(r *recorder, registration string) error {
 
 	ready, ok := r.first(registrationReadyKey)
 	if !ok {
-		return fmt.Errorf("the plugin did not write the registration %s again with Ready=True", registration)
+		return fmt.Errorf("the plugin did not write the registration %q again with Ready=True", registration)
 	}
 
 	served, ok := r.first(requestServedKey)
@@ -576,7 +576,7 @@ func checkDeleteRoutes(ctx context.Context, s *suite) error {
 		written, recorded := life.written[r.name]
 		if !recorded {
 			problems = append(problems, fmt.Errorf(
-				"request %s: the deletion checks did not record the objects of the request",
+				"request %q: the deletion checks did not record the objects of the request",
 				r.name,
 			))
 			continue
@@ -608,7 +608,7 @@ func checkDeleteRoutes(ctx context.Context, s *suite) error {
 				)
 			})
 			if err != nil {
-				problems = append(problems, fmt.Errorf("request %s: %w", r.name, err))
+				problems = append(problems, fmt.Errorf("request %q: %w", r.name, err))
 			}
 		}
 	}
