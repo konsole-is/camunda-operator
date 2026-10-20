@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Story } from "@/gallery/registry";
 import type { LogLine, Series } from "@/lib/observe/types";
 import { EventList } from "./event-list";
@@ -226,9 +227,12 @@ export const observeStories: Story[] = [
           },
         ]}
         done={
-          <a href="/fleet/clusters/orders" className="text-sm text-info">
+          <Link
+            href="/fleet/clusters/team-a/orders"
+            className="text-sm text-info"
+          >
             Open the cluster orders
-          </a>
+          </Link>
         }
       />
     ),

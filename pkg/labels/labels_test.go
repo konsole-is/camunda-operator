@@ -17,10 +17,13 @@ limitations under the License.
 package labels
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -163,6 +166,31 @@ func TestBoundedNameHandlesALimitSmallerThanTheHash(t *testing.T) {
 		BoundedName(strings.Repeat("b", 253), 5),
 		"a short bound still separates two names",
 	)
+}
+
+// The fleet manager finds the pods of a cluster by the owner label, so it
+// computes OwnerName too. Its test reads the same fixture, and a change on one
+// side alone fails one of the two tests.
+func TestOwnerNameMatchesTheSharedFixture(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile("../../test/fixtures/labels/owner-names.json")
+	require.NoError(t, err)
+
+	var fixture struct {
+		SchemaVersion int `json:"schemaVersion"`
+		Names         []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"names"`
+	}
+	require.NoError(t, json.Unmarshal(data, &fixture))
+	require.Equal(t, 1, fixture.SchemaVersion)
+	require.NotEmpty(t, fixture.Names)
+
+	for _, c := range fixture.Names {
+		assert.Equal(t, c.Value, OwnerName(c.Name), "OwnerName of a name of %d characters", len(c.Name))
+	}
 }
 
 // docs/architecture.md promises these keys to selectors outside this
