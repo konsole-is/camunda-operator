@@ -17,6 +17,9 @@ limitations under the License.
 package builtin
 
 import (
+	"maps"
+	"slices"
+
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -84,6 +87,12 @@ type contractRef struct {
 	output string // the output key, a pluginstartup.Output* constant
 	kind   string // kindObjectStorageConfig, kindSecondaryStorageConfig, or kindDatabaseConfig
 	name   string
+}
+
+// Served returns the sorted names of the built-in registrations whose
+// requests the controller serves.
+func Served() []string {
+	return slices.Sorted(maps.Keys(handlers()))
 }
 
 // handlers returns the handler of each built-in registration that the
