@@ -88,6 +88,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=get;list;watch
+// A new handler adds its registration here: REG-RBAC and the Grant admission policy check serve.
+// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=existing-object-storage;existing-secondary-storage;existing-database-configs
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs;secondarystorageconfigs;databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
