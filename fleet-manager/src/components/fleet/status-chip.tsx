@@ -9,8 +9,8 @@ import {
 /**
  * StatusChip shows the Ready condition of an object: "Ready", or "Not ready"
  * and "Unknown" with the reason. readyReason shows the reason of "Ready"
- * too, such as Suspended. The message is the hover text. loading wins over
- * condition while the page has no status yet.
+ * too when it is not Healthy, such as Suspended. The message is the hover
+ * text. loading wins over condition while the page has no status yet.
  */
 export function StatusChip({
   condition,
@@ -26,7 +26,10 @@ export function StatusChip({
     : describeReady(condition);
   const reason =
     ready.reason ??
-    (readyReason && !loading && condition?.status === "True"
+    (readyReason &&
+    !loading &&
+    condition?.status === "True" &&
+    condition.reason !== "Healthy"
       ? condition.reason
       : undefined);
   return (

@@ -22,6 +22,17 @@ describe("StatusChip", () => {
     expect(screen.getByText("Ready · Suspended")).toBeTruthy();
   });
 
+  it("hides the reason Healthy with readyReason", () => {
+    render(
+      <StatusChip
+        condition={{ status: "True", reason: "Healthy" }}
+        readyReason
+      />,
+    );
+    expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.queryByText(/Healthy/)).toBeNull();
+  });
+
   it("shows the reason when Ready is False", () => {
     render(
       <StatusChip

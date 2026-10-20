@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, renderHook, screen } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  renderHook,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { type PlaneSources, PlanesTable, usePlanes } from "./planes-table";
@@ -68,7 +74,7 @@ const managed = (name: string, environments: string[], status?: object) => ({
 });
 
 const a = managed("plane-a", ["production", "staging"], {
-  conditions: [{ type: "Ready", status: "True", reason: "Ready" }],
+  conditions: [{ type: "Ready", status: "True", reason: "Healthy" }],
 });
 const b = managed("plane-b", ["staging"]);
 const initial: PlaneSources = {
@@ -121,9 +127,11 @@ describe("PlanesTable", () => {
     const { rerender } = render(
       <Harness environment="production" initial={initial} />,
     );
-    expect(screen.getByRole("row", { name: /plane-a/ }).textContent).toContain(
-      "Ready",
-    );
+    expect(
+      within(screen.getByRole("row", { name: /plane-a/ })).getAllByRole(
+        "cell",
+      )[1].textContent,
+    ).toBe("Ready");
     lists.current.CamundaManagementCluster = {
       items: [
         cluster("platform", "plane-a", {

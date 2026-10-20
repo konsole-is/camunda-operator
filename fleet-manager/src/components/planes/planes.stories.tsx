@@ -58,7 +58,7 @@ const sources: PlaneSources = {
       "production",
       { identityProvider: { keycloak: {} }, console: {}, webModeler: {} },
       {
-        conditions: [{ type: "Ready", status: "True", reason: "Ready" }],
+        conditions: [{ type: "Ready", status: "True", reason: "Healthy" }],
         clusters: [
           { namespace: "team-orders", name: "orders", attached: true },
           { namespace: "team-payments", name: "payments", attached: true },
@@ -93,7 +93,7 @@ const sources: PlaneSources = {
       "partners",
       { identityProvider: { oidc: {} }, console: {} },
       {
-        conditions: [{ type: "Ready", status: "True", reason: "Ready" }],
+        conditions: [{ type: "Ready", status: "True", reason: "Healthy" }],
         clusters: [
           { namespace: "team-partners", name: "partners", attached: true },
         ],
@@ -112,7 +112,7 @@ const sources: PlaneSources = {
         },
         namespaceSelector: { matchLabels: { team: "payments" } },
       },
-      { conditions: [{ type: "Ready", status: "True", reason: "Ready" }] },
+      { conditions: [{ type: "Ready", status: "True", reason: "Healthy" }] },
       false,
     ),
   ],

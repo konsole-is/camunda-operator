@@ -81,7 +81,7 @@ function threePlanes(): Plane[] {
       cluster("platform", "keycloak", {
         labels: { [CLAIM_LABEL]: "keycloak" },
         status: {
-          ...ready("True", "Ready"),
+          ...ready("True", "Healthy"),
           clusters: [{ namespace: "a", name: "x", attached: true }],
         },
       }),
@@ -89,7 +89,7 @@ function threePlanes(): Plane[] {
         labels: { [CLAIM_LABEL]: "oidc" },
         spec: { identityProvider: { oidc: {} } },
         status: {
-          ...ready("True", "Ready"),
+          ...ready("True", "Healthy"),
           clusters: [
             { namespace: "a", name: "x", attached: true },
             { namespace: "a", name: "y", attached: true },
