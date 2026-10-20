@@ -57,6 +57,17 @@ describe("NotAttachedChip", () => {
     expect(screen.queryByRole("note")).toBeNull();
   });
 
+  it("shows the list outside a box that scrolls, so the box does not clip it", () => {
+    const { container } = render(
+      <div style={{ overflowX: "auto" }}>
+        <NotAttachedChip clusters={clusters} defaultOpen />
+      </div>,
+    );
+    const note = screen.getByRole("note");
+    expect(container.contains(note)).toBe(false);
+    expect(document.body.contains(note)).toBe(true);
+  });
+
   it("starts open with defaultOpen", () => {
     render(<NotAttachedChip clusters={clusters} defaultOpen />);
     expect(screen.getByRole("note")).toBeTruthy();

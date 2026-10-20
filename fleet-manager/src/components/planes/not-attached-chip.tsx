@@ -1,7 +1,15 @@
 "use client";
 
 import { TriangleAlert } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { createPortal } from "react-dom";
 import { CHIP_TONE } from "@/components/fleet/status";
 import { cn } from "@/lib/utils";
 import type { NotAttached } from "./plane";
@@ -22,10 +30,33 @@ export function NotAttachedChip({
   const id = useId();
   const [open, setOpen] = useState(defaultOpen);
   const trigger = useRef<HTMLButtonElement>(null);
+  const anchor = useRef<HTMLSpanElement>(null);
+  const panel = useRef<HTMLSpanElement>(null);
+  const [place, setPlace] = useState<CSSProperties>({ visibility: "hidden" });
+  const inBrowser = useSyncExternalStore(
+    noChange,
+    () => true,
+    () => false,
+  );
+  useLayoutEffect(() => {
+    if (!open || !inBrowser) return;
+    const update = () => {
+      if (anchor.current && panel.current)
+        setPlace(placeBelowOrAbove(anchor.current, panel.current));
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open, inBrowser]);
   if (clusters.length === 0) return null;
   return (
     <span
-      className="relative inline-flex align-middle"
+      ref={anchor}
+      className="inline-flex align-middle"
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={(event) => {
         if (!event.currentTarget.contains(document.activeElement))
@@ -55,36 +86,54 @@ export function NotAttachedChip({
         <TriangleAlert aria-hidden className="size-3.5" />
         {`${clusters.length} not attached`}
       </button>
-      {open && (
-        // Padding, not a margin: a gap outside the box ends the hover
-        // before the pointer reaches it.
-        <span
-          className="absolute top-full right-0 z-20 pt-1"
-          ref={(box) => {
-            if (!box) return;
-            const { left } = box.getBoundingClientRect();
-            if (left < 0) box.style.right = `${left}px`;
-          }}
-        >
-          <span
-            id={id}
-            role="note"
-            className="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-panel-2 p-3 text-sm font-normal text-text-2 shadow-lg"
-          >
-            {clusters.map((cluster) => (
-              <span
-                key={`${cluster.namespace}/${cluster.name}`}
-                className="flex flex-col"
-              >
-                <span className="font-medium text-text">{`${cluster.namespace}/${cluster.name}`}</span>
-                {why(cluster) && <span>{why(cluster)}</span>}
-              </span>
-            ))}
-          </span>
-        </span>
-      )}
+      {open &&
+        inBrowser &&
+        // The table box scrolls, so a panel inside it is clipped. Padding,
+        // not a margin: a gap outside the box ends the hover before the
+        // pointer reaches it.
+        createPortal(
+          <span ref={panel} style={place} className="fixed z-50 py-1">
+            <span
+              id={id}
+              role="note"
+              className="flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-panel-2 p-3 text-sm font-normal break-words text-text-2 shadow-lg"
+            >
+              {clusters.map((cluster) => (
+                <span
+                  key={`${cluster.namespace}/${cluster.name}`}
+                  className="flex flex-col"
+                >
+                  <span className="font-medium text-text">{`${cluster.namespace}/${cluster.name}`}</span>
+                  {why(cluster) && <span>{why(cluster)}</span>}
+                </span>
+              ))}
+            </span>
+          </span>,
+          document.body,
+        )}
     </span>
   );
+}
+
+function noChange() {
+  return () => {};
+}
+
+function placeBelowOrAbove(
+  anchor: HTMLElement,
+  panel: HTMLElement,
+): CSSProperties {
+  const chip = anchor.getBoundingClientRect();
+  const { width, height } = panel.getBoundingClientRect();
+  const margin = 8;
+  const below = chip.bottom + height <= window.innerHeight;
+  return {
+    top: below || chip.top < height ? chip.bottom : chip.top - height,
+    left: Math.max(
+      margin,
+      Math.min(chip.right - width, window.innerWidth - width - margin),
+    ),
+  };
 }
 
 function why({ reason, message }: NotAttached): string | undefined {
