@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "name": "The request gets the value of the allowed name that the claim picks",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "sections": {
+          "backup-storage": {
+            "allowed": [
+              "s3"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "access": {
+              "claimEditable": true,
+              "allowed": [
+                {
+                  "name": "sqs",
+                  "label": "SQS access",
+                  "value": "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
+                },
+                {
+                  "name": "sns",
+                  "label": "SNS access",
+                  "value": "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameterValues": {
+            "region": "eu-west-1",
+            "tier": "standard"
+          },
+          "claimEditable": [
+            "tier"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3",
+        "parameters": {
+          "access": "sqs"
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "policy": {
+        "sections": {
+          "backup-storage": {
+            "allowed": [
+              "s3"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "access": {
+              "claimEditable": true,
+              "allowed": [
+                {
+                  "name": "sqs",
+                  "label": "SQS access",
+                  "value": "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
+                },
+                {
+                  "name": "sns",
+                  "label": "SNS access",
+                  "value": "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+                }
+              ]
+            },
+            "region": {
+              "value": "eu-west-1"
+            },
+            "tier": {
+              "value": "standard"
+            }
+          }
+        },
+        "deletionPolicy": "Delete"
+      },
+      "requests": [
+        {
+          "section": "backup-storage",
+          "registration": "s3",
+          "parameters": {
+            "access": "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+            "region": "eu-west-1",
+            "tier": "standard"
+          }
+        }
+      ]
+    }
+  }
+}

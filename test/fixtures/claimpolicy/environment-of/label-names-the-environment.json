@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "name": "A namespace belongs to the Environment that its label names",
+  "input": {
+    "namespace": {
+      "metadata": {
+        "name": "team-a",
+        "labels": {
+          "fleet.camunda.io/environment": "dev"
+        }
+      }
+    },
+    "environments": [
+      {
+        "metadata": {
+          "name": "dev"
+        },
+        "spec": {}
+      },
+      {
+        "metadata": {
+          "name": "prod"
+        },
+        "spec": {}
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "environment": "dev"
+    }
+  }
+}

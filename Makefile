@@ -106,6 +106,10 @@ observability: ## Render the dashboards and alert rules of the framework for the
 merge-fixtures: ## Write the merged field of each case under test/fixtures/merge from the merge functions.
 	go test ./test/fixtures/merge -count=1 -update
 
+.PHONY: claimpolicy-fixtures
+claimpolicy-fixtures: ## Write the result of each case under test/fixtures/claimpolicy from the functions of pkg/claimpolicy.
+	go test ./pkg/claimpolicy -count=1 -update
+
 .PHONY: tidy
 tidy: ## Run go mod tidy in every module.
 	@for m in $(MODULES); do (cd $$m && go mod tidy) || exit 1; done

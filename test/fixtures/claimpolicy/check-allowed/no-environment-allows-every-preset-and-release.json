@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "name": "Without an Environment, every preset and release passes, and the snapshot decides the registrations",
+  "input": {
+    "policy": {
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3"
+          ],
+          "default": "s3"
+        }
+      }
+    },
+    "presetRef": "large",
+    "releaseRef": "8.8.4",
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}

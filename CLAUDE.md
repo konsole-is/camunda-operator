@@ -133,6 +133,7 @@ make lint-renovate          # renovate.json5 against the validator of RENOVATE_V
 make manifests generate     # then `git status --porcelain config api pkg/images` prints nothing
 make api-docs               # then `git status --porcelain docs/crds` prints nothing
 make merge-fixtures         # then `git status --porcelain test/fixtures` prints nothing
+make claimpolicy-fixtures   # then `git status --porcelain test/fixtures/claimpolicy` prints nothing
 make test-version-stamp     # a stamped build reports its version, and the image builds pass it on
 go vet -tags=e2e ./test/e2e/  # go test ./... never compiles this package
 mkdocs build --strict       # catches a broken link or a missing nav entry

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "name": "A selection of a registration that does not exist is refused",
+  "input": {
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "gcs"
+      }
+    ],
+    "registrations": [
+      {
+        "metadata": {
+          "name": "elasticsearch"
+        },
+        "spec": {
+          "sections": [
+            "secondary-storage"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "storageClassName",
+              "from": "volume-encryption/storageClassName"
+            },
+            {
+              "name": "objectStorageConfig",
+              "from": "backup-storage/objectStorageConfig"
+            }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "ebs"
+        },
+        "spec": {
+          "sections": [
+            "volume-encryption"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "kms-bucket"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "keyRef",
+              "from": "encryption-key/keyRef",
+              "required": true
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "InvalidReference",
+      "message": "PluginRegistration \"gcs\" does not exist"
+    }
+  }
+}

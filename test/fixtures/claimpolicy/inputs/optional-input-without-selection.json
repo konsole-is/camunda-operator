@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "An input whose section has no selection is left out and does not wait",
+  "input": {
+    "registration": {
+      "metadata": {
+        "name": "elasticsearch"
+      },
+      "spec": {
+        "sections": [
+          "secondary-storage"
+        ],
+        "mode": "Optional",
+        "inputs": [
+          {
+            "name": "storageClassName",
+            "from": "volume-encryption/storageClassName"
+          },
+          {
+            "name": "objectStorageConfig",
+            "from": "backup-storage/objectStorageConfig"
+          }
+        ]
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      }
+    ],
+    "requests": []
+  },
+  "result": {
+    "value": {}
+  }
+}

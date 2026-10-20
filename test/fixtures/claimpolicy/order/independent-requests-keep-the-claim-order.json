@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "name": "Requests without inputs between them keep the claim order",
+  "input": {
+    "selections": [
+      {
+        "section": "volume-encryption",
+        "registration": "ebs"
+      },
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ],
+    "registrations": [
+      {
+        "metadata": {
+          "name": "elasticsearch"
+        },
+        "spec": {
+          "sections": [
+            "secondary-storage"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "storageClassName",
+              "from": "volume-encryption/storageClassName"
+            },
+            {
+              "name": "objectStorageConfig",
+              "from": "backup-storage/objectStorageConfig"
+            }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "ebs"
+        },
+        "spec": {
+          "sections": [
+            "volume-encryption"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "kms-bucket"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "keyRef",
+              "from": "encryption-key/keyRef",
+              "required": true
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": [
+      {
+        "section": "volume-encryption",
+        "registration": "ebs"
+      },
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ]
+  }
+}
