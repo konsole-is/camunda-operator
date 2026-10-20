@@ -283,9 +283,10 @@ func (r *Reconciler) finalize(
 // SetupWithManager returns an error that names each handler without a
 // registration in Registrations, or with a parameter schema that it cannot
 // read. Then it registers the contractsField and registrationField indexes
-// and the controller. It runs for a request whose registration label names
-// a handler, for every request that reads a contract that changed, and for
-// every request whose spec.registration names a registration that changed.
+// and the controller. The controller runs for a request whose registration
+// label names a handler, for every request that reads a contract that
+// changed, and for every request whose spec.registration names a
+// registration that changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
