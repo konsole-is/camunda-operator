@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotAttachedChip } from "./not-attached-chip";
@@ -103,6 +103,7 @@ describe("NotAttachedChip", () => {
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(note);
     expect(screen.getByRole("note")).toBe(note);
+    expect(fireEvent.keyDown(note, { key: "ArrowDown" })).toBe(true);
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("note")).toBeNull();
     expect(document.activeElement).toBe(

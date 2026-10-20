@@ -78,9 +78,10 @@ export function NotAttachedChip({
         if (!holds(event.relatedTarget as Node | null)) setOpen(false);
       }}
       onKeyDown={(event) => {
-        if (event.key !== "ArrowDown" || !panel.current) return;
+        if (event.key !== "ArrowDown" || event.target !== trigger.current)
+          return;
         event.preventDefault();
-        panel.current.querySelector<HTMLElement>("[role=note]")?.focus();
+        panel.current?.querySelector<HTMLElement>("[role=note]")?.focus();
       }}
     >
       <button
