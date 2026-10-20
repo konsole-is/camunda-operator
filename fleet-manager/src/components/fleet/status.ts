@@ -15,19 +15,34 @@ export const CONDITION_TONE: Record<ConditionStatus, StatusTone> = {
   Unknown: "warn",
 };
 
+/** HEALTHY_REASON is ReasonHealthy of api/v1, the reason of a healthy Ready. */
+export const HEALTHY_REASON = "Healthy";
+
 /**
  * describeReady turns a Ready condition into the words and the tone that the
  * status components show. A missing condition is "No status". The reason is
- * kept for False and Unknown only.
+ * kept for False and Unknown, and for True with trueReason unless it is
+ * HEALTHY_REASON, such as Suspended.
  */
-export function describeReady(condition: ConditionLike | undefined): {
+export function describeReady(
+  condition: ConditionLike | undefined,
+  { trueReason = false }: { trueReason?: boolean } = {},
+): {
   tone: StatusTone;
   label: string;
   reason?: string;
 } {
   switch (condition?.status) {
     case "True":
-      return { tone: CONDITION_TONE.True, label: "Ready" };
+      return trueReason &&
+        condition.reason &&
+        condition.reason !== HEALTHY_REASON
+        ? {
+            tone: CONDITION_TONE.True,
+            label: "Ready",
+            reason: condition.reason,
+          }
+        : { tone: CONDITION_TONE.True, label: "Ready" };
     case "False":
       return {
         tone: CONDITION_TONE.False,

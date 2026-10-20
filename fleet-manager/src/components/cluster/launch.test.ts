@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ACCESS_SECTION, launchLinks } from "./launch";
+import { launchLinks } from "./launch";
 
 describe("launchLinks", () => {
   it("builds the three links from externalUrl", () => {
@@ -53,17 +52,5 @@ describe("launchLinks", () => {
         { name: "operate", url: "https://o.example.com" },
       ])[0].href,
     ).toBe("https://c.example.com/operate");
-  });
-});
-
-describe("ACCESS_SECTION", () => {
-  it("matches SectionAccess of internal/pluginstartup/names.go", () => {
-    const source = readFileSync(
-      new URL("../../../../internal/pluginstartup/names.go", import.meta.url),
-      "utf8",
-    );
-    expect(ACCESS_SECTION).toBe(
-      /\bSectionAccess\s*=\s*"([^"]*)"/.exec(source)?.[1],
-    );
   });
 });

@@ -204,3 +204,23 @@ describe("a first read beside an update", () => {
     expect(live?.["git.path"]).toBe("fleet");
   });
 });
+
+// Contract 6.1: the settings never go to Git.
+describe("in Git mode", () => {
+  it("the first create and each update go to the API, not to Git", async () => {
+    vi.mocked(getWriter).mockResolvedValue({ ...writer, mode: "git" });
+    const missing = new KubernetesRequestError(404, "not found");
+    vi.mocked(getJSON)
+      .mockRejectedValueOnce(missing)
+      .mockRejectedValueOnce(missing)
+      .mockResolvedValue(configMap({}, "1"));
+
+    await getSettings();
+    await updateSettings({ "git.path": "fleet" });
+
+    expect(apply).toHaveBeenCalledTimes(2);
+    for (const [change] of apply.mock.calls) {
+      expect(change.directOnly).toBe(true);
+    }
+  });
+});

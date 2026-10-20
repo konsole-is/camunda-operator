@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  ACCESS_SECTION,
   CLAIM_LABEL,
   CLUSTER_LABEL,
   COMPONENT_LABEL,
@@ -79,6 +80,7 @@ it.each([
     "AnnotationRevision",
   ],
   [SECTION_LABEL, "api/plugins/v1alpha1/shared_types.go", "LabelSection"],
+  [ACCESS_SECTION, "internal/pluginstartup/names.go", "SectionAccess"],
   [CLUSTER_LABEL, "pkg/labels/labels.go", "ClusterKey"],
   [COMPONENT_LABEL, "pkg/labels/labels.go", "ComponentKey"],
 ])("%s matches %s %s", (value, file, name) => {

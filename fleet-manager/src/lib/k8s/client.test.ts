@@ -2,7 +2,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { KubeConfig } from "@kubernetes/client-node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { requestJSON } from "./client";
+import { KubernetesRequestError, requestJSON, unlessNotFound } from "./client";
 
 type Seen = {
   method?: string;
@@ -139,5 +139,26 @@ describe("requestJSON", () => {
     await expect(
       requestJSON(kc, { method: "GET", path: "/x" }),
     ).rejects.toMatchObject({ statusCode: 503, message: "HTTP 503" });
+  });
+});
+
+describe("unlessNotFound", () => {
+  it("returns the answer of the request", async () => {
+    expect(await unlessNotFound(Promise.resolve({ a: 1 }))).toEqual({ a: 1 });
+  });
+
+  it("returns undefined when the API server answers 404", async () => {
+    expect(
+      await unlessNotFound(
+        Promise.reject(new KubernetesRequestError(404, "not found")),
+      ),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    new KubernetesRequestError(403, "forbidden"),
+    new Error("connect ECONNREFUSED"),
+  ])("rethrows any other failure (%s)", async (error) => {
+    await expect(unlessNotFound(Promise.reject(error))).rejects.toBe(error);
   });
 });

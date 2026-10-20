@@ -9,21 +9,21 @@ import { Button } from "@/components/ui/button";
 import { PlaneClusters, PlaneName, PlaneServes } from "./cells";
 import { NotAttachedChip } from "./not-attached-chip";
 import { optimizeLabel, type Plane, type PlaneSources } from "./plane";
-import { usePlanes } from "./planes-table";
+import { type ReadError, usePlanes } from "./planes-table";
 
 const MODES = ["Keycloak", "External Keycloak", "OIDC"];
 const STATUSES = ["Ready", "Not ready", "Unknown", "No status"];
 
 /**
  * PlaneList is the page of every management plane, with search, filters,
- * sort, and pages. error, when set, shows above the table, and the rows stay.
+ * sort, and pages. Each of errors shows above the table, and the rows stay.
  */
 export function PlaneList({
   planes,
-  error,
+  errors = [],
 }: {
   planes: Plane[];
-  error?: string;
+  errors?: ReadError[];
 }): ReactNode {
   return (
     <div className="flex flex-col gap-6">
@@ -35,11 +35,11 @@ export function PlaneList({
           <Link href="/fleet/planes/new">New management plane</Link>
         </Button>
       </div>
-      {error && (
-        <p role="alert" className="text-sm text-bad">
-          {error}
+      {errors.map((e) => (
+        <p key={e.kind} role="alert" className="text-sm text-bad">
+          Could not read {e.kind}: {e.message}
         </p>
-      )}
+      ))}
       <DataTable
         label="Management planes"
         emptyText={planes.length === 0 ? "No management plane yet." : undefined}
@@ -102,6 +102,6 @@ export function PlaneList({
 
 /** PlaneListLive is PlaneList on the live planes of usePlanes, starting from initial. */
 export function PlaneListLive({ initial }: { initial: PlaneSources }) {
-  const { planes, error } = usePlanes(initial);
-  return <PlaneList planes={planes} error={error} />;
+  const { planes, errors } = usePlanes(initial);
+  return <PlaneList planes={planes} errors={errors} />;
 }

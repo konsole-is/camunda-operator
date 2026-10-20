@@ -42,6 +42,26 @@ export class KubernetesRequestError extends Error {
   }
 }
 
+/** isNotFound is true for an answer 404 of the API server. */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof KubernetesRequestError && error.statusCode === 404;
+}
+
+/**
+ * unlessNotFound returns the answer of request, or undefined when the API
+ * server answers 404. It rethrows any other failure.
+ */
+export async function unlessNotFound<T>(
+  request: Promise<T>,
+): Promise<T | undefined> {
+  try {
+    return await request;
+  } catch (error) {
+    if (isNotFound(error)) return undefined;
+    throw error;
+  }
+}
+
 /** RequestOptions is one request to the API server. path holds the query string. */
 export interface RequestOptions {
   method: "GET" | "PATCH" | "DELETE" | "POST" | "PUT";

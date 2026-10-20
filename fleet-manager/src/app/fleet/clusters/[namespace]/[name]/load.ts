@@ -1,9 +1,8 @@
 import "server-only";
-import { ACCESS_SECTION } from "@/components/cluster/launch";
 import type { ClusterPageData } from "@/components/cluster/cluster-view";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { get, list, type ListOptions } from "@/lib/k8s/read";
-import { CLUSTER_LABEL, SECTION_LABEL } from "@/lib/labels";
+import { ACCESS_SECTION, CLUSTER_LABEL, SECTION_LABEL } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/server";
 
 /**

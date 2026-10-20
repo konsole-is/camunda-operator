@@ -236,10 +236,20 @@ describe("PlanesTable", () => {
 });
 
 describe("usePlanes", () => {
-  it("returns the first watch error", () => {
+  it("returns the error of each failed watch with its kind", () => {
+    lists.current.CamundaManagementClusterClaim = {
+      items: [],
+      error: "claims: forbidden",
+    };
     lists.current.Namespace = { items: [], error: "namespaces: forbidden" };
     const { result } = renderHook(() => usePlanes(initial));
-    expect(result.current.error).toBe("namespaces: forbidden");
+    expect(result.current.errors).toEqual([
+      {
+        kind: "CamundaManagementClusterClaim",
+        message: "claims: forbidden",
+      },
+      { kind: "Namespace", message: "namespaces: forbidden" },
+    ]);
     expect(result.current.planes.map((p) => p.name)).toEqual([
       "plane-a",
       "plane-b",
@@ -248,6 +258,6 @@ describe("usePlanes", () => {
 
   it("has no error while every watch is healthy", () => {
     const { result } = renderHook(() => usePlanes(initial));
-    expect(result.current.error).toBeUndefined();
+    expect(result.current.errors).toEqual([]);
   });
 });
