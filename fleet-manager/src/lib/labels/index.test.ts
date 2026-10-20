@@ -1,6 +1,26 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ENVIRONMENT_LABEL, isLabelKey, isLabelValue } from ".";
+import {
+  CLAIM_LABEL,
+  CLUSTER_LABEL,
+  COMPONENT_LABEL,
+  ENVIRONMENT_LABEL,
+  REVISION_ANNOTATION,
+  SECTION_LABEL,
+  isLabelKey,
+  isLabelValue,
+  isManaged,
+} from ".";
+
+// goConstant reads the value of a Go string constant from a file of the
+// repository. \b keeps ClusterKey from matching ManagementClusterKey.
+function goConstant(file: string, name: string): string | undefined {
+  const source = readFileSync(
+    new URL(`../../../../${file}`, import.meta.url),
+    "utf8",
+  );
+  return new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`).exec(source)?.[1];
+}
 
 describe("isLabelKey", () => {
   it.each(["team", "app.kubernetes.io/name", "a", "a_b.c-d"])(
@@ -47,5 +67,37 @@ describe("ENVIRONMENT_LABEL", () => {
     expect(ENVIRONMENT_LABEL).toBe(
       /LabelEnvironment\s*=\s*"([^"]*)"/.exec(goSource)?.[1],
     );
+  });
+});
+
+// The Go constants are the source. A change on one side alone fails here.
+it.each([
+  [CLAIM_LABEL, "api/fleet/v1alpha1/shared_types.go", "LabelClaim"],
+  [
+    REVISION_ANNOTATION,
+    "api/fleet/v1alpha1/shared_types.go",
+    "AnnotationRevision",
+  ],
+  [SECTION_LABEL, "api/plugins/v1alpha1/shared_types.go", "LabelSection"],
+  [CLUSTER_LABEL, "pkg/labels/labels.go", "ClusterKey"],
+  [COMPONENT_LABEL, "pkg/labels/labels.go", "ComponentKey"],
+])("%s matches %s %s", (value, file, name) => {
+  expect(value).toBe(goConstant(file, name));
+});
+
+describe("isManaged", () => {
+  it("is true for an object with the claim label", () => {
+    expect(
+      isManaged({ metadata: { labels: { [CLAIM_LABEL]: "orders" } } }),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["no metadata", {}],
+    ["no labels", { metadata: {} }],
+    ["other labels", { metadata: { labels: { team: "a" } } }],
+    ["an empty claim label", { metadata: { labels: { [CLAIM_LABEL]: "" } } }],
+  ])("is false with %s", (_, object) => {
+    expect(isManaged(object)).toBe(false);
   });
 });
