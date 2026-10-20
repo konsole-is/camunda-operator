@@ -36,7 +36,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	ctrlhandler "sigs.k8s.io/controller-runtime/pkg/handler"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -82,6 +85,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests/finalizers,verbs=update
+// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs;secondarystorageconfigs;databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
@@ -89,7 +93,9 @@ type Reconciler struct {
 // spec.registration name the same built-in registration with a handler, and
 // a request that holds the finalizer after its label changed. It leaves
 // every other request alone. A request under deletion gets the
-// deletion policy applied and loses the finalizer. Otherwise the finalizer
+// deletion policy applied and loses the finalizer, whatever the state of its
+// registration. Any other request waits, with no write, until its
+// registration has Ready=True at its current generation. Then the finalizer
 // is added first, the parameters are checked against the schema and the
 // rules of the registration, and the components of the handler converge.
 // OutputsReady comes from the outputs component, and Ready from the backing
@@ -125,6 +131,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 
 	if !request.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, r.finalize(ctx, rec, &request, h)
+	}
+
+	ready, err := r.registrationReady(ctx, request.Spec.Registration)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !ready {
+		return ctrl.Result{}, nil
 	}
 
 	if controllerutil.AddFinalizer(&request, pluginsv1alpha1.FinalizerCleanup) {
@@ -176,6 +190,21 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	request.Status.PodSelector = rep.podSelector
 
 	return ctrl.Result{}, errors.Join(errs...)
+}
+
+// registrationReady reports whether the registration name has Ready=True at
+// its current generation. A missing registration is not ready.
+func (r *Reconciler) registrationReady(ctx context.Context, name string) (bool, error) {
+	var reg pluginsv1alpha1.PluginRegistration
+	if err := r.Get(ctx, client.ObjectKey{Name: name}, &reg); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("reading the PluginRegistration %q: %w", name, err)
+	}
+
+	ready := meta.FindStatusCondition(reg.Status.Conditions, v1.ConditionReady)
+	return ready != nil && ready.Status == metav1.ConditionTrue && ready.ObservedGeneration == reg.Generation, nil
 }
 
 // build checks the parameters of request and returns the components of h.
@@ -253,7 +282,8 @@ func (r *Reconciler) finalize(
 // registration in Registrations, or with a parameter schema that it cannot
 // read. Then it registers the contractsField index and the controller. The
 // controller runs for a request whose registration label names a handler,
-// and for every request that reads a contract that changed.
+// for every request that reads a contract that changed, and for every
+// request whose registration label names a registration that changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -306,7 +336,17 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		)
 	}
 
-	return b.Named(controllerName).Complete(r)
+	return b.
+		Watches(
+			&pluginsv1alpha1.PluginRegistration{},
+			ctrlhandler.EnqueueRequestsFromMapFunc(r.requestsOf),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
+				_, ok := r.handlers[o.GetName()]
+				return ok
+			})),
+		).
+		Named(controllerName).
+		Complete(r)
 }
 
 // contractKeys returns the contractsField keys of a request with a handler.
@@ -357,4 +397,25 @@ func keyOf(kind string) func(client.Object) string {
 
 func contractKey(kind, namespace, name string) string {
 	return kind + "/" + refindex.NamespacedKey(namespace, name)
+}
+
+// requestsOf returns the requests whose registration label names reg. A
+// failed list drops the event and logs the error.
+func (r *Reconciler) requestsOf(ctx context.Context, reg client.Object) []reconcile.Request {
+	var list pluginsv1alpha1.PluginRequestList
+	if err := r.List(
+		ctx,
+		&list,
+		client.MatchingLabels{pluginsv1alpha1.LabelRegistration: reg.GetName()},
+	); err != nil {
+		logf.FromContext(ctx).Error(err, "Could not list PluginRequests", "registration", reg.GetName())
+		return nil
+	}
+
+	reqs := make([]reconcile.Request, 0, len(list.Items))
+	for _, item := range list.Items {
+		reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&item)})
+	}
+
+	return reqs
 }
