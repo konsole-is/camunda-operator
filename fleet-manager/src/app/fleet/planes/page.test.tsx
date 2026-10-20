@@ -31,8 +31,12 @@ const data: Record<string, unknown[]> = {
   Namespace: [],
 };
 
+const failing = vi.hoisted(() => ({ kind: "" }));
 vi.mock("@/lib/k8s/read", () => ({
-  list: vi.fn(async (kind: string) => data[kind]),
+  list: vi.fn(async (kind: string) => {
+    if (kind === failing.kind) throw new Error(`${kind} is forbidden`);
+    return data[kind];
+  }),
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (_kind: string, _opts: unknown, initial: unknown[]) => ({
@@ -40,7 +44,10 @@ vi.mock("@/lib/k8s/hooks", () => ({
   }),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  failing.kind = "";
+});
 
 describe("PlanesPage", () => {
   it("renders the planes of the cache on each request", async () => {
@@ -57,5 +64,11 @@ describe("PlanesPage", () => {
     ]);
     expect(screen.getByRole("row", { name: /plane-a/ })).toBeTruthy();
     expect(dynamic).toBe("force-dynamic");
+  });
+
+  it("a failed first read of one kind still shows the page", async () => {
+    failing.kind = "Namespace";
+    render(await PlanesPage());
+    expect(screen.getByRole("row", { name: /plane-a/ })).toBeTruthy();
   });
 });

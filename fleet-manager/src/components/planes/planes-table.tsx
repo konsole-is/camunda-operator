@@ -15,14 +15,17 @@ import {
 
 export type { Plane, PlaneSources } from "./plane";
 
+/** ReadError is the error of the watch of one kind. */
+export type ReadError = { kind: string; message: string };
+
 /**
  * usePlanes follows the three lists of initial live and returns their
- * planes. error is the first error of the three watches. The planes then
+ * planes. errors holds the error of each failed watch. The planes then
  * keep the last lists, which can be out of date.
  */
 export function usePlanes(initial: PlaneSources): {
   planes: Plane[];
-  error?: string;
+  errors: ReadError[];
 } {
   const clusters = useResources(
     "CamundaManagementCluster",
@@ -44,8 +47,16 @@ export function usePlanes(initial: PlaneSources): {
       }),
     [clusters.items, claims.items, namespaces.items],
   );
-  const error = clusters.error ?? claims.error ?? namespaces.error;
-  return error === undefined ? { planes } : { planes, error };
+  const errors = (
+    [
+      ["CamundaManagementCluster", clusters],
+      ["CamundaManagementClusterClaim", claims],
+      ["Namespace", namespaces],
+    ] as const
+  ).flatMap(([kind, result]) =>
+    result.error ? [{ kind, message: result.error }] : [],
+  );
+  return { planes, errors };
 }
 
 /** PlanesTable shows the planes that serve environment, or nothing when none does. */

@@ -275,11 +275,20 @@ describe("PlaneList", () => {
     expect(screen.getByText("No management plane yet.")).toBeTruthy();
   });
 
-  it("shows a watch error above the table", () => {
-    render(<PlaneList planes={keycloakPlane} error="namespaces: forbidden" />);
-    expect(screen.getByRole("alert").textContent).toContain(
-      "namespaces: forbidden",
+  it("shows each read error with its kind above the table", () => {
+    render(
+      <PlaneList
+        planes={keycloakPlane}
+        errors={[
+          { kind: "Namespace", message: "namespaces: forbidden" },
+          { kind: "CamundaManagementClusterClaim", message: "timed out" },
+        ]}
+      />,
     );
+    expect(screen.getAllByRole("alert").map((a) => a.textContent)).toEqual([
+      "Could not read Namespace: namespaces: forbidden",
+      "Could not read CamundaManagementClusterClaim: timed out",
+    ]);
     expect(screen.getByRole("row", { name: /plane-a/ })).toBeTruthy();
   });
 });
