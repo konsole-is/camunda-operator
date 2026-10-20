@@ -120,6 +120,7 @@ function pathOf(field: string | undefined): { path?: string } {
   return { path: field.startsWith(".") ? field.slice(1) : field };
 }
 
-function messageOf(error: unknown): string {
+/** messageOf is the message of error, or error as text when it is not an Error. */
+export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

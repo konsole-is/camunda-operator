@@ -1,5 +1,6 @@
 import "server-only";
-import { KubernetesRequestError, getJSON, kubeConfig } from "@/lib/k8s/client";
+import { getJSON, kubeConfig, unlessNotFound } from "@/lib/k8s/client";
+import { KindMap, objectPath } from "@/lib/k8s/kinds";
 import type { KubeObject } from "@/lib/write/types";
 import { WRITE_TIMEOUT_MS } from "@/lib/write/writer";
 
@@ -26,20 +27,15 @@ export async function readSecretValues(
 export type RawSecret = KubeObject & { data?: Record<string, string> };
 
 /** readSecret returns the Secret with its base64 data, or undefined when it does not exist. */
-export async function readSecret(
+export function readSecret(
   namespace: string,
   name: string,
 ): Promise<RawSecret | undefined> {
-  try {
-    return await getJSON<RawSecret>(
+  return unlessNotFound(
+    getJSON<RawSecret>(
       kubeConfig(),
-      `/api/v1/namespaces/${encodeURIComponent(namespace)}/secrets/${encodeURIComponent(name)}`,
+      objectPath(KindMap.Secret, namespace, name),
       WRITE_TIMEOUT_MS,
-    );
-  } catch (error) {
-    if (error instanceof KubernetesRequestError && error.statusCode === 404) {
-      return undefined;
-    }
-    throw error;
-  }
+    ),
+  );
 }

@@ -2,9 +2,10 @@ import "server-only";
 import type { KubeConfig } from "@kubernetes/client-node";
 import { objectDiff } from "@/lib/diff";
 import {
-  KubernetesRequestError,
+  isNotFound,
   kubeConfig,
   requestJSON,
+  unlessNotFound,
 } from "@/lib/k8s/client";
 import {
   KindMap,
@@ -143,16 +144,8 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       timeoutMs: WRITE_TIMEOUT_MS,
     });
 
-  const read = async (path: string): Promise<KubeObject | undefined> => {
-    try {
-      return await send<KubeObject>("GET", path);
-    } catch (error) {
-      if (isNotFound(error)) {
-        return undefined;
-      }
-      throw error;
-    }
-  };
+  const read = (path: string): Promise<KubeObject | undefined> =>
+    unlessNotFound(send<KubeObject>("GET", path));
 
   const applyObject = (
     object: KubeObject,
@@ -302,10 +295,6 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 /** getWriter returns the writer of the app: the direct writer of kubeConfig(). */
 export async function getWriter(): Promise<Writer> {
   return directWriter();
-}
-
-function isNotFound(error: unknown): boolean {
-  return error instanceof KubernetesRequestError && error.statusCode === 404;
 }
 
 function kindInfoOf(kind: string): KindInfo | undefined {

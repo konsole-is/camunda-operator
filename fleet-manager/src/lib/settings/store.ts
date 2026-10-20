@@ -1,8 +1,15 @@
 import "server-only";
-import { KubernetesRequestError, getJSON, kubeConfig } from "@/lib/k8s/client";
+import { getJSON, kubeConfig, unlessNotFound } from "@/lib/k8s/client";
+import { objectPath } from "@/lib/k8s/kinds";
 import { inOrder } from "@/lib/serial";
+import { messageOf } from "@/lib/write/errors";
 import type { KubeObject, WriteResult } from "@/lib/write/types";
-import { WRITE_TIMEOUT_MS, getWriter, refKey } from "@/lib/write/writer";
+import {
+  WRITE_TIMEOUT_MS,
+  WriteOnlyKindMap,
+  getWriter,
+  refKey,
+} from "@/lib/write/writer";
 import {
   SETTINGS_CONFIGMAP,
   type Settings,
@@ -88,16 +95,15 @@ async function readOrCreate(): Promise<ConfigMap> {
   return created;
 }
 
-async function read(): Promise<ConfigMap | undefined> {
-  const path = `/api/v1/namespaces/${encodeURIComponent(appNamespace())}/configmaps/${SETTINGS_CONFIGMAP}`;
-  try {
-    return await getJSON<ConfigMap>(kubeConfig(), path, WRITE_TIMEOUT_MS);
-  } catch (error) {
-    if (error instanceof KubernetesRequestError && error.statusCode === 404) {
-      return undefined;
-    }
-    throw error;
-  }
+function read(): Promise<ConfigMap | undefined> {
+  const path = objectPath(
+    WriteOnlyKindMap.ConfigMap,
+    appNamespace(),
+    SETTINGS_CONFIGMAP,
+  );
+  return unlessNotFound(
+    getJSON<ConfigMap>(kubeConfig(), path, WRITE_TIMEOUT_MS),
+  );
 }
 
 function settingsObject(data: Record<string, string>): ConfigMap {
@@ -107,8 +113,4 @@ function settingsObject(data: Record<string, string>): ConfigMap {
     metadata: { name: SETTINGS_CONFIGMAP, namespace: appNamespace() },
     data,
   };
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
