@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResource, useResources } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
+  ACCESS_SECTION,
   CLAIM_LABEL,
   ENVIRONMENT_LABEL,
   REVISION_ANNOTATION,
@@ -22,7 +23,7 @@ import { runningBackup, runningRestore } from "@/lib/policy/backups";
 import { ActionSlot } from "./action-slot";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
 import { ClusterHeader } from "./cluster-header";
-import { ACCESS_SECTION, launchLinks } from "./launch";
+import { launchLinks } from "./launch";
 import type { ActionSlots } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
 import { topologyOf } from "./topology";

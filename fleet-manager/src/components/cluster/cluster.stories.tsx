@@ -1,4 +1,3 @@
-import { GitWaitingLine } from "@/components/fleet/git-waiting-line";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Story } from "@/gallery/registry";
 import type { Resource } from "@/lib/k8s/kinds";
@@ -158,21 +157,6 @@ export const clusterStories: Story[] = [
             pod("orders-gateway-7d9f-y3", "gateway", ready, true),
           ],
         )}
-      />
-    ),
-  },
-  {
-    component: "GitWaitingLine",
-    name: "Waiting",
-    render: () => (
-      <GitWaitingLine
-        pushed={{
-          path: "clusters/team-a/camundaclusterclaims/orders.yaml",
-          revision: "bbb",
-          pushedAt: "2026-10-18T11:58:00Z",
-        }}
-        liveRevision="aaa"
-        now="2026-10-18T12:00:00Z"
       />
     ),
   },

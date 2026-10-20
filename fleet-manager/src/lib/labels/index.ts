@@ -15,6 +15,9 @@ export const REVISION_ANNOTATION = "fleet.camunda.io/revision";
 /** SECTION_LABEL names the section of a PluginRequest. It is LabelSection of api/plugins/v1alpha1. */
 export const SECTION_LABEL = "plugins.camunda.io/section";
 
+/** ACCESS_SECTION is the section of the access request of a claim. It is SectionAccess of internal/pluginstartup. */
+export const ACCESS_SECTION = "access";
+
 /**
  * CLUSTER_LABEL on a pod holds labels.OwnerName of its CamundaCluster. It is
  * ClusterKey of pkg/labels.

@@ -1,6 +1,3 @@
-/** ACCESS_SECTION is the section of the access request of a claim. It is SectionAccess of internal/pluginstartup. */
-export const ACCESS_SECTION = "access";
-
 /** LaunchLink opens one web app of a cluster. */
 export type LaunchLink = {
   label: "Operate" | "Tasklist" | "Admin";

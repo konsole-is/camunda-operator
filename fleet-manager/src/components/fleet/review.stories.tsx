@@ -1,6 +1,7 @@
 import type { Story } from "@/gallery/registry";
 import { objectDiff } from "@/lib/diff";
 import { DiffView } from "./diff-view";
+import { GitWaitingLine } from "./git-waiting-line";
 import { ReviewPanel } from "./review-panel";
 
 const before = {
@@ -73,6 +74,21 @@ export const reviewStories: Story[] = [
         confirmLabel="Change anyway"
         effects={["Zeebe gets two more brokers."]}
         caution="A backup of orders runs now. The rollout makes it fail. A backup that starts after the change waits until the rollout is done."
+      />
+    ),
+  },
+  {
+    component: "GitWaitingLine",
+    name: "Waiting",
+    render: () => (
+      <GitWaitingLine
+        pushed={{
+          path: "clusters/team-a/camundaclusterclaims/orders.yaml",
+          revision: "bbb",
+          pushedAt: "2026-10-18T11:58:00Z",
+        }}
+        liveRevision="aaa"
+        now="2026-10-18T12:00:00Z"
       />
     ),
   },
