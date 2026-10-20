@@ -152,7 +152,7 @@ func TestOrderVerdict(t *testing.T) {
 				at(request, "11")
 				r.observe(request, requestServedKey)
 			},
-			message: "the plugin did not write the registration echo-1 again with Ready=True",
+			message: `the plugin did not write the registration "echo-1" again with Ready=True`,
 		},
 	}
 
