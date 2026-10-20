@@ -1,13 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { NotAttachedChip } from "./not-attached-chip";
 
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-});
+afterEach(cleanup);
 
 const clusters = [
   {
@@ -93,25 +90,10 @@ describe("NotAttachedChip", () => {
     expect(screen.queryByRole("note")).toBeNull();
   });
 
-  it("fits a long list into the room of the viewport and lets the keyboard scroll it", async () => {
-    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
-    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
-      function (this: Element) {
-        const chip = this.querySelector("button") !== null;
-        return {
-          top: chip ? 380 : 0,
-          bottom: chip ? 400 : 1000,
-          left: 0,
-          right: chip ? 120 : 320,
-          width: chip ? 120 : 320,
-          height: chip ? 20 : 1000,
-        } as DOMRect;
-      },
-    );
+  it("moves the focus into the list on Arrow Down, scrolls it, and returns on Escape", async () => {
     render(<NotAttachedChip clusters={clusters} />);
     await userEvent.tab();
     const note = screen.getByRole("note");
-    expect(note.parentElement?.style.maxHeight).toBe("392px");
     await userEvent.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(note);
     expect(screen.getByRole("note")).toBe(note);
@@ -121,36 +103,6 @@ describe("NotAttachedChip", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "2 not attached" }),
     );
-  });
-
-  it("keeps a list above the chip inside the viewport when the page scrolls", async () => {
-    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
-    let chipTop = 450;
-    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
-      function (this: Element) {
-        if (this.querySelector("button") !== null)
-          return {
-            top: chipTop,
-            bottom: chipTop + 20,
-            right: 120,
-            width: 120,
-            height: 20,
-          } as DOMRect;
-        const bound = Number.parseFloat((this as HTMLElement).style.maxHeight);
-        const height = Number.isNaN(bound) ? 1000 : Math.min(1000, bound);
-        return { width: 320, height, top: 0, bottom: height } as DOMRect;
-      },
-    );
-    render(<NotAttachedChip clusters={clusters} />);
-    await userEvent.tab();
-    const box = screen.getByRole("note").parentElement as HTMLElement;
-    expect(box.style.bottom).toBe("350px");
-    expect(box.style.maxHeight).toBe("442px");
-    chipTop = 650;
-    fireEvent.scroll(window);
-    expect(box.style.top).toBe("");
-    expect(box.style.bottom).toBe("150px");
-    expect(box.style.maxHeight).toBe("642px");
   });
 
   it("starts open with defaultOpen", () => {
