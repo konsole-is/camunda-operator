@@ -281,8 +281,9 @@ export interface PluginRegistrationStatus {
    * Conditions holds Accepted and Ready. The operator sets Accepted. Its
    * False reasons are SectionMissing, OperatorVersionUnsupported, and
    * DefaultConflict. The plugin controller sets Ready from its health and
-   * its credentials. The fleet manager offers the option only when both
-   * are True.
+   * its credentials. On the built-in registrations whose requests the
+   * operator serves, the operator sets Ready. The fleet manager offers the
+   * option only when both are True.
    *
    * Items: Condition contains details for one aspect of the current state of this API Resource.
    */
@@ -324,6 +325,8 @@ export interface PluginRegistrationStatus {
    * ObservedGeneration is the last generation of the registration that the
    * plugin controller processed. Only the plugin controller sets it, so the
    * field is absent until the plugin controller processes the registration.
+   * The operator is the plugin controller of the built-in registrations
+   * whose requests it serves.
    */
   observedGeneration?: number;
 }
