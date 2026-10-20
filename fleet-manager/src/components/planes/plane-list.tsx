@@ -67,12 +67,12 @@ export function PlaneList({
           },
         ]}
         rows={planes.map((plane) => {
-          const id = `${plane.namespace}/${plane.name}`;
+          const path = `${plane.namespace}/${plane.name}`;
           const status = describeReady(plane.ready).label;
           return {
-            id,
+            id: plane.id,
             label: plane.name,
-            href: `/fleet/planes/${id}`,
+            href: `/fleet/planes/${path}`,
             search: [
               plane.name,
               plane.namespace,
@@ -80,7 +80,7 @@ export function PlaneList({
                 ? plane.serves.environments.join(" ")
                 : plane.serves.selector,
             ].join(" "),
-            sort: { plane: id, clusters: plane.attached, status },
+            sort: { plane: path, clusters: plane.attached, status },
             filters: { mode: plane.mode ?? "", status },
             cells: {
               plane: <PlaneName plane={plane} />,

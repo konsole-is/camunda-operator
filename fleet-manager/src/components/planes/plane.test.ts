@@ -97,6 +97,7 @@ describe("planesOf", () => {
       namespaces: [],
     });
     expect(plane).toEqual({
+      id: "cluster/platform/plane-a",
       namespace: "platform",
       name: "plane-a",
       managed: true,
@@ -211,6 +212,16 @@ describe("planesOf", () => {
       ["platform", "plane-a", { environments: ["production"] }],
       ["sandbox", "plane-a", { selector: "Every namespace" }],
     ]);
+  });
+
+  it("gives an unmanaged cluster and a claim of the same name two ids", () => {
+    const planes = planesOf({
+      clusters: [cluster("platform", "plane-a")],
+      claims: [claim("platform", "plane-a", ["production"])],
+      namespaces: [],
+    });
+    expect(planes).toHaveLength(2);
+    expect(new Set(planes.map((p) => p.id)).size).toBe(2);
   });
 
   it("keeps a labelled cluster managed when its claim is missing", () => {

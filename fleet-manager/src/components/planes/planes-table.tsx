@@ -72,7 +72,7 @@ export function PlanesTable({
         { key: "warnings", label: "Warnings" },
       ]}
       rows={served.map((plane) => ({
-        id: `${plane.namespace}/${plane.name}`,
+        id: plane.id,
         label: plane.name,
         href: `/fleet/planes/${plane.namespace}/${plane.name}`,
         search: `${plane.name} ${plane.namespace}`,

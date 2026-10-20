@@ -28,6 +28,7 @@ export type NotAttached = {
  * distinct. ready is undefined while no CamundaManagementCluster exists.
  */
 export type Plane = {
+  id: string;
   namespace: string;
   name: string;
   managed: boolean;
@@ -83,6 +84,7 @@ export function planesOf(sources: PlaneSources): Plane[] {
     const status = cluster.status;
     const rows = status?.clusters ?? [];
     return {
+      id: `cluster/${key(namespace, cluster.metadata?.name)}`,
       namespace,
       name: cluster.metadata?.name ?? "",
       managed: isManaged(cluster),
@@ -115,6 +117,7 @@ export function planesOf(sources: PlaneSources): Plane[] {
   const claimOnly = sources.claims
     .filter((c) => !joined.has(key(c.metadata?.namespace, c.metadata?.name)))
     .map((claim): Plane => ({
+      id: `claim/${key(claim.metadata?.namespace, claim.metadata?.name)}`,
       namespace: claim.metadata?.namespace ?? "",
       name: claim.metadata?.name ?? "",
       managed: true,
