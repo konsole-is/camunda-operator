@@ -23,15 +23,7 @@ export function StatusChip({
 }) {
   const ready = loading
     ? { tone: "muted" as const, label: "Loading", reason: undefined }
-    : describeReady(condition);
-  const reason =
-    ready.reason ??
-    (readyReason &&
-    !loading &&
-    condition?.status === "True" &&
-    condition.reason !== "Healthy"
-      ? condition.reason
-      : undefined);
+    : describeReady(condition, { trueReason: readyReason });
   return (
     <span
       aria-busy={loading || undefined}
@@ -46,7 +38,7 @@ export function StatusChip({
         className={cn("size-1.5 shrink-0 rounded-full", DOT_TONE[ready.tone])}
       />
       <span className="truncate">
-        {reason ? `${ready.label} · ${reason}` : ready.label}
+        {ready.reason ? `${ready.label} · ${ready.reason}` : ready.label}
       </span>
     </span>
   );

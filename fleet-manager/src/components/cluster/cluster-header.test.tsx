@@ -39,7 +39,13 @@ describe("ClusterHeader", () => {
 
   it("shows the reason of a True Ready condition", () => {
     render(header({ ready: { status: "True", reason: "Suspended" } }));
-    expect(screen.getByText("Suspended")).toBeTruthy();
+    expect(screen.getByText("Ready · Suspended")).toBeTruthy();
+  });
+
+  it("hides the reason Healthy of a True Ready condition", () => {
+    render(header({ ready: { status: "True", reason: "Healthy" } }));
+    expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.queryByText(/Healthy/)).toBeNull();
   });
 
   it("says No environment for a namespace without the label", () => {
