@@ -144,7 +144,9 @@ function placeNear(anchor: HTMLElement, panel: HTMLElement): CSSProperties {
   const below = height <= roomBelow || roomBelow >= roomAbove;
   const room = below ? roomBelow : roomAbove;
   return {
-    top: below ? chip.bottom : chip.top - Math.min(height, room),
+    ...(below
+      ? { top: chip.bottom }
+      : { bottom: window.innerHeight - chip.top }),
     left: Math.max(
       margin,
       Math.min(chip.right - width, window.innerWidth - width - margin),
