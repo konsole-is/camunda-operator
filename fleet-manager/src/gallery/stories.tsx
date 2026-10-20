@@ -7,6 +7,7 @@ import { editorStories } from "@/components/fleet/editors.stories";
 import { helpStories } from "@/components/fleet/help.stories";
 import { lockedFieldStories } from "@/components/fleet/locked-field.stories";
 import { observeStories } from "@/components/fleet/observe.stories";
+import { planesStories } from "@/components/planes/planes.stories";
 import { reviewStories } from "@/components/fleet/review.stories";
 import { sectionCardsStories } from "@/components/fleet/section-cards.stories";
 import { shellStories } from "@/components/fleet/shell.stories";
@@ -23,6 +24,7 @@ export const stories: readonly Story[] = [
   ...confirmStories,
   ...helpStories,
   ...dataTableStories,
+  ...planesStories,
   ...editorStories,
   ...workloadEditorStories,
   ...sectionCardsStories,
