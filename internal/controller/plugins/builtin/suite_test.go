@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -67,6 +68,13 @@ var _ = BeforeSuite(func() {
 	)
 
 	ctx, k8sClient = env.Ctx, env.Client
+
+	// The controller of the built-in registrations does not run in this
+	// suite, so the suite writes each registration Ready.
+	for _, reg := range pluginstartup.Registrations("0.3.0", testServiceAccount) {
+		Expect(k8sClient.Create(ctx, &reg)).To(Succeed())
+		setRegistrationReady(reg.Name, metav1.ConditionTrue)
+	}
 })
 
 var _ = AfterSuite(func() {

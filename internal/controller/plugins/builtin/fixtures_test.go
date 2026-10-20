@@ -31,6 +31,7 @@ import (
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 )
 
 // newRequest creates a request in default for registration, with the label
@@ -156,6 +157,41 @@ func expectCondition(
 		g.Expect(cond.ObservedGeneration).To(Equal(live.Generation))
 	}, timeout, interval).Should(Succeed())
 	return live
+}
+
+// setRegistrationReady writes the Ready condition of the registration name
+// with status at its current generation.
+func setRegistrationReady(name string, status metav1.ConditionStatus) {
+	GinkgoHelper()
+	Eventually(func() error {
+		var reg pluginsv1alpha1.PluginRegistration
+		if err := k8sClient.Get(ctx, client.ObjectKey{Name: name}, &reg); err != nil {
+			return err
+		}
+		meta.SetStatusCondition(&reg.Status.Conditions, metav1.Condition{
+			Type:               v1.ConditionReady,
+			Status:             status,
+			Reason:             "SetBySpec",
+			Message:            "The spec sets this condition",
+			ObservedGeneration: reg.Generation,
+		})
+		reg.Status.ObservedGeneration = reg.Generation
+		return k8sClient.Status().Update(ctx, &reg)
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectProbeServed creates a request with parameters that fail the schema
+// and waits until the controller refuses it. The controller handles requests
+// in the order of their events, so a request whose event came before the
+// probe was reconciled first.
+func expectProbeServed() {
+	GinkgoHelper()
+	probe := newRequest(
+		pluginstartup.RegistrationExistingObjectStorage,
+		`{}`,
+		pluginsv1alpha1.DeletionPolicyDelete,
+	)
+	expectCondition(probe, v1.ConditionReady, metav1.ConditionFalse, pluginsv1alpha1.ReasonInvalidParameters)
 }
 
 // expectGone waits until obj is not found.
