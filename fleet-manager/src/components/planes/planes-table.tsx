@@ -78,7 +78,7 @@ export function PlanesTable({
         search: `${plane.name} ${plane.namespace}`,
         cells: {
           plane: <PlaneName plane={plane} />,
-          status: <StatusChip condition={plane.ready} />,
+          status: <StatusChip condition={plane.ready} readyReason />,
           identity: plane.mode ?? "—",
           serves: <PlaneServes plane={plane} />,
           clusters: <PlaneClusters plane={plane} />,

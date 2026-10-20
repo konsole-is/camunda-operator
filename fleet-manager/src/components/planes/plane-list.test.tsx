@@ -159,6 +159,24 @@ describe("PlaneList", () => {
     expect(cells[5]).toBe("0 (OIDC)");
   });
 
+  it("shows the reason of a Ready plane, such as Suspended", () => {
+    const suspended = planesOf({
+      clusters: [
+        cluster("platform", "stopped", {
+          labels: { [CLAIM_LABEL]: "stopped" },
+          status: ready("True", "Suspended"),
+        }),
+      ],
+      claims: [claim("platform", "stopped", ["production"])],
+      namespaces: [],
+    });
+    render(<PlaneList planes={suspended} />);
+    const cells = within(screen.getByRole("row", { name: /stopped/ }))
+      .getAllByRole("cell")
+      .map((c) => c.textContent);
+    expect(cells[7]).toBe("Ready · Suspended");
+  });
+
   it("shows a not-attached warning chip with each cluster on hover", async () => {
     render(<PlaneList planes={keycloakPlane} />);
     await userEvent.hover(

@@ -146,6 +146,25 @@ describe("PlanesTable", () => {
     );
   });
 
+  it("shows the reason of a Ready plane, such as Suspended", () => {
+    const stopped = managed("stopped", ["production"], {
+      conditions: [{ type: "Ready", status: "True", reason: "Suspended" }],
+    });
+    render(
+      <Harness
+        environment="production"
+        initial={{
+          clusters: [stopped.cluster],
+          claims: [stopped.claim],
+          namespaces: [],
+        }}
+      />,
+    );
+    expect(screen.getByRole("row", { name: /stopped/ }).textContent).toContain(
+      "Ready · Suspended",
+    );
+  });
+
   it("marks a plane without the claim label as not managed and shows its selector", () => {
     const legacy: PlaneSources = {
       clusters: [

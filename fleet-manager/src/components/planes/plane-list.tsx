@@ -90,7 +90,7 @@ export function PlaneList({
               clusters: <PlaneClusters plane={plane} />,
               optimize: optimizeLabel(plane),
               contract: plane.contract ?? "—",
-              status: <StatusChip condition={plane.ready} />,
+              status: <StatusChip condition={plane.ready} readyReason />,
               warnings: <NotAttachedChip clusters={plane.notAttached} />,
             },
           };

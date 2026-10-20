@@ -8,19 +8,27 @@ import {
 
 /**
  * StatusChip shows the Ready condition of an object: "Ready", or "Not ready"
- * and "Unknown" with the reason. The message is the hover text. loading wins
- * over condition while the page has no status yet.
+ * and "Unknown" with the reason. readyReason shows the reason of "Ready"
+ * too, such as Suspended. The message is the hover text. loading wins over
+ * condition while the page has no status yet.
  */
 export function StatusChip({
   condition,
   loading = false,
+  readyReason = false,
 }: {
   condition?: ConditionLike;
   loading?: boolean;
+  readyReason?: boolean;
 }) {
   const ready = loading
     ? { tone: "muted" as const, label: "Loading", reason: undefined }
     : describeReady(condition);
+  const reason =
+    ready.reason ??
+    (readyReason && !loading && condition?.status === "True"
+      ? condition.reason
+      : undefined);
   return (
     <span
       aria-busy={loading || undefined}
@@ -35,7 +43,7 @@ export function StatusChip({
         className={cn("size-1.5 shrink-0 rounded-full", DOT_TONE[ready.tone])}
       />
       <span className="truncate">
-        {ready.reason ? `${ready.label} · ${ready.reason}` : ready.label}
+        {reason ? `${ready.label} · ${reason}` : ready.label}
       </span>
     </span>
   );
