@@ -44,9 +44,6 @@ var (
 	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
-	// managerCache is the cache that the controller reads the registrations
-	// from.
-	managerCache client.Reader
 )
 
 func TestBuiltin(t *testing.T) {
@@ -61,7 +58,6 @@ var _ = BeforeSuite(func() {
 	env = envtest.StartWith(
 		envtest.Options{WithoutECK: true, WithoutKeycloak: true, WithoutCNPG: true},
 		func(mgr ctrl.Manager) error {
-			managerCache = mgr.GetCache()
 			return (&Reconciler{
 				Client:        mgr.GetClient(),
 				APIReader:     mgr.GetAPIReader(),

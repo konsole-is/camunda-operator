@@ -36,10 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	ctrlhandler "sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -57,6 +54,11 @@ const controllerName = "builtin"
 // contract that a built-in request reads. No other controller of the
 // manager may register an index of this name on PluginRequest.
 const contractsField = "pluginrequest.builtin.contracts"
+
+// registrationField is the index on PluginRequest by spec.registration, for
+// a request with a handler. No other controller of the manager may register
+// an index of this name on PluginRequest.
+const registrationField = "pluginrequest.builtin.registration"
 
 // Reconciler serves every PluginRequest of a built-in registration that has a
 // handler.
@@ -196,7 +198,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 // its current generation. A missing registration is not ready.
 func (r *Reconciler) registrationReady(ctx context.Context, name string) (bool, error) {
 	var reg pluginsv1alpha1.PluginRegistration
-	if err := r.Get(ctx, client.ObjectKey{Name: name}, &reg); err != nil {
+	if err := r.APIReader.Get(ctx, client.ObjectKey{Name: name}, &reg); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
@@ -280,10 +282,10 @@ func (r *Reconciler) finalize(
 
 // SetupWithManager returns an error that names each handler without a
 // registration in Registrations, or with a parameter schema that it cannot
-// read. Then it registers the contractsField index and the controller. The
-// controller runs for a request whose registration label names a handler,
-// for every request that reads a contract that changed, and for every
-// request whose registration label names a registration that changed.
+// read. Then it registers the contractsField and registrationField indexes
+// and the controller. It runs for a request whose registration label names
+// a handler, for every request that reads a contract that changed, and for
+// every request whose spec.registration names a registration that changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -323,6 +325,13 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &pluginsv1alpha1.PluginRequest{},
+		registrationField, r.registrationKeys,
+	); err != nil {
+		return err
+	}
+
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.serves)))
 	for kind, obj := range map[string]client.Object{
@@ -339,7 +348,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return b.
 		Watches(
 			&pluginsv1alpha1.PluginRegistration{},
-			ctrlhandler.EnqueueRequestsFromMapFunc(r.requestsOf),
+			refindex.Enqueue(
+				mgr.GetClient(),
+				&pluginsv1alpha1.PluginRequestList{},
+				registrationField,
+				refindex.ObjectName,
+			),
 			builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
 				_, ok := r.handlers[o.GetName()]
 				return ok
@@ -367,6 +381,21 @@ func (r *Reconciler) contractKeys(o client.Object) []string {
 	}
 
 	return keys
+}
+
+// registrationKeys returns the registrationField key of a request with a
+// handler.
+func (r *Reconciler) registrationKeys(o client.Object) []string {
+	request, ok := o.(*pluginsv1alpha1.PluginRequest)
+	if !ok {
+		return nil
+	}
+
+	if _, ok := r.handlers[request.Spec.Registration]; !ok {
+		return nil
+	}
+
+	return []string{request.Spec.Registration}
 }
 
 // serves reports whether the registration label of o names a handler, or
@@ -397,25 +426,4 @@ func keyOf(kind string) func(client.Object) string {
 
 func contractKey(kind, namespace, name string) string {
 	return kind + "/" + refindex.NamespacedKey(namespace, name)
-}
-
-// requestsOf returns the requests whose registration label names reg. A
-// failed list drops the event and logs the error.
-func (r *Reconciler) requestsOf(ctx context.Context, reg client.Object) []reconcile.Request {
-	var list pluginsv1alpha1.PluginRequestList
-	if err := r.List(
-		ctx,
-		&list,
-		client.MatchingLabels{pluginsv1alpha1.LabelRegistration: reg.GetName()},
-	); err != nil {
-		logf.FromContext(ctx).Error(err, "Could not list PluginRequests", "registration", reg.GetName())
-		return nil
-	}
-
-	reqs := make([]reconcile.Request, 0, len(list.Items))
-	for _, item := range list.Items {
-		reqs = append(reqs, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&item)})
-	}
-
-	return reqs
 }

@@ -180,17 +180,6 @@ func setRegistrationReady(name string, status metav1.ConditionStatus) {
 	}, timeout, interval).Should(Succeed())
 }
 
-// expectCachedRegistration waits until the cache of the controller holds the
-// registration name in the state that match accepts.
-func expectCachedRegistration(name string, match func(*pluginsv1alpha1.PluginRegistration) bool) {
-	GinkgoHelper()
-	Eventually(func(g Gomega) {
-		var reg pluginsv1alpha1.PluginRegistration
-		g.Expect(managerCache.Get(ctx, client.ObjectKey{Name: name}, &reg)).To(Succeed())
-		g.Expect(match(&reg)).To(BeTrue())
-	}, timeout, interval).Should(Succeed())
-}
-
 // expectProbeServed creates a request with parameters that fail the schema
 // and waits until the controller refuses it. The controller handles requests
 // in the order of their events, so a request whose event came before the

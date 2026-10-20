@@ -41,9 +41,6 @@ var _ = Describe("Built-in requests and the Ready state of their registration", 
 
 	It("serves a request only once its registration is Ready", func() {
 		setRegistrationReady(registration, metav1.ConditionFalse)
-		expectCachedRegistration(registration, func(reg *pluginsv1alpha1.PluginRegistration) bool {
-			return meta.IsStatusConditionFalse(reg.Status.Conditions, v1.ConditionReady)
-		})
 		contract := newSecondaryStorageConfig()
 		createContract(contract)
 		request := newRequest(registration, `{"name":"`+contract.Name+`"}`, pluginsv1alpha1.DeletionPolicyDelete)
@@ -76,10 +73,6 @@ var _ = Describe("Built-in requests and the Ready state of their registration", 
 		)
 
 		bumpRegistration(registration)
-		expectCachedRegistration(registration, func(reg *pluginsv1alpha1.PluginRegistration) bool {
-			ready := meta.FindStatusCondition(reg.Status.Conditions, v1.ConditionReady)
-			return ready != nil && ready.ObservedGeneration < reg.Generation
-		})
 		Eventually(func() error {
 			live := &pluginsv1alpha1.PluginRequest{}
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(request), live); err != nil {
@@ -105,6 +98,32 @@ var _ = Describe("Built-in requests and the Ready state of their registration", 
 		Expect(live.Status.Outputs).To(Equal(secondaryOutput(second.Name)))
 	})
 
+	It("resumes a served request whose label changed once its registration is Ready", func() {
+		first, second := newSecondaryStorageConfig(), newSecondaryStorageConfig()
+		createContract(first)
+		createContract(second)
+		request := newRequest(registration, `{"name":"`+first.Name+`"}`, pluginsv1alpha1.DeletionPolicyDelete)
+		expectCondition(request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionTrue, v1.ReasonHealthy)
+
+		setRegistrationReady(registration, metav1.ConditionFalse)
+		Eventually(func() error {
+			live := &pluginsv1alpha1.PluginRequest{}
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(request), live); err != nil {
+				return err
+			}
+			live.Labels[pluginsv1alpha1.LabelRegistration] = "s3-backup-bucket"
+			live.Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(`{"name":"` + second.Name + `"}`)}
+			return k8sClient.Update(ctx, live)
+		}, timeout, interval).Should(Succeed())
+		expectProbeServed()
+		Expect(liveRequest(Default, request).Status.Outputs).To(Equal(secondaryOutput(first.Name)))
+
+		setRegistrationReady(registration, metav1.ConditionTrue)
+
+		live := expectCondition(request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionTrue, v1.ReasonHealthy)
+		Expect(live.Status.Outputs).To(Equal(secondaryOutput(second.Name)))
+	})
+
 	It("finishes the deletion of a served request while its registration is not Ready", func() {
 		contract := newSecondaryStorageConfig()
 		createContract(contract)
@@ -112,9 +131,6 @@ var _ = Describe("Built-in requests and the Ready state of their registration", 
 		expectCondition(request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionTrue, v1.ReasonHealthy)
 
 		setRegistrationReady(registration, metav1.ConditionFalse)
-		expectCachedRegistration(registration, func(reg *pluginsv1alpha1.PluginRegistration) bool {
-			return meta.IsStatusConditionFalse(reg.Status.Conditions, v1.ConditionReady)
-		})
 		Expect(k8sClient.Delete(ctx, request)).To(Succeed())
 
 		expectGone(request)
