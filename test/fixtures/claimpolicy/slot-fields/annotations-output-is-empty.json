@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "name": "An empty annotations output is an error, so that it never removes the annotations of the cluster",
+  "input": {
+    "kind": "CamundaClusterClaim",
+    "sections": [
+      {
+        "metadata": {
+          "name": "cloud-identity"
+        },
+        "spec": {
+          "label": "cloud-identity",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "workloadIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "encryption-key"
+        },
+        "spec": {
+          "label": "encryption-key",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "volume-encryption"
+        },
+        "spec": {
+          "label": "volume-encryption",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "volumeEncryption"
+        }
+      },
+      {
+        "metadata": {
+          "name": "backup-storage"
+        },
+        "spec": {
+          "label": "backup-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "backupStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "secondary-storage"
+        },
+        "spec": {
+          "label": "secondary-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "secondaryStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "access"
+        },
+        "spec": {
+          "label": "access",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim",
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "externalAccess"
+        }
+      },
+      {
+        "metadata": {
+          "name": "connectors-permissions"
+        },
+        "spec": {
+          "label": "connectors-permissions",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "connectorsIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "management-database"
+        },
+        "spec": {
+          "label": "management-database",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "managementDatabases"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "cloud-identity",
+        "registration": "aws-iam"
+      }
+    ],
+    "requests": [
+      {
+        "metadata": {
+          "name": "team-a-cloud-identity",
+          "generation": 3
+        },
+        "spec": {
+          "section": "cloud-identity",
+          "registration": "aws-iam"
+        },
+        "status": {
+          "conditions": [
+            {
+              "type": "OutputsReady",
+              "status": "True",
+              "reason": "Written",
+              "message": "",
+              "lastTransitionTime": "2026-10-18T00:00:00Z",
+              "observedGeneration": 3
+            }
+          ],
+          "outputs": {
+            "serviceAccountAnnotations": ""
+          }
+        }
+      }
+    ]
+  },
+  "result": {
+    "error": "output serviceAccountAnnotations of section \"cloud-identity\": the value is not a JSON object"
+  }
+}

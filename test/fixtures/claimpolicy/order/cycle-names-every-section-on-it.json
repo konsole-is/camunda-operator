@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "name": "A cycle names each section on it, and no section that only reads from it",
+  "input": {
+    "selections": [
+      {
+        "section": "a",
+        "registration": "a"
+      },
+      {
+        "section": "b",
+        "registration": "b"
+      },
+      {
+        "section": "c",
+        "registration": "c"
+      },
+      {
+        "section": "d",
+        "registration": "d"
+      },
+      {
+        "section": "e",
+        "registration": "e"
+      }
+    ],
+    "registrations": [
+      {
+        "metadata": {
+          "name": "a"
+        },
+        "spec": {
+          "sections": [
+            "a"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "in",
+              "from": "c/out"
+            }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "b"
+        },
+        "spec": {
+          "sections": [
+            "b"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "in",
+              "from": "a/out"
+            }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "c"
+        },
+        "spec": {
+          "sections": [
+            "c"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "in",
+              "from": "b/out"
+            }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "d"
+        },
+        "spec": {
+          "sections": [
+            "d"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "in",
+              "from": "a/out"
+            }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "e"
+        },
+        "spec": {
+          "sections": [
+            "e"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "in",
+              "from": "e/out"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "WiringCycle",
+      "message": "the inputs of these sections form a cycle: a, b, c, e"
+    }
+  }
+}

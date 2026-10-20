@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "name": "The claim cannot set spec.management.console.externalUrl while a selected slot fills it",
+  "input": {
+    "sections": [
+      {
+        "metadata": {
+          "name": "cloud-identity"
+        },
+        "spec": {
+          "label": "cloud-identity",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "workloadIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "encryption-key"
+        },
+        "spec": {
+          "label": "encryption-key",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "volume-encryption"
+        },
+        "spec": {
+          "label": "volume-encryption",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "volumeEncryption"
+        }
+      },
+      {
+        "metadata": {
+          "name": "backup-storage"
+        },
+        "spec": {
+          "label": "backup-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "backupStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "secondary-storage"
+        },
+        "spec": {
+          "label": "secondary-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "secondaryStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "access"
+        },
+        "spec": {
+          "label": "access",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim",
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "externalAccess"
+        }
+      },
+      {
+        "metadata": {
+          "name": "connectors-permissions"
+        },
+        "spec": {
+          "label": "connectors-permissions",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "connectorsIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "management-database"
+        },
+        "spec": {
+          "label": "management-database",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "managementDatabases"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "access",
+        "registration": "ingress"
+      }
+    ],
+    "overrides": {
+      "management": {
+        "identityProvider": {},
+        "identity": {
+          "admin": {}
+        },
+        "console": {
+          "externalUrl": "https://custom.example.com"
+        }
+      }
+    }
+  },
+  "result": {
+    "refusal": {
+      "reason": "SlotConflict",
+      "message": "spec.management.console.externalUrl is filled by section \"access\", so the claim cannot set it"
+    }
+  }
+}

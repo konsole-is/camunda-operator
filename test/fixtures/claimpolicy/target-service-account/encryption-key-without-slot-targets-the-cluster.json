@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "A section without a slot targets the cluster",
+  "input": {
+    "claim": "team-a",
+    "section": {
+      "metadata": {
+        "name": "encryption-key"
+      },
+      "spec": {
+        "label": "encryption-key",
+        "selection": "One",
+        "appliesTo": [
+          "CamundaClusterClaim"
+        ]
+      }
+    }
+  },
+  "result": {
+    "value": {
+      "serviceAccountName": "team-a-camunda"
+    }
+  }
+}

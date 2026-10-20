@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "parameterValues of a registration that is not a JSON object is an error",
+  "input": {
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameterValues": [
+            "eu-west-1"
+          ]
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ]
+  },
+  "result": {
+    "error": "parameterValues of PluginRegistration \"s3\": the value is not a JSON object"
+  }
+}

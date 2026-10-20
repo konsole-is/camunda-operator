@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "name": "An explicit empty spec.cluster.zeebe.storageClassName conflicts too, because the broker volumes get it",
+  "input": {
+    "sections": [
+      {
+        "metadata": {
+          "name": "cloud-identity"
+        },
+        "spec": {
+          "label": "cloud-identity",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "workloadIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "encryption-key"
+        },
+        "spec": {
+          "label": "encryption-key",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "volume-encryption"
+        },
+        "spec": {
+          "label": "volume-encryption",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "volumeEncryption"
+        }
+      },
+      {
+        "metadata": {
+          "name": "backup-storage"
+        },
+        "spec": {
+          "label": "backup-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "backupStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "secondary-storage"
+        },
+        "spec": {
+          "label": "secondary-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "secondaryStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "access"
+        },
+        "spec": {
+          "label": "access",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim",
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "externalAccess"
+        }
+      },
+      {
+        "metadata": {
+          "name": "connectors-permissions"
+        },
+        "spec": {
+          "label": "connectors-permissions",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "connectorsIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "management-database"
+        },
+        "spec": {
+          "label": "management-database",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "managementDatabases"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "volume-encryption",
+        "registration": "ebs"
+      }
+    ],
+    "overrides": {
+      "cluster": {
+        "zeebe": {
+          "storageClassName": ""
+        }
+      }
+    }
+  },
+  "result": {
+    "refusal": {
+      "reason": "SlotConflict",
+      "message": "spec.cluster.zeebe.storageClassName is filled by section \"volume-encryption\", so the claim cannot set it"
+    }
+  }
+}

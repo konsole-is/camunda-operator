@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "name": "The annotations of connectors-permissions fill only the ServiceAccount of the Connectors",
+  "input": {
+    "kind": "CamundaClusterClaim",
+    "sections": [
+      {
+        "metadata": {
+          "name": "cloud-identity"
+        },
+        "spec": {
+          "label": "cloud-identity",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "workloadIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "encryption-key"
+        },
+        "spec": {
+          "label": "encryption-key",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "volume-encryption"
+        },
+        "spec": {
+          "label": "volume-encryption",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "volumeEncryption"
+        }
+      },
+      {
+        "metadata": {
+          "name": "backup-storage"
+        },
+        "spec": {
+          "label": "backup-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "backupStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "secondary-storage"
+        },
+        "spec": {
+          "label": "secondary-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "secondaryStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "access"
+        },
+        "spec": {
+          "label": "access",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim",
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "externalAccess"
+        }
+      },
+      {
+        "metadata": {
+          "name": "connectors-permissions"
+        },
+        "spec": {
+          "label": "connectors-permissions",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "connectorsIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "management-database"
+        },
+        "spec": {
+          "label": "management-database",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "managementDatabases"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "connectors-permissions",
+        "registration": "aws-iam-connectors"
+      }
+    ],
+    "requests": [
+      {
+        "metadata": {
+          "name": "team-a-connectors-permissions",
+          "generation": 3
+        },
+        "spec": {
+          "section": "connectors-permissions",
+          "registration": "aws-iam-connectors"
+        },
+        "status": {
+          "conditions": [
+            {
+              "type": "OutputsReady",
+              "status": "True",
+              "reason": "Written",
+              "message": "",
+              "lastTransitionTime": "2026-10-18T00:00:00Z",
+              "observedGeneration": 3
+            }
+          ],
+          "outputs": {
+            "serviceAccountAnnotations": "{\"eks.amazonaws.com/role-arn\": \"arn:aws:iam::1:role/connectors\"}"
+          }
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": [
+      {
+        "kind": "CamundaCluster",
+        "path": "spec.connectors.serviceAccount.annotations",
+        "section": "connectors-permissions",
+        "value": {
+          "eks.amazonaws.com/role-arn": "arn:aws:iam::1:role/connectors"
+        }
+      }
+    ]
+  }
+}

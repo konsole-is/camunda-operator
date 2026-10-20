@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "name": "Without any Environment and without a label, the registrations apply",
+  "input": {
+    "namespace": {
+      "metadata": {
+        "name": "team-a"
+      }
+    }
+  },
+  "result": {
+    "value": {}
+  }
+}
