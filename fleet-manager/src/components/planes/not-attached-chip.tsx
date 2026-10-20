@@ -89,6 +89,7 @@ export function NotAttachedChip({
         type="button"
         aria-expanded={open}
         aria-controls={id}
+        onClick={() => setOpen(true)}
         className={cn(
           "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
           CHIP_TONE.warn,

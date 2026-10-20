@@ -71,6 +71,18 @@ describe("NotAttachedChip", () => {
     expect(document.body.contains(note)).toBe(true);
   });
 
+  it("opens again on Enter or Space after Escape closed it", async () => {
+    render(<NotAttachedChip clusters={clusters} />);
+    await userEvent.tab();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("note")).toBeNull();
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByRole("note")).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
+    await userEvent.keyboard(" ");
+    expect(screen.getByRole("note")).toBeTruthy();
+  });
+
   it("closes on Escape while only the pointer is on it", async () => {
     render(<NotAttachedChip clusters={clusters} />);
     await userEvent.hover(
