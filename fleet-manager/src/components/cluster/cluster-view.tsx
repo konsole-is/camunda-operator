@@ -189,7 +189,8 @@ export function ClusterView({
   const backups = [...backupsES.items, ...backupsRDBMS.items];
   const clock = useClock(
     now,
-    runningBackup(cluster.item ?? initial.cluster, backups) !== undefined,
+    tab === "backups" ||
+      runningBackup(cluster.item ?? initial.cluster, backups) !== undefined,
   );
 
   const live = cluster.item;

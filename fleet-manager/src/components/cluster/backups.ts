@@ -342,9 +342,15 @@ function databaseOf(
       retentionDays: pitr?.retentionPeriodDays,
     },
   };
-  const server = input.databaseServers.find(
-    (s) => s.spec.databaseServerConfig === serverName,
+  // The operator rejects a second server that asks for the same config
+  // (contractTaken in internal/controller/databaseserver), so only the
+  // controller of the config publishes it.
+  const publisher = serverConfig.metadata?.ownerReferences?.find(
+    (r) => r.controller && r.kind === "DatabaseServer",
   );
+  const server =
+    publisher &&
+    input.databaseServers.find((s) => s.metadata?.uid === publisher.uid);
   if (server) view.archive = archiveOf(input, server);
   return view;
 }
@@ -391,9 +397,10 @@ function archiveOf(
     const from = [open.from, archive?.reachableFrom, cutoff]
       .filter((t): t is string => parse(t) !== undefined)
       .reduce((a, b) => (parse(b)! > parse(a)! ? b : a));
-    view.window = open.unverifiedFrom
-      ? { from, to: open.unverifiedFrom }
-      : { from };
+    const to = open.unverifiedFrom;
+    if (to === undefined || parse(from)! <= (parse(to) ?? Infinity)) {
+      view.window = to ? { from, to } : { from };
+    }
   }
   return view;
 }

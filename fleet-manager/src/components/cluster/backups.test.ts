@@ -328,10 +328,11 @@ function obj<K extends KindName>(
   name: string,
   spec: object,
   status?: object,
+  meta: object = {},
 ): Resource<K> {
   return {
     kind,
-    metadata: { namespace: "team-a", name },
+    metadata: { namespace: "team-a", name, ...meta },
     spec,
     status,
   } as unknown as Resource<K>;
@@ -399,6 +400,7 @@ function rdbmsChain(
     serverConfig?: boolean;
     server?: object | false;
     serverStatus?: object;
+    owned?: boolean;
   } = {},
 ): BackupStorageInput {
   return input({
@@ -421,15 +423,21 @@ function rdbmsChain(
       over.serverConfig === false
         ? []
         : [
-            obj("DatabaseServerConfig", "orders-pg", {
-              host: "orders-pg-rw.team-a.svc",
-              port: 5432,
-              pitr: {
-                enabled: true,
-                recovery: "operator",
-                retentionPeriodDays: 30,
+            obj(
+              "DatabaseServerConfig",
+              "orders-pg",
+              {
+                host: "orders-pg-rw.team-a.svc",
+                port: 5432,
+                pitr: {
+                  enabled: true,
+                  recovery: "operator",
+                  retentionPeriodDays: 30,
+                },
               },
-            }),
+              undefined,
+              over.owned === false ? {} : { ownerReferences: [publisher] },
+            ),
           ],
     databaseServers:
       over.server === false
@@ -458,10 +466,19 @@ function rdbmsChain(
                   reachableFrom: "2026-09-25T09:58:00Z",
                 },
               },
+              { uid: "uid-orders-pg" },
             ),
           ],
   });
 }
+
+const publisher = {
+  apiVersion: "core.camunda.io/v1",
+  kind: "DatabaseServer",
+  name: "orders-pg",
+  uid: "uid-orders-pg",
+  controller: true,
+};
 
 describe("backupStorageOf", () => {
   it("is none without backupStorageRef, and still lists the schedules of the cluster", () => {
@@ -693,8 +710,58 @@ describe("backupStorageOf", () => {
     });
   });
 
+  it("ignores a DatabaseServer that requests the config but does not control it", () => {
+    const data = rdbmsChain();
+    data.databaseServers = [
+      obj(
+        "DatabaseServer",
+        "intruder",
+        {
+          databaseServerConfig: "orders-pg",
+          archive: { objectStorageRef: "backups" },
+        },
+        {},
+        { uid: "uid-intruder" },
+      ),
+      ...data.databaseServers,
+    ];
+    const storage = backupStorageOf(data);
+    expect(storage.kind === "rdbms" && storage.database?.archive).toMatchObject(
+      {
+        server: "orders-pg",
+        bucket: { name: "wal" },
+      },
+    );
+  });
+
+  it("has no window when the retention cutoff is after unverifiedFrom", () => {
+    const storage = backupStorageOf(
+      rdbmsChain({
+        server: {
+          databaseServerConfig: "orders-pg",
+          archive: { objectStorageRef: "wal", retentionPeriodDays: 7 },
+        },
+        serverStatus: {
+          archive: {
+            history: [
+              {
+                serverName: "orders-pg",
+                from: "2026-09-01T00:00:00Z",
+                unverifiedFrom: "2026-10-01T00:00:00Z",
+              },
+            ],
+          },
+        },
+      }),
+    );
+    expect(storage.kind === "rdbms" && storage.database?.archive).toBeDefined();
+    expect(
+      storage.kind === "rdbms" && storage.database?.archive?.window,
+    ).toBeUndefined();
+  });
+
   it("an external server shows the pitr of its DatabaseServerConfig and no archive", () => {
-    const storage = backupStorageOf(rdbmsChain({ server: false }));
+    const storage = backupStorageOf(rdbmsChain({ owned: false }));
     expect(storage.kind === "rdbms" && storage.database).toEqual({
       serverConfig: "orders-pg",
       endpoint: "orders-pg-rw.team-a.svc:5432",

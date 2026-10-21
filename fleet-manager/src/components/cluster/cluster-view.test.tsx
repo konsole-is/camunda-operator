@@ -446,6 +446,97 @@ function esBackup(
 
 const noBackupStorage = data().backupStorage;
 
+function pgPage(
+  server: object = {
+    databaseServerConfig: "orders-pg",
+    archive: { objectStorageRef: "wal" },
+  },
+  status?: object,
+): ClusterPageData {
+  return data({
+    cluster: cluster({
+      spec: {
+        storageRef: "orders-db-storage",
+        backupStorageRef: "backups",
+      },
+    }),
+    storage: [
+      nsObject("SecondaryStorageConfig", "orders-db-storage", {
+        type: "rdbms",
+        rdbms: { databaseConfigRef: "orders-db" },
+      }),
+    ],
+    backupStorage: {
+      objectStorage: [
+        nsObject("ObjectStorageConfig", "backups", {
+          type: "S3",
+          s3: { bucketName: "acme-backups" },
+        }),
+        nsObject("ObjectStorageConfig", "wal", {
+          type: "GCS",
+          gcs: { bucketName: "acme-wal" },
+        }),
+      ],
+      databaseConfigs: [
+        nsObject("DatabaseConfig", "orders-db", {
+          serverRef: "orders-pg",
+        }),
+      ],
+      databaseServerConfigs: [
+        nsObject(
+          "DatabaseServerConfig",
+          "orders-pg",
+          {
+            host: "orders-pg-rw.team-a.svc",
+            port: 5432,
+            pitr: {
+              enabled: true,
+              recovery: "operator",
+              retentionPeriodDays: 30,
+            },
+          },
+          {},
+          {
+            ownerReferences: [
+              {
+                apiVersion: "core.camunda.io/v1",
+                kind: "DatabaseServer",
+                name: "orders-pg",
+                uid: "uid-orders-pg",
+                controller: true,
+              },
+            ],
+          },
+        ),
+      ],
+      databaseServers: [
+        nsObject(
+          "DatabaseServer",
+          "orders-pg",
+          server,
+          status ?? {
+            conditions: [
+              {
+                type: "ArchiveReady",
+                status: "True",
+                reason: "Archiving",
+              },
+            ],
+            archive: {
+              history: [
+                { serverName: "orders-pg", from: "2026-10-11T00:00:00Z" },
+              ],
+            },
+          },
+          { uid: "uid-orders-pg" },
+        ),
+      ],
+      databaseServerPresets: [],
+      schedules: [],
+    },
+  });
+}
+
 describe("Backups tab", () => {
   beforeEach(() => {
     window.history.replaceState(null, "", "?tab=backups");
@@ -538,74 +629,7 @@ describe("Backups tab", () => {
   it("a PostgreSQL cluster with point-in-time restore on shows its server, archive, and window", () => {
     render(
       view({
-        initial: data({
-          cluster: cluster({
-            spec: {
-              storageRef: "orders-db-storage",
-              backupStorageRef: "backups",
-            },
-          }),
-          storage: [
-            nsObject("SecondaryStorageConfig", "orders-db-storage", {
-              type: "rdbms",
-              rdbms: { databaseConfigRef: "orders-db" },
-            }),
-          ],
-          backupStorage: {
-            objectStorage: [
-              nsObject("ObjectStorageConfig", "backups", {
-                type: "S3",
-                s3: { bucketName: "acme-backups" },
-              }),
-              nsObject("ObjectStorageConfig", "wal", {
-                type: "GCS",
-                gcs: { bucketName: "acme-wal" },
-              }),
-            ],
-            databaseConfigs: [
-              nsObject("DatabaseConfig", "orders-db", {
-                serverRef: "orders-pg",
-              }),
-            ],
-            databaseServerConfigs: [
-              nsObject("DatabaseServerConfig", "orders-pg", {
-                host: "orders-pg-rw.team-a.svc",
-                port: 5432,
-                pitr: {
-                  enabled: true,
-                  recovery: "operator",
-                  retentionPeriodDays: 30,
-                },
-              }),
-            ],
-            databaseServers: [
-              nsObject(
-                "DatabaseServer",
-                "orders-pg",
-                {
-                  databaseServerConfig: "orders-pg",
-                  archive: { objectStorageRef: "wal" },
-                },
-                {
-                  conditions: [
-                    {
-                      type: "ArchiveReady",
-                      status: "True",
-                      reason: "Archiving",
-                    },
-                  ],
-                  archive: {
-                    history: [
-                      { serverName: "orders-pg", from: "2026-10-11T00:00:00Z" },
-                    ],
-                  },
-                },
-              ),
-            ],
-            databaseServerPresets: [],
-            schedules: [],
-          },
-        }),
+        initial: pgPage(),
       }),
     );
     const storage = screen.getByRole("region", { name: "Backup storage" });
@@ -705,6 +729,36 @@ describe("Backups tab", () => {
         vi.advanceTimersByTime(65_000);
       });
       expect(row().textContent).toContain("31m 5s");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("moves the start of the restore window on with the clock on the Backups tab", () => {
+    vi.useFakeTimers({ now: Date.parse(now) });
+    try {
+      render(
+        view({
+          initial: pgPage(
+            {
+              databaseServerConfig: "orders-pg",
+              archive: { objectStorageRef: "wal", retentionPeriodDays: 7 },
+            },
+            {
+              archive: {
+                history: [
+                  { serverName: "orders-pg", from: "2026-01-01T00:00:00Z" },
+                ],
+              },
+            },
+          ),
+        }),
+      );
+      expect(screen.getByText("2026-10-11 12:00 UTC to now")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByText("2026-10-11 12:01 UTC to now")).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }

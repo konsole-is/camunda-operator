@@ -143,11 +143,27 @@ const pgInput = input({
     obj("DatabaseConfig", "orders-db", { serverRef: "orders-pg" }),
   ],
   databaseServerConfigs: [
-    obj("DatabaseServerConfig", "orders-pg", {
-      host: "orders-pg-rw.team-a.svc",
-      port: 5432,
-      pitr: { enabled: true, recovery: "operator", retentionPeriodDays: 30 },
-    }),
+    obj(
+      "DatabaseServerConfig",
+      "orders-pg",
+      {
+        host: "orders-pg-rw.team-a.svc",
+        port: 5432,
+        pitr: { enabled: true, recovery: "operator", retentionPeriodDays: 30 },
+      },
+      {},
+      {
+        ownerReferences: [
+          {
+            apiVersion: "core.camunda.io/v1",
+            kind: "DatabaseServer",
+            name: "orders-pg",
+            uid: "uid-orders-pg",
+            controller: true,
+          },
+        ],
+      },
+    ),
   ],
   databaseServers: [
     obj(
@@ -155,7 +171,7 @@ const pgInput = input({
       "orders-pg",
       {
         databaseServerConfig: "orders-pg",
-        archive: { objectStorageRef: "wal" },
+        archive: { objectStorageRef: "wal", retentionPeriodDays: 30 },
       },
       {
         conditions: [
@@ -166,6 +182,7 @@ const pgInput = input({
           reachableFrom: "2026-09-25T09:58:00Z",
         },
       },
+      { uid: "uid-orders-pg" },
     ),
   ],
   schedules: [nightly],
