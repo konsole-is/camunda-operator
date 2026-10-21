@@ -1,0 +1,127 @@
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+    plugins.camunda.io/registration: test-identity
+    plugins.camunda.io/section: cloud-identity
+  name: orders-cloud-identity
+  namespace: team-a
+spec:
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  deletionPolicy: Delete
+  registration: test-identity
+  section: cloud-identity
+  target:
+    additionalServiceAccounts:
+    - orders-es-es
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+    plugins.camunda.io/registration: test-connectors
+    plugins.camunda.io/section: connectors-permissions
+  name: orders-connectors-permissions
+  namespace: team-a
+spec:
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  deletionPolicy: Delete
+  registration: test-connectors
+  section: connectors-permissions
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-connectors
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+    plugins.camunda.io/registration: elasticsearch
+    plugins.camunda.io/section: secondary-storage
+  name: orders-secondary-storage
+  namespace: team-a
+spec:
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  deletionPolicy: Delete
+  registration: elasticsearch
+  section: secondary-storage
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+    plugins.camunda.io/registration: test-bucket
+    plugins.camunda.io/section: backup-storage
+  name: orders-backup-storage
+  namespace: team-a
+spec:
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  deletionPolicy: Delete
+  registration: test-bucket
+  section: backup-storage
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+    plugins.camunda.io/registration: test-volumes
+    plugins.camunda.io/section: volume-encryption
+  name: orders-volume-encryption
+  namespace: team-a
+spec:
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  deletionPolicy: Delete
+  registration: test-volumes
+  section: volume-encryption
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+    plugins.camunda.io/registration: test-access
+    plugins.camunda.io/section: access
+  name: orders-access
+  namespace: team-a
+spec:
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  deletionPolicy: Delete
+  registration: test-access
+  section: access
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda
