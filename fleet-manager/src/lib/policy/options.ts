@@ -102,8 +102,10 @@ export function lockedSummary(value: unknown): string {
  * name, and the Default is the one registration with mode Default. With one,
  * they are the allowed registrations in the order of allowed, and the Default
  * is its default. A registration that is missing, or not Accepted=True and
- * Ready=True, is left out. An option has no choices when the Environment
- * gives the choice parameter an allowed list. disabledReason stays unset: the
+ * Ready=True, is left out. An option has no choices when its registration
+ * lists none, or when its choice parameter ("preset" if the schema has it,
+ * else "name") is claim-editable and the Environment gives it an allowed
+ * list. That list is then in parameters. disabledReason stays unset: the
  * caller sets it from missingInputs.
  */
 export function sectionOptions(
