@@ -14,6 +14,10 @@ CONFORMANCE_IMG ?= ghcr.io/konsole-is/camunda-operator-plugin-conformance:latest
 # CONFORMANCE_PLATFORMS are the platforms of the plugin-conformance binaries
 # that dist-conformance builds for the release assets.
 CONFORMANCE_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+# Images of the fake plugin and the Git server of the kind harness of the
+# fleet manager. The harness builds them and loads them into kind.
+FAKEPLUGIN_IMG ?= fleet-harness-fakeplugin:dev
+GITSERVER_IMG ?= fleet-harness-gitserver:dev
 # OPERATOR_VERSION is the version that the manager reports, without the v of
 # the tag. The release workflow sets it from the tag. Without it the manager
 # reports 0.0.0-dev.
@@ -299,6 +303,14 @@ docker-push-cli: ## Push docker image with camunda-operator-cli.
 .PHONY: docker-build-conformance
 docker-build-conformance: ## Build docker image with plugin-conformance.
 	$(CONTAINER_TOOL) build -t ${CONFORMANCE_IMG} -f Dockerfile.conformance .
+
+.PHONY: docker-build-fakeplugin
+docker-build-fakeplugin: ## Build the image of the fake plugin of the fleet manager harness on kind.
+	$(CONTAINER_TOOL) build -t ${FAKEPLUGIN_IMG} -f test/e2e/fakeplugin/Dockerfile .
+
+.PHONY: docker-build-gitserver
+docker-build-gitserver: ## Build the image of the Git server of the fleet manager harness on kind.
+	$(CONTAINER_TOOL) build -t ${GITSERVER_IMG} -f test/e2e/gitserver/Dockerfile .
 
 .PHONY: docker-push-conformance
 docker-push-conformance: ## Push docker image with plugin-conformance.
