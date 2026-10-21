@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { KubeConfig, KubernetesObjectApi } from "@kubernetes/client-node";
+import {
+  KubeConfig,
+  KubernetesObjectApi,
+  PatchStrategy,
+} from "@kubernetes/client-node";
 import { afterEach, beforeEach, describe, expect, inject, it } from "vitest";
 import { gitWriter } from "@/lib/write/git";
 import type { KubeObject, Writer } from "@/lib/write/types";
@@ -94,6 +98,29 @@ describe("the Git writer against envtest", () => {
       errors: [expect.objectContaining({ code: "Stale" })],
     });
     expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it("a second save of a field that a GitOps tool applied commits", async () => {
+    // A GitOps tool applies the first commit under its own field manager.
+    await api.patch(
+      environment(name, { displayName: "One" }),
+      undefined,
+      undefined,
+      "gitops",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+
+    const result = await writer.apply({
+      intent: "Change the display name",
+      apply: [environment(name, { displayName: "Two" })],
+    });
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, mode: "git" }));
+    expect(await repo.log()).toEqual([
+      "Change the display name",
+      "Initial commit",
+    ]);
   });
 
   it("a directOnly change writes nothing to Git and creates the object in envtest", async () => {

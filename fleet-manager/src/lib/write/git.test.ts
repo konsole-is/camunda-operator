@@ -1,3 +1,6 @@
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { HttpClient } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -422,6 +425,97 @@ describe("the Git writer", () => {
       ],
     });
     expect(await repo.log()).toEqual(["Other admin", "Initial commit"]);
+  });
+
+  it("refuses a name with a path separator and writes nothing", async () => {
+    repo = await serveBareRepository();
+
+    const result = await writerFor().apply({
+      intent: "Set the secret",
+      apply: [
+        {
+          apiVersion: "external-secrets.io/v1",
+          kind: "ExternalSecret",
+          metadata: { name: "../../../escaped", namespace: "team-a" },
+        },
+      ],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Invalid" })],
+    });
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it("refuses to write through a symbolic link of the repository", async () => {
+    repo = await serveBareRepository();
+    const outside = await mkdtemp(path.join(os.tmpdir(), "fleet-outside-"));
+    await repo.linkFromOtherClone("team-a", outside, "Link team-a");
+
+    const result = await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Invalid",
+          ref: claimRef("team-a", "orders"),
+        }),
+      ],
+    });
+    expect(await readdir(outside)).toEqual([]);
+    expect(await repo.log()).toEqual(["Link team-a", "Initial commit"]);
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  it("forces the dry run, so a field that a GitOps tool applied does not block the save", async () => {
+    repo = await serveBareRepository();
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [environment("prod")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({ force: true }),
+    );
+  });
+
+  it("a delete of an ExternalSecret skips the dry run and removes the file", async () => {
+    repo = await serveBareRepository();
+    const ref: ObjectRef = {
+      apiVersion: "external-secrets.io/v1",
+      kind: "ExternalSecret",
+      namespace: "team-a",
+      name: "db",
+    };
+    await writerFor().apply({
+      intent: "Set",
+      apply: [
+        {
+          apiVersion: ref.apiVersion,
+          kind: ref.kind,
+          metadata: { name: "db", namespace: "team-a" },
+        },
+      ],
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Remove the secret db",
+        apply: [],
+        delete: [ref],
+      }),
+    );
+
+    expect(directPreview).not.toHaveBeenCalled();
+    expect(await repo.files()).toEqual(["README.md"]);
   });
 
   it("a missing branch gives Unavailable and commits nothing", async () => {

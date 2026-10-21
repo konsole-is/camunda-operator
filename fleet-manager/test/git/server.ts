@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -12,7 +12,8 @@ const run = promisify(execFile);
  * BareRepository is a bare Git repository on disk that an HTTP server
  * serves at url. log returns the subjects of main, newest first. show
  * returns the file at the head of main, or undefined. commitFromOtherClone
- * commits files and pushes them to main from a second clone.
+ * commits files and pushes them to main from a second clone, and
+ * linkFromOtherClone does the same for one symbolic link.
  */
 export type BareRepository = {
   url: string;
@@ -20,6 +21,11 @@ export type BareRepository = {
   close(): Promise<void>;
   commitFromOtherClone(
     files: Record<string, string>,
+    message: string,
+  ): Promise<void>;
+  linkFromOtherClone(
+    link: string,
+    target: string,
     message: string,
   ): Promise<void>;
   log(): Promise<string[]>;
@@ -108,6 +114,15 @@ export async function serveBareRepository(
         await writeFile(path.join(other, file), content);
         await git(other, "add", file);
       }
+      await git(other, "commit", "-m", message);
+      await git(other, "push", "origin", "HEAD:main");
+    },
+    linkFromOtherClone: async (link, linkTarget, message) => {
+      const other = await mkdtemp(path.join(root, "other-"));
+      await git(root, "clone", dir, other);
+      await mkdir(path.dirname(path.join(other, link)), { recursive: true });
+      await symlink(linkTarget, path.join(other, link));
+      await git(other, "add", link);
       await git(other, "commit", "-m", message);
       await git(other, "push", "origin", "HEAD:main");
     },

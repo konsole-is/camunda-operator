@@ -1,6 +1,6 @@
 import "server-only";
 import fs from "node:fs";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import git, { type HttpClient } from "isomorphic-git";
@@ -92,7 +92,8 @@ type Remote = {
  * or was deleted in the cluster (Stale), or the dry run against the
  * cluster fails. The dry run skips an ExternalSecret and an object in a
  * namespace that the same change creates; the preview shows them as
- * rendered. A delete of an object without a file is Invalid.
+ * rendered. A delete of an object without a file, and a file behind a
+ * symbolic link of the repository, are Invalid.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
@@ -110,17 +111,26 @@ export function gitWriter(options: GitWriterOptions): Writer {
     const refusals = refsOf(change).flatMap(gitRefusalOf);
     if (refusals.length > 0) return { objects: [], errors: refusals };
     const skipped = await notDryRun(change);
-    const checked = {
+    const deletes = change.delete ?? [];
+    // force: GitOps applies the objects under its own field manager, so a
+    // dry run without force fails on each field that GitOps set.
+    const checked: Change = {
       ...change,
+      force: true,
       apply: change.apply.filter((o) => !skipped.has(o)),
+      delete: deletes.filter((r) => r.kind !== "ExternalSecret"),
     };
     const result =
-      checked.apply.length + (change.delete?.length ?? 0) > 0
+      checked.apply.length + checked.delete!.length > 0
         ? await direct.preview(checked)
         : { objects: [], errors: [] };
     const shown: PreviewObject[] = [...skipped].map((o) =>
       previewObject(refOf(o), undefined, o),
     );
+    for (const ref of deletes) {
+      if (ref.kind !== "ExternalSecret") continue;
+      shown.push(previewObject(ref, await read(ref), undefined));
+    }
     return { objects: [...result.objects, ...shown], errors: result.errors };
   };
 
@@ -372,10 +382,15 @@ async function writeFiles(
   const revisions: Record<RefKey, string> = {};
   const paths: Record<RefKey, string> = {};
   const files: string[] = [];
+  const errors: ApiError[] = [];
   for (const object of change.apply) {
     const ref = refOf(object);
     const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
     const { text, revision } = renderObject(object);
+    if (await throughLink(dir, file)) {
+      errors.push(linkError(file, ref));
+      continue;
+    }
     await mkdir(path.dirname(path.join(dir, file)), { recursive: true });
     await writeFile(path.join(dir, file), text);
     await git.add({ fs, dir, filepath: file });
@@ -383,9 +398,12 @@ async function writeFiles(
     paths[refKey(ref)] = file;
     files.push(file);
   }
-  const errors: ApiError[] = [];
   for (const ref of change.delete ?? []) {
     const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
+    if (await throughLink(dir, file)) {
+      errors.push(linkError(file, ref));
+      continue;
+    }
     if (!(await exists(path.join(dir, file)))) {
       errors.push({
         code: "Invalid",
@@ -423,6 +441,29 @@ async function blobOf(
   }
 }
 
+// A symbolic link in the repository can point out of the clone, and a
+// write through it would change a file of the app server.
+async function throughLink(dir: string, file: string): Promise<boolean> {
+  let current = dir;
+  for (const segment of file.split("/")) {
+    current = path.join(current, segment);
+    try {
+      if ((await lstat(current)).isSymbolicLink()) return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+function linkError(file: string, ref: ObjectRef): ApiError {
+  return {
+    code: "Invalid",
+    message: `${file} is behind a symbolic link in the repository. The fleet manager does not write through a link.`,
+    ref,
+  };
+}
+
 async function exists(file: string): Promise<boolean> {
   try {
     await stat(file);
@@ -441,7 +482,19 @@ function isRejected(error: unknown): boolean {
 
 function gitRefusalOf(ref: ObjectRef): ApiError[] {
   const refusals = refusalOf(ref);
-  if (refusals.length > 0 || ref.kind !== "Secret") return refusals;
+  if (refusals.length > 0) return refusals;
+  // The name and the namespace are segments of the file path, and the dry
+  // run that would refuse such a name skips some objects.
+  if ([ref.name, ref.namespace].some((part) => /[/\\]/.test(part ?? ""))) {
+    return [
+      {
+        code: "Invalid",
+        message: `The name or the namespace of the ${ref.kind} is not a valid name.`,
+        ref,
+      },
+    ];
+  }
+  if (ref.kind !== "Secret") return refusals;
   return [
     {
       code: "Invalid",
