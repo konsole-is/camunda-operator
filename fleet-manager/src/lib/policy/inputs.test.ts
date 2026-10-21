@@ -55,6 +55,23 @@ describe("missingInputs", () => {
   it("returns nothing for a registration that does not exist", () => {
     expect(missingInputs(es, [es], [])).toEqual([]);
   });
+
+  it("returns only the required inputs of unselected sections, in input order", () => {
+    const registration = structuredClone(esRegistration);
+    registration.spec.inputs = [
+      { name: "b", from: "volume-encryption/key", required: true },
+      { name: "a", from: "backup-storage/config", required: true },
+      { name: "c", from: "dns/zone", required: true },
+    ];
+
+    expect(
+      missingInputs(
+        es,
+        [es, { section: "backup-storage", registration: "s3" }],
+        [registration],
+      ).map((i) => i.name),
+    ).toEqual(["b", "c"]);
+  });
 });
 
 describe("missingInputs with input names of Object", () => {

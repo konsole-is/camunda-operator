@@ -86,19 +86,17 @@ export function missingInputs(
   );
   if (!registration) return [];
 
-  const { values = {}, waiting = [] } = resolveInputs(
-    registration,
-    selections,
-    [],
-  );
   return (registration.spec.inputs ?? [])
-    .filter((input) => input.required && !Object.hasOwn(values, input.name))
+    .filter(
+      (input) =>
+        input.required &&
+        !selections.some((s) => s.section === splitFrom(input.from).section),
+    )
     .map((input) => ({
       name: input.name,
       from: input.from,
       ...splitFrom(input.from),
-    }))
-    .filter((input) => !waiting.includes(input.section));
+    }));
 }
 
 function splitFrom(from: string): { section: string; output: string } {

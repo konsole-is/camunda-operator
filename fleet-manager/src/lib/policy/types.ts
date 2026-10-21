@@ -47,7 +47,7 @@ export type OptionView = {
  * it, and allowed, which lists the choices by name and label. allowed holds
  * no value: the values of the choices stay with the claim controller
  * (contract CL40). A locked parameter has no value: summary says what it
- * holds, for example "3 policies". note is a line under a locked parameter,
+ * holds, for example "3 items". note is a line under a locked parameter,
  * for example the pattern of a hostname.
  */
 export type ParameterRule = EditableParameter | LockedParameter;
