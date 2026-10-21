@@ -9,6 +9,8 @@ export type NamedObject = { metadata?: { namespace?: string; name?: string } };
 
 /** WatchDelta is the data of an SSE frame "delta". */
 export interface WatchDelta<T = NamedObject> {
+  /** watch is the value of the parameter watch that the frame answers. */
+  watch: string;
   type: WatchEventType;
   kind: string;
   object: T;
@@ -16,12 +18,16 @@ export interface WatchDelta<T = NamedObject> {
 
 /** WatchSnapshot is the data of an SSE frame "snapshot": all matching objects at connect time. */
 export interface WatchSnapshot<T = NamedObject> {
+  /** watch is the value of the parameter watch that the frame answers. */
+  watch: string;
   kind: string;
   objects: T[];
 }
 
 /** WatchFailure is the data of an SSE frame "failure": a kind that the server could not read. */
 export interface WatchFailure {
+  /** watch is the value of the parameter watch that the frame answers. */
+  watch: string;
   kind: string;
   message: string;
 }
@@ -61,7 +67,7 @@ export function deltaType(
  */
 export function applyDelta<T extends NamedObject>(
   list: readonly T[],
-  delta: WatchDelta<T>,
+  delta: Omit<WatchDelta<T>, "watch">,
 ): T[] {
   const key = objectKey(delta.object);
   const index = list.findIndex((o) => objectKey(o) === key);

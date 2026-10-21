@@ -49,7 +49,7 @@ The defaults are the values of a released chart.
 | `fleetManager.image.tag` | the chart version | Fleet manager image tag. |
 | `fleetManager.image.pullPolicy` | `IfNotPresent` | Image pull policy of the fleet manager. |
 | `fleetManager.resources` | requests `50m`/`256Mi`, limit memory `512Mi` | Resource requests and limits of the fleet manager. |
-| `fleetManager.settings.*` | `""` | Reserved for the settings of the fleet manager. This release does not read them. |
+| `fleetManager.settings.*` | `""` | Settings of the fleet manager for its first start. See [Fleet manager settings](https://github.com/konsole-is/camunda-operator/blob/main/docs/fleet-manager/settings.md). |
 | `nameOverride` | unset | Replace the chart name in the resource names and in the `app.kubernetes.io/name` label. |
 | `fullnameOverride` | unset | Replace the release and chart name at the start of each resource name. |
 

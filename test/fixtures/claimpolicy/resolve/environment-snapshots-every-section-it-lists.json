@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "name": "The snapshot holds each section of the Environment, also one that the claim does not select",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "sections": {
+          "backup-storage": {
+            "allowed": [
+              "s3"
+            ]
+          },
+          "access": {
+            "required": true,
+            "allowed": [
+              "ingress"
+            ],
+            "default": "ingress"
+          }
+        }
+      }
+    },
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameterValues": {
+            "region": "eu-west-1",
+            "tier": "standard"
+          },
+          "claimEditable": [
+            "tier"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "policy": {
+        "sections": {
+          "access": {
+            "required": true,
+            "default": "ingress",
+            "allowed": [
+              "ingress"
+            ]
+          },
+          "backup-storage": {
+            "allowed": [
+              "s3"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "region": {
+              "value": "eu-west-1"
+            },
+            "tier": {
+              "value": "standard"
+            }
+          }
+        },
+        "deletionPolicy": "Delete"
+      },
+      "requests": [
+        {
+          "section": "backup-storage",
+          "registration": "s3",
+          "parameters": {
+            "region": "eu-west-1",
+            "tier": "standard"
+          }
+        }
+      ]
+    }
+  }
+}

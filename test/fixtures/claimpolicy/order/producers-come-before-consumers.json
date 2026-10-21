@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "name": "A request comes after the requests whose outputs it reads",
+  "input": {
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      },
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      },
+      {
+        "section": "volume-encryption",
+        "registration": "ebs"
+      }
+    ],
+    "registrations": [
+      {
+        "metadata": {
+          "name": "elasticsearch"
+        },
+        "spec": {
+          "sections": [
+            "secondary-storage"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "storageClassName",
+              "from": "volume-encryption/storageClassName"
+            },
+            {
+              "name": "objectStorageConfig",
+              "from": "backup-storage/objectStorageConfig"
+            }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "ebs"
+        },
+        "spec": {
+          "sections": [
+            "volume-encryption"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "kms-bucket"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "keyRef",
+              "from": "encryption-key/keyRef",
+              "required": true
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      },
+      {
+        "section": "volume-encryption",
+        "registration": "ebs"
+      },
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      }
+    ]
+  }
+}

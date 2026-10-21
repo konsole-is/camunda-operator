@@ -56,6 +56,14 @@ jobs:
           make merge-fixtures
           git diff --exit-code -- test/fixtures/merge
 
+      # The result of each case under test/fixtures/claimpolicy is the output
+      # of a function of pkg/claimpolicy. A change to a rule must regenerate
+      # the cases in the same change.
+      - name: Check that the claim policy fixtures are generated
+        run: |
+          make claimpolicy-fixtures
+          git diff --exit-code -- test/fixtures/claimpolicy
+
       # docs/crds/api-reference.md is rendered from the GoDoc in api/. A
       # change to a type must re-render it in the same change.
       - name: Check that the API reference is rendered

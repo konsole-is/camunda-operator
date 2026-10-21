@@ -70,8 +70,8 @@ fleetManager:
       cpu: 50m
       memory: 256Mi
 
-  ## Reserved for the settings of the fleet manager. This release does not
-  ## read them.
+  ## The settings of the fleet manager. It reads them at its first read
+  ## only. Later changes go in the ConfigMap fleet-manager-settings.
   ##
   settings:
     kubernetesClusterName: ""

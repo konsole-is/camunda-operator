@@ -7,4 +7,5 @@ src/lib/__lint_probe__/
 .next-gallery/
 ui-gallery/
 test-results/
+test-reports/
 playwright-report/

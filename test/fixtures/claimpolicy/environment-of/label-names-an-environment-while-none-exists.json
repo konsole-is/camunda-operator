@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "A label is refused also when no Environment exists",
+  "input": {
+    "namespace": {
+      "metadata": {
+        "name": "team-a",
+        "labels": {
+          "fleet.camunda.io/environment": "staging"
+        }
+      }
+    }
+  },
+  "result": {
+    "refusal": {
+      "reason": "UnknownEnvironment",
+      "message": "namespace \"team-a\" has the label fleet.camunda.io/environment=staging, and no Environment \"staging\" exists"
+    }
+  }
+}

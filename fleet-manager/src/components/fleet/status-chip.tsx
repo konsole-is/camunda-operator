@@ -8,19 +8,22 @@ import {
 
 /**
  * StatusChip shows the Ready condition of an object: "Ready", or "Not ready"
- * and "Unknown" with the reason. The message is the hover text. loading wins
- * over condition while the page has no status yet.
+ * and "Unknown" with the reason. readyReason shows the reason of "Ready"
+ * too when it is not Healthy, such as Suspended. The message is the hover
+ * text. loading wins over condition while the page has no status yet.
  */
 export function StatusChip({
   condition,
   loading = false,
+  readyReason = false,
 }: {
   condition?: ConditionLike;
   loading?: boolean;
+  readyReason?: boolean;
 }) {
   const ready = loading
     ? { tone: "muted" as const, label: "Loading", reason: undefined }
-    : describeReady(condition);
+    : describeReady(condition, { trueReason: readyReason });
   return (
     <span
       aria-busy={loading || undefined}

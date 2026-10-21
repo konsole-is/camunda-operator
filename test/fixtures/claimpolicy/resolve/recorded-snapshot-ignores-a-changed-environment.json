@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "name": "A recorded snapshot stays as it is after the Environment changes",
+  "input": {
+    "recorded": {
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3"
+          ],
+          "default": "s3"
+        }
+      },
+      "parameters": {
+        "s3": {
+          "region": {
+            "value": "us-east-1"
+          },
+          "tier": {
+            "value": "standard",
+            "claimEditable": true
+          }
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "sections": {
+          "backup-storage": {
+            "allowed": [
+              "existing-object-storage"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "region": {
+              "value": "eu-central-1"
+            }
+          }
+        },
+        "deletionPolicy": "Orphan"
+      }
+    },
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameterValues": {
+            "region": "eu-west-1",
+            "tier": "standard"
+          },
+          "claimEditable": [
+            "tier"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "policy": {
+        "sections": {
+          "backup-storage": {
+            "default": "s3",
+            "allowed": [
+              "s3"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "region": {
+              "value": "us-east-1"
+            },
+            "tier": {
+              "value": "standard",
+              "claimEditable": true
+            }
+          }
+        },
+        "deletionPolicy": "Delete"
+      },
+      "requests": [
+        {
+          "section": "backup-storage",
+          "registration": "s3",
+          "parameters": {
+            "region": "us-east-1",
+            "tier": "standard"
+          }
+        }
+      ]
+    }
+  }
+}

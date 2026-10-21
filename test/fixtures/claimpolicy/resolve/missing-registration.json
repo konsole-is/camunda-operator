@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "name": "A selection of a registration that does not exist is refused",
+  "input": {
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameterValues": {
+            "region": "eu-west-1",
+            "tier": "standard"
+          },
+          "claimEditable": [
+            "tier"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "gcs"
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "InvalidReference",
+      "message": "PluginRegistration \"gcs\" does not exist"
+    }
+  }
+}

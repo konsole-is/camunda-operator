@@ -8,6 +8,11 @@ on:
       - pkg/images/table.json
       - test/fixtures/merge/**
       - api/fleet/v1alpha1/shared_types.go
+      - test/fixtures/labels/**
+      - api/plugins/v1alpha1/shared_types.go
+      - pkg/labels/labels.go
+      - pkg/components/camundacluster/names.go
+      - internal/pluginstartup/names.go
       - .github/workflows/fleet-manager.yml
       - go.mod
       - go.sum
@@ -20,6 +25,11 @@ on:
       - pkg/images/table.json
       - test/fixtures/merge/**
       - api/fleet/v1alpha1/shared_types.go
+      - test/fixtures/labels/**
+      - api/plugins/v1alpha1/shared_types.go
+      - pkg/labels/labels.go
+      - pkg/components/camundacluster/names.go
+      - internal/pluginstartup/names.go
       - .github/workflows/fleet-manager.yml
       - go.mod
       - go.sum
@@ -58,7 +68,17 @@ jobs:
       - name: Run the fleet manager linters
         run: make fleet-lint
       - name: Run the fleet manager tests
+        id: fleet-test
         run: make fleet-test
+      # Only a failed test run uploads its output. A run that passes, or a job
+      # that fails before this step, uploads nothing.
+      - name: Upload the fleet manager test reports
+        if: ${{ failure() && steps.fleet-test.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: fleet-test-reports
+          path: fleet-manager/test-reports/
+          if-no-files-found: error
       # fleet-gallery runs fleet-build and fleet-playwright first.
       - name: Build the fleet manager and check the UI gallery
         run: make fleet-gallery FLEET_PLAYWRIGHT_FLAGS=--with-deps

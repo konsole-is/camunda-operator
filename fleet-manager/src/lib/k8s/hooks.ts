@@ -2,27 +2,21 @@
 // The client half of the data layer. It imports only types from the server
 // modules of src/lib/k8s, and the isomorphic deltas module.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import {
-  applyDelta,
-  type NamedObject,
-  type WatchDelta,
-  type WatchFailure,
-  type WatchSnapshot,
-} from "./deltas";
+import { useEffect } from "react";
+import type { NamedObject } from "./deltas";
 import type { KindName, Resource } from "./kinds";
 import type { ListOptions } from "./read";
+import {
+  failureKey,
+  sharedWatch,
+  watchKey,
+  type WatchSpec,
+} from "./shared-watch";
 
 /** Ref names one object. namespace is unset for a cluster-scoped kind. */
 export interface Ref {
   namespace?: string;
   name: string;
-}
-
-interface Filter {
-  namespace?: string;
-  labelSelector?: string;
-  name?: string;
 }
 
 /**
@@ -31,8 +25,11 @@ interface Filter {
  * /api/watch: each snapshot frame replaces the list, also after a
  * reconnect, and each delta changes it. When the first list of the kind on
  * the server fails, error holds its message and items keep the last list,
- * which can be out of date, until the next snapshot. The stream closes on
- * unmount. A component that calls it needs a QueryClientProvider above it.
+ * which can be out of date, until the next snapshot. All hooks under one
+ * QueryClientProvider share one connection to /api/watch, and hooks with
+ * the same kind and filter share one entry. The hook leaves the connection
+ * on unmount. A component that calls it needs a QueryClientProvider above
+ * it.
  */
 export function useResources<K extends KindName>(
   kind: K,
@@ -69,74 +66,38 @@ export function useResource<K extends KindName>(
   return error === undefined ? { item } : { item, error };
 }
 
-function queryKey(kind: KindName, filter: Filter) {
-  return [
-    "k8s",
-    kind,
-    filter.namespace ?? "",
-    filter.labelSelector ?? "",
-    filter.name ?? "",
-  ] as const;
-}
-
-function watchURL(kind: KindName, filter: Filter): string {
-  const params = new URLSearchParams({ kind });
-  if (filter.namespace) params.set("namespace", filter.namespace);
-  if (filter.labelSelector) params.set("labelSelector", filter.labelSelector);
-  if (filter.name) params.set("name", filter.name);
-  return `/api/watch?${params}`;
-}
-
 function useWatchedList<K extends KindName>(
   kind: K,
-  filter: Filter,
+  filter: Omit<WatchSpec, "kind">,
   initial: Resource<K>[],
 ): { items: Resource<K>[]; error?: string } {
   const client = useQueryClient();
-  const [failure, setFailure] = useState<{ key: string; message: string }>();
   const { namespace, labelSelector, name } = filter;
-  const key = queryKey(kind, filter);
+  const spec = { kind, namespace, labelSelector, name };
+  // The lists and the failures change only through the shared watch, never
+  // by a refetch.
+  const listKey = watchKey(spec);
   const { data } = useQuery({
-    queryKey: key,
-    // The list changes only through the stream below, never by a refetch.
-    queryFn: () => client.getQueryData<Resource<K>[]>(key) ?? initial,
+    queryKey: listKey,
+    queryFn: () => client.getQueryData<Resource<K>[]>(listKey) ?? initial,
     initialData: initial,
     staleTime: Infinity,
   });
+  const errorKey = failureKey(spec);
+  const { data: failure } = useQuery({
+    queryKey: errorKey,
+    queryFn: () => client.getQueryData<string | null>(errorKey) ?? null,
+    initialData: null,
+    staleTime: Infinity,
+  });
 
-  useEffect(() => {
-    const current = { namespace, labelSelector, name };
-    const effectKey = queryKey(kind, current);
-    const source = new EventSource(watchURL(kind, current));
-    source.addEventListener("snapshot", (event) => {
-      const snapshot = JSON.parse(
-        (event as MessageEvent<string>).data,
-      ) as WatchSnapshot<Resource<K>>;
-      client.setQueryData(effectKey, snapshot.objects);
-      setFailure(undefined);
-    });
-    source.addEventListener("failure", (event) => {
-      const frame = JSON.parse(
-        (event as MessageEvent<string>).data,
-      ) as WatchFailure;
-      setFailure({ key: JSON.stringify(effectKey), message: frame.message });
-    });
-    source.addEventListener("delta", (event) => {
-      const delta = JSON.parse(
-        (event as MessageEvent<string>).data,
-      ) as WatchDelta<NamedObject>;
-      client.setQueryData<Resource<K>[]>(
-        effectKey,
-        (list = []) =>
-          applyDelta(list as NamedObject[], delta) as Resource<K>[],
-      );
-    });
-    return () => source.close();
-  }, [client, kind, namespace, labelSelector, name]);
+  useEffect(
+    () =>
+      sharedWatch(client).subscribe({ kind, namespace, labelSelector, name }),
+    [client, kind, namespace, labelSelector, name],
+  );
 
-  // A change of the kind or the filter drops the failure of the old stream.
-  if (failure && failure.key !== JSON.stringify(key)) setFailure(undefined);
-  const error =
-    failure?.key === JSON.stringify(key) ? failure.message : undefined;
-  return error === undefined ? { items: data } : { items: data, error };
+  return typeof failure === "string"
+    ? { items: data, error: failure }
+    : { items: data };
 }

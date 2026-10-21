@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "name": "A required input whose section has no selection is refused",
+  "input": {
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "kms-bucket"
+      }
+    ],
+    "registrations": [
+      {
+        "metadata": {
+          "name": "elasticsearch"
+        },
+        "spec": {
+          "sections": [
+            "secondary-storage"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "storageClassName",
+              "from": "volume-encryption/storageClassName"
+            },
+            {
+              "name": "objectStorageConfig",
+              "from": "backup-storage/objectStorageConfig"
+            }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "ebs"
+        },
+        "spec": {
+          "sections": [
+            "volume-encryption"
+          ],
+          "mode": "Optional"
+        }
+      },
+      {
+        "metadata": {
+          "name": "kms-bucket"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional",
+          "inputs": [
+            {
+              "name": "keyRef",
+              "from": "encryption-key/keyRef",
+              "required": true
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "MissingInput",
+      "message": "registration \"kms-bucket\" of section \"backup-storage\" needs the input \"keyRef\" from encryption-key/keyRef, and the claim selects nothing in section \"encryption-key\""
+    }
+  }
+}

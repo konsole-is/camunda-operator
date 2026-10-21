@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "name": "A namespace without the label is refused while an Environment exists",
+  "input": {
+    "namespace": {
+      "metadata": {
+        "name": "team-a"
+      }
+    },
+    "environments": [
+      {
+        "metadata": {
+          "name": "dev"
+        },
+        "spec": {}
+      },
+      {
+        "metadata": {
+          "name": "prod"
+        },
+        "spec": {}
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NoEnvironment",
+      "message": "namespace \"team-a\" has no label fleet.camunda.io/environment, and an Environment exists"
+    }
+  }
+}

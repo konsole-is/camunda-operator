@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "name": "parameters of a selection that is not a JSON object is an error",
+  "input": {
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameterValues": {
+            "region": "eu-west-1",
+            "tier": "standard"
+          },
+          "claimEditable": [
+            "tier"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3",
+        "parameters": "glacier"
+      }
+    ]
+  },
+  "result": {
+    "error": "parameters of the selection of section \"backup-storage\": the value is not a JSON object"
+  }
+}

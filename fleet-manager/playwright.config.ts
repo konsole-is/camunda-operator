@@ -45,5 +45,13 @@ export default defineConfig({
       testMatch: "production.spec.ts",
       use: { baseURL: PRODUCTION },
     },
+    // Playwright starts webServer before globalSetup, so a server cannot get
+    // the kubeconfig of an envtest from the global setup. The spec starts
+    // its own envtest and its own server of the gallery build.
+    {
+      name: "watch",
+      testDir: "./e2e/watch",
+      testMatch: "shared-watch.spec.ts",
+    },
   ],
 });

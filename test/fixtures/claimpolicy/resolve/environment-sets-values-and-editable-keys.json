@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "name": "The Environment replaces values and decides the claim-editable keys",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "sections": {
+          "backup-storage": {
+            "allowed": [
+              "s3"
+            ],
+            "default": "s3"
+          }
+        },
+        "parameters": {
+          "s3": {
+            "region": {
+              "value": "us-east-1"
+            },
+            "tier": {
+              "claimEditable": true
+            }
+          }
+        },
+        "deletionPolicy": "Orphan"
+      }
+    },
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameterValues": {
+            "region": "eu-west-1",
+            "tier": "standard"
+          },
+          "claimEditable": [
+            "tier"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Optional"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3",
+        "parameters": {
+          "region": "eu-central-1"
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "policy": {
+        "sections": {
+          "backup-storage": {
+            "default": "s3",
+            "allowed": [
+              "s3"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "region": {
+              "value": "us-east-1"
+            },
+            "tier": {
+              "value": "standard",
+              "claimEditable": true
+            }
+          }
+        },
+        "deletionPolicy": "Orphan"
+      },
+      "requests": [
+        {
+          "section": "backup-storage",
+          "registration": "s3",
+          "parameters": {
+            "region": "us-east-1",
+            "tier": "standard"
+          }
+        }
+      ]
+    }
+  }
+}

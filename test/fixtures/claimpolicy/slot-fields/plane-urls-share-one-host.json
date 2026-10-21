@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "name": "The five URLs of a plane come from one host, and the databases fill their references",
+  "input": {
+    "kind": "CamundaManagementClusterClaim",
+    "sections": [
+      {
+        "metadata": {
+          "name": "cloud-identity"
+        },
+        "spec": {
+          "label": "cloud-identity",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "workloadIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "encryption-key"
+        },
+        "spec": {
+          "label": "encryption-key",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "volume-encryption"
+        },
+        "spec": {
+          "label": "volume-encryption",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "volumeEncryption"
+        }
+      },
+      {
+        "metadata": {
+          "name": "backup-storage"
+        },
+        "spec": {
+          "label": "backup-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "backupStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "secondary-storage"
+        },
+        "spec": {
+          "label": "secondary-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "secondaryStorage"
+        }
+      },
+      {
+        "metadata": {
+          "name": "access"
+        },
+        "spec": {
+          "label": "access",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim",
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "externalAccess"
+        }
+      },
+      {
+        "metadata": {
+          "name": "connectors-permissions"
+        },
+        "spec": {
+          "label": "connectors-permissions",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ],
+          "slot": "connectorsIdentity"
+        }
+      },
+      {
+        "metadata": {
+          "name": "management-database"
+        },
+        "spec": {
+          "label": "management-database",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaManagementClusterClaim"
+          ],
+          "slot": "managementDatabases"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "access",
+        "registration": "ingress"
+      },
+      {
+        "section": "management-database",
+        "registration": "management-database-server"
+      }
+    ],
+    "requests": [
+      {
+        "metadata": {
+          "name": "plane-access",
+          "generation": 3
+        },
+        "spec": {
+          "section": "access",
+          "registration": "ingress"
+        },
+        "status": {
+          "conditions": [
+            {
+              "type": "OutputsReady",
+              "status": "True",
+              "reason": "Written",
+              "message": "",
+              "lastTransitionTime": "2026-10-18T00:00:00Z",
+              "observedGeneration": 3
+            }
+          ],
+          "outputs": {
+            "managementHost": "plane.example.com"
+          }
+        }
+      },
+      {
+        "metadata": {
+          "name": "plane-management-database",
+          "generation": 3
+        },
+        "spec": {
+          "section": "management-database",
+          "registration": "management-database-server"
+        },
+        "status": {
+          "conditions": [
+            {
+              "type": "OutputsReady",
+              "status": "True",
+              "reason": "Written",
+              "message": "",
+              "lastTransitionTime": "2026-10-18T00:00:00Z",
+              "observedGeneration": 3
+            }
+          ],
+          "outputs": {
+            "keycloakDatabaseConfig": "plane-keycloak",
+            "identityDatabaseConfig": "plane-identity",
+            "webModelerDatabaseConfig": "plane-web-modeler"
+          }
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": [
+      {
+        "kind": "CamundaManagementCluster",
+        "path": "spec.console.externalUrl",
+        "section": "access",
+        "value": "https://plane.example.com/console"
+      },
+      {
+        "kind": "CamundaManagementCluster",
+        "path": "spec.identity.databaseConfigRef",
+        "section": "management-database",
+        "value": "plane-identity"
+      },
+      {
+        "kind": "CamundaManagementCluster",
+        "path": "spec.identity.externalUrl",
+        "section": "access",
+        "value": "https://plane.example.com/identity"
+      },
+      {
+        "kind": "CamundaManagementCluster",
+        "path": "spec.identityProvider.keycloak.databaseConfigRef",
+        "section": "management-database",
+        "value": "plane-keycloak"
+      },
+      {
+        "kind": "CamundaManagementCluster",
+        "path": "spec.identityProvider.keycloak.externalUrl",
+        "section": "access",
+        "value": "https://plane.example.com/auth"
+      },
+      {
+        "kind": "CamundaManagementCluster",
+        "path": "spec.webModeler.databaseConfigRef",
+        "section": "management-database",
+        "value": "plane-web-modeler"
+      },
+      {
+        "kind": "CamundaManagementCluster",
+        "path": "spec.webModeler.externalUrl",
+        "section": "access",
+        "value": "https://plane.example.com/modeler"
+      },
+      {
+        "kind": "CamundaManagementCluster",
+        "path": "spec.webModeler.websocketsExternalUrl",
+        "section": "access",
+        "value": "https://plane.example.com/modeler-ws"
+      }
+    ]
+  }
+}

@@ -8,14 +8,15 @@ import https from "node:https";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { KubeConfig } from "@kubernetes/client-node";
 import { parseAllDocuments } from "yaml";
 
-/** CRD_DIR is config/crd/bases of the repository. */
-export const CRD_DIR = fileURLToPath(
-  new URL("../../../config/crd/bases", import.meta.url),
-);
+/**
+ * CRD_DIR is config/crd/bases of the repository. It resolves from the
+ * working directory, which is fleet-manager for Vitest and Playwright.
+ */
+// Playwright compiles this module to CommonJS, which has no import.meta.
+export const CRD_DIR = path.resolve("../config/crd/bases");
 
 export interface EnvtestOptions {
   /** assetsDir holds etcd and kube-apiserver. The default is KUBEBUILDER_ASSETS. */

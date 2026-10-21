@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "name": "An empty label counts as no label",
+  "input": {
+    "namespace": {
+      "metadata": {
+        "name": "team-a",
+        "labels": {
+          "fleet.camunda.io/environment": ""
+        }
+      }
+    },
+    "environments": [
+      {
+        "metadata": {
+          "name": "dev"
+        },
+        "spec": {}
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NoEnvironment",
+      "message": "namespace \"team-a\" has no label fleet.camunda.io/environment, and an Environment exists"
+    }
+  }
+}

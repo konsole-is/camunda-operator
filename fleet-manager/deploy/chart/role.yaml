@@ -15,5 +15,5 @@ rules:
   - apiGroups: [""]
     resources: [configmaps]
     resourceNames: [fleet-manager-settings]
-    verbs: [get, update]
+    verbs: [get, update, patch]
 {{- end }}
