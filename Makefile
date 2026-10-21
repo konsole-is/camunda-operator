@@ -722,6 +722,22 @@ fleet-gallery: fleet-build fleet-playwright setup-envtest ## Screenshot each fle
 	$(FLEET_PNPM) run build:gallery
 	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run gallery
 
+# The kind cluster of the fleet manager journeys. The harness targets run in
+# CI only: they create and fill a kind cluster.
+FLEET_HARNESS_CLUSTER ?= fleet-harness
+
+.PHONY: fleet-harness-up
+fleet-harness-up: ## Create the kind cluster of the fleet manager journeys and install the operator, the app, the fake plugin, and the Git server. CI only.
+	KIND_CLUSTER=$(FLEET_HARNESS_CLUSTER) $(FLEET_DIR)/e2e/harness/up.sh
+
+.PHONY: fleet-harness-check
+fleet-harness-check: ## Check the fake plugin outputs, the Git apply loop, and the CA trust of the app on the harness cluster.
+	$(FLEET_DIR)/e2e/harness/check.sh
+
+.PHONY: fleet-journeys
+fleet-journeys: fleet-playwright ## Run the fleet manager journeys on the harness cluster and write fleet-manager/ui-journeys.
+	$(FLEET_DIR)/e2e/harness/journeys.sh "$(FLEET_PNPM_BIN)" exec playwright test -c playwright.journeys.config.ts
+
 .PHONY: docker-build-fleet
 docker-build-fleet: ## Build the fleet manager image.
 	$(CONTAINER_TOOL) build -t ${FLEET_IMG} -f $(FLEET_DIR)/Dockerfile .

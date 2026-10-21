@@ -1,0 +1,99 @@
+# The fake plugin of the harness and its rights. It serves the registration
+# fleet-harness with the sections access and backup-storage. up.sh replaces
+# __FAKEPLUGIN_IMAGE__ and __ACCESS_EXTERNAL_URL__.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fakeplugin
+  namespace: fleet-harness
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fleet-harness-fakeplugin
+rules:
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginregistrations]
+    verbs: [get, list, watch, create, patch, update]
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginregistrations/status]
+    verbs: [get, update, patch]
+  # The right to serve the registration (contract CL20).
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginregistrations]
+    resourceNames: [fleet-harness]
+    verbs: [serve]
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginrequests]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginrequests/status]
+    verbs: [get, update, patch]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fleet-harness-fakeplugin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fleet-harness-fakeplugin
+subjects:
+  - kind: ServiceAccount
+    name: fakeplugin
+    namespace: fleet-harness
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fakeplugin
+  namespace: fleet-harness
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fakeplugin
+  template:
+    metadata:
+      labels:
+        app: fakeplugin
+    spec:
+      serviceAccountName: fakeplugin
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: fakeplugin
+          image: __FAKEPLUGIN_IMAGE__
+          imagePullPolicy: IfNotPresent
+          args:
+            - --registration=fleet-harness
+            - --service-account-namespace=fleet-harness
+            - --service-account-name=fakeplugin
+            - --access-external-url=__ACCESS_EXTERNAL_URL__
+            - --backup-object-storage-config=fleet-harness-backups
+          ports:
+            - name: probes
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: probes
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
