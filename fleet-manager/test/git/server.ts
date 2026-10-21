@@ -112,7 +112,9 @@ export async function serveBareRepository(
       await git(other, "push", "origin", "HEAD:main");
     },
     log: async () =>
-      (await git(dir, "log", "--format=%s", "main")).split("\n").filter(Boolean),
+      (await git(dir, "log", "--format=%s", "main"))
+        .split("\n")
+        .filter(Boolean),
     show: async (file) => {
       try {
         return await git(dir, "show", `main:${file}`);

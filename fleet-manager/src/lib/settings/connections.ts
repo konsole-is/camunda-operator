@@ -192,10 +192,13 @@ async function readCredentials(secret: string): Promise<Credentials> {
   return { ok: true, values };
 }
 
-// A library message can quote the answer of the server, and the answer can
-// hold the credentials. So a message names only an error code, an HTTP
-// status, or a timeout, never the text of the error.
-function reasonOf(error: unknown): string {
+/**
+ * reasonOf returns why a connection failed: an error code, an HTTP status,
+ * or a timeout. It never returns the text of the error, because a library
+ * message can quote the answer of the server, and the answer can hold the
+ * credentials.
+ */
+export function reasonOf(error: unknown): string {
   if (error instanceof KubernetesRequestError) {
     return `the API server answered HTTP ${error.statusCode}`;
   }

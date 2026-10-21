@@ -95,9 +95,7 @@ describe("renderObject", () => {
       kind: claim.kind,
       apiVersion: claim.apiVersion,
     };
-    expect(renderObject(reordered).revision).toBe(
-      renderObject(claim).revision,
-    );
+    expect(renderObject(reordered).revision).toBe(renderObject(claim).revision);
   });
 
   it("gives another revision when the content changes", () => {

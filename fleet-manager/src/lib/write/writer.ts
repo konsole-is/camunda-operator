@@ -144,8 +144,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       timeoutMs: WRITE_TIMEOUT_MS,
     });
 
-  const read = (path: string): Promise<KubeObject | undefined> =>
-    unlessNotFound(send<KubeObject>("GET", path));
+  const read = (ref: ObjectRef) => readObject(kc, ref);
 
   const applyObject = (
     object: KubeObject,
@@ -200,7 +199,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       const ref = refOf(object);
       const resourceVersion = change.preconditions?.[refKey(ref)];
       try {
-        const before = await read(pathOf(ref));
+        const before = await read(ref);
         // The API server creates a missing object even when the applied
         // object carries a resourceVersion.
         if (before === undefined && resourceVersion !== undefined) {
@@ -224,7 +223,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     for (const ref of change.delete ?? []) {
       const resourceVersion = change.preconditions?.[refKey(ref)];
       try {
-        const before = await read(pathOf(ref));
+        const before = await read(ref);
         if (before === undefined) continue;
         await deleteObject(ref, { resourceVersion }, true);
         objects.push(previewObject(ref, before, undefined));
@@ -297,7 +296,25 @@ export async function getWriter(): Promise<Writer> {
   return directWriter();
 }
 
-function kindInfoOf(kind: string): KindInfo | undefined {
+/**
+ * readObject returns the object of ref from the API server of kc, or
+ * undefined when it does not exist. ref must pass refusalOf.
+ */
+export function readObject(
+  kc: KubeConfig,
+  ref: ObjectRef,
+): Promise<KubeObject | undefined> {
+  return unlessNotFound(
+    requestJSON<KubeObject>(kc, {
+      method: "GET",
+      path: pathOf(ref),
+      timeoutMs: WRITE_TIMEOUT_MS,
+    }),
+  );
+}
+
+/** kindInfoOf returns the kind of KindMap or WriteOnlyKindMap, or undefined for any other kind. */
+export function kindInfoOf(kind: string): KindInfo | undefined {
   if (isKindName(kind)) return KindMap[kind];
   return Object.hasOwn(WriteOnlyKindMap, kind)
     ? WriteOnlyKindMap[kind as keyof typeof WriteOnlyKindMap]
@@ -309,11 +326,18 @@ function pathOf(ref: ObjectRef): string {
   return objectPath(kindInfoOf(ref.kind)!, ref.namespace, ref.name);
 }
 
-function refsOf(change: Change): ObjectRef[] {
+/** refsOf returns the refs of the objects that change applies, then of those it deletes. */
+export function refsOf(change: Change): ObjectRef[] {
   return [...change.apply.map(refOf), ...(change.delete ?? [])];
 }
 
-function refusalOf(ref: ObjectRef): ApiError[] {
+/**
+ * refusalOf returns one Invalid error when the fleet manager does not write
+ * ref: a kind outside KindMap and WriteOnlyKindMap, another apiVersion, a
+ * name that is not a valid name, or a namespace that does not match the
+ * scope of the kind. It returns none for a ref that it accepts.
+ */
+export function refusalOf(ref: ObjectRef): ApiError[] {
   const info = kindInfoOf(ref.kind);
   if (info === undefined || ref.apiVersion !== apiVersionOf(info)) {
     return [
@@ -351,7 +375,11 @@ function refusalOf(ref: ObjectRef): ApiError[] {
   return [];
 }
 
-function previewObject(
+/**
+ * previewObject returns the preview of ref from before and after, without
+ * server fields. A Secret shows "(hidden)" or "(changed)" for each value.
+ */
+export function previewObject(
   ref: ObjectRef,
   before: KubeObject | undefined,
   after: KubeObject | undefined,
