@@ -82,7 +82,8 @@ export type GitSync = "waiting" | "applied";
  * fails. It needs a QueryClientProvider above it, as useResource does.
  */
 export function useGitSync(ref: GitSyncRef, revision: string): GitSync {
-  const { item } = useResource(ref.kind, ref);
+  const { item, error } = useResource(ref.kind, ref);
+  if (error !== undefined) return "waiting";
   const annotations = (
     item as { metadata?: { annotations?: Record<string, string> } } | undefined
   )?.metadata?.annotations;

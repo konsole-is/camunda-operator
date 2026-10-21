@@ -450,4 +450,20 @@ describe("useGitSync", () => {
     await flush();
     expect(result.current).toBe("waiting");
   });
+
+  it("is waiting while the watch fails, also when the cached object carries the revision", async () => {
+    const { result } = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    const s = await source();
+    const watch = s.ids()[0];
+    s.emit("snapshot", {
+      watch,
+      kind: "CamundaClusterClaim",
+      objects: [claim("abc")],
+    });
+    await waitFor(() => expect(result.current).toBe("applied"));
+
+    s.emit("failure", { watch, kind: "CamundaClusterClaim", message: "lost" });
+
+    await waitFor(() => expect(result.current).toBe("waiting"));
+  });
 });
