@@ -63,6 +63,11 @@ describe("loadClusterPage", () => {
       "SecondaryStorageConfig",
       "LogicalBackupRDBMS",
       "PointInTimeRestore",
+      "ObjectStorageConfig",
+      "DatabaseConfig",
+      "DatabaseServerConfig",
+      "DatabaseServer",
+      "BackupSchedule",
     ]) {
       expect(listOf(kind)).toEqual({ namespace: "team-a" });
     }
@@ -100,5 +105,13 @@ describe("loadClusterPage", () => {
     const data = await loadClusterPage("team-a", "orders");
     expect(data?.cluster.metadata?.name).toBe("orders");
     expect(data?.backups.rdbms).toEqual([]);
+  });
+
+  it("gives an empty list of schedules when their read fails", async () => {
+    named("orders");
+    k8s.failing = "BackupSchedule";
+    const data = await loadClusterPage("team-a", "orders");
+    expect(data?.cluster.metadata?.name).toBe("orders");
+    expect(data?.backupStorage.schedules).toEqual([]);
   });
 });

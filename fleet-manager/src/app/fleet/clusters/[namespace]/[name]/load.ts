@@ -33,6 +33,11 @@ export async function loadClusterPage(
     restoresES,
     restoresRDBMS,
     restoresPITR,
+    objectStorage,
+    databaseConfigs,
+    databaseServerConfigs,
+    databaseServers,
+    schedules,
   ] = await Promise.all([
     get("Namespace", undefined, namespace).catch(() => undefined),
     listOrEmpty("Environment", {}),
@@ -50,6 +55,11 @@ export async function loadClusterPage(
     listOrEmpty("LogicalRestoreElasticsearch", inNamespace),
     listOrEmpty("LogicalRestoreRDBMS", inNamespace),
     listOrEmpty("PointInTimeRestore", inNamespace),
+    listOrEmpty("ObjectStorageConfig", inNamespace),
+    listOrEmpty("DatabaseConfig", inNamespace),
+    listOrEmpty("DatabaseServerConfig", inNamespace),
+    listOrEmpty("DatabaseServer", inNamespace),
+    listOrEmpty("BackupSchedule", inNamespace),
   ]);
   return {
     cluster,
@@ -67,6 +77,13 @@ export async function loadClusterPage(
       elasticsearch: restoresES,
       rdbms: restoresRDBMS,
       pointInTime: restoresPITR,
+    },
+    backupStorage: {
+      objectStorage,
+      databaseConfigs,
+      databaseServerConfigs,
+      databaseServers,
+      schedules,
     },
   };
 }
