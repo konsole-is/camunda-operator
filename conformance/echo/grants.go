@@ -18,6 +18,8 @@ package echo
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -31,7 +33,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// grants returns one Grant <request>-<template> for each grant template of
+// grants returns one Grant for each grant template of
 // the options whose required inputs all have a value in req.
 func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest) ([]*pluginsv1alpha1.Grant, error) {
 	parameters := map[string]any{}
@@ -72,7 +74,7 @@ func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest) ([]*pluginsv1alp
 		grant := &pluginsv1alpha1.Grant{
 			TypeMeta: metav1.TypeMeta{APIVersion: pluginsv1alpha1.GroupVersion.String(), Kind: "Grant"},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      req.Name + "-" + tmpl.Name,
+				Name:      grantName(req.Name, tmpl.Name),
 				Namespace: req.Namespace,
 				Labels: map[string]string{
 					pluginsv1alpha1.LabelRegistration: c.opts.Registration,
@@ -92,6 +94,20 @@ func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest) ([]*pluginsv1alp
 	}
 
 	return grants, nil
+}
+
+// grantName is the name of the Grant of request for the grant template tmpl.
+// It has at most 63 characters, the limit of the Grant CRD, and two pairs of
+// request and template get two names.
+func grantName(request, tmpl string) string {
+	name := request + "-" + tmpl
+	if len(name) > 54 {
+		name = strings.TrimRight(name[:54], "-")
+	}
+
+	sum := sha256.Sum256([]byte(request + "/" + tmpl))
+
+	return name + "-" + hex.EncodeToString(sum[:4])
 }
 
 // renderFragment executes each string value of the JSON document raw, at any

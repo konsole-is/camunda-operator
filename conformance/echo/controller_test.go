@@ -193,7 +193,7 @@ func TestResourcesListEachGrant(t *testing.T) {
 
 	assert.Contains(t, rows, pluginsv1alpha1.ResourceRef{
 		Kind:     "Grant",
-		Name:     requestName + "-read",
+		Name:     grantName(requestName, "read"),
 		Role:     "grant",
 		OnOrphan: pluginsv1alpha1.OnOrphanKept,
 	})

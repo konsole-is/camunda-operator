@@ -293,6 +293,19 @@ func TestGrantMatchProblems(t *testing.T) {
 	}
 }
 
+func TestUndeclaredTemplateProblems(t *testing.T) {
+	undeclared := goodGrant()
+	undeclared.Name = "r-extra"
+	undeclared.Spec.Template = "extra"
+
+	got := undeclaredTemplateProblems(
+		[]pluginsv1alpha1.Grant{goodGrant(), undeclared},
+		[]pluginsv1alpha1.GrantTemplate{grantTemplate(`{}`)},
+	)
+
+	assert.Equal(t, []string{"Grant r-extra names the template extra, which the registration does not declare"}, got)
+}
+
 func TestGrantChecksSkipARegistrationWithoutGrantTemplates(t *testing.T) {
 	reg := validRegistration()
 	reg.Spec.GrantTemplates = nil

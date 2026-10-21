@@ -129,8 +129,46 @@ func checkGrantMatch(ctx context.Context, s *suite) error {
 			}))
 		}
 
+		if err := waitForOutputsReady(ctx, s, r.name, life.createdAt[r.name], true); err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+
+		req, err := s.request(ctx, r.name)
+		if err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+
+		grants, err := s.requestGrants(ctx, req)
+		if err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+		errs = append(errs, problemsError(undeclaredTemplateProblems(grants, reg.Spec.GrantTemplates)))
+
 		return errors.Join(errs...)
 	})
+}
+
+// undeclaredTemplateProblems names each of grants whose template the
+// registration does not declare in templates.
+func undeclaredTemplateProblems(
+	grants []pluginsv1alpha1.Grant,
+	templates []pluginsv1alpha1.GrantTemplate,
+) []string {
+	var problems []string
+	for _, g := range grants {
+		declared := slices.ContainsFunc(templates, func(t pluginsv1alpha1.GrantTemplate) bool {
+			return t.Name == g.Spec.Template
+		})
+		if !declared {
+			problems = append(problems, fmt.Sprintf(
+				"Grant %s names the template %s, which the registration does not declare",
+				g.Name,
+				g.Spec.Template,
+			))
+		}
+	}
+
+	return problems
 }
 
 // missingInputs returns each of required that inputs leaves empty or does
@@ -239,13 +277,26 @@ func templateParameters(schema *apiextensionsv1.JSON) ([]string, error) {
 	return names, nil
 }
 
-// grantsOf returns the Grants in the namespace of req that carry its request
-// label and name template, sorted by name. It does not check their other
-// labels or their owner.
+// grantsOf returns the Grants of requestGrants that name template.
 func (s *suite) grantsOf(
 	ctx context.Context,
 	req *pluginsv1alpha1.PluginRequest,
 	template string,
+) ([]pluginsv1alpha1.Grant, error) {
+	grants, err := s.requestGrants(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(grants, func(g pluginsv1alpha1.Grant) bool { return g.Spec.Template != template }), nil
+}
+
+// requestGrants returns the Grants in the namespace of req that carry its
+// request label, sorted by name. It does not check their other labels or
+// their owner.
+func (s *suite) requestGrants(
+	ctx context.Context,
+	req *pluginsv1alpha1.PluginRequest,
 ) ([]pluginsv1alpha1.Grant, error) {
 	var list pluginsv1alpha1.GrantList
 	err := s.client.List(
@@ -258,10 +309,9 @@ func (s *suite) grantsOf(
 		return nil, fmt.Errorf("listing the Grants of the request: %w", err)
 	}
 
-	grants := slices.DeleteFunc(list.Items, func(g pluginsv1alpha1.Grant) bool { return g.Spec.Template != template })
-	slices.SortFunc(grants, func(a, b pluginsv1alpha1.Grant) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(list.Items, func(a, b pluginsv1alpha1.Grant) int { return strings.Compare(a.Name, b.Name) })
 
-	return grants, nil
+	return list.Items, nil
 }
 
 // grantMatchProblems names each way in which grants, the Grants of req for
@@ -507,7 +557,9 @@ func checkGrantAdmission(ctx context.Context, s *suite) error {
 
 	user := serviceAccountUser(sa)
 	impersonated := rest.CopyConfig(s.restConfig)
-	impersonated.Impersonate.UserName = user
+	// Each other impersonation attribute of the run would add to the rights
+	// that serveReview checked.
+	impersonated.Impersonate = rest.ImpersonationConfig{UserName: user}
 	c, err := client.New(impersonated, client.Options{Scheme: s.client.Scheme(), Mapper: s.client.RESTMapper()})
 	if err != nil {
 		return fmt.Errorf("connecting as %s: %w", user, err)

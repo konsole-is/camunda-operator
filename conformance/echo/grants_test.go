@@ -17,6 +17,8 @@ limitations under the License.
 package echo
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -80,7 +82,7 @@ func TestGrantsRenderEachTemplateWithTheRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
 	g := grants[0]
-	assert.Equal(t, requestName+"-read", g.Name)
+	assert.Equal(t, grantName(requestName, "read"), g.Name)
 	assert.Equal(t, "ns", g.Namespace)
 	wantLabels := map[string]string{
 		pluginsv1alpha1.LabelRegistration: validOptions().Registration,
@@ -141,4 +143,20 @@ func TestRenderFragmentNamesAMissingValue(t *testing.T) {
 	_, err := renderFragment([]byte(`{"a":"{{ .outputs.nope }}"}`), map[string]any{"outputs": map[string]string{}})
 
 	assert.ErrorContains(t, err, "nope")
+}
+
+func TestGrantNameHasAtMost63CharactersAndKeepsPairsApart(t *testing.T) {
+	long := strings.Repeat("a", 63)
+	names := []string{
+		grantName(long, "read"),
+		grantName(long, "write"),
+		grantName(long+"b", "read"),
+		grantName(requestName, "read"),
+	}
+
+	for _, name := range names {
+		assert.LessOrEqual(t, len(name), 63, name)
+	}
+	assert.Len(t, slices.Compact(slices.Sorted(slices.Values(names))), len(names))
+	assert.True(t, strings.HasPrefix(grantName(requestName, "read"), requestName+"-read-"))
 }
