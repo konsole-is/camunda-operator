@@ -1,4 +1,5 @@
 import type { StatusTone } from "@/components/fleet/status";
+import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import { formatBytes } from "@/components/fleet/units";
 import type { Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
@@ -162,6 +163,236 @@ export function restoreRowsOf(
     ...rows.filter((r) => r.running),
     ...rows.filter((r) => !r.running).slice(0, RECENT_RESTORES),
   ];
+}
+
+/** BucketView is an ObjectStorageConfig by name. location is unset when it is not found. */
+export type BucketView = { name: string; location?: string };
+
+/** ScheduleView is one BackupSchedule of the cluster. */
+export type ScheduleView = {
+  name: string;
+  cron: string;
+  completed?: number;
+  failed?: number;
+  lastBackup?: string;
+};
+
+/**
+ * ArchiveView is the WAL archive of a DatabaseServer that the operator runs.
+ * bucket is unset when the archive is off. window is the restore window of
+ * a point-in-time restore: it is unset without a restore point, and its to
+ * is unset when it ends now.
+ */
+export type ArchiveView = {
+  server: string;
+  state: { tone: StatusTone; label: string; message?: string };
+  bucket?: BucketView;
+  window?: { from: string; to?: string };
+};
+
+/**
+ * DatabaseView is the PostgreSQL server of a cluster. missing names the
+ * first object of the chain from the SecondaryStorageConfig that is not
+ * found, such as "DatabaseConfig orders-db", and then no other field is set.
+ * archive is set only when a DatabaseServer of the operator publishes the
+ * DatabaseServerConfig.
+ */
+export type DatabaseView = {
+  missing?: string;
+  serverConfig?: string;
+  endpoint?: string;
+  pitr?: { enabled: boolean; recovery?: string; retentionDays?: number };
+  archive?: ArchiveView;
+};
+
+/**
+ * BackupStorage is the backup storage of a cluster. It is none when the
+ * cluster has no backupStorageRef, and unknown when its
+ * SecondaryStorageConfig is not found. repository is set only for
+ * elasticsearch, and database only for rdbms.
+ */
+export type BackupStorage =
+  | { kind: "none"; schedules: ScheduleView[] }
+  | {
+      kind: "elasticsearch" | "rdbms" | "unknown";
+      bucket: BucketView;
+      repository?: string;
+      database?: DatabaseView;
+      schedules: ScheduleView[];
+    };
+
+/**
+ * BackupStorageInput holds what backupStorageOf reads. cluster is the live
+ * object and spec its merged spec. The lists hold the objects of the
+ * namespace of the cluster.
+ */
+export type BackupStorageInput = {
+  cluster: Resource<"CamundaCluster">;
+  spec: CamundaClusterSpec;
+  storage: readonly Resource<"SecondaryStorageConfig">[];
+  objectStorage: readonly Resource<"ObjectStorageConfig">[];
+  databaseConfigs: readonly Resource<"DatabaseConfig">[];
+  databaseServerConfigs: readonly Resource<"DatabaseServerConfig">[];
+  databaseServers: readonly Resource<"DatabaseServer">[];
+  schedules: readonly Resource<"BackupSchedule">[];
+};
+
+/**
+ * bucketLocation writes where an ObjectStorageConfig points, as
+ * s3://bucket/path (region r), gs://bucket/path, or
+ * azure://account/container/path.
+ */
+export function bucketLocation(
+  config: Resource<"ObjectStorageConfig">,
+): string {
+  const { s3, gcs, azureBlob } = config.spec;
+  const path = (base: string, basePath?: string) =>
+    basePath ? `${base}/${basePath}` : base;
+  if (config.spec.type === "S3" && s3) {
+    const location = path(`s3://${s3.bucketName}`, s3.basePath);
+    return s3.region ? `${location} (region ${s3.region})` : location;
+  }
+  if (config.spec.type === "GCS" && gcs) {
+    return path(`gs://${gcs.bucketName}`, gcs.basePath);
+  }
+  if (azureBlob) {
+    return path(
+      `azure://${azureBlob.accountName}/${azureBlob.container}`,
+      azureBlob.basePath,
+    );
+  }
+  return config.spec.type;
+}
+
+/**
+ * backupStorageOf follows a cluster to its backup bucket, its snapshot
+ * repository or its PostgreSQL server, and its schedules. A reference to an
+ * object that is not found gives its name without the object, never an
+ * error. The schedules are sorted by name.
+ */
+export function backupStorageOf(input: BackupStorageInput): BackupStorage {
+  const name = input.cluster.metadata?.name;
+  const schedules = input.schedules
+    .filter((s) => s.spec.clusterRef.name === name)
+    .map((s): ScheduleView => ({
+      name: s.metadata?.name ?? "",
+      cron: s.spec.schedule,
+      completed: s.spec.retained?.completed,
+      failed: s.spec.retained?.failed,
+      lastBackup: s.status?.lastBackupName,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const ref = input.spec.backupStorageRef;
+  if (!ref) return { kind: "none", schedules };
+
+  const storage = byName(input.storage, input.spec.storageRef);
+  const bucket = bucketOf(input.objectStorage, ref);
+  switch (storage?.spec.type) {
+    case "elasticsearch":
+      return {
+        kind: "elasticsearch",
+        bucket,
+        repository:
+          input.cluster.status?.management?.backupRepository ||
+          storage.spec.elasticsearch?.snapshotRepository ||
+          undefined,
+        schedules,
+      };
+    case "rdbms":
+      return {
+        kind: "rdbms",
+        bucket,
+        database: databaseOf(input, storage.spec.rdbms?.databaseConfigRef),
+        schedules,
+      };
+    default:
+      return { kind: "unknown", bucket, schedules };
+  }
+}
+
+function databaseOf(
+  input: BackupStorageInput,
+  databaseConfigName: string | undefined,
+): DatabaseView {
+  const databaseConfig = byName(input.databaseConfigs, databaseConfigName);
+  if (!databaseConfig) {
+    return { missing: `DatabaseConfig ${databaseConfigName ?? ""}` };
+  }
+  const serverName = databaseConfig.spec.serverRef;
+  const serverConfig = byName(input.databaseServerConfigs, serverName);
+  if (!serverConfig) return { missing: `DatabaseServerConfig ${serverName}` };
+
+  const { host, port, pitr } = serverConfig.spec;
+  const view: DatabaseView = {
+    serverConfig: serverName,
+    endpoint: `${host}:${port}`,
+    pitr: {
+      enabled: pitr?.enabled ?? false,
+      recovery: pitr?.recovery,
+      retentionDays: pitr?.retentionPeriodDays,
+    },
+  };
+  const server = input.databaseServers.find(
+    (s) => s.spec.databaseServerConfig === serverName,
+  );
+  if (server) view.archive = archiveOf(input, server);
+  return view;
+}
+
+function archiveOf(
+  input: BackupStorageInput,
+  server: Resource<"DatabaseServer">,
+): ArchiveView {
+  const view: ArchiveView = {
+    server: server.metadata?.name ?? "",
+    state: { tone: "muted", label: "Off" },
+  };
+  if (!server.spec.archive) return view;
+
+  const ready = server.status?.conditions?.find(
+    (c) => c.type === "ArchiveReady",
+  );
+  const message = ready?.message || undefined;
+  if (ready?.status === "True") {
+    view.state = { tone: "ok", label: "Archiving" };
+  } else if (ready?.status === "False") {
+    view.state = { tone: "bad", label: ready.reason, message };
+  } else {
+    view.state = { tone: "warn", label: ready?.reason || "Waiting", message };
+  }
+  view.bucket = bucketOf(
+    input.objectStorage,
+    server.spec.archive.objectStorageRef,
+  );
+
+  // A rollback reads only the open record, the one without to
+  // (docs/crds/databaseserver.md "The archive history").
+  const archive = server.status?.archive;
+  const open = archive?.history?.findLast((r) => !r.to);
+  if (open) {
+    const from = [open.from, archive?.reachableFrom]
+      .filter((t): t is string => parse(t) !== undefined)
+      .reduce((a, b) => (parse(b)! > parse(a)! ? b : a));
+    view.window = open.unverifiedFrom
+      ? { from, to: open.unverifiedFrom }
+      : { from };
+  }
+  return view;
+}
+
+function bucketOf(
+  objectStorage: readonly Resource<"ObjectStorageConfig">[],
+  name: string,
+): BucketView {
+  const config = byName(objectStorage, name);
+  return config ? { name, location: bucketLocation(config) } : { name };
+}
+
+function byName<T extends { metadata?: { name?: string } }>(
+  objects: readonly T[],
+  name: string | undefined,
+): T | undefined {
+  return name ? objects.find((o) => o.metadata?.name === name) : undefined;
 }
 
 function detailsOf(backup: BackupObject): Detail[] {

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { Resource } from "@/lib/k8s/kinds";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
 import {
   type BackupObject,
+  type BackupStorageInput,
   type RestoreObject,
   backupRowsOf,
+  backupStorageOf,
+  bucketLocation,
   dateTime,
   duration,
   restoreRowsOf,
@@ -317,5 +320,392 @@ describe("restoreRowsOf", () => {
       { name: "p", phase: "Pending", running: true },
       { name: "f", failureMessage: "The backup is gone" },
     ]);
+  });
+});
+
+function obj<K extends KindName>(
+  kind: K,
+  name: string,
+  spec: object,
+  status?: object,
+): Resource<K> {
+  return {
+    kind,
+    metadata: { namespace: "team-a", name },
+    spec,
+    status,
+  } as unknown as Resource<K>;
+}
+
+function osc(name: string, spec: object) {
+  return obj("ObjectStorageConfig", name, spec);
+}
+
+function schedule(name: string, clusterName: string, status?: object) {
+  return obj(
+    "BackupSchedule",
+    name,
+    {
+      clusterRef: { name: clusterName },
+      schedule: "0 2 * * *",
+      retained: { completed: 7, failed: 3 },
+    },
+    status,
+  );
+}
+
+function input(
+  over: Partial<Omit<BackupStorageInput, "cluster">> & {
+    backupRepository?: string;
+  } = {},
+): BackupStorageInput {
+  const { backupRepository, ...rest } = over;
+  return {
+    cluster: obj(
+      "CamundaCluster",
+      "orders",
+      {},
+      backupRepository ? { management: { backupRepository } } : {},
+    ),
+    spec: {},
+    storage: [],
+    objectStorage: [],
+    databaseConfigs: [],
+    databaseServerConfigs: [],
+    databaseServers: [],
+    schedules: [],
+    ...rest,
+  };
+}
+
+const esStorage = obj("SecondaryStorageConfig", "orders-es", {
+  type: "elasticsearch",
+  elasticsearch: {
+    endpoint: "http://es:9200",
+    snapshotRepository: "from-config",
+  },
+});
+
+const s3Backups = osc("backups", {
+  type: "S3",
+  s3: { bucketName: "acme-backups", basePath: "orders", region: "eu-west-1" },
+});
+
+function rdbmsChain(
+  over: {
+    databaseConfig?: boolean;
+    serverConfig?: boolean;
+    server?: object | false;
+    serverStatus?: object;
+  } = {},
+): BackupStorageInput {
+  return input({
+    spec: { storageRef: "orders-db-storage", backupStorageRef: "backups" },
+    storage: [
+      obj("SecondaryStorageConfig", "orders-db-storage", {
+        type: "rdbms",
+        rdbms: { databaseConfigRef: "orders-db" },
+      }),
+    ],
+    objectStorage: [
+      s3Backups,
+      osc("wal", { type: "GCS", gcs: { bucketName: "acme-wal" } }),
+    ],
+    databaseConfigs:
+      over.databaseConfig === false
+        ? []
+        : [obj("DatabaseConfig", "orders-db", { serverRef: "orders-pg" })],
+    databaseServerConfigs:
+      over.serverConfig === false
+        ? []
+        : [
+            obj("DatabaseServerConfig", "orders-pg", {
+              host: "orders-pg-rw.team-a.svc",
+              port: 5432,
+              pitr: {
+                enabled: true,
+                recovery: "operator",
+                retentionPeriodDays: 30,
+              },
+            }),
+          ],
+    databaseServers:
+      over.server === false
+        ? []
+        : [
+            obj(
+              "DatabaseServer",
+              "orders-pg",
+              over.server ?? {
+                databaseServerConfig: "orders-pg",
+                archive: { objectStorageRef: "wal" },
+              },
+              over.serverStatus ?? {
+                conditions: [
+                  { type: "ArchiveReady", status: "True", reason: "Archiving" },
+                ],
+                archive: {
+                  history: [
+                    {
+                      serverName: "orders-pg",
+                      from: "2026-09-01T00:00:00Z",
+                      to: "2026-09-20T15:20:40Z",
+                    },
+                    { serverName: "orders-pg", from: "2026-09-20T15:20:40Z" },
+                  ],
+                  reachableFrom: "2026-09-25T09:58:00Z",
+                },
+              },
+            ),
+          ],
+  });
+}
+
+describe("backupStorageOf", () => {
+  it("is none without backupStorageRef, and still lists the schedules of the cluster", () => {
+    expect(
+      backupStorageOf(input({ schedules: [schedule("nightly", "orders")] })),
+    ).toEqual({
+      kind: "none",
+      schedules: [
+        { name: "nightly", cron: "0 2 * * *", completed: 7, failed: 3 },
+      ],
+    });
+  });
+
+  it("an Elasticsearch cluster shows the repository of the cluster status and the S3 bucket", () => {
+    expect(
+      backupStorageOf(
+        input({
+          spec: { storageRef: "orders-es", backupStorageRef: "backups" },
+          backupRepository: "camunda-backups",
+          storage: [esStorage],
+          objectStorage: [s3Backups],
+        }),
+      ),
+    ).toEqual({
+      kind: "elasticsearch",
+      repository: "camunda-backups",
+      bucket: {
+        name: "backups",
+        location: "s3://acme-backups/orders (region eu-west-1)",
+      },
+      schedules: [],
+    });
+  });
+
+  it("falls back to the snapshotRepository of the SecondaryStorageConfig", () => {
+    expect(
+      backupStorageOf(
+        input({
+          spec: { storageRef: "orders-es", backupStorageRef: "backups" },
+          storage: [esStorage],
+          objectStorage: [s3Backups],
+        }),
+      ),
+    ).toMatchObject({ kind: "elasticsearch", repository: "from-config" });
+  });
+
+  it("names a missing bucket", () => {
+    const storage = backupStorageOf(
+      input({
+        spec: { storageRef: "orders-es", backupStorageRef: "gone" },
+        storage: [esStorage],
+        objectStorage: [s3Backups],
+      }),
+    );
+    expect(storage.kind !== "none" && storage.bucket).toEqual({ name: "gone" });
+  });
+
+  it("is unknown when the SecondaryStorageConfig is missing", () => {
+    expect(
+      backupStorageOf(
+        input({
+          spec: { storageRef: "gone", backupStorageRef: "backups" },
+          objectStorage: [s3Backups],
+        }),
+      ),
+    ).toEqual({
+      kind: "unknown",
+      bucket: {
+        name: "backups",
+        location: "s3://acme-backups/orders (region eu-west-1)",
+      },
+      schedules: [],
+    });
+  });
+
+  it("a PostgreSQL cluster follows the chain to its server, archive, bucket, and window", () => {
+    expect(backupStorageOf(rdbmsChain())).toMatchObject({
+      kind: "rdbms",
+      database: {
+        serverConfig: "orders-pg",
+        endpoint: "orders-pg-rw.team-a.svc:5432",
+        pitr: { enabled: true, recovery: "operator", retentionDays: 30 },
+        archive: {
+          server: "orders-pg",
+          state: { tone: "ok", label: "Archiving" },
+          bucket: { name: "wal", location: "gs://acme-wal" },
+          window: { from: "2026-09-25T09:58:00Z" },
+        },
+      },
+    });
+  });
+
+  it("starts the window at the open record when it is later than reachableFrom", () => {
+    const storage = backupStorageOf(
+      rdbmsChain({
+        serverStatus: {
+          archive: {
+            history: [
+              { serverName: "orders-pg", from: "2026-10-01T00:00:00Z" },
+            ],
+            reachableFrom: "2026-09-25T09:58:00Z",
+          },
+        },
+      }),
+    );
+    expect(
+      storage.kind === "rdbms" && storage.database?.archive?.window,
+    ).toEqual({ from: "2026-10-01T00:00:00Z" });
+  });
+
+  it("ends the window at unverifiedFrom while uploads fail", () => {
+    const storage = backupStorageOf(
+      rdbmsChain({
+        serverStatus: {
+          conditions: [
+            {
+              type: "ArchiveReady",
+              status: "False",
+              reason: "ArchiveFailing",
+              message: "The upload of WAL failed",
+            },
+          ],
+          archive: {
+            history: [
+              {
+                serverName: "orders-pg",
+                from: "2026-09-20T15:20:40Z",
+                unverifiedFrom: "2026-10-18T10:00:00Z",
+              },
+            ],
+            reachableFrom: "2026-09-25T09:58:00Z",
+          },
+        },
+      }),
+    );
+    expect(storage.kind === "rdbms" && storage.database?.archive).toMatchObject(
+      {
+        state: {
+          tone: "bad",
+          label: "ArchiveFailing",
+          message: "The upload of WAL failed",
+        },
+        window: { from: "2026-09-25T09:58:00Z", to: "2026-10-18T10:00:00Z" },
+      },
+    );
+  });
+
+  it("has no window without an open record", () => {
+    const storage = backupStorageOf(
+      rdbmsChain({
+        serverStatus: {
+          archive: {
+            history: [
+              {
+                serverName: "orders-pg",
+                from: "2026-09-01T00:00:00Z",
+                to: "2026-09-20T00:00:00Z",
+              },
+            ],
+          },
+        },
+      }),
+    );
+    expect(
+      storage.kind === "rdbms" && storage.database?.archive?.window,
+    ).toBeUndefined();
+  });
+
+  it("an archive without ArchiveReady is Waiting", () => {
+    const storage = backupStorageOf(rdbmsChain({ serverStatus: {} }));
+    expect(
+      storage.kind === "rdbms" && storage.database?.archive?.state,
+    ).toEqual({ tone: "warn", label: "Waiting" });
+  });
+
+  it("a server without spec.archive shows the archive as Off and no window", () => {
+    const storage = backupStorageOf(
+      rdbmsChain({
+        server: { databaseServerConfig: "orders-pg" },
+        serverStatus: {},
+      }),
+    );
+    expect(storage.kind === "rdbms" && storage.database?.archive).toEqual({
+      server: "orders-pg",
+      state: { tone: "muted", label: "Off" },
+    });
+  });
+
+  it("an external server shows the pitr of its DatabaseServerConfig and no archive", () => {
+    const storage = backupStorageOf(rdbmsChain({ server: false }));
+    expect(storage.kind === "rdbms" && storage.database).toEqual({
+      serverConfig: "orders-pg",
+      endpoint: "orders-pg-rw.team-a.svc:5432",
+      pitr: { enabled: true, recovery: "operator", retentionDays: 30 },
+    });
+  });
+
+  it.each([
+    ["DatabaseConfig orders-db", rdbmsChain({ databaseConfig: false })],
+    ["DatabaseServerConfig orders-pg", rdbmsChain({ serverConfig: false })],
+  ])(
+    "names the first missing link of the PostgreSQL chain: %s",
+    (missing, data) => {
+      const storage = backupStorageOf(data);
+      expect(storage.kind === "rdbms" && storage.database).toEqual({ missing });
+    },
+  );
+
+  it("lists only the schedules of the cluster, by name", () => {
+    expect(
+      backupStorageOf(
+        input({
+          schedules: [
+            schedule("weekly", "orders", { lastBackupName: "weekly-1" }),
+            schedule("payments-nightly", "payments"),
+            schedule("nightly", "orders"),
+          ],
+        }),
+      ).schedules.map((s) => [s.name, s.lastBackup]),
+    ).toEqual([
+      ["nightly", undefined],
+      ["weekly", "weekly-1"],
+    ]);
+  });
+});
+
+describe("bucketLocation", () => {
+  it.each([
+    [{ type: "S3", s3: { bucketName: "b" } }, "s3://b"],
+    [
+      { type: "S3", s3: { bucketName: "b", basePath: "p", region: "r" } },
+      "s3://b/p (region r)",
+    ],
+    [{ type: "GCS", gcs: { bucketName: "b", basePath: "p" } }, "gs://b/p"],
+    [
+      { type: "AzureBlob", azureBlob: { accountName: "acct", container: "c" } },
+      "azure://acct/c",
+    ],
+    [
+      {
+        type: "AzureBlob",
+        azureBlob: { accountName: "acct", container: "c", basePath: "p" },
+      },
+      "azure://acct/c/p",
+    ],
+  ])("bucketLocation of %j is %s", (spec, want) => {
+    expect(bucketLocation(osc("x", spec))).toBe(want);
   });
 });
