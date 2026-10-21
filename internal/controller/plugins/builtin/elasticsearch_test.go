@@ -193,6 +193,31 @@ func TestElasticsearchRefusesOverridesThatDoNotDecode(t *testing.T) {
 	}
 }
 
+func TestElasticsearchRefusesParameterNamesInAnotherCase(t *testing.T) {
+	schema, err := newParameterSchema(schemaOf(t, pluginstartup.RegistrationElasticsearch))
+	require.NoError(t, err)
+	r := &Reconciler{
+		APIReader: fakeReader(t),
+		schemas:   map[string]*parameterSchema{pluginstartup.RegistrationElasticsearch: schema},
+	}
+	tests := []struct{ params, field string }{
+		{`{"preset":"small","releaseRef":"approved","releaseref":"other"}`, "releaseref"},
+		{`{"preset":"small","releaseRef":"approved","Overrides":{"replicas":0}}`, "Overrides"},
+		{`{"preset":"small","releaseRef":"approved","overrides":{"Replicas":0}}`, "Replicas"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.field, func(t *testing.T) {
+			_, err := r.build(t.Context(), elasticsearchRequest(tt.params, nil), elasticsearch{})
+
+			var failure *conditions.PreCheckFailure
+			require.ErrorAs(t, err, &failure)
+			assert.Equal(t, pluginsv1alpha1.ReasonInvalidParameters, failure.Reason)
+			assert.Contains(t, failure.Message, tt.field)
+		})
+	}
+}
+
 func TestElasticsearchRefusesAnnotationsThatAreNotAnObject(t *testing.T) {
 	for _, value := range []string{`["a"]`, `{"a":1}`, `not json`, `null`, `{"a":null}`} {
 		t.Run(value, func(t *testing.T) {

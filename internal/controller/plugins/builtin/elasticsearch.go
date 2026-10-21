@@ -357,35 +357,50 @@ func elasticsearchClusterName(request *pluginsv1alpha1.PluginRequest) string {
 // A value that does not decode returns a *conditions.PreCheckFailure with
 // reason InvalidParameters, whose message names the field.
 func decodeElasticsearchParameters(parameters *apiextensionsv1.JSON) (elasticsearchParameters, error) {
-	var top struct {
-		Preset     string                     `json:"preset"`
-		ReleaseRef string                     `json:"releaseRef"`
-		Overrides  map[string]json.RawMessage `json:"overrides"`
-	}
+	var top map[string]json.RawMessage
 	if err := decodeStrict(parameters, &top); err != nil {
 		return elasticsearchParameters{}, invalidParameter("spec.parameters", err)
 	}
 
-	p := elasticsearchParameters{Preset: top.Preset, ReleaseRef: top.ReleaseRef}
-	fields := map[string]any{
+	var p elasticsearchParameters
+	var overrides map[string]json.RawMessage
+	if err := decodeFields(top, "spec.parameters.", map[string]any{
+		"preset":     &p.Preset,
+		"releaseRef": &p.ReleaseRef,
+		"overrides":  &overrides,
+	}); err != nil {
+		return elasticsearchParameters{}, err
+	}
+
+	if err := decodeFields(overrides, "spec.parameters.overrides.", map[string]any{
 		"replicas":    &p.Overrides.Replicas,
 		"resources":   &p.Overrides.Resources,
 		"storageSize": &p.Overrides.StorageSize,
 		"scheduling":  &p.Overrides.Scheduling,
 		"podLabels":   &p.Overrides.PodLabels,
-	}
-	for _, key := range slices.Sorted(maps.Keys(top.Overrides)) {
-		field := "spec.parameters.overrides." + key
-		target, ok := fields[key]
-		if !ok {
-			return elasticsearchParameters{}, invalidParameter(field, fmt.Errorf("unknown field %q", key))
-		}
-		if err := decodeStrict(&apiextensionsv1.JSON{Raw: top.Overrides[key]}, target); err != nil {
-			return elasticsearchParameters{}, invalidParameter(field, err)
-		}
+	}); err != nil {
+		return elasticsearchParameters{}, err
 	}
 
 	return p, nil
+}
+
+// decodeFields decodes each value of values into the target of its key in
+// targets, matched by exact name. A key without a target, or a value that
+// does not decode, returns a *conditions.PreCheckFailure that names prefix
+// and the key.
+func decodeFields(values map[string]json.RawMessage, prefix string, targets map[string]any) error {
+	for _, key := range slices.Sorted(maps.Keys(values)) {
+		target, ok := targets[key]
+		if !ok {
+			return invalidParameter(prefix+key, fmt.Errorf("unknown field %q", key))
+		}
+		if err := decodeStrict(&apiextensionsv1.JSON{Raw: values[key]}, target); err != nil {
+			return invalidParameter(prefix+key, err)
+		}
+	}
+
+	return nil
 }
 
 // decodeStrict decodes raw into target and refuses an unknown field. Nil or
