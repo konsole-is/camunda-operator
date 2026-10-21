@@ -60,7 +60,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -18173,13 +18173,13 @@ for.</p>
 <tbody>
 <tr>
 <td><code>observedGeneration</code> <em>integer</em></td>
-<td>ObservedGeneration is the last generation of the registration that the<br />plugin controller processed. Only the plugin controller sets it, so the<br />field is absent until the plugin controller processes the registration.</td>
+<td>ObservedGeneration is the last generation of the registration that the<br />plugin controller processed. Only the plugin controller sets it, so the<br />field is absent until the plugin controller processes the registration.<br />The operator is the plugin controller of the built-in registrations<br />whose requests it serves.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
 <td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta">Condition</a> array</em></td>
-<td>Conditions holds Accepted and Ready. The operator sets Accepted. Its<br />False reasons are SectionMissing, OperatorVersionUnsupported, and<br />DefaultConflict. The plugin controller sets Ready from its health and<br />its credentials. The fleet manager offers the option only when both<br />are True.</td>
+<td>Conditions holds Accepted and Ready. The operator sets Accepted. Its<br />False reasons are SectionMissing, OperatorVersionUnsupported, and<br />DefaultConflict. The plugin controller sets Ready from its health and<br />its credentials. On the built-in registrations whose requests the<br />operator serves, the operator sets Ready. The fleet manager offers the<br />option only when both are True.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
