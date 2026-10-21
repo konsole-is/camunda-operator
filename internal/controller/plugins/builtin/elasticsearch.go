@@ -138,8 +138,8 @@ func (elasticsearch) build(request *pluginsv1alpha1.PluginRequest, live liveObje
 }
 
 // elasticsearchClusterFor returns the ElasticsearchCluster to apply for
-// request. When the asked storage size is smaller than the live one, the
-// cluster keeps the live size, and shrink is the summary item that says so.
+// request. When the asked storage size is smaller than liveStorageSize, the
+// cluster keeps that size, and shrink is the summary item that says so.
 func elasticsearchClusterFor(
 	request *pluginsv1alpha1.PluginRequest,
 	p elasticsearchParameters,
@@ -172,11 +172,11 @@ func elasticsearchClusterFor(
 		cluster.Spec.StorageClassName = &class
 	}
 
-	if current, ok := liveAs[*v1.ElasticsearchCluster](live, kindElasticsearchCluster, name); ok &&
-		cluster.Spec.StorageSize != nil && current.Spec.StorageSize != nil &&
-		cluster.Spec.StorageSize.Cmp(*current.Spec.StorageSize) < 0 {
-		asked, kept := cluster.Spec.StorageSize.String(), current.Spec.StorageSize.String()
-		cluster.Spec.StorageSize = new(current.Spec.StorageSize.DeepCopy())
+	current, _ := liveAs[*v1.ElasticsearchCluster](live, kindElasticsearchCluster, name)
+	if size := liveStorageSize(current); cluster.Spec.StorageSize != nil && size != nil &&
+		cluster.Spec.StorageSize.Cmp(*size) < 0 {
+		asked, kept := cluster.Spec.StorageSize.String(), size.String()
+		cluster.Spec.StorageSize = size
 		shrink = &pluginsv1alpha1.SummaryItem{
 			Label:    "Storage size",
 			Value:    "Storage size " + asked + " is smaller than " + kept + ", kept " + kept,
@@ -192,6 +192,26 @@ func elasticsearchClusterFor(
 	return cluster, shrink, nil
 }
 
+// liveStorageSize returns the larger of spec.storageSize and the largest data
+// volume of cluster, or nil when cluster is nil or has neither.
+func liveStorageSize(cluster *v1.ElasticsearchCluster) *resource.Quantity {
+	if cluster == nil {
+		return nil
+	}
+
+	var size *resource.Quantity
+	if cluster.Spec.StorageSize != nil {
+		size = new(cluster.Spec.StorageSize.DeepCopy())
+	}
+	for _, volume := range cluster.Status.Volumes {
+		if size == nil || volume.Capacity.Cmp(*size) > 0 {
+			size = new(volume.Capacity.DeepCopy())
+		}
+	}
+
+	return size
+}
+
 // serviceAccountFor returns the ServiceAccount block of cluster for inputs.
 // With the bucket input or the annotations input, it pins the name that the
 // cloud identity request trusts, so that a preset cannot move the account
@@ -203,13 +223,24 @@ func serviceAccountFor(cluster *v1.ElasticsearchCluster, inputs map[string]strin
 	}
 
 	account := &v1.ServiceAccountSpec{Name: escomponents.ServiceAccountName(cluster, v1.ElasticsearchClusterSpec{})}
-	if raw != "" {
-		if err := json.Unmarshal([]byte(raw), &account.Annotations); err != nil {
-			return nil, &conditions.PreCheckFailure{
-				Reason:  pluginsv1alpha1.ReasonInvalidParameters,
-				Message: "spec.inputs." + pluginstartup.OutputServiceAccountAnnotations + " is not a JSON object of strings",
-			}
+	if raw == "" {
+		return account, nil
+	}
+
+	var annotations map[string]*string
+	invalid := &conditions.PreCheckFailure{
+		Reason:  pluginsv1alpha1.ReasonInvalidParameters,
+		Message: "spec.inputs." + pluginstartup.OutputServiceAccountAnnotations + " is not a JSON object of strings",
+	}
+	if err := json.Unmarshal([]byte(raw), &annotations); err != nil || annotations == nil {
+		return nil, invalid
+	}
+	account.Annotations = make(map[string]string, len(annotations))
+	for key, value := range annotations {
+		if value == nil {
+			return nil, invalid
 		}
+		account.Annotations[key] = *value
 	}
 
 	return account, nil

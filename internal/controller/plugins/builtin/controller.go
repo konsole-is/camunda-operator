@@ -287,6 +287,11 @@ func (r *Reconciler) finalize(
 		return err
 	}
 
+	// An orphan removes the owner reference that its read finds. A cache that
+	// has not seen the reference yet removes nothing, and the garbage
+	// collector then deletes the object with the request.
+	rec.Client = uncachedReads{Client: rec.Client, reader: r.APIReader}
+
 	c, err := h.cleanup(request, request.Spec.DeletionPolicy, live)
 	if err != nil {
 		return fmt.Errorf("building the cleanup: %w", err)
@@ -316,6 +321,25 @@ func (r *Reconciler) finalize(
 	}
 
 	return nil
+}
+
+// uncachedReads reads through reader and writes through Client.
+type uncachedReads struct {
+	client.Client
+	reader client.Reader
+}
+
+func (u uncachedReads) Get(
+	ctx context.Context,
+	key client.ObjectKey,
+	obj client.Object,
+	opts ...client.GetOption,
+) error {
+	return u.reader.Get(ctx, key, obj, opts...)
+}
+
+func (u uncachedReads) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return u.reader.List(ctx, list, opts...)
 }
 
 // SetupWithManager returns an error that names each handler without a

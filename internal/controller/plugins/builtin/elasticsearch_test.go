@@ -20,12 +20,15 @@ import (
 	"flag"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -117,14 +120,16 @@ func TestElasticsearchNamesTheClusterAfterTheClaim(t *testing.T) {
 
 func TestElasticsearchKeepsTheLiveStorageSize(t *testing.T) {
 	tests := []struct {
-		name, asked, live, wantSize string
-		wantItem                    bool
+		name, asked, live, volume, wantSize string
+		wantItem                            bool
 	}{
-		{"smaller", "20Gi", "50Gi", "50Gi", true},
-		{"larger", "80Gi", "50Gi", "80Gi", false},
-		{"equal", "50Gi", "50Gi", "50Gi", false},
-		{"no live size", "20Gi", "", "20Gi", false},
-		{"no override, live 50Gi", "", "50Gi", "", false},
+		{"smaller", "20Gi", "50Gi", "", "50Gi", true},
+		{"larger", "80Gi", "50Gi", "", "80Gi", false},
+		{"equal", "50Gi", "50Gi", "", "50Gi", false},
+		{"no live size", "20Gi", "", "", "20Gi", false},
+		{"no override, live 50Gi", "", "50Gi", "", "", false},
+		{"smaller than the volume of a preset size", "20Gi", "", "50Gi", "50Gi", true},
+		{"smaller than a volume that grew past the spec", "20Gi", "30Gi", "50Gi", "50Gi", true},
 	}
 
 	for _, tt := range tests {
@@ -136,6 +141,9 @@ func TestElasticsearchKeepsTheLiveStorageSize(t *testing.T) {
 			current := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{Name: "orders-es"}}
 			if tt.live != "" {
 				current.Spec.StorageSize = new(resource.MustParse(tt.live))
+			}
+			if tt.volume != "" {
+				current.Status.Volumes = []v1.VolumeStatus{{Name: "data", Capacity: resource.MustParse(tt.volume)}}
 			}
 			live := liveObjects{{kind: kindElasticsearchCluster, name: "orders-es"}: current}
 
@@ -186,7 +194,7 @@ func TestElasticsearchRefusesOverridesThatDoNotDecode(t *testing.T) {
 }
 
 func TestElasticsearchRefusesAnnotationsThatAreNotAnObject(t *testing.T) {
-	for _, value := range []string{`["a"]`, `{"a":1}`, `not json`} {
+	for _, value := range []string{`["a"]`, `{"a":1}`, `not json`, `null`, `{"a":null}`} {
 		t.Run(value, func(t *testing.T) {
 			request := elasticsearchRequest(`{"preset":"small"}`, map[string]string{"serviceAccountAnnotations": value})
 
@@ -350,6 +358,36 @@ func TestElasticsearchCleanupWaitsOnlyForAnOwnedCluster(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestElasticsearchOrphanReadsTheClusterWithoutTheCache(t *testing.T) {
+	stored := elasticsearchRequest(`{"preset":"small"}`, nil)
+	stored.UID = "request-uid"
+	stored.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+	stored.Finalizers = []string{pluginsv1alpha1.FinalizerCleanup}
+	cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{
+		Name: "orders-es", Namespace: stored.Namespace,
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: pluginsv1alpha1.GroupVersion.String(), Kind: "PluginRequest",
+			Name: stored.Name, UID: stored.UID, Controller: new(true),
+		}},
+	}}
+	apiServer := fakeReader(t, stored, cluster)
+	// The cache has not seen the cluster yet. Writes reach the API server.
+	cached := uncachedReads{Client: apiServer, reader: fakeReader(t)}
+	request := &pluginsv1alpha1.PluginRequest{}
+	require.NoError(t, apiServer.Get(t.Context(), client.ObjectKeyFromObject(stored), request))
+	r := &Reconciler{Client: cached, APIReader: apiServer}
+	rec := component.ReconcileContext{
+		Client: cached, Scheme: apiServer.Scheme(), EventRecorder: events.NewFakeRecorder(10),
+		APIReader: apiServer, Owner: request,
+	}
+
+	require.NoError(t, r.finalize(t.Context(), rec, request, elasticsearch{}))
+
+	var got v1.ElasticsearchCluster
+	require.NoError(t, apiServer.Get(t.Context(), client.ObjectKeyFromObject(cluster), &got))
+	assert.Empty(t, got.OwnerReferences)
 }
 
 // elasticsearchRequest returns an elasticsearch request of the claim orders
