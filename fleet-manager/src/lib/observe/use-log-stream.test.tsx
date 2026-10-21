@@ -123,6 +123,23 @@ describe("useLogStream", () => {
     expect(last().closed).toBe(true);
   });
 
+  it.each([
+    ["no source", undefined],
+    ["another source", { namespace: "n", pod: "q" }],
+  ])("starts empty when it opens a source again after %s", (_, between) => {
+    const { result, rerender } = renderHook(
+      ({ from }: { from: LogSource | undefined }) => useLogStream(from),
+      { initialProps: { from: source as LogSource | undefined } },
+    );
+    last().emit("line", "old");
+    last().emit("end", {});
+
+    rerender({ from: between });
+    rerender({ from: source });
+
+    expect(result.current).toEqual({ lines: [], ended: false });
+  });
+
   it("starts empty with a new connection for a new source", () => {
     const { result, rerender } = renderHook(
       ({ pod }: { pod: string }) => useLogStream({ namespace: "n", pod }),

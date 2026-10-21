@@ -28,17 +28,15 @@ export function useLogStream(
   filter: LogFilter = {},
 ): { lines: LogLine[]; error?: string; ended: boolean } {
   const url = source && logURL(source);
-  const [state, setState] = useState<State>({ lines: [], ended: false });
+  const [state, setState] = useState<State>({ url, lines: [], ended: false });
+  // A new url, also the url of an earlier source, starts with no lines.
+  if (state.url !== url) setState({ url, lines: [], ended: false });
 
   useEffect(() => {
     if (!url) return;
     const events = new EventSource(url);
-    // Each update starts from empty state when an older source wrote it.
     const update = (change: (s: State) => Partial<State>) =>
-      setState((s) => {
-        const current = s.url === url ? s : { url, lines: [], ended: false };
-        return { ...current, ...change(current) };
-      });
+      setState((s) => (s.url === url ? { ...s, ...change(s) } : s));
     const stop = (change: Partial<State>) => {
       events.close();
       update(() => change);
@@ -59,17 +57,16 @@ export function useLogStream(
     return () => events.close();
   }, [url]);
 
-  const current = state.url === url ? state : undefined;
-  const lines = current?.lines;
+  const { lines, ended, error } = state;
   const { level, text, request } = filter;
   const filtered = useMemo(
-    () => filterLines(lines ?? [], { level, text, request }),
+    () => filterLines(lines, { level, text, request }),
     [lines, level, text, request],
   );
   return {
     lines: filtered,
-    ended: current?.ended ?? false,
-    ...(current?.error !== undefined && { error: current.error }),
+    ended,
+    ...(error !== undefined && { error }),
   };
 }
 
