@@ -64,8 +64,9 @@ const registrationField = "pluginrequest.builtin.registration"
 // handler.
 type Reconciler struct {
 	client.Client
-	// APIReader reads the request at the top of each reconcile, and the
-	// remaining objects of a deletion, without the cache.
+	// APIReader reads the request at the top of each reconcile, the backing
+	// objects of the request, and the remaining objects of a deletion,
+	// without the cache.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// Registrations are the built-in registrations. A request is checked
@@ -102,6 +103,8 @@ type Reconciler struct {
 // registration has Ready=True at its current generation. Then the finalizer
 // is added first, the parameters are checked against the schema and the
 // rules of the registration, and the components of the handler converge.
+// The handler gets the backing objects of the request, read without the
+// cache.
 // OutputsReady comes from the outputs component, and Ready from the backing
 // component, or from the outputs when the handler writes nothing. The
 // outputs are published only while OutputsReady is True.
@@ -217,7 +220,34 @@ func (r *Reconciler) build(ctx context.Context, request *pluginsv1alpha1.PluginR
 		return served{}, err
 	}
 
-	return h.build(request)
+	live, err := r.readBacking(ctx, request, h)
+	if err != nil {
+		return served{}, err
+	}
+
+	return h.build(request, live)
+}
+
+// readBacking reads each backing object of request that h names, without
+// the cache. A missing object is absent from the result, not an error.
+func (r *Reconciler) readBacking(
+	ctx context.Context,
+	request *pluginsv1alpha1.PluginRequest,
+	h handler,
+) (liveObjects, error) {
+	live := liveObjects{}
+	for _, ref := range h.backing(request) {
+		key := client.ObjectKeyFromObject(ref.object)
+		if err := r.APIReader.Get(ctx, key, ref.object); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("reading the backing %s %s: %w", ref.kind, key, err)
+		}
+		live[liveKey{kind: ref.kind, name: key.Name}] = ref.object
+	}
+
+	return live, nil
 }
 
 // refuse sets OutputsReady and Ready of request to False with the reason
@@ -251,7 +281,12 @@ func (r *Reconciler) finalize(
 		return nil
 	}
 
-	c, err := h.cleanup(request, request.Spec.DeletionPolicy)
+	live, err := r.readBacking(ctx, request, h)
+	if err != nil {
+		return err
+	}
+
+	c, err := h.cleanup(request, request.Spec.DeletionPolicy, live)
 	if err != nil {
 		return fmt.Errorf("building the cleanup: %w", err)
 	}
