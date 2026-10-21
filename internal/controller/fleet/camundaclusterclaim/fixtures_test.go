@@ -237,12 +237,11 @@ func latest(g Gomega, claim *fleetv1alpha1.CamundaClusterClaim) *fleetv1alpha1.C
 	return &current
 }
 
-// expectCondition polls until the condition of claim has status and reason,
-// and its message matches message.
-func expectCondition(
+// expectFalse polls until the condition of claim is False with reason, and
+// its message matches message.
+func expectFalse(
 	claim *fleetv1alpha1.CamundaClusterClaim,
 	conditionType string,
-	status metav1.ConditionStatus,
 	reason string,
 	message OmegaMatcher,
 ) {
@@ -250,7 +249,7 @@ func expectCondition(
 	Eventually(func(g Gomega) {
 		condition := meta.FindStatusCondition(latest(g, claim).Status.Conditions, conditionType)
 		g.Expect(condition).NotTo(BeNil())
-		g.Expect(condition.Status).To(Equal(status))
+		g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
 		g.Expect(condition.Reason).To(Equal(reason))
 		g.Expect(condition.Message).To(message)
 	}, timeout, interval).Should(Succeed())

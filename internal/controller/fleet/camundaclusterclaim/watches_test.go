@@ -36,10 +36,9 @@ var _ = Describe("CamundaClusterClaim watches", func() {
 		createEnvironment(environment)
 		claim := newClaim(newNamespace(nil))
 		create(claim)
-		expectCondition(
+		expectFalse(
 			claim,
 			v1.ConditionReady,
-			metav1.ConditionFalse,
 			fleetv1alpha1.ReasonNoEnvironment,
 			Not(BeEmpty()),
 		)
@@ -58,7 +57,7 @@ var _ = Describe("CamundaClusterClaim watches", func() {
 		claim := newClaim(newNamespace(nil))
 		claim.Spec.PresetRef = uniqueName("late-preset")
 		create(claim)
-		expectCondition(claim, v1.ConditionReady, metav1.ConditionFalse, v1.ReasonInvalidReference, Not(BeEmpty()))
+		expectFalse(claim, v1.ConditionReady, v1.ReasonInvalidReference, Not(BeEmpty()))
 
 		create(&v1.CamundaClusterPreset{ObjectMeta: metav1.ObjectMeta{Name: claim.Spec.PresetRef}})
 

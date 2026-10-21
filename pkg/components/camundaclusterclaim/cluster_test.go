@@ -51,7 +51,7 @@ func TestClusterCarriesTheSlotFieldsFromTheOutputs(t *testing.T) {
 	)
 	assert.Equal(t, "orders-es", cluster.Spec.StorageRef)
 	assert.Equal(t, "orders-backups", cluster.Spec.BackupStorageRef)
-	assert.Equal(t, ptr.To("orders-encrypted"), cluster.Spec.Zeebe.StorageClassName)
+	assert.Equal(t, new("orders-encrypted"), cluster.Spec.Zeebe.StorageClassName)
 	assert.Equal(t, "https://orders.example.com", cluster.Spec.ExternalURL)
 }
 
@@ -78,7 +78,7 @@ func TestClusterCarriesTheClaimFields(t *testing.T) {
 	assert.Equal(t, "team-a", cluster.Namespace)
 	assert.Equal(t, map[string]string{fleetv1alpha1.LabelClaim: "orders"}, cluster.Labels)
 	assert.Equal(t, ptr.To[int32](3), cluster.Spec.Zeebe.Partitions)
-	assert.Equal(t, ptr.To("orders-encrypted"), cluster.Spec.Zeebe.StorageClassName)
+	assert.Equal(t, new("orders-encrypted"), cluster.Spec.Zeebe.StorageClassName)
 	assert.Equal(t, "small", cluster.Spec.PresetRef)
 	assert.Equal(t, "camunda-8-9", cluster.Spec.ReleaseRef)
 	assert.Equal(t, "default", cluster.Spec.PlatformConfigRef)

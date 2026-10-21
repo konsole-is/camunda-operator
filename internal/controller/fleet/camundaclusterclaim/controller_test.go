@@ -61,10 +61,9 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		)
 		create(claim)
 
-		expectCondition(
+		expectFalse(
 			claim,
 			fleetv1alpha1.ConditionRequestsReady,
-			metav1.ConditionFalse,
 			"Blocked",
 			ContainSubstring("waiting for the outputs of encryption-key"),
 		)
@@ -124,8 +123,8 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionCloudIdentity, registrationIdentity))
 		create(claim)
 
-		expectCondition(
-			claim, v1.ConditionReady, metav1.ConditionFalse, "PrerequisiteNotMet", ContainSubstring("cloud-identity"),
+		expectFalse(
+			claim, v1.ConditionReady, "PrerequisiteNotMet", ContainSubstring("cloud-identity"),
 		)
 		Consistently(func() bool {
 			_, err := clusterOf(claim)
@@ -307,10 +306,9 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		create(foreign)
 		create(claim)
 
-		expectCondition(
+		expectFalse(
 			claim,
 			fleetv1alpha1.ConditionClusterReady,
-			metav1.ConditionFalse,
 			"Blocked",
 			ContainSubstring(owner.Name),
 		)
@@ -342,10 +340,9 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		create(foreign)
 		create(claim)
 
-		expectCondition(
+		expectFalse(
 			claim,
 			fleetv1alpha1.ConditionRequestsReady,
-			metav1.ConditionFalse,
 			"Blocked",
 			ContainSubstring(owner.Name),
 		)
@@ -370,6 +367,6 @@ func controllerReference(owner *corev1.ConfigMap) metav1.OwnerReference {
 		Kind:       "ConfigMap",
 		Name:       owner.Name,
 		UID:        owner.UID,
-		Controller: ptr.To(true),
+		Controller: new(true),
 	}
 }

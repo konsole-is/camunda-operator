@@ -19,7 +19,6 @@ package camundaclusterclaim
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
@@ -35,7 +34,7 @@ var _ = Describe("CamundaClusterClaim precheck", func() {
 			claim := claimOf()
 			create(claim)
 
-			expectCondition(claim, v1.ConditionReady, metav1.ConditionFalse, reason, ContainSubstring(message))
+			expectFalse(claim, v1.ConditionReady, reason, ContainSubstring(message))
 			Consistently(func(g Gomega) {
 				g.Expect(latest(g, claim).Status.ResolvedPolicy).To(BeNil())
 
