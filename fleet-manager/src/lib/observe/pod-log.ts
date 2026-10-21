@@ -74,9 +74,8 @@ export async function followPodLog(
   // broken connection would look like a log that never ends.
   const response = await new Promise<http.IncomingMessage>(
     (resolve, reject) => {
-      const request = transport.request(url, options, resolve);
+      const request = transport.request(url, { ...options, signal }, resolve);
       request.on("error", reject);
-      signal.addEventListener("abort", () => request.destroy(), { once: true });
       request.end();
     },
   );
@@ -94,35 +93,47 @@ export async function followPodLog(
   return lineStream(response);
 }
 
+// The log pauses while QUEUED_LINES lines wait for the reader.
+const QUEUED_LINES = 100;
+
 function lineStream(response: http.IncomingMessage): ReadableStream<string> {
   let carry = "";
   let done = false;
-  return new ReadableStream<string>({
-    start(controller) {
-      response.setEncoding("utf8");
-      response.on("data", (chunk: string) => {
-        const parts = (carry + chunk).split("\n");
-        carry = parts.pop()!;
-        for (const line of parts) controller.enqueue(line.replace(/\r$/, ""));
-      });
-      response.on("end", () => {
+  return new ReadableStream<string>(
+    {
+      start(controller) {
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          const parts = (carry + chunk).split("\n");
+          carry = parts.pop()!;
+          for (const line of parts) {
+            controller.enqueue(line.replace(/\r$/, ""));
+          }
+          if ((controller.desiredSize ?? 0) <= 0) response.pause();
+        });
+        response.on("end", () => {
+          done = true;
+          if (carry) controller.enqueue(carry.replace(/\r$/, ""));
+          controller.close();
+        });
+        // An error always comes with a close, which reports it.
+        response.on("error", () => {});
+        response.on("close", () => {
+          if (done) return;
+          done = true;
+          controller.error(new Error("The log stream broke"));
+        });
+      },
+      pull() {
+        response.resume();
+      },
+      cancel() {
         done = true;
-        if (carry) controller.enqueue(carry.replace(/\r$/, ""));
-        controller.close();
-      });
-      // An error always comes with a close, which reports it.
-      response.on("error", () => {});
-      response.on("close", () => {
-        if (done) return;
-        done = true;
-        controller.error(new Error("The log stream broke"));
-      });
+        response.destroy();
+      },
     },
-    cancel() {
-      done = true;
-      response.destroy();
-    },
-  });
+    new CountQueuingStrategy({ highWaterMark: QUEUED_LINES }),
+  );
 }
 
 async function readText(response: http.IncomingMessage): Promise<string> {

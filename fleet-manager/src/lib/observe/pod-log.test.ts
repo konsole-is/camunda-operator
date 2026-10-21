@@ -58,6 +58,7 @@ beforeEach(() => {
   asked.length = 0;
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   server?.closeAllConnections();
   if (server) await new Promise((resolve) => server!.close(resolve));
   server = undefined;
@@ -180,6 +181,43 @@ describe("followPodLog", () => {
 
     expect(await reader.read()).toEqual({ done: false, value: "a" });
     await expect(reader.read()).rejects.toThrow();
+  });
+
+  it("pauses the log while the reader does not read, and goes on after", async () => {
+    vi.mocked(get).mockResolvedValue(pod("main"));
+    const pause = vi.spyOn(http.IncomingMessage.prototype, "pause");
+    const lines = Array.from({ length: 500 }, (_, i) => `line ${i}`);
+    await serve(async (_req, res) => {
+      res.writeHead(200);
+      res.write(lines.join("\n") + "\n");
+      await tick();
+      await tick();
+      res.end("last");
+    });
+
+    const stream = await followPodLog(
+      { namespace: "n", pod: "p" },
+      new AbortController().signal,
+    );
+    await tick();
+
+    expect(pause).toHaveBeenCalled();
+    expect(await readAll(stream)).toEqual([...lines, "last"]);
+  });
+
+  it("sends no log request when the signal aborted during the pod lookup", async () => {
+    const abort = new AbortController();
+    vi.mocked(get).mockImplementation(async () => {
+      abort.abort();
+      return pod("main");
+    });
+    await serve((_req, res) => res.end());
+
+    await expect(
+      followPodLog({ namespace: "n", pod: "p" }, abort.signal),
+    ).rejects.toThrow();
+    await tick();
+    expect(asked).toEqual([]);
   });
 
   it("stops the log request when the signal aborts", async () => {
