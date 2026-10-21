@@ -52,8 +52,12 @@ func TestAppendValuesAddsTheFleetManagerBlock(t *testing.T) {
 				Tag        string `json:"tag"`
 				PullPolicy string `json:"pullPolicy"`
 			} `json:"image"`
-			Resources map[string]any `json:"resources"`
-			Settings  map[string]any `json:"settings"`
+			Resources    map[string]any `json:"resources"`
+			ExtraCACerts struct {
+				ConfigMapName string `json:"configMapName"`
+				Key           string `json:"key"`
+			} `json:"extraCACerts"`
+			Settings map[string]any `json:"settings"`
 		} `json:"fleetManager"`
 	}
 	require.NoError(t, yaml.Unmarshal([]byte(out), &values))
@@ -64,6 +68,8 @@ func TestAppendValuesAddsTheFleetManagerBlock(t *testing.T) {
 	assert.Equal(t, "0.4.0", values.FleetManager.Image.Tag)
 	assert.Equal(t, "IfNotPresent", values.FleetManager.Image.PullPolicy)
 	assert.NotEmpty(t, values.FleetManager.Resources)
+	assert.Empty(t, values.FleetManager.ExtraCACerts.ConfigMapName, "no extra CA by default")
+	assert.Equal(t, "ca.crt", values.FleetManager.ExtraCACerts.Key)
 	assert.Equal(t, map[string]any{
 		"kubernetesClusterName": "",
 		"git": map[string]any{

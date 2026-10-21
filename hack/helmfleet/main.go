@@ -70,6 +70,18 @@ fleetManager:
       cpu: 50m
       memory: 256Mi
 
+  ## A CA bundle that the fleet manager trusts in addition to the CAs of
+  ## Node.js, for a Git or Prometheus server with a private CA. The ConfigMap
+  ## must be in the release namespace. An empty configMapName adds no CA.
+  ##
+  extraCACerts:
+    ## Name of the ConfigMap with the CA bundle
+    ##
+    configMapName: ""
+    ## Key of the PEM CA bundle in the ConfigMap
+    ##
+    key: ca.crt
+
   ## The settings of the fleet manager. It reads them at its first read
   ## only. Later changes go in the ConfigMap fleet-manager-settings.
   ##

@@ -568,7 +568,8 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		echo "$(HELM_CHART_DIR)/values.schema.json not found; run 'make helm-generate' first." >&2; exit 1; }
 	$(HELM) lint "$(HELM_CHART_DIR)"
 	@# The schema must reject an unknown key and a value of the wrong type.
-	@for opts in "--set prometheus.enabeld=true" "--set prometheus.enabled=yes" "--set fleetManager.enabeld=true"; do \
+	@for opts in "--set prometheus.enabeld=true" "--set prometheus.enabled=yes" "--set fleetManager.enabeld=true" \
+		"--set fleetManager.extraCACerts.configMapname=x" "--set fleetManager.extraCACerts.configMapName=1"; do \
 		err="$$($(HELM) template verify "$(HELM_CHART_DIR)" $$opts 2>&1 >/dev/null || true)"; \
 		case "$$err" in *"meet the specifications of the schema"*) ;; *) \
 			echo "ERROR: the values schema did not reject: helm template $$opts" >&2; exit 1 ;; \
@@ -607,6 +608,18 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		--show-only templates/fleet-manager/deployment.yaml | grep -q 'name: verify-pull' || { \
 		echo "ERROR: the fleet manager Pod does not use manager.imagePullSecrets" >&2; exit 1; }
 	@echo "  the fleet manager Pod uses manager.imagePullSecrets"
+	@out="$$($(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		--set fleetManager.extraCACerts.configMapName=verify-ca --set fleetManager.extraCACerts.key=bundle.pem \
+		--show-only templates/fleet-manager/deployment.yaml)"; \
+	for want in 'name: NODE_EXTRA_CA_CERTS' 'value: /etc/fleet-manager/extra-ca/ca.crt' \
+		'name: "verify-ca"' 'key: "bundle.pem"' 'mountPath: /etc/fleet-manager/extra-ca'; do \
+		printf '%s\n' "$$out" | grep -qF "$$want" || { \
+			echo "ERROR: fleetManager.extraCACerts does not render '$$want'" >&2; exit 1; }; \
+	done
+	@$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		--show-only templates/fleet-manager/deployment.yaml | grep -q NODE_EXTRA_CA_CERTS && { \
+		echo "ERROR: the fleet manager sets NODE_EXTRA_CA_CERTS without extraCACerts" >&2; exit 1; } || true
+	@echo "  fleetManager.extraCACerts mounts the CA and sets NODE_EXTRA_CA_CERTS"
 	@# Measure the release Secret that an install writes, for each set of values.
 	@echo "  release Secret size (limit 1048576 bytes):"
 	@for opts in \
