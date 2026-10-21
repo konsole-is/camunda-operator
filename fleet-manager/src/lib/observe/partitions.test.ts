@@ -133,7 +133,9 @@ describe("partitionHealth", () => {
   it("asks /actuator/partitions on the IP of each broker pod", async () => {
     const seen: http.IncomingMessage[] = [];
     const port = await serve(broker(seen));
-    vi.mocked(list).mockResolvedValue([pod("orders-zeebe-0", "127.0.0.1")] as never);
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
 
     expect(await partitionHealth(cluster(port))).toEqual([
       {
@@ -164,20 +166,29 @@ describe("partitionHealth", () => {
     const result = await partitionHealth(cluster(port));
 
     expect(result).toEqual([
-      expect.objectContaining({ partition: 1, leader: "orders-zeebe-0", followers: [] }),
+      expect.objectContaining({
+        partition: 1,
+        leader: "orders-zeebe-0",
+        followers: [],
+      }),
       expect.objectContaining({ partition: 2, followers: ["orders-zeebe-0"] }),
     ]);
   });
 
   it("counts an answer that is not an object of partitions as no answer", async () => {
     const port = await serve((_req, res) => res.end("[1,2]"));
-    vi.mocked(list).mockResolvedValue([pod("orders-zeebe-0", "127.0.0.1")] as never);
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
 
     expect(await partitionHealth(cluster(port))).toBe("unavailable");
   });
 
   it("returns unavailable when the cluster has no status.management", async () => {
-    const noManagement = { ...cluster(1), status: {} } as Resource<"CamundaCluster">;
+    const noManagement = {
+      ...cluster(1),
+      status: {},
+    } as Resource<"CamundaCluster">;
 
     expect(await partitionHealth(noManagement)).toBe("unavailable");
     expect(list).not.toHaveBeenCalled();
@@ -191,7 +202,9 @@ describe("partitionHealth", () => {
 
   it("returns unavailable when no broker answers", async () => {
     const port = await serve((_req, res) => res.writeHead(503).end());
-    vi.mocked(list).mockResolvedValue([pod("orders-zeebe-0", "127.0.0.1")] as never);
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
 
     expect(await partitionHealth(cluster(port))).toBe("unavailable");
   });
@@ -200,7 +213,9 @@ describe("partitionHealth", () => {
     const port = await serve((_req, res) =>
       res.writeHead(302, { Location: "http://127.0.0.1:1/x" }).end(),
     );
-    vi.mocked(list).mockResolvedValue([pod("orders-zeebe-0", "127.0.0.1")] as never);
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
 
     expect(await partitionHealth(cluster(port))).toBe("unavailable");
   });
@@ -208,11 +223,19 @@ describe("partitionHealth", () => {
   it("sends basic auth from the Secret of the binding", async () => {
     const seen: http.IncomingMessage[] = [];
     const port = await serve(broker(seen));
-    vi.mocked(list).mockResolvedValue([pod("orders-zeebe-0", "127.0.0.1")] as never);
-    vi.mocked(readSecretValues).mockResolvedValue({ username: "u", password: "p" });
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
+    vi.mocked(readSecretValues).mockResolvedValue({
+      username: "u",
+      password: "p",
+    });
 
     const result = await partitionHealth(
-      cluster(port, { method: "basic", credentialsSecretRef: { name: "mgmt" } }),
+      cluster(port, {
+        method: "basic",
+        credentialsSecretRef: { name: "mgmt" },
+      }),
     );
 
     expect(result).not.toBe("unavailable");
@@ -225,13 +248,19 @@ describe("partitionHealth", () => {
   it("reads the keys that the binding names", async () => {
     const seen: http.IncomingMessage[] = [];
     const port = await serve(broker(seen));
-    vi.mocked(list).mockResolvedValue([pod("orders-zeebe-0", "127.0.0.1")] as never);
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
     vi.mocked(readSecretValues).mockResolvedValue({ user: "u", pass: "p" });
 
     await partitionHealth(
       cluster(port, {
         method: "basic",
-        credentialsSecretRef: { name: "mgmt", usernameKey: "user", passwordKey: "pass" },
+        credentialsSecretRef: {
+          name: "mgmt",
+          usernameKey: "user",
+          passwordKey: "pass",
+        },
       }),
     );
 
@@ -246,12 +275,17 @@ describe("partitionHealth", () => {
   ])("returns unavailable when the basic auth Secret %s", async (_, values) => {
     const seen: http.IncomingMessage[] = [];
     const port = await serve(broker(seen));
-    vi.mocked(list).mockResolvedValue([pod("orders-zeebe-0", "127.0.0.1")] as never);
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
     vi.mocked(readSecretValues).mockResolvedValue(values);
 
     expect(
       await partitionHealth(
-        cluster(port, { method: "basic", credentialsSecretRef: { name: "mgmt" } }),
+        cluster(port, {
+          method: "basic",
+          credentialsSecretRef: { name: "mgmt" },
+        }),
       ),
     ).toBe("unavailable");
     expect(seen).toEqual([]);

@@ -36,7 +36,8 @@ describe("parseLogLine", () => {
 
   it.each(["[1,2]", '"text"', "{not json", "null"])(
     "treats %s as a text line",
-    (raw) => expect(parseLogLine(raw)).toEqual({ raw, message: raw, fields: {} }),
+    (raw) =>
+      expect(parseLogLine(raw)).toEqual({ raw, message: raw, fields: {} }),
   );
 
   it("reads the Spring Boot keys of a Camunda JSON line", () =>

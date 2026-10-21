@@ -70,7 +70,11 @@ describe("observe readers against envtest", () => {
       .poll(
         async () =>
           (
-            await events({ kind: "PluginRequest", name: "orders-access", namespace })
+            await events({
+              kind: "PluginRequest",
+              name: "orders-access",
+              namespace,
+            })
           ).map((e) => e.reason),
         { timeout: 10_000 },
       )

@@ -264,6 +264,8 @@ describe("promRange", () => {
       new KubernetesRequestError(403, "forbidden"),
     );
 
-    await expect(promRange("up", range)).rejects.toThrow(KubernetesRequestError);
+    await expect(promRange("up", range)).rejects.toThrow(
+      KubernetesRequestError,
+    );
   });
 });

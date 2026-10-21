@@ -118,11 +118,14 @@ export async function testPrometheus(): Promise<TestResult> {
   if (auth.header) headers.Authorization = auth.header;
   const at = `Prometheus at ${url}`;
   try {
-    const response = await fetch(prometheusURL(url, "/api/v1/query", { query: "vector(1)" }), {
-      headers,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      redirect: "manual",
-    });
+    const response = await fetch(
+      prometheusURL(url, "/api/v1/query", { query: "vector(1)" }),
+      {
+        headers,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        redirect: "manual",
+      },
+    );
     if (response.status === 401 || response.status === 403) {
       return { ok: false, message: `${at} refused the credentials.` };
     }

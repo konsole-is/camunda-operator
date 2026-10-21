@@ -108,10 +108,12 @@ describe("render", () => {
       render("{{ .parameters.size }}/{{ .parameters.on }}", data, "parameter"),
     ).toEqual({ text: "3/true" }));
 
-  it.each(["obj", "none"])("refuses the parameter %s, which is not text", (name) =>
-    expect(render(`{{ .parameters.${name} }}`, data, "parameter")).toMatchObject(
-      { field: `parameters.${name}` },
-    ),
+  it.each(["obj", "none"])(
+    "refuses the parameter %s, which is not text",
+    (name) =>
+      expect(
+        render(`{{ .parameters.${name} }}`, data, "parameter"),
+      ).toMatchObject({ field: `parameters.${name}` }),
   );
 
   it("trims whitespace around {{- and -}} as Go does", () =>
@@ -138,8 +140,9 @@ describe("render", () => {
     expect(render("", data, "grant")).toEqual({ text: "" }));
 
   it("refuses .pods in a metric query when the data has no pods", () =>
-    expect(render("{{ .pods }}", { ...data, pods: undefined }, "metric"))
-      .toMatchObject({ field: "pods" }));
+    expect(
+      render("{{ .pods }}", { ...data, pods: undefined }, "metric"),
+    ).toMatchObject({ field: "pods" }));
 });
 
 describe("parseTemplate", () => {

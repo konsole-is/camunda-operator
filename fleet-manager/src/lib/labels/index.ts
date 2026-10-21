@@ -69,7 +69,9 @@ export type LabelSelector = {
  * empty one give "", which selects every object. It throws for an operator
  * other than In, NotIn, Exists, and DoesNotExist.
  */
-export function labelSelectorString(selector: LabelSelector | undefined): string {
+export function labelSelectorString(
+  selector: LabelSelector | undefined,
+): string {
   const labels = Object.entries(selector?.matchLabels ?? {})
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([key, value]) => `${key}=${value}`);

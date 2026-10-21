@@ -34,12 +34,7 @@ export type TimeRange = { start: number; end: number; stepSeconds: number };
 
 /** CoreComponent is a value of the label camunda.io/component on the pods of a cluster. */
 export type CoreComponent =
-  | "zeebe"
-  | "gateway"
-  | "operate"
-  | "tasklist"
-  | "admin"
-  | "connectors";
+  "zeebe" | "gateway" | "operate" | "tasklist" | "admin" | "connectors";
 
 /**
  * MetricDef is one chart: a rendered PromQL query. source names where the

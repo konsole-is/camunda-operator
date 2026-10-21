@@ -80,7 +80,10 @@ describe("podUsage", () => {
       },
     ] as never);
 
-    const [pod] = (await podUsage("team-a", "")) as { cpu: object; memory: object }[];
+    const [pod] = (await podUsage("team-a", "")) as {
+      cpu: object;
+      memory: object;
+    }[];
     expect(pod.cpu).toEqual({ usedCores: 0.3, limitCores: 1.5 });
     expect(pod.memory).toEqual({ usedBytes: 80 * MI });
   });

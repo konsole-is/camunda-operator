@@ -100,7 +100,9 @@ export function coreMetricDefs(
   return coreQueries[component].map(({ label, query, unit, source }) => {
     const rendered = render(query, data, "metric");
     if ("error" in rendered) {
-      throw new Error(`The core query ${label} does not render: ${rendered.error}`);
+      throw new Error(
+        `The core query ${label} does not render: ${rendered.error}`,
+      );
     }
     return { label, query: rendered.text, ...(unit && { unit }), source };
   });

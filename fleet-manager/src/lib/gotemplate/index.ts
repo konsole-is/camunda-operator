@@ -97,7 +97,9 @@ export function render(
         field: `parameters.${name}`,
       };
     }
-    if (!["string", "number", "boolean"].includes(typeof data.parameters[name])) {
+    if (
+      !["string", "number", "boolean"].includes(typeof data.parameters[name])
+    ) {
       return {
         error: `parameter "${name}" is not a string, a number, or a boolean`,
         field: `parameters.${name}`,
@@ -160,9 +162,7 @@ function parse(template: string, kind: TemplateKind): Parsed | TemplateError {
       template[close - 1] === "-" &&
       close - 2 >= start &&
       SPACE.includes(template[close - 2]);
-    const action = template
-      .slice(start, trimNext ? close - 1 : close)
-      .trim();
+    const action = template.slice(start, trimNext ? close - 1 : close).trim();
     const checked = checkAction(action, kind);
     if ("error" in checked) return checked;
     addReference(parsed, checked.path);

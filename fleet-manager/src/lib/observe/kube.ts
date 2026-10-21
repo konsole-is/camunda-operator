@@ -23,7 +23,10 @@ type PodMetrics = {
   }[];
 };
 
-type Resources = { requests?: Record<string, string>; limits?: Record<string, string> };
+type Resources = {
+  requests?: Record<string, string>;
+  limits?: Record<string, string>;
+};
 
 /**
  * podUsage returns the live CPU and memory of the pods in namespace that
@@ -71,7 +74,10 @@ export async function podUsage(
     const containers = item.containers ?? [];
     const resources = specs.get(name);
     const used = (key: "cpu" | "memory") =>
-      containers.reduce((sum, c) => sum + parseQuantity(c.usage?.[key] ?? "0"), 0);
+      containers.reduce(
+        (sum, c) => sum + parseQuantity(c.usage?.[key] ?? "0"),
+        0,
+      );
     const cpu = sums(resources, "cpu");
     const memory = sums(resources, "memory");
     return {
@@ -111,12 +117,16 @@ export async function requestPods(
  * the events of an older object of the same name can be left out.
  */
 export async function events(ref: EventRef): Promise<Resource<"Event">[]> {
-  const all = await list("Event", ref.namespace ? { namespace: ref.namespace } : {});
-  return all.filter(({ regarding }) =>
-    regarding?.kind === ref.kind &&
-    regarding.name === ref.name &&
-    (regarding.namespace ?? undefined) === ref.namespace &&
-    (!ref.uid || regarding.uid === ref.uid),
+  const all = await list(
+    "Event",
+    ref.namespace ? { namespace: ref.namespace } : {},
+  );
+  return all.filter(
+    ({ regarding }) =>
+      regarding?.kind === ref.kind &&
+      regarding.name === ref.name &&
+      (regarding.namespace ?? undefined) === ref.namespace &&
+      (!ref.uid || regarding.uid === ref.uid),
   );
 }
 

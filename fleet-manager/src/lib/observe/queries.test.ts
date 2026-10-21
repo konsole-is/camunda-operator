@@ -43,10 +43,10 @@ const request = {
 describe("registrationQueries", () => {
   it("renders the placeholders into PromQL", () =>
     expect(
-      registrationQueries(registration, request, ["rustfs-0", "rustfs-1"]).slice(
-        0,
-        2,
-      ),
+      registrationQueries(registration, request, [
+        "rustfs-0",
+        "rustfs-1",
+      ]).slice(0, 2),
     ).toEqual([
       {
         label: "Requests",
@@ -64,7 +64,9 @@ describe("registrationQueries", () => {
     ]));
 
   it("returns an error that names the if construct", () => {
-    const bad = registrationQueries(registration, request, ["p"])[2] as QueryError;
+    const bad = registrationQueries(registration, request, [
+      "p",
+    ])[2] as QueryError;
     expect(bad.label).toBe("Bad");
     expect(bad.source).toBe("rustfs-bucket");
     expect(bad.error).toContain("if");
@@ -86,11 +88,9 @@ describe("registrationQueries", () => {
 
   it("a registration without metricQueries has no queries", () =>
     expect(
-      registrationQueries(
-        { ...registration, spec: {} } as never,
-        request,
-        ["p"],
-      ),
+      registrationQueries({ ...registration, spec: {} } as never, request, [
+        "p",
+      ]),
     ).toEqual([]));
 });
 
