@@ -92,9 +92,10 @@ func TestRegistryRunsTheChecksInContractOrder(t *testing.T) {
 	want := []CheckID{
 		"REQ-FINALIZER", "REQ-OUTPUTS-READY", "REQ-OUTPUTS", "REQ-READY", "REQ-LABELS", "REQ-RESOURCES",
 		"REQ-EVENTS", "REQ-DISPLAY", "REQ-LOGS", "REQ-ACCEPTED-KEPT",
+		"GRANT-MATCH", "GRANT-REQUIRES", "GRANT-ADMISSION",
 		"ORDER-REGISTRATION-FIRST", "DELETE-DELETE", "DELETE-ORPHAN", "DELETE-ROUTES",
 	}
-	skippable := []CheckID{"REQ-LOGS", "ORDER-REGISTRATION-FIRST"}
+	skippable := []CheckID{"REQ-LOGS", "GRANT-ADMISSION", "ORDER-REGISTRATION-FIRST"}
 
 	var got []CheckID
 	lastStatic := -1
@@ -136,6 +137,7 @@ func TestNewSchemeKnowsTheKindsOfTheChecks(t *testing.T) {
 		&pluginsv1alpha1.PluginRegistration{},
 		&pluginsv1alpha1.PluginSection{},
 		&pluginsv1alpha1.PluginRequest{},
+		&pluginsv1alpha1.Grant{},
 		&v1.CamundaCluster{},
 		&corev1.ConfigMap{},
 		&appsv1.Deployment{},

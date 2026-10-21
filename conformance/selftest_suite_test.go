@@ -154,6 +154,8 @@ func installPlugin(name string) pluginsv1alpha1.ServiceAccountRef {
 				Verbs: []string{"get", "list", "watch", "update", "patch"}},
 			{APIGroups: []string{plugins}, Resources: []string{"pluginrequests/status", "pluginrequests/finalizers"},
 				Verbs: []string{"update"}},
+			{APIGroups: []string{plugins}, Resources: []string{"grants"},
+				Verbs: []string{"get", "list", "watch", "create", "patch", "delete"}},
 			{APIGroups: []string{"", "storage.k8s.io", "networking.k8s.io"},
 				Resources: []string{"configmaps", "storageclasses", "ingresses"},
 				Verbs:     []string{"get", "list", "watch", "create", "patch", "delete"}},
@@ -323,6 +325,35 @@ func twoSectionRun() Config {
 			{Key: "optimizeUrl", Value: "https://camunda.example.com/optimize", Section: "access"},
 		},
 	})
+}
+
+// grantRun starts an echo controller of the echo section with one grant
+// template that needs the input source, and returns the config of a run
+// against it. The case nosource leaves the input empty.
+func grantRun(defect echo.Defect) Config {
+	cfg := pluginRun(echo.Options{
+		Sections: []string{"echo"},
+		Inputs:   []pluginsv1alpha1.InputDecl{{Name: "source", From: "echo-source/value"}},
+		Outputs:  []echo.Output{{Key: "message", Value: "echo-bucket"}},
+		GrantTemplates: []pluginsv1alpha1.GrantTemplate{{
+			Name:           "read",
+			Format:         pluginsv1alpha1.GrantFormatAWSIAMStatement,
+			RequiresInputs: []string{"source"},
+			Template: &apiextensionsv1.JSON{Raw: []byte(
+				`{"Effect":"Allow","Action":["s3:GetObject"],` +
+					`"Resource":"arn:aws:s3:::{{ .outputs.message }}/{{ .namespace }}/{{ .claim }}/{{ .request }}/*",` +
+					`"Sid":"{{ .parameters.message }}","Condition":{"StringEquals":{"sa":"{{ .serviceAccount }}"}}}`,
+			)},
+		}},
+		Defect: defect,
+	})
+
+	nosource := cfg.Cases[0]
+	nosource.Name = "nosource"
+	nosource.Inputs = nil
+	cfg.Cases = append(cfg.Cases, nosource)
+
+	return cfg
 }
 
 func pluginRun(opts echo.Options) Config {

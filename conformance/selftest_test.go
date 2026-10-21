@@ -35,7 +35,9 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, DeleteRoutes))
+		Expect(skippedIDs(got)).To(ConsistOf(
+			ReqLogs, OrderRegistrationFirst, DeleteRoutes, GrantMatch, GrantRequires,
+		))
 		Expect(got[DeleteDelete].skipped).To(BeEmpty())
 		Expect(got[DeleteOrphan].skipped).To(BeEmpty())
 	})
@@ -46,7 +48,7 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst))
+		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires))
 	})
 
 	ginkgo.It("runs each case for each section of a registration that serves two", func() {
@@ -57,7 +59,7 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst))
+		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires))
 
 		// The orphaned ConfigMap of each section shows that a request of
 		// each section ran.
@@ -66,6 +68,15 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			var cm corev1.ConfigMap
 			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: cfg.Namespace, Name: name}, &cm)).To(Succeed())
 		}
+	})
+
+	ginkgo.It("passes every grant check when it writes a grant from a template", func() {
+		got := runAll(grantRun(echo.DefectNone))
+
+		for id, o := range got {
+			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
+		}
+		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, DeleteRoutes))
 	})
 
 	ginkgo.It("passes REQ-LABELS and DELETE-ORPHAN with a cluster-scoped object that carries the labels only", func() {
@@ -168,5 +179,6 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			"owner reference",
 		),
 		ginkgo.Entry("a route kept on Orphan", accessRun, echo.DefectKeepRouteOnOrphan, DeleteRoutes, "Ingress"),
+		ginkgo.Entry("a wrong fragment", grantRun, echo.DefectWrongFragment, GrantMatch, "has the fragment"),
 	)
 })
