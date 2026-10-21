@@ -164,6 +164,29 @@ func TestComponentSetsTheReleaseOfARegistrationThatDeclaresIt(t *testing.T) {
 	}
 }
 
+func TestComponentLeavesOutAWaitingRequestWithoutASlot(t *testing.T) {
+	in := volumeInput(t)
+	in.Sections = append(in.Sections, section("audit", ""), section("access", pluginsv1alpha1.SlotExternalAccess))
+	audit := registration("test-audit", "audit")
+	audit.Spec.Inputs = []pluginsv1alpha1.InputDecl{{Name: "keyRef", From: "encryption-key/keyRef"}}
+	in.Registrations = append(in.Registrations, audit, registration("test-access", "access"))
+	in.Selections = append(
+		in.Selections,
+		fleetv1alpha1.PluginSelection{Section: "audit", Registration: "test-audit"},
+		fleetv1alpha1.PluginSelection{Section: "access", Registration: "test-access"},
+	)
+	in.Order = in.Selections
+	in.Requests = nil
+
+	requests := previewRequests(t, in)
+	names := make([]string, 0, len(requests))
+	for _, request := range requests {
+		names = append(names, request.Name)
+	}
+
+	assert.Equal(t, []string{"orders-volume-encryption", "orders-encryption-key", "orders-access"}, names)
+}
+
 func TestComponentGoldenRequests(t *testing.T) {
 	comp, err := Component(claim(), volumeInput(t))
 	require.NoError(t, err)

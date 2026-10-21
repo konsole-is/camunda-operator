@@ -42,11 +42,12 @@ const ComponentName = "requests"
 // (CL55).
 const releaseRefParameter = "releaseRef"
 
-// Component builds the requests component of claim: one PluginRequest for
-// each item of in.Order. A request whose inputs wait for outputs is guarded,
-// a request of a section without a slot is Auxiliary, and every request is
-// blocked by a foreign controller reference. A selection whose section or
-// registration is not in in is an error.
+// Component builds the requests component of claim: at most one
+// PluginRequest for each item of in.Order. A request whose inputs wait for
+// outputs is guarded. A request of a section without a slot is Auxiliary,
+// and it is left out while its inputs wait. Every request is blocked by a
+// foreign controller reference. A selection whose section or registration
+// is not in in is an error.
 func Component(claim client.Object, in Input) (*component.Component, error) {
 	builder := component.NewComponentBuilder().
 		WithName(ComponentName).
@@ -70,6 +71,12 @@ func Component(claim client.Object, in Input) (*component.Component, error) {
 		}
 
 		inputs := claimpolicy.Inputs(registration, in.Selections, in.Requests)
+		auxiliary := section.Spec.Slot == ""
+		if auxiliary && len(inputs.Waiting) > 0 {
+			// A guarded request would block the requests after it.
+			continue
+		}
+
 		request, err := desiredRequest(claim, in, s, section, registration, inputs.Values)
 		if err != nil {
 			return nil, fmt.Errorf("selection %s/%s: %w", s.Section, s.Registration, err)
@@ -81,7 +88,7 @@ func Component(claim client.Object, in Input) (*component.Component, error) {
 		}
 
 		opts := []component.ResourceOption{component.BlockOnForeignController()}
-		if section.Spec.Slot == "" {
+		if auxiliary {
 			opts = append(opts, component.Auxiliary())
 		}
 		builder.WithResource(resource, opts...)
