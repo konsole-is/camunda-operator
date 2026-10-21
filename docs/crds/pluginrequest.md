@@ -192,7 +192,7 @@ The inputs come from other sections of the claim. Each input is optional:
 - `objectStorageConfig` names the bucket of the snapshot repository. Without it, the preset decides.
 - `serviceAccountAnnotations` is a JSON object of strings. The ServiceAccount `<claim>-es-es` of the Elasticsearch pods gets these annotations, for workload identity to the bucket.
 
-With `objectStorageConfig` or `serviceAccountAnnotations`, the ServiceAccount of the pods is always `<claim>-es-es`, and the operator creates it. This replaces the ServiceAccount settings of the preset. If `serviceAccountAnnotations` is not a JSON object of strings, `Ready` is `False` with reason `InvalidParameters`. An override that does not fit the field of the `ElasticsearchCluster`, or a field that the override does not know, gives the same reason.
+With `objectStorageConfig` or `serviceAccountAnnotations`, the ServiceAccount of the pods is always `<claim>-es-es`, and the operator creates it. This replaces the ServiceAccount settings of the preset. Without both inputs, the preset decides the ServiceAccount. If `serviceAccountAnnotations` is not a JSON object of strings, `Ready` is `False` with reason `InvalidParameters`. An override that does not fit the field of the `ElasticsearchCluster`, or a field that the override does not know, gives the same reason.
 
 `OutputsReady` turns `True` when the `SecondaryStorageConfig` exists. `Ready` follows the `Ready` condition of the `ElasticsearchCluster`. `status.resources` lists the cluster, and `status.podSelector` selects its pods:
 
