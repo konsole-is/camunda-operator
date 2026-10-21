@@ -6,6 +6,7 @@ import {
   checkAllowed,
   environmentOf,
   resolve,
+  resolveInputs,
   type PolicyResult,
 } from "@/lib/policy";
 import {
@@ -205,6 +206,13 @@ const RUNNERS: Partial<Record<AppRule, Runner>> = {
   },
   resolve: (input) => resolve(input),
   "check-allowed": (input) => checkAllowed(input),
+  inputs: (input) => ({
+    value: resolveInputs(
+      input.registration,
+      input.selections ?? [],
+      input.requests ?? [],
+    ),
+  }),
 };
 
 describe.each(Object.entries(RUNNERS))("the %s rule", (folder, run) => {
