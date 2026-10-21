@@ -42,8 +42,9 @@ func TestParseOptionsServesAccessAndBackupStorage(t *testing.T) {
 	assert.Equal(t, ":8081", cfg.HealthProbeBindAddress)
 	assert.Equal(t, "fleet-harness", opts.Registration)
 	assert.Equal(t, []string{pluginstartup.SectionAccess, pluginstartup.SectionBackupStorage}, opts.Sections)
-	assert.Equal(t, pluginsv1alpha1.ServiceAccountRef{Namespace: "fleet-harness", Name: "fakeplugin"}, opts.ServiceAccount)
-	assert.ElementsMatch(t, []echo.Output{
+	wantSA := pluginsv1alpha1.ServiceAccountRef{Namespace: "fleet-harness", Name: "fakeplugin"}
+	assert.Equal(t, wantSA, opts.ServiceAccount)
+	want := []echo.Output{
 		{
 			Key:     pluginstartup.OutputExternalURL,
 			Value:   "https://camundacluster-sample-fleet-smoke.fleet-harness.test",
@@ -54,7 +55,8 @@ func TestParseOptionsServesAccessAndBackupStorage(t *testing.T) {
 			Value:   "fleet-harness-backups",
 			Section: pluginstartup.SectionBackupStorage,
 		},
-	}, opts.Outputs)
+	}
+	assert.ElementsMatch(t, want, opts.Outputs)
 	assert.Equal(t, echo.DefectNone, opts.Defect, "the fake plugin keeps the contract")
 
 	_, err = echo.New(opts)
