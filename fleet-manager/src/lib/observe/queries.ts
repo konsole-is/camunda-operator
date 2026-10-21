@@ -1,5 +1,6 @@
 import "server-only";
 import { type TemplateData, parseTemplate, render } from "@/lib/gotemplate";
+import type { PluginsPluginRequestConditionType } from "@/generated/conditions";
 import type { Resource } from "@/lib/k8s/kinds";
 import type { CoreComponent, CoreQuery, MetricDef, QueryError } from "./types";
 
@@ -7,6 +8,7 @@ const CADVISOR =
   "https://github.com/google/cadvisor/blob/master/docs/storage/prometheus.md";
 const CAMUNDA =
   "https://docs.camunda.io/docs/self-managed/operational-guides/monitoring/metrics/#available-metrics";
+const OUTPUTS_READY: PluginsPluginRequestConditionType = "OutputsReady";
 const SELECT = 'namespace="{{ .namespace }}", pod=~"{{ .pods }}"';
 
 // The kubelet reports a series for each container and one for the pod
@@ -113,7 +115,9 @@ export function coreMetricDefs(
  * request, with pods as the pods of the request. The source of each result
  * is the name of the registration. A query that does not render is a
  * QueryError with the reason. A query that uses {{ .pods }} is left out
- * while pods is empty, so it never matches the pods of others.
+ * while pods is empty, so it never matches the pods of others. The outputs
+ * count only while OutputsReady is True for the current generation; before
+ * that, a query that uses an output and is not left out is a QueryError.
  */
 export function registrationQueries(
   registration: Resource<"PluginRegistration">,
@@ -133,7 +137,7 @@ export function registrationQueries(
       !Array.isArray(parameters)
         ? (parameters as Record<string, unknown>)
         : {},
-    outputs: request.status?.outputs ?? {},
+    outputs: trustedOutputs(request),
     pods: pods.length ? podsPattern(pods) : undefined,
   });
   const results: (MetricDef | QueryError)[] = [];
@@ -148,6 +152,18 @@ export function registrationQueries(
     );
   }
   return results;
+}
+
+function trustedOutputs(
+  request: Resource<"PluginRequest">,
+): Record<string, string> {
+  const ready = request.status?.conditions?.find(
+    (c) => c.type === OUTPUTS_READY,
+  );
+  return ready?.status === "True" &&
+    ready.observedGeneration === request.metadata?.generation
+    ? (request.status?.outputs ?? {})
+    : {};
 }
 
 function templateData(data: Partial<TemplateData>): TemplateData {

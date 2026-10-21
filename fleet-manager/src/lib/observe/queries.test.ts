@@ -31,14 +31,32 @@ const registration = {
 } as unknown as Resource<"PluginRegistration">;
 
 const request = {
-  metadata: { name: "orders-backup-storage", namespace: "team-a" },
+  metadata: {
+    name: "orders-backup-storage",
+    namespace: "team-a",
+    generation: 2,
+  },
   spec: {
     claimRef: { name: "orders" },
     target: { serviceAccountName: "orders-camunda" },
     parameters: { region: "eu-1" },
   },
-  status: { outputs: { bucket: "b-1" } },
+  status: {
+    outputs: { bucket: "b-1" },
+    conditions: [
+      { type: "OutputsReady", status: "True", observedGeneration: 2 },
+    ],
+  },
 } as unknown as Resource<"PluginRequest">;
+
+const withOutputsReady = (condition?: object) =>
+  ({
+    ...request,
+    status: {
+      outputs: { bucket: "b-1" },
+      conditions: condition ? [{ type: "OutputsReady", ...condition }] : [],
+    },
+  }) as unknown as Resource<"PluginRequest">;
 
 describe("registrationQueries", () => {
   it("renders the placeholders into PromQL", () =>
@@ -80,6 +98,23 @@ describe("registrationQueries", () => {
   it("returns an error for an output that the request does not have yet", () => {
     const pending = { ...request, status: {} } as Resource<"PluginRequest">;
     expect(registrationQueries(registration, pending, ["p"])[0]).toEqual({
+      label: "Requests",
+      source: "rustfs-bucket",
+      error: 'output "bucket" has no value',
+    });
+  });
+
+  it.each([
+    ["no OutputsReady condition", undefined],
+    ["OutputsReady False", { status: "False", observedGeneration: 2 }],
+    [
+      "OutputsReady of an older generation",
+      { status: "True", observedGeneration: 1 },
+    ],
+  ])("does not use the outputs with %s", (_, condition) => {
+    expect(
+      registrationQueries(registration, withOutputsReady(condition), ["p"])[0],
+    ).toEqual({
       label: "Requests",
       source: "rustfs-bucket",
       error: 'output "bucket" has no value',
