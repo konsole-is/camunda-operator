@@ -288,7 +288,15 @@ export function gitWriter(options: GitWriterOptions): Writer {
       singleBranch: true,
       ...(target.branch ? { ref: target.branch } : {}),
     });
-    const branch = (await git.currentBranch({ fs, dir })) ?? target.branch;
+    // A tag in git.branch clones to a detached HEAD, and a push of the tag
+    // would not publish the commit.
+    const branch = await git.currentBranch({ fs, dir });
+    if (branch === undefined) {
+      return failure({
+        code: "Unavailable",
+        message: `${target.url} has no branch ${target.branch}.`,
+      });
+    }
     const cloned = await git.resolveRef({ fs, dir, ref: "HEAD" });
 
     const written = await writeFiles(dir, base, change);

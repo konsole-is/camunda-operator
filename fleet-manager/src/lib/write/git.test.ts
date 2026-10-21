@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { HttpClient } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -535,6 +537,24 @@ describe("the Git writer", () => {
         },
       ],
     });
+  });
+
+  it("a tag in git.branch gives Unavailable and commits nothing", async () => {
+    repo = await serveBareRepository();
+    await promisify(execFile)("git", ["-C", repo.dir, "tag", "v1", "main"]);
+
+    const result = await writerFor({ branch: "v1" }).apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        { code: "Unavailable", message: `${repo.url} has no branch v1.` },
+      ],
+    });
+    expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
   it("refuses a git.path that leaves the repository", async () => {
