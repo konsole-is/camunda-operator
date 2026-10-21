@@ -48,6 +48,9 @@ func TestSameJSON(t *testing.T) {
 		{"key order", `{"a":1,"b":[1,2]}`, `{"b":[1,2],"a":1}`, true},
 		{"number form", `{"a":1}`, `{"a":1.0}`, true},
 		{"escaped html", `{"a":"<&>"}`, `{"a":"<&>"}`, true},
+		{"exponent", `{"a":1e2}`, `{"a":100}`, true},
+		{"large integers", `{"a":9007199254740992}`, `{"a":9007199254740993}`, false},
+		{"number and string", `{"a":1}`, `{"a":"1"}`, false},
 		{"array order", `{"a":[1,2]}`, `{"a":[2,1]}`, false},
 		{"extra key", `{"a":1}`, `{"a":1,"b":2}`, false},
 	}
@@ -119,6 +122,19 @@ func TestExpectedFragmentRendersTemplateParametersFirst(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"Resource":"team-a/data"}`, string(got))
+}
+
+func TestExpectedFragmentRendersAnOutputInATemplateParameter(t *testing.T) {
+	parameters := &apiextensionsv1.JSON{Raw: []byte(
+		`{"type":"object","properties":{"prefix":{"type":"string","x-fleet-template":true}}}`)}
+	tmpl := grantTemplate(`{"Resource":"{{ .parameters.prefix }}"}`)
+	req := grantCheckRequest()
+	req.Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(`{"prefix":"{{ .outputs.bucket }}/data"}`)}
+
+	got, err := expectedFragment(tmpl, parameters, req)
+
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"Resource":"orders-bucket/data"}`, string(got))
 }
 
 func TestExpectedFragmentKeepsAnUnmarkedParameterAsItIs(t *testing.T) {
@@ -200,6 +216,15 @@ func TestGrantMatchProblems(t *testing.T) {
 				return []pluginsv1alpha1.Grant{g}
 			},
 			[]string{`the label plugins.camunda.io/registration: "", and the request needs "echo"`},
+		},
+		{
+			"wrong cluster reference",
+			func() []pluginsv1alpha1.Grant {
+				g := goodGrant()
+				g.Spec.Cluster.Name = "other"
+				return []pluginsv1alpha1.Grant{g}
+			},
+			[]string{`Grant r-read has spec.cluster.name "other", and the request needs "orders"`},
 		},
 		{
 			"wrong format",

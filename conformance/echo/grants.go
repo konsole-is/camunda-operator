@@ -32,9 +32,8 @@ import (
 )
 
 // grants returns one Grant <request>-<template> for each grant template of
-// the options whose required inputs all have a value in req. orphaned
-// leaves out the owner reference to req.
-func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest, orphaned bool) ([]*pluginsv1alpha1.Grant, error) {
+// the options whose required inputs all have a value in req.
+func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest) ([]*pluginsv1alpha1.Grant, error) {
 	parameters := map[string]any{}
 	if req.Spec.Parameters != nil && len(req.Spec.Parameters.Raw) > 0 {
 		decoder := json.NewDecoder(bytes.NewReader(req.Spec.Parameters.Raw))
@@ -80,6 +79,7 @@ func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest, orphaned bool) (
 					pluginsv1alpha1.LabelRequest:      req.Name,
 					pluginsv1alpha1.LabelCluster:      req.Spec.Target.Name,
 				},
+				OwnerReferences: requestOwner(req),
 			},
 			Spec: pluginsv1alpha1.GrantSpec{
 				Cluster:  v1.ClusterRef{Name: req.Spec.Target.Name},
@@ -87,9 +87,6 @@ func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest, orphaned bool) (
 				Format:   tmpl.Format,
 				Fragment: &apiextensionsv1.JSON{Raw: fragment},
 			},
-		}
-		if !orphaned {
-			grant.OwnerReferences = requestOwner(req)
 		}
 		grants = append(grants, grant)
 	}

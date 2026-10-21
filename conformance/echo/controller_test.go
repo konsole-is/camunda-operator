@@ -176,7 +176,7 @@ func newFakeGrantController(t *testing.T, objs ...client.Object) *Controller {
 func existingGrant(t *testing.T) *pluginsv1alpha1.Grant {
 	t.Helper()
 
-	grants, err := newGrantController(t, DefectNone).grants(grantRequest(map[string]string{"source": "hello"}), false)
+	grants, err := newGrantController(t, DefectNone).grants(grantRequest(map[string]string{"source": "hello"}))
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
 
@@ -186,7 +186,7 @@ func existingGrant(t *testing.T) *pluginsv1alpha1.Grant {
 func TestResourcesListEachGrant(t *testing.T) {
 	c := newFakeGrantController(t)
 	req := grantRequest(map[string]string{"source": "hello"})
-	grants, err := c.grants(req, false)
+	grants, err := c.grants(req)
 	require.NoError(t, err)
 
 	rows := c.resources(req, grants)
@@ -220,6 +220,42 @@ func TestCleanUpDeleteRemovesTheGrant(t *testing.T) {
 	req.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyDelete
 
 	require.NoError(t, c.cleanUp(t.Context(), req))
+
+	err := c.client.Get(t.Context(), client.ObjectKeyFromObject(grant), &pluginsv1alpha1.Grant{})
+	assert.True(t, apierrors.IsNotFound(err), "got %v", err)
+}
+
+func TestCleanUpOrphanReleasesAGrantWhoseInputIsNowEmpty(t *testing.T) {
+	grant := existingGrant(t)
+	c := newFakeGrantController(t, grant)
+	req := grantRequest(nil)
+	req.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+
+	require.NoError(t, c.cleanUp(t.Context(), req))
+
+	var got pluginsv1alpha1.Grant
+	require.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(grant), &got))
+	assert.Empty(t, got.OwnerReferences)
+}
+
+func TestCleanUpDeletesAGrantWhoseTemplateNoLongerRenders(t *testing.T) {
+	grant := existingGrant(t)
+	c := newFakeGrantController(t, grant)
+	c.opts.GrantTemplates[0].Template.Raw = []byte(`{"Sid":"{{ .parameters.missing }}"}`)
+	req := grantRequest(map[string]string{"source": "hello"})
+	req.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyDelete
+
+	require.NoError(t, c.cleanUp(t.Context(), req))
+
+	err := c.client.Get(t.Context(), client.ObjectKeyFromObject(grant), &pluginsv1alpha1.Grant{})
+	assert.True(t, apierrors.IsNotFound(err), "got %v", err)
+}
+
+func TestApplyObjectsDeletesAGrantWhoseInputIsNowEmpty(t *testing.T) {
+	grant := existingGrant(t)
+	c := newFakeGrantController(t, grant)
+
+	require.NoError(t, c.applyObjects(t.Context(), grantRequest(nil)))
 
 	err := c.client.Get(t.Context(), client.ObjectKeyFromObject(grant), &pluginsv1alpha1.Grant{})
 	assert.True(t, apierrors.IsNotFound(err), "got %v", err)

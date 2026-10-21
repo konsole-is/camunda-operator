@@ -204,7 +204,7 @@ func (c *Controller) registrationReady(ctx context.Context) (bool, error) {
 // cleanUp applies the deletion policy of req to its objects.
 func (c *Controller) cleanUp(ctx context.Context, req *pluginsv1alpha1.PluginRequest) error {
 	cm, sc, ing := c.objects(req, true)
-	grants, err := c.grants(req, true)
+	grants, err := c.existingGrants(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -270,11 +270,11 @@ func (c *Controller) releaseOwner(ctx context.Context, obj client.Object, uid ty
 	return nil
 }
 
-// applyObjects applies the objects of req. It fails, and writes nothing,
-// when an object of one of their names exists without the request label of
-// req.
+// applyObjects applies the objects of req, and deletes each Grant of req that
+// is not one of them. It fails, and writes nothing, when an object of one of
+// their names exists without the request label of req.
 func (c *Controller) applyObjects(ctx context.Context, req *pluginsv1alpha1.PluginRequest) error {
-	grants, err := c.grants(req, false)
+	grants, err := c.grants(req)
 	if err != nil {
 		return err
 	}
@@ -303,7 +303,42 @@ func (c *Controller) applyObjects(ctx context.Context, req *pluginsv1alpha1.Plug
 		}
 	}
 
-	return nil
+	existing, err := c.existingGrants(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	var stale []client.Object
+	for _, g := range existing {
+		if !slices.ContainsFunc(grants, func(want *pluginsv1alpha1.Grant) bool { return want.Name == g.Name }) {
+			stale = append(stale, g)
+		}
+	}
+
+	return c.deleteOwn(ctx, req, stale...)
+}
+
+// existingGrants lists the Grants in the namespace of req that carry the
+// labels of req.
+func (c *Controller) existingGrants(
+	ctx context.Context,
+	req *pluginsv1alpha1.PluginRequest,
+) ([]*pluginsv1alpha1.Grant, error) {
+	var list pluginsv1alpha1.GrantList
+	err := c.client.List(ctx, &list, client.InNamespace(req.Namespace), client.MatchingLabels{
+		pluginsv1alpha1.LabelRegistration: c.opts.Registration,
+		pluginsv1alpha1.LabelRequest:      req.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing the Grants of the request: %w", err)
+	}
+
+	grants := make([]*pluginsv1alpha1.Grant, 0, len(list.Items))
+	for i := range list.Items {
+		grants = append(grants, &list.Items[i])
+	}
+
+	return grants, nil
 }
 
 // objectList is the objects of req, with grants, in one list.
@@ -435,7 +470,7 @@ func (c *Controller) outputs(req *pluginsv1alpha1.PluginRequest) map[string]stri
 // writeStatus writes the status of req on the copy that it read. It records
 // one event for each resource row that the status did not list yet.
 func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.PluginRequest) (ctrl.Result, error) {
-	grants, err := c.grants(req, false)
+	grants, err := c.grants(req)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

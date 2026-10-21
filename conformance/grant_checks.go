@@ -23,7 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"reflect"
+	"math/big"
 	"slices"
 	"strings"
 	"time"
@@ -146,10 +146,9 @@ func missingInputs(inputs map[string]string, required []string) []string {
 	return missing
 }
 
-// expectedFragment is the fragment of tmpl for req, as pluginkit renders it:
-// each top-level parameter that schema marks x-fleet-template is rendered
-// first, and the template then reads the rendered value. The outputs come
-// from the status of req.
+// expectedFragment is the fragment of tmpl for req. Each top-level parameter
+// that schema marks x-fleet-template is rendered first, and the template then
+// reads the rendered value. The outputs come from the status of req.
 func expectedFragment(
 	tmpl pluginsv1alpha1.GrantTemplate,
 	schema *apiextensionsv1.JSON,
@@ -165,6 +164,7 @@ func expectedFragment(
 		request:        req.Name,
 		serviceAccount: req.Spec.Target.ServiceAccountName,
 		parameters:     map[string]any{},
+		outputs:        req.Status.Outputs,
 	}
 	if req.Spec.Parameters != nil && len(req.Spec.Parameters.Raw) > 0 {
 		if err := decodeNumbers(req.Spec.Parameters.Raw, &data.parameters); err != nil {
@@ -202,7 +202,6 @@ func expectedFragment(
 	}
 
 	data.parameters = rendered
-	data.outputs = req.Status.Outputs
 
 	return renderJSONTemplate("the grant template "+tmpl.Name, tmpl.Template.Raw, templatePlaceholders, data)
 }
@@ -297,6 +296,15 @@ func grantMatchProblems(
 
 	g := grants[0]
 	var problems []string
+	if g.Spec.Cluster.Name != req.Spec.Target.Name {
+		problems = append(problems, fmt.Sprintf(
+			"Grant %s has spec.cluster.name %q, and the request needs %q",
+			g.Name,
+			g.Spec.Cluster.Name,
+			req.Spec.Target.Name,
+		))
+	}
+
 	for _, label := range []struct{ key, want string }{
 		{pluginsv1alpha1.LabelRegistration, req.Spec.Registration},
 		{pluginsv1alpha1.LabelCluster, req.Spec.Target.Name},
@@ -343,17 +351,38 @@ func grantMatchProblems(
 }
 
 // sameJSON says whether a and b hold the same JSON value. The order of the
-// keys and the form of a number do not count.
+// keys and the form of a number do not count, and numbers compare exactly.
 func sameJSON(a, b []byte) (bool, error) {
 	var va, vb any
-	if err := json.Unmarshal(a, &va); err != nil {
+	if err := decodeNumbers(a, &va); err != nil {
 		return false, err
 	}
-	if err := json.Unmarshal(b, &vb); err != nil {
+	if err := decodeNumbers(b, &vb); err != nil {
 		return false, err
 	}
 
-	return reflect.DeepEqual(va, vb), nil
+	return sameValue(va, vb), nil
+}
+
+func sameValue(a, b any) bool {
+	switch x := a.(type) {
+	case json.Number:
+		y, ok := b.(json.Number)
+		if !ok {
+			return false
+		}
+		rx, okx := new(big.Rat).SetString(string(x))
+		ry, oky := new(big.Rat).SetString(string(y))
+		return okx && oky && rx.Cmp(ry) == 0
+	case []any:
+		y, ok := b.([]any)
+		return ok && slices.EqualFunc(x, y, sameValue)
+	case map[string]any:
+		y, ok := b.(map[string]any)
+		return ok && maps.EqualFunc(x, y, sameValue)
+	default:
+		return a == b
+	}
 }
 
 func checkGrantRequires(ctx context.Context, s *suite) error {

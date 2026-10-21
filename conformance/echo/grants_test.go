@@ -75,7 +75,7 @@ func TestGrantsRenderEachTemplateWithTheRequest(t *testing.T) {
 	c := newGrantController(t, DefectNone)
 	req := grantRequest(map[string]string{"source": "hello"})
 
-	grants, err := c.grants(req, false)
+	grants, err := c.grants(req)
 
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
@@ -102,21 +102,11 @@ func TestGrantsLeaveOutATemplateWhoseRequiredInputIsEmpty(t *testing.T) {
 	c := newGrantController(t, DefectNone)
 
 	for _, inputs := range []map[string]string{nil, {"source": ""}} {
-		grants, err := c.grants(grantRequest(inputs), false)
+		grants, err := c.grants(grantRequest(inputs))
 
 		require.NoError(t, err)
 		assert.Empty(t, grants)
 	}
-}
-
-func TestGrantsOfAnOrphanedRequestHaveNoOwnerReference(t *testing.T) {
-	c := newGrantController(t, DefectNone)
-
-	grants, err := c.grants(grantRequest(map[string]string{"source": "hello"}), true)
-
-	require.NoError(t, err)
-	require.Len(t, grants, 1)
-	assert.Empty(t, grants[0].OwnerReferences)
 }
 
 func TestGrantsKeepALargeIntegerParameterExact(t *testing.T) {
@@ -130,7 +120,7 @@ func TestGrantsKeepALargeIntegerParameterExact(t *testing.T) {
 	req := grantRequest(nil)
 	req.Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(`{"size":12345678901234567890}`)}
 
-	grants, err := c.grants(req, false)
+	grants, err := c.grants(req)
 
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
@@ -140,7 +130,7 @@ func TestGrantsKeepALargeIntegerParameterExact(t *testing.T) {
 func TestWrongFragmentDefectChangesTheFragment(t *testing.T) {
 	c := newGrantController(t, DefectWrongFragment)
 
-	grants, err := c.grants(grantRequest(map[string]string{"source": "hello"}), false)
+	grants, err := c.grants(grantRequest(map[string]string{"source": "hello"}))
 
 	require.NoError(t, err)
 	require.Len(t, grants, 1)
