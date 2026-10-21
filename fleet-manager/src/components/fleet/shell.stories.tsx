@@ -1,5 +1,7 @@
 import type { Story } from "@/gallery/registry";
 import { AppShell } from "./app-shell";
+import { GitBannerView } from "./git-banner";
+import { GitWaitingLine } from "./git-waiting-line";
 import { Logo } from "./logo";
 import { SetupBreadcrumb } from "./setup-breadcrumb";
 import { SetupNav } from "./setup-nav";
@@ -8,6 +10,18 @@ import { TopNav } from "./top-nav";
 const heading = (text: string) => (
   <h1 className="font-heading text-3xl font-bold tracking-[-0.02em]">{text}</h1>
 );
+
+const now = "2026-10-21T12:00:00Z";
+const claimPush = {
+  path: "clusters/prod/team-a/camundaclusterclaims/orders.yaml",
+  revision: "b",
+  pushedAt: "2026-10-21T11:58:00Z",
+};
+const namespacePush = {
+  path: "clusters/prod/_cluster/namespaces/team-a.yaml",
+  revision: "a",
+  pushedAt: "2026-10-21T11:58:00Z",
+};
 
 export const shellStories: Story[] = [
   { component: "Logo", name: "Default", render: () => <Logo /> },
@@ -76,17 +90,32 @@ export const shellStories: Story[] = [
       <AppShell
         pathname="/fleet"
         banner={
-          <div
-            role="status"
-            className="flex flex-wrap items-center gap-2.5 rounded-lg border border-border bg-panel px-3.5 py-2.5 text-text-2"
-          >
-            <span
-              aria-hidden
-              className="size-2 rounded-full bg-info shadow-[0_0_8px_var(--info)]"
-            />
-            Waiting for GitOps to apply
-          </div>
+          <GitBannerView count={2}>
+            <GitWaitingLine pushed={claimPush} now={now} />
+            <GitWaitingLine pushed={namespacePush} now={now} />
+          </GitBannerView>
         }
+      >
+        {heading("Fleet")}
+      </AppShell>
+    ),
+  },
+  {
+    component: "GitBannerView",
+    name: "One change waiting",
+    render: () => (
+      <GitBannerView count={1}>
+        <GitWaitingLine pushed={claimPush} now={now} />
+      </GitBannerView>
+    ),
+  },
+  {
+    component: "GitBannerView",
+    name: "Nothing waiting",
+    render: () => (
+      <AppShell
+        pathname="/fleet"
+        banner={<GitBannerView count={0}>{null}</GitBannerView>}
       >
         {heading("Fleet")}
       </AppShell>

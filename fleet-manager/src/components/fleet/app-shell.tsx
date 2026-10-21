@@ -6,7 +6,8 @@ import { TopNav } from "./top-nav";
 /**
  * AppShell is the frame of every page: the logo and the top navigation, an
  * optional banner (the Git waiting banner), an optional side navigation, and
- * the page. pathname goes to TopNav, for the gallery.
+ * the page. The banner brings its own page gutter, so a banner that renders
+ * nothing adds no space. pathname goes to TopNav, for the gallery.
  */
 export function AppShell({
   pathname,
@@ -27,7 +28,7 @@ export function AppShell({
         </Link>
         <TopNav pathname={pathname} />
       </header>
-      {banner ? <div className="px-4 pt-4 md:px-8">{banner}</div> : null}
+      {banner}
       {sideNav ? (
         <div className="mx-auto flex max-w-[1500px] flex-col md:flex-row md:items-start">
           {sideNav}
