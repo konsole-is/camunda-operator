@@ -56,22 +56,9 @@ func (e existing) build(request *pluginsv1alpha1.PluginRequest, _ liveObjects) (
 		return served{}, err
 	}
 
-	b := component.NewComponentBuilder().
-		WithName("outputs").
-		WithConditionType(component.ConditionType(pluginsv1alpha1.ConditionOutputsReady))
-	cells := make([]*concepts.Data[metav1.Condition], 0, len(refs))
-	for _, ref := range refs {
-		res, cell, err := readContract(ref, request.Namespace)
-		if err != nil {
-			return served{}, err
-		}
-		b.WithResource(res, component.ReadOnly(), component.BlockOnAbsence())
-		cells = append(cells, cell)
-	}
-
-	outputs, err := b.Build()
+	outputs, cells, err := outputsComponent(refs, request.Namespace)
 	if err != nil {
-		return served{}, fmt.Errorf("building the outputs component: %w", err)
+		return served{}, err
 	}
 
 	return served{
@@ -80,11 +67,39 @@ func (e existing) build(request *pluginsv1alpha1.PluginRequest, _ liveObjects) (
 			rep := report{outputs: map[string]string{}}
 			for i, ref := range refs {
 				rep.outputs[ref.output] = ref.name
-				rep.summary = append(rep.summary, summaryItem(ref, cells[i]))
+				rep.summary = append(rep.summary, summaryItem(ref.kind, ref.name, cells[i]))
 			}
 			return rep
 		},
 	}, nil
+}
+
+// outputsComponent returns the component with condition type OutputsReady
+// that waits for each contract of refs in namespace, and the cells that hold
+// their Ready conditions, in the order of refs.
+func outputsComponent(
+	refs []contractRef,
+	namespace string,
+) (*component.Component, []*concepts.Data[metav1.Condition], error) {
+	b := component.NewComponentBuilder().
+		WithName("outputs").
+		WithConditionType(component.ConditionType(pluginsv1alpha1.ConditionOutputsReady))
+	cells := make([]*concepts.Data[metav1.Condition], 0, len(refs))
+	for _, ref := range refs {
+		res, cell, err := readContract(ref, namespace)
+		if err != nil {
+			return nil, nil, err
+		}
+		b.WithResource(res, component.ReadOnly(), component.BlockOnAbsence())
+		cells = append(cells, cell)
+	}
+
+	outputs, err := b.Build()
+	if err != nil {
+		return nil, nil, fmt.Errorf("building the outputs component: %w", err)
+	}
+
+	return outputs, cells, nil
 }
 
 func (existing) cleanup(*pluginsv1alpha1.PluginRequest, pluginsv1alpha1.DeletionPolicy, liveObjects) (cleanup, error) {
@@ -238,22 +253,22 @@ func readyOf(conds []metav1.Condition) metav1.Condition {
 	return metav1.Condition{}
 }
 
-// summaryItem says whether the contract of ref is there and Ready. A cell
-// without a value means that the contract, or a contract before it, is
-// missing.
-func summaryItem(ref contractRef, cell *concepts.Data[metav1.Condition]) pluginsv1alpha1.SummaryItem {
-	item := pluginsv1alpha1.SummaryItem{Label: ref.kind, Severity: pluginsv1alpha1.SeverityWarning}
+// summaryItem says whether the object name is there and Ready, with label as
+// the label of the item. A cell without a value means that the object, or an
+// object before it, is missing.
+func summaryItem(label, name string, cell *concepts.Data[metav1.Condition]) pluginsv1alpha1.SummaryItem {
+	item := pluginsv1alpha1.SummaryItem{Label: label, Severity: pluginsv1alpha1.SeverityWarning}
 	ready, ok := cell.Get()
 	switch {
 	case !ok:
-		item.Value = ref.name + ", waiting"
+		item.Value = name + ", waiting"
 	case ready.Status == metav1.ConditionTrue:
-		item.Value = ref.name + ", Ready"
+		item.Value = name + ", Ready"
 		item.Severity = pluginsv1alpha1.SeverityInfo
 	case ready.Reason != "":
-		item.Value = ref.name + ", not Ready (" + ready.Reason + ")"
+		item.Value = name + ", not Ready (" + ready.Reason + ")"
 	default:
-		item.Value = ref.name + ", not Ready"
+		item.Value = name + ", not Ready"
 	}
 
 	return item

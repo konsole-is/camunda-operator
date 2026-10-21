@@ -260,6 +260,7 @@ rules:
   - existing-database-configs
   - existing-object-storage
   - existing-secondary-storage
+  - management-database-server
   resources:
   - pluginregistrations
   verbs:
