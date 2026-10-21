@@ -3,6 +3,7 @@
 // modules of src/lib/k8s, and the isomorphic deltas module.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import type { NamedObject } from "./deltas";
 import type { KindName, Resource } from "./kinds";
 import type { ListOptions } from "./read";
@@ -64,6 +65,30 @@ export function useResource<K extends KindName>(
       (o as NamedObject).metadata?.namespace === ref.namespace,
   );
   return error === undefined ? { item } : { item, error };
+}
+
+/** GitSyncRef names the object of a push. */
+export interface GitSyncRef extends Ref {
+  kind: KindName;
+}
+
+/** GitSync is "waiting" until the live object carries the pushed revision. */
+export type GitSync = "waiting" | "applied";
+
+/**
+ * useGitSync follows the object of ref and returns "applied" once its
+ * annotation REVISION_ANNOTATION equals revision. It returns "waiting" for
+ * any other revision, while the object does not exist, and while the watch
+ * fails. It needs a QueryClientProvider above it, as useResource does.
+ */
+export function useGitSync(ref: GitSyncRef, revision: string): GitSync {
+  const { item } = useResource(ref.kind, ref);
+  const annotations = (
+    item as { metadata?: { annotations?: Record<string, string> } } | undefined
+  )?.metadata?.annotations;
+  return annotations?.[REVISION_ANNOTATION] === revision
+    ? "applied"
+    : "waiting";
 }
 
 function useWatchedList<K extends KindName>(
