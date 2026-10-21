@@ -147,6 +147,7 @@ When someone pushed to the branch after the fleet manager read it, the save comm
 | `<repository> refused the credentials.` | The username or the token of the Secret is wrong, or the token cannot push. | Correct the Secret of `git.credentialsSecretRef`. |
 | `<repository> has no branch <branch>.` | The branch of `git.branch` does not exist. | Create the branch, or correct `git.branch`. |
 | `<file> is not in the repository. GitOps does not manage <kind> <name>.` | A delete of an object that has no file in the repository. | Delete the object in the cluster with `kubectl delete`. |
+| `<file> is behind a symbolic link in the repository. The fleet manager does not write through a link.` | A folder or the file on the path of the object is a symbolic link in the repository. | Replace the link with a real folder or file in the repository. |
 
 ## Prometheus credentials
 
