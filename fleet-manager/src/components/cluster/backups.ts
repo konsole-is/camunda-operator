@@ -180,9 +180,9 @@ export type ScheduleView = {
 
 /**
  * ArchiveView is the WAL archive of a DatabaseServer that the operator runs.
- * bucket is unset when the archive is off. window is the restore window of
- * a point-in-time restore: it is unset without a restore point, and its to
- * is unset when it ends now.
+ * bucket is unset when the archive is off or its preset is not found. window
+ * is the restore window of a point-in-time restore: it is unset without a
+ * restore point, and its to is unset when it ends now.
  */
 export type ArchiveView = {
   server: string;
@@ -364,6 +364,13 @@ function archiveOf(
     state: { tone: "muted", label: "Off" },
   };
   const preset = byName(input.databaseServerPresets, server.spec.presetRef);
+  if (server.spec.presetRef && !preset) {
+    view.state = {
+      tone: "bad",
+      label: `DatabaseServerPreset ${server.spec.presetRef} not found`,
+    };
+    return view;
+  }
   const spec = mergeDatabaseServer(preset?.spec, server.spec).spec;
   if (!spec.archive) return view;
 

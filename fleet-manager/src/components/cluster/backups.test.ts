@@ -734,6 +734,18 @@ describe("backupStorageOf", () => {
     );
   });
 
+  it("names a missing DatabaseServerPreset in place of the archive state", () => {
+    const storage = backupStorageOf(
+      rdbmsChain({
+        server: { databaseServerConfig: "orders-pg", presetRef: "pg" },
+      }),
+    );
+    expect(storage.kind === "rdbms" && storage.database?.archive).toEqual({
+      server: "orders-pg",
+      state: { tone: "bad", label: "DatabaseServerPreset pg not found" },
+    });
+  });
+
   it("has no window when the retention cutoff is after unverifiedFrom", () => {
     const storage = backupStorageOf(
       rdbmsChain({
