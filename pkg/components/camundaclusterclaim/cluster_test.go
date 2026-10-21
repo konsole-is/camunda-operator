@@ -23,6 +23,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/utils/ptr"
@@ -66,6 +67,52 @@ func TestClusterKeepsTheLiveValueOfASlotFieldWhoseOutputIsMissing(t *testing.T) 
 
 	in.Live = &v1.CamundaCluster{Spec: v1.CamundaClusterSpec{ExternalURL: "https://orders.example.com"}}
 	assert.Equal(t, "https://orders.example.com", previewCluster(t, in).Spec.ExternalURL)
+}
+
+// RequestsReady can read newer outputs than the cluster was rendered from,
+// so the first apply also waits for every slot output of the render.
+func TestClusterWaitsForTheSlotOutputsOfTheRenderBeforeTheFirstApply(t *testing.T) {
+	tests := []struct {
+		name       string
+		live       *v1.CamundaCluster
+		missing    bool
+		wantStatus concepts.GuardStatus
+		wantReason string
+	}{
+		{name: "every output is there", wantStatus: concepts.GuardStatusUnblocked},
+		{
+			name:       "an output is missing before the cluster exists",
+			missing:    true,
+			wantStatus: concepts.GuardStatusBlocked,
+			wantReason: "waiting for the outputs of access",
+		},
+		{
+			name:       "an output is missing after the cluster exists",
+			live:       &v1.CamundaCluster{},
+			missing:    true,
+			wantStatus: concepts.GuardStatusUnblocked,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := fullInput(t)
+			in.Live = tt.live
+			if tt.missing {
+				access := slices.IndexFunc(in.Requests, func(r pluginsv1alpha1.PluginRequest) bool {
+					return r.Spec.Section == "access"
+				})
+				in.Requests[access].Status.Conditions = nil
+			}
+
+			_, waiting, err := cluster(in)
+			require.NoError(t, err)
+			status, err := createWithOutputs(in.Live, waiting)(v1.CamundaCluster{})
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantStatus, status.Status)
+			assert.Equal(t, tt.wantReason, status.Reason)
+		})
+	}
 }
 
 func TestClusterCarriesTheClaimFields(t *testing.T) {

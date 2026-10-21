@@ -20,8 +20,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -63,12 +66,12 @@ var slotSetters = map[string]slotSetter{
 // clusterComponent builds the component of the CamundaCluster of the claim.
 // It waits for RequestsReady before the first apply.
 func clusterComponent(in Input) (*component.Component, error) {
-	desired, err := cluster(in)
+	desired, waiting, err := cluster(in)
 	if err != nil {
 		return nil, err
 	}
 
-	resource, err := camundacluster.NewBuilder(desired).Build()
+	resource, err := camundacluster.NewBuilder(desired).WithGuard(createWithOutputs(in.Live, waiting)).Build()
 	if err != nil {
 		return nil, fmt.Errorf("building the CamundaCluster %s: %w", desired.Name, err)
 	}
@@ -81,10 +84,33 @@ func clusterComponent(in Input) (*component.Component, error) {
 		Build()
 }
 
+// createWithOutputs returns the guard of the CamundaCluster. It holds back
+// the first apply while a slot field has no output in waiting, because
+// RequestsReady can read newer outputs than the ones that the cluster was
+// rendered from, and some slot fields cannot change after creation.
+func createWithOutputs(
+	live *v1.CamundaCluster,
+	waiting []string,
+) func(v1.CamundaCluster) (concepts.GuardStatusWithReason, error) {
+	status := concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}
+	if live == nil && len(waiting) > 0 {
+		status = concepts.GuardStatusWithReason{
+			Status: concepts.GuardStatusBlocked,
+			Reason: "waiting for the outputs of " + strings.Join(waiting, ", "),
+		}
+	}
+
+	return func(v1.CamundaCluster) (concepts.GuardStatusWithReason, error) {
+		return status, nil
+	}
+}
+
 // cluster returns the CamundaCluster of the claim: spec.cluster of the
 // claim, the references and ServiceAccount names that the claim controller
-// sets, and the slot fields from the outputs.
-func cluster(in Input) (*v1.CamundaCluster, error) {
+// sets, and the slot fields from the outputs. waiting holds the sections,
+// sorted and distinct, whose output of a CamundaCluster slot field is
+// missing.
+func cluster(in Input) (desired *v1.CamundaCluster, waiting []string, err error) {
 	spec := v1.CamundaClusterSpec{}
 	if in.Claim.Spec.Cluster != nil {
 		spec = *in.Claim.Spec.Cluster.DeepCopy()
@@ -99,7 +125,7 @@ func cluster(in Input) (*v1.CamundaCluster, error) {
 		pluginsv1alpha1.ClaimKindCamundaClusterClaim, in.Sections, in.Claim.Spec.Plugins, in.Requests,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// The setters fill the intermediate structs of the copy, never of the
@@ -118,12 +144,16 @@ func cluster(in Input) (*v1.CamundaCluster, error) {
 
 		set, ok := slotSetters[f.Path]
 		if !ok {
-			return nil, fmt.Errorf("no CamundaCluster field for the slot path %s of section %q", f.Path, f.Section)
+			return nil, nil, fmt.Errorf("no CamundaCluster field for the slot path %s of section %q", f.Path, f.Section)
 		}
 		if err := set(&spec, live, f.Value); err != nil {
-			return nil, fmt.Errorf("setting %s from the outputs of section %q: %w", f.Path, f.Section, err)
+			return nil, nil, fmt.Errorf("setting %s from the outputs of section %q: %w", f.Path, f.Section, err)
+		}
+		if f.Value == nil {
+			waiting = append(waiting, f.Section)
 		}
 	}
+	slices.Sort(waiting)
 
 	return &v1.CamundaCluster{
 		TypeMeta: metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaCluster"},
@@ -133,7 +163,7 @@ func cluster(in Input) (*v1.CamundaCluster, error) {
 			Labels:    map[string]string{fleetv1alpha1.LabelClaim: in.Claim.Name},
 		},
 		Spec: spec,
-	}, nil
+	}, slices.Compact(waiting), nil
 }
 
 // serviceAccount returns *account, and sets it to an empty ServiceAccountSpec

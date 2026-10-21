@@ -134,7 +134,7 @@ When the check passes, `Ready` follows two conditions:
 | `RequestsReady` | `Healthy` | Every request with a slot reports its outputs. | Nothing. |
 | `ClusterReady` | `PrerequisiteNotMet` | The cluster waits for `RequestsReady`. The message holds the message of `RequestsReady`. | See `RequestsReady`. |
 | `ClusterReady` | `Creating`, `Updating`, `Failing`, `Degraded`, `Down` | The `CamundaCluster` is not ready. The message holds its `Ready` reason and message, as `<Reason>: <Message>`. | See [CamundaCluster](camundacluster.md#status). |
-| `ClusterReady` | `Blocked` | Another owner controls a `CamundaCluster` of this name. | Delete that cluster, or rename the claim. |
+| `ClusterReady` | `Blocked` | Another owner controls a `CamundaCluster` of this name, or an output came in after the check of the claim. The message says which. | For another owner, delete that cluster, or rename the claim. For an output, wait. |
 | `ClusterReady` | `Error` | The API server refused the `CamundaCluster`. The message holds its answer. | Correct the claim. |
 | `ClusterReady` | `Healthy` | The `CamundaCluster` is ready. | Nothing. |
 
