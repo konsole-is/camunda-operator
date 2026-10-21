@@ -210,7 +210,12 @@ func TestRenderJSONTemplateRendersStringLeavesOnly(t *testing.T) {
 }
 
 func TestRenderJSONTemplateKeepsALargeNumberExact(t *testing.T) {
-	got, err := renderJSONTemplate("template", []byte(`{"n":12345678901234567890}`), templatePlaceholders, templateData{})
+	got, err := renderJSONTemplate(
+		"template",
+		[]byte(`{"n":12345678901234567890}`),
+		templatePlaceholders,
+		templateData{},
+	)
 
 	require.NoError(t, err)
 	assert.Equal(t, `{"n":12345678901234567890}`, string(got))

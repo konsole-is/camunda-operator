@@ -80,7 +80,9 @@ func grantCheckRequest() *pluginsv1alpha1.PluginRequest {
 				Name:               "orders",
 				ServiceAccountName: "orders-camunda",
 			},
-			Parameters: &apiextensionsv1.JSON{Raw: []byte(`{"prefix":"{{ .namespace }}/data","size":12345678901234567890}`)},
+			Parameters: &apiextensionsv1.JSON{
+				Raw: []byte(`{"prefix":"{{ .namespace }}/data","size":12345678901234567890}`),
+			},
 		},
 	}
 	req.Status.Outputs = map[string]string{"bucket": "orders-bucket"}
@@ -103,15 +105,17 @@ func TestExpectedFragmentFillsTheTemplateWithTheRequest(t *testing.T) {
 	got, err := expectedFragment(tmpl, nil, grantCheckRequest())
 
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"Resource":"arn:aws:s3:::orders-bucket/team-a/r",`+
-		`"Condition":{"sa":"orders-camunda","claim":"orders","size":"12345678901234567890"}}`, string(got))
+	want := `{"Resource":"arn:aws:s3:::orders-bucket/team-a/r",` +
+		`"Condition":{"sa":"orders-camunda","claim":"orders","size":"12345678901234567890"}}`
+	assert.JSONEq(t, want, string(got))
 }
 
 func TestExpectedFragmentRendersTemplateParametersFirst(t *testing.T) {
-	schema := &apiextensionsv1.JSON{Raw: []byte(
+	parameters := &apiextensionsv1.JSON{Raw: []byte(
 		`{"type":"object","properties":{"prefix":{"type":"string","x-fleet-template":true}}}`)}
+	tmpl := grantTemplate(`{"Resource":"{{ .parameters.prefix }}"}`)
 
-	got, err := expectedFragment(grantTemplate(`{"Resource":"{{ .parameters.prefix }}"}`), schema, grantCheckRequest())
+	got, err := expectedFragment(tmpl, parameters, grantCheckRequest())
 
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"Resource":"team-a/data"}`, string(got))

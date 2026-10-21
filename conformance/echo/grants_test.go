@@ -58,7 +58,7 @@ func grantRequest(inputs map[string]string) *pluginsv1alpha1.PluginRequest {
 	req.Namespace = "ns"
 	req.Name = requestName
 	req.UID = "request-uid"
-	req.Spec.Registration = "echo"
+	req.Spec.Registration = validOptions().Registration
 	req.Spec.ClaimRef = pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: "orders"}
 	req.Spec.Target = pluginsv1alpha1.TargetRef{
 		Kind:               "CamundaCluster",
@@ -82,16 +82,18 @@ func TestGrantsRenderEachTemplateWithTheRequest(t *testing.T) {
 	g := grants[0]
 	assert.Equal(t, requestName+"-read", g.Name)
 	assert.Equal(t, "ns", g.Namespace)
-	assert.Equal(t, map[string]string{
-		pluginsv1alpha1.LabelRegistration: "echo",
+	wantLabels := map[string]string{
+		pluginsv1alpha1.LabelRegistration: validOptions().Registration,
 		pluginsv1alpha1.LabelRequest:      requestName,
 		pluginsv1alpha1.LabelCluster:      "orders",
-	}, g.Labels)
+	}
+	assert.Equal(t, wantLabels, g.Labels)
 	assert.Equal(t, "orders", g.Spec.Cluster.Name)
 	assert.Equal(t, "read", g.Spec.Template)
 	assert.Equal(t, pluginsv1alpha1.GrantFormatAWSIAMStatement, g.Spec.Format)
-	assert.JSONEq(t, `{"Resource":"arn:aws:s3:::hello/ns/`+requestName+`","Sid":"hi",`+
-		`"Condition":{"StringEquals":{"sa":"orders-camunda","claim":"orders"}}}`, string(g.Spec.Fragment.Raw))
+	wantFragment := `{"Resource":"arn:aws:s3:::hello/ns/` + requestName + `","Sid":"hi",` +
+		`"Condition":{"StringEquals":{"sa":"orders-camunda","claim":"orders"}}}`
+	assert.JSONEq(t, wantFragment, string(g.Spec.Fragment.Raw))
 	require.Len(t, g.OwnerReferences, 1)
 	assert.Equal(t, req.UID, g.OwnerReferences[0].UID)
 }

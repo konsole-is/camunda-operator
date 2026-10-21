@@ -540,7 +540,12 @@ func (c *Controller) resources(
 	for _, g := range grants {
 		rows = append(
 			rows,
-			pluginsv1alpha1.ResourceRef{Kind: "Grant", Name: g.Name, Role: "grant", OnOrphan: pluginsv1alpha1.OnOrphanKept},
+			pluginsv1alpha1.ResourceRef{
+				Kind:     "Grant",
+				Name:     g.Name,
+				Role:     "grant",
+				OnOrphan: pluginsv1alpha1.OnOrphanKept,
+			},
 		)
 	}
 

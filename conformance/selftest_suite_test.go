@@ -150,16 +150,17 @@ func installGrantAdmissionPolicy() {
 
 	// The policy acts a short time after it is created. The binding covers
 	// every requester, so a refusal of an admin request shows that it acts.
+	unlabelled := &pluginsv1alpha1.Grant{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "unlabelled"},
+		Spec: pluginsv1alpha1.GrantSpec{
+			Cluster:  v1.ClusterRef{Name: "conformance"},
+			Template: "read",
+			Format:   pluginsv1alpha1.GrantFormatAWSIAMStatement,
+			Fragment: &apiextensionsv1.JSON{Raw: []byte(`{"Effect":"Allow"}`)},
+		},
+	}
 	Eventually(func() error {
-		return k8sClient.Create(ctx, &pluginsv1alpha1.Grant{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "unlabelled"},
-			Spec: pluginsv1alpha1.GrantSpec{
-				Cluster:  v1.ClusterRef{Name: "conformance"},
-				Template: "read",
-				Format:   pluginsv1alpha1.GrantFormatAWSIAMStatement,
-				Fragment: &apiextensionsv1.JSON{Raw: []byte(`{"Effect":"Allow"}`)},
-			},
-		}, client.DryRunAll)
+		return k8sClient.Create(ctx, unlabelled, client.DryRunAll)
 	}, time.Minute).Should(MatchError(ContainSubstring(grantAuthorPolicy)))
 }
 
