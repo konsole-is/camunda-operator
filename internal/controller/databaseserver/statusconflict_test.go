@@ -106,6 +106,12 @@ var _ = Describe("DatabaseServer abandoned recovery whose status write loses a c
 			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
 		}, timeout, interval).Should(Succeed())
 
+		// The pass that sees the stranger own camunda-r1 abandons the
+		// rollback, so the hook is in place before the stranger takes it.
+		touched := make(chan error, 1)
+		backupLists.onNextOutcome(func() { touched <- touchServer(server) })
+		DeferCleanup(func() { backupLists.onNextOutcome(nil) })
+
 		stranger := serverNamed(server.Namespace, "stranger", "stranger", nil)
 		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
 		Eventually(func(g Gomega) {
@@ -120,10 +126,6 @@ var _ = Describe("DatabaseServer abandoned recovery whose status write loses a c
 			}}
 			g.Expect(k8sClient.Update(ctx, &taken)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
-
-		touched := make(chan error, 1)
-		backupLists.onNextOutcome(func() { touched <- touchServer(server) })
-		DeferCleanup(func() { backupLists.onNextOutcome(nil) })
 		probeAnyEndpoint(server)
 
 		expectLastRecovery(server, v1.RecoveryResultFailed)
@@ -150,6 +152,15 @@ var _ = Describe("DatabaseServer abandoned recovery whose receipt is lost", func
 			g.Expect(reconciledServer(server).Status.Cluster).To(Equal("camunda-r1"))
 		}, timeout, interval).Should(Succeed())
 
+		// The pass that sees the stranger own camunda-r1 abandons the
+		// rollback, so the hook is in place before the stranger takes it.
+		touched := make(chan error, 1)
+		backupLists.onNextOutcome(func() {
+			backupLists.failNextStatusPatch()
+			touched <- touchServer(server)
+		})
+		DeferCleanup(func() { backupLists.onNextOutcome(nil) })
+
 		stranger := serverNamed(server.Namespace, "stranger", "stranger", nil)
 		key := client.ObjectKey{Namespace: server.Namespace, Name: "camunda-r1"}
 		Eventually(func(g Gomega) {
@@ -164,13 +175,6 @@ var _ = Describe("DatabaseServer abandoned recovery whose receipt is lost", func
 			}}
 			g.Expect(k8sClient.Update(ctx, &taken)).To(Succeed())
 		}, timeout, interval).Should(Succeed())
-
-		touched := make(chan error, 1)
-		backupLists.onNextOutcome(func() {
-			backupLists.failNextStatusPatch()
-			touched <- touchServer(server)
-		})
-		DeferCleanup(func() { backupLists.onNextOutcome(nil) })
 		probeAnyEndpoint(server)
 
 		expectLastRecovery(server, v1.RecoveryResultFailed)
