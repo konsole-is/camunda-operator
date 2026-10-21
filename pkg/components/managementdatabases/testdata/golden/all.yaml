@@ -1,0 +1,55 @@
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    plugins.camunda.io/registration: management-database-server
+    plugins.camunda.io/request: ops-management-database
+  name: ops-db
+  namespace: ops-ns
+spec:
+  databaseServerConfig: ops-db
+  presetRef: small
+  version: "17"
+---
+apiVersion: core.camunda.io/v1
+kind: Database
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    plugins.camunda.io/registration: management-database-server
+    plugins.camunda.io/request: ops-management-database
+  name: ops-keycloak
+  namespace: ops-ns
+spec:
+  databaseConfig: ops-keycloak
+  databaseName: keycloak
+  serverRef: ops-db
+---
+apiVersion: core.camunda.io/v1
+kind: Database
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    plugins.camunda.io/registration: management-database-server
+    plugins.camunda.io/request: ops-management-database
+  name: ops-identity
+  namespace: ops-ns
+spec:
+  databaseConfig: ops-identity
+  databaseName: identity
+  serverRef: ops-db
+---
+apiVersion: core.camunda.io/v1
+kind: Database
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    plugins.camunda.io/registration: management-database-server
+    plugins.camunda.io/request: ops-management-database
+  name: ops-web-modeler
+  namespace: ops-ns
+spec:
+  databaseConfig: ops-web-modeler
+  databaseName: web_modeler
+  serverRef: ops-db

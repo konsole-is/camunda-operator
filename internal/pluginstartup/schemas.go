@@ -64,6 +64,7 @@ const (
   "required": ["preset"],
   "properties": {
     "preset": {"type": "string", "minLength": 1, "description": "The name of the DatabaseServerPreset that the PostgreSQL server starts from."},
+    "version": {"type": "string", "pattern": "^\\d+$", "default": "` + ManagementDatabaseServerVersion + `", "description": "The PostgreSQL major version of the server, for example 17."},
     "databases": {
       "type": "array",
       "description": "The components that get a database. The management plane claim sets it.",
