@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/ptr"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -316,7 +315,7 @@ func TestElasticsearchCleanupWaitsOnlyForAnOwnedCluster(t *testing.T) {
 		Name: "orders-es", Namespace: request.Namespace,
 		OwnerReferences: []metav1.OwnerReference{{
 			APIVersion: pluginsv1alpha1.GroupVersion.String(), Kind: "PluginRequest",
-			Name: request.Name, UID: request.UID, Controller: ptr.To(true),
+			Name: request.Name, UID: request.UID, Controller: new(true),
 		}},
 	}}
 	foreign := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{Name: "orders-es", Namespace: request.Namespace}}

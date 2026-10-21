@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
@@ -177,7 +176,7 @@ var _ = Describe("Built-in elasticsearch requests", func() {
 				Name:      name,
 				Namespace: "default",
 				OwnerReferences: []metav1.OwnerReference{{
-					APIVersion: "v1", Kind: "ConfigMap", Name: holder.Name, UID: holder.UID, Controller: ptr.To(true),
+					APIVersion: "v1", Kind: "ConfigMap", Name: holder.Name, UID: holder.UID, Controller: new(true),
 				}},
 			},
 			Spec: v1.ElasticsearchClusterSpec{SecondaryStorageConfig: name},
