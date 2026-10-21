@@ -41,6 +41,9 @@ rules:
   - apiGroups: [core.camunda.io]
     resources:
       - camundaclusters
+    verbs: [get, watch]
+  - apiGroups: [core.camunda.io]
+    resources:
       - camundamanagementclusters
       - camundaoptimizes
       - elasticsearchclusters
