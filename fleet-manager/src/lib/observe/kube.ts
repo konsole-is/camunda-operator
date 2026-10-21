@@ -66,7 +66,14 @@ export async function podUsage(
   const specs = new Map(
     pods.map((pod) => [
       pod.metadata?.name,
-      (pod.spec?.containers ?? []).map((c) => c.resources ?? {}),
+      // A native sidecar is an init container that keeps running, and
+      // metrics.k8s.io counts its usage with the pod.
+      [
+        ...(pod.spec?.containers ?? []),
+        ...(pod.spec?.initContainers ?? []).filter(
+          (c) => c.restartPolicy === "Always",
+        ),
+      ].map((c) => c.resources ?? {}),
     ]),
   );
   return (metrics.items ?? []).map((item) => {

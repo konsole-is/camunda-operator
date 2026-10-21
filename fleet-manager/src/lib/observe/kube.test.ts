@@ -88,6 +88,57 @@ describe("podUsage", () => {
     expect(pod.memory).toEqual({ usedBytes: 80 * MI });
   });
 
+  it("counts a native sidecar and leaves out an init container that ends", async () => {
+    vi.mocked(getJSON).mockResolvedValue(usage);
+    vi.mocked(list).mockResolvedValue([
+      {
+        metadata: { name: "p-0" },
+        spec: {
+          initContainers: [
+            {
+              name: "setup",
+              resources: { requests: { cpu: "4" }, limits: { cpu: "4" } },
+            },
+            {
+              name: "b",
+              restartPolicy: "Always",
+              resources: { requests: { cpu: "100m" }, limits: { cpu: "500m" } },
+            },
+          ],
+          containers: [
+            {
+              name: "a",
+              resources: { requests: { cpu: "500m" }, limits: { cpu: "1" } },
+            },
+          ],
+        },
+      },
+    ] as never);
+
+    const [usageOf] = (await podUsage("team-a", "")) as { cpu: object }[];
+    expect(usageOf.cpu).toEqual({
+      usedCores: 0.3,
+      requestCores: 0.6,
+      limitCores: 1.5,
+    });
+  });
+
+  it("gives no limit when a native sidecar has none", async () => {
+    vi.mocked(getJSON).mockResolvedValue(usage);
+    vi.mocked(list).mockResolvedValue([
+      {
+        metadata: { name: "p-0" },
+        spec: {
+          initContainers: [{ name: "b", restartPolicy: "Always" }],
+          containers: [{ name: "a", resources: { limits: { cpu: "1" } } }],
+        },
+      },
+    ] as never);
+
+    const [usageOf] = (await podUsage("team-a", "")) as { cpu: object }[];
+    expect(usageOf.cpu).toEqual({ usedCores: 0.3 });
+  });
+
   it("gives a pod that is not in the cache no requests and no limits", async () => {
     vi.mocked(getJSON).mockResolvedValue(usage);
     vi.mocked(list).mockResolvedValue([]);
