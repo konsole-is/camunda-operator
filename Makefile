@@ -8,6 +8,12 @@ CLI_IMG ?= ghcr.io/konsole-is/camunda-operator-cli:latest
 # Image URL of the fleet manager, the web app of the chart value
 # fleetManager.enabled. helm-generate stamps it into the chart values.
 FLEET_IMG ?= ghcr.io/konsole-is/camunda-operator-fleet-manager:latest
+# Image URL of plugin-conformance, the conformance binary for the CI of a
+# plugin that is not written in Go.
+CONFORMANCE_IMG ?= ghcr.io/konsole-is/camunda-operator-plugin-conformance:latest
+# CONFORMANCE_PLATFORMS are the platforms of the plugin-conformance binaries
+# that dist-conformance builds for the release assets.
+CONFORMANCE_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 # OPERATOR_VERSION is the version that the manager reports, without the v of
 # the tag. The release workflow sets it from the tag. Without it the manager
 # reports 0.0.0-dev.
@@ -123,7 +129,7 @@ vet: ## Run go vet against code.
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	cd api && go test ./...
-	cd conformance && go test ./...
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go -C conformance test ./...
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
@@ -247,6 +253,20 @@ build: manifests generate fmt vet ## Build manager binary.
 build-cli: fmt vet ## Build the camunda-operator-cli binary.
 	go build -o bin/camunda-operator-cli ./cmd/camunda-operator-cli
 
+.PHONY: build-conformance
+build-conformance: ## Build the plugin-conformance binary.
+	go -C conformance build -o ../bin/plugin-conformance ./cmd/plugin-conformance
+
+.PHONY: dist-conformance
+dist-conformance: ## Build the plugin-conformance binary of each of CONFORMANCE_PLATFORMS into dist/.
+	@mkdir -p dist
+	@for p in $(CONFORMANCE_PLATFORMS); do \
+		os=$${p%/*}; arch=$${p#*/}; \
+		echo "Building dist/plugin-conformance-$$os-$$arch"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
+			go -C conformance build -o ../dist/plugin-conformance-$$os-$$arch ./cmd/plugin-conformance || exit 1; \
+	done
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host. The backup Jobs it renders run CLI_IMG.
 	@"$(KUBECTL)" create namespace "$(OPERATOR_NAMESPACE)" --dry-run=client -o yaml | "$(KUBECTL)" apply -f -
@@ -272,6 +292,14 @@ docker-build-cli: ## Build docker image with camunda-operator-cli.
 docker-push-cli: ## Push docker image with camunda-operator-cli.
 	$(CONTAINER_TOOL) push ${CLI_IMG}
 
+.PHONY: docker-build-conformance
+docker-build-conformance: ## Build docker image with plugin-conformance.
+	$(CONTAINER_TOOL) build -t ${CONFORMANCE_IMG} -f Dockerfile.conformance .
+
+.PHONY: docker-push-conformance
+docker-push-conformance: ## Push docker image with plugin-conformance.
+	$(CONTAINER_TOOL) push ${CONFORMANCE_IMG}
+
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
@@ -279,7 +307,7 @@ docker-push-cli: ## Push docker image with camunda-operator-cli.
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
 PLATFORMS ?= linux/amd64,linux/arm64
-# BUILDX_OUTPUT is where docker-buildx, docker-buildx-cli, and docker-buildx-fleet send the image. The release workflow sets it to
+# BUILDX_OUTPUT is where docker-buildx, docker-buildx-cli, docker-buildx-conformance, and docker-buildx-fleet send the image. The release workflow sets it to
 # --load, with one platform in PLATFORMS, to scan the image of each platform before it pushes them.
 BUILDX_OUTPUT ?= --push
 .PHONY: docker-buildx
@@ -300,6 +328,15 @@ docker-buildx-cli: ## Build and push docker image for camunda-operator-cli for c
 	$(CONTAINER_TOOL) buildx build $(BUILDX_OUTPUT) --platform=$(PLATFORMS) --tag ${CLI_IMG} -f Dockerfile.cli.cross .
 	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
 	rm Dockerfile.cli.cross
+
+.PHONY: docker-buildx-conformance
+docker-buildx-conformance: ## Build and push docker image for plugin-conformance for cross-platform support
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile.conformance > Dockerfile.conformance.cross
+	- $(CONTAINER_TOOL) buildx create --name camunda-operator-builder
+	$(CONTAINER_TOOL) buildx use camunda-operator-builder
+	$(CONTAINER_TOOL) buildx build $(BUILDX_OUTPUT) --platform=$(PLATFORMS) --tag ${CONFORMANCE_IMG} -f Dockerfile.conformance.cross .
+	- $(CONTAINER_TOOL) buildx rm camunda-operator-builder
+	rm Dockerfile.conformance.cross
 
 .PHONY: test-version-stamp
 test-version-stamp: OPERATOR_VERSION = 0.3.0

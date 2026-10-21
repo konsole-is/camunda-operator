@@ -22,6 +22,7 @@ import (
 	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/client-go/rest"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
@@ -40,6 +41,10 @@ type Config struct {
 	// Skip names the checks that the run does not run. Only a skippable
 	// check can be skipped, and each skip needs a reason.
 	Skip []Skip
+	// RESTConfig is the connection to the cluster of the run. Nil takes the
+	// first of the --kubeconfig flag, the KUBECONFIG file, the in-cluster
+	// config, and $HOME/.kube/config, as controller-runtime GetConfig does.
+	RESTConfig *rest.Config
 }
 
 func (c Config) validate() error {
@@ -94,7 +99,10 @@ type Case struct {
 	// Target is the resource that the request serves.
 	Target pluginsv1alpha1.TargetRef
 	// DeletionPolicy is the deletion policy of the request. It is empty,
-	// Delete, or Orphan.
+	// Delete, or Orphan. An empty policy runs the case once for each policy
+	// of the registration. When the registration has two policies, the target
+	// name of each of these runs ends in -delete or -orphan, and so does the
+	// ServiceAccount name when the case sets one.
 	DeletionPolicy pluginsv1alpha1.DeletionPolicy
 }
 
@@ -114,8 +122,8 @@ type Timeouts struct {
 	// Ready is the wait for Ready=True on a request. The default is 10
 	// minutes.
 	Ready time.Duration
-	// Deletion is the wait for a deleted request to be gone. The default is
-	// 5 minutes.
+	// Deletion bounds each wait for a deletion: of a request and its objects,
+	// of a terminating namespace, and of the cleanups. The default is 5 minutes.
 	Deletion time.Duration
 }
 

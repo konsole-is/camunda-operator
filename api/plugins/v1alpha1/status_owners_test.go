@@ -36,6 +36,17 @@ func TestPluginRequestStagesItsStatus(t *testing.T) {
 	assert.Equal(t, "PluginRequest", request.GetKind())
 }
 
+func TestPluginRegistrationStagesItsStatus(t *testing.T) {
+	var reg v1alpha1.PluginRegistration
+
+	*reg.GetStatusConditions() = append(*reg.GetStatusConditions(), metav1.Condition{Type: "Ready"})
+	reg.SetObservedGeneration(3)
+
+	assert.Equal(t, []metav1.Condition{{Type: "Ready"}}, reg.Status.Conditions)
+	assert.Equal(t, int64(3), reg.Status.ObservedGeneration)
+	assert.Equal(t, "PluginRegistration", reg.GetKind())
+}
+
 func TestGrantStagesItsConditions(t *testing.T) {
 	var grant v1alpha1.Grant
 

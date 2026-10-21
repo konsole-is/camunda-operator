@@ -72,7 +72,8 @@ type Reconciler struct {
 
 // Reconcile sets the Accepted condition of the registration. It writes no
 // other condition and leaves status.observedGeneration as the server has it,
-// because the plugin controller owns Ready and that field.
+// because the controller that serves the registration owns Ready and that
+// field.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var reg pluginsv1alpha1.PluginRegistration
 	if err := r.Get(ctx, req.NamespacedName, &reg); err != nil {
@@ -92,7 +93,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	meta.SetStatusCondition(&reg.Status.Conditions, accepted(&reg, r.OperatorVersion, f))
 
 	// The write sends the whole status as this reconcile read it. A write of
-	// the plugin controller in between makes it conflict, so it never rolls
+	// the serving controller in between makes it conflict, so it never rolls
 	// back Ready or status.observedGeneration.
 	return ownerstatus.Flush(
 		ctx,

@@ -255,6 +255,16 @@ rules:
   - watch
 - apiGroups:
   - plugins.camunda.io
+  resourceNames:
+  - existing-database-configs
+  - existing-object-storage
+  - existing-secondary-storage
+  resources:
+  - pluginregistrations
+  verbs:
+  - serve
+- apiGroups:
+  - plugins.camunda.io
   resources:
   - pluginregistrations
   - pluginsections
@@ -268,9 +278,26 @@ rules:
   - plugins.camunda.io
   resources:
   - pluginregistrations/status
+  - pluginrequests/status
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - plugins.camunda.io
+  resources:
+  - pluginrequests
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - plugins.camunda.io
+  resources:
+  - pluginrequests/finalizers
+  verbs:
   - update
 - apiGroups:
   - postgresql.cnpg.io

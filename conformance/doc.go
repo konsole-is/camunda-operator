@@ -18,5 +18,6 @@ limitations under the License.
 // plugins.camunda.io. A plugin repository calls Run from its own tests,
 // against a cluster where the plugin chart, the CRDs of the group, the grant
 // admission policy, and the operator manager are installed. Each check has a
-// stable ID, and the report, a skip, and the docs use the same ID.
+// stable ID, and the report, a skip, and the docs use the same ID. A plugin
+// in another language runs the binary plugin-conformance instead.
 package conformance

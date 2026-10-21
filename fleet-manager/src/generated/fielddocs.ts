@@ -6103,11 +6103,11 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pluginregistration"
       },
       "status.conditions": {
-        "description": "Conditions holds Accepted and Ready. The operator sets Accepted. Its\nFalse reasons are SectionMissing, OperatorVersionUnsupported, and\nDefaultConflict. The plugin controller sets Ready from its health and\nits credentials. The fleet manager offers the option only when both\nare True.",
+        "description": "Conditions holds Accepted and Ready. The operator sets Accepted. Its\nFalse reasons are SectionMissing, OperatorVersionUnsupported, and\nDefaultConflict. The plugin controller sets Ready from its health and\nits credentials. On the built-in registrations whose requests the\noperator serves, the operator sets Ready. The fleet manager offers the\noption only when both are True.",
         "anchor": "#pluginregistrationstatus"
       },
       "status.observedGeneration": {
-        "description": "ObservedGeneration is the last generation of the registration that the\nplugin controller processed. Only the plugin controller sets it, so the\nfield is absent until the plugin controller processes the registration.",
+        "description": "ObservedGeneration is the last generation of the registration that the\nplugin controller processed. Only the plugin controller sets it, so the\nfield is absent until the plugin controller processes the registration.\nThe operator is the plugin controller of the built-in registrations\nwhose requests it serves.",
         "anchor": "#pluginregistrationstatus"
       }
     },

@@ -63,15 +63,102 @@ Each resource that a plugin writes for a request carries the labels `plugins.cam
 
 With both policies, the plugin deletes a route to a Service that no longer exists. The request goes away only after the plugin applies the policy. The claim copies its own deletion policy to the request before it deletes the request.
 
+## Built-in requests
+
+The operator serves the requests of three [built-in registrations](pluginregistration.md#built-in-registrations). Each one points a section at a contract that is already in the namespace of the claim:
+
+| Registration | Parameters | Outputs |
+| --- | --- | --- |
+| `existing-object-storage` | `name` (required): an `ObjectStorageConfig` | `objectStorageConfig` |
+| `existing-secondary-storage` | `name` (required): a `SecondaryStorageConfig` | `secondaryStorageConfig` |
+| `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set |
+
+The claim writes the request. A request for the bucket `my-backup-bucket`:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: orders-backup-storage
+  namespace: my-cluster-ns
+  labels:
+    plugins.camunda.io/section: backup-storage
+    plugins.camunda.io/registration: existing-object-storage
+    fleet.camunda.io/claim: orders
+spec:
+  section: backup-storage
+  registration: existing-object-storage
+  parameters:
+    name: my-backup-bucket
+  # ... the rest of your request
+```
+
+A built-in request waits until its registration is `Ready` at the current generation of the registration. Until then, the operator does not change the status of the request. A deletion does not wait.
+
+The outputs hold the names of the contracts. `OutputsReady` turns `True` when every named contract exists, and `Ready` follows `OutputsReady`. The first item of `summary` names the contract and says if its `Ready` condition is `True`:
+
+```yaml
+status:
+  observedGeneration: 1
+  conditions:
+    - type: OutputsReady
+      status: "True"
+      reason: Healthy
+      message: Component is healthy.
+      observedGeneration: 1
+    - type: Ready
+      status: "True"
+      reason: Healthy
+      message: "outputs: Component is healthy."
+      observedGeneration: 1
+  outputs:
+    objectStorageConfig: my-backup-bucket
+  summary:
+    - label: ObjectStorageConfig
+      value: my-backup-bucket, Ready
+      severity: Info
+  summaryTime: "2026-10-19T09:00:00Z"
+```
+
+If the contract exists and its `Ready` condition is not `True`, the value is `my-backup-bucket, not Ready` with the `Warning` severity. If the contract has a `Ready` reason, the value adds it, for example `my-backup-bucket, not Ready (MissingSecret)`.
+
+While a named contract does not exist, `OutputsReady` and `Ready` are `False` with reason `Blocked`, and the message names the contract. The summary value ends in `waiting`. Create the contract, or correct the name in the claim. If a contract is deleted later, the request removes its outputs and reports `Blocked` again until the contract is back.
+
+```yaml
+status:
+  conditions:
+    - type: OutputsReady
+      status: "False"
+      reason: Blocked
+      message: waiting for core.camunda.io/v1/ObjectStorageConfig/my-cluster-ns/my-backup-bucket
+      observedGeneration: 1
+    - type: Ready
+      status: "False"
+      reason: Blocked
+      message: "outputs: waiting for core.camunda.io/v1/ObjectStorageConfig/my-cluster-ns/my-backup-bucket"
+      observedGeneration: 1
+  summary:
+    - label: ObjectStorageConfig
+      value: my-backup-bucket, waiting
+      severity: Warning
+```
+
+If the parameters do not pass the schema of the registration, for example without the required `name`, `OutputsReady` and `Ready` are `False` with reason `InvalidParameters`. The message names each field that fails. `existing-database-configs` also refuses two fields with the same name, and the message names both fields.
+
+When the claim or you delete the request, the contracts stay, with both deletion policies. The request goes away at once.
+
 ## Status
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `OutputsReady` | set by the plugin | `True` when the plugin wrote the outputs for the current generation. | If it stays `False`, read the message and the events of the request. |
+| `OutputsReady` | `InvalidParameters` | The parameters do not pass the schema or the rules of the registration. | Correct the parameters in the claim. |
+| `OutputsReady` | `Blocked` | A contract that the request names does not exist. The message names the contract. | Create the contract, or correct the name in the claim. |
 | `Ready` | `Healthy` | The resources of the request are ready. | Nothing. |
 | `Ready` | `GrantRejected` | A `Grant` of the request is not `Ready`. The outputs stay usable. | Read the status of the grant. See [Grant](grant.md#status). |
 | `Ready` | `WaitingForEndpoints` | An access request waits for the endpoints in the status of its target. | Wait for the target to report its endpoints. |
 | `Ready` | `InvalidParameters` | The parameters do not pass the schema or the rules of the registration. | Correct the parameters in the claim. |
+| `Ready` | `Blocked` | A contract that the request names does not exist. The message names the contract. | Create the contract, or correct the name in the claim. |
 | `Ready` | set by the plugin | Another state of the plugin. | Read the message, and the logs of the plugin controller. |
 
 The plugin records an event on the request for each external action, for example a bucket that it created.

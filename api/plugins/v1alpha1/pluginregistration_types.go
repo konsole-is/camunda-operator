@@ -146,13 +146,16 @@ type PluginRegistrationStatus struct {
 	// ObservedGeneration is the last generation of the registration that the
 	// plugin controller processed. Only the plugin controller sets it, so the
 	// field is absent until the plugin controller processes the registration.
+	// The operator is the plugin controller of the built-in registrations
+	// whose requests it serves.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions holds Accepted and Ready. The operator sets Accepted. Its
 	// False reasons are SectionMissing, OperatorVersionUnsupported, and
 	// DefaultConflict. The plugin controller sets Ready from its health and
-	// its credentials. The fleet manager offers the option only when both
-	// are True.
+	// its credentials. On the built-in registrations whose requests the
+	// operator serves, the operator sets Ready. The fleet manager offers the
+	// option only when both are True.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -199,6 +202,11 @@ func (in *PluginRegistration) GetStatusConditions() *[]metav1.Condition { return
 // GetKind returns the CRD kind. The component framework uses it for event and
 // metric recording.
 func (in *PluginRegistration) GetKind() string { return "PluginRegistration" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *PluginRegistration) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
+}
 
 // +kubebuilder:object:root=true
 
