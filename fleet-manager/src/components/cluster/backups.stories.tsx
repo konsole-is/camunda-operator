@@ -61,7 +61,9 @@ function input(over: Partial<BackupStorageInput>): BackupStorageInput {
     databaseConfigs: [],
     databaseServerConfigs: [],
     databaseServers: [],
+    databaseServerPresets: [],
     schedules: [],
+    now,
     ...over,
   };
 }

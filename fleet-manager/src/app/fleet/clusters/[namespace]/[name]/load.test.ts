@@ -75,6 +75,7 @@ describe("loadClusterPage", () => {
       "Environment",
       "CamundaClusterPreset",
       "CamundaRelease",
+      "DatabaseServerPreset",
     ]) {
       expect(listOf(kind)).toEqual({});
     }

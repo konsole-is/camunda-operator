@@ -3,6 +3,7 @@ import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import { formatBytes } from "@/components/fleet/units";
 import type { Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
+import { mergeDatabaseServer } from "@/lib/merge";
 import {
   type BackupKind,
   type ClusterLike,
@@ -208,13 +209,15 @@ export type DatabaseView = {
 /**
  * BackupStorage is the backup storage of a cluster. It is none when the
  * cluster has no backupStorageRef, and unknown when its
- * SecondaryStorageConfig is not found. repository is set only for
+ * SecondaryStorageConfig is not found. missing then names that object, as
+ * "SecondaryStorageConfig orders-es". repository is set only for
  * elasticsearch, and database only for rdbms.
  */
 export type BackupStorage =
   | { kind: "none"; schedules: ScheduleView[] }
   | {
       kind: "elasticsearch" | "rdbms" | "unknown";
+      missing?: string;
       bucket: BucketView;
       repository?: string;
       database?: DatabaseView;
@@ -223,8 +226,8 @@ export type BackupStorage =
 
 /**
  * BackupStorageInput holds what backupStorageOf reads. cluster is the live
- * object and spec its merged spec. The lists hold the objects of the
- * namespace of the cluster.
+ * object and spec its merged spec. The namespaced lists hold the objects of
+ * the namespace of the cluster. now is the current time.
  */
 export type BackupStorageInput = {
   cluster: Resource<"CamundaCluster">;
@@ -234,7 +237,9 @@ export type BackupStorageInput = {
   databaseConfigs: readonly Resource<"DatabaseConfig">[];
   databaseServerConfigs: readonly Resource<"DatabaseServerConfig">[];
   databaseServers: readonly Resource<"DatabaseServer">[];
+  databaseServerPresets: readonly Resource<"DatabaseServerPreset">[];
   schedules: readonly Resource<"BackupSchedule">[];
+  now: string;
 };
 
 /**
@@ -306,7 +311,12 @@ export function backupStorageOf(input: BackupStorageInput): BackupStorage {
         schedules,
       };
     default:
-      return { kind: "unknown", bucket, schedules };
+      return {
+        kind: "unknown",
+        missing: `SecondaryStorageConfig ${input.spec.storageRef ?? ""}`,
+        bucket,
+        schedules,
+      };
   }
 }
 
@@ -347,7 +357,9 @@ function archiveOf(
     server: server.metadata?.name ?? "",
     state: { tone: "muted", label: "Off" },
   };
-  if (!server.spec.archive) return view;
+  const preset = byName(input.databaseServerPresets, server.spec.presetRef);
+  const spec = mergeDatabaseServer(preset?.spec, server.spec).spec;
+  if (!spec.archive) return view;
 
   const ready = server.status?.conditions?.find(
     (c) => c.type === "ArchiveReady",
@@ -360,17 +372,23 @@ function archiveOf(
   } else {
     view.state = { tone: "warn", label: ready?.reason || "Waiting", message };
   }
-  view.bucket = bucketOf(
-    input.objectStorage,
-    server.spec.archive.objectStorageRef,
-  );
+  view.bucket = bucketOf(input.objectStorage, spec.archive.objectStorageRef);
 
   // A rollback reads only the open record, the one without to
-  // (docs/crds/databaseserver.md "The archive history").
+  // (docs/crds/databaseserver.md "The archive history"). The operator also
+  // refuses a point older than the retention period (outOfReach in
+  // internal/controller/databaseserver).
   const archive = server.status?.archive;
   const open = archive?.history?.findLast((r) => !r.to);
   if (open) {
-    const from = [open.from, archive?.reachableFrom]
+    const nowMs = parse(input.now);
+    const cutoff =
+      nowMs === undefined || !spec.archive.retentionPeriodDays
+        ? undefined
+        : new Date(
+            nowMs - spec.archive.retentionPeriodDays * 86_400_000,
+          ).toISOString();
+    const from = [open.from, archive?.reachableFrom, cutoff]
       .filter((t): t is string => parse(t) !== undefined)
       .reduce((a, b) => (parse(b)! > parse(a)! ? b : a));
     view.window = open.unverifiedFrom

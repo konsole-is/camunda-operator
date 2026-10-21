@@ -37,6 +37,7 @@ export async function loadClusterPage(
     databaseConfigs,
     databaseServerConfigs,
     databaseServers,
+    databaseServerPresets,
     schedules,
   ] = await Promise.all([
     get("Namespace", undefined, namespace).catch(() => undefined),
@@ -59,6 +60,7 @@ export async function loadClusterPage(
     listOrEmpty("DatabaseConfig", inNamespace),
     listOrEmpty("DatabaseServerConfig", inNamespace),
     listOrEmpty("DatabaseServer", inNamespace),
+    listOrEmpty("DatabaseServerPreset", {}),
     listOrEmpty("BackupSchedule", inNamespace),
   ]);
   return {
@@ -83,6 +85,7 @@ export async function loadClusterPage(
       databaseConfigs,
       databaseServerConfigs,
       databaseServers,
+      databaseServerPresets,
       schedules,
     },
   };

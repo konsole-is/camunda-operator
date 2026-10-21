@@ -138,6 +138,25 @@ describe("BackupsTab", () => {
     expect(within(storage).getByText("Not registered yet")).toBeTruthy();
   });
 
+  it("names a missing SecondaryStorageConfig", () => {
+    render(
+      <BackupsTab
+        storage={{
+          kind: "unknown",
+          missing: "SecondaryStorageConfig orders-es",
+          bucket: { name: "backups", location: "s3://acme-backups" },
+          schedules: [],
+        }}
+        backups={[]}
+        restores={[]}
+      />,
+    );
+    const storage = screen.getByRole("region", { name: "Backup storage" });
+    expect(
+      within(storage).getByText("SecondaryStorageConfig orders-es not found"),
+    ).toBeTruthy();
+  });
+
   it("names the missing link of the PostgreSQL chain", () => {
     render(
       <BackupsTab

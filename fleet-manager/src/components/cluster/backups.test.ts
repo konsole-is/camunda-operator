@@ -373,7 +373,9 @@ function input(
     databaseConfigs: [],
     databaseServerConfigs: [],
     databaseServers: [],
+    databaseServerPresets: [],
     schedules: [],
+    now,
     ...rest,
   };
 }
@@ -527,6 +529,7 @@ describe("backupStorageOf", () => {
       ),
     ).toEqual({
       kind: "unknown",
+      missing: "SecondaryStorageConfig gone",
       bucket: {
         name: "backups",
         location: "s3://acme-backups/orders (region eu-west-1)",
@@ -626,6 +629,48 @@ describe("backupStorageOf", () => {
     expect(
       storage.kind === "rdbms" && storage.database?.archive?.window,
     ).toBeUndefined();
+  });
+
+  it("starts the window at the retention cutoff when the open record is older", () => {
+    const storage = backupStorageOf(
+      rdbmsChain({
+        server: {
+          databaseServerConfig: "orders-pg",
+          archive: { objectStorageRef: "wal", retentionPeriodDays: 7 },
+        },
+        serverStatus: {
+          archive: {
+            history: [
+              { serverName: "orders-pg", from: "2026-01-01T00:00:00Z" },
+            ],
+          },
+        },
+      }),
+    );
+    expect(
+      storage.kind === "rdbms" && storage.database?.archive?.window,
+    ).toEqual({ from: "2026-10-11T12:00:00.000Z" });
+  });
+
+  it("takes the archive of the DatabaseServerPreset when the server sets none", () => {
+    const data = rdbmsChain({
+      server: { databaseServerConfig: "orders-pg", presetRef: "pg" },
+    });
+    data.databaseServerPresets = [
+      {
+        kind: "DatabaseServerPreset",
+        metadata: { name: "pg" },
+        spec: { server: { archive: { objectStorageRef: "wal" } } },
+      } as unknown as Resource<"DatabaseServerPreset">,
+    ];
+    const storage = backupStorageOf(data);
+    expect(storage.kind === "rdbms" && storage.database?.archive).toMatchObject(
+      {
+        state: { tone: "ok", label: "Archiving" },
+        bucket: { name: "wal", location: "gs://acme-wal" },
+        window: { from: "2026-09-25T09:58:00Z" },
+      },
+    );
   });
 
   it("an archive without ArchiveReady is Waiting", () => {

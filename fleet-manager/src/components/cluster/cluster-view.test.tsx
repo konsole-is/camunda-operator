@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
@@ -144,6 +144,7 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
       databaseConfigs: [],
       databaseServerConfigs: [],
       databaseServers: [],
+      databaseServerPresets: [],
       schedules: [],
     },
     ...over,
@@ -601,6 +602,7 @@ describe("Backups tab", () => {
                 },
               ),
             ],
+            databaseServerPresets: [],
             schedules: [],
           },
         }),
@@ -677,6 +679,42 @@ describe("Backups tab", () => {
     expect(
       screen.getByRole("button", { name: "Details of manual-2" }),
     ).toBeTruthy();
+  });
+
+  it("a running backup counts its duration on with the clock", () => {
+    vi.useFakeTimers({ now: Date.parse(now) });
+    try {
+      render(
+        view({
+          initial: data({
+            backups: {
+              elasticsearch: [
+                esBackup("running-1", "Running", "2026-10-18T11:30:00Z"),
+              ],
+              rdbms: [],
+            },
+          }),
+        }),
+      );
+      const row = () =>
+        within(screen.getByRole("region", { name: "Backups" })).getAllByRole(
+          "row",
+        )[1];
+      expect(row().textContent).toContain("30m");
+      act(() => {
+        vi.advanceTimersByTime(65_000);
+      });
+      expect(row().textContent).toContain("31m 5s");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("watches the DatabaseServerPresets of every namespace", () => {
+    render(view());
+    expect(
+      live.calls.find((c) => c.kind === "DatabaseServerPreset")?.opts,
+    ).toEqual({});
   });
 
   it("watches the backup kinds in the namespace of the cluster", () => {

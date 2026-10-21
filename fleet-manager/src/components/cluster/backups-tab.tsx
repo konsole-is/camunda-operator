@@ -73,6 +73,11 @@ function StorageSection({ storage }: { storage: BackupStorage }) {
         </p>
       ) : (
         <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+          {storage.missing && (
+            <Term label="Secondary storage">
+              <span className="text-bad">{storage.missing} not found</span>
+            </Term>
+          )}
           <Term label="Bucket">{bucketText(storage.bucket)}</Term>
           {storage.kind === "elasticsearch" && (
             <Term label="Snapshot repository">

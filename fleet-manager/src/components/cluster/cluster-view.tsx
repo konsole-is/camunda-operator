@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   GitWaitingLine,
   type PushedObject,
@@ -37,7 +37,7 @@ import { TopologyView } from "./topology-view";
  * the PluginRequests of the access section. podSelector selects the pods of
  * the cluster by its owner label, and pods holds them. backupStorage holds
  * the objects that the Backups tab follows from the cluster to its buckets
- * and its schedules.
+ * and its schedules. Its databaseServerPresets are cluster-scoped.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -64,6 +64,7 @@ export type ClusterPageData = {
     databaseConfigs: Resource<"DatabaseConfig">[];
     databaseServerConfigs: Resource<"DatabaseServerConfig">[];
     databaseServers: Resource<"DatabaseServer">[];
+    databaseServerPresets: Resource<"DatabaseServerPreset">[];
     schedules: Resource<"BackupSchedule">[];
   };
 };
@@ -175,10 +176,20 @@ export function ClusterView({
     { namespace: ns },
     initial.backupStorage.databaseServers,
   );
+  const databaseServerPresets = useResources(
+    "DatabaseServerPreset",
+    {},
+    initial.backupStorage.databaseServerPresets,
+  );
   const schedules = useResources(
     "BackupSchedule",
     { namespace: ns },
     initial.backupStorage.schedules,
+  );
+  const backups = [...backupsES.items, ...backupsRDBMS.items];
+  const clock = useClock(
+    now,
+    runningBackup(cluster.item ?? initial.cluster, backups) !== undefined,
   );
 
   const live = cluster.item;
@@ -206,6 +217,7 @@ export function ClusterView({
       ["DatabaseConfig", databaseConfigs],
       ["DatabaseServerConfig", databaseServerConfigs],
       ["DatabaseServer", databaseServers],
+      ["DatabaseServerPreset", databaseServerPresets],
       ["BackupSchedule", schedules],
     ] as const
   ).flatMap(([kind, result]) =>
@@ -241,7 +253,6 @@ export function ClusterView({
   const ready = live.status?.conditions?.find((c) => c.type === "Ready") as
     ConditionLike | undefined;
 
-  const backups = [...backupsES.items, ...backupsRDBMS.items];
   const restores = [
     ...restoresES.items,
     ...restoresRDBMS.items,
@@ -315,9 +326,11 @@ export function ClusterView({
               databaseConfigs: databaseConfigs.items,
               databaseServerConfigs: databaseServerConfigs.items,
               databaseServers: databaseServers.items,
+              databaseServerPresets: databaseServerPresets.items,
               schedules: schedules.items,
+              now: clock,
             })}
-            backups={backupRowsOf(live, backups, now)}
+            backups={backupRowsOf(live, backups, clock)}
             restores={restoreRowsOf(live, restores)}
             actions={slot("cluster.backups.actions")}
           />
@@ -327,4 +340,16 @@ export function ClusterView({
       </Tabs>
     </div>
   );
+}
+
+// useClock starts at the time of the server, so that the first render in
+// the browser matches the render of the server.
+function useClock(initial: string, ticking: boolean): string {
+  const [clock, setClock] = useState(initial);
+  useEffect(() => {
+    if (!ticking) return;
+    const timer = setInterval(() => setClock(new Date().toISOString()), 1000);
+    return () => clearInterval(timer);
+  }, [ticking]);
+  return clock;
 }
