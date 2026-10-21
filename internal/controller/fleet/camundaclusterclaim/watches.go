@@ -93,8 +93,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fleetv1alpha1.CamundaClusterClaim{}).
-		Owns(&pluginsv1alpha1.PluginRequest{}).
-		Owns(&v1.CamundaCluster{}).
+		// Not Owns: an object that another owner controls must also wake the
+		// claim that it blocks, so the claim moves on when the object goes.
+		Watches(&pluginsv1alpha1.PluginRequest{}, enqueueClaimOfRequest()).
+		Watches(&v1.CamundaCluster{}, &handler.EnqueueRequestForObject{}).
 		Watches(
 			&pluginsv1alpha1.PluginSection{},
 			refindex.Enqueue(cached, list, pluginSectionsField, refindex.ObjectName),
@@ -127,6 +129,31 @@ func distinctNames(o client.Object, name func(fleetv1alpha1.PluginSelection) str
 	slices.Sort(names)
 
 	return slices.Compact(names)
+}
+
+// enqueueClaimOfRequest maps the event of a PluginRequest to the claim of
+// its label fleet.camunda.io/claim and to the claim of spec.claimRef.
+func enqueueClaimOfRequest() handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
+		request, ok := o.(*pluginsv1alpha1.PluginRequest)
+		if !ok {
+			return nil
+		}
+
+		names := []string{request.Labels[fleetv1alpha1.LabelClaim], request.Spec.ClaimRef.Name}
+		slices.Sort(names)
+
+		var requests []reconcile.Request
+		for _, name := range slices.Compact(names) {
+			if name != "" {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{Namespace: request.Namespace, Name: name},
+				})
+			}
+		}
+
+		return requests
+	})
 }
 
 // enqueueAllClaims maps an event to a request for every claim.

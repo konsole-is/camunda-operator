@@ -315,6 +315,15 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		cluster, err := clusterOf(claim)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cluster.Spec.PresetRef).To(Equal("other"))
+
+		By("writing its own cluster once the foreign one is gone")
+		Expect(k8sClient.Delete(ctx, foreign)).To(Succeed())
+		Eventually(func(g Gomega) {
+			cluster, err := clusterOf(claim)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(cluster.Spec.PresetRef).To(Equal(presetName))
+			g.Expect(metav1.GetControllerOf(cluster).Name).To(Equal(claim.Name))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("does not take over a request that another claim controls", func() {
@@ -349,6 +358,14 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		request, err := requestOf(claim, pluginstartup.SectionEncryptionKey)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(request.Spec.ClaimRef.Kind).To(Equal(pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim))
+
+		By("writing its own request once the foreign one is gone")
+		Expect(k8sClient.Delete(ctx, foreign)).To(Succeed())
+		Eventually(func(g Gomega) {
+			request, err := requestOf(claim, pluginstartup.SectionEncryptionKey)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(request.Spec.ClaimRef.Kind).To(Equal(pluginsv1alpha1.ClaimKindCamundaClusterClaim))
+		}, timeout, interval).Should(Succeed())
 	})
 })
 
