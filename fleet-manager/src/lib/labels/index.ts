@@ -56,3 +56,40 @@ export function isLabelKey(key: string): boolean {
 export function isLabelValue(value: string): boolean {
   return value === "" || NAME.test(value);
 }
+
+/** LabelSelector is a metav1.LabelSelector. */
+export type LabelSelector = {
+  matchLabels?: Record<string, string>;
+  matchExpressions?: { key: string; operator: string; values?: string[] }[];
+};
+
+/**
+ * labelSelectorString writes selector in the text form of a Kubernetes
+ * label selector, as in "app=web,tier in (a,b),!legacy". No selector and an
+ * empty one give "", which selects every object. It throws for an operator
+ * other than In, NotIn, Exists, and DoesNotExist.
+ */
+export function labelSelectorString(selector: LabelSelector | undefined): string {
+  const labels = Object.entries(selector?.matchLabels ?? {})
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, value]) => `${key}=${value}`);
+  const expressions = (selector?.matchExpressions ?? []).map(
+    ({ key, operator, values = [] }) => {
+      switch (operator) {
+        case "In":
+          return `${key} in (${values.join(",")})`;
+        case "NotIn":
+          return `${key} notin (${values.join(",")})`;
+        case "Exists":
+          return key;
+        case "DoesNotExist":
+          return `!${key}`;
+        default:
+          throw new Error(
+            `The label selector operator ${operator} of key ${key} is not valid`,
+          );
+      }
+    },
+  );
+  return [...labels, ...expressions].join(",");
+}
