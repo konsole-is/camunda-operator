@@ -57,3 +57,22 @@ export function byCodeUnit(a: string, b: string): number {
 export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+/** own returns the own property key of object, never one that it inherits, such as constructor. */
+export function own<T>(object: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(object, key) ? object[key] : undefined;
+}
+
+/** setOwn sets the own property key of object, also for the key __proto__. */
+export function setOwn<T>(
+  object: Record<string, T>,
+  key: string,
+  value: NoInfer<T>,
+): void {
+  Object.defineProperty(object, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}

@@ -6,6 +6,7 @@ import {
   listOfNames,
   nameOf,
   NOT_AN_OBJECT,
+  own,
 } from "./json";
 import type {
   ParameterPolicies,
@@ -118,7 +119,7 @@ function checkParameters(
   }
 
   for (const key of Object.keys(claimed).sort(byCodeUnit)) {
-    const policy: ParameterPolicy = policies[key] ?? {};
+    const policy: ParameterPolicy = own(policies, key) ?? {};
     const value = claimed[key];
     if (!policy.claimEditable) {
       if (!("value" in policy) || !equalJSON(value, policy.value)) {

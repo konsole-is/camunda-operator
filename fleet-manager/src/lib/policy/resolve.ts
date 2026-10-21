@@ -7,6 +7,8 @@ import {
   listOfNames,
   nameOf,
   NOT_AN_OBJECT,
+  own,
+  setOwn,
 } from "./json";
 import type { PluginSelection, PolicyResult } from "./types";
 
@@ -92,8 +94,8 @@ export function sectionPolicy(
   registrations: readonly PluginRegistration[],
 ): SectionPolicy | undefined {
   if (environment) {
-    const own = environment.spec.sections?.[section];
-    return own && compactSection(own);
+    const entry = environment.spec.sections?.[section];
+    return entry && compactSection(entry);
   }
 
   const serving = registrations.filter((r) =>
@@ -128,28 +130,28 @@ export function parameterPolicies(
 
   const policies: ParameterPolicies = {};
   for (const [key, value] of Object.entries(values)) {
-    policies[key] = { value: structuredClone(value) };
+    setOwn(policies, key, { value: structuredClone(value) });
   }
 
   if (!environment) {
     for (const key of registration.spec.claimEditable ?? []) {
-      policies[key] = { ...policies[key], claimEditable: true };
+      setOwn(policies, key, { ...own(policies, key), claimEditable: true });
     }
     return { value: policies };
   }
 
-  for (const [key, own] of Object.entries(
+  for (const [key, entry] of Object.entries(
     environment.spec.parameters?.[name] ?? {},
   )) {
-    const policy: ParameterPolicy = { ...policies[key] };
+    const policy: ParameterPolicy = { ...own(policies, key) };
     delete policy.claimEditable;
     delete policy.allowed;
-    if (own.claimEditable) policy.claimEditable = true;
-    if (own.allowed?.length) policy.allowed = own.allowed.map(choiceOf);
-    if (own.value !== undefined && own.value !== null) {
-      policy.value = structuredClone(own.value);
+    if (entry.claimEditable) policy.claimEditable = true;
+    if (entry.allowed?.length) policy.allowed = entry.allowed.map(choiceOf);
+    if (entry.value !== undefined && entry.value !== null) {
+      policy.value = structuredClone(entry.value);
     }
-    policies[key] = policy;
+    setOwn(policies, key, policy);
   }
 
   return { value: policies };
@@ -167,8 +169,8 @@ function snapshot(input: ResolveInput): PolicyResult<ResolvedPolicy> {
     ? Object.keys(environment.spec.sections ?? {})
     : selections.map((s) => s.section);
   for (const section of sections) {
-    const own = sectionPolicy(section, environment, registrations);
-    if (own) policy.sections = { ...policy.sections, [section]: own };
+    const entry = sectionPolicy(section, environment, registrations);
+    if (entry) policy.sections = { ...policy.sections, [section]: entry };
   }
 
   for (const s of selections) {
@@ -208,12 +210,12 @@ function requestParameters(
 
   const object: Record<string, unknown> = {};
   for (const [key, policy] of Object.entries(policies)) {
-    if ("value" in policy) object[key] = policy.value;
+    if ("value" in policy) setOwn(object, key, policy.value);
   }
   for (const [key, value] of Object.entries(claimed)) {
-    const policy = policies[key];
+    const policy = own(policies, key);
     if (policy?.claimEditable) {
-      object[key] = valuesOfNames(value, policy.allowed ?? []);
+      setOwn(object, key, valuesOfNames(value, policy.allowed ?? []));
     }
   }
 

@@ -1,6 +1,6 @@
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
-import { byCodeUnit } from "./json";
+import { byCodeUnit, own, setOwn } from "./json";
 import type { InputRef, PluginSelection } from "./types";
 
 /**
@@ -32,11 +32,10 @@ export function resolveInputs(
     const selection = selections.find((s) => s.section === section);
     if (!selection) continue;
 
-    const value = readyOutputs(requests, section, selection.registration)?.[
-      output
-    ];
+    const outputs = readyOutputs(requests, section, selection.registration);
+    const value = outputs && own(outputs, output);
     if (value === undefined) waiting.add(section);
-    else values[input.name] = value;
+    else setOwn(values, input.name, value);
   }
 
   return {
@@ -93,7 +92,7 @@ export function missingInputs(
     [],
   );
   return (registration.spec.inputs ?? [])
-    .filter((input) => input.required && !(input.name in values))
+    .filter((input) => input.required && !Object.hasOwn(values, input.name))
     .map((input) => ({
       name: input.name,
       from: input.from,

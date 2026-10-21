@@ -152,6 +152,25 @@ describe("claimEditable", () => {
     expect(rules[1]).not.toHaveProperty("required");
   });
 
+  it("returns a rule for a parameter named constructor that only the policy has", () => {
+    expect(
+      claimEditable(
+        reg({
+          parameterValues: { constructor: "default" },
+          claimEditable: ["constructor"],
+        }),
+        undefined,
+      ),
+    ).toEqual([
+      {
+        name: "constructor",
+        label: "constructor",
+        claimEditable: true,
+        value: "default",
+      },
+    ]);
+  });
+
   it("counts parameterValues that is not an object as no values", () => {
     expect(
       claimEditable(
@@ -223,6 +242,33 @@ describe("sectionOptions", () => {
     );
 
     expect(view.options[0].choices?.parameter).toBe("name");
+  });
+
+  it("sets no choices when the environment gives the choice parameter an allowed list", () => {
+    const view = sectionOptions(
+      section(),
+      [
+        reg({
+          parameters: {
+            type: "object",
+            properties: { preset: { type: "string" } },
+          },
+          choices: [{ name: "small" }, { name: "large" }],
+        }),
+      ],
+      envWith(
+        {
+          preset: {
+            claimEditable: true,
+            allowed: [{ name: "standard", label: "Standard", value: "small" }],
+          },
+        },
+        { sections: { "backup-storage": { allowed: ["s3"] } } },
+      ),
+      "CamundaClusterClaim",
+    );
+
+    expect(view.options[0]).not.toHaveProperty("choices");
   });
 
   it("sets no choices for a registration without choices", () => {

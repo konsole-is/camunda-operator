@@ -2,7 +2,7 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { OpenAPISchema } from "@/lib/schema";
-import { byCodeUnit, isObject } from "./json";
+import { byCodeUnit, isObject, own } from "./json";
 import { parameterPolicies, sectionPolicy } from "./resolve";
 import type {
   ClaimKind,
@@ -44,12 +44,12 @@ export function claimEditable(
   const names = [
     ...Object.keys(properties),
     ...Object.keys(policies)
-      .filter((k) => !(k in properties))
+      .filter((k) => !Object.hasOwn(properties, k))
       .sort(byCodeUnit),
   ];
 
   return names.map((name): ParameterRule => {
-    const property = isObject(properties[name])
+    const property = isObject(own(properties, name))
       ? (properties[name] as OpenAPISchema)
       : undefined;
     const base = {
@@ -61,7 +61,7 @@ export function claimEditable(
       ...(property && { schema: property }),
       ...(required.includes(name) && { required: true }),
     };
-    const policy = policies[name] ?? {};
+    const policy = own(policies, name) ?? {};
     if (!policy.claimEditable) {
       return {
         ...base,
@@ -102,8 +102,9 @@ export function lockedSummary(value: unknown): string {
  * name, and the Default is the one registration with mode Default. With one,
  * they are the allowed registrations in the order of allowed, and the Default
  * is its default. A registration that is missing, or not Accepted=True and
- * Ready=True, is left out. disabledReason stays unset: the caller sets it
- * from missingInputs.
+ * Ready=True, is left out. An option has no choices when the Environment
+ * gives the choice parameter an allowed list. disabledReason stays unset: the
+ * caller sets it from missingInputs.
  */
 export function sectionOptions(
   section: PluginSection,
@@ -147,19 +148,19 @@ function optionOf(
   const { spec } = registration;
   const schema = isObject(spec.parameters) ? spec.parameters : {};
   const properties = isObject(schema.properties) ? schema.properties : {};
+  const parameters = claimEditable(registration, environment);
+  const parameter = Object.hasOwn(properties, "preset") ? "preset" : "name";
+  const rule = parameters.find((r) => r.name === parameter);
+  const aliased = rule?.claimEditable && rule.allowed;
   return {
     registration: registration.metadata.name ?? "",
     label: spec.label,
     ...(spec.description && { description: spec.description }),
     ...(spec.docsUrl && { docsUrl: spec.docsUrl }),
     isDefault,
-    parameters: claimEditable(registration, environment),
-    ...(spec.choices?.length && {
-      choices: {
-        parameter: "preset" in properties ? "preset" : "name",
-        items: spec.choices,
-      },
-    }),
+    parameters,
+    ...(spec.choices?.length &&
+      !aliased && { choices: { parameter, items: spec.choices } }),
   };
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import { missingInputs } from "./inputs";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import { missingInputs, resolveInputs } from "./inputs";
 
 const esRegistration = {
   metadata: { name: "elasticsearch" },
@@ -53,5 +54,48 @@ describe("missingInputs", () => {
 
   it("returns nothing for a registration that does not exist", () => {
     expect(missingInputs(es, [es], [])).toEqual([]);
+  });
+});
+
+describe("missingInputs with input names of Object", () => {
+  it.each(["constructor", "toString"])(
+    "returns a required input named %s whose section has no selection",
+    (name) => {
+      const registration = structuredClone(esRegistration);
+      registration.spec.inputs = [
+        { name, from: "backup-storage/objectStorageConfig", required: true },
+      ];
+
+      expect(
+        missingInputs(es, [es], [registration]).map((i) => i.name),
+      ).toEqual([name]);
+    },
+  );
+});
+
+describe("resolveInputs", () => {
+  it("waits for an output named constructor that the ready request does not have", () => {
+    const registration = structuredClone(esRegistration);
+    registration.spec.inputs = [
+      { name: "ctor", from: "backup-storage/constructor", required: true },
+    ];
+    const request = {
+      metadata: { name: "orders-backup-storage", generation: 1 },
+      spec: { section: "backup-storage", registration: "s3" },
+      status: {
+        outputs: { objectStorageConfig: "orders" },
+        conditions: [
+          { type: "OutputsReady", status: "True", observedGeneration: 1 },
+        ],
+      },
+    } as unknown as PluginRequest;
+
+    expect(
+      resolveInputs(
+        registration,
+        [es, { section: "backup-storage", registration: "s3" }],
+        [request],
+      ),
+    ).toEqual({ waiting: ["backup-storage"] });
   });
 });
