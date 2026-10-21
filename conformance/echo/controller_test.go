@@ -160,3 +160,67 @@ func TestApplyObjectsRefusesAnObjectOfAnotherWriter(t *testing.T) {
 	assert.Equal(t, other.Data, got.Data)
 	assert.Empty(t, got.Labels)
 }
+
+// newFakeGrantController is newFakeController with the grant template
+// readTemplate.
+func newFakeGrantController(t *testing.T, objs ...client.Object) *Controller {
+	t.Helper()
+
+	c := newFakeController(t, objs...)
+	c.opts.GrantTemplates = []pluginsv1alpha1.GrantTemplate{readTemplate()}
+
+	return c
+}
+
+// existingGrant is the Grant of grantRequest as the controller wrote it.
+func existingGrant(t *testing.T) *pluginsv1alpha1.Grant {
+	t.Helper()
+
+	grants, err := newGrantController(t, DefectNone).grants(grantRequest(map[string]string{"source": "hello"}), false)
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+
+	return grants[0]
+}
+
+func TestResourcesListEachGrant(t *testing.T) {
+	c := newFakeGrantController(t)
+	req := grantRequest(map[string]string{"source": "hello"})
+	grants, err := c.grants(req, false)
+	require.NoError(t, err)
+
+	rows := c.resources(req, grants)
+
+	assert.Contains(t, rows, pluginsv1alpha1.ResourceRef{
+		Kind:     "Grant",
+		Name:     requestName + "-read",
+		Role:     "grant",
+		OnOrphan: pluginsv1alpha1.OnOrphanKept,
+	})
+}
+
+func TestCleanUpOrphanKeepsTheGrantWithoutItsOwner(t *testing.T) {
+	grant := existingGrant(t)
+	c := newFakeGrantController(t, grant)
+	req := grantRequest(map[string]string{"source": "hello"})
+	req.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+
+	require.NoError(t, c.cleanUp(t.Context(), req))
+
+	var got pluginsv1alpha1.Grant
+	require.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(grant), &got))
+	assert.Empty(t, got.OwnerReferences)
+	assert.Equal(t, grant.Labels, got.Labels)
+}
+
+func TestCleanUpDeleteRemovesTheGrant(t *testing.T) {
+	grant := existingGrant(t)
+	c := newFakeGrantController(t, grant)
+	req := grantRequest(map[string]string{"source": "hello"})
+	req.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyDelete
+
+	require.NoError(t, c.cleanUp(t.Context(), req))
+
+	err := c.client.Get(t.Context(), client.ObjectKeyFromObject(grant), &pluginsv1alpha1.Grant{})
+	assert.True(t, apierrors.IsNotFound(err), "got %v", err)
+}

@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
@@ -61,6 +62,42 @@ func TestNewRefusesAnIncompleteOption(t *testing.T) {
 			"Outputs[0].Section",
 		},
 		{"an unknown defect", func(o *Options) { o.Defect = "Broken" }, `Defect "Broken"`},
+		{
+			"a grant template without a name",
+			func(o *Options) {
+				tmpl := readTemplate()
+				tmpl.Name = ""
+				o.GrantTemplates = []pluginsv1alpha1.GrantTemplate{tmpl}
+			},
+			"option GrantTemplates[0].Name is empty",
+		},
+		{
+			"a grant template that is not a JSON object",
+			func(o *Options) {
+				tmpl := readTemplate()
+				tmpl.Template = &apiextensionsv1.JSON{Raw: []byte(`["x"]`)}
+				o.GrantTemplates = []pluginsv1alpha1.GrantTemplate{tmpl}
+			},
+			"option GrantTemplates[0].Template is not a JSON object",
+		},
+		{
+			"a grant template without a template",
+			func(o *Options) {
+				tmpl := readTemplate()
+				tmpl.Template = nil
+				o.GrantTemplates = []pluginsv1alpha1.GrantTemplate{tmpl}
+			},
+			"option GrantTemplates[0].Template is not a JSON object",
+		},
+		{
+			"a grant template that requires an unknown input",
+			func(o *Options) {
+				tmpl := readTemplate()
+				tmpl.RequiresInputs = []string{"key"}
+				o.GrantTemplates = []pluginsv1alpha1.GrantTemplate{tmpl}
+			},
+			`option GrantTemplates[0].RequiresInputs names "key", which Inputs does not declare`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -145,4 +182,13 @@ func TestRegistrationDeclaresAKeyOfTwoSectionsOneTime(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []pluginsv1alpha1.OutputDecl{{Key: "url"}}, c.registration().Spec.Outputs)
+}
+
+func TestRegistrationPublishesTheGrantTemplates(t *testing.T) {
+	opts := validOptions()
+	opts.GrantTemplates = []pluginsv1alpha1.GrantTemplate{readTemplate()}
+	c, err := New(opts)
+	require.NoError(t, err)
+
+	assert.Equal(t, opts.GrantTemplates, c.registration().Spec.GrantTemplates)
 }
