@@ -26,12 +26,19 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // The IDs of the grant checks, which check the Grants that the plugin writes
@@ -59,6 +66,13 @@ var grantChecks = []Check{
 		ID:          GrantRequires,
 		Description: "A grant template with a required input without a value has no Grant.",
 		run:         checkGrantRequires,
+	},
+	{
+		ID: GrantAdmission,
+		Description: "The API server refuses a Grant of the registration from a requester without the verb serve " +
+			"on it. It skips itself when the Grant admission policy is not installed.",
+		Skippable: true,
+		run:       checkGrantAdmission,
 	},
 }
 
@@ -406,4 +420,144 @@ func checkGrantRequires(ctx context.Context, s *suite) error {
 
 		return problemsError(problems)
 	})
+}
+
+// grantAuthorPolicy is the ValidatingAdmissionPolicy that admits a Grant
+// only from a requester with the verb serve on its registration.
+const grantAuthorPolicy = "plugins.camunda.io-grant-author"
+
+// admissionTimeout is how long GRANT-ADMISSION waits for the refusal. A new
+// RoleBinding reaches the authorizer a short time after it is created.
+const admissionTimeout = time.Minute
+
+// checkGrantAdmission sends a dry-run Grant of the registration as a
+// ServiceAccount that can create Grants and has no verb serve, and expects
+// the policy to refuse it. The identity of the run needs create on
+// ServiceAccounts, Roles, and RoleBindings, and impersonate on
+// ServiceAccounts, in the run namespace. A cluster admin has them.
+func checkGrantAdmission(ctx context.Context, s *suite) error {
+	reg, err := s.registration(ctx)
+	if err != nil {
+		return err
+	}
+	if len(reg.Spec.GrantTemplates) == 0 {
+		return SkipCheck(noGrantTemplates)
+	}
+
+	var policy admissionregistrationv1.ValidatingAdmissionPolicy
+	err = s.client.Get(ctx, client.ObjectKey{Name: grantAuthorPolicy}, &policy)
+	switch {
+	case apierrors.IsNotFound(err):
+		return SkipCheck("the ValidatingAdmissionPolicy " + grantAuthorPolicy + " is not installed")
+	case err != nil:
+		return fmt.Errorf("getting the ValidatingAdmissionPolicy %s: %w", grantAuthorPolicy, err)
+	}
+
+	if _, err := s.lifecycle(ctx); err != nil {
+		return err
+	}
+
+	sa, err := createGrantAuthor(ctx, s)
+	if err != nil {
+		return err
+	}
+
+	review, err := serveReview(ctx, s, sa, reg.Name)
+	if err != nil {
+		return err
+	}
+	if review.Status.Allowed {
+		return fmt.Errorf(
+			"the ServiceAccount %s/%s that the check created has the verb serve on %s, so the check cannot "+
+				"test a refusal. A role in the cluster gives serve to it",
+			sa.Namespace,
+			sa.Name,
+			reg.Name,
+		)
+	}
+
+	user := serviceAccountUser(sa)
+	impersonated := rest.CopyConfig(s.restConfig)
+	impersonated.Impersonate.UserName = user
+	c, err := client.New(impersonated, client.Options{Scheme: s.client.Scheme(), Mapper: s.client.RESTMapper()})
+	if err != nil {
+		return fmt.Errorf("connecting as %s: %w", user, err)
+	}
+
+	what := "a refusal of the Grant by the policy " + grantAuthorPolicy
+	return waitFor(ctx, admissionTimeout, what, func(ctx context.Context) error {
+		grant := &pluginsv1alpha1.Grant{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: s.cfg.Namespace,
+				Name:      "conformance-grant-author",
+				Labels:    map[string]string{pluginsv1alpha1.LabelRegistration: reg.Name},
+			},
+			Spec: pluginsv1alpha1.GrantSpec{
+				Cluster:  v1.ClusterRef{Name: "conformance"},
+				Template: reg.Spec.GrantTemplates[0].Name,
+				Format:   pluginsv1alpha1.GrantFormatAWSIAMStatement,
+				Fragment: &apiextensionsv1.JSON{
+					Raw: []byte(`{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["*"]}`),
+				},
+			},
+		}
+
+		// A dry run stores nothing, so a policy that admits the Grant
+		// leaves no object behind.
+		return admissionVerdict(c.Create(ctx, grant, client.DryRunAll), user, reg.Name)
+	})
+}
+
+// createGrantAuthor creates, in the run namespace, a ServiceAccount with a
+// Role that can create Grants, and returns it. The cleanups of the suite
+// delete what it created.
+func createGrantAuthor(ctx context.Context, s *suite) (pluginsv1alpha1.ServiceAccountRef, error) {
+	name := "conformance-grant-author-" + runIDOf(s.cfg.Namespace)
+	objectMeta := metav1.ObjectMeta{Namespace: s.cfg.Namespace, Name: name}
+	sa := pluginsv1alpha1.ServiceAccountRef{Namespace: s.cfg.Namespace, Name: name}
+
+	objs := []client.Object{
+		&corev1.ServiceAccount{ObjectMeta: objectMeta},
+		&rbacv1.Role{
+			ObjectMeta: objectMeta,
+			Rules: []rbacv1.PolicyRule{{
+				APIGroups: []string{pluginsv1alpha1.GroupVersion.Group},
+				Resources: []string{"grants"},
+				Verbs:     []string{"create"},
+			}},
+		},
+		&rbacv1.RoleBinding{
+			ObjectMeta: objectMeta,
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: name},
+			Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Namespace: sa.Namespace, Name: name}},
+		},
+	}
+
+	for _, obj := range objs {
+		if err := s.client.Create(ctx, obj); err != nil {
+			return sa, fmt.Errorf("creating the %T %s/%s: %w", obj, obj.GetNamespace(), obj.GetName(), err)
+		}
+		s.onClose(func(ctx context.Context) error {
+			return client.IgnoreNotFound(s.client.Delete(ctx, obj))
+		})
+	}
+
+	return sa, nil
+}
+
+// admissionVerdict passes err when it is a refusal by grantAuthorPolicy of a
+// Grant of registration from user.
+func admissionVerdict(err error, user, registration string) error {
+	switch {
+	case err == nil:
+		return fmt.Errorf(
+			"the API server admitted a Grant of %s from %s, which has no verb serve on it",
+			registration,
+			user,
+		)
+	case strings.Contains(err.Error(), grantAuthorPolicy):
+		return nil
+	default:
+		return fmt.Errorf("the API server refused the Grant, but not through the policy %s: %w", grantAuthorPolicy, err)
+	}
 }

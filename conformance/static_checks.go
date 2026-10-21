@@ -271,24 +271,9 @@ func checkRBAC(ctx context.Context, s *suite) error {
 	}
 
 	sa := reg.Spec.ServiceAccount
-	review := &authorizationv1.SubjectAccessReview{
-		Spec: authorizationv1.SubjectAccessReviewSpec{
-			User: "system:serviceaccount:" + sa.Namespace + ":" + sa.Name,
-			Groups: []string{
-				"system:serviceaccounts",
-				"system:serviceaccounts:" + sa.Namespace,
-				"system:authenticated",
-			},
-			ResourceAttributes: &authorizationv1.ResourceAttributes{
-				Group:    pluginsv1alpha1.GroupVersion.Group,
-				Resource: resourcePluginRegistrations,
-				Verb:     verbServe,
-				Name:     reg.Name,
-			},
-		},
-	}
-	if err := s.client.Create(ctx, review); err != nil {
-		return fmt.Errorf("spec.serviceAccount %s/%s: creating a SubjectAccessReview: %w", sa.Namespace, sa.Name, err)
+	review, err := serveReview(ctx, s, sa, reg.Name)
+	if err != nil {
+		return fmt.Errorf("spec.serviceAccount %s/%s: %w", sa.Namespace, sa.Name, err)
 	}
 
 	if review.Status.Allowed {
@@ -308,6 +293,42 @@ func checkRBAC(ctx context.Context, s *suite) error {
 	}
 
 	return errors.New(denied)
+}
+
+// serveReview asks the API server whether the ServiceAccount sa has the
+// verb serve on the registration, and returns the review with its status.
+func serveReview(
+	ctx context.Context,
+	s *suite,
+	sa pluginsv1alpha1.ServiceAccountRef,
+	registration string,
+) (*authorizationv1.SubjectAccessReview, error) {
+	review := &authorizationv1.SubjectAccessReview{
+		Spec: authorizationv1.SubjectAccessReviewSpec{
+			User: serviceAccountUser(sa),
+			Groups: []string{
+				"system:serviceaccounts",
+				"system:serviceaccounts:" + sa.Namespace,
+				"system:authenticated",
+			},
+			ResourceAttributes: &authorizationv1.ResourceAttributes{
+				Group:    pluginsv1alpha1.GroupVersion.Group,
+				Resource: resourcePluginRegistrations,
+				Verb:     verbServe,
+				Name:     registration,
+			},
+		},
+	}
+	if err := s.client.Create(ctx, review); err != nil {
+		return nil, fmt.Errorf("creating a SubjectAccessReview: %w", err)
+	}
+
+	return review, nil
+}
+
+// serviceAccountUser is the user name of the ServiceAccount sa.
+func serviceAccountUser(sa pluginsv1alpha1.ServiceAccountRef) string {
+	return "system:serviceaccount:" + sa.Namespace + ":" + sa.Name
 }
 
 func checkMetrics(ctx context.Context, s *suite) error {

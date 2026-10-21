@@ -18,12 +18,15 @@ package conformance
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -266,10 +269,34 @@ func TestGrantChecksSkipARegistrationWithoutGrantTemplates(t *testing.T) {
 	reg.Spec.GrantTemplates = nil
 	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, append(testSections(), reg)...)
 
-	for _, check := range []func(context.Context, *suite) error{checkGrantMatch, checkGrantRequires} {
+	for _, check := range []func(context.Context, *suite) error{checkGrantMatch, checkGrantRequires, checkGrantAdmission} {
 		reason, skipped := skipReasonOf(check(t.Context(), s))
 
 		assert.True(t, skipped)
 		assert.Equal(t, "the registration has no grant templates", reason)
 	}
+}
+
+func TestAdmissionVerdict(t *testing.T) {
+	grants := schema.GroupResource{Group: "plugins.camunda.io", Resource: "grants"}
+	policyRefusal := apierrors.NewForbidden(grants, "g", errors.New(
+		"ValidatingAdmissionPolicy 'plugins.camunda.io-grant-author' with binding "+
+			"'plugins.camunda.io-grant-author-binding' denied request: no serve",
+	))
+	rbacRefusal := apierrors.NewForbidden(grants, "g", errors.New(
+		`User "system:serviceaccount:ns:sa" cannot create resource "grants"`,
+	))
+
+	assert.NoError(t, admissionVerdict(policyRefusal, "u", "echo"))
+	assert.ErrorContains(t, admissionVerdict(nil, "u", "echo"), "admitted a Grant of echo from u")
+	assert.ErrorContains(t, admissionVerdict(rbacRefusal, "u", "echo"), "not through the policy")
+}
+
+func TestGrantAdmissionSkipsWhenThePolicyIsNotInstalled(t *testing.T) {
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, append(testSections(), validRegistration())...)
+
+	reason, skipped := skipReasonOf(checkGrantAdmission(t.Context(), s))
+
+	assert.True(t, skipped)
+	assert.Equal(t, "the ValidatingAdmissionPolicy plugins.camunda.io-grant-author is not installed", reason)
 }
