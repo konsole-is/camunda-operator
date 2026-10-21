@@ -209,19 +209,36 @@ rules:
 - apiGroups:
   - fleet.camunda.io
   resources:
-  - environments
+  - camundaclusterclaims
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - fleet.camunda.io
   resources:
+  - camundaclusterclaims/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - fleet.camunda.io
+  resources:
+  - camundaclusterclaims/status
   - environments/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - fleet.camunda.io
+  resources:
+  - environments
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - k8s.keycloak.org
   resources:
@@ -288,6 +305,8 @@ rules:
   resources:
   - pluginrequests
   verbs:
+  - create
+  - delete
   - get
   - list
   - patch

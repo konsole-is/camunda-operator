@@ -38,6 +38,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseserver"
 	"github.com/konsole-is/camunda-operator/internal/controller/databaseserverconfig"
 	"github.com/konsole-is/camunda-operator/internal/controller/elasticsearchcluster"
+	"github.com/konsole-is/camunda-operator/internal/controller/fleet/camundaclusterclaim"
 	"github.com/konsole-is/camunda-operator/internal/controller/fleet/environment"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackupelasticsearch"
 	"github.com/konsole-is/camunda-operator/internal/controller/logicalbackuprdbms"
@@ -241,6 +242,13 @@ func Setup(mgr ctrl.Manager, opts Options) error {
 			return (&environment.Reconciler{
 				Client: c,
 				Scheme: scheme,
+			}).SetupWithManager(mgr)
+		}},
+		{"CamundaClusterClaim", func() error {
+			return (&camundaclusterclaim.Reconciler{
+				Client:    c,
+				APIReader: reader,
+				Scheme:    scheme,
 			}).SetupWithManager(mgr)
 		}},
 	}
