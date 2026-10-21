@@ -90,7 +90,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=get;list;watch
 // A new handler adds its registration here: REG-RBAC and the Grant admission policy check serve.
-// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=existing-object-storage;existing-secondary-storage;existing-database-configs
+// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=elasticsearch;existing-object-storage;existing-secondary-storage;existing-database-configs
+// +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs;secondarystorageconfigs;databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
@@ -321,9 +322,9 @@ func (r *Reconciler) finalize(
 // registration in Registrations, or with a parameter schema that it cannot
 // read. Then it registers the contractsField and registrationField indexes
 // and the controller. The controller runs for a request whose registration
-// label names a handler, for every request that reads a contract that
-// changed, and for every request whose spec.registration names a
-// registration that changed.
+// label names a handler, for a request whose ElasticsearchCluster changed,
+// for every request that reads a contract that changed, and for every
+// request whose spec.registration names a registration that changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -371,7 +372,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.serves)))
+		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.serves))).
+		Owns(&v1.ElasticsearchCluster{})
 	for kind, obj := range map[string]client.Object{
 		kindObjectStorageConfig:    &v1.ObjectStorageConfig{},
 		kindSecondaryStorageConfig: &v1.SecondaryStorageConfig{},

@@ -59,7 +59,9 @@ func TestElasticsearchGolden(t *testing.T) {
 		{
 			"annotations",
 			`{"preset":"small","releaseRef":"camunda-8-9"}`,
-			map[string]string{"serviceAccountAnnotations": `{"eks.amazonaws.com/role-arn":"arn:aws:iam::1:role/orders"}`},
+			map[string]string{
+				"serviceAccountAnnotations": `{"eks.amazonaws.com/role-arn":"arn:aws:iam::1:role/orders"}`,
+			},
 		},
 	}
 
@@ -95,14 +97,18 @@ func TestElasticsearchNamesTheClusterAfterTheClaim(t *testing.T) {
 	assert.Equal(t, "small", cluster.Spec.PresetRef)
 	assert.Equal(t, "camunda-8-9", cluster.Spec.ReleaseRef)
 	assert.Equal(t, "orders-es", cluster.Spec.SecondaryStorageConfig)
-	assert.Equal(t, map[string]string{
-		pluginsv1alpha1.LabelRegistration: pluginstartup.RegistrationElasticsearch,
-		pluginsv1alpha1.LabelRequest:      request.Name,
-	}, cluster.Labels)
+	assert.Equal(
+		t, map[string]string{
+			pluginsv1alpha1.LabelRegistration: pluginstartup.RegistrationElasticsearch,
+			pluginsv1alpha1.LabelRequest:      request.Name,
+		}, cluster.Labels,
+	)
 	assert.Equal(t, map[string]string{pluginstartup.OutputSecondaryStorageConfig: "orders-es"}, s.report().outputs)
-	assert.Equal(t, []contractRef{{
-		output: pluginstartup.OutputSecondaryStorageConfig, kind: kindSecondaryStorageConfig, name: "orders-es",
-	}}, elasticsearch{}.contracts(request))
+	assert.Equal(
+		t, []contractRef{{
+			output: pluginstartup.OutputSecondaryStorageConfig, kind: kindSecondaryStorageConfig, name: "orders-es",
+		}}, elasticsearch{}.contracts(request),
+	)
 	refs := elasticsearch{}.backing(request)
 	require.Len(t, refs, 1)
 	assert.Equal(t, kindElasticsearchCluster, refs[0].kind)
@@ -232,13 +238,17 @@ func TestElasticsearchReportsTheResourceAndThePods(t *testing.T) {
 	require.NoError(t, err)
 
 	rep := s.report()
-	assert.Equal(t, []pluginsv1alpha1.ResourceRef{{
-		Kind: "ElasticsearchCluster", Name: "orders-es", OnOrphan: pluginsv1alpha1.OnOrphanKept,
-	}}, rep.resources)
+	assert.Equal(
+		t, []pluginsv1alpha1.ResourceRef{{
+			Kind: "ElasticsearchCluster", Name: "orders-es", OnOrphan: pluginsv1alpha1.OnOrphanKept,
+		}}, rep.resources,
+	)
 	assert.Equal(t, map[string]string{"camunda.io/elasticsearch-cluster": "orders-es"}, rep.podSelector.MatchLabels)
-	assert.Equal(t, []pluginsv1alpha1.SummaryItem{{
-		Label: "Elasticsearch", Value: "waiting", Severity: pluginsv1alpha1.SeverityWarning,
-	}}, rep.summary)
+	assert.Equal(
+		t, []pluginsv1alpha1.SummaryItem{{
+			Label: "Elasticsearch", Value: "waiting", Severity: pluginsv1alpha1.SeverityWarning,
+		}}, rep.summary,
+	)
 }
 
 func TestElasticsearchSummary(t *testing.T) {

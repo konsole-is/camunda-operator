@@ -131,6 +131,7 @@ func Served() []string {
 // controller serves, by registration name.
 func handlers() map[string]handler {
 	return map[string]handler{
+		pluginstartup.RegistrationElasticsearch: elasticsearch{},
 		pluginstartup.RegistrationExistingObjectStorage: existing{
 			parse: oneContract(pluginstartup.OutputObjectStorageConfig, kindObjectStorageConfig),
 		},
