@@ -1,3 +1,4 @@
+import { backupsStories } from "@/components/cluster/backups.stories";
 import { clusterStories } from "@/components/cluster/cluster.stories";
 import { confirmStories } from "@/components/fleet/confirm.stories";
 import { createFlowStories } from "@/components/fleet/create-flow.stories";
@@ -31,5 +32,6 @@ export const stories: readonly Story[] = [
   ...createFlowStories,
   ...observeStories,
   ...clusterStories,
+  ...backupsStories,
   ...uiStories,
 ];
