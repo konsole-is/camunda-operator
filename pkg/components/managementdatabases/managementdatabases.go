@@ -50,7 +50,8 @@ type Values struct {
 	// Version is the PostgreSQL major version of the server.
 	Version string
 	// StorageClassName is the StorageClass of the server volumes. Empty
-	// keeps the default StorageClass.
+	// keeps the StorageClass of the preset, or the default StorageClass
+	// when the preset sets none.
 	StorageClassName string
 	// Databases are the listed components, without duplicates, in the order
 	// of Components.
