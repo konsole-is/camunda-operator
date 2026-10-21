@@ -77,10 +77,15 @@ export function labelSelectorString(
     .map(([key, value]) => `${key}=${value}`);
   const expressions = (selector?.matchExpressions ?? []).map(
     ({ key, operator, values = [] }) => {
+      // A set with only the empty value reads as "key in ()", which a
+      // selector parser refuses, so it is written as key= or key!=.
+      const empty = values.length === 1 && values[0] === "";
       switch (operator) {
         case "In":
+          if (empty) return `${key}=`;
           return `${key} in (${values.join(",")})`;
         case "NotIn":
+          if (empty) return `${key}!=`;
           return `${key} notin (${values.join(",")})`;
         case "Exists":
           return key;

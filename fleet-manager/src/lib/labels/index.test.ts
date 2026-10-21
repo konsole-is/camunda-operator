@@ -13,6 +13,7 @@ import {
   isManaged,
   labelSelectorString,
 } from ".";
+import { parseSelector } from "@/lib/k8s/selector";
 
 // goConstant reads the value of a Go string constant from a file of the
 // repository. \b keeps ClusterKey from matching ManagementClusterKey.
@@ -126,6 +127,28 @@ describe("labelSelectorString", () => {
   ])("is empty for %s", (_, selector) => {
     expect(labelSelectorString(selector)).toBe("");
   });
+
+  it.each<[Record<string, string>, boolean]>([
+    [{ a: "x" }, true],
+    [{ a: "" }, true],
+    [{}, false],
+  ])(
+    "gives a selector that parseSelector reads, for labels %j",
+    (labels, want) => {
+      const text = labelSelectorString({
+        matchExpressions: [{ key: "a", operator: "In", values: [""] }],
+      });
+      const not = labelSelectorString({
+        matchExpressions: [{ key: "a", operator: "NotIn", values: [""] }],
+      });
+      expect(parseSelector(text)(labels)).toBe(labels.a === "");
+      expect(parseSelector(not)(labels)).toBe(labels.a !== "");
+      const any = labelSelectorString({
+        matchExpressions: [{ key: "a", operator: "In", values: ["", "x"] }],
+      });
+      expect(parseSelector(any)(labels)).toBe(want);
+    },
+  );
 
   it("names an operator that it does not know", () => {
     expect(() =>
