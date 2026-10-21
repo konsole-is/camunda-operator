@@ -27,6 +27,12 @@ export const CLUSTER_LABEL = "camunda.io/cluster";
 /** COMPONENT_LABEL on a pod names its component. It is ComponentKey of pkg/labels. */
 export const COMPONENT_LABEL = "camunda.io/component";
 
+/**
+ * BACKUP_SCHEDULE_LABEL on a backup holds labels.OwnerName of the
+ * BackupSchedule that made it. It is BackupScheduleKey of pkg/labels.
+ */
+export const BACKUP_SCHEDULE_LABEL = "camunda.io/backup-schedule";
+
 /** isManaged says whether a claim made the object: it carries CLAIM_LABEL with a value. */
 export function isManaged(object: {
   metadata?: { labels?: Record<string, string> };

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   ACCESS_SECTION,
+  BACKUP_SCHEDULE_LABEL,
   CLAIM_LABEL,
   CLUSTER_LABEL,
   COMPONENT_LABEL,
@@ -83,6 +84,7 @@ it.each([
   [ACCESS_SECTION, "internal/pluginstartup/names.go", "SectionAccess"],
   [CLUSTER_LABEL, "pkg/labels/labels.go", "ClusterKey"],
   [COMPONENT_LABEL, "pkg/labels/labels.go", "ComponentKey"],
+  [BACKUP_SCHEDULE_LABEL, "pkg/labels/labels.go", "BackupScheduleKey"],
 ])("%s matches %s %s", (value, file, name) => {
   expect(value).toBe(goConstant(file, name));
 });
