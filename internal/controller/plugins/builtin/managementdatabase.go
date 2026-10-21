@@ -108,32 +108,37 @@ func (managementDatabases) cleanup(
 	policy pluginsv1alpha1.DeletionPolicy,
 ) (cleanup, error) {
 	v := managementValues(request)
+	databases := make([]client.Object, 0, len(mdb.Components))
+	for _, c := range mdb.Components {
+		databases = append(databases, mdb.Database(v, c))
+	}
 
 	if policy == pluginsv1alpha1.DeletionPolicyOrphan {
 		orphan, err := mdb.Orphan(v)
 		if err != nil {
 			return cleanup{}, err
 		}
-		return cleanup{stages: []cleanupStage{{components: []*component.Component{orphan}}}}, nil
+		// The orphan step reads through the cache. An object that the cache
+		// does not hold yet keeps its owner reference, and garbage
+		// collection deletes it once the request is gone.
+		return cleanup{stages: []cleanupStage{{
+			components: []*component.Component{orphan},
+			remaining:  append(databases, mdb.Server(v)),
+		}}}, nil
 	}
 
-	databases, err := mdb.DeleteDatabases(v)
+	deleteDatabases, err := mdb.DeleteDatabases(v)
 	if err != nil {
 		return cleanup{}, err
 	}
-	server, err := mdb.DeleteServer(v)
+	deleteServer, err := mdb.DeleteServer(v)
 	if err != nil {
 		return cleanup{}, err
-	}
-
-	remaining := make([]client.Object, 0, len(mdb.Components))
-	for _, c := range mdb.Components {
-		remaining = append(remaining, mdb.Database(v, c))
 	}
 
 	return cleanup{stages: []cleanupStage{
-		{components: []*component.Component{databases}, remaining: remaining},
-		{components: []*component.Component{server}, remaining: []client.Object{mdb.Server(v)}},
+		{components: []*component.Component{deleteDatabases}, remaining: databases},
+		{components: []*component.Component{deleteServer}, remaining: []client.Object{mdb.Server(v)}},
 	}}, nil
 }
 
@@ -161,33 +166,40 @@ func managementValues(request *pluginsv1alpha1.PluginRequest) mdb.Values {
 	}
 }
 
-// managementParameters decodes {"preset", "version", "databases"}. An absent
-// version is pluginstartup.ManagementDatabaseServerVersion. The databases
-// have no duplicates and follow the order of mdb.Components.
+// managementParameters decodes {"preset", "version", "databases"}, matched
+// by exact name. An absent version is
+// pluginstartup.ManagementDatabaseServerVersion. The databases have no
+// duplicates and follow the order of mdb.Components.
 func managementParameters(parameters *apiextensionsv1.JSON) (string, string, []mdb.Component, error) {
-	var p struct {
-		Preset    string          `json:"preset"`
-		Version   string          `json:"version"`
-		Databases []mdb.Component `json:"databases"`
-	}
+	var object map[string]json.RawMessage
 	if parameters != nil && len(parameters.Raw) > 0 {
-		if err := json.Unmarshal(parameters.Raw, &p); err != nil {
+		if err := json.Unmarshal(parameters.Raw, &object); err != nil {
 			return "", "", nil, fmt.Errorf("decoding the parameters: %w", err)
 		}
 	}
 
-	if p.Version == "" {
-		p.Version = pluginstartup.ManagementDatabaseServerVersion
+	var preset, version string
+	var listed []mdb.Component
+	for key, value := range map[string]any{"preset": &preset, "version": &version, "databases": &listed} {
+		if raw, ok := object[key]; ok {
+			if err := json.Unmarshal(raw, value); err != nil {
+				return "", "", nil, fmt.Errorf("decoding spec.parameters.%s: %w", key, err)
+			}
+		}
+	}
+
+	if version == "" {
+		version = pluginstartup.ManagementDatabaseServerVersion
 	}
 
 	var databases []mdb.Component
 	for _, c := range mdb.Components {
-		if slices.Contains(p.Databases, c) {
+		if slices.Contains(listed, c) {
 			databases = append(databases, c)
 		}
 	}
 
-	return p.Preset, p.Version, databases, nil
+	return preset, version, databases, nil
 }
 
 // managementContracts returns the DatabaseConfig of each listed component of

@@ -199,13 +199,29 @@ func TestManagementDatabasesDeleteTheDatabasesBeforeTheServer(t *testing.T) {
 	assert.Equal(t, []string{"DatabaseServer/ops-db"}, objectNames(c.stages[1].remaining))
 }
 
-func TestManagementDatabasesOrphanKeepsEverything(t *testing.T) {
+func TestManagementDatabasesOrphanWaitsUntilNoObjectReferencesTheRequest(t *testing.T) {
 	c, err := managementDatabases{}.cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyOrphan)
 	require.NoError(t, err)
 
 	require.Len(t, c.stages, 1)
 	assert.Len(t, c.stages[0].components, 1)
-	assert.Empty(t, c.stages[0].remaining)
+	assert.ElementsMatch(
+		t, []string{
+			"DatabaseServer/ops-db", "Database/ops-keycloak", "Database/ops-identity", "Database/ops-web-modeler",
+		}, objectNames(c.stages[0].remaining), "a stale cache can leave an owner reference that garbage collection follows",
+	)
+}
+
+func TestManagementDatabasesReadOnlyTheExactParameterNames(t *testing.T) {
+	request := planeRequest(`["identity"]`)
+	request.Spec.Parameters.Raw = []byte(`{"preset":"small","databases":["identity"],"Databases":[],"Version":"9"}`)
+
+	assert.Equal(
+		t, []contractRef{
+			{output: pluginstartup.OutputIdentityDatabaseConfig, kind: kindDatabaseConfig, name: "ops-identity"},
+		}, managementDatabases{}.contracts(request),
+	)
+	assert.Equal(t, pluginstartup.ManagementDatabaseServerVersion, previewServer(t, buildFor(t, request)).Spec.Version)
 }
 
 var removedItem = pluginsv1alpha1.SummaryItem{
