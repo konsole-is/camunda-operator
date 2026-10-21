@@ -26,7 +26,7 @@ export function equalJSON(a: unknown, b: unknown): boolean {
     const keys = Object.keys(a).filter((k) => a[k] !== undefined);
     return (
       keys.length === Object.keys(b).filter((k) => b[k] !== undefined).length &&
-      keys.every((k) => equalJSON(a[k], b[k]))
+      keys.every((k) => Object.hasOwn(b, k) && equalJSON(a[k], b[k]))
     );
   }
   return a === b;
