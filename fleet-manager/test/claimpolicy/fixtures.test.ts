@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { environmentOf, resolve, type PolicyResult } from "@/lib/policy";
+import {
+  checkAllowed,
+  environmentOf,
+  resolve,
+  type PolicyResult,
+} from "@/lib/policy";
 import {
   APP_RULES,
   type AppRule,
@@ -199,6 +204,7 @@ const RUNNERS: Partial<Record<AppRule, Runner>> = {
     };
   },
   resolve: (input) => resolve(input),
+  "check-allowed": (input) => checkAllowed(input),
 };
 
 describe.each(Object.entries(RUNNERS))("the %s rule", (folder, run) => {

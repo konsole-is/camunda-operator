@@ -1,3 +1,4 @@
+export * from "./allowed";
 export * from "./backups";
 export * from "./environment";
 export * from "./json";
