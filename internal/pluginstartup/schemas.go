@@ -22,9 +22,10 @@ package pluginstartup
 const (
 	elasticsearchParameters = `{
   "type": "object",
-  "required": ["preset"],
+  "required": ["preset", "releaseRef"],
   "properties": {
     "preset": {"type": "string", "minLength": 1, "description": "The name of the ElasticsearchClusterPreset that the Elasticsearch cluster starts from."},
+    "releaseRef": {"type": "string", "minLength": 1, "description": "The name of the CamundaRelease that gives the Elasticsearch version. The claim controller sets it to the release of the claim."},
     "overrides": {
       "type": "object",
       "description": "The values that replace the values of the preset.",
