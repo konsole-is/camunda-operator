@@ -4,9 +4,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   checkAllowed,
+  checkSlotConflicts,
   environmentOf,
   resolve,
   resolveInputs,
+  slotFields,
   type PolicyResult,
 } from "@/lib/policy";
 import {
@@ -192,7 +194,7 @@ describe("compareResult", () => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- each runner reads the input of its own folder
 type Runner = (input: any) => PolicyResult<unknown>;
 
-const RUNNERS: Partial<Record<AppRule, Runner>> = {
+const RUNNERS: Record<AppRule, Runner> = {
   "environment-of": (input) => {
     const got = environmentOf(input.namespace, input.environments ?? []);
     if (got.reason) {
@@ -213,7 +215,24 @@ const RUNNERS: Partial<Record<AppRule, Runner>> = {
       input.requests ?? [],
     ),
   }),
+  "slot-fields": (input) =>
+    slotFields(
+      input.kind,
+      input.sections ?? [],
+      input.selections ?? [],
+      input.requests ?? [],
+    ),
+  "check-slot-conflicts": (input) =>
+    checkSlotConflicts(
+      input.sections ?? [],
+      input.selections ?? [],
+      input.overrides,
+    ),
 };
+
+it("runs every app-rule folder", () => {
+  expect(Object.keys(RUNNERS).sort()).toEqual([...APP_RULES].sort());
+});
 
 describe.each(Object.entries(RUNNERS))("the %s rule", (folder, run) => {
   const fixtures = loadPolicyFixtures(folder);
@@ -225,7 +244,7 @@ describe.each(Object.entries(RUNNERS))("the %s rule", (folder, run) => {
   it.each(fixtures.map((f) => [path.basename(f.file), f] as const))(
     "passes %s",
     (_, f) => {
-      expect(compareResult(run!(f.input), f.result), f.name).toBeUndefined();
+      expect(compareResult(run(f.input), f.result), f.name).toBeUndefined();
     },
   );
 });
