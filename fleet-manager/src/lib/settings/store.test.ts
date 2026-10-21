@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KubernetesRequestError, getJSON } from "@/lib/k8s/client";
 import type { Change, Writer } from "@/lib/write/types";
-import { getWriter } from "@/lib/write/writer";
+import { directWriter, getWriter } from "@/lib/write/writer";
 import { getSettings, updateSettings } from "./store";
 
 vi.mock("@/lib/k8s/client", async (real) => ({
@@ -11,6 +11,7 @@ vi.mock("@/lib/k8s/client", async (real) => ({
 }));
 vi.mock("@/lib/write/writer", async (real) => ({
   ...(await real<typeof import("@/lib/write/writer")>()),
+  directWriter: vi.fn(),
   getWriter: vi.fn(),
 }));
 
@@ -31,7 +32,7 @@ const configMap = (data: Record<string, string>, resourceVersion: string) => ({
 beforeEach(() => {
   vi.resetAllMocks();
   process.env.FLEET_NAMESPACE = "fleet";
-  vi.mocked(getWriter).mockResolvedValue(writer);
+  vi.mocked(directWriter).mockReturnValue(writer);
   apply.mockResolvedValue({ ok: true, mode: "direct" });
 });
 
@@ -205,10 +206,10 @@ describe("a first read beside an update", () => {
   });
 });
 
-// Contract 6.1: the settings never go to Git.
+// Contract 6.1: the settings never go to Git. getWriter reads the settings,
+// so a write of the settings through it would read the settings again.
 describe("in Git mode", () => {
   it("the first create and each update go to the API, not to Git", async () => {
-    vi.mocked(getWriter).mockResolvedValue({ ...writer, mode: "git" });
     const missing = new KubernetesRequestError(404, "not found");
     vi.mocked(getJSON)
       .mockRejectedValueOnce(missing)
@@ -222,5 +223,6 @@ describe("in Git mode", () => {
     for (const [change] of apply.mock.calls) {
       expect(change.directOnly).toBe(true);
     }
+    expect(getWriter).not.toHaveBeenCalled();
   });
 });

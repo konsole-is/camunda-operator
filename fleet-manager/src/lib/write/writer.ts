@@ -16,6 +16,7 @@ import {
 } from "@/lib/k8s/kinds";
 import { APP_FIELD_MANAGER } from "@/lib/merge";
 import { apiErrorsOf, staleError } from "./errors";
+import { gitWriter } from "./git";
 import type {
   ApiError,
   Change,
@@ -291,9 +292,29 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   return { mode: "direct", preview, apply };
 }
 
-/** getWriter returns the writer of the app: the direct writer of kubeConfig(). */
+/**
+ * getWriter returns the writer of the app for the settings: the Git writer
+ * when git.repository is set, else the direct writer of kubeConfig(). It
+ * throws when the settings cannot be read.
+ */
 export async function getWriter(): Promise<Writer> {
-  return directWriter();
+  // The settings store writes through directWriter of this module, so a
+  // static import of the store would be a cycle.
+  const { getSettings } = await import("@/lib/settings/store");
+  const settings = await getSettings();
+  const url = settings["git.repository"];
+  const kc = kubeConfig();
+  if (!url) return directWriter(kc);
+  return gitWriter({
+    target: {
+      url,
+      branch: settings["git.branch"],
+      path: settings["git.path"],
+      credentialsSecretRef: settings["git.credentialsSecretRef"],
+    },
+    direct: directWriter(kc),
+    read: (ref) => readObject(kc, ref),
+  });
 }
 
 /**

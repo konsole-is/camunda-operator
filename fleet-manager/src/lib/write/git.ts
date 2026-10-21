@@ -7,9 +7,8 @@ import git, { type HttpClient } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
 import { inOrder } from "@/lib/serial";
 import { readSecretValues } from "@/lib/secrets/values";
-import { reasonOf } from "@/lib/settings/connections";
 import { appNamespace } from "@/lib/settings/keys";
-import { apiErrorsOf, staleError } from "./errors";
+import { apiErrorsOf, reasonOf, staleError } from "./errors";
 import { gitBase, gitPath, renderObject } from "./git-files";
 import type {
   ApiError,

@@ -1,8 +1,8 @@
 import "server-only";
 import { listServerRefs } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
-import { KubernetesRequestError } from "@/lib/k8s/client";
 import { readSecretValues } from "@/lib/secrets/values";
+import { reasonOf } from "@/lib/write/errors";
 import { type Settings, appNamespace } from "./keys";
 import { getSettings } from "./store";
 
@@ -190,29 +190,4 @@ async function readCredentials(secret: string): Promise<Credentials> {
     };
   }
   return { ok: true, values };
-}
-
-/**
- * reasonOf returns why a connection failed: an error code, an HTTP status,
- * or a timeout. It never returns the text of the error, because a library
- * message can quote the answer of the server, and the answer can hold the
- * credentials.
- */
-export function reasonOf(error: unknown): string {
-  if (error instanceof KubernetesRequestError) {
-    return `the API server answered HTTP ${error.statusCode}`;
-  }
-  const cause = error instanceof Error && error.cause ? error.cause : error;
-  const name = (cause as { name?: unknown }).name;
-  const message = (cause as { message?: unknown }).message;
-  if (
-    name === "AbortError" ||
-    name === "TimeoutError" ||
-    message === "Request timed out"
-  ) {
-    return "the server did not answer in time";
-  }
-  const code = (cause as { code?: unknown }).code;
-  if (typeof code === "string" && /^E[A-Z_]+$/.test(code)) return code;
-  return "the server did not give a valid answer";
 }
