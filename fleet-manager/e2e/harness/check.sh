@@ -72,9 +72,11 @@ harness_git -C "$repo" add .
 harness_git -C "$repo" commit -q -m "Add the harness probe"
 harness_git -C "$repo" push -q origin HEAD:refs/heads/main
 
-export want
-timeout 60 bash -c 'until [ "$(kubectl get configmap harness-probe -n fleet-harness-probe -o jsonpath={.data.run} 2>/dev/null)" = "$want" ]; do sleep 2; done' ||
-  fail "the pushed commit did not appear as a live object within 60 seconds"
+deadline=$((SECONDS + 60))
+until [ "$(kubectl get configmap harness-probe -n fleet-harness-probe -o jsonpath='{.data.run}' 2>/dev/null)" = "$want" ]; do
+  [ "$SECONDS" -lt "$deadline" ] || fail "the pushed commit did not appear as a live object within 60 seconds"
+  sleep 2
+done
 echo "ok: the pushed commit appeared as the ConfigMap fleet-harness-probe/harness-probe"
 
 echo "==> The fleet manager trusts the private CA of the Git server"
