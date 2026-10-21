@@ -39,7 +39,11 @@ import (
 func TestClusterCarriesTheSlotFieldsFromTheOutputs(t *testing.T) {
 	cluster := previewCluster(t, fullInput(t))
 
-	assert.Equal(t, map[string]string{"eks.amazonaws.com/role-arn": "arn:camunda"}, cluster.Spec.ServiceAccount.Annotations)
+	assert.Equal(
+		t,
+		map[string]string{"eks.amazonaws.com/role-arn": "arn:camunda"},
+		cluster.Spec.ServiceAccount.Annotations,
+	)
 	assert.Equal(
 		t,
 		map[string]string{"eks.amazonaws.com/role-arn": "arn:connectors"},
@@ -99,7 +103,9 @@ func TestClusterApplySendsOnlyTheClaimAndOutputFields(t *testing.T) {
 		},
 	}).Build()
 	in := fullInput(t)
-	in.Claim.Spec.Plugins = []fleetv1alpha1.PluginSelection{{Section: "secondary-storage", Registration: "elasticsearch"}}
+	in.Claim.Spec.Plugins = []fleetv1alpha1.PluginSelection{
+		{Section: "secondary-storage", Registration: "elasticsearch"},
+	}
 	in.Order = in.Claim.Spec.Plugins
 
 	//nolint:staticcheck // ocf applies through the deprecated client.Apply patch

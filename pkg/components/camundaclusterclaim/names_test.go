@@ -50,9 +50,11 @@ func TestAdditionalServiceAccounts(t *testing.T) {
 			want:       []string{"orders-es-es"},
 		},
 		{
-			name:       "a database server",
-			selections: []fleetv1alpha1.PluginSelection{{Section: "secondary-storage", Registration: "database-server"}},
-			want:       []string{"orders-pg-postgres"},
+			name: "a database server",
+			selections: []fleetv1alpha1.PluginSelection{
+				{Section: "secondary-storage", Registration: "database-server"},
+			},
+			want: []string{"orders-pg-postgres"},
 		},
 		{
 			name: "existing secondary storage",
@@ -132,8 +134,10 @@ func TestReferences(t *testing.T) {
 		},
 		{name: "no Environment gives empty names"},
 		{
-			name:         "an Environment without releases gives no release",
-			environment:  &fleetv1alpha1.Environment{Spec: fleetv1alpha1.EnvironmentSpec{PlatformConfigRef: "prod-config"}},
+			name: "an Environment without releases gives no release",
+			environment: &fleetv1alpha1.Environment{
+				Spec: fleetv1alpha1.EnvironmentSpec{PlatformConfigRef: "prod-config"},
+			},
 			wantPlatform: "prod-config",
 		},
 	}

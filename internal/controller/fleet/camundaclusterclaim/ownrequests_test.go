@@ -36,6 +36,10 @@ func TestOwnRequests(t *testing.T) {
 	plane := request("orders-management-database", pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim, "orders")
 	other := request("billing-access", pluginsv1alpha1.ClaimKindCamundaClusterClaim, "billing")
 
-	assert.Equal(t, []pluginsv1alpha1.PluginRequest{own}, ownRequests([]pluginsv1alpha1.PluginRequest{plane, own, other}, "orders"))
+	assert.Equal(
+		t,
+		[]pluginsv1alpha1.PluginRequest{own},
+		ownRequests([]pluginsv1alpha1.PluginRequest{plane, own, other}, "orders"),
+	)
 	assert.Empty(t, ownRequests(nil, "orders"))
 }

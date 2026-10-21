@@ -55,7 +55,12 @@ func Component(claim client.Object, in Input) (*component.Component, error) {
 	for _, s := range in.Order {
 		section := find(in.Sections, s.Section)
 		if section == nil {
-			return nil, fmt.Errorf("selection %s/%s: PluginSection %q is not in the input", s.Section, s.Registration, s.Section)
+			return nil, fmt.Errorf(
+				"selection %s/%s: PluginSection %q is not in the input",
+				s.Section,
+				s.Registration,
+				s.Section,
+			)
 		}
 		registration := find(in.Registrations, s.Registration)
 		if registration == nil {

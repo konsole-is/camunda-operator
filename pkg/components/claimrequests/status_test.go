@@ -47,15 +47,17 @@ func TestStatusesReportEachRequestInClaimOrder(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, []fleetv1alpha1.RequestStatus{
-		{
-			Section:      "access",
-			Registration: "test-access",
-			Name:         "orders-access",
-			OutputsReady: metav1.ConditionTrue,
-			Ready:        metav1.ConditionFalse,
-		},
-		{Section: "encryption-key", Registration: "test-key", Name: "orders-encryption-key"},
-		{Section: "cloud-identity", Registration: "test-identity", Name: "orders-cloud-identity"},
-	}, Statuses(claim(), in))
+	assert.Equal(
+		t, []fleetv1alpha1.RequestStatus{
+			{
+				Section:      "access",
+				Registration: "test-access",
+				Name:         "orders-access",
+				OutputsReady: metav1.ConditionTrue,
+				Ready:        metav1.ConditionFalse,
+			},
+			{Section: "encryption-key", Registration: "test-key", Name: "orders-encryption-key"},
+			{Section: "cloud-identity", Registration: "test-identity", Name: "orders-cloud-identity"},
+		}, Statuses(claim(), in),
+	)
 }

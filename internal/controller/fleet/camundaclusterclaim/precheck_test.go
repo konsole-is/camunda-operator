@@ -29,7 +29,8 @@ import (
 )
 
 var _ = Describe("CamundaClusterClaim precheck", func() {
-	DescribeTable("refuses the claim and writes nothing",
+	DescribeTable(
+		"refuses the claim and writes nothing",
 		func(claimOf func() *fleetv1alpha1.CamundaClusterClaim, reason, message string) {
 			claim := claimOf()
 			create(claim)
@@ -52,46 +53,63 @@ var _ = Describe("CamundaClusterClaim precheck", func() {
 				g.Expect(clusters.Items).To(BeEmpty())
 			}, consistently, interval).Should(Succeed())
 		},
-		Entry("a namespace without the label while an Environment exists", func() *fleetv1alpha1.CamundaClusterClaim {
-			createEnvironment(allowingEnvironment(nil))
-			return newClaim(newNamespace(nil))
-		}, fleetv1alpha1.ReasonNoEnvironment, fleetv1alpha1.LabelEnvironment),
-		Entry("a label that names no Environment", func() *fleetv1alpha1.CamundaClusterClaim {
-			return newClaim(newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: "missing"}))
-		}, fleetv1alpha1.ReasonUnknownEnvironment, `"missing"`),
-		Entry("a preset that does not exist", func() *fleetv1alpha1.CamundaClusterClaim {
-			claim := newClaim(newNamespace(nil))
-			claim.Spec.PresetRef = "missing-preset"
-			return claim
-		}, v1.ReasonInvalidReference, `CamundaClusterPreset "missing-preset"`),
-		Entry("a preset that the Environment does not allow", func() *fleetv1alpha1.CamundaClusterClaim {
-			environment := allowingEnvironment(map[string][]string{
-				pluginstartup.SectionSecondaryStorage: {pluginstartup.RegistrationExistingSecondaryStorage},
-			})
-			environment.Spec.Presets.CamundaCluster = nil
-			createEnvironment(environment)
-			return newClaim(newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}))
-		}, fleetv1alpha1.ReasonNotAllowed, presetName),
-		Entry("an override of a field that a selected slot fills", func() *fleetv1alpha1.CamundaClusterClaim {
-			claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionAccess, registrationAccess))
-			claim.Spec.Cluster = &v1.CamundaClusterSpec{ExternalURL: "https://own.example.com"}
-			return claim
-		}, fleetv1alpha1.ReasonSlotConflict, "externalUrl"),
-		Entry("a required input without a producer", func() *fleetv1alpha1.CamundaClusterClaim {
-			return newClaim(newNamespace(nil), selection(pluginstartup.SectionVolumeEncryption, registrationVolumes))
-		}, fleetv1alpha1.ReasonMissingInput, pluginstartup.SectionEncryptionKey),
-		Entry("inputs that form a cycle", func() *fleetv1alpha1.CamundaClusterClaim {
-			first := testRegistration(uniqueName("cycle-key"), pluginstartup.SectionEncryptionKey)
-			first.Spec.Inputs = []pluginsv1alpha1.InputDecl{{Name: "url", From: "access/externalUrl"}}
-			second := testRegistration(uniqueName("cycle-access"), pluginstartup.SectionAccess)
-			second.Spec.Inputs = []pluginsv1alpha1.InputDecl{{Name: "key", From: "encryption-key/keyRef"}}
-			create(first)
-			create(second)
-			return newClaim(
-				newNamespace(nil),
-				selection(pluginstartup.SectionEncryptionKey, first.Name),
-				selection(pluginstartup.SectionAccess, second.Name),
-			)
-		}, fleetv1alpha1.ReasonWiringCycle, pluginstartup.SectionAccess),
+		Entry(
+			"a namespace without the label while an Environment exists", func() *fleetv1alpha1.CamundaClusterClaim {
+				createEnvironment(allowingEnvironment(nil))
+				return newClaim(newNamespace(nil))
+			}, fleetv1alpha1.ReasonNoEnvironment, fleetv1alpha1.LabelEnvironment,
+		),
+		Entry(
+			"a label that names no Environment", func() *fleetv1alpha1.CamundaClusterClaim {
+				return newClaim(newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: "missing"}))
+			}, fleetv1alpha1.ReasonUnknownEnvironment, `"missing"`,
+		),
+		Entry(
+			"a preset that does not exist", func() *fleetv1alpha1.CamundaClusterClaim {
+				claim := newClaim(newNamespace(nil))
+				claim.Spec.PresetRef = "missing-preset"
+				return claim
+			}, v1.ReasonInvalidReference, `CamundaClusterPreset "missing-preset"`,
+		),
+		Entry(
+			"a preset that the Environment does not allow", func() *fleetv1alpha1.CamundaClusterClaim {
+				environment := allowingEnvironment(map[string][]string{
+					pluginstartup.SectionSecondaryStorage: {pluginstartup.RegistrationExistingSecondaryStorage},
+				})
+				environment.Spec.Presets.CamundaCluster = nil
+				createEnvironment(environment)
+				return newClaim(newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}))
+			}, fleetv1alpha1.ReasonNotAllowed, presetName,
+		),
+		Entry(
+			"an override of a field that a selected slot fills", func() *fleetv1alpha1.CamundaClusterClaim {
+				claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionAccess, registrationAccess))
+				claim.Spec.Cluster = &v1.CamundaClusterSpec{ExternalURL: "https://own.example.com"}
+				return claim
+			}, fleetv1alpha1.ReasonSlotConflict, "externalUrl",
+		),
+		Entry(
+			"a required input without a producer", func() *fleetv1alpha1.CamundaClusterClaim {
+				return newClaim(
+					newNamespace(nil),
+					selection(pluginstartup.SectionVolumeEncryption, registrationVolumes),
+				)
+			}, fleetv1alpha1.ReasonMissingInput, pluginstartup.SectionEncryptionKey,
+		),
+		Entry(
+			"inputs that form a cycle", func() *fleetv1alpha1.CamundaClusterClaim {
+				first := testRegistration(uniqueName("cycle-key"), pluginstartup.SectionEncryptionKey)
+				first.Spec.Inputs = []pluginsv1alpha1.InputDecl{{Name: "url", From: "access/externalUrl"}}
+				second := testRegistration(uniqueName("cycle-access"), pluginstartup.SectionAccess)
+				second.Spec.Inputs = []pluginsv1alpha1.InputDecl{{Name: "key", From: "encryption-key/keyRef"}}
+				create(first)
+				create(second)
+				return newClaim(
+					newNamespace(nil),
+					selection(pluginstartup.SectionEncryptionKey, first.Name),
+					selection(pluginstartup.SectionAccess, second.Name),
+				)
+			}, fleetv1alpha1.ReasonWiringCycle, pluginstartup.SectionAccess,
+		),
 	)
 })

@@ -45,28 +45,34 @@ func TestComponentWritesOneRequestForEachSelectionInOrder(t *testing.T) {
 
 	volume := requests[1]
 	assert.Equal(t, "team-a", volume.Namespace)
-	assert.Equal(t, map[string]string{
-		pluginsv1alpha1.LabelSection:      "volume-encryption",
-		pluginsv1alpha1.LabelRegistration: "test-volumes",
-		fleetv1alpha1.LabelClaim:          "orders",
-	}, volume.Labels)
-	assert.Equal(t, pluginsv1alpha1.PluginRequestSpec{
-		Section:      "volume-encryption",
-		Registration: "test-volumes",
-		ClaimRef:     pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: "orders"},
-		Target: pluginsv1alpha1.TargetRef{
-			Kind: claimpolicy.KindCamundaCluster, Name: "orders", ServiceAccountName: "orders-camunda",
-		},
-		Inputs:         map[string]string{"keyRef": "arn:aws:kms:key"},
-		DeletionPolicy: pluginsv1alpha1.DeletionPolicyDelete,
-	}, volume.Spec)
+	assert.Equal(
+		t, map[string]string{
+			pluginsv1alpha1.LabelSection:      "volume-encryption",
+			pluginsv1alpha1.LabelRegistration: "test-volumes",
+			fleetv1alpha1.LabelClaim:          "orders",
+		}, volume.Labels,
+	)
+	assert.Equal(
+		t, pluginsv1alpha1.PluginRequestSpec{
+			Section:      "volume-encryption",
+			Registration: "test-volumes",
+			ClaimRef:     pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: "orders"},
+			Target: pluginsv1alpha1.TargetRef{
+				Kind: claimpolicy.KindCamundaCluster, Name: "orders", ServiceAccountName: "orders-camunda",
+			},
+			Inputs:         map[string]string{"keyRef": "arn:aws:kms:key"},
+			DeletionPolicy: pluginsv1alpha1.DeletionPolicyDelete,
+		}, volume.Spec,
+	)
 }
 
 func TestComponentTargetsTheConnectorsAccountForConnectorsPermissions(t *testing.T) {
 	in := volumeInput(t)
 	in.Sections = append(in.Sections, section("connectors-permissions", pluginsv1alpha1.SlotConnectorsIdentity))
 	in.Registrations = append(in.Registrations, registration("test-connectors", "connectors-permissions"))
-	in.Selections = []fleetv1alpha1.PluginSelection{{Section: "connectors-permissions", Registration: "test-connectors"}}
+	in.Selections = []fleetv1alpha1.PluginSelection{
+		{Section: "connectors-permissions", Registration: "test-connectors"},
+	}
 	in.Order = in.Selections
 
 	requests := previewRequests(t, in)

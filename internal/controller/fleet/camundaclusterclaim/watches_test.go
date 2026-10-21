@@ -36,7 +36,13 @@ var _ = Describe("CamundaClusterClaim watches", func() {
 		createEnvironment(environment)
 		claim := newClaim(newNamespace(nil))
 		create(claim)
-		expectCondition(claim, v1.ConditionReady, metav1.ConditionFalse, fleetv1alpha1.ReasonNoEnvironment, Not(BeEmpty()))
+		expectCondition(
+			claim,
+			v1.ConditionReady,
+			metav1.ConditionFalse,
+			fleetv1alpha1.ReasonNoEnvironment,
+			Not(BeEmpty()),
+		)
 
 		var namespace corev1.Namespace
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: claim.Namespace}, &namespace)).To(Succeed())

@@ -199,7 +199,12 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		create(claim)
 		eventuallyCluster(claim)
 
-		setClusterReady(claim, metav1.ConditionFalse, v1.ReasonInvalidReference, `CamundaPlatformConfig "x" does not exist`)
+		setClusterReady(
+			claim,
+			metav1.ConditionFalse,
+			v1.ReasonInvalidReference,
+			`CamundaPlatformConfig "x" does not exist`,
+		)
 
 		Eventually(func(g Gomega) {
 			ready := meta.FindStatusCondition(latest(g, claim).Status.Conditions, fleetv1alpha1.ConditionClusterReady)
