@@ -175,6 +175,20 @@ describe("claimEditable", () => {
     },
   );
 
+  it("gives a list value that one choice holds as the name of that choice", () => {
+    const [rule] = claimEditable(
+      reg({ parameterValues: { zones: [1, 2] } }),
+      envWith({
+        zones: {
+          claimEditable: true,
+          allowed: [{ name: "standard", label: "Standard", value: [1, 2] }],
+        },
+      }),
+    );
+
+    expect(rule).toMatchObject({ value: "standard" });
+  });
+
   it("keeps a value of an editable parameter that no choice has", () => {
     const [rule] = claimEditable(
       reg({ parameterValues: { access: ["arn:sqs", "arn:other"] } }),

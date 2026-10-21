@@ -192,11 +192,10 @@ function namesOf(
 ): unknown {
   const nameOfValue = (v: unknown) =>
     choices.find((c) => equalJSON(c.value, v))?.name;
-  if (Array.isArray(value)) {
-    const names = value.map(nameOfValue);
-    return names.every((n) => n !== undefined) ? names : value;
-  }
-  return nameOfValue(value) ?? value;
+  const name = nameOfValue(value);
+  if (name !== undefined || !Array.isArray(value)) return name ?? value;
+  const names = value.map(nameOfValue);
+  return names.every((n) => n !== undefined) ? names : value;
 }
 
 function count(n: number, noun: string): string {
