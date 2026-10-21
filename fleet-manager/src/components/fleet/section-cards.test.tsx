@@ -79,19 +79,16 @@ describe("SectionCards", () => {
     );
     const group = screen.getByRole("group", { name: "Policies" });
     const boxes = within(group).getAllByRole("checkbox");
-    expect(
-      boxes.map((b) => b.getAttribute("aria-label") ?? b.textContent),
-    ).toEqual(["SQS access", "S3 read", "SNS publish"]);
+    const names = boxes.map(
+      (b) => b.getAttribute("aria-label") ?? b.textContent,
+    );
+    expect(names).toEqual(["SQS access", "S3 read", "SNS publish"]);
     expect(boxes.every((b) => b.getAttribute("aria-checked") === "false")).toBe(
       true,
     );
 
-    await userEvent.click(
-      within(group).getByRole("checkbox", { name: "S3 read" }),
-    );
-    await userEvent.click(
-      within(group).getByRole("checkbox", { name: "SQS access" }),
-    );
+    await userEvent.click(boxes[names.indexOf("S3 read")]);
+    await userEvent.click(boxes[names.indexOf("SQS access")]);
     expect(onChange).toHaveBeenLastCalledWith(
       [
         {
