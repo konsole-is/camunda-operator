@@ -32,6 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	components "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/barmanobjectstore"
 	"github.com/konsole-is/camunda-operator/test/envtest"
@@ -200,7 +201,9 @@ func (c *backupListCounter) Patch(
 	patch client.Patch,
 	opts ...client.PatchOption,
 ) error {
-	if obj.GetObjectKind().GroupVersionKind().Kind == "DatabaseServerConfig" {
+	patchOptions := &client.PatchOptions{}
+	patchOptions.ApplyOptions(opts)
+	if patchOptions.FieldManager == string(components.RecoveryFieldManager) {
 		c.mu.Lock()
 		hook := c.beforeOutcome
 		c.beforeOutcome = nil
