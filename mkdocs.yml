@@ -101,6 +101,7 @@ nav:
       - Management plane: guides/management-plane.md
       - Backup: guides/backup.md
       - Operations: guides/operations.md
+      - Claims: guides/claims.md
   - CRD reference:
       - Overview: crds/index.md
       - Cluster:
@@ -139,4 +140,5 @@ nav:
           - Grant: crds/grant.md
       - Fleet:
           - Environment: crds/environment.md
+          - CamundaClusterClaim: crds/camundaclusterclaim.md
       - API reference: crds/api-reference.md
