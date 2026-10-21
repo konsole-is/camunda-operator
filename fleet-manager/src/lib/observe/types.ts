@@ -28,3 +28,56 @@ export type LogLine = {
   request?: string;
   fields: Record<string, unknown>;
 };
+
+/** TimeRange is the range of a Prometheus query. start and end are Unix times in milliseconds. */
+export type TimeRange = { start: number; end: number; stepSeconds: number };
+
+/** CoreComponent is a value of the label camunda.io/component on the pods of a cluster. */
+export type CoreComponent =
+  | "zeebe"
+  | "gateway"
+  | "operate"
+  | "tasklist"
+  | "admin"
+  | "connectors";
+
+/**
+ * MetricDef is one chart: a rendered PromQL query. source names where the
+ * query comes from: the documentation of its metric, or a registration.
+ */
+export type MetricDef = {
+  label: string;
+  query: string;
+  unit?: string;
+  source: string;
+};
+
+/** QueryError is a metric query of a registration that does not render, with the reason. */
+export type QueryError = { label: string; source: string; error: string };
+
+/**
+ * CoreQuery is a fixed query of a core component. query is a template with
+ * {{ .namespace }} and {{ .pods }}. metric is the documented metric that it
+ * reads, and source is the address of that documentation.
+ */
+export type CoreQuery = {
+  label: string;
+  query: string;
+  unit?: string;
+  metric: string;
+  source: string;
+};
+
+/**
+ * PartitionHealth is one partition of a cluster. leader and followers are
+ * pod names. A partition that no answering broker leads has no leader.
+ * health is "unknown", because the management port of a broker does not
+ * give it.
+ */
+export type PartitionHealth = {
+  partition: number;
+  leader?: string;
+  followers: string[];
+  processorPhase?: string;
+  health: "unknown";
+};
