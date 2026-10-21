@@ -152,6 +152,43 @@ describe("claimEditable", () => {
     expect(rules[1]).not.toHaveProperty("required");
   });
 
+  it.each([
+    ["a value", "arn:sqs", "sqs"],
+    ["a list of values", ["arn:sqs", "arn:sns"], ["sqs", "sns"]],
+  ])(
+    "gives an editable parameter with choices %s as the names of the choices",
+    (_, value, names) => {
+      const [rule] = claimEditable(
+        reg({ parameterValues: { access: value } }),
+        envWith({
+          access: {
+            claimEditable: true,
+            allowed: [
+              { name: "sqs", label: "SQS access", value: "arn:sqs" },
+              { name: "sns", label: "SNS access", value: "arn:sns" },
+            ],
+          },
+        }),
+      );
+
+      expect(rule).toMatchObject({ claimEditable: true, value: names });
+    },
+  );
+
+  it("keeps a value of an editable parameter that no choice has", () => {
+    const [rule] = claimEditable(
+      reg({ parameterValues: { access: ["arn:sqs", "arn:other"] } }),
+      envWith({
+        access: {
+          claimEditable: true,
+          allowed: [{ name: "sqs", label: "SQS access", value: "arn:sqs" }],
+        },
+      }),
+    );
+
+    expect(rule).toMatchObject({ value: ["arn:sqs", "arn:other"] });
+  });
+
   it("returns a rule for a parameter named constructor that only the policy has", () => {
     expect(
       claimEditable(
@@ -355,6 +392,20 @@ describe("sectionOptions", () => {
     );
 
     expect(view.options.map((o) => o.registration)).toEqual(["b"]);
+  });
+
+  it("leaves out an allowed registration that does not serve the section", () => {
+    const view = sectionOptions(
+      section(),
+      [reg({}, "a"), reg({ sections: ["secondary-storage"] }, "elastic")],
+      envWith(
+        {},
+        { sections: { "backup-storage": { allowed: ["elastic", "a"] } } },
+      ),
+      "CamundaClusterClaim",
+    );
+
+    expect(view.options.map((o) => o.registration)).toEqual(["a"]);
   });
 
   it("leaves out an allowed registration that does not exist", () => {

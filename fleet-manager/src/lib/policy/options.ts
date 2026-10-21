@@ -2,7 +2,7 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { OpenAPISchema } from "@/lib/schema";
-import { byCodeUnit, isObject, own } from "./json";
+import { byCodeUnit, equalJSON, isObject, own } from "./json";
 import { parameterPolicies, sectionPolicy } from "./resolve";
 import type {
   ClaimKind,
@@ -17,7 +17,8 @@ import type {
  * its policy in code-unit order. label is the title of the property schema,
  * else the name. required follows the required list of the schema. A
  * claim-editable parameter carries its policy value and the names and labels
- * of its choices. A locked parameter carries lockedSummary of its value and
+ * of its choices. A value of a choice, or a list of such values, is given as
+ * the names of the choices. A locked parameter carries lockedSummary of its value and
  * no value. A parameterValues that is not an object counts as no values.
  */
 export function claimEditable(
@@ -72,7 +73,9 @@ export function claimEditable(
     return {
       ...base,
       claimEditable: true,
-      ...("value" in policy && { value: policy.value }),
+      ...("value" in policy && {
+        value: namesOf(policy.value, policy.allowed ?? []),
+      }),
       ...(policy.allowed && {
         allowed: policy.allowed.map((c) => ({ name: c.name, label: c.label })),
       }),
@@ -101,8 +104,8 @@ export function lockedSummary(value: unknown): string {
  * Environment, the options are the registrations that serve the section, by
  * name, and the Default is the one registration with mode Default. With one,
  * they are the allowed registrations in the order of allowed, and the Default
- * is its default. A registration that is missing, or not Accepted=True and
- * Ready=True, is left out. An option has no choices when its registration
+ * is its default. A registration that is missing, does not serve the section,
+ * or is not Accepted=True and Ready=True, is left out. An option has no choices when its registration
  * lists none, or when its choice parameter ("preset" if the schema has it,
  * else "name") is claim-editable and the Environment gives it an allowed
  * list. That list is then in parameters. disabledReason stays unset: the
@@ -134,7 +137,13 @@ export function sectionOptions(
   view.required = policy.required ?? false;
   for (const allowed of policy.allowed ?? []) {
     const registration = registrations.find((r) => r.metadata.name === allowed);
-    if (!registration || !ready(registration)) continue;
+    if (
+      !registration ||
+      !registration.spec.sections.includes(name) ||
+      !ready(registration)
+    ) {
+      continue;
+    }
     view.options.push(
       optionOf(registration, environment, allowed === policy.default),
     );
@@ -173,6 +182,21 @@ function ready(registration: PluginRegistration): boolean {
   return ["Accepted", "Ready"].every((type) =>
     conditions.some((c) => c.type === type && c.status === "True"),
   );
+}
+
+// The values of the choices stay with the claim controller (CL40), and the
+// cards pick choices by name.
+function namesOf(
+  value: unknown,
+  choices: readonly { name: string; value: unknown }[],
+): unknown {
+  const nameOfValue = (v: unknown) =>
+    choices.find((c) => equalJSON(c.value, v))?.name;
+  if (Array.isArray(value)) {
+    const names = value.map(nameOfValue);
+    return names.every((n) => n !== undefined) ? names : value;
+  }
+  return nameOfValue(value) ?? value;
 }
 
 function count(n: number, noun: string): string {
