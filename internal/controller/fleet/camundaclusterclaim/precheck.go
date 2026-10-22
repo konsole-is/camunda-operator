@@ -134,7 +134,7 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 	); err != nil {
 		return res, fmt.Errorf("listing the PluginRequests of the claim: %w", err)
 	}
-	res.requests = ownRequests(requests.Items, claim.Name, claim.Spec.Plugins)
+	res.requests = ownRequests(requests.Items, claim.Name, claim.Spec.Plugins, res.sections)
 
 	var live v1.CamundaCluster
 	err = r.Get(ctx, client.ObjectKeyFromObject(claim), &live)
@@ -230,19 +230,26 @@ func named[T any, P interface {
 }
 
 // ownRequests returns the requests whose claimRef names the cluster claim
-// name and whose name is the request name of a section of selections. A
-// request of another claim kind, or of another name, with the same label
-// stays out, so the claim never reads its outputs.
+// name and whose name is the request name of an item of selections in
+// sections. A request of another claim kind, or of another name, with the
+// same label stays out, so the claim never reads its outputs.
 func ownRequests(
 	requests []pluginsv1alpha1.PluginRequest,
 	name string,
 	selections []fleetv1alpha1.PluginSelection,
+	sections []pluginsv1alpha1.PluginSection,
 ) []pluginsv1alpha1.PluginRequest {
 	own := pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: name}
+	names := make([]string, 0, len(selections))
+	for _, s := range selections {
+		var mode pluginsv1alpha1.Selection
+		if i := slices.IndexFunc(sections, named[pluginsv1alpha1.PluginSection](s.Section)); i >= 0 {
+			mode = sections[i].Spec.Selection
+		}
+		names = append(names, claimrequests.Name(name, s, mode))
+	}
 
 	return slices.DeleteFunc(slices.Clone(requests), func(r pluginsv1alpha1.PluginRequest) bool {
-		return r.Spec.ClaimRef != own || !slices.ContainsFunc(selections, func(s fleetv1alpha1.PluginSelection) bool {
-			return claimrequests.Name(name, s.Section) == r.Name
-		})
+		return r.Spec.ClaimRef != own || !slices.Contains(names, r.Name)
 	})
 }

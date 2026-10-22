@@ -42,7 +42,38 @@ func TestOwnRequests(t *testing.T) {
 	assert.Equal(
 		t,
 		[]pluginsv1alpha1.PluginRequest{own},
-		ownRequests([]pluginsv1alpha1.PluginRequest{stray, plane, own, other}, "orders", selections),
+		ownRequests([]pluginsv1alpha1.PluginRequest{stray, plane, own, other}, "orders", selections, nil),
 	)
-	assert.Empty(t, ownRequests(nil, "orders", selections))
+	assert.Empty(t, ownRequests(nil, "orders", selections, nil))
+}
+
+func TestOwnRequestsOfAManySection(t *testing.T) {
+	request := func(name string) pluginsv1alpha1.PluginRequest {
+		return pluginsv1alpha1.PluginRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: pluginsv1alpha1.PluginRequestSpec{
+				ClaimRef: pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: "orders"},
+			},
+		}
+	}
+	first, second := request("orders-alerts-mail"), request("orders-alerts-chat")
+	sections := []pluginsv1alpha1.PluginSection{{
+		ObjectMeta: metav1.ObjectMeta{Name: "alerts"},
+		Spec:       pluginsv1alpha1.PluginSectionSpec{Selection: pluginsv1alpha1.SelectionMany},
+	}}
+	selections := []fleetv1alpha1.PluginSelection{
+		{Section: "alerts", Registration: "mail"},
+		{Section: "alerts", Registration: "chat"},
+	}
+
+	assert.Equal(
+		t,
+		[]pluginsv1alpha1.PluginRequest{first, second},
+		ownRequests(
+			[]pluginsv1alpha1.PluginRequest{first, request("orders-alerts"), second},
+			"orders",
+			selections,
+			sections,
+		),
+	)
 }

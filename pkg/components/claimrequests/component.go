@@ -17,6 +17,8 @@ limitations under the License.
 package claimrequests
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -26,6 +28,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
@@ -97,9 +100,24 @@ func Component(claim client.Object, in Input) (*component.Component, error) {
 	return builder.Build()
 }
 
-// Name returns the name of the request of claim in section: <claim>-<section>.
-func Name(claim, section string) string {
-	return claim + "-" + section
+// Name returns the name of the request of claim for selection s in a
+// section with mode: <claim>-<section> for One, and
+// <claim>-<section>-<registration> for Many. A name over 63 characters is
+// cut to 54 and gets "-" and the first 8 hex characters of the SHA-256 of
+// the full name.
+func Name(claim string, s fleetv1alpha1.PluginSelection, mode pluginsv1alpha1.Selection) string {
+	name := claim + "-" + s.Section
+	if mode == pluginsv1alpha1.SelectionMany {
+		name += "-" + s.Registration
+	}
+
+	// The name is the value of the plugins.camunda.io/request label.
+	if len(name) <= validation.LabelValueMaxLength {
+		return name
+	}
+	sum := sha256.Sum256([]byte(name))
+
+	return name[:54] + "-" + hex.EncodeToString(sum[:4])
 }
 
 // find returns the item of objects named name, or nil.
@@ -133,7 +151,7 @@ func desiredRequest(
 	return &pluginsv1alpha1.PluginRequest{
 		TypeMeta: metav1.TypeMeta{APIVersion: pluginsv1alpha1.GroupVersion.String(), Kind: "PluginRequest"},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      Name(claim.GetName(), s.Section),
+			Name:      Name(claim.GetName(), s, section.Spec.Selection),
 			Namespace: claim.GetNamespace(),
 			Labels: map[string]string{
 				pluginsv1alpha1.LabelSection:      s.Section,

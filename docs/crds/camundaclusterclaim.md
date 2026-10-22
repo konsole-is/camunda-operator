@@ -57,7 +57,7 @@ On its first check, the claim records the policy of its `Environment` in `status
 
 ## Plugin requests
 
-The claim creates one `PluginRequest` for each item of `spec.plugins`, with the name `<claim>-<section>`. The claim `my-cluster` that selects an option of `secondary-storage` gets the request `my-cluster-secondary-storage`. Each request carries the labels `plugins.camunda.io/section`, `plugins.camunda.io/registration`, and `fleet.camunda.io/claim`. To list the requests of a claim:
+The claim creates one `PluginRequest` for each item of `spec.plugins`. In a section that takes one option, the name of the request is `<claim>-<section>`. The claim `my-cluster` that selects an option of `secondary-storage` gets the request `my-cluster-secondary-storage`. In a section that takes many options, the name is `<claim>-<section>-<registration>`, so each option gets its own request. A name longer than 63 characters is cut to 54 characters and ends with `-` and 8 characters of a hash of the full name. `status.requests` shows the name of each request. Each request carries the labels `plugins.camunda.io/section`, `plugins.camunda.io/registration`, and `fleet.camunda.io/claim`. To list the requests of a claim:
 
 ```bash
 kubectl get pluginrequests -n my-cluster-ns -l fleet.camunda.io/claim=my-cluster
@@ -129,7 +129,7 @@ When the check passes, `Ready` follows two conditions:
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
-| `RequestsReady` | `OperationPending` | A plugin has not reported the outputs of its request. The message names the section. | Read the status of the request with `kubectl get pluginrequest <claim>-<section> -o yaml`. |
+| `RequestsReady` | `OperationPending` | A plugin has not reported the outputs of its request. The message names the section. | Read the status of the request with `kubectl get pluginrequest <name> -o yaml`, with the name from `status.requests`. |
 | `RequestsReady` | `Blocked` | A request waits for the outputs of another section, or another owner controls it. The message says which. | Wait, or rename one of the two claims. |
 | `RequestsReady` | `Healthy` | Every request with a slot reports its outputs. | Nothing. |
 | `ClusterReady` | `PrerequisiteNotMet` | The cluster waits for `RequestsReady`. The message holds the message of `RequestsReady`. | See `RequestsReady`. |

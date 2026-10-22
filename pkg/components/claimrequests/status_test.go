@@ -61,3 +61,29 @@ func TestStatusesReportEachRequestInClaimOrder(t *testing.T) {
 		}, Statuses(claim(), in),
 	)
 }
+
+func TestStatusesReportEachRequestOfAManySection(t *testing.T) {
+	in := Input{
+		Selections: []fleetv1alpha1.PluginSelection{
+			{Section: "alerts", Registration: "mail"},
+			{Section: "alerts", Registration: "chat"},
+		},
+		Sections: []pluginsv1alpha1.PluginSection{{
+			ObjectMeta: metav1.ObjectMeta{Name: "alerts"},
+			Spec:       pluginsv1alpha1.PluginSectionSpec{Selection: pluginsv1alpha1.SelectionMany},
+		}},
+		Requests: []pluginsv1alpha1.PluginRequest{{
+			ObjectMeta: metav1.ObjectMeta{Name: "orders-alerts-chat"},
+			Status: pluginsv1alpha1.PluginRequestStatus{Conditions: []metav1.Condition{
+				{Type: "Ready", Status: metav1.ConditionTrue},
+			}},
+		}},
+	}
+
+	assert.Equal(
+		t, []fleetv1alpha1.RequestStatus{
+			{Section: "alerts", Registration: "mail", Name: "orders-alerts-mail"},
+			{Section: "alerts", Registration: "chat", Name: "orders-alerts-chat", Ready: metav1.ConditionTrue},
+		}, Statuses(claim(), in),
+	)
+}

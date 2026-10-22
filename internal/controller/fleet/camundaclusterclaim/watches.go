@@ -42,7 +42,8 @@ import (
 
 // The field indexes of CamundaClusterClaim: the distinct section and
 // registration names of spec.plugins, and the <namespace>/<name> of each
-// PluginRequest that the claim writes.
+// PluginRequest that the claim can write. The index holds, for each item,
+// the request name for a One section and for a Many section.
 const (
 	pluginSectionsField      = "spec.plugins.section"
 	pluginRegistrationsField = "spec.plugins.registration"
@@ -75,15 +76,18 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.componentClient = pluginrequest.NewApplyClient(camundacluster.NewApplyClient(uncached))
 	}
 
-	indexers := map[string]func(*fleetv1alpha1.CamundaClusterClaim, fleetv1alpha1.PluginSelection) string{
-		pluginSectionsField: func(_ *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) string {
-			return s.Section
+	indexers := map[string]func(*fleetv1alpha1.CamundaClusterClaim, fleetv1alpha1.PluginSelection) []string{
+		pluginSectionsField: func(_ *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) []string {
+			return []string{s.Section}
 		},
-		pluginRegistrationsField: func(_ *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) string {
-			return s.Registration
+		pluginRegistrationsField: func(_ *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) []string {
+			return []string{s.Registration}
 		},
-		requestNamesField: func(c *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) string {
-			return refindex.NamespacedKey(c.Namespace, claimrequests.Name(c.Name, s.Section))
+		requestNamesField: func(c *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) []string {
+			return []string{
+				refindex.NamespacedKey(c.Namespace, claimrequests.Name(c.Name, s, pluginsv1alpha1.SelectionOne)),
+				refindex.NamespacedKey(c.Namespace, claimrequests.Name(c.Name, s, pluginsv1alpha1.SelectionMany)),
+			}
 		},
 	}
 	for field, name := range indexers {
@@ -131,16 +135,16 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 // spec.plugins of the claim o.
 func distinctNames(
 	o client.Object,
-	name func(*fleetv1alpha1.CamundaClusterClaim, fleetv1alpha1.PluginSelection) string,
+	name func(*fleetv1alpha1.CamundaClusterClaim, fleetv1alpha1.PluginSelection) []string,
 ) []string {
 	claim, ok := o.(*fleetv1alpha1.CamundaClusterClaim)
 	if !ok {
 		return nil
 	}
 
-	names := make([]string, 0, len(claim.Spec.Plugins))
+	var names []string
 	for _, s := range claim.Spec.Plugins {
-		names = append(names, name(claim, s))
+		names = append(names, name(claim, s)...)
 	}
 	slices.Sort(names)
 

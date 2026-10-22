@@ -29,14 +29,20 @@ import (
 // Statuses returns status.requests: one item for each selection, in claim
 // order, with the status of the OutputsReady and Ready conditions of its
 // request as in.Requests holds it. A request that is missing or has no such
-// condition leaves the status empty.
+// condition leaves the status empty. A selection whose section is not in
+// in.Sections gets the name of a request of a One section.
 func Statuses(claim client.Object, in Input) []fleetv1alpha1.RequestStatus {
 	statuses := make([]fleetv1alpha1.RequestStatus, 0, len(in.Selections))
 	for _, s := range in.Selections {
+		var mode pluginsv1alpha1.Selection
+		if section := find(in.Sections, s.Section); section != nil {
+			mode = section.Spec.Selection
+		}
+
 		status := fleetv1alpha1.RequestStatus{
 			Section:      s.Section,
 			Registration: s.Registration,
-			Name:         Name(claim.GetName(), s.Section),
+			Name:         Name(claim.GetName(), s, mode),
 		}
 		if request := find(in.Requests, status.Name); request != nil {
 			status.OutputsReady = conditionStatus(request, pluginsv1alpha1.ConditionOutputsReady)
