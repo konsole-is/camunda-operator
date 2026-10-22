@@ -89,9 +89,7 @@ func (c Config) validate() error {
 }
 
 // Case is one request of a run, as a claim controller writes it. Each
-// deletion policy of a case names a claim of its own, so names that a plugin
-// derives from the claim do not collide between the Delete and the Orphan
-// request.
+// deletion policy of a case names a claim of its own.
 type Case struct {
 	// Name names the case in the report. It is unique in the config.
 	Name string

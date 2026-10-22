@@ -48,7 +48,8 @@ type requestRun struct {
 	section  string
 	policy   pluginsv1alpha1.DeletionPolicy
 	name     string
-	// claim is the claim that the request names. No such claim exists.
+	// claim is the claim that the request names, one for each case and
+	// policy. No such claim exists.
 	claim string
 	tc    Case
 }
@@ -172,9 +173,7 @@ func (s *suite) prepare(ctx context.Context) (*lifecycle, error) {
 
 // runsOf gives each case one run for each of sections, with its deletion
 // policy, or with each of policies when the case leaves its deletion policy
-// empty. A request name holds the section only when there are several. The runs
-// of one case and policy share a claim name, as the requests of one claim
-// for each section do, and it is a DNS label like the request name. It
+// empty. A request name holds the section only when there are several. It
 // refuses a request name that is not a DNS label, and two runs with one
 // request name.
 func runsOf(
