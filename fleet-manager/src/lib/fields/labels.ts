@@ -17,6 +17,8 @@ export function stateLabel(state: FieldState): string {
       return "Set by your admin";
     case "environment":
       return "From environment";
+    case "default":
+      return "Default value";
   }
 }
 

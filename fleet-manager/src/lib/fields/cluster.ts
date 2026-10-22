@@ -58,12 +58,14 @@ export type ClusterFieldsInput = {
  *  4. "From release".
  *  5. "From preset".
  *  6. "Changed in the claim": the claim controller owns it.
- *  7. "Set by" with no known writer.
+ *  7. "Default value": no manager owns it.
+ *  8. "Set by" with no known writer.
  *
  * Its lock is the section of a filled field, else the lock of its path:
  * set by the release, fixed by the claim controller, or set by a section.
  * On a cluster without the claim label, a field is From release, From
- * preset, or Set by its manager, and every field is locked as not managed.
+ * preset, Set by its manager, or a Default value when no manager owns it,
+ * and every field is locked as not managed.
  * A cluster with the label and no claim object is still managed.
  */
 export function clusterFields(input: ClusterFieldsInput): ClusterField[] {
@@ -426,11 +428,13 @@ function managedState(f: {
   if (f.release) return { kind: "release" };
   if (f.preset) return { kind: "preset" };
   if (f.managers.some(isClaimManager)) return { kind: "claim" };
+  if (f.managers.length === 0) return { kind: "default" };
   return { kind: "setBy", takeOver: !f.locked };
 }
 
 function unmanagedState(managers: string[]): FieldState {
   const [manager] = [...managers].sort();
+  if (manager === undefined) return { kind: "default" };
   return { kind: "setBy", manager, takeOver: false };
 }
 

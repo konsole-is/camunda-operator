@@ -25,7 +25,8 @@ export type FieldTarget =
 /**
  * FieldState says where the value of a field comes from. takeOver of setBy
  * is true when setting the field in the claim takes it from its manager. A
- * setBy without a manager has no known writer.
+ * setBy without a manager has no known writer. default is a value that no
+ * manager owns.
  */
 export type FieldState =
   | { kind: "filled"; section: string; sectionLabel: string }
@@ -34,7 +35,8 @@ export type FieldState =
   | { kind: "release" }
   | { kind: "preset" }
   | { kind: "admin" }
-  | { kind: "environment" };
+  | { kind: "environment" }
+  | { kind: "default" };
 
 /** FieldLock says why a field cannot change. */
 export type FieldLock =

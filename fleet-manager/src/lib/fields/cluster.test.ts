@@ -512,6 +512,30 @@ describe("clusterFields", () => {
     expect(stateLabel(field.state)).toBe("Changed in the claim");
   });
 
+  it("a value that no manager owns is a Default value on a managed cluster", () => {
+    const field = at(
+      fieldsOf({
+        spec: {
+          zeebe: {
+            replicas: 3,
+            persistentVolumeClaimRetentionPolicy: { whenDeleted: "Delete" },
+          },
+        },
+        managedFields: [
+          managedFieldsOf(CLAIM, [["spec", "zeebe", "replicas"]]),
+        ],
+        claim: claim({ cluster: { zeebe: { replicas: 3 } } }),
+      }),
+      "spec.zeebe.persistentVolumeClaimRetentionPolicy",
+    );
+    expect(view(field)).toEqual({
+      value: { whenDeleted: "Delete" },
+      state: "Default value",
+      lock: undefined,
+    });
+    expect(stateNote(field.state)).toBeUndefined();
+  });
+
   it("the app manager is not shown as a writer on a managed cluster", () => {
     const field = at(
       fieldsOf({
@@ -565,6 +589,31 @@ describe("clusterFields", () => {
     const size = at(fields, "spec.zeebe.storageSize");
     expect(stateLabel(size.state)).toBe("Set by kubectl-client-side-apply");
     expect(stateNote(size.state)).toBeUndefined();
+  });
+
+  it("a value that no manager owns is a Default value on an unmanaged cluster", () => {
+    const fields = fieldsOf({
+      spec: {
+        zeebe: {
+          storageSize: "64Gi",
+          persistentVolumeClaimRetentionPolicy: { whenDeleted: "Delete" },
+        },
+      },
+      managedFields: [
+        managedFieldsOf("kubectl-client-side-apply", [
+          ["spec", "zeebe", "storageSize"],
+        ]),
+      ],
+      labelled: false,
+    });
+    const policy = at(
+      fields,
+      "spec.zeebe.persistentVolumeClaimRetentionPolicy",
+    );
+    expect(stateLabel(policy.state)).toBe("Default value");
+    expect(stateLabel(at(fields, "spec.zeebe.storageSize").state)).toBe(
+      "Set by kubectl-client-side-apply",
+    );
   });
 
   it("treats a labelled cluster without its claim as managed", () => {

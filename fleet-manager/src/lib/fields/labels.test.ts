@@ -22,6 +22,7 @@ describe("stateLabel", () => {
     [{ kind: "preset" }, "From preset"],
     [{ kind: "admin" }, "Set by your admin"],
     [{ kind: "environment" }, "From environment"],
+    [{ kind: "default" }, "Default value"],
   ])("%o reads %s", (state, want) => {
     expect(stateLabel(state)).toBe(want);
   });
@@ -38,6 +39,7 @@ describe("stateNote", () => {
     { kind: "setBy", manager: "x", takeOver: false },
     { kind: "claim" },
     { kind: "preset" },
+    { kind: "default" },
     { kind: "filled", section: "access", sectionLabel: "Access" },
   ])("has no note for %o", (state) => {
     expect(stateNote(state)).toBeUndefined();
