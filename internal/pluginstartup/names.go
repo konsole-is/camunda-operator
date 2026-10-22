@@ -49,6 +49,7 @@ const (
 // its backing resource (CL4).
 const (
 	BackingSuffixElasticsearch            = "-es"
+	BackingSuffixDatabaseServer           = "-pg"
 	BackingSuffixManagementDatabaseServer = "-db"
 )
 

@@ -171,7 +171,7 @@ var _ = Describe("Writer", Ordered, func() {
 		}),
 		Entry("database-server", "database-server", wantRegistration{
 			sections: []string{"secondary-storage"}, mode: pluginsv1alpha1.ModeOptional,
-			required: []string{"preset"}, properties: []string{"preset", "overrides"},
+			required: []string{"preset", "releaseRef"}, properties: []string{"preset", "releaseRef", "overrides"},
 			claimEditable: []string{"overrides"}, inputs: storageIn,
 			outputs: []string{"secondaryStorageConfig"}, deletionPolicies: bothPolicies,
 		}),

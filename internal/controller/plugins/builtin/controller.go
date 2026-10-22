@@ -96,10 +96,11 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=get;list;watch
 // A new handler adds its registration here: REG-RBAC and the Grant admission policy check serve.
-// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=elasticsearch;existing-object-storage;existing-secondary-storage;existing-database-configs;management-database-server
+// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=database-server;elasticsearch;existing-object-storage;existing-secondary-storage;existing-database-configs;management-database-server
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs;secondarystorageconfigs;databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=databaseservers;databases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverpresets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile serves a request whose registration label and

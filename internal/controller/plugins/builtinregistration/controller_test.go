@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -67,18 +68,32 @@ var _ = Describe("Built-in registration controller", func() {
 		}
 	})
 
-	It("writes no Ready on a built-in registration that the operator does not serve", func() {
-		Expect(builtin.Served()).NotTo(ContainElement(pluginstartup.RegistrationDatabaseServer))
+	It("writes no Ready on a registration that the operator does not serve", func() {
+		reg := &pluginsv1alpha1.PluginRegistration{
+			ObjectMeta: metav1.ObjectMeta{Name: "plugin-" + utilrand.String(6)},
+			Spec: pluginsv1alpha1.PluginRegistrationSpec{
+				Sections: []string{pluginstartup.SectionSecondaryStorage},
+				Label:    "Test option",
+				Mode:     pluginsv1alpha1.ModeOptional,
+				ServiceAccount: pluginsv1alpha1.ServiceAccountRef{
+					Namespace: "camunda-plugins",
+					Name:      "test-controller",
+				},
+				DeletionPolicies: []pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete},
+			},
+		}
+		Expect(k8sClient.Create(ctx, reg)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, reg) })
 
 		Eventually(func(g Gomega) {
-			reg := get(g, pluginstartup.RegistrationDatabaseServer)
-			expectTrue(g, &reg, pluginsv1alpha1.ConditionAccepted)
+			live := get(g, reg.Name)
+			g.Expect(meta.FindStatusCondition(live.Status.Conditions, pluginsv1alpha1.ConditionAccepted)).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
-			reg := get(g, pluginstartup.RegistrationDatabaseServer)
-			g.Expect(meta.FindStatusCondition(reg.Status.Conditions, v1.ConditionReady)).To(BeNil())
-			g.Expect(reg.Status.ObservedGeneration).To(BeZero())
+			live := get(g, reg.Name)
+			g.Expect(meta.FindStatusCondition(live.Status.Conditions, v1.ConditionReady)).To(BeNil())
+			g.Expect(live.Status.ObservedGeneration).To(BeZero())
 		}, 3*time.Second, interval).Should(Succeed())
 	})
 

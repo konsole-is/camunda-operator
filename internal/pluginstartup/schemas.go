@@ -42,9 +42,10 @@ const (
 
 	databaseServerParameters = `{
   "type": "object",
-  "required": ["preset"],
+  "required": ["preset", "releaseRef"],
   "properties": {
     "preset": {"type": "string", "minLength": 1, "description": "The name of the DatabaseServerPreset that the PostgreSQL server starts from."},
+    "releaseRef": {"type": "string", "minLength": 1, "description": "The name of the CamundaRelease that gives the PostgreSQL major version. The claim controller sets it to the release of the claim."},
     "overrides": {
       "type": "object",
       "description": "The values that replace the values of the preset.",
