@@ -70,6 +70,9 @@ const kindPluginRequest = "PluginRequest"
 // TODO(#867): use pluginsv1alpha1.LabelRequestNamespace.
 const labelRequestNamespace = "plugins.camunda.io/request-namespace"
 
+// TODO(#867): use pluginsv1alpha1.ReasonWaitingForGrants.
+const reasonWaitingForGrants = "WaitingForGrants"
+
 // lifecycleChecks run for each request of the run, in this order.
 var lifecycleChecks = []Check{
 	{
@@ -91,7 +94,8 @@ var lifecycleChecks = []Check{
 	{
 		ID: ReqReady,
 		Description: "The request gets Ready=True within the Ready timeout, or Ready=False with the reason " +
-			"GrantRejected while one of its Grants has Ready=False.",
+			"GrantRejected while one of its Grants has Ready=False, or with the reason WaitingForGrants while " +
+			"one of its Grants does not have Ready=True yet.",
 		run: checkReady,
 	},
 	{
@@ -700,8 +704,10 @@ func outputProblems(section, declared []pluginsv1alpha1.OutputDecl, outputs map[
 	return problems
 }
 
-// readyVerdict passes Ready=True, and Ready=False with the reason
-// GrantRejected while one of grants has Ready=False.
+// readyVerdict passes Ready=True, Ready=False with the reason GrantRejected
+// while one of grants has Ready=False, and Ready=False with the reason
+// WaitingForGrants while one of grants does not have Ready=True and none has
+// Ready=False.
 func readyVerdict(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) error {
 	switch {
 	case ready == nil:
@@ -719,9 +725,33 @@ func readyVerdict(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) error
 		return errors.New(
 			"the Ready condition is False with the reason GrantRejected while no Grant of the request has Ready=False",
 		)
+	case ready.Status == metav1.ConditionFalse && ready.Reason == reasonWaitingForGrants:
+		return waitingForGrantsVerdict(grants)
 	}
 
 	return fmt.Errorf("the Ready condition is %s, reason %s: %s", ready.Status, ready.Reason, ready.Message)
+}
+
+func waitingForGrantsVerdict(grants []pluginsv1alpha1.Grant) error {
+	if slices.ContainsFunc(grants, func(g pluginsv1alpha1.Grant) bool {
+		return meta.IsStatusConditionFalse(g.Status.Conditions, v1.ConditionReady)
+	}) {
+		return errors.New(
+			"the Ready condition is False with the reason WaitingForGrants while a Grant of the request has " +
+				"Ready=False: the reason is GrantRejected",
+		)
+	}
+
+	if !slices.ContainsFunc(grants, func(g pluginsv1alpha1.Grant) bool {
+		return !meta.IsStatusConditionTrue(g.Status.Conditions, v1.ConditionReady)
+	}) {
+		return errors.New(
+			"the Ready condition is False with the reason WaitingForGrants while every Grant of the request has " +
+				"Ready=True",
+		)
+	}
+
+	return nil
 }
 
 // labelProblems names each writer rule of the contract that obj breaks. A
