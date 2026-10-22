@@ -15,7 +15,14 @@ function fieldsOf({
   registrations = [],
   labelled = true,
 }: {
-  policy?: Record<string, { claimEditable?: boolean; value?: unknown }>;
+  policy?: Record<
+    string,
+    {
+      claimEditable?: boolean;
+      value?: unknown;
+      allowed?: { name: string; label: string; value?: unknown }[];
+    }
+  >;
   parameters?: Record<string, unknown>;
   registrations?: Resource<"PluginRegistration">[];
   labelled?: boolean;
@@ -102,6 +109,29 @@ describe("parameterFields", () => {
     expect(field.value).toBe("medium");
     expect(stateLabel(field.state)).toBe("Set by your admin");
   });
+
+  it.each([
+    ["one choice", "sqs", "arn:sqs"],
+    ["a list of choices", ["sqs", "sns"], ["arn:sqs", "arn:sns"]],
+  ])(
+    "a claim that picks %s by name has the value of the choice",
+    (_, pick, want) => {
+      const [field] = fieldsOf({
+        policy: {
+          access: {
+            claimEditable: true,
+            allowed: [
+              { name: "sqs", label: "SQS access", value: "arn:sqs" },
+              { name: "sns", label: "SNS access", value: "arn:sns" },
+            ],
+          },
+        },
+        parameters: { access: pick },
+      });
+      expect(field.value).toEqual(want);
+      expect(stateLabel(field.state)).toBe("Changed in the claim");
+    },
+  );
 
   it("lists a schema parameter that the policy does not name", () => {
     const fields = fieldsOf({

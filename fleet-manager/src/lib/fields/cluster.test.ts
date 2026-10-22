@@ -315,6 +315,97 @@ describe("clusterFields on the merge fixtures", () => {
 });
 
 describe("clusterFields", () => {
+  it("a locked field of another manager has no take-over note", () => {
+    const f = fixture("the-version-comes-from-the-release.json");
+    const field = at(
+      fieldsOf({
+        spec: { version: "8.9.4" },
+        preset: f.preset,
+        release: f.release,
+        managedFields: [managedFieldsOf("upgrader", [["spec", "version"]])],
+        claim: claim({}),
+      }),
+      "spec.version",
+    );
+    expect(stateLabel(field.state)).toBe("Set by upgrader");
+    expect(stateNote(field.state)).toBeUndefined();
+    expect(lockLabel(field.lock!)).toBe("Set by the release");
+  });
+
+  it("an item that the claim appends to a concatenated list is the claim item", () => {
+    const f = fixture("extra-env-from-concatenates-in-layer-order.json");
+    const fields = fieldsOf({
+      spec: f.spec,
+      preset: f.preset,
+      release: f.release,
+      managedFields: [owns(CLAIM, { spec: f.spec })],
+      claim: claim({ cluster: f.spec }),
+    });
+    const inherited = at(fields, "spec.extraEnvFrom[0]");
+    expect(stateLabel(inherited.state)).toBe("From preset");
+    expect(inherited.claimPath).toBe("spec.cluster.extraEnvFrom");
+    expect(stateLabel(at(fields, "spec.extraEnvFrom[1]").state)).toBe(
+      "From release",
+    );
+    const own = at(fields, "spec.extraEnvFrom[2]");
+    expect(stateLabel(own.state)).toBe("Changed in the claim");
+    expect(own.claimPath).toBe("spec.cluster.extraEnvFrom[0]");
+  });
+
+  it("a manager of a whole list owns its live items only", () => {
+    const f = fixture("extra-env-from-concatenates-in-layer-order.json");
+    const fields = fieldsOf({
+      spec: f.spec,
+      preset: f.preset,
+      release: f.release,
+      managedFields: [
+        managedFieldsOf("env-injector", [["spec", "extraEnvFrom"]]),
+      ],
+      claim: claim({}),
+    });
+    expect(stateLabel(at(fields, "spec.extraEnvFrom[2]").state)).toBe(
+      "Set by env-injector",
+    );
+    expect(stateLabel(at(fields, "spec.extraEnvFrom[0]").state)).toBe(
+      "From preset",
+    );
+  });
+
+  it("a manager of a whole attachment list owns each of its items", () => {
+    const spec = {
+      clusterRef: { name: "orders" },
+      webapp: {
+        extraEnvFrom: [
+          { configMapRef: { name: "a" } },
+          { configMapRef: { name: "b" } },
+        ],
+      },
+    };
+    const fields = fieldsOf({
+      spec: {},
+      claim: claim({}),
+      optimize: {
+        kind: "CamundaOptimize",
+        metadata: {
+          name: "orders",
+          managedFields: [
+            managedFieldsOf("env-injector", [
+              ["spec", "webapp", "extraEnvFrom"],
+            ]),
+          ],
+        },
+        spec,
+      } as unknown as Resource<"CamundaOptimize">,
+    });
+    for (const path of [
+      "spec.webapp.extraEnvFrom[0]",
+      "spec.webapp.extraEnvFrom[1]",
+    ])
+      expect(stateLabel(at(fields, path, "CamundaOptimize").state)).toBe(
+        "Set by env-injector",
+      );
+  });
+
   it("a slot fills a field that the claim also sets", () => {
     const field = at(
       fieldsOf({

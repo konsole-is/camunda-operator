@@ -1,5 +1,6 @@
 import { isManaged } from "@/lib/labels";
 import { child, keyedItem } from "@/lib/merge";
+import { resolve, type PluginSelection } from "@/lib/policy";
 import type { ClusterFieldsInput } from "./cluster";
 import type { ClusterField, FieldState } from "./types";
 
@@ -10,12 +11,22 @@ import type { ClusterField, FieldState } from "./types";
  * parameter that the claim cannot change is Set by your admin, with the
  * policy value, also when the claim holds a value for it. A claim-editable
  * one is Changed in the claim when the claim sets it, else From environment.
+ * When the policy resolves for the claim, the value is the one that the
+ * request gets, so a choice with a value that the claim picks by name has
+ * that value.
  * A cluster without a claim, or an unmanaged one, has none.
  */
 export function parameterFields(input: ClusterFieldsInput): ClusterField[] {
   if (!isManaged(input.cluster) || input.claim === undefined) return [];
+  const selections = (input.claim.spec.plugins ?? []) as PluginSelection[];
+  const resolved = input.policy
+    ? resolve({ recorded: input.policy, selections })
+    : undefined;
+  const requests =
+    resolved && "value" in resolved ? resolved.value.requests : undefined;
   const fields: ClusterField[] = [];
-  for (const s of input.claim.spec.plugins ?? []) {
+  for (const [i, s] of selections.entries()) {
+    const request = requests?.[i];
     const policies = input.policy?.parameters?.[s.registration] ?? {};
     const claimed = asObject(s.parameters);
     const registration = input.registrations.find(
@@ -57,7 +68,11 @@ export function parameterFields(input: ClusterFieldsInput): ClusterField[] {
         group: "parameters",
         path,
         label: name,
-        value: set ? claimed[name] : policy?.value,
+        value: request
+          ? request.parameters?.[name]
+          : set
+            ? claimed[name]
+            : policy?.value,
         state,
         ...(!editable && { lock: { reason: "admin" as const } }),
         claimPath: child(child(selection, "parameters"), name),

@@ -7,6 +7,7 @@ import {
   child,
   fieldManagers,
   isClaimManager,
+  indexItem,
   keyedItem,
   mergeCluster,
   type FieldPath,
@@ -188,7 +189,6 @@ function camundaClusterFields(
     return undefined;
   };
 
-  const managers = managersByField(input.cluster, nodes, fieldOf);
   const below = new Map<FieldPath, Layer>();
   for (const [path, layer] of Object.entries(source)) {
     const field = nodes.has(path) ? fieldOf(path) : undefined;
@@ -204,6 +204,15 @@ function camundaClusterFields(
     const owner = ancestors(path).find(hasSource);
     return owner === undefined ? below.get(path) : source[owner];
   };
+  // An inherited item of a merged list is not in the live object, so a
+  // manager of the whole live list does not own it.
+  const managers = managersByField(
+    input.cluster,
+    nodes,
+    fieldOf,
+    units.map((u) => u.path),
+    (field) => layerOf(field) === "overrides",
+  );
 
   const claim = input.claim;
   const claimNodes = walk(
@@ -231,7 +240,33 @@ function camundaClusterFields(
         (claim?.spec as Record<string, unknown> | undefined)?.[name] !==
         undefined
       );
-    return claimNodes.has(unit.path);
+    const local = claimSteps(unit.steps);
+    return !local.inherited && claimNodes.has(pathFrom("spec", local.steps));
+  };
+  // claimSteps gives the steps of a field in spec.cluster of the claim. A
+  // concatenated list holds the items of the preset and the release before
+  // those of the cluster, so an index counts only the cluster items. An item
+  // that a baseline adds is inherited, and its steps end at its list.
+  const claimSteps = (steps: Step[]): { steps: Step[]; inherited: boolean } => {
+    const local: Step[] = [];
+    let path: FieldPath = "spec";
+    for (const step of steps) {
+      let next = step;
+      if ("index" in step) {
+        const layer = source[indexItem(path, step.index)];
+        if (layer !== undefined && layer !== "overrides")
+          return { steps: local, inherited: true };
+        if (layer === "overrides") {
+          let index = 0;
+          for (let i = 0; i < step.index; i++)
+            if (source[indexItem(path, i)] === "overrides") index++;
+          next = { index };
+        }
+      }
+      local.push(next);
+      path = pathFrom(path, [step]);
+    }
+    return { steps: local, inherited: false };
   };
 
   return units.map((unit) => {
@@ -246,6 +281,7 @@ function camundaClusterFields(
           claimSets: claimSets(unit),
           release: layer === "release" || lockReason === "release",
           preset: layer === "preset",
+          locked: lockReason !== undefined,
         })
       : layer === "release"
         ? { kind: "release" }
@@ -273,7 +309,7 @@ function camundaClusterFields(
       ...claimPathOf(ctx.managed, selected, lock, () =>
         name !== undefined
           ? child("spec", name)
-          : pathFrom(child("spec", "cluster"), unit.steps),
+          : pathFrom(child("spec", "cluster"), claimSteps(unit.steps).steps),
       ),
       docNames: docNamesOf(unit.steps),
     };
@@ -325,7 +361,13 @@ function attachmentFields(ctx: Context, a: Attachment): ClusterField[] {
     }
   }
 
-  const managers = managersByField(a.live, nodes, fieldOf);
+  const managers = managersByField(
+    a.live,
+    nodes,
+    fieldOf,
+    units.map((u) => u.path),
+    () => true,
+  );
   const claimNodes = walk(ctx.managed ? (a.claimed ?? {}) : {}, "spec");
 
   return units.map((unit) => {
@@ -339,6 +381,7 @@ function attachmentFields(ctx: Context, a: Attachment): ClusterField[] {
           claimSets: claimNodes.has(unit.path),
           release: lockReason === "release",
           preset: false,
+          locked: lockReason !== undefined,
         })
       : unmanagedState(own);
     const lock = lockOf(ctx.managed, selected, lockReason);
@@ -352,7 +395,7 @@ function attachmentFields(ctx: Context, a: Attachment): ClusterField[] {
       state,
       ...(lock && { lock }),
       ...claimPathOf(ctx.managed, selected, lock, () =>
-        pathFrom(a.claimRoot, claimSteps(unit.steps)),
+        pathFrom(a.claimRoot, claimAuthSteps(unit.steps)),
       ),
       docNames: docNamesOf(unit.steps),
     };
@@ -365,6 +408,7 @@ function managedState(f: {
   claimSets: boolean;
   release: boolean;
   preset: boolean;
+  locked: boolean;
 }): FieldState {
   if (f.selected)
     return {
@@ -376,12 +420,12 @@ function managedState(f: {
     .filter((m) => !isClaimManager(m) && m !== APP_FIELD_MANAGER)
     .sort();
   if (foreign !== undefined)
-    return { kind: "setBy", manager: foreign, takeOver: true };
+    return { kind: "setBy", manager: foreign, takeOver: !f.locked };
   if (f.claimSets) return { kind: "claim" };
   if (f.release) return { kind: "release" };
   if (f.preset) return { kind: "preset" };
   if (f.managers.some(isClaimManager)) return { kind: "claim" };
-  return { kind: "setBy", takeOver: true };
+  return { kind: "setBy", takeOver: !f.locked };
 }
 
 function unmanagedState(managers: string[]): FieldState {
@@ -425,19 +469,35 @@ function claimPathOf(
 }
 
 // managersByField gives each field the managers that own it or a value
-// inside it.
+// inside it. A manager of a node above the fields owns each field below it
+// that inherits returns true for.
 function managersByField(
   live: ManagedObject,
   nodes: Map<FieldPath, WalkNode>,
   fieldOf: (path: FieldPath) => FieldPath | undefined,
+  fields: readonly FieldPath[],
+  inherits: (field: FieldPath) => boolean,
 ): Map<FieldPath, string[]> {
   const byField = new Map<FieldPath, string[]>();
-  for (const [path, manager] of Object.entries(fieldManagers(live))) {
-    const field = nodes.has(path) ? fieldOf(path) : undefined;
-    if (field === undefined) continue;
+  const add = (field: FieldPath, manager: string) => {
     const list = byField.get(field) ?? [];
     if (!list.includes(manager)) list.push(manager);
     byField.set(field, list);
+  };
+  const isBelow = (field: FieldPath, path: FieldPath): boolean => {
+    for (let at = nodes.get(field)?.parent; at !== undefined;) {
+      if (at === path) return true;
+      at = nodes.get(at)?.parent;
+    }
+    return false;
+  };
+  for (const [path, manager] of Object.entries(fieldManagers(live))) {
+    if (!nodes.has(path)) continue;
+    const field = fieldOf(path);
+    if (field !== undefined) add(field, manager);
+    else
+      for (const f of fields)
+        if (isBelow(f, path) && inherits(f)) add(f, manager);
   }
   return byField;
 }
@@ -508,7 +568,7 @@ function renameAuth(optimize: object | undefined): object | undefined {
   return auth === undefined ? rest : { ...rest, [LIVE_AUTH]: auth };
 }
 
-function claimSteps(steps: readonly Step[]): Step[] {
+function claimAuthSteps(steps: readonly Step[]): Step[] {
   const [first, ...rest] = steps;
   return first !== undefined && "field" in first && first.field === LIVE_AUTH
     ? [{ field: CLAIM_AUTH }, ...rest]
