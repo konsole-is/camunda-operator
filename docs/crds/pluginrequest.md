@@ -357,7 +357,7 @@ Without `overrides.storageSize`, the size of the preset applies. If that size is
 
 When the claim or you delete the request, the deletion policy applies to both objects:
 
-- `Delete` deletes the `Database` first. When it is gone, the operator deletes the `DatabaseServer`. The deletion of the server removes its data volumes and all the data on them. The request goes away when the server is gone. If you created a `Database` or a `DatabaseServer` of that name yourself, it stays.
+- `Delete` deletes the `Database` first. When it is gone, the operator deletes the `DatabaseServer`. The deletion of the server removes its data volumes and all the data on them. The request goes away when the server is gone. A `Database` or a `DatabaseServer` of that name that another resource controls stays.
 - `Orphan` keeps the `DatabaseServer`, the `Database`, and all the data, without the owner reference to the request. They keep their labels, so you can find them again.
 
 ### Management plane databases
