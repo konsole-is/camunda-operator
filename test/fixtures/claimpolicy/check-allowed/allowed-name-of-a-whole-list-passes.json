@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "name": "An array key whose choices are whole lists takes the name of one choice",
+  "input": {
+    "policy": {
+      "sections": {
+        "connectors-permissions": {
+          "allowed": [
+            "aws-connectors-role"
+          ]
+        }
+      },
+      "parameters": {
+        "aws-connectors-role": {
+          "policies": {
+            "claimEditable": true,
+            "allowed": [
+              {
+                "name": "messaging",
+                "label": "Messaging",
+                "value": [
+                  "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+                  "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+                ]
+              },
+              {
+                "name": "storage",
+                "label": "Storage",
+                "value": [
+                  "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "selections": [
+      {
+        "section": "connectors-permissions",
+        "registration": "aws-connectors-role",
+        "parameters": {
+          "policies": "messaging"
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}
