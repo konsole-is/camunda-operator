@@ -106,11 +106,19 @@ type report struct {
 	podSelector *metav1.LabelSelector
 }
 
-// cleanup applies a deletion policy.
+// cleanup applies a deletion policy, one stage after the other. A cleanup
+// without stages removes the finalizer at once.
 type cleanup struct {
-	// components apply the policy to the resources of the request.
+	stages []cleanupStage
+}
+
+// cleanupStage is one step of a deletion policy. The next stage starts, or
+// after the last stage the finalizer goes, only when every remaining object
+// of this stage that the request owns is gone.
+type cleanupStage struct {
+	// components apply the policy to the resources of this stage.
 	components []*component.Component
-	// remaining are the objects that must be gone before the finalizer goes.
+	// remaining are the objects that the stage waits for.
 	remaining []client.Object
 }
 
@@ -138,6 +146,7 @@ func handlers() map[string]handler {
 		pluginstartup.RegistrationExistingSecondaryStorage: existing{
 			parse: oneContract(pluginstartup.OutputSecondaryStorageConfig, kindSecondaryStorageConfig),
 		},
-		pluginstartup.RegistrationExistingDatabaseConfigs: existing{parse: databaseConfigs},
+		pluginstartup.RegistrationExistingDatabaseConfigs:  existing{parse: databaseConfigs},
+		pluginstartup.RegistrationManagementDatabaseServer: managementDatabases{},
 	}
 }

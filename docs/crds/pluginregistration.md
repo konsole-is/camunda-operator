@@ -38,7 +38,7 @@ The operator writes six built-in registrations:
 | `database-server` | `secondary-storage` | `Optional` | `preset` (required), `overrides`: `instances`, `resources`, `storageSize`, `scheduling`, `podLabels` | `overrides` | `volume-encryption/storageClassName`, `backup-storage/objectStorageConfig`, `cloud-identity/serviceAccountAnnotations` | `secondaryStorageConfig` |
 | `existing-secondary-storage` | `secondary-storage` | `Optional` | `name` (required): a `SecondaryStorageConfig` in the namespace of the claim | none | none | `secondaryStorageConfig` |
 | `existing-object-storage` | `backup-storage` | `Optional` | `name` (required): an `ObjectStorageConfig` in the namespace of the claim | none | none | `objectStorageConfig` |
-| `management-database-server` | `management-database` | `Default` | `preset` (required), `databases` | none | `volume-encryption/storageClassName` | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig` |
+| `management-database-server` | `management-database` | `Default` | `preset` (required), `version` (the PostgreSQL major version, default `17`), `databases` | none | `volume-encryption/storageClassName` | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig` |
 | `existing-database-configs` | `management-database` | `Optional` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | none | none | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig` |
 
 Without an `Environment`, a new cluster claim selects `elasticsearch` for its secondary storage, and a new management plane claim selects `management-database-server` for its databases. A claim selects the other options only when you pick them.
@@ -47,9 +47,9 @@ Every input of a built-in registration is optional. Every built-in registration 
 
 On `elasticsearch`, the input `backup-storage/objectStorageConfig` or `cloud-identity/serviceAccountAnnotations` fixes the ServiceAccount of the Elasticsearch pods to `<claim>-es-es`, which the cloud identity trusts. It then replaces the ServiceAccount settings of the preset. Without both inputs, the preset decides the ServiceAccount.
 
-The operator serves the requests of `elasticsearch`, `existing-object-storage`, `existing-secondary-storage`, and `existing-database-configs`. See [Built-in requests](pluginrequest.md#built-in-requests).
+The operator serves the requests of `elasticsearch`, `existing-object-storage`, `existing-secondary-storage`, `existing-database-configs`, and `management-database-server`. See [Built-in requests](pluginrequest.md#built-in-requests).
 
-The operator is the plugin controller of these four registrations. It sets their `Ready` condition to `True`, as in this status of `existing-object-storage`:
+The operator is the plugin controller of these five registrations. It sets their `Ready` condition to `True`, as in this status of `existing-object-storage`:
 
 ```yaml
 status:
@@ -65,7 +65,7 @@ status:
       message: The operator serves the requests of this registration
 ```
 
-`database-server` and `management-database-server` have no `Ready` condition until a release of the operator serves their requests.
+`database-server` has no `Ready` condition until a release of the operator serves its requests.
 
 Each built-in registration has `controller.name: camunda-operator`, and `controller.version` is the version of the operator. `serviceAccount` names the ServiceAccount of the operator. `operatorVersions` is empty, because the operator serves these options itself.
 
@@ -160,7 +160,7 @@ A plugin controller that writes the status of its registration must keep the `Ac
 | `Accepted` | `SectionMissing` | A section in `spec.sections` does not exist. The message names it. | Install the plugin chart that brings the section, or fix the name. |
 | `Accepted` | `OperatorVersionUnsupported` | The version of the operator is outside `spec.operatorVersions`, or the range is not valid. The message names the version and the range. | Install a plugin version that supports this operator, or upgrade the operator. |
 | `Accepted` | `DefaultConflict` | Another registration of the same section also has mode `Default`. The message names it. | Set `mode: Optional` on all but one of them. |
-| `Ready` | `Healthy` | The operator serves the requests of this built-in registration: `elasticsearch`, `existing-object-storage`, `existing-secondary-storage`, or `existing-database-configs`. | Nothing. |
+| `Ready` | `Healthy` | The operator serves the requests of this built-in registration: `elasticsearch`, `existing-object-storage`, `existing-secondary-storage`, `existing-database-configs`, or `management-database-server`. | Nothing. |
 | `Ready` | set by the plugin | The plugin controller reports its health and its credentials. | Read the message, and the logs of the plugin controller. |
 
 `status.observedGeneration` is the last generation that a controller of the registration processed.

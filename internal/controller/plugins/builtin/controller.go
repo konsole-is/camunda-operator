@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -31,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -49,6 +51,11 @@ import (
 // controllerName is the name the controller registers with controller-runtime.
 // It labels every metrics series it records.
 const controllerName = "builtin"
+
+// cleanupRequeue is the wait before finalize runs again. The Owns watches
+// enqueue the request only through a controller reference, so an object with
+// a plain owner reference sends no event when it goes.
+const cleanupRequeue = 5 * time.Second
 
 // contractsField is the index on PluginRequest with one key for each
 // contract that a built-in request reads. No other controller of the
@@ -89,9 +96,10 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=get;list;watch
 // A new handler adds its registration here: REG-RBAC and the Grant admission policy check serve.
-// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=elasticsearch;existing-object-storage;existing-secondary-storage;existing-database-configs
+// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=elasticsearch;existing-object-storage;existing-secondary-storage;existing-database-configs;management-database-server
 // +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs;secondarystorageconfigs;databaseconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=databaseservers;databases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile serves a request whose registration label and
@@ -135,7 +143,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	}
 
 	if !request.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.finalize(ctx, rec, &request, h)
+		waiting, err := r.finalize(ctx, rec, &request, h)
+		if err != nil || !waiting {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: cleanupRequeue}, nil
 	}
 
 	ready, err := r.registrationReady(ctx, request.Spec.Registration)
@@ -267,21 +279,24 @@ func refuse(request *pluginsv1alpha1.PluginRequest, failure *conditions.PreCheck
 	setSummary(&request.Status, nil, metav1.Now())
 }
 
-// finalize applies the deletion policy of request and removes the finalizer
-// once every remaining object of the handler is gone. It writes no status.
+// finalize applies the deletion policy of request stage by stage. It starts a
+// stage only when every remaining object of the stage before it that the
+// request owns is gone, and removes the finalizer after the last stage. It
+// writes no status. waiting is true while an owned remaining object holds
+// the finalizer.
 func (r *Reconciler) finalize(
 	ctx context.Context,
 	rec component.ReconcileContext,
 	request *pluginsv1alpha1.PluginRequest,
 	h handler,
-) error {
+) (waiting bool, err error) {
 	if !controllerutil.ContainsFinalizer(request, pluginsv1alpha1.FinalizerCleanup) {
-		return nil
+		return false, nil
 	}
 
 	live, err := r.readBacking(ctx, request, h)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// An orphan removes the owner reference that its read finds. A cache that
@@ -291,33 +306,35 @@ func (r *Reconciler) finalize(
 
 	c, err := h.cleanup(request, request.Spec.DeletionPolicy, live)
 	if err != nil {
-		return fmt.Errorf("building the cleanup: %w", err)
+		return false, fmt.Errorf("building the cleanup: %w", err)
 	}
 
-	for _, comp := range c.components {
-		if err := comp.Reconcile(ctx, rec); err != nil {
-			return fmt.Errorf("applying the deletion policy: %w", err)
+	for _, stage := range c.stages {
+		for _, comp := range stage.components {
+			if err := comp.Reconcile(ctx, rec); err != nil {
+				return false, fmt.Errorf("applying the deletion policy: %w", err)
+			}
 		}
-	}
 
-	// The Owns watch of the kind of a remaining object reconciles the
-	// request again when the object goes.
-	for _, obj := range c.remaining {
-		err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-		if err == nil {
-			return nil
-		}
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("reading %s: %w", client.ObjectKeyFromObject(obj), err)
+		// An object that the request does not own stays, so it cannot hold
+		// the finalizer.
+		for _, obj := range stage.remaining {
+			err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(obj), obj)
+			if err == nil && ownedBy(obj, request.UID) {
+				return true, nil
+			}
+			if err != nil && !apierrors.IsNotFound(err) {
+				return false, fmt.Errorf("reading %s: %w", client.ObjectKeyFromObject(obj), err)
+			}
 		}
 	}
 
 	controllerutil.RemoveFinalizer(request, pluginsv1alpha1.FinalizerCleanup)
 	if err := r.Update(ctx, request); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("removing the finalizer: %w", err)
+		return false, fmt.Errorf("removing the finalizer: %w", err)
 	}
 
-	return nil
+	return false, nil
 }
 
 // uncachedReads reads through reader and writes through Client.
@@ -339,13 +356,20 @@ func (u uncachedReads) List(ctx context.Context, list client.ObjectList, opts ..
 	return u.reader.List(ctx, list, opts...)
 }
 
+func ownedBy(obj client.Object, uid types.UID) bool {
+	return slices.ContainsFunc(obj.GetOwnerReferences(), func(ref metav1.OwnerReference) bool {
+		return ref.UID == uid
+	})
+}
+
 // SetupWithManager returns an error that names each handler without a
 // registration in Registrations, or with a parameter schema that it cannot
 // read. Then it registers the contractsField and registrationField indexes
 // and the controller. The controller runs for a request whose registration
-// label names a handler, for a request whose ElasticsearchCluster changed,
-// for every request that reads a contract that changed, and for every
-// request whose spec.registration names a registration that changed.
+// label names a handler, for a request whose ElasticsearchCluster,
+// DatabaseServer, or Database changed, for every request that reads a
+// contract that changed, and for every request whose spec.registration
+// names a registration that changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -407,6 +431,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	return b.
+		Owns(&v1.DatabaseServer{}).
+		Owns(&v1.Database{}).
 		Watches(
 			&pluginsv1alpha1.PluginRegistration{},
 			refindex.Enqueue(

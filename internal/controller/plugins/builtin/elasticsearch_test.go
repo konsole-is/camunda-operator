@@ -381,46 +381,28 @@ func TestElasticsearchSummary(t *testing.T) {
 	}
 }
 
-func TestElasticsearchCleanupWaitsOnlyForAnOwnedCluster(t *testing.T) {
+func TestElasticsearchCleanupWaitsForTheClusterOnlyWithDelete(t *testing.T) {
 	request := elasticsearchRequest(`{"preset":"small"}`, nil)
-	request.UID = "request-uid"
-	owned := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{
-		Name: "orders-es", Namespace: request.Namespace,
-		OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: pluginsv1alpha1.GroupVersion.String(), Kind: "PluginRequest",
-			Name: request.Name, UID: request.UID, Controller: new(true),
-		}},
-	}}
-	foreign := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{Name: "orders-es", Namespace: request.Namespace}}
 	tests := []struct {
-		name          string
 		policy        pluginsv1alpha1.DeletionPolicy
-		live          *v1.ElasticsearchCluster
-		wantRemaining bool
+		wantRemaining []string
 	}{
-		{"Delete, owned cluster", pluginsv1alpha1.DeletionPolicyDelete, owned, true},
-		{"Delete, cluster of another owner", pluginsv1alpha1.DeletionPolicyDelete, foreign, false},
-		{"Delete, no cluster", pluginsv1alpha1.DeletionPolicyDelete, nil, false},
-		{"Orphan, owned cluster", pluginsv1alpha1.DeletionPolicyOrphan, owned, false},
+		{pluginsv1alpha1.DeletionPolicyDelete, []string{"orders-es"}},
+		{pluginsv1alpha1.DeletionPolicyOrphan, []string{}},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			live := liveObjects{}
-			if tt.live != nil {
-				live[liveKey{kind: kindElasticsearchCluster, name: "orders-es"}] = tt.live
-			}
-
-			c, err := elasticsearch{}.cleanup(request, tt.policy, live)
+		t.Run(string(tt.policy), func(t *testing.T) {
+			c, err := elasticsearch{}.cleanup(request, tt.policy, nil)
 			require.NoError(t, err)
 
-			assert.Len(t, c.components, 1)
-			if tt.wantRemaining {
-				require.Len(t, c.remaining, 1)
-				assert.Equal(t, "orders-es", c.remaining[0].GetName())
-			} else {
-				assert.Empty(t, c.remaining)
+			require.Len(t, c.stages, 1)
+			assert.Len(t, c.stages[0].components, 1)
+			remaining := make([]string, 0, len(c.stages[0].remaining))
+			for _, obj := range c.stages[0].remaining {
+				remaining = append(remaining, obj.GetName())
 			}
+			assert.Equal(t, tt.wantRemaining, remaining)
 		})
 	}
 }
@@ -448,7 +430,8 @@ func TestElasticsearchOrphanReadsTheClusterWithoutTheCache(t *testing.T) {
 		APIReader: apiServer, Owner: request,
 	}
 
-	require.NoError(t, r.finalize(t.Context(), rec, request, elasticsearch{}))
+	_, err := r.finalize(t.Context(), rec, request, elasticsearch{})
+	require.NoError(t, err)
 
 	var got v1.ElasticsearchCluster
 	require.NoError(t, apiServer.Get(t.Context(), client.ObjectKeyFromObject(cluster), &got))

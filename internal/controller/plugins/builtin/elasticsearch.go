@@ -292,7 +292,7 @@ func elasticsearchSummary(cluster v1.ElasticsearchCluster, ok bool) []pluginsv1a
 func (elasticsearch) cleanup(
 	request *pluginsv1alpha1.PluginRequest,
 	policy pluginsv1alpha1.DeletionPolicy,
-	live liveObjects,
+	_ liveObjects,
 ) (cleanup, error) {
 	name := elasticsearchClusterName(request)
 	b := eswrapper.NewBuilder(&v1.ElasticsearchCluster{
@@ -316,17 +316,14 @@ func (elasticsearch) cleanup(
 		return cleanup{}, fmt.Errorf("building the cleanup component: %w", err)
 	}
 
-	c := cleanup{components: []*component.Component{comp}}
-	// Only an owned cluster is deleted, so only an owned cluster can hold the
-	// finalizer.
-	if current, ok := liveAs[*v1.ElasticsearchCluster](live, kindElasticsearchCluster, name); ok &&
-		policy == pluginsv1alpha1.DeletionPolicyDelete && metav1.IsControlledBy(current, request) {
-		c.remaining = []client.Object{&v1.ElasticsearchCluster{
+	stage := cleanupStage{components: []*component.Component{comp}}
+	if policy == pluginsv1alpha1.DeletionPolicyDelete {
+		stage.remaining = []client.Object{&v1.ElasticsearchCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: request.Namespace},
 		}}
 	}
 
-	return c, nil
+	return cleanup{stages: []cleanupStage{stage}}, nil
 }
 
 // contracts returns the SecondaryStorageConfig of the cluster.

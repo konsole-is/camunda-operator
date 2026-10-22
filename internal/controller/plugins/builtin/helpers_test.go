@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/meta/testrestmapper"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -91,7 +92,14 @@ func fakeReader(t *testing.T, objs ...client.Object) client.Client {
 
 	return fake.NewClientBuilder().
 		WithScheme(scheme).
+		WithRESTMapper(testrestmapper.TestOnlyStaticRESTMapper(scheme)).
 		WithObjects(objs...).
-		WithStatusSubresource(&v1.ObjectStorageConfig{}, &v1.SecondaryStorageConfig{}, &v1.DatabaseConfig{}).
+		WithStatusSubresource(
+			&v1.ObjectStorageConfig{},
+			&v1.SecondaryStorageConfig{},
+			&v1.DatabaseConfig{},
+			&v1.DatabaseServer{},
+			&v1.Database{},
+		).
 		Build()
 }

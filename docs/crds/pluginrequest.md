@@ -73,7 +73,7 @@ With both policies, the plugin deletes a route to a Service that no longer exist
 
 ## Built-in requests
 
-The operator serves the requests of four [built-in registrations](pluginregistration.md#built-in-registrations):
+The operator serves the requests of five [built-in registrations](pluginregistration.md#built-in-registrations):
 
 | Registration | Parameters | Inputs | Outputs |
 | --- | --- | --- | --- |
@@ -81,6 +81,7 @@ The operator serves the requests of four [built-in registrations](pluginregistra
 | `existing-object-storage` | `name` (required): an `ObjectStorageConfig` | none | `objectStorageConfig` |
 | `existing-secondary-storage` | `name` (required): a `SecondaryStorageConfig` | none | `secondaryStorageConfig` |
 | `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | none | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set |
+| `management-database-server` | `preset` (required), `version`, `databases` | `storageClassName` | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each listed component |
 
 A built-in request waits until its registration is `Ready` at the current generation of the registration. Until then, the operator does not change the status of the request. A deletion does not wait.
 
@@ -253,6 +254,103 @@ When the claim or you delete the request, the deletion policy applies to the clu
 
 - `Delete` deletes the `ElasticsearchCluster`, and the request goes away after the cluster. A cluster of that name that the request does not own stays.
 - `Orphan` keeps the `ElasticsearchCluster` with its data and its labels, without the owner reference to the request. The request goes away at once.
+
+### Management plane databases
+
+A request of `management-database-server` gives a management plane a PostgreSQL server and one database for each component that needs one. The management plane claim writes the request:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: my-plane-management-database
+  namespace: my-plane-ns
+  labels:
+    plugins.camunda.io/section: management-database
+    plugins.camunda.io/registration: management-database-server
+    fleet.camunda.io/claim: my-plane
+spec:
+  section: management-database
+  registration: management-database-server
+  inputs:
+    storageClassName: encrypted-ssd
+  parameters:
+    preset: small
+    databases: [keycloak, identity]
+  # ... the rest of your request
+```
+
+`preset` names the `DatabaseServerPreset` that the server starts from. `version` is the PostgreSQL major version of the server. Without `version`, the server runs PostgreSQL 17. `databases` lists the components that get a database: `keycloak`, `identity`, and `webModeler`. The input `storageClassName` sets the StorageClass of the server volumes. The claim fills it from the `volume-encryption` section. Without it, the volumes use the StorageClass of the preset, or the default StorageClass when the preset sets none.
+
+A parameter that the registration does not know, or a value of the wrong type, gives `OutputsReady` and `Ready` `False` with reason `InvalidParameters`. The message names the parameter.
+
+The operator applies a [`DatabaseServer`](databaseserver.md) and a [`Database`](database.md) for each listed component, in the namespace of the request. `<plane>` is the name of the management plane claim:
+
+| Object | Name | Logical database | Output |
+| --- | --- | --- | --- |
+| `DatabaseServer` | `<plane>-db` | none | none |
+| `Database` of `keycloak` | `<plane>-keycloak` | `keycloak` | `keycloakDatabaseConfig: <plane>-keycloak` |
+| `Database` of `identity` | `<plane>-identity` | `identity` | `identityDatabaseConfig: <plane>-identity` |
+| `Database` of `webModeler` | `<plane>-web-modeler` | `web_modeler` | `webModelerDatabaseConfig: <plane>-web-modeler` |
+
+Each `Database` publishes a `DatabaseConfig` of its own name. `OutputsReady` turns `True` when the `DatabaseConfig` of every listed component exists. Without listed components, the operator applies the `DatabaseServer` only. The request then has no outputs, and `OutputsReady` is `True`. `Ready` follows the `DatabaseServer` and the `Database` objects. The first item of `summary` names the server and its PostgreSQL version:
+
+```yaml
+status:
+  conditions:
+    - type: OutputsReady
+      status: "True"
+      reason: Healthy
+      message: Component is healthy.
+      observedGeneration: 1
+    - type: Ready
+      status: "True"
+      reason: Healthy
+      message: "backing: Component is healthy."
+      observedGeneration: 1
+  outputs:
+    keycloakDatabaseConfig: my-plane-keycloak
+    identityDatabaseConfig: my-plane-identity
+  summary:
+    - label: DatabaseServer
+      value: my-plane-db, PostgreSQL 17, Ready
+      severity: Info
+    - label: Database
+      value: my-plane-keycloak, Ready
+      severity: Info
+    - label: Database
+      value: my-plane-identity, Ready
+      severity: Info
+  podSelector:
+    matchLabels:
+      camunda.io/database-server: my-plane-db
+  resources:
+    - kind: DatabaseServer
+      name: my-plane-db
+      onOrphan: Kept
+    - kind: Database
+      name: my-plane-keycloak
+      onOrphan: Kept
+    - kind: Database
+      name: my-plane-identity
+      onOrphan: Kept
+```
+
+While the server has not reported on its current spec, the first item is `my-plane-db, updating` with the `Warning` severity.
+
+When a component leaves `databases`, the operator deletes its `Database`, and the request removes its output. If you created a `Database` of that name yourself, it stays. The logical database and its data stay on the server, as [Database deletion](database.md#deletion) says. Until the `Database` is gone, the summary shows a `Warning` item:
+
+```yaml
+status:
+  summary:
+    - label: Database
+      value: my-plane-web-modeler removed, the logical database web_modeler stays on my-plane-db
+      severity: Warning
+```
+
+If you do not need the data, drop the logical database on the server yourself.
+
+With the deletion policy `Delete`, the operator deletes the `Database` objects first. When they are gone, it deletes the `DatabaseServer`. The deletion of the server removes its data volumes and all the data on them. The request goes away when the server is gone. With `Orphan`, the server, every `Database`, and all the data stay, without the owner reference to the request. They keep the labels `plugins.camunda.io/registration` and `plugins.camunda.io/request`, so you can find them again.
 
 ## Status
 
