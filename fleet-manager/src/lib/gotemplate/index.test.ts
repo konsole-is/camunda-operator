@@ -52,10 +52,23 @@ describe("render", () => {
       ),
     ).toEqual({ text: "up{r='own\\'} or up{r=~\\'.*'}" }));
 
+  it("ignores a quote in a comment of a metric query", () =>
+    expect(
+      render(
+        '# r\'s requests\nup{r="{{ .parameters.x }}"}',
+        { ...data, parameters: { x: 'own"} or up{r=~".*' } },
+        "metric",
+      ),
+    ).toEqual({
+      text: '# r\'s requests\nup{r="own\\"} or up{r=~\\".*"}',
+    }));
+
   it.each([
     ["no string", "up{r={{ .parameters.x }}}"],
     ["a backtick string", "up{r=`{{ .parameters.x }}`}"],
     ["the end of a string", 'up{r="a"{{ .parameters.x }}}'],
+    ["a comment that holds a quote", 'up # "\nx{r={{ .parameters.x }}}'],
+    ["a comment", 'up # "{{ .parameters.x }}"'],
   ])("refuses a placeholder of a metric query in %s", (_, template) =>
     expect(render(template, data, "metric")).toMatchObject({
       field: "parameters.x",

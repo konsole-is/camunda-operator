@@ -128,7 +128,7 @@ export function render(
 
 // A value can change the structure of a PromQL query unless it sits in a
 // quoted string with the quote, the backslash, and the newline escaped. A
-// backtick string has no escapes.
+// backtick string has no escapes, and a # outside a string starts a comment.
 function renderPromQL(
   parts: Part[],
   data: TemplateData,
@@ -152,7 +152,9 @@ function renderPromQL(
     }
     for (const ch of part) {
       if (!quote) {
-        if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+        if (ch === '"' || ch === "'" || ch === "`" || ch === "#") quote = ch;
+      } else if (quote === "#") {
+        if (ch === "\n") quote = "";
       } else if (escaped) {
         escaped = false;
       } else if (ch === "\\" && quote !== "`") {
