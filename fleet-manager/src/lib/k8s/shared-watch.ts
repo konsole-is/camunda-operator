@@ -85,10 +85,10 @@ export interface SharedWatch {
    * snapshot, so the initial data of a query stays. The function it returns
    * removes the subscriber once, also when it is called again. A change of
    * the set of watches opens a new connection in a microtask, so the
-   * subscribes of one render share one connection. A new connection sets
-   * freshKey of each watch to false until its snapshot. A watch without
-   * subscribers leaves its list in the cache, sets its failure to null, and
-   * sets freshKey to false.
+   * subscribes of one render share one connection. A new connection, and an
+   * error of the connection, set freshKey of each watch to false until its
+   * snapshot. A watch without subscribers leaves its list in the cache, sets
+   * its failure to null, and sets freshKey to false.
    */
   subscribe(spec: WatchSpec): () => void;
 }
@@ -156,10 +156,7 @@ class Connection implements SharedWatch {
     clearTimeout(this.reopen);
     this.openIds = ids;
     this.source = undefined;
-    for (const id of ids) {
-      const watch = this.watches.get(id);
-      if (watch) this.client.setQueryData(freshKey(watch.spec), false);
-    }
+    this.markNotFresh();
     if (ids.length === 0) return;
     const params = new URLSearchParams(ids.map((id) => ["watch", id]));
     const source = new EventSource(`/api/watch?${params}`);
@@ -192,10 +189,17 @@ class Connection implements SharedWatch {
     // EventSource does not connect again after an HTTP error status or a
     // body that is not text/event-stream. It then has readyState CLOSED.
     source.addEventListener("error", () => {
-      if (this.source !== source || source.readyState !== EventSource.CLOSED) {
-        return;
-      }
+      if (this.source !== source) return;
+      this.markNotFresh();
+      if (source.readyState !== EventSource.CLOSED) return;
       this.reopen = setTimeout(() => this.open(this.openIds), REOPEN_DELAY_MS);
     });
+  }
+
+  private markNotFresh() {
+    for (const id of this.openIds) {
+      const watch = this.watches.get(id);
+      if (watch) this.client.setQueryData(freshKey(watch.spec), false);
+    }
   }
 }

@@ -260,10 +260,24 @@ describe("sharedWatch", () => {
     FakeEventSource.instances[0].emit("snapshot", snapshot(team, []));
 
     FakeEventSource.instances[0].fail(2);
+    expect(client.getQueryData(freshKey(team))).toBe(false);
     vi.advanceTimersByTime(REOPEN_DELAY_MS);
     expect(client.getQueryData(freshKey(team))).toBe(false);
 
     FakeEventSource.instances[1].emit("snapshot", snapshot(team, []));
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+  });
+
+  it("marks its watches not fresh when the browser connects again by itself, until their snapshot", async () => {
+    sharedWatch(client).subscribe(team);
+    await flush();
+    const source = FakeEventSource.instances[0];
+    source.emit("snapshot", snapshot(team, []));
+
+    source.fail(0);
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+
+    source.emit("snapshot", snapshot(team, []));
     expect(client.getQueryData(freshKey(team))).toBe(true);
   });
 });
