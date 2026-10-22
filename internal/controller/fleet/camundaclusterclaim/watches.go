@@ -34,16 +34,19 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	"github.com/konsole-is/camunda-operator/pkg/components/claimrequests"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/pluginrequest"
 )
 
 // The field indexes of CamundaClusterClaim: the distinct section and
-// registration names of spec.plugins.
+// registration names of spec.plugins, and the <namespace>/<name> of each
+// PluginRequest that the claim writes.
 const (
 	pluginSectionsField      = "spec.plugins.section"
 	pluginRegistrationsField = "spec.plugins.registration"
+	requestNamesField        = "spec.plugins.request"
 )
 
 // SetupWithManager registers the controller, its field indexes, and its
@@ -72,9 +75,16 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		r.componentClient = pluginrequest.NewApplyClient(camundacluster.NewApplyClient(uncached))
 	}
 
-	indexers := map[string]func(fleetv1alpha1.PluginSelection) string{
-		pluginSectionsField:      func(s fleetv1alpha1.PluginSelection) string { return s.Section },
-		pluginRegistrationsField: func(s fleetv1alpha1.PluginSelection) string { return s.Registration },
+	indexers := map[string]func(*fleetv1alpha1.CamundaClusterClaim, fleetv1alpha1.PluginSelection) string{
+		pluginSectionsField: func(_ *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) string {
+			return s.Section
+		},
+		pluginRegistrationsField: func(_ *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) string {
+			return s.Registration
+		},
+		requestNamesField: func(c *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) string {
+			return refindex.NamespacedKey(c.Namespace, claimrequests.Name(c.Name, s.Section))
+		},
 	}
 	for field, name := range indexers {
 		if err := mgr.GetFieldIndexer().IndexField(
@@ -95,7 +105,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&fleetv1alpha1.CamundaClusterClaim{}).
 		// Not Owns: an object that another owner controls must also wake the
 		// claim that it blocks, so the claim moves on when the object goes.
-		Watches(&pluginsv1alpha1.PluginRequest{}, enqueueClaimOfRequest()).
+		Watches(
+			&pluginsv1alpha1.PluginRequest{},
+			refindex.Enqueue(cached, list, requestNamesField, refindex.ObjectNamespacedName),
+		).
 		Watches(&v1.CamundaCluster{}, &handler.EnqueueRequestForObject{}).
 		Watches(
 			&pluginsv1alpha1.PluginSection{},
@@ -116,7 +129,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // distinctNames returns the distinct names that name gives for the items of
 // spec.plugins of the claim o.
-func distinctNames(o client.Object, name func(fleetv1alpha1.PluginSelection) string) []string {
+func distinctNames(
+	o client.Object,
+	name func(*fleetv1alpha1.CamundaClusterClaim, fleetv1alpha1.PluginSelection) string,
+) []string {
 	claim, ok := o.(*fleetv1alpha1.CamundaClusterClaim)
 	if !ok {
 		return nil
@@ -124,36 +140,11 @@ func distinctNames(o client.Object, name func(fleetv1alpha1.PluginSelection) str
 
 	names := make([]string, 0, len(claim.Spec.Plugins))
 	for _, s := range claim.Spec.Plugins {
-		names = append(names, name(s))
+		names = append(names, name(claim, s))
 	}
 	slices.Sort(names)
 
 	return slices.Compact(names)
-}
-
-// enqueueClaimOfRequest maps the event of a PluginRequest to the claim of
-// its label fleet.camunda.io/claim and to the claim of spec.claimRef.
-func enqueueClaimOfRequest() handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
-		request, ok := o.(*pluginsv1alpha1.PluginRequest)
-		if !ok {
-			return nil
-		}
-
-		names := []string{request.Labels[fleetv1alpha1.LabelClaim], request.Spec.ClaimRef.Name}
-		slices.Sort(names)
-
-		var requests []reconcile.Request
-		for _, name := range slices.Compact(names) {
-			if name != "" {
-				requests = append(requests, reconcile.Request{
-					NamespacedName: types.NamespacedName{Namespace: request.Namespace, Name: name},
-				})
-			}
-		}
-
-		return requests
-	})
 }
 
 // enqueueAllClaims maps an event to a request for every claim.

@@ -326,47 +326,57 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("does not take over a request that another claim controls", func() {
-		claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionEncryptionKey, registrationKey))
-		owner := foreignOwner(claim.Namespace)
-		foreign := &pluginsv1alpha1.PluginRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:            claim.Name + "-" + pluginstartup.SectionEncryptionKey,
-				Namespace:       claim.Namespace,
-				Labels:          map[string]string{fleetv1alpha1.LabelClaim: claim.Name},
-				OwnerReferences: []metav1.OwnerReference{controllerReference(owner)},
-			},
-			Spec: pluginsv1alpha1.PluginRequestSpec{
-				Section:      pluginstartup.SectionEncryptionKey,
-				Registration: registrationKey,
-				ClaimRef: pluginsv1alpha1.ClaimRef{
-					Kind: pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim, Name: claim.Name,
+	DescribeTable(
+		"does not take over a request that another claim controls",
+		func(claimRef pluginsv1alpha1.ClaimRef) {
+			claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionEncryptionKey, registrationKey))
+			owner := foreignOwner(claim.Namespace)
+			foreign := &pluginsv1alpha1.PluginRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            claim.Name + "-" + pluginstartup.SectionEncryptionKey,
+					Namespace:       claim.Namespace,
+					Labels:          map[string]string{fleetv1alpha1.LabelClaim: claimRef.Name},
+					OwnerReferences: []metav1.OwnerReference{controllerReference(owner)},
 				},
-				Target:         pluginsv1alpha1.TargetRef{Kind: "CamundaManagementCluster", Name: claim.Name},
-				DeletionPolicy: pluginsv1alpha1.DeletionPolicyDelete,
-			},
-		}
-		create(foreign)
-		create(claim)
+				Spec: pluginsv1alpha1.PluginRequestSpec{
+					Section:        pluginstartup.SectionEncryptionKey,
+					Registration:   registrationKey,
+					ClaimRef:       claimRef,
+					Target:         pluginsv1alpha1.TargetRef{Kind: "CamundaCluster", Name: claimRef.Name},
+					DeletionPolicy: pluginsv1alpha1.DeletionPolicyDelete,
+				},
+			}
+			create(foreign)
+			create(claim)
 
-		expectFalse(
-			claim,
-			fleetv1alpha1.ConditionRequestsReady,
-			"Blocked",
-			ContainSubstring(owner.Name),
-		)
-		request, err := requestOf(claim, pluginstartup.SectionEncryptionKey)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(request.Spec.ClaimRef.Kind).To(Equal(pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim))
-
-		By("writing its own request once the foreign one is gone")
-		Expect(k8sClient.Delete(ctx, foreign)).To(Succeed())
-		Eventually(func(g Gomega) {
+			expectFalse(
+				claim,
+				fleetv1alpha1.ConditionRequestsReady,
+				"Blocked",
+				ContainSubstring(owner.Name),
+			)
 			request, err := requestOf(claim, pluginstartup.SectionEncryptionKey)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(request.Spec.ClaimRef.Kind).To(Equal(pluginsv1alpha1.ClaimKindCamundaClusterClaim))
-		}, timeout, interval).Should(Succeed())
-	})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(request.Spec.ClaimRef).To(Equal(claimRef))
+
+			By("writing its own request once the foreign one is gone")
+			Expect(k8sClient.Delete(ctx, foreign)).To(Succeed())
+			Eventually(func(g Gomega) {
+				request, err := requestOf(claim, pluginstartup.SectionEncryptionKey)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(request.Spec.ClaimRef).To(Equal(pluginsv1alpha1.ClaimRef{
+					Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: claim.Name,
+				}))
+			}, timeout, interval).Should(Succeed())
+		},
+		Entry("a management cluster claim of the same name", pluginsv1alpha1.ClaimRef{
+			Kind: pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim, Name: "orders",
+		}),
+		// orders-encryption with a section key also writes orders-encryption-key.
+		Entry("a cluster claim of another name", pluginsv1alpha1.ClaimRef{
+			Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: "orders-encryption",
+		}),
+	)
 })
 
 // foreignOwner creates a ConfigMap in namespace that controls an object the
