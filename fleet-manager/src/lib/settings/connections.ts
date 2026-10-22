@@ -4,6 +4,7 @@ import gitHttp from "isomorphic-git/http/node";
 import { readSecretValues } from "@/lib/secrets/values";
 import { reasonOf } from "@/lib/write/errors";
 import { type Settings, appNamespace } from "./keys";
+import { prometheusAuthHeader, prometheusURL } from "./prometheus";
 import { getSettings } from "./store";
 
 /** TestResult is the outcome of a connection test, with a message for the page. */
@@ -106,29 +107,25 @@ export async function testPrometheus(): Promise<TestResult> {
   const secret = settings["prometheus.credentialsSecretRef"];
   const credentials = await readCredentials(secret);
   if (!credentials.ok) return credentials.result;
-  const values = credentials.values;
-  const headers: Record<string, string> = { Accept: "application/json" };
-  if (values) {
-    if (values.username && values.password) {
-      headers.Authorization =
-        "Basic " +
-        Buffer.from(`${values.username}:${values.password}`).toString("base64");
-    } else if (values.token) {
-      headers.Authorization = `Bearer ${values.token}`;
-    } else {
-      return {
-        ok: false,
-        message: `The Secret ${secret} needs the keys username and password, or token.`,
-      };
-    }
+  const auth = prometheusAuthHeader(credentials.values);
+  if ("missing" in auth) {
+    return {
+      ok: false,
+      message: `The Secret ${secret} needs the keys username and password, or token.`,
+    };
   }
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (auth.header) headers.Authorization = auth.header;
   const at = `Prometheus at ${url}`;
   try {
-    const response = await fetch(queryURL(url), {
-      headers,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      redirect: "manual",
-    });
+    const response = await fetch(
+      prometheusURL(url, "/api/v1/query", { query: "vector(1)" }),
+      {
+        headers,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        redirect: "manual",
+      },
+    );
     if (response.status === 401 || response.status === 403) {
       return { ok: false, message: `${at} refused the credentials.` };
     }
@@ -154,14 +151,6 @@ function settingsFailure(error: unknown): TestResult {
     ok: false,
     message: `Could not read the settings: ${reasonOf(error)}`,
   };
-}
-
-function queryURL(address: string): URL {
-  const url = new URL(address);
-  url.pathname = url.pathname.replace(/\/+$/, "") + "/api/v1/query";
-  url.searchParams.set("query", "vector(1)");
-  url.hash = "";
-  return url;
 }
 
 async function readCredentials(secret: string): Promise<Credentials> {
