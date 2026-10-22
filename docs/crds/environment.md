@@ -5,7 +5,7 @@ An `Environment` sets the policy for the claims in its namespaces. A claim is a 
 The policy names the releases and the presets that a claim can use. It also names the plugin options of each `PluginSection` of the create flow, for example "Backup storage". Each option is a `PluginRegistration`. The policy sets the parameter values of each option and the deletion default.
 
 !!! note
-    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release. The operator creates the cluster of a [CamundaClusterClaim](camundaclusterclaim.md). It does not act on a `CamundaManagementClusterClaim` yet.
+    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release. The operator creates the cluster of a [CamundaClusterClaim](camundaclusterclaim.md) and the plane of a [CamundaManagementClusterClaim](camundamanagementclusterclaim.md).
 
 The smallest manifest:
 
