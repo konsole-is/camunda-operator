@@ -2962,6 +2962,11 @@ metadata:
               f:description: {}
               f:minLength: {}
               f:type: {}
+            f:releaseRef:
+              .: {}
+              f:description: {}
+              f:minLength: {}
+              f:type: {}
           f:required: {}
           f:type: {}
         f:sections: {}
@@ -2986,6 +2991,15 @@ metadata:
             f:reason: {}
             f:status: {}
             f:type: {}
+          k:{"type":"Ready"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:message: {}
+            f:observedGeneration: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+        f:observedGeneration: {}
     manager: manager
     operation: Update
     subresource: status
@@ -3049,8 +3063,14 @@ spec:
           starts from.
         minLength: 1
         type: string
+      releaseRef:
+        description: The name of the CamundaRelease that gives the PostgreSQL major
+          version. The claim controller sets it to the release of the claim.
+        minLength: 1
+        type: string
     required:
     - preset
+    - releaseRef
     type: object
   sections:
   - secondary-storage
@@ -3065,6 +3085,13 @@ status:
     reason: Healthy
     status: "True"
     type: Accepted
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: The operator serves the requests of this registration
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Ready
+  observedGeneration: 1
 ---
 apiVersion: plugins.camunda.io/v1alpha1
 kind: PluginRegistration
