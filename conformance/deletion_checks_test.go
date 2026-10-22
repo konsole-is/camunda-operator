@@ -372,7 +372,10 @@ func TestOrderRunHasAClaimOfItsOwn(t *testing.T) {
 }
 
 func TestOrderRunGivesALongCaseAClaimNameThatAClusterClaimTakes(t *testing.T) {
-	first := requestRun{caseName: "postgresql-with-backup-storage", name: "postgresql-with-backup-storage-delete-0123456789"}
+	first := requestRun{
+		caseName: "postgresql-with-backup-storage",
+		name:     "postgresql-with-backup-storage-delete-0123456789",
+	}
 
 	run := orderRun(first, "0123456789")
 
