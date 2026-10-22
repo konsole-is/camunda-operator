@@ -117,13 +117,8 @@ rules:
   - core.camunda.io
   resources:
   - backupschedules
-  - camundaclusterpresets
-  - camundaplatformconfigs
-  - camundareleases
-  - databaseserverpresets
-  - elasticsearchclusterpresets
-  - objectstorageconfigs
   verbs:
+  - delete
   - get
   - list
   - watch
@@ -152,6 +147,19 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - core.camunda.io
+  resources:
+  - camundaclusterpresets
+  - camundaplatformconfigs
+  - camundareleases
+  - databaseserverpresets
+  - elasticsearchclusterpresets
+  - objectstorageconfigs
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - core.camunda.io
   resources:

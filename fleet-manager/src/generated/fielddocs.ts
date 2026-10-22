@@ -5209,7 +5209,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#zeebespec"
       },
       "spec.deletionPolicy": {
-        "description": "DeletionPolicy says what happens to the resources of the plugin\nrequests when the claim is deleted. Delete deletes them. Orphan keeps\nthem. Empty means spec.deletionPolicy of the Environment. The\nCamundaCluster and the attachments are always deleted with the claim,\nunder their own retention rules.",
+        "description": "DeletionPolicy says what happens to the resources of the plugin\nrequests when the claim is deleted. Delete deletes them. Orphan keeps\nthem. Empty means the deletion default that the claim recorded from its\nEnvironment at creation, or Delete when it recorded none. The\nCamundaCluster and the attachments are always deleted with the claim,\nunder their own retention rules.",
         "anchor": "#camundaclusterclaimspec"
       },
       "spec.platformConfigRef": {

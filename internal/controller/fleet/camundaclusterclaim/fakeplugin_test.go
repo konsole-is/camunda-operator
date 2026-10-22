@@ -24,8 +24,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -39,17 +41,28 @@ const heldRetry = 250 * time.Millisecond
 // writes their outputs, OutputsReady=True, and Ready=True for the current
 // generation. It writes nothing for a held registration until the spec
 // releases it. The specs never write the status of a request.
+//
+// It holds every request with the plugin finalizer. On a deleted request it
+// records spec.deletionPolicy once, then removes the finalizer unless the
+// spec holds the cleanup of that request.
 type fakePlugin struct {
 	reader client.Reader
 	writer client.Client
 
-	mu      sync.Mutex
-	outputs map[string]map[string]string
-	held    map[string]bool
+	mu               sync.Mutex
+	outputs          map[string]map[string]string
+	held             map[string]bool
+	cleanupHeld      map[types.NamespacedName]bool
+	policyAtDeletion map[types.NamespacedName]pluginsv1alpha1.DeletionPolicy
 }
 
 func newFakePlugin() *fakePlugin {
-	return &fakePlugin{outputs: map[string]map[string]string{}, held: map[string]bool{}}
+	return &fakePlugin{
+		outputs:          map[string]map[string]string{},
+		held:             map[string]bool{},
+		cleanupHeld:      map[types.NamespacedName]bool{},
+		policyAtDeletion: map[types.NamespacedName]pluginsv1alpha1.DeletionPolicy{},
+	}
 }
 
 // serve makes the plugin write outputs for the requests of registration.
@@ -71,6 +84,42 @@ func (p *fakePlugin) release(registration string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.held, registration)
+}
+
+// holdCleanup keeps the plugin finalizer on the request key after its
+// deletion.
+func (p *fakePlugin) holdCleanup(key types.NamespacedName) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cleanupHeld[key] = true
+}
+
+// releaseCleanup lets the plugin remove its finalizer from the request key.
+func (p *fakePlugin) releaseCleanup(key types.NamespacedName) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.cleanupHeld, key)
+}
+
+// deletionPolicyOf returns spec.deletionPolicy of the request key when the
+// plugin first saw its deletion, and whether it saw it.
+func (p *fakePlugin) deletionPolicyOf(key types.NamespacedName) (pluginsv1alpha1.DeletionPolicy, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	policy, ok := p.policyAtDeletion[key]
+	return policy, ok
+}
+
+// cleanup records the policy of the deleted request on its first sight and
+// reports whether the plugin holds its cleanup.
+func (p *fakePlugin) cleanup(request *pluginsv1alpha1.PluginRequest) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key := client.ObjectKeyFromObject(request)
+	if _, seen := p.policyAtDeletion[key]; !seen {
+		p.policyAtDeletion[key] = request.Spec.DeletionPolicy
+	}
+	return p.cleanupHeld[key]
 }
 
 // state returns the outputs of registration, whether the plugin serves it,
@@ -95,6 +144,17 @@ func (p *fakePlugin) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	var request pluginsv1alpha1.PluginRequest
 	if err := p.reader.Get(ctx, req.NamespacedName, &request); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	if !request.DeletionTimestamp.IsZero() {
+		if p.cleanup(&request) {
+			return ctrl.Result{RequeueAfter: heldRetry}, nil
+		}
+		return ctrl.Result{}, p.setFinalizer(ctx, &request, controllerutil.RemoveFinalizer)
+	}
+
+	if err := p.setFinalizer(ctx, &request, controllerutil.AddFinalizer); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	outputs, served, held := p.state(request.Spec.Registration)
@@ -128,4 +188,19 @@ func (p *fakePlugin) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// setFinalizer applies change to the plugin finalizer of request and patches
+// the request when that changed it.
+func (p *fakePlugin) setFinalizer(
+	ctx context.Context,
+	request *pluginsv1alpha1.PluginRequest,
+	change func(client.Object, string) bool,
+) error {
+	before := request.DeepCopy()
+	if !change(request, pluginsv1alpha1.FinalizerCleanup) {
+		return nil
+	}
+
+	return client.IgnoreNotFound(p.writer.Patch(ctx, request, client.MergeFrom(before)))
 }
