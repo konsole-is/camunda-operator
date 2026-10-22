@@ -49,13 +49,14 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		))
 		Expect(got[DeleteDelete].skipped).To(BeEmpty())
 		Expect(got[DeleteOrphan].skipped).To(BeEmpty())
-		seen := requests()
 		for _, policy := range []string{"delete", "orphan"} {
 			name := requestName("basic", "", policy, runIDOf(cfg.Namespace))
-			Expect(seen).To(HaveKey(name))
-			req := seen[name]
-			Expect(req.Spec.ClaimRef.Name).To(Equal(name))
-			Expect(req.Labels).To(HaveKeyWithValue(fleetv1alpha1.LabelClaim, name))
+			Eventually(func(g Gomega) {
+				seen := requests()
+				g.Expect(seen).To(HaveKey(name))
+				g.Expect(seen[name].Spec.ClaimRef.Name).To(Equal(name))
+				g.Expect(seen[name].Labels).To(HaveKeyWithValue(fleetv1alpha1.LabelClaim, name))
+			}, time.Minute).Should(Succeed())
 		}
 	})
 
