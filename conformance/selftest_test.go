@@ -45,8 +45,9 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
 		Expect(skippedIDs(got)).To(ConsistOf(
-			ReqLogs, OrderRegistrationFirst, DeleteRoutes, GrantMatch, GrantRequires, GrantAdmission,
+			ReqLogs, OrderRegistrationFirst, DeleteRoutes, GrantMatch, GrantRequires, GrantAdmission, GrantReady,
 		))
+		Expect(got[GrantReady].skipped).To(Equal("the plugin wrote no Grant"))
 		Expect(got[DeleteDelete].skipped).To(BeEmpty())
 		Expect(got[DeleteOrphan].skipped).To(BeEmpty())
 		for _, policy := range []string{"delete", "orphan"} {
@@ -67,7 +68,7 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
 		Expect(skippedIDs(got)).To(ConsistOf(
-			ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires, GrantAdmission,
+			ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires, GrantAdmission, GrantReady,
 		))
 	})
 
@@ -80,7 +81,7 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
 		Expect(skippedIDs(got)).To(ConsistOf(
-			ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires, GrantAdmission,
+			ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires, GrantAdmission, GrantReady,
 		))
 
 		// The orphaned ConfigMap of each section shows that a request of
@@ -99,6 +100,18 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
 		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, DeleteRoutes))
+		Expect(got[GrantReady].skipped).To(BeEmpty())
+	})
+
+	ginkgo.It("skips GRANT-READY when a Grant already has Ready", func() {
+		s := newSuite(grantRun(echo.DefectNone), restCfg, k8sClient)
+		ginkgo.DeferCleanup(func() { Expect(s.close(ctx)).To(Succeed()) })
+		Expect(checkGrantReady(ctx, s)).To(Succeed())
+
+		reason, skipped := skipReasonOf(checkGrantReady(ctx, s))
+
+		Expect(skipped).To(BeTrue())
+		Expect(reason).To(ContainSubstring("has a Ready condition"))
 	})
 
 	ginkgo.It("fails GRANT-ADMISSION when a role gives serve to its ServiceAccount", func() {
@@ -251,6 +264,13 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			echo.DefectIgnoreRequiredInputs,
 			GrantRequires,
 			"without a value",
+		),
+		ginkgo.Entry(
+			"Ready=True while a Grant waits",
+			grantRun,
+			echo.DefectReadyIgnoresGrants,
+			GrantReady,
+			"has no Ready condition",
 		),
 	)
 })

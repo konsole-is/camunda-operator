@@ -6173,7 +6173,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pluginrequest"
       },
       "status.conditions": {
-        "description": "Conditions are OutputsReady and Ready. OutputsReady is True when the\noutputs are written for the current generation. Ready is False with\nreason GrantRejected while a Grant of the request is not Ready. Ready\nis False with reason WaitingForEndpoints while an access request waits\nfor the endpoints of its target. Ready is False with reason\nInvalidParameters when the parameters do not pass the registration.\nThe plugin sets the other reasons.",
+        "description": "Conditions are OutputsReady and Ready. OutputsReady is True when the\noutputs are written for the current generation. Ready is False with\nreason GrantRejected while a Grant of the request has Ready=False.\nReady is False with reason WaitingForGrants while no Grant of the\nrequest has Ready=False and a Grant does not have Ready=True yet. Ready\nis False with reason WaitingForEndpoints while an access request waits\nfor the endpoints of its target. Ready is False with reason\nInvalidParameters when the parameters do not pass the registration.\nThe plugin sets the other reasons.",
         "anchor": "#pluginrequeststatus"
       },
       "status.links": {

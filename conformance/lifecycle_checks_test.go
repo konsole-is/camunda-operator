@@ -102,6 +102,33 @@ func TestReadyVerdict(t *testing.T) {
 			grants:  []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue)},
 			message: "no Grant of the request has Ready=False",
 		},
+		{
+			name:   "WaitingForGrants with a Grant without Ready",
+			ready:  ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			grants: []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue), {}},
+		},
+		{
+			name:   "WaitingForGrants with an Unknown Grant",
+			ready:  ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			grants: []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionUnknown)},
+		},
+		{
+			name:    "WaitingForGrants while every Grant is Ready",
+			ready:   ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			grants:  []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue)},
+			message: "while every Grant of the request has Ready=True",
+		},
+		{
+			name:    "WaitingForGrants without a Grant",
+			ready:   ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			message: "while every Grant of the request has Ready=True",
+		},
+		{
+			name:    "WaitingForGrants while a Grant has Ready=False",
+			ready:   ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			grants:  []pluginsv1alpha1.Grant{{}, grantWithReady(metav1.ConditionFalse)},
+			message: "the reason is GrantRejected",
+		},
 	}
 
 	for _, tt := range tests {

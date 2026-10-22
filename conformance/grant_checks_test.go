@@ -20,14 +20,17 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -403,4 +406,149 @@ func TestRequestGrantsFindsAGrantByItsLabelOrItsOwner(t *testing.T) {
 		names = append(names, g.Name)
 	}
 	assert.Equal(t, []string{"r-owned", "r-read"}, names)
+}
+
+func TestWaitingVerdict(t *testing.T) {
+	tests := []struct {
+		name    string
+		ready   *metav1.Condition
+		message string
+	}{
+		{
+			name:  "Ready=False",
+			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: reasonWaitingForGrants},
+		},
+		{
+			name:  "Ready=False with another reason",
+			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: "EchoDefect"},
+		},
+		{name: "no Ready"},
+		{
+			name:    "Ready=True",
+			ready:   &metav1.Condition{Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy},
+			message: "Ready=True while Grant g has no Ready condition",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := waitingVerdict(tt.ready, "g")
+
+			if tt.message == "" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorContains(t, err, tt.message)
+		})
+	}
+}
+
+func TestGrantsReadyVerdict(t *testing.T) {
+	tests := []struct {
+		name     string
+		ready    *metav1.Condition
+		messages []string
+	}{
+		{name: "Ready=True", ready: &metav1.Condition{Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy}},
+		{name: "no Ready", messages: []string{"has no Ready condition"}},
+		{
+			name:  "Ready=False",
+			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: reasonWaitingForGrants},
+			messages: []string{
+				"not Ready=True after every Grant of it got Ready=True",
+				reasonWaitingForGrants,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := grantsReadyVerdict(tt.ready)
+
+			if len(tt.messages) == 0 {
+				assert.NoError(t, err)
+				return
+			}
+			for _, m := range tt.messages {
+				assert.ErrorContains(t, err, m)
+			}
+		})
+	}
+}
+
+func TestSetGrantsReadyKeepsTheOtherConditions(t *testing.T) {
+	grant := goodGrant()
+	grant.Status.Conditions = []metav1.Condition{{Type: "Applied", Status: metav1.ConditionTrue, Reason: "Set"}}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, &grant)
+
+	require.NoError(t, s.setGrantsReady(t.Context(), []pluginsv1alpha1.Grant{grant}))
+
+	var got pluginsv1alpha1.Grant
+	require.NoError(t, s.client.Get(t.Context(), client.ObjectKeyFromObject(&grant), &got))
+	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, v1.ConditionReady))
+	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, "Applied"))
+}
+
+func TestSetGrantsReadySkipsAReadyOfAnotherWriter(t *testing.T) {
+	grant := goodGrant()
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, &grant)
+	served := grant.DeepCopy()
+	meta.SetStatusCondition(&served.Status.Conditions, metav1.Condition{
+		Type:   v1.ConditionReady,
+		Status: metav1.ConditionFalse,
+		Reason: "Rejected",
+	})
+	require.NoError(t, s.client.Status().Update(t.Context(), served))
+
+	err := s.setGrantsReady(t.Context(), []pluginsv1alpha1.Grant{grant})
+
+	reason, skipped := skipReasonOf(err)
+	assert.True(t, skipped, "got %v", err)
+	assert.Contains(t, reason, "has a Ready condition")
+	var got pluginsv1alpha1.Grant
+	require.NoError(t, s.client.Get(t.Context(), client.ObjectKeyFromObject(&grant), &got))
+	assert.True(t, meta.IsStatusConditionFalse(got.Status.Conditions, v1.ConditionReady))
+}
+
+// grantReadySuite is a suite with the request of grantCheckRequest, whose
+// Ready condition has status, and with grant. Its Ready timeout is long, so a
+// spec that waits for it does not end.
+func grantReadySuite(
+	t *testing.T,
+	status metav1.ConditionStatus,
+	grant pluginsv1alpha1.Grant,
+) *suite {
+	t.Helper()
+
+	req := grantCheckRequest()
+	req.Status.Conditions = []metav1.Condition{{Type: v1.ConditionReady, Status: status, Reason: v1.ReasonHealthy}}
+	cfg := validConfig()
+	cfg.Namespace = req.Namespace
+	cfg.Timeouts.Ready = time.Hour
+
+	return newTestSuite(t, cfg, interceptor.Funcs{}, req, &grant)
+}
+
+func TestGrantReadyRunFailsAReadyRequestAtOnce(t *testing.T) {
+	grant := goodGrant()
+	s := grantReadySuite(t, metav1.ConditionTrue, grant)
+
+	err := s.grantReadyRun(t.Context(), "r")
+
+	assert.ErrorContains(t, err, "Ready=True while Grant r-read has no Ready condition")
+}
+
+func TestGrantReadyRunSkipsWhenAnotherWriterSetReadyOnAGrant(t *testing.T) {
+	grant := goodGrant()
+	served := grant.DeepCopy()
+	served.Status.Conditions = []metav1.Condition{
+		{Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: "Set"},
+	}
+	s := grantReadySuite(t, metav1.ConditionTrue, *served)
+
+	err := s.grantReadyRun(t.Context(), "r")
+
+	reason, skipped := skipReasonOf(err)
+	assert.True(t, skipped, "got %v", err)
+	assert.Contains(t, reason, "has a Ready condition")
 }

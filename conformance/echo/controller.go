@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -59,6 +60,9 @@ const (
 
 // TODO(#867): use pluginsv1alpha1.LabelRequestNamespace.
 const labelRequestNamespace = "plugins.camunda.io/request-namespace"
+
+// TODO(#867): use pluginsv1alpha1.ReasonWaitingForGrants.
+const reasonWaitingForGrants = "WaitingForGrants"
 
 // Controller is one echo controller. It writes its registration when it
 // starts and sets Ready=True on it. It serves each request of the
@@ -115,6 +119,7 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	err = ctrl.NewControllerManagedBy(mgr).
 		Named(name).
 		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(c.serves))).
+		Watches(&pluginsv1alpha1.Grant{}, handler.EnqueueRequestsFromMapFunc(c.requestOfGrant)).
 		Complete(reconcileFunc(c.reconcileRequest))
 	if err != nil {
 		return fmt.Errorf("adding the request controller: %w", err)
@@ -129,6 +134,19 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 func (c *Controller) serves(obj client.Object) bool {
 	req, ok := obj.(*pluginsv1alpha1.PluginRequest)
 	return ok && req.Spec.Registration == c.opts.Registration
+}
+
+// requestOfGrant maps a Grant of the registration to its request.
+func (c *Controller) requestOfGrant(_ context.Context, obj client.Object) []ctrl.Request {
+	labels := obj.GetLabels()
+	if labels[pluginsv1alpha1.LabelRegistration] != c.opts.Registration || labels[pluginsv1alpha1.LabelRequest] == "" {
+		return nil
+	}
+
+	return []ctrl.Request{{NamespacedName: types.NamespacedName{
+		Namespace: obj.GetNamespace(),
+		Name:      labels[pluginsv1alpha1.LabelRequest],
+	}}}
 }
 
 type reconcileFunc func(ctx context.Context, req ctrl.Request) (ctrl.Result, error)
@@ -484,6 +502,11 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 		return ctrl.Result{}, err
 	}
 
+	existing, err := c.existingGrants(ctx, req)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	status := req.Status.DeepCopy()
 	status.ObservedGeneration = req.Generation
 	status.Outputs = c.outputs(req)
@@ -500,19 +523,10 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 		ObservedGeneration: outputsGeneration,
 	})
 
-	ready := metav1.Condition{
-		Type:               v1.ConditionReady,
-		Status:             metav1.ConditionTrue,
-		Reason:             v1.ReasonHealthy,
-		Message:            "The echo controller serves the request",
-		ObservedGeneration: req.Generation,
-	}
-	if c.opts.Defect == DefectNotReady {
-		ready.Status = metav1.ConditionFalse
-		ready.Reason = reasonEchoDefect
-		ready.Message = "The echo controller reports a defect"
-	}
-	meta.SetStatusCondition(&status.Conditions, ready)
+	meta.SetStatusCondition(
+		&status.Conditions,
+		readyCondition(servedGrants(grants, existing), c.opts.Defect, req.Generation),
+	)
 
 	summary := []pluginsv1alpha1.SummaryItem{
 		{Label: "Message", Value: message(req), Severity: pluginsv1alpha1.SeverityInfo},
@@ -549,6 +563,58 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// servedGrants are existing, the Grants that the cache holds, and each Grant
+// of want that it does not hold yet, without a status.
+func servedGrants(want, existing []*pluginsv1alpha1.Grant) []*pluginsv1alpha1.Grant {
+	served := slices.Clone(existing)
+	for _, g := range want {
+		if !slices.ContainsFunc(existing, func(e *pluginsv1alpha1.Grant) bool { return e.Name == g.Name }) {
+			served = append(served, g)
+		}
+	}
+
+	return served
+}
+
+// readyCondition is the Ready condition of a request of generation with
+// grants. A Grant with Ready=False gives GrantRejected, and then a Grant
+// without Ready=True gives WaitingForGrants. DefectReadyIgnoresGrants skips
+// both, and DefectNotReady gives EchoDefect.
+func readyCondition(grants []*pluginsv1alpha1.Grant, defect Defect, generation int64) metav1.Condition {
+	ready := metav1.Condition{
+		Type:               v1.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             v1.ReasonHealthy,
+		Message:            "The echo controller serves the request",
+		ObservedGeneration: generation,
+	}
+
+	rejected := slices.IndexFunc(grants, func(g *pluginsv1alpha1.Grant) bool {
+		return meta.IsStatusConditionFalse(g.Status.Conditions, v1.ConditionReady)
+	})
+	waiting := slices.IndexFunc(grants, func(g *pluginsv1alpha1.Grant) bool {
+		return !meta.IsStatusConditionTrue(g.Status.Conditions, v1.ConditionReady)
+	})
+
+	switch {
+	case defect == DefectNotReady:
+		ready.Status = metav1.ConditionFalse
+		ready.Reason = reasonEchoDefect
+		ready.Message = "The echo controller reports a defect"
+	case defect == DefectReadyIgnoresGrants:
+	case rejected >= 0:
+		ready.Status = metav1.ConditionFalse
+		ready.Reason = pluginsv1alpha1.ReasonGrantRejected
+		ready.Message = fmt.Sprintf("Grant %s has Ready=False", grants[rejected].Name)
+	case waiting >= 0:
+		ready.Status = metav1.ConditionFalse
+		ready.Reason = reasonWaitingForGrants
+		ready.Message = fmt.Sprintf("Grant %s does not have Ready=True yet", grants[waiting].Name)
+	}
+
+	return ready
 }
 
 // resources are the rows of status.resources of req, which has grants.
