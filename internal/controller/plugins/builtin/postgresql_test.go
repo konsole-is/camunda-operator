@@ -308,6 +308,9 @@ func TestPostgreSQLReadsTheServerTheDatabaseAndThePreset(t *testing.T) {
 		{"parameters", `{"preset":"small"}`, []string{
 			"DatabaseServer my-cluster-ns/orders-pg", "Database my-cluster-ns/orders", "DatabaseServerPreset /small",
 		}},
+		{"a preset name that is not an object name", `{"preset":"default/small"}`, []string{
+			"DatabaseServer my-cluster-ns/orders-pg", "Database my-cluster-ns/orders",
+		}},
 		{"parameters that do not decode", `{"preset":"small","size":1}`, []string{
 			"DatabaseServer my-cluster-ns/orders-pg", "Database my-cluster-ns/orders",
 		}},

@@ -29,6 +29,7 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -400,8 +401,10 @@ func (postgresql) backing(request *pluginsv1alpha1.PluginRequest) []backingRef {
 		}}},
 	}
 
+	// A name that is not an object name fails the read with an error that is
+	// not NotFound, which would hold the build and the finalizer.
 	p, err := decodePostgresParameters(request.Spec.Parameters)
-	if err != nil || p.Preset == "" {
+	if err != nil || len(validation.IsDNS1123Subdomain(p.Preset)) > 0 {
 		return refs
 	}
 
