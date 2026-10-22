@@ -78,7 +78,7 @@ The operator writes these fields with the field manager `camunda-operator-builti
 
 ## Mode
 
-`mode` says what a new claim selects when no [`Environment`](index.md#planned-kinds) applies to its namespace:
+`mode` says what a new claim selects when no [`Environment`](environment.md) applies to its namespace:
 
 - `Default`: a new claim selects the option. A section has at most one `Default` option.
 - `Optional`: the fleet manager offers the option, and a new claim does not select it.

@@ -115,8 +115,12 @@ describe("the folders of test/fixtures/claimpolicy", () => {
     expect(missingFolders(fixtureFolders())).toEqual([]);
   });
 
-  it("names the excluded folders order and target-service-account", () => {
-    expect([...EXCLUDED]).toEqual(["order", "target-service-account"]);
+  it("names the excluded folders order, target-service-account, and check-served", () => {
+    expect([...EXCLUDED]).toEqual([
+      "order",
+      "target-service-account",
+      "check-served",
+    ]);
   });
 
   it("fails on a folder that is in neither list", () => {

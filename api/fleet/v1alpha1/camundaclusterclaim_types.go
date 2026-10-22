@@ -25,10 +25,10 @@ import (
 
 // The component conditions of a CamundaClusterClaim. Ready comes from api/v1.
 const (
-	// ConditionRequestsReady reports the PluginRequests of the claim. While
-	// the claim waits for the outputs of a request, its reason is
-	// PrerequisiteNotMet or OperationPending, and the message names the
-	// sections.
+	// ConditionRequestsReady reports the PluginRequests of the claim. While a
+	// request waits for its own outputs, the reason is OperationPending.
+	// While a request waits for the outputs of another section, the reason
+	// is Blocked. The message names the sections.
 	ConditionRequestsReady = "RequestsReady"
 	// ConditionClusterReady reports the CamundaCluster of the claim. ocf sets
 	// its reason, such as Creating, Healthy, or Down. While the reason is
@@ -273,6 +273,21 @@ type CamundaClusterClaim struct {
 	// status is the state of the claim
 	// +optional
 	Status CamundaClusterClaimStatus `json:"status,omitzero"`
+}
+
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *CamundaClusterClaim) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *CamundaClusterClaim) GetKind() string { return "CamundaClusterClaim" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *CamundaClusterClaim) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
 }
 
 // +kubebuilder:object:root=true

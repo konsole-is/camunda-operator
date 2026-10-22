@@ -132,8 +132,9 @@ type PluginRequestStatus struct {
 // PluginRequest asks a plugin for the resources of one section of a claim.
 // A claim controller writes the spec, and the plugin controller that serves
 // the registration writes the status. The claim names a request
-// <claim>-<section>. The name is at most 63 characters, because other
-// objects carry it in a label value.
+// <claim>-<section>, or <claim>-<section>-<registration> in a section with
+// selection Many. The name is at most 63 characters, because other objects
+// carry it in a label value.
 type PluginRequest struct {
 	metav1.TypeMeta `json:",inline"`
 

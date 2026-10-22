@@ -1,0 +1,25 @@
+apiVersion: core.camunda.io/v1
+kind: CamundaCluster
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+  name: orders
+  namespace: team-a
+spec:
+  backupStorageRef: orders-backups
+  connectors:
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: arn:connectors
+      name: orders-connectors
+  externalUrl: https://orders.example.com
+  platformConfigRef: default
+  presetRef: small
+  releaseRef: camunda-8-9
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:camunda
+    name: orders-camunda
+  storageRef: orders-es
+  zeebe:
+    storageClassName: orders-encrypted
