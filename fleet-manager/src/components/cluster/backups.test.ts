@@ -175,6 +175,24 @@ describe("backupRowsOf", () => {
     ]);
   });
 
+  it("a failed Elasticsearch backup that could not resume exporting shows both failures", () => {
+    const [row] = backupRowsOf(
+      cluster,
+      [
+        esBackup("b", {
+          phase: "Failed",
+          failureMessage: "The snapshot failed",
+          resumeFailureMessage: "Zeebe refused to resume exporting",
+        }),
+      ],
+      now,
+    );
+    expect(row.details).toEqual([
+      { label: "Failure", value: "The snapshot failed" },
+      { label: "Resume failure", value: "Zeebe refused to resume exporting" },
+    ]);
+  });
+
   it("does not show a backup ID or partitions of 0", () => {
     const [row] = backupRowsOf(
       cluster,

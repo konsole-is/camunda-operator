@@ -449,6 +449,7 @@ function detailsOf(backup: BackupObject): Detail[] {
     ["Partitions", es?.partitionsCount || undefined],
     ["Restore sizes", sizes],
     ["Failure", status.failureMessage],
+    ["Resume failure", es?.resumeFailureMessage],
   ];
   return details
     .filter(([, value]) => value !== undefined && value !== "")
