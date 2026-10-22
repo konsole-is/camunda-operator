@@ -42,17 +42,16 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
-// claimName is the claim that every request of a run names. No such claim
-// exists.
-const claimName = "conformance"
-
 // requestRun is one request of the run: one case, section and deletion policy.
 type requestRun struct {
 	caseName string
 	section  string
 	policy   pluginsv1alpha1.DeletionPolicy
 	name     string
-	tc       Case
+	// claim is the claim that the request names, one for each case and
+	// policy. No such claim exists.
+	claim string
+	tc    Case
 }
 
 // lifecycle is the state that the lifecycle and deletion checks of one run
@@ -221,7 +220,14 @@ func runsOf(
 				}
 
 				caseOf[name] = tc.Name
-				run := requestRun{caseName: tc.Name, section: section, policy: policy, name: name, tc: tc}
+				run := requestRun{
+					caseName: tc.Name,
+					section:  section,
+					policy:   policy,
+					name:     name,
+					claim:    requestName(tc.Name, "", string(policy), runID),
+					tc:       tc,
+				}
 				if len(casePolicies) > 1 {
 					run.tc.Target = targetWithSuffix(tc.Target, strings.ToLower(string(policy)))
 				}
@@ -545,13 +551,13 @@ func requestFor(
 			Labels: map[string]string{
 				pluginsv1alpha1.LabelSection:      section.Name,
 				pluginsv1alpha1.LabelRegistration: registration,
-				fleetv1alpha1.LabelClaim:          claimName,
+				fleetv1alpha1.LabelClaim:          run.claim,
 			},
 		},
 		Spec: pluginsv1alpha1.PluginRequestSpec{
 			Section:        section.Name,
 			Registration:   registration,
-			ClaimRef:       pluginsv1alpha1.ClaimRef{Kind: kind, Name: claimName},
+			ClaimRef:       pluginsv1alpha1.ClaimRef{Kind: kind, Name: run.claim},
 			Target:         run.tc.Target,
 			Inputs:         run.tc.Inputs,
 			Parameters:     run.tc.Parameters,

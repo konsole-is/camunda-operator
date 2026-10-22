@@ -17,6 +17,8 @@ limitations under the License.
 package conformance
 
 import (
+	"maps"
+	"sync"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
@@ -27,13 +29,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/conformance/echo"
 )
 
 var _ = ginkgo.Describe("The echo plugin", func() {
-	ginkgo.It("passes every check", func() {
-		got := runAll(echoRun(echo.DefectNone))
+	ginkgo.It("passes every check, with a claim name of its own for the Delete and the Orphan request", func() {
+		cfg := echoRun(echo.DefectNone)
+		requests := watchRequests(cfg.Namespace)
+
+		got := runAll(cfg)
 
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
@@ -43,6 +49,15 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		))
 		Expect(got[DeleteDelete].skipped).To(BeEmpty())
 		Expect(got[DeleteOrphan].skipped).To(BeEmpty())
+		for _, policy := range []string{"delete", "orphan"} {
+			name := requestName("basic", "", policy, runIDOf(cfg.Namespace))
+			Eventually(func(g Gomega) {
+				seen := requests()
+				g.Expect(seen).To(HaveKey(name))
+				g.Expect(seen[name].Spec.ClaimRef.Name).To(Equal(name))
+				g.Expect(seen[name].Labels).To(HaveKeyWithValue(fleetv1alpha1.LabelClaim, name))
+			}, time.Minute).Should(Succeed())
+		}
 	})
 
 	ginkgo.It("passes every check when it serves the access section", func() {
@@ -239,3 +254,32 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		),
 	)
 })
+
+// watchRequests watches the PluginRequests of namespace until the spec ends,
+// and returns a func that gives the latest copy of each, by name.
+func watchRequests(namespace string) func() map[string]pluginsv1alpha1.PluginRequest {
+	c, err := client.NewWithWatch(restCfg, client.Options{Scheme: k8sClient.Scheme()})
+	Expect(err).NotTo(HaveOccurred())
+	w, err := c.Watch(ctx, &pluginsv1alpha1.PluginRequestList{}, client.InNamespace(namespace))
+	Expect(err).NotTo(HaveOccurred())
+	ginkgo.DeferCleanup(w.Stop)
+
+	var mu sync.Mutex
+	seen := map[string]pluginsv1alpha1.PluginRequest{}
+	go func() {
+		for event := range w.ResultChan() {
+			if req, ok := event.Object.(*pluginsv1alpha1.PluginRequest); ok {
+				mu.Lock()
+				seen[req.Name] = *req
+				mu.Unlock()
+			}
+		}
+	}()
+
+	return func() map[string]pluginsv1alpha1.PluginRequest {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return maps.Clone(seen)
+	}
+}
