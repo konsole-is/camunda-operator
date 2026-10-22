@@ -26,6 +26,7 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // handler serves the requests of one built-in registration. It reads no
@@ -149,5 +150,15 @@ func handlers() map[string]handler {
 		},
 		pluginstartup.RegistrationExistingDatabaseConfigs:  existing{parse: databaseConfigs},
 		pluginstartup.RegistrationManagementDatabaseServer: managementDatabases{},
+	}
+}
+
+// backingLabels returns the labels of each object that a built-in handler
+// writes for request.
+func backingLabels(request *pluginsv1alpha1.PluginRequest) map[string]string {
+	return map[string]string{
+		pluginsv1alpha1.LabelRegistration: request.Spec.Registration,
+		pluginsv1alpha1.LabelRequest:      request.Name,
+		labels.ManagedByKey:               labels.ManagedBy,
 	}
 }

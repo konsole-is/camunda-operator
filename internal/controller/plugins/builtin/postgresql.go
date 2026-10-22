@@ -185,7 +185,7 @@ func postgresServer(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: request.Namespace,
-			Labels:    postgresLabels(request),
+			Labels:    backingLabels(request),
 		},
 		Spec: v1.DatabaseServerSpec{
 			PresetRef:            p.Preset,
@@ -247,13 +247,6 @@ func postgresServerName(request *pluginsv1alpha1.PluginRequest) string {
 	return request.Spec.ClaimRef.Name + pluginstartup.BackingSuffixDatabaseServer
 }
 
-func postgresLabels(request *pluginsv1alpha1.PluginRequest) map[string]string {
-	return map[string]string{
-		pluginsv1alpha1.LabelRegistration: pluginstartup.RegistrationDatabaseServer,
-		pluginsv1alpha1.LabelRequest:      request.Name,
-	}
-}
-
 // postgresArchive returns the archive of the server for the bucket input,
 // with the retention and the schedule of the archive of the preset. The
 // archive replaces the archive of the preset whole, and its retention is
@@ -296,7 +289,7 @@ func postgresDatabase(request *pluginsv1alpha1.PluginRequest) *v1.Database {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      request.Spec.ClaimRef.Name,
 			Namespace: request.Namespace,
-			Labels:    postgresLabels(request),
+			Labels:    backingLabels(request),
 		},
 		Spec: v1.DatabaseSpec{
 			ServerRef:              postgresServerName(request),
