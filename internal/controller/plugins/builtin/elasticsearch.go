@@ -51,17 +51,17 @@ type elasticsearch struct{}
 
 // elasticsearchParameters are the parameters of an elasticsearch request.
 type elasticsearchParameters struct {
-	Preset     string                 `json:"preset"`
-	ReleaseRef string                 `json:"releaseRef"`
-	Overrides  elasticsearchOverrides `json:"overrides"`
+	Preset     string
+	ReleaseRef string
+	Overrides  elasticsearchOverrides
 }
 
 type elasticsearchOverrides struct {
-	Replicas    *int32                       `json:"replicas,omitempty"`
-	Resources   *corev1.ResourceRequirements `json:"resources,omitempty"`
-	StorageSize *resource.Quantity           `json:"storageSize,omitempty"`
-	Scheduling  *v1.SchedulingSpec           `json:"scheduling,omitempty"`
-	PodLabels   map[string]string            `json:"podLabels,omitempty"`
+	Replicas    *int32
+	Resources   *corev1.ResourceRequirements
+	StorageSize *resource.Quantity
+	Scheduling  *v1.SchedulingSpec
+	PodLabels   map[string]string
 }
 
 func (elasticsearch) build(request *pluginsv1alpha1.PluginRequest, live liveObjects) (served, error) {
@@ -93,22 +93,10 @@ func (elasticsearch) build(request *pluginsv1alpha1.PluginRequest, live liveObje
 		return served{}, fmt.Errorf("building the backing component: %w", err)
 	}
 
-	contract := contractRef{
-		output: pluginstartup.OutputSecondaryStorageConfig,
-		kind:   kindSecondaryStorageConfig,
-		name:   desired.Name,
-	}
-	read, _, err := readContract(contract, request.Namespace)
+	contract := elasticsearchContract(request)
+	outputs, _, err := outputsComponent([]contractRef{contract}, request.Namespace)
 	if err != nil {
 		return served{}, err
-	}
-	outputs, err := component.NewComponentBuilder().
-		WithName("outputs").
-		WithConditionType(component.ConditionType(pluginsv1alpha1.ConditionOutputsReady)).
-		WithResource(read, component.ReadOnly(), component.BlockOnAbsence()).
-		Build()
-	if err != nil {
-		return served{}, fmt.Errorf("building the outputs component: %w", err)
 	}
 
 	return served{
@@ -120,7 +108,7 @@ func (elasticsearch) build(request *pluginsv1alpha1.PluginRequest, live liveObje
 				summary = append(summary, *shrink)
 			}
 			return report{
-				outputs: map[string]string{contract.output: desired.Name},
+				outputs: map[string]string{contract.output: contract.name},
 				summary: summary,
 				resources: []pluginsv1alpha1.ResourceRef{{
 					Kind:     kindElasticsearchCluster,
@@ -148,10 +136,7 @@ func elasticsearchClusterFor(
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: request.Namespace,
-			Labels: map[string]string{
-				pluginsv1alpha1.LabelRegistration: pluginstartup.RegistrationElasticsearch,
-				pluginsv1alpha1.LabelRequest:      request.Name,
-			},
+			Labels:    backingLabels(request),
 		},
 		Spec: v1.ElasticsearchClusterSpec{
 			PresetRef:              p.Preset,
@@ -252,36 +237,41 @@ func (elasticsearch) cleanup(
 	policy pluginsv1alpha1.DeletionPolicy,
 	_ liveObjects,
 ) (cleanup, error) {
-	name := elasticsearchClusterName(request)
-	b := eswrapper.NewBuilder(&v1.ElasticsearchCluster{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: request.Namespace},
-	})
-	res, err := b.Build()
+	cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{
+		Name: elasticsearchClusterName(request), Namespace: request.Namespace,
+	}}
+	res, err := eswrapper.NewBuilder(cluster.DeepCopy()).Build()
 	if err != nil {
 		return cleanup{}, fmt.Errorf("building the ElasticsearchCluster: %w", err)
 	}
 
-	options := []component.ResourceOption{component.OrphanWhen(true)}
-	if policy == pluginsv1alpha1.DeletionPolicyDelete {
-		options = []component.ResourceOption{component.DeleteWhen(true), component.DeleteOnlyIfOwned()}
+	if policy == pluginsv1alpha1.DeletionPolicyOrphan {
+		orphan, err := component.NewComponentBuilder().
+			WithName("orphan").
+			WithConditionType(component.ConditionType(v1.ConditionReady)).
+			WithResource(res, component.OrphanWhen(true)).
+			Build()
+		if err != nil {
+			return cleanup{}, fmt.Errorf("building the orphan component: %w", err)
+		}
+		return cleanup{stages: []cleanupStage{{
+			components: []*component.Component{orphan},
+			remaining:  []client.Object{cluster},
+		}}}, nil
 	}
-	comp, err := component.NewComponentBuilder().
-		WithName("cleanup").
+
+	deleteCluster, err := component.NewComponentBuilder().
+		WithName("cluster").
 		WithConditionType(component.ConditionType(v1.ConditionReady)).
-		WithResource(res, options...).
+		WithResource(res, component.Delete(), component.DeleteOnlyIfOwned()).
 		Build()
 	if err != nil {
-		return cleanup{}, fmt.Errorf("building the cleanup component: %w", err)
+		return cleanup{}, fmt.Errorf("building the cluster component: %w", err)
 	}
 
-	stage := cleanupStage{components: []*component.Component{comp}}
-	if policy == pluginsv1alpha1.DeletionPolicyDelete {
-		stage.remaining = []client.Object{&v1.ElasticsearchCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: request.Namespace},
-		}}
-	}
-
-	return cleanup{stages: []cleanupStage{stage}}, nil
+	return cleanup{stages: []cleanupStage{
+		{components: []*component.Component{deleteCluster}, remaining: []client.Object{cluster}},
+	}}, nil
 }
 
 // contracts returns the SecondaryStorageConfig of the cluster.
@@ -290,11 +280,7 @@ func (elasticsearch) contracts(request *pluginsv1alpha1.PluginRequest) []contrac
 		return nil
 	}
 
-	return []contractRef{{
-		output: pluginstartup.OutputSecondaryStorageConfig,
-		kind:   kindSecondaryStorageConfig,
-		name:   elasticsearchClusterName(request),
-	}}
+	return []contractRef{elasticsearchContract(request)}
 }
 
 func (elasticsearch) backing(request *pluginsv1alpha1.PluginRequest) []backingRef {
@@ -308,6 +294,16 @@ func (elasticsearch) backing(request *pluginsv1alpha1.PluginRequest) []backingRe
 
 func elasticsearchClusterName(request *pluginsv1alpha1.PluginRequest) string {
 	return request.Spec.ClaimRef.Name + pluginstartup.BackingSuffixElasticsearch
+}
+
+// elasticsearchContract returns the SecondaryStorageConfig that the cluster
+// of request publishes.
+func elasticsearchContract(request *pluginsv1alpha1.PluginRequest) contractRef {
+	return contractRef{
+		output: pluginstartup.OutputSecondaryStorageConfig,
+		kind:   kindSecondaryStorageConfig,
+		name:   elasticsearchClusterName(request),
+	}
 }
 
 // decodeElasticsearchParameters decodes parameters with no unknown field.

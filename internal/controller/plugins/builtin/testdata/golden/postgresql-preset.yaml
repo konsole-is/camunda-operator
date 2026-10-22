@@ -2,6 +2,7 @@ apiVersion: core.camunda.io/v1
 kind: DatabaseServer
 metadata:
   labels:
+    app.kubernetes.io/managed-by: camunda-operator
     plugins.camunda.io/registration: database-server
     plugins.camunda.io/request: orders-secondary-storage
   name: orders-pg
@@ -15,6 +16,7 @@ apiVersion: core.camunda.io/v1
 kind: Database
 metadata:
   labels:
+    app.kubernetes.io/managed-by: camunda-operator
     plugins.camunda.io/registration: database-server
     plugins.camunda.io/request: orders-secondary-storage
   name: orders

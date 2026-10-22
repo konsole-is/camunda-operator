@@ -88,6 +88,14 @@ A built-in request waits until its registration is `Ready` at the current genera
 
 If the parameters do not pass the schema of the registration, for example without a required field, `OutputsReady` and `Ready` are `False` with reason `InvalidParameters`. The message names each field that fails.
 
+Each object that the operator creates for a built-in request has these labels:
+
+| Label | Value |
+| --- | --- |
+| `plugins.camunda.io/registration` | The name of the registration, for example `elasticsearch`. |
+| `plugins.camunda.io/request` | The name of the request. |
+| `app.kubernetes.io/managed-by` | `camunda-operator` |
+
 ### Existing resources
 
 The three `existing-*` registrations point a section at a contract that is already in the namespace of the claim. The claim writes the request. A request for the bucket `my-backup-bucket`:
@@ -194,7 +202,7 @@ spec:
   # ... the rest of your request
 ```
 
-The operator creates the [ElasticsearchCluster](elasticsearchcluster.md) `<claim>-es`, here `orders-es`, in the namespace of the request. It starts from the `ElasticsearchClusterPreset` that `preset` names and takes its Elasticsearch version from the release. Each field in `overrides` replaces the value of the preset for that field. The cluster publishes the `SecondaryStorageConfig` `<claim>-es`, and the output `secondaryStorageConfig` names it. The cluster has the labels `plugins.camunda.io/registration: elasticsearch` and `plugins.camunda.io/request: <request name>`.
+The operator creates the [ElasticsearchCluster](elasticsearchcluster.md) `<claim>-es`, here `orders-es`, in the namespace of the request. It starts from the `ElasticsearchClusterPreset` that `preset` names and takes its Elasticsearch version from the release. Each field in `overrides` replaces the value of the preset for that field. The cluster publishes the `SecondaryStorageConfig` `<claim>-es`, and the output `secondaryStorageConfig` names it. The cluster has the [labels of a built-in request](#built-in-requests).
 
 The inputs come from other sections of the claim. Each input is optional:
 
@@ -254,7 +262,7 @@ Without `overrides.storageSize`, the size of the preset applies. If that size is
 When the claim or you delete the request, the deletion policy applies to the cluster:
 
 - `Delete` deletes the `ElasticsearchCluster`, and the request goes away after the cluster. A cluster of that name that the request does not own stays.
-- `Orphan` keeps the `ElasticsearchCluster` with its data and its labels, without the owner reference to the request. The request goes away at once.
+- `Orphan` keeps the `ElasticsearchCluster` with its data and its labels, without the owner reference to the request. The request goes away when the owner reference is gone.
 
 ### PostgreSQL
 
@@ -295,7 +303,7 @@ The operator applies two objects in the namespace of the request:
 | [`DatabaseServer`](databaseserver.md) | `<claim>-pg`, here `orders-pg` | The `DatabaseServerConfig` `<claim>-pg` |
 | [`Database`](database.md) | `<claim>`, here `orders`, with the logical database `camunda` | The `DatabaseConfig` `<claim>` and the `SecondaryStorageConfig` `<claim>-pg` of type `rdbms` |
 
-The server starts from the `DatabaseServerPreset` that `preset` names, and takes its PostgreSQL major version from the release. Each field in `overrides` replaces the value of the preset for that field. The output `secondaryStorageConfig` names the `SecondaryStorageConfig` `<claim>-pg`. Both objects have the labels `plugins.camunda.io/registration: database-server` and `plugins.camunda.io/request: <request name>`.
+The server starts from the `DatabaseServerPreset` that `preset` names, and takes its PostgreSQL major version from the release. Each field in `overrides` replaces the value of the preset for that field. The output `secondaryStorageConfig` names the `SecondaryStorageConfig` `<claim>-pg`. Both objects have the [labels of a built-in request](#built-in-requests).
 
 The inputs come from other sections of the claim. Each input is optional:
 

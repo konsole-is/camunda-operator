@@ -17,6 +17,7 @@ limitations under the License.
 package builtin
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -290,6 +291,23 @@ func TestManagementDatabasesRefuseAnUnknownParameter(t *testing.T) {
 	assert.Nil(t, managementDatabases{}.contracts(request))
 }
 
+func TestManagementDatabasesLabelEveryBackingObject(t *testing.T) {
+	request := planeRequest(`["keycloak","identity","webModeler"]`)
+	objs, err := buildFor(t, request).backing.Preview()
+	require.NoError(t, err)
+
+	require.Len(t, objs, 4)
+	for _, obj := range objs {
+		assert.Equal(
+			t, map[string]string{
+				pluginsv1alpha1.LabelRegistration: pluginstartup.RegistrationManagementDatabaseServer,
+				pluginsv1alpha1.LabelRequest:      request.Name,
+				"app.kubernetes.io/managed-by":    "camunda-operator",
+			}, obj.GetLabels(), obj.GetName(),
+		)
+	}
+}
+
 func TestManagementDatabasesNameEveryBackingObject(t *testing.T) {
 	refs := managementDatabases{}.backing(planeRequest(`[]`))
 	names := make([]string, 0, len(refs))
@@ -376,11 +394,7 @@ func databaseConfig(name string) *v1.DatabaseConfig {
 func objectNames(objs []client.Object) []string {
 	names := make([]string, 0, len(objs))
 	for _, o := range objs {
-		kind := "Database"
-		if _, ok := o.(*v1.DatabaseServer); ok {
-			kind = "DatabaseServer"
-		}
-		names = append(names, kind+"/"+o.GetName())
+		names = append(names, reflect.TypeOf(o).Elem().Name()+"/"+o.GetName())
 	}
 	return names
 }

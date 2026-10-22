@@ -33,6 +33,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
+	escomponents "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
@@ -103,6 +104,7 @@ func TestElasticsearchNamesTheClusterAfterTheClaim(t *testing.T) {
 		t, map[string]string{
 			pluginsv1alpha1.LabelRegistration: pluginstartup.RegistrationElasticsearch,
 			pluginsv1alpha1.LabelRequest:      request.Name,
+			"app.kubernetes.io/managed-by":    "camunda-operator",
 		}, cluster.Labels,
 	)
 	assert.Equal(t, map[string]string{pluginstartup.OutputSecondaryStorageConfig: "orders-es"}, s.report().outputs)
@@ -116,6 +118,18 @@ func TestElasticsearchNamesTheClusterAfterTheClaim(t *testing.T) {
 	assert.Equal(t, kindElasticsearchCluster, refs[0].kind)
 	assert.Equal(t, "orders-es", refs[0].object.GetName())
 	assert.Equal(t, request.Namespace, refs[0].object.GetNamespace())
+}
+
+func TestElasticsearchClusterPassesTheValidationOfItsKind(t *testing.T) {
+	s, err := elasticsearch{}.build(elasticsearchRequest(`{"preset":"small","releaseRef":"camunda-8-9"}`, nil), nil)
+	require.NoError(t, err)
+	preset := v1.ElasticsearchClusterPresetSpec{Cluster: v1.ElasticsearchClusterSpec{
+		Replicas:    new(int32(3)),
+		StorageSize: new(resource.MustParse("10Gi")),
+	}}
+	release := v1.CamundaReleaseSpec{Version: "8.9.0", Elasticsearch: &v1.ReleaseElasticsearchSpec{Version: "8.19.0"}}
+
+	assert.NoError(t, escomponents.ValidateMerged(escomponents.MergeSpec(rendered(t, s).Spec, &preset, &release)))
 }
 
 func TestElasticsearchKeepsTheLiveStorageSize(t *testing.T) {
@@ -381,28 +395,22 @@ func TestElasticsearchSummary(t *testing.T) {
 	}
 }
 
-func TestElasticsearchCleanupWaitsForTheClusterOnlyWithDelete(t *testing.T) {
+// With Orphan, garbage collection follows an owner reference that stays, so
+// the finalizer waits until the cluster no longer references the request.
+func TestElasticsearchCleanupWaitsForTheCluster(t *testing.T) {
 	request := elasticsearchRequest(`{"preset":"small"}`, nil)
-	tests := []struct {
-		policy        pluginsv1alpha1.DeletionPolicy
-		wantRemaining []string
-	}{
-		{pluginsv1alpha1.DeletionPolicyDelete, []string{"orders-es"}},
-		{pluginsv1alpha1.DeletionPolicyOrphan, []string{}},
-	}
 
-	for _, tt := range tests {
-		t.Run(string(tt.policy), func(t *testing.T) {
-			c, err := elasticsearch{}.cleanup(request, tt.policy, nil)
+	for _, policy := range []pluginsv1alpha1.DeletionPolicy{
+		pluginsv1alpha1.DeletionPolicyDelete,
+		pluginsv1alpha1.DeletionPolicyOrphan,
+	} {
+		t.Run(string(policy), func(t *testing.T) {
+			c, err := elasticsearch{}.cleanup(request, policy, nil)
 			require.NoError(t, err)
 
 			require.Len(t, c.stages, 1)
 			assert.Len(t, c.stages[0].components, 1)
-			remaining := make([]string, 0, len(c.stages[0].remaining))
-			for _, obj := range c.stages[0].remaining {
-				remaining = append(remaining, obj.GetName())
-			}
-			assert.Equal(t, tt.wantRemaining, remaining)
+			assert.Equal(t, []string{"ElasticsearchCluster/orders-es"}, objectNames(c.stages[0].remaining))
 		})
 	}
 }

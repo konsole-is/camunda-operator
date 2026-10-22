@@ -161,10 +161,14 @@ func (managementDatabases) backing(request *pluginsv1alpha1.PluginRequest) []bac
 // parameters. Parameters that do not decode return a
 // *conditions.PreCheckFailure with reason InvalidParameters.
 func managementValuesWithParameters(request *pluginsv1alpha1.PluginRequest) (mdb.Values, error) {
+	p, err := decodeManagementParameters(request.Spec.Parameters)
+	if err != nil {
+		return mdb.Values{}, err
+	}
+
 	v := managementValues(request)
-	var err error
-	v.Preset, v.Version, v.Databases, err = managementParameters(request.Spec.Parameters)
-	return v, err
+	v.Preset, v.Version, v.Databases = p.Preset, p.Version, p.Databases
+	return v, nil
 }
 
 // managementValues returns the values of request that do not depend on its
@@ -176,46 +180,50 @@ func managementValues(request *pluginsv1alpha1.PluginRequest) mdb.Values {
 		Plane:            plane,
 		Server:           plane + pluginstartup.BackingSuffixManagementDatabaseServer,
 		StorageClassName: request.Spec.Inputs[pluginstartup.OutputStorageClassName],
-		Labels: map[string]string{
-			pluginsv1alpha1.LabelRegistration: request.Spec.Registration,
-			pluginsv1alpha1.LabelRequest:      request.Name,
-			labels.ManagedByKey:               labels.ManagedBy,
-		},
+		Labels:           backingLabels(request),
 	}
 }
 
-// managementParameters returns an error for a field other than preset,
-// version, and databases. An absent version is
-// pluginstartup.ManagementDatabaseServerVersion. The databases have no
+// managementParameters are the parameters of a management-database-server
+// request.
+type managementParameters struct {
+	Preset    string
+	Version   string
+	Databases []mdb.Component
+}
+
+// decodeManagementParameters decodes parameters with no unknown field. A
+// value that does not decode returns a *conditions.PreCheckFailure with
+// reason InvalidParameters, whose message names the field. An absent version
+// is pluginstartup.ManagementDatabaseServerVersion. The databases have no
 // duplicates and follow the order of mdb.Components.
-func managementParameters(parameters *apiextensionsv1.JSON) (string, string, []mdb.Component, error) {
+func decodeManagementParameters(parameters *apiextensionsv1.JSON) (managementParameters, error) {
 	var top map[string]json.RawMessage
 	if err := decodeStrict(parameters, &top); err != nil {
-		return "", "", nil, invalidParameter("spec.parameters", err)
+		return managementParameters{}, invalidParameter("spec.parameters", err)
 	}
 
-	var preset, version string
+	var p managementParameters
 	var listed []mdb.Component
 	if err := decodeFields(top, "spec.parameters.", map[string]any{
-		"preset":    &preset,
-		"version":   &version,
+		"preset":    &p.Preset,
+		"version":   &p.Version,
 		"databases": &listed,
 	}); err != nil {
-		return "", "", nil, err
+		return managementParameters{}, err
 	}
 
-	if version == "" {
-		version = pluginstartup.ManagementDatabaseServerVersion
+	if p.Version == "" {
+		p.Version = pluginstartup.ManagementDatabaseServerVersion
 	}
 
-	var databases []mdb.Component
 	for _, c := range mdb.Components {
 		if slices.Contains(listed, c) {
-			databases = append(databases, c)
+			p.Databases = append(p.Databases, c)
 		}
 	}
 
-	return preset, version, databases, nil
+	return p, nil
 }
 
 // managementContracts returns the DatabaseConfig of each listed component of

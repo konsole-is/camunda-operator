@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -134,6 +135,49 @@ var _ = Describe("Built-in elasticsearch requests", func() {
 		Consistently(func(g Gomega) {
 			g.Expect(storageSizeOf(liveCluster(g, name))).To(Equal("50Gi"))
 		}, 2*time.Second, interval).Should(Succeed())
+	})
+
+	It("drops a removed storage size override without a warning and reports the size of the volumes", func() {
+		claim := "es-" + utilrand.String(6)
+		request := newElasticsearchRequest(
+			claim,
+			`{"preset":"small","releaseRef":"camunda","overrides":{"storageSize":"50Gi"}}`,
+			pluginsv1alpha1.DeletionPolicyDelete,
+		)
+		name := claim + "-es"
+		disk := pluginsv1alpha1.SummaryItem{
+			Label:    "Disk",
+			Value:    "50Gi per node",
+			Severity: pluginsv1alpha1.SeverityInfo,
+		}
+		Eventually(func(g Gomega) {
+			g.Expect(storageSizeOf(liveCluster(g, name))).To(Equal("50Gi"))
+		}, timeout, interval).Should(Succeed())
+
+		setClusterVolumes(name, "50Gi")
+		// Only a reconcile that read the volumes reports the Disk item.
+		Eventually(func(g Gomega) {
+			g.Expect(liveRequest(g, request).Status.Summary).To(ContainElement(disk))
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func() error {
+			var fresh pluginsv1alpha1.PluginRequest
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(request), &fresh); err != nil {
+				return err
+			}
+			fresh.Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(`{"preset":"small","releaseRef":"camunda"}`)}
+			return k8sClient.Update(ctx, &fresh)
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			live := liveRequest(g, request)
+			ready := meta.FindStatusCondition(live.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.ObservedGeneration).To(Equal(live.Generation))
+			g.Expect(storageSizeOf(liveCluster(g, name))).To(BeEmpty())
+			g.Expect(live.Status.Summary).To(ContainElement(disk))
+			g.Expect(live.Status.Summary).NotTo(ContainElement(HaveField("Label", "Storage size")))
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("deletes the cluster with the Delete policy", func() {
@@ -260,6 +304,22 @@ func setClusterReady(name string) {
 			ObservedGeneration: cluster.Generation,
 		})
 		cluster.Status.ObservedGeneration = cluster.Generation
+		return k8sClient.Status().Update(ctx, &cluster)
+	}, timeout, interval).Should(Succeed())
+}
+
+// setClusterVolumes writes one data volume of capacity in the status of the
+// ElasticsearchCluster name. Its controller does not run in this suite.
+func setClusterVolumes(name, capacity string) {
+	GinkgoHelper()
+	Eventually(func() error {
+		var cluster v1.ElasticsearchCluster
+		if err := k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, &cluster); err != nil {
+			return err
+		}
+		cluster.Status.Volumes = []v1.VolumeStatus{
+			{Name: "data-" + name + "-0", Capacity: resource.MustParse(capacity)},
+		}
 		return k8sClient.Status().Update(ctx, &cluster)
 	}, timeout, interval).Should(Succeed())
 }

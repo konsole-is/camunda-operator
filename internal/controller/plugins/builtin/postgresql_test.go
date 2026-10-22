@@ -105,6 +105,7 @@ func TestPostgreSQLWritesTheServerAndTheDatabaseOfTheClaim(t *testing.T) {
 			t, map[string]string{
 				pluginsv1alpha1.LabelRegistration: pluginstartup.RegistrationDatabaseServer,
 				pluginsv1alpha1.LabelRequest:      request.Name,
+				"app.kubernetes.io/managed-by":    "camunda-operator",
 			}, obj.GetLabels(), obj.GetName(),
 		)
 	}
