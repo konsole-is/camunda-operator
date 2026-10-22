@@ -134,6 +134,7 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: cfg.Namespace + "-" + request + "-echo"}, &sc)).To(Succeed())
 		Expect(sc.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRequest, request))
 		Expect(sc.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRegistration, cfg.Registration))
+		Expect(sc.Labels).To(HaveKeyWithValue(labelRequestNamespace, cfg.Namespace))
 		Expect(sc.OwnerReferences).To(BeEmpty())
 		Expect(got[ReqLabels].err).NotTo(HaveOccurred())
 		Expect(got[DeleteOrphan].err).NotTo(HaveOccurred())
@@ -207,6 +208,10 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		ginkgo.Entry(
 			"an owner reference on a cluster-scoped object", echoRun, echo.DefectClusterOwnerReference,
 			ReqLabels, "StorageClass",
+		),
+		ginkgo.Entry(
+			"a cluster-scoped object without the request namespace", echoRun, echo.DefectNoRequestNamespace,
+			ReqLabels, labelRequestNamespace,
 		),
 		ginkgo.Entry(
 			"an unlisted resource",

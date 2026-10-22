@@ -150,6 +150,13 @@ func writerLabels() map[string]string {
 	}
 }
 
+// clusterLabels are the labels of a cluster-scoped object of testRequest.
+func clusterLabels() map[string]string {
+	labels := writerLabels()
+	labels[labelRequestNamespace] = "ns"
+	return labels
+}
+
 func ownerOf(req *pluginsv1alpha1.PluginRequest) metav1.OwnerReference {
 	return metav1.OwnerReference{
 		APIVersion: pluginsv1alpha1.GroupVersion.String(),
@@ -169,14 +176,28 @@ func TestLabelProblems(t *testing.T) {
 		obj      *unstructured.Unstructured
 		contains []string
 	}{
-		{name: "a namespaced object with both labels and the owner reference",
+		{name: "a namespaced object with both labels, the owner reference, and no request namespace label",
 			obj: written("ConfigMap", "ns", "x", writerLabels(), ownerOf(req))},
 		{name: "a cluster-scoped object with both labels and no owner reference",
-			obj: written("StorageClass", "", "x", writerLabels())},
+			obj: written("StorageClass", "", "x", clusterLabels())},
 		{
 			name:     "a cluster-scoped object with an owner reference to the request",
-			obj:      written("StorageClass", "", "x", writerLabels(), ownerOf(req)),
+			obj:      written("StorageClass", "", "x", clusterLabels(), ownerOf(req)),
 			contains: []string{"StorageClass x is cluster-scoped and has an owner reference to the request"},
+		},
+		{
+			name:     "a cluster-scoped object without the request namespace label",
+			obj:      written("StorageClass", "", "x", writerLabels()),
+			contains: []string{`StorageClass x has no label plugins.camunda.io/request-namespace: "ns"`},
+		},
+		{
+			name: "a cluster-scoped object with the request namespace of another request",
+			obj: written("StorageClass", "", "x", func() map[string]string {
+				labels := clusterLabels()
+				labels[labelRequestNamespace] = "team-b"
+				return labels
+			}()),
+			contains: []string{`StorageClass x has no label plugins.camunda.io/request-namespace: "ns"`},
 		},
 		{
 			name:     "a namespaced object without the owner reference",

@@ -85,6 +85,9 @@ const (
 	// DefectClusterOwnerReference gives the cluster-scoped StorageClass an
 	// owner reference to the request.
 	DefectClusterOwnerReference Defect = "ClusterOwnerReference"
+	// DefectNoRequestNamespace writes the cluster-scoped StorageClass without
+	// the label plugins.camunda.io/request-namespace.
+	DefectNoRequestNamespace Defect = "NoRequestNamespace"
 	// DefectUnlistedResource leaves the StorageClass out of
 	// status.resources.
 	DefectUnlistedResource Defect = "UnlistedResource"
@@ -121,6 +124,7 @@ var defects = []Defect{
 	DefectNotReady,
 	DefectNoOwnerReference,
 	DefectClusterOwnerReference,
+	DefectNoRequestNamespace,
 	DefectUnlistedResource,
 	DefectNoEvents,
 	DefectRelativeLink,

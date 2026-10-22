@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -159,6 +160,79 @@ func TestApplyObjectsRefusesAnObjectOfAnotherWriter(t *testing.T) {
 	require.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(other), &got))
 	assert.Equal(t, other.Data, got.Data)
 	assert.Empty(t, got.Labels)
+}
+
+func TestObjectsLabelOnlyTheStorageClassWithTheRequestNamespace(t *testing.T) {
+	c := newFakeController(t)
+	a := &pluginsv1alpha1.PluginRequest{ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: requestName}}
+	b := &pluginsv1alpha1.PluginRequest{ObjectMeta: metav1.ObjectMeta{Namespace: "team-b", Name: requestName}}
+
+	cmA, scA, _ := c.objects(a, false)
+	_, scB, _ := c.objects(b, false)
+
+	assert.Equal(t, "team-a", scA.Labels[labelRequestNamespace])
+	assert.Equal(t, "team-b", scB.Labels[labelRequestNamespace])
+	assert.Equal(
+		t,
+		scA.Labels[pluginsv1alpha1.LabelRequest],
+		scB.Labels[pluginsv1alpha1.LabelRequest],
+		"only the request namespace label tells the two apart",
+	)
+	assert.NotContains(t, cmA.Labels, labelRequestNamespace)
+}
+
+// echoStorageClass is a StorageClass with the labels of the request
+// requestName, and the request namespace label namespace when it is not
+// empty.
+func echoStorageClass(name, namespace string) *storagev1.StorageClass {
+	labels := map[string]string{
+		pluginsv1alpha1.LabelRegistration: "echo",
+		pluginsv1alpha1.LabelRequest:      requestName,
+	}
+	if namespace != "" {
+		labels[labelRequestNamespace] = namespace
+	}
+
+	return &storagev1.StorageClass{
+		ObjectMeta:  metav1.ObjectMeta{Name: name, Labels: labels},
+		Provisioner: storageProvisioner,
+	}
+}
+
+func TestDeleteKeepsAStorageClassOfAnotherNamespace(t *testing.T) {
+	other := echoStorageClass("team-a-"+requestName+"-echo", "team-b")
+	c := newFakeController(t, other)
+	req := &pluginsv1alpha1.PluginRequest{ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: requestName}}
+
+	sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: other.Name}}
+	require.NoError(t, c.deleteOwn(t.Context(), req, sc))
+
+	assert.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(other), &storagev1.StorageClass{}))
+}
+
+func TestDeleteRemovesAStorageClassWithoutTheRequestNamespace(t *testing.T) {
+	older := echoStorageClass("team-a-"+requestName+"-echo", "")
+	c := newFakeController(t, older)
+	req := &pluginsv1alpha1.PluginRequest{ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: requestName}}
+
+	sc := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: older.Name}}
+	require.NoError(t, c.deleteOwn(t.Context(), req, sc))
+
+	err := c.client.Get(t.Context(), client.ObjectKeyFromObject(older), &storagev1.StorageClass{})
+	assert.True(t, apierrors.IsNotFound(err), "got %v", err)
+}
+
+func TestApplyObjectsRefusesAStorageClassOfAnotherNamespace(t *testing.T) {
+	other := echoStorageClass("ns-"+requestName+"-echo", "other")
+	c := newFakeController(t, other)
+	req := &pluginsv1alpha1.PluginRequest{ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: requestName}}
+
+	err := c.applyObjects(t.Context(), req)
+
+	assert.ErrorContains(t, err, "is not an object of the request")
+	var got storagev1.StorageClass
+	require.NoError(t, c.client.Get(t.Context(), client.ObjectKeyFromObject(other), &got))
+	assert.Equal(t, other.Labels, got.Labels)
 }
 
 // newFakeGrantController is newFakeController with the grant template
