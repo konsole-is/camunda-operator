@@ -126,7 +126,10 @@ async function askBroker(
     signal: AbortSignal.timeout(TIMEOUT_MS),
     redirect: "manual",
   });
-  if (response.status !== 200) return undefined;
+  if (response.status !== 200) {
+    await response.body?.cancel();
+    return undefined;
+  }
   const body = (await response.json()) as unknown;
   if (!isObject(body) || !Object.values(body).every(isObject)) {
     return undefined;

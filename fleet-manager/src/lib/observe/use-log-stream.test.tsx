@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import type { LogFilter } from "./logs";
@@ -106,6 +106,38 @@ describe("useLogStream", () => {
 
     expect(result.current.error).toBeDefined();
     expect(last().closed).toBe(true);
+  });
+
+  it("sets error to the text of /api/logs when it refuses the stream", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response("The container c of pod n/p is not running", {
+          status: 409,
+        }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    const { result } = renderHook(() => useLogStream(source));
+
+    last().fail(2);
+
+    await waitFor(() =>
+      expect(result.current.error).toBe(
+        "The container c of pod n/p is not running",
+      ),
+    );
+    expect(fetch).toHaveBeenCalledWith(last().url, expect.anything());
+  });
+
+  it("asks /api/logs for no text when the stream broke after it opened", () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const { result } = renderHook(() => useLogStream(source));
+
+    last().emit("open", {});
+    last().fail(0);
+
+    expect(result.current.error).toBe("The connection to the log stream broke");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("opens no connection without a source", () => {

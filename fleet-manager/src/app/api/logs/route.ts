@@ -1,6 +1,7 @@
 import {
   PodLogNotFound,
   type PodLogRequest,
+  PodLogUnavailable,
   followPodLog,
 } from "@/lib/observe/pod-log";
 
@@ -27,6 +28,9 @@ export async function GET(request: Request): Promise<Response> {
   } catch (error) {
     if (error instanceof PodLogNotFound) {
       return new Response(error.message, { status: 404 });
+    }
+    if (error instanceof PodLogUnavailable) {
+      return new Response(error.message, { status: error.status });
     }
     throw error;
   }

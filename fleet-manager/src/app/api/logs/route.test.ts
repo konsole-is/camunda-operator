@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PodLogNotFound, followPodLog } from "@/lib/observe/pod-log";
+import {
+  PodLogNotFound,
+  PodLogUnavailable,
+  followPodLog,
+} from "@/lib/observe/pod-log";
 import { GET } from "./route";
 
 vi.mock("@/lib/observe/pod-log", async (real) => ({
@@ -45,6 +49,23 @@ describe("GET /api/logs", () => {
     expect(response.status).toBe(404);
     expect(await response.text()).toBe("The pod n/p does not exist");
   });
+
+  it.each([
+    [409, "The container c of pod n/p is not running"],
+    [502, "The API server did not give the log of pod n/p"],
+  ] as const)(
+    "answers %i with the text of PodLogUnavailable",
+    async (status, text) => {
+      vi.mocked(followPodLog).mockRejectedValue(
+        new PodLogUnavailable(status, text),
+      );
+
+      const response = await call("namespace=n&pod=p");
+
+      expect(response.status).toBe(status);
+      expect(await response.text()).toBe(text);
+    },
+  );
 
   it("passes the parameters and the signal of the request", async () => {
     vi.mocked(followPodLog).mockResolvedValue(lines());

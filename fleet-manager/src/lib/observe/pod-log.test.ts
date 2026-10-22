@@ -2,9 +2,9 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { KubeConfig } from "@kubernetes/client-node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { KubernetesRequestError, kubeConfig } from "@/lib/k8s/client";
+import { kubeConfig } from "@/lib/k8s/client";
 import { get } from "@/lib/k8s/read";
-import { PodLogNotFound, followPodLog } from "./pod-log";
+import { PodLogNotFound, PodLogUnavailable, followPodLog } from "./pod-log";
 
 vi.mock("@/lib/k8s/client", async (real) => ({
   ...(await real<typeof import("@/lib/k8s/client")>()),
@@ -164,23 +164,47 @@ describe("followPodLog", () => {
     ).rejects.toBeInstanceOf(PodLogNotFound);
   });
 
-  it("rejects with the status of another answer outside 200", async () => {
+  it.each([
+    [400, 409, "The container main of pod n/p is not running"],
+    [403, 502, "The API server did not give the log of pod n/p"],
+  ])(
+    "rejects an answer %i with status %i and a text without the API server text",
+    async (answer, status, message) => {
+      vi.mocked(get).mockResolvedValue(pod("main"));
+      await serve((_req, res) =>
+        res
+          .writeHead(answer)
+          .end(JSON.stringify({ kind: "Status", message: "secret detail" })),
+      );
+
+      const failure = followPodLog(
+        { namespace: "n", pod: "p" },
+        new AbortController().signal,
+      );
+
+      await expect(failure).rejects.toBeInstanceOf(PodLogUnavailable);
+      await expect(failure).rejects.toMatchObject({ status, message });
+    },
+  );
+
+  it("sends a line longer than 64 KiB before its line end arrives", async () => {
     vi.mocked(get).mockResolvedValue(pod("main"));
-    await serve((_req, res) =>
-      res
-        .writeHead(403)
-        .end(
-          JSON.stringify({ kind: "Status", code: 403, message: "forbidden" }),
-        ),
-    );
+    const long = "x".repeat(70 * 1024);
+    await serve((_req, res) => {
+      res.writeHead(200);
+      res.write(long);
+    });
 
-    const failure = followPodLog(
-      { namespace: "n", pod: "p" },
-      new AbortController().signal,
-    );
+    const reader = (
+      await followPodLog(
+        { namespace: "n", pod: "p" },
+        new AbortController().signal,
+      )
+    ).getReader();
 
-    await expect(failure).rejects.toBeInstanceOf(KubernetesRequestError);
-    await expect(failure).rejects.toMatchObject({ statusCode: 403 });
+    let got = "";
+    while (got.length < long.length) got += (await reader.read()).value;
+    expect(got).toBe(long);
   });
 
   it("errors the stream when the connection breaks", async () => {

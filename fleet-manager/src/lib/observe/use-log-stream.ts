@@ -20,8 +20,8 @@ type State = { url?: string; lines: LogLine[]; error?: string; ended: boolean };
 /**
  * useLogStream follows the log of source through /api/logs and returns
  * the newest 1000 lines that filter keeps. ended is true when the log
- * ended. error is set when the stream broke; the hook does not connect
- * again. No source opens no connection. A new source starts with no lines.
+ * ended. error is set when the stream broke or /api/logs refused it, with
+ * the text of the refusal; the hook does not connect again. No source opens no connection. A new source starts with no lines.
  */
 export function useLogStream(
   source: LogSource | undefined,
@@ -35,12 +35,15 @@ export function useLogStream(
   useEffect(() => {
     if (!url) return;
     const events = new EventSource(url);
+    const abort = new AbortController();
+    let opened = false;
     const update = (change: (s: State) => Partial<State>) =>
       setState((s) => (s.url === url ? { ...s, ...change(s) } : s));
     const stop = (change: Partial<State>) => {
       events.close();
       update(() => change);
     };
+    events.addEventListener("open", () => (opened = true));
     events.addEventListener("line", (event) => {
       const line = parseLogLine(JSON.parse((event as MessageEvent).data));
       update((s) => ({ lines: [...s.lines, line].slice(-LIMIT) }));
@@ -51,10 +54,17 @@ export function useLogStream(
     );
     // EventSource connects again by itself, and the route would then send
     // the lines that the page already has.
-    events.addEventListener("error", () =>
-      stop({ error: "The connection to the log stream broke" }),
-    );
-    return () => events.close();
+    events.addEventListener("error", () => {
+      stop({ error: "The connection to the log stream broke" });
+      if (opened) return;
+      void refusal(url, abort.signal).then(
+        (text) => text && update(() => ({ error: text })),
+      );
+    });
+    return () => {
+      events.close();
+      abort.abort();
+    };
   }, [url]);
 
   const { lines, ended, error } = state;
@@ -68,6 +78,23 @@ export function useLogStream(
     ended,
     ...(error !== undefined && { error }),
   };
+}
+
+// EventSource does not give the text of an answer outside 200.
+async function refusal(
+  url: string,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  try {
+    const response = await fetch(url, { signal });
+    if (response.ok) {
+      await response.body?.cancel();
+      return undefined;
+    }
+    return await response.text();
+  } catch {
+    return undefined;
+  }
 }
 
 function logURL(source: LogSource): string {

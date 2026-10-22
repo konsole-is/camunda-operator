@@ -1,7 +1,7 @@
 import "server-only";
 import http from "node:http";
 import https from "node:https";
-import { KubernetesRequestError, kubeConfig } from "@/lib/k8s/client";
+import { kubeConfig } from "@/lib/k8s/client";
 import { get } from "@/lib/k8s/read";
 
 /** PodLogRequest names the log to follow. sinceSeconds and tailLines are positive integers. */
@@ -22,12 +22,28 @@ export class PodLogNotFound extends Error {
 }
 
 /**
+ * PodLogUnavailable is a log that the API server did not give. status is
+ * 409 for a container that is not running, 502 otherwise. The message is
+ * fixed text that names the pod.
+ */
+export class PodLogUnavailable extends Error {
+  constructor(
+    readonly status: 409 | 502,
+    message: string,
+  ) {
+    super(message);
+    this.name = "PodLogUnavailable";
+  }
+}
+
+/**
  * followPodLog follows the log of a container of a pod, by default its
  * first container, and returns a stream with one chunk for each line,
- * without the line end. The stream closes when the log ends, and errors
- * when the connection breaks. An abort of signal stops the request. It
- * rejects with PodLogNotFound for a pod or a container that does not
- * exist, and with KubernetesRequestError for another answer outside 200.
+ * without the line end. A line longer than 64 KiB arrives in more than one
+ * chunk. The stream closes when the log ends, and errors when the
+ * connection breaks. An abort of signal stops the request. It rejects with
+ * PodLogNotFound for a pod or a container that does not exist, and with
+ * PodLogUnavailable for another answer outside 200.
  */
 export async function followPodLog(
   req: PodLogRequest,
@@ -81,14 +97,20 @@ export async function followPodLog(
     },
   );
   if (response.statusCode !== 200) {
-    const code = response.statusCode ?? 0;
-    const text = await readText(response);
-    if (code === 404) {
+    response.destroy();
+    if (response.statusCode === 404) {
       throw new PodLogNotFound(`The pod ${namespace}/${name} does not exist`);
     }
-    throw new KubernetesRequestError(
-      code,
-      statusMessage(text) ?? `HTTP ${code}`,
+    // The API server answers 400 for a container that is waiting to start.
+    if (response.statusCode === 400) {
+      throw new PodLogUnavailable(
+        409,
+        `The container ${container} of pod ${namespace}/${name} is not running`,
+      );
+    }
+    throw new PodLogUnavailable(
+      502,
+      `The API server did not give the log of pod ${namespace}/${name}`,
     );
   }
   return lineStream(response);
@@ -96,6 +118,7 @@ export async function followPodLog(
 
 // The log pauses while QUEUED_LINES lines wait for the reader.
 const QUEUED_LINES = 100;
+const MAX_LINE = 64 * 1024;
 
 function lineStream(response: http.IncomingMessage): ReadableStream<string> {
   let carry = "";
@@ -107,6 +130,10 @@ function lineStream(response: http.IncomingMessage): ReadableStream<string> {
         response.on("data", (chunk: string) => {
           const parts = (carry + chunk).split("\n");
           carry = parts.pop()!;
+          if (carry.length > MAX_LINE) {
+            parts.push(carry);
+            carry = "";
+          }
           for (const line of parts) {
             controller.enqueue(line.replace(/\r$/, ""));
           }
@@ -135,19 +162,4 @@ function lineStream(response: http.IncomingMessage): ReadableStream<string> {
     },
     new CountQueuingStrategy({ highWaterMark: QUEUED_LINES }),
   );
-}
-
-async function readText(response: http.IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of response) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-function statusMessage(text: string): string | undefined {
-  try {
-    const message = (JSON.parse(text) as { message?: unknown }).message;
-    return typeof message === "string" ? message : undefined;
-  } catch {
-    return undefined;
-  }
 }
