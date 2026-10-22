@@ -18,247 +18,44 @@ package camundaclusterclaim
 
 import (
 	"context"
-	"fmt"
-	"slices"
 
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
-	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
-	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
+	"github.com/konsole-is/camunda-operator/internal/claimdeletion"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaclusterclaim"
-	"github.com/konsole-is/camunda-operator/pkg/components/claimrequests"
-)
-
-// The event of a delete call that the deletion of a claim sends, in the
-// vocabulary of the ocf component deletion.
-const (
-	eventReasonResourceDeleted = "ResourceDeleted"
-	eventActionDelete          = "Delete"
 )
 
 // finalize deletes what the claim generated, one step per pass: the
-// attachments, then the CamundaCluster, then the PluginRequests. Before any
-// step it writes the effective deletion policy on the requests. It returns
-// the objects that the claim still waits for, as "<Kind> <name>", and removes
-// the finalizer of the claim when nothing is left. An object that the claim
-// does not control counts as gone. A claim without the finalizer returns nil
-// and writes nothing. It returns a *conditions.PreCheckFailure, and writes
-// and deletes nothing, when a selected registration does not support the
-// policy.
+// attachments, then the CamundaCluster, then the PluginRequests, as
+// claimdeletion.Deleter.Finalize does.
 func (r *Reconciler) finalize(ctx context.Context, claim *fleetv1alpha1.CamundaClusterClaim) ([]string, error) {
-	if !controllerutil.ContainsFinalizer(claim, fleetv1alpha1.FinalizerCleanup) {
-		return nil, nil
+	deleter := claimdeletion.Deleter{
+		Client:        r.Client,
+		APIReader:     r.APIReader,
+		Scheme:        r.Scheme,
+		EventRecorder: r.EventRecorder,
 	}
 
-	requests, err := r.ownedRequests(ctx, claim)
-	if err != nil {
-		return nil, err
-	}
-
-	// A plugin reads the policy when its request gets a deletion timestamp,
-	// so the policy goes on before any delete of this pass.
-	if err := r.writeDeletionPolicy(ctx, claim, requests); err != nil {
-		return nil, err
-	}
-
-	attachments, err := r.ownedObjects(
-		ctx,
-		claim,
-		&v1.CamundaOptimize{ObjectMeta: objectKey(claim, components.OptimizeName(claim.Name))},
-		&v1.BackupSchedule{ObjectMeta: objectKey(claim, components.BackupScheduleName(claim.Name))},
-	)
-	if err != nil {
-		return nil, err
-	}
-	cluster, err := r.ownedObjects(ctx, claim, &v1.CamundaCluster{ObjectMeta: objectKey(claim, claim.Name)})
-	if err != nil {
-		return nil, err
-	}
-
-	remaining := slices.Concat(attachments, cluster, requests)
-	var step []client.Object
-	switch {
-	case len(attachments) > 0:
-		step = attachments
-	case len(cluster) > 0:
-		step = cluster
-	case len(requests) > 0:
-		step = requests
-	default:
-		controllerutil.RemoveFinalizer(claim, fleetv1alpha1.FinalizerCleanup)
-		if err := r.Update(ctx, claim); err != nil && !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("removing the finalizer: %w", err)
-		}
-		return nil, nil
-	}
-
-	if err := r.deleteAll(ctx, claim, step); err != nil {
-		return nil, err
-	}
-
-	return r.describe(remaining)
-}
-
-// ownedRequests reads the PluginRequests in the namespace of claim that
-// claim controls, without the cache.
-func (r *Reconciler) ownedRequests(
-	ctx context.Context,
-	claim *fleetv1alpha1.CamundaClusterClaim,
-) ([]client.Object, error) {
-	// Not by the claim label: a user can remove a label, and the claim must
-	// still find the request.
-	var list pluginsv1alpha1.PluginRequestList
-	if err := r.APIReader.List(ctx, &list, client.InNamespace(claim.Namespace)); err != nil {
-		return nil, fmt.Errorf("listing the PluginRequests of the claim: %w", err)
-	}
-
-	var owned []client.Object
-	for i := range list.Items {
-		if metav1.IsControlledBy(&list.Items[i], claim) {
-			owned = append(owned, &list.Items[i])
-		}
-	}
-
-	return owned, nil
-}
-
-// writeDeletionPolicy applies the effective deletion policy of claim to each
-// of requests that has no deletion timestamp and another policy. It writes
-// nothing and returns the refusal of claimpolicy.CheckDeletionPolicy when a
-// selected registration does not support the policy.
-func (r *Reconciler) writeDeletionPolicy(
-	ctx context.Context,
-	claim *fleetv1alpha1.CamundaClusterClaim,
-	requests []client.Object,
-) error {
-	policy := claimpolicy.DeletionPolicy(claim.Spec.DeletionPolicy, claim.Status.ResolvedPolicy)
-
-	var registrations pluginsv1alpha1.PluginRegistrationList
-	if err := r.List(ctx, &registrations); err != nil {
-		return fmt.Errorf("listing the PluginRegistrations: %w", err)
-	}
-	if err := claimpolicy.CheckDeletionPolicy(policy, claim.Spec.Plugins, registrations.Items); err != nil {
-		return err
-	}
-
-	owner := client.FieldOwner(
-		claimrequests.DeletionPolicyFieldManager(fleetv1alpha1.FieldManagerPrefixClusterClaim, claim.UID),
-	)
-	for _, obj := range requests {
-		request, ok := obj.(*pluginsv1alpha1.PluginRequest)
-		if !ok || !request.DeletionTimestamp.IsZero() || request.Spec.DeletionPolicy == policy {
-			continue
-		}
-
-		apply := claimrequests.DeletionPolicyApply(request, policy)
-		//nolint:staticcheck // the repository applies through the deprecated client.Apply patch
-		if err := r.Patch(ctx, apply, client.Apply, owner, client.ForceOwnership); err != nil {
-			return fmt.Errorf("writing the deletion policy on PluginRequest %s: %w", request.Name, err)
-		}
-	}
-
-	return nil
+	return deleter.Finalize(ctx, claimdeletion.Input{
+		Claim:              claim,
+		FieldManagerPrefix: fleetv1alpha1.FieldManagerPrefixClusterClaim,
+		DeletionPolicy:     components.DeletionPolicy(claim),
+		Selections:         claim.Spec.Plugins,
+		Stages: [][]client.Object{
+			{
+				&v1.CamundaOptimize{ObjectMeta: objectKey(claim, components.OptimizeName(claim.Name))},
+				&v1.BackupSchedule{ObjectMeta: objectKey(claim, components.BackupScheduleName(claim.Name))},
+			},
+			{&v1.CamundaCluster{ObjectMeta: objectKey(claim, claim.Name)}},
+		},
+	})
 }
 
 // objectKey returns the metadata of the object name in the namespace of
 // claim.
 func objectKey(claim *fleetv1alpha1.CamundaClusterClaim, name string) metav1.ObjectMeta {
 	return metav1.ObjectMeta{Name: name, Namespace: claim.Namespace}
-}
-
-// ownedObjects reads each of objs by its name without the cache and returns
-// the ones that exist and that claim controls.
-func (r *Reconciler) ownedObjects(
-	ctx context.Context,
-	claim *fleetv1alpha1.CamundaClusterClaim,
-	objs ...client.Object,
-) ([]client.Object, error) {
-	var owned []client.Object
-	for _, obj := range objs {
-		err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-		switch {
-		case apierrors.IsNotFound(err):
-			continue
-		case err != nil:
-			return nil, fmt.Errorf("reading %T %s: %w", obj, obj.GetName(), err)
-		}
-
-		if metav1.IsControlledBy(obj, claim) {
-			owned = append(owned, obj)
-		}
-	}
-
-	return owned, nil
-}
-
-// deleteAll deletes each of objs that has no deletion timestamp yet, and
-// records an event for each delete that it sends.
-func (r *Reconciler) deleteAll(
-	ctx context.Context,
-	claim *fleetv1alpha1.CamundaClusterClaim,
-	objs []client.Object,
-) error {
-	for _, obj := range objs {
-		if !obj.GetDeletionTimestamp().IsZero() {
-			continue
-		}
-
-		kind, err := r.kindOf(obj)
-		if err != nil {
-			return err
-		}
-
-		// The UID keeps the delete off an object that replaced this one
-		// under its name since the read.
-		err = r.Delete(ctx, obj, client.Preconditions{UID: new(obj.GetUID())})
-		if apierrors.IsNotFound(err) {
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("deleting %s %s: %w", kind, obj.GetName(), err)
-		}
-
-		r.EventRecorder.Eventf(
-			claim,
-			obj,
-			corev1.EventTypeNormal,
-			eventReasonResourceDeleted,
-			eventActionDelete,
-			"Deleted %s %s",
-			kind,
-			obj.GetName(),
-		)
-	}
-
-	return nil
-}
-
-// describe returns "<Kind> <name>" for each of objs.
-func (r *Reconciler) describe(objs []client.Object) ([]string, error) {
-	names := make([]string, 0, len(objs))
-	for _, obj := range objs {
-		kind, err := r.kindOf(obj)
-		if err != nil {
-			return nil, err
-		}
-		names = append(names, kind+" "+obj.GetName())
-	}
-
-	return names, nil
-}
-
-func (r *Reconciler) kindOf(obj client.Object) (string, error) {
-	gvk, err := apiutil.GVKForObject(obj, r.Scheme)
-	if err != nil {
-		return "", fmt.Errorf("finding the kind of %T: %w", obj, err)
-	}
-
-	return gvk.Kind, nil
 }

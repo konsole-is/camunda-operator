@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package camundaclusterclaim
+package claimrequests
 
 import (
 	"slices"
@@ -24,18 +24,19 @@ import (
 )
 
 // ClaimPolicy returns a copy of policy in which a section that sections
-// marks as not applying to a CamundaClusterClaim is not required. An
-// Environment serves both claim kinds, so its required sections of the
-// management plane must not refuse a cluster claim. A section that is not
-// in sections keeps its policy. policy is not changed.
+// marks as not applying to kind is not required. An Environment serves both
+// claim kinds, so its required sections of one kind must not refuse a claim
+// of the other. A section that is not in sections keeps its policy. policy
+// is not changed.
 func ClaimPolicy(
+	kind pluginsv1alpha1.ClaimKind,
 	policy fleetv1alpha1.ResolvedPolicy,
 	sections []pluginsv1alpha1.PluginSection,
 ) fleetv1alpha1.ResolvedPolicy {
 	claimPolicy := *policy.DeepCopy()
 	for _, section := range sections {
 		sectionPolicy, ok := claimPolicy.Sections[section.Name]
-		if !ok || slices.Contains(section.Spec.AppliesTo, pluginsv1alpha1.ClaimKindCamundaClusterClaim) {
+		if !ok || slices.Contains(section.Spec.AppliesTo, kind) {
 			continue
 		}
 

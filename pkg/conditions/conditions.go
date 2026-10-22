@@ -117,4 +117,12 @@ func BoundMessage(message string) string {
 	return cut + marker
 }
 
+// BoundMessages bounds the message of each condition in conds, in place,
+// with BoundMessage.
+func BoundMessages(conds []metav1.Condition) {
+	for i := range conds {
+		conds[i].Message = BoundMessage(conds[i].Message)
+	}
+}
+
 func (f *PreCheckFailure) Error() string { return f.Message }

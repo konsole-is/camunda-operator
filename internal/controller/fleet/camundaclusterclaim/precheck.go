@@ -18,7 +18,6 @@ package camundaclusterclaim
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -89,7 +88,7 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		return res, err
 	}
 
-	if err := checkParameterObjects(claim.Spec.Plugins); err != nil {
+	if err := claimrequests.CheckParameterObjects(claim.Spec.Plugins); err != nil {
 		return res, err
 	}
 
@@ -113,10 +112,14 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 
 	if err := claimpolicy.CheckAllowed(claimpolicy.AllowedInput{
 		Environment: environment,
-		Policy:      components.ClaimPolicy(res.resolution.Policy, res.sections),
-		PresetRef:   claim.Spec.PresetRef,
-		ReleaseRef:  claim.Spec.ReleaseRef,
-		Selections:  claim.Spec.Plugins,
+		Policy: claimrequests.ClaimPolicy(
+			pluginsv1alpha1.ClaimKindCamundaClusterClaim,
+			res.resolution.Policy,
+			res.sections,
+		),
+		PresetRef:  claim.Spec.PresetRef,
+		ReleaseRef: claim.Spec.ReleaseRef,
+		Selections: claim.Spec.Plugins,
 	}); err != nil {
 		return res, err
 	}
@@ -150,7 +153,12 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 	); err != nil {
 		return res, fmt.Errorf("listing the PluginRequests of the claim: %w", err)
 	}
-	res.requests = ownRequests(requests.Items, claim.Name, claim.Spec.Plugins, res.sections)
+	res.requests = claimrequests.Own(
+		requests.Items,
+		pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: claim.Name},
+		claim.Spec.Plugins,
+		res.sections,
+	)
 
 	var live v1.CamundaCluster
 	err = r.Get(ctx, client.ObjectKeyFromObject(claim), &live)
@@ -217,55 +225,9 @@ func (r *Reconciler) checkReferences(
 	}
 }
 
-// checkParameterObjects refuses with NotAllowed a selection whose
-// parameters are not a JSON object. The claim schema accepts any JSON value
-// there.
-func checkParameterObjects(selections []fleetv1alpha1.PluginSelection) error {
-	for _, s := range selections {
-		if s.Parameters == nil {
-			continue
-		}
-
-		var object map[string]json.RawMessage
-		if json.Unmarshal(s.Parameters.Raw, &object) != nil {
-			return &conditions.PreCheckFailure{
-				Reason:  fleetv1alpha1.ReasonNotAllowed,
-				Message: fmt.Sprintf("the parameters of the selection of section %q are not a JSON object", s.Section),
-			}
-		}
-	}
-
-	return nil
-}
-
 func named[T any, P interface {
 	*T
 	GetName() string
 }](name string) func(T) bool {
 	return func(item T) bool { return P(&item).GetName() == name }
-}
-
-// ownRequests returns the requests whose claimRef names the cluster claim
-// name and whose name is the request name of an item of selections in
-// sections. A request of another claim kind, or of another name, with the
-// same label stays out, so the claim never reads its outputs.
-func ownRequests(
-	requests []pluginsv1alpha1.PluginRequest,
-	name string,
-	selections []fleetv1alpha1.PluginSelection,
-	sections []pluginsv1alpha1.PluginSection,
-) []pluginsv1alpha1.PluginRequest {
-	own := pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: name}
-	names := make([]string, 0, len(selections))
-	for _, s := range selections {
-		var mode pluginsv1alpha1.Selection
-		if i := slices.IndexFunc(sections, named[pluginsv1alpha1.PluginSection](s.Section)); i >= 0 {
-			mode = sections[i].Spec.Selection
-		}
-		names = append(names, claimrequests.Name(name, s, mode))
-	}
-
-	return slices.DeleteFunc(slices.Clone(requests), func(r pluginsv1alpha1.PluginRequest) bool {
-		return r.Spec.ClaimRef != own || !slices.Contains(names, r.Name)
-	})
 }
