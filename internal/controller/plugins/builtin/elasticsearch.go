@@ -17,10 +17,8 @@ limitations under the License.
 package builtin
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
 	"strconv"
 
@@ -386,41 +384,4 @@ func decodeElasticsearchParameters(parameters *apiextensionsv1.JSON) (elasticsea
 	}
 
 	return p, nil
-}
-
-// decodeFields decodes each value of values into the target of its key in
-// targets, matched by exact name. A key without a target, or a value that
-// does not decode, returns a *conditions.PreCheckFailure that names prefix
-// and the key.
-func decodeFields(values map[string]json.RawMessage, prefix string, targets map[string]any) error {
-	for _, key := range slices.Sorted(maps.Keys(values)) {
-		target, ok := targets[key]
-		if !ok {
-			return invalidParameter(prefix+key, fmt.Errorf("unknown field %q", key))
-		}
-		if err := decodeStrict(&apiextensionsv1.JSON{Raw: values[key]}, target); err != nil {
-			return invalidParameter(prefix+key, err)
-		}
-	}
-
-	return nil
-}
-
-// decodeStrict decodes raw into target and refuses an unknown field. Nil or
-// empty raw decodes nothing.
-func decodeStrict(raw *apiextensionsv1.JSON, target any) error {
-	if raw == nil || len(raw.Raw) == 0 {
-		return nil
-	}
-
-	d := json.NewDecoder(bytes.NewReader(raw.Raw))
-	d.DisallowUnknownFields()
-	return d.Decode(target)
-}
-
-func invalidParameter(field string, err error) *conditions.PreCheckFailure {
-	return &conditions.PreCheckFailure{
-		Reason:  pluginsv1alpha1.ReasonInvalidParameters,
-		Message: field + " does not decode: " + err.Error(),
-	}
 }
