@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
@@ -38,8 +37,7 @@ import (
 // every request is <claim kind>/requests/<claim UID>.
 const ComponentName = "requests"
 
-// releaseRefParameter is the parameter that gets the release of the claim
-// (CL55).
+// releaseRefParameter is the parameter that gets the release of the claim.
 const releaseRefParameter = "releaseRef"
 
 // Component builds the requests component of claim: at most one
@@ -82,7 +80,8 @@ func Component(claim client.Object, in Input) (*component.Component, error) {
 			return nil, fmt.Errorf("selection %s/%s: %w", s.Section, s.Registration, err)
 		}
 
-		resource, err := pluginrequest.NewBuilder(request).WithGuard(waitFor(inputs.Waiting)).Build()
+		guard := waitFor(claimpolicy.WaitingReason(inputs.Waiting))
+		resource, err := pluginrequest.NewBuilder(request).WithGuard(guard).Build()
 		if err != nil {
 			return nil, fmt.Errorf("building the PluginRequest %s: %w", request.Name, err)
 		}
@@ -218,16 +217,13 @@ func declaresRelease(registration *pluginsv1alpha1.PluginRegistration) bool {
 	return ok && property.Type == "string"
 }
 
-// waitFor returns the guard of a request whose inputs wait for the outputs
-// of the sections in waiting. The guard closes over the value of the build,
+// waitFor returns the guard of a request. It blocks with the reason waiting
+// when waiting is not empty. The guard closes over the value of the build,
 // because the inputs of the request are fixed there.
-func waitFor(waiting []string) func(pluginsv1alpha1.PluginRequest) (concepts.GuardStatusWithReason, error) {
+func waitFor(waiting string) func(pluginsv1alpha1.PluginRequest) (concepts.GuardStatusWithReason, error) {
 	status := concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}
-	if len(waiting) > 0 {
-		status = concepts.GuardStatusWithReason{
-			Status: concepts.GuardStatusBlocked,
-			Reason: "waiting for the outputs of " + strings.Join(waiting, ", "),
-		}
+	if waiting != "" {
+		status = concepts.GuardStatusWithReason{Status: concepts.GuardStatusBlocked, Reason: waiting}
 	}
 
 	return func(pluginsv1alpha1.PluginRequest) (concepts.GuardStatusWithReason, error) {

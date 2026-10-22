@@ -107,7 +107,7 @@ func TestClusterWaitsForTheSlotOutputsOfTheRenderBeforeTheFirstApply(t *testing.
 
 			_, waiting, err := cluster(in)
 			require.NoError(t, err)
-			status, err := createWithOutputs(in.Live, waiting)(v1.CamundaCluster{})
+			status, err := waitFor(waiting)(v1.CamundaCluster{})
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantStatus, status.Status)
@@ -180,7 +180,7 @@ func TestClusterCarriesTheClaimFields(t *testing.T) {
 }
 
 // The apply of the cluster sends only the fields that the claim and the
-// outputs set (E spec "Empty values").
+// outputs set.
 func TestClusterApplySendsOnlyTheClaimAndOutputFields(t *testing.T) {
 	var sent []byte
 	recorder := fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{

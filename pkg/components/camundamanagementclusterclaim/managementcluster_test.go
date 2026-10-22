@@ -280,7 +280,7 @@ func TestManagementClusterComponentHoldsTheApplyWhileADatabaseIsMissing(t *testi
 }
 
 // The apply of the plane sends only the fields that the claim and the
-// outputs set (E spec "Empty values").
+// outputs set.
 func TestManagementClusterApplySendsOnlyTheClaimAndOutputFields(t *testing.T) {
 	var sent []byte
 	recorder := fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{

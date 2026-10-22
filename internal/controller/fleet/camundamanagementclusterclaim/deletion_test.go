@@ -69,7 +69,7 @@ var _ = Describe("Deleting a plane claim", func() {
 		expectGone(
 			&v1.CamundaManagementCluster{ObjectMeta: metav1.ObjectMeta{Name: claim.Name, Namespace: claim.Namespace}},
 		)
-		expectFalse(claim, v1.ConditionReady, fleetv1alpha1.ReasonDeleting, And(
+		expectNotReady(claim, fleetv1alpha1.ReasonDeleting, And(
 			ContainSubstring("PluginRequest "+held.Name),
 			Not(ContainSubstring("CamundaManagementCluster")),
 		))

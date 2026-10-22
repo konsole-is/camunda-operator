@@ -35,9 +35,6 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// planeClaim is the claim kind of this controller.
-const planeClaim = pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim
-
 // resolved is what the precheck read and decided: the input of the snapshot
 // and of the components.
 type resolved struct {
@@ -120,7 +117,7 @@ func (r *Reconciler) preCheck(
 
 	if err := claimpolicy.CheckAllowed(claimpolicy.AllowedInput{
 		Environment: environment,
-		Kind:        planeClaim,
+		Kind:        pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim,
 		Sections:    res.sections,
 		Policy:      res.resolution.Policy,
 		Selections:  claim.Spec.Plugins,
@@ -173,7 +170,7 @@ func (r *Reconciler) preCheck(
 	}
 	res.requests = claimrequests.Own(
 		requests.Items,
-		pluginsv1alpha1.ClaimRef{Kind: planeClaim, Name: claim.Name},
+		pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim, Name: claim.Name},
 		claim.Spec.Plugins,
 		res.sections,
 	)

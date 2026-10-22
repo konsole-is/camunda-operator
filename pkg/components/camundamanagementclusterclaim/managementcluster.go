@@ -268,8 +268,8 @@ func emptyFields(spec *v1.CamundaManagementClusterSpec, sections map[string]stri
 	slices.Sort(waiting)
 
 	var reasons []string
-	if waiting = slices.Compact(waiting); len(waiting) > 0 {
-		reasons = append(reasons, "waiting for the outputs of "+strings.Join(waiting, ", "))
+	if reason := claimpolicy.WaitingReason(slices.Compact(waiting)); reason != "" {
+		reasons = append(reasons, reason)
 	}
 	if len(unfilled) > 0 {
 		reasons = append(reasons, strings.Join(unfilled, ", ")+" has no value")
