@@ -227,7 +227,7 @@ status:
       camunda.io/elasticsearch-cluster: orders-es
 ```
 
-The first summary item counts the nodes by their data volumes. While the cluster is not `Ready`, its value is `not Ready (<reason>), <n> nodes` with the `Warning` severity.
+The first summary item counts the nodes by their data volumes. While the cluster is not `Ready`, its value is `not Ready (<reason>), <n> nodes` with the `Warning` severity. While the cluster has not yet reported on its current spec, the value is `updating, <n> nodes`, also with `Warning`.
 
 The storage size only grows. If `overrides.storageSize` is smaller than the size of the cluster, the cluster keeps its size, and the summary has a `Warning` item:
 

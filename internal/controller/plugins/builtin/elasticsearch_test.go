@@ -288,13 +288,37 @@ func TestElasticsearchSummary(t *testing.T) {
 		return v1.VolumeStatus{Name: "data", Capacity: resource.MustParse(size)}
 	}
 	tests := []struct {
-		name    string
-		ready   *metav1.Condition
-		volumes []v1.VolumeStatus
-		want    []pluginsv1alpha1.SummaryItem
+		name                         string
+		generation, statusGeneration int64
+		ready                        *metav1.Condition
+		volumes                      []v1.VolumeStatus
+		want                         []pluginsv1alpha1.SummaryItem
 	}{
 		{
+			"Ready of an older generation",
+			2, 2,
+			&metav1.Condition{
+				Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy, ObservedGeneration: 1,
+			},
+			nil,
+			[]pluginsv1alpha1.SummaryItem{{
+				Label: "Elasticsearch", Value: "updating, 0 nodes", Severity: pluginsv1alpha1.SeverityWarning,
+			}},
+		},
+		{
+			"status of an older generation",
+			2, 1,
+			&metav1.Condition{
+				Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy, ObservedGeneration: 2,
+			},
+			nil,
+			[]pluginsv1alpha1.SummaryItem{{
+				Label: "Elasticsearch", Value: "updating, 0 nodes", Severity: pluginsv1alpha1.SeverityWarning,
+			}},
+		},
+		{
 			"ready",
+			0, 0,
 			&metav1.Condition{Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy},
 			[]v1.VolumeStatus{volume("50Gi"), volume("50Gi"), volume("50Gi")},
 			[]pluginsv1alpha1.SummaryItem{
@@ -304,6 +328,7 @@ func TestElasticsearchSummary(t *testing.T) {
 		},
 		{
 			"not ready with a reason",
+			0, 0,
 			&metav1.Condition{Type: v1.ConditionReady, Status: metav1.ConditionFalse, Reason: "Creating"},
 			nil,
 			[]pluginsv1alpha1.SummaryItem{{
@@ -312,6 +337,7 @@ func TestElasticsearchSummary(t *testing.T) {
 		},
 		{
 			"no Ready condition",
+			0, 0,
 			nil,
 			nil,
 			[]pluginsv1alpha1.SummaryItem{{
@@ -320,6 +346,7 @@ func TestElasticsearchSummary(t *testing.T) {
 		},
 		{
 			"volumes of two sizes",
+			0, 0,
 			nil,
 			[]v1.VolumeStatus{volume("50Gi"), volume("60Gi")},
 			[]pluginsv1alpha1.SummaryItem{
@@ -331,7 +358,10 @@ func TestElasticsearchSummary(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cluster := v1.ElasticsearchCluster{Status: v1.ElasticsearchClusterStatus{Volumes: tt.volumes}}
+			cluster := v1.ElasticsearchCluster{
+				ObjectMeta: metav1.ObjectMeta{Generation: tt.generation},
+				Status:     v1.ElasticsearchClusterStatus{ObservedGeneration: tt.statusGeneration, Volumes: tt.volumes},
+			}
 			if tt.ready != nil {
 				cluster.Status.Conditions = []metav1.Condition{*tt.ready}
 			}

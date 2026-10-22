@@ -260,6 +260,9 @@ func elasticsearchSummary(cluster v1.ElasticsearchCluster, ok bool) []pluginsv1a
 	nodes := strconv.Itoa(len(cluster.Status.Volumes)) + " nodes"
 	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
 	switch {
+	case cluster.Status.ObservedGeneration != cluster.Generation ||
+		ready != nil && ready.ObservedGeneration != cluster.Generation:
+		headline.Value = "updating, " + nodes
 	case ready != nil && ready.Status == metav1.ConditionTrue:
 		headline.Value = "Ready, " + nodes
 		headline.Severity = pluginsv1alpha1.SeverityInfo
