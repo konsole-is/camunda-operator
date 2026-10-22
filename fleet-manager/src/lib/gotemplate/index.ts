@@ -83,7 +83,9 @@ export function parseTemplate(
  * render fills the placeholders of a template of kind from data. It fails
  * as parseTemplate does, and also for a parameter, an output, or .pods that
  * data does not hold. A parameter renders when it is a string, a number, or
- * a boolean; another value is an error that names it.
+ * a boolean; another value is an error that names it. A number can print
+ * other than in pluginkit, as for 1.0, 1e3, and integers above 2^53. In a
+ * metric query, each value is escaped for a PromQL double-quoted string.
  */
 export function render(
   template: string,
@@ -116,8 +118,9 @@ export function render(
   if (parsed.usesPods && data.pods === undefined) {
     return { error: "the placeholder .pods has no value", field: "pods" };
   }
+  const fill = kind === "metric" ? promQLEscape : (v: string) => v;
   const text = parsed.parts
-    .map((part) => (typeof part === "string" ? part : value(part, data)))
+    .map((part) => (typeof part === "string" ? part : fill(value(part, data))))
     .join("");
   return { text };
 }
@@ -133,6 +136,13 @@ function value([head, name]: readonly string[], data: TemplateData): string {
     default:
       return data[head as "namespace" | "claim" | "request" | "serviceAccount"];
   }
+}
+
+function promQLEscape(text: string): string {
+  return text
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replaceAll("\n", "\\n");
 }
 
 function parse(template: string, kind: TemplateKind): Parsed | TemplateError {

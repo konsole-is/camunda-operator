@@ -34,6 +34,24 @@ describe("render", () => {
       text: 'up{pod=~"orders-zeebe-0|orders-zeebe-1",r="eu-1",b="bucket-1"}',
     }));
 
+  it("keeps the selector of a metric query when a value holds a quote or a backslash", () =>
+    expect(
+      render(
+        'up{r="{{ .parameters.x }}",b="b"}',
+        { ...data, parameters: { x: 'a\\",b=~".*\nz' } },
+        "metric",
+      ),
+    ).toEqual({ text: 'up{r="a\\\\\\",b=~\\".*\\nz",b="b"}' }));
+
+  it("fills a value with a quote or a backslash into a grant template as it is", () =>
+    expect(
+      render(
+        '{"r":"{{ .parameters.x }}"}',
+        { ...data, parameters: { x: 'a\\"\nz' } },
+        "grant",
+      ),
+    ).toEqual({ text: '{"r":"a\\"\nz"}' }));
+
   it.each(["grant", "parameter"] as const)(
     "refuses .pods in a %s template",
     (kind) =>
