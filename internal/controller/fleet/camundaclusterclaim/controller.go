@@ -28,6 +28,7 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -185,7 +186,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	// PrerequisiteNotMet with the message of RequestsReady.
 	conditions.Stage(&claim, conditions.Aggregate(&claim, comps.Cluster, comps.Requests))
 	claim.Status.Requests = claimrequests.Statuses(&claim, components.RequestsInput(in))
-	if res.live != nil {
+	claim.Status.Cluster = nil
+	if res.live != nil && metav1.IsControlledBy(res.live, &claim) {
 		claim.Status.Cluster = &v1.ClusterRef{Name: claim.Name}
 	}
 

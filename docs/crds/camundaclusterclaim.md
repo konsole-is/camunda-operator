@@ -180,7 +180,7 @@ status:
           - existing-secondary-storage
 ```
 
-`status.requests` lists one item for each option, in the order of `spec.plugins`, with the status of the `OutputsReady` and `Ready` conditions of its request. `status.cluster.name` names the `CamundaCluster` once it exists.
+`status.requests` lists one item for each option, in the order of `spec.plugins`, with the status of the `OutputsReady` and `Ready` conditions of its request. `status.cluster.name` names the `CamundaCluster` once the claim controls it. A cluster of the same name that another owner controls is not named there.
 
 `kubectl get camundaclusterclaims` shows `Ready`, the reason, the cluster, and the age. `kubectl get camundaclusterclaims -o wide` adds the preset, the release, and the environment.
 

@@ -315,6 +315,9 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		cluster, err := clusterOf(claim)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cluster.Spec.PresetRef).To(Equal("other"))
+		Consistently(func(g Gomega) {
+			g.Expect(latest(g, claim).Status.Cluster).To(BeNil())
+		}, consistently, interval).Should(Succeed())
 
 		By("writing its own cluster once the foreign one is gone")
 		Expect(k8sClient.Delete(ctx, foreign)).To(Succeed())
@@ -323,6 +326,7 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(cluster.Spec.PresetRef).To(Equal(presetName))
 			g.Expect(metav1.GetControllerOf(cluster).Name).To(Equal(claim.Name))
+			g.Expect(latest(g, claim).Status.Cluster).To(Equal(&v1.ClusterRef{Name: claim.Name}))
 		}, timeout, interval).Should(Succeed())
 	})
 
