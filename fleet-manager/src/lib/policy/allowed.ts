@@ -8,10 +8,11 @@ import {
   NOT_AN_OBJECT,
   own,
 } from "./json";
-import type {
-  ParameterPolicies,
-  ParameterPolicy,
-  ResolvedPolicy,
+import {
+  hasValue,
+  type ParameterPolicies,
+  type ParameterPolicy,
+  type ResolvedPolicy,
 } from "./resolve";
 import type { PluginSelection, PolicyResult, Refusal } from "./types";
 
@@ -35,10 +36,11 @@ export type AllowedInput = {
  * required section without a selection in name order, and each parameter.
  * Without an Environment, every preset and release passes. The registrations
  * and the parameters are checked against the snapshot. A key that is not
- * claim-editable passes only with the value of the snapshot. A claim-editable
- * key with choices takes only a name of a choice or a list of names.
- * parameters of a selection that is not a JSON object is an error. The value
- * is an empty object when the claim passes.
+ * claim-editable passes only with the value of the snapshot, and a null
+ * value of the snapshot is no value. A claim-editable key with choices takes
+ * only a name of a choice or a list of names. parameters of a selection that
+ * is not a JSON object is an error. The value is an empty object when the
+ * claim passes.
  */
 export function checkAllowed(
   input: AllowedInput,
@@ -124,7 +126,7 @@ function checkParameters(
     const policy: ParameterPolicy = own(policies, key) ?? {};
     const value = claimed[key];
     if (!policy.claimEditable) {
-      if (!("value" in policy) || !equalJSON(value, policy.value)) {
+      if (!hasValue(policy) || !equalJSON(value, policy.value)) {
         return notAllowed(
           `parameter "${key}" of registration "${selection.registration}" is not claim-editable`,
         );
