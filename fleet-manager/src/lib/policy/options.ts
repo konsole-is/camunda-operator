@@ -196,7 +196,7 @@ function ready(registration: PluginRegistration): boolean {
   );
 }
 
-// The values of the choices stay with the claim controller (CL40), and the
+// The values of the choices stay with the claim controller, and the
 // cards pick choices by name.
 function namesOf(
   value: unknown,

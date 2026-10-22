@@ -18,7 +18,7 @@ rules:
   - apiGroups: [plugins.camunda.io]
     resources: [pluginregistrations/status]
     verbs: [get, update, patch]
-  # The right to serve the registration (contract CL20).
+  # The right to serve the registration.
   - apiGroups: [plugins.camunda.io]
     resources: [pluginregistrations]
     resourceNames: [fleet-harness]

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
-import type { ResolvedPolicy } from "./cluster";
+import type { ResolvedPolicy } from "@/lib/policy";
 import { lockLabel, stateLabel } from "./labels";
 import { parameterFields } from "./parameters";
 

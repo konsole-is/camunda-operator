@@ -16,16 +16,12 @@ import {
   type Merged,
   wholeFieldManagers,
 } from "@/lib/merge";
+import type { ResolvedPolicy } from "@/lib/policy";
 import { LOCK_FIELDS, type LockKind, type LockRow } from "./locks";
 import { parameterFields } from "./parameters";
 import { SLOT_FIELDS } from "./slots";
 import type { ClusterField, FieldGroup, FieldLock, FieldState } from "./types";
 import { pathFrom, walk, type Step, type WalkNode } from "./walk";
-
-/** ResolvedPolicy is the policy that the claim controller resolved for a claim. */
-export type ResolvedPolicy = NonNullable<
-  NonNullable<CamundaClusterClaim["status"]>["resolvedPolicy"]
->;
 
 /**
  * ClusterFieldsInput is what clusterFields reads. cluster is the live object

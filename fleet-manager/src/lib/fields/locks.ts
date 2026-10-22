@@ -12,7 +12,7 @@ export type LockRow = {
   names: readonly string[];
 };
 
-/** LOCK_FIELDS is the lock table of the cluster field states (G1 spec "Cluster field states"). */
+/** LOCK_FIELDS is the lock table of the cluster field states. */
 export const LOCK_FIELDS: readonly LockRow[] = [
   { kind: "CamundaCluster", reason: "release", names: ["spec", "version"] },
   {

@@ -47,8 +47,8 @@ export type OptionView = {
  * claimEditable says whether a claim can change it. An editable parameter
  * can have value, the value that the environment or the registration gives
  * it, and allowed, which lists the choices by name and label. allowed holds
- * no value: the values of the choices stay with the claim controller
- * (contract CL40). allowedLists says that each choice is a whole list, so
+ * no value: the values of the choices stay with the claim controller.
+ * allowedLists says that each choice is a whole list, so
  * the claim takes one name for an array parameter, not a list of names. A
  * locked parameter has no value: summary says what it
  * holds, for example "3 items". note is a line under a locked parameter,
