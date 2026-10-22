@@ -30,8 +30,8 @@ import (
 
 // placeholders is a set of the field references that a template may hold.
 // A name of fields stands alone, as .namespace. A name of maps takes one
-// key, as .parameters.<name>. A name of refused that fields and maps do not
-// hold is not allowed, and its value is the reason.
+// key, as .parameters.<name>. refused maps a name that is not allowed to the
+// reason.
 type placeholders struct {
 	fields  map[string]bool
 	maps    map[string]bool
