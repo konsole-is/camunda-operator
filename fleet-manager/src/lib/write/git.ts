@@ -298,12 +298,19 @@ export function gitWriter(options: GitWriterOptions): Writer {
   ): Promise<ApiError[]> => {
     const errors: ApiError[] = [];
     for (const ref of refsOf(change)) {
-      if (change.preconditions?.[refKey(ref)] === undefined) continue;
+      const expected = change.preconditions?.[refKey(ref)];
+      if (expected === undefined) continue;
       const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
       const committed = await revisionOf(dir, file);
-      if (committed === undefined) continue;
       try {
-        const annotations = (await read(ref))?.metadata.annotations as
+        // GitOps can apply an earlier save during the clone.
+        const object = await read(ref);
+        if (object?.metadata.resourceVersion !== expected) {
+          errors.push(staleError(ref));
+          continue;
+        }
+        if (committed === undefined) continue;
+        const annotations = object.metadata.annotations as
           Record<string, string> | undefined;
         if (annotations?.[REVISION_ANNOTATION] === committed) continue;
         errors.push({

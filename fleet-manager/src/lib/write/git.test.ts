@@ -333,6 +333,55 @@ describe("the Git writer", () => {
     expect(file.spec.presetRef).toBe("large");
   });
 
+  it("a save from an older read fails with Stale when GitOps applies the previous save during the clone", async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "7" },
+    });
+    const preconditions = { "CamundaClusterClaim/team-a/orders": "7" };
+    const first = ok(
+      await writerFor().apply({
+        intent: "First",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions,
+      }),
+    );
+    let applied = false;
+    const gitOpsAppliesOnClone: HttpClient = {
+      request: (r) => {
+        if (!applied) {
+          applied = true;
+          live.set("CamundaClusterClaim/team-a/orders", {
+            ...claim("team-a", "orders", "large"),
+            metadata: {
+              name: "orders",
+              namespace: "team-a",
+              resourceVersion: "8",
+              annotations: {
+                [REVISION_ANNOTATION]:
+                  first.revisions["CamundaClusterClaim/team-a/orders"],
+              },
+            },
+          });
+        }
+        return gitHttp.request(r);
+      },
+    };
+
+    const second = await writerFor({}, gitOpsAppliesOnClone).apply({
+      intent: "Second",
+      apply: [claim("team-a", "orders", "medium")],
+      preconditions,
+    });
+
+    expect(second).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(await repo.log()).toEqual(["First", "Initial commit"]);
+  });
+
   it("a save after GitOps applied the previous save commits", async () => {
     repo = await serveBareRepository();
     live.set("CamundaClusterClaim/team-a/orders", {
