@@ -125,7 +125,7 @@ You need:
       # ... the rest of your environment
     ```
 
-2. Apply the claim. It takes the platform config from the environment. Without an option of `access`, the claim sets the URL of Management Identity itself:
+2. Apply the claim. It takes the platform config from the environment. `clusterSelector: {}` selects every cluster in the served namespaces. Without an option of `access`, the claim sets the URL of Management Identity itself:
 
     ```yaml
     apiVersion: fleet.camunda.io/v1alpha1
@@ -136,6 +136,7 @@ You need:
     spec:
       environments:
         - production
+      clusterSelector: {}
       management:
         identityProvider:
           oidc: {}
