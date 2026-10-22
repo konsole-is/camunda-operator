@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
 // requestName is the name of the request of the tests.
@@ -333,4 +334,107 @@ func TestApplyObjectsDeletesAGrantWhoseInputIsNowEmpty(t *testing.T) {
 
 	err := c.client.Get(t.Context(), client.ObjectKeyFromObject(grant), &pluginsv1alpha1.Grant{})
 	assert.True(t, apierrors.IsNotFound(err), "got %v", err)
+}
+
+// grantNamed is a Grant name with a Ready condition of status, or without one
+// when status is empty.
+func grantNamed(name string, status metav1.ConditionStatus) *pluginsv1alpha1.Grant {
+	g := &pluginsv1alpha1.Grant{ObjectMeta: metav1.ObjectMeta{Name: name}}
+	if status != "" {
+		g.Status.Conditions = []metav1.Condition{{Type: v1.ConditionReady, Status: status, Reason: "Set"}}
+	}
+
+	return g
+}
+
+func TestReadyCondition(t *testing.T) {
+	tests := []struct {
+		name    string
+		grants  []*pluginsv1alpha1.Grant
+		defect  Defect
+		status  metav1.ConditionStatus
+		reason  string
+		message string
+	}{
+		{name: "no Grants", status: metav1.ConditionTrue, reason: v1.ReasonHealthy},
+		{
+			name:    "a Grant without Ready",
+			grants:  []*pluginsv1alpha1.Grant{grantNamed("g", "")},
+			status:  metav1.ConditionFalse,
+			reason:  reasonWaitingForGrants,
+			message: "Grant g",
+		},
+		{
+			name:    "a Grant with Ready=Unknown",
+			grants:  []*pluginsv1alpha1.Grant{grantNamed("g", metav1.ConditionUnknown)},
+			status:  metav1.ConditionFalse,
+			reason:  reasonWaitingForGrants,
+			message: "Grant g",
+		},
+		{
+			name:    "a rejected Grant and a waiting one",
+			grants:  []*pluginsv1alpha1.Grant{grantNamed("a", ""), grantNamed("b", metav1.ConditionFalse)},
+			status:  metav1.ConditionFalse,
+			reason:  pluginsv1alpha1.ReasonGrantRejected,
+			message: "Grant b",
+		},
+		{
+			name:   "every Grant Ready",
+			grants: []*pluginsv1alpha1.Grant{grantNamed("g", metav1.ConditionTrue)},
+			status: metav1.ConditionTrue,
+			reason: v1.ReasonHealthy,
+		},
+		{
+			name:   "a Grant without Ready and the defect ReadyIgnoresGrants",
+			grants: []*pluginsv1alpha1.Grant{grantNamed("g", "")},
+			defect: DefectReadyIgnoresGrants,
+			status: metav1.ConditionTrue,
+			reason: v1.ReasonHealthy,
+		},
+		{
+			name:   "a Grant without Ready and the defect NotReady",
+			grants: []*pluginsv1alpha1.Grant{grantNamed("g", "")},
+			defect: DefectNotReady,
+			status: metav1.ConditionFalse,
+			reason: reasonEchoDefect,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := readyCondition(tt.grants, tt.defect, 3)
+
+			assert.Equal(t, v1.ConditionReady, got.Type)
+			assert.Equal(t, tt.status, got.Status)
+			assert.Equal(t, tt.reason, got.Reason)
+			assert.Contains(t, got.Message, tt.message)
+			assert.Equal(t, int64(3), got.ObservedGeneration)
+		})
+	}
+}
+
+func TestServedGrantsCountAGrantThatIsNotWrittenYet(t *testing.T) {
+	written := grantNamed("written", metav1.ConditionTrue)
+	deleting := grantNamed("deleting", "")
+
+	got := servedGrants(
+		[]*pluginsv1alpha1.Grant{grantNamed("written", ""), grantNamed("new", "")},
+		[]*pluginsv1alpha1.Grant{written, deleting},
+	)
+
+	assert.ElementsMatch(t, []*pluginsv1alpha1.Grant{written, deleting, grantNamed("new", "")}, got)
+}
+
+func TestRequestOfGrantMapsAGrantOfTheRegistrationToItsRequest(t *testing.T) {
+	c := newFakeGrantController(t)
+	grant := existingGrant(t)
+	other := grant.DeepCopy()
+	other.Labels[pluginsv1alpha1.LabelRegistration] = "other"
+
+	assert.Equal(
+		t,
+		[]ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: grant.Namespace, Name: requestName}}},
+		c.requestOfGrant(t.Context(), grant),
+	)
+	assert.Empty(t, c.requestOfGrant(t.Context(), other))
 }

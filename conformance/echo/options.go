@@ -113,6 +113,9 @@ const (
 	// DefectIgnoreRequiredInputs writes the Grant of each grant template, also
 	// when a required input of the template has no value.
 	DefectIgnoreRequiredInputs Defect = "IgnoreRequiredInputs"
+	// DefectReadyIgnoresGrants writes Ready=True while a Grant of the request
+	// has no Ready condition.
+	DefectReadyIgnoresGrants Defect = "ReadyIgnoresGrants"
 )
 
 // defects are the defects that New accepts.
@@ -134,6 +137,7 @@ var defects = []Defect{
 	DefectKeepRouteOnOrphan,
 	DefectWrongFragment,
 	DefectIgnoreRequiredInputs,
+	DefectReadyIgnoresGrants,
 }
 
 func (o Options) validate() error {
