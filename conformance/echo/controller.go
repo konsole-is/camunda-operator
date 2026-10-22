@@ -71,8 +71,7 @@ const reasonWaitingForGrants = "WaitingForGrants"
 // the request namespace label, and with the
 // access section an Ingress <request>-echo to the Service <target>-echo, and
 // a Grant for each grant template whose required inputs have a value, then
-// the status of the request. The request is Ready=True only when each of its
-// Grants is Ready=True. With Delete it deletes these objects. With
+// the status of the request. With Delete it deletes these objects. With
 // Orphan it keeps the ConfigMap and the Grants without their owner
 // reference, keeps the StorageClass, and deletes the Ingress.
 type Controller struct {
