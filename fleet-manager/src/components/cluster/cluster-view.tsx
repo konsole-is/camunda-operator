@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   GitWaitingLine,
   type PushedObject,
@@ -22,6 +22,8 @@ import { mergeCluster } from "@/lib/merge";
 import { runningBackup, runningRestore } from "@/lib/policy/backups";
 import { ActionSlot } from "./action-slot";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
+import { backupRowsOf, backupStorageOf, restoreRowsOf } from "./backups";
+import { BackupsTab } from "./backups-tab";
 import { ClusterHeader } from "./cluster-header";
 import { launchLinks } from "./launch";
 import type { ActionSlots } from "./slots";
@@ -33,7 +35,9 @@ import { TopologyView } from "./topology-view";
  * ClusterPageData is the first snapshot of the cluster page. The namespaced
  * lists hold the objects of the namespace of the cluster. accessRequests are
  * the PluginRequests of the access section. podSelector selects the pods of
- * the cluster by its owner label, and pods holds them.
+ * the cluster by its owner label, and pods holds them. backupStorage holds
+ * the objects that the Backups tab follows from the cluster to its backup
+ * storage and its schedules. Its databaseServerPresets are cluster-scoped.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -54,6 +58,14 @@ export type ClusterPageData = {
     elasticsearch: Resource<"LogicalRestoreElasticsearch">[];
     rdbms: Resource<"LogicalRestoreRDBMS">[];
     pointInTime: Resource<"PointInTimeRestore">[];
+  };
+  backupStorage: {
+    objectStorage: Resource<"ObjectStorageConfig">[];
+    databaseConfigs: Resource<"DatabaseConfig">[];
+    databaseServerConfigs: Resource<"DatabaseServerConfig">[];
+    databaseServers: Resource<"DatabaseServer">[];
+    databaseServerPresets: Resource<"DatabaseServerPreset">[];
+    schedules: Resource<"BackupSchedule">[];
   };
 };
 
@@ -144,6 +156,38 @@ export function ClusterView({
     { namespace: ns },
     initial.restores.pointInTime,
   );
+  const objectStorage = useResources(
+    "ObjectStorageConfig",
+    { namespace: ns },
+    initial.backupStorage.objectStorage,
+  );
+  const databaseConfigs = useResources(
+    "DatabaseConfig",
+    { namespace: ns },
+    initial.backupStorage.databaseConfigs,
+  );
+  const databaseServerConfigs = useResources(
+    "DatabaseServerConfig",
+    { namespace: ns },
+    initial.backupStorage.databaseServerConfigs,
+  );
+  const databaseServers = useResources(
+    "DatabaseServer",
+    { namespace: ns },
+    initial.backupStorage.databaseServers,
+  );
+  const databaseServerPresets = useResources(
+    "DatabaseServerPreset",
+    {},
+    initial.backupStorage.databaseServerPresets,
+  );
+  const schedules = useResources(
+    "BackupSchedule",
+    { namespace: ns },
+    initial.backupStorage.schedules,
+  );
+  const backups = [...backupsES.items, ...backupsRDBMS.items];
+  const clock = useClock(now, tab === "backups");
 
   const live = cluster.item;
   if (!live) {
@@ -166,6 +210,12 @@ export function ClusterView({
       ["LogicalRestoreElasticsearch", restoresES],
       ["LogicalRestoreRDBMS", restoresRDBMS],
       ["PointInTimeRestore", restoresPITR],
+      ["ObjectStorageConfig", objectStorage],
+      ["DatabaseConfig", databaseConfigs],
+      ["DatabaseServerConfig", databaseServerConfigs],
+      ["DatabaseServer", databaseServers],
+      ["DatabaseServerPreset", databaseServerPresets],
+      ["BackupSchedule", schedules],
     ] as const
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
@@ -200,6 +250,12 @@ export function ClusterView({
   const ready = live.status?.conditions?.find((c) => c.type === "Ready") as
     ConditionLike | undefined;
 
+  const restores = [
+    ...restoresES.items,
+    ...restoresRDBMS.items,
+    ...restoresPITR.items,
+  ];
+
   const selectTab = (value: string) => {
     const next = clusterTabOf(value);
     setTab(next);
@@ -227,15 +283,8 @@ export function ClusterView({
         />
       )}
       <ActivityBanner
-        backup={runningBackup(live, [
-          ...backupsES.items,
-          ...backupsRDBMS.items,
-        ])}
-        restore={runningRestore(live, [
-          ...restoresES.items,
-          ...restoresRDBMS.items,
-          ...restoresPITR.items,
-        ])}
+        backup={runningBackup(live, backups)}
+        restore={runningRestore(live, restores)}
         backupsHref="?tab=backups"
         onOpenBackups={() => selectTab("backups")}
       />
@@ -265,11 +314,39 @@ export function ClusterView({
           />
         </TabsContent>
         <TabsContent value="backups">
-          {slot("cluster.backups.actions")}
+          <BackupsTab
+            storage={backupStorageOf({
+              cluster: live,
+              spec: merged.spec,
+              storage: storage.items,
+              objectStorage: objectStorage.items,
+              databaseConfigs: databaseConfigs.items,
+              databaseServerConfigs: databaseServerConfigs.items,
+              databaseServers: databaseServers.items,
+              databaseServerPresets: databaseServerPresets.items,
+              schedules: schedules.items,
+              now: clock,
+            })}
+            backups={backupRowsOf(live, backups, clock)}
+            restores={restoreRowsOf(live, restores)}
+            actions={slot("cluster.backups.actions")}
+          />
         </TabsContent>
         <TabsContent value="endpoints" />
         <TabsContent value="claim">{slot("cluster.claim.editor")}</TabsContent>
       </Tabs>
     </div>
   );
+}
+
+// useClock starts at the time of the server, so that the first render in
+// the browser matches the render of the server.
+function useClock(initial: string, ticking: boolean): string {
+  const [clock, setClock] = useState(initial);
+  useEffect(() => {
+    if (!ticking) return;
+    const timer = setInterval(() => setClock(new Date().toISOString()), 1000);
+    return () => clearInterval(timer);
+  }, [ticking]);
+  return clock;
 }
