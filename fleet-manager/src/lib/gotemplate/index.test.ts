@@ -43,6 +43,25 @@ describe("render", () => {
       ),
     ).toEqual({ text: 'up{r="a\\\\\\",b=~\\".*\\nz",b="b"}' }));
 
+  it("keeps the selector of a single-quoted string when a value holds a quote", () =>
+    expect(
+      render(
+        "up{r='{{ .parameters.x }}'}",
+        { ...data, parameters: { x: "own'} or up{r=~'.*" } },
+        "metric",
+      ),
+    ).toEqual({ text: "up{r='own\\'} or up{r=~\\'.*'}" }));
+
+  it.each([
+    ["no string", "up{r={{ .parameters.x }}}"],
+    ["a backtick string", "up{r=`{{ .parameters.x }}`}"],
+    ["the end of a string", 'up{r="a"{{ .parameters.x }}}'],
+  ])("refuses a placeholder of a metric query in %s", (_, template) =>
+    expect(render(template, data, "metric")).toMatchObject({
+      field: "parameters.x",
+    }),
+  );
+
   it("fills a value with a quote or a backslash into a grant template as it is", () =>
     expect(
       render(

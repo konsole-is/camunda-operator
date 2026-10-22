@@ -85,7 +85,8 @@ export function parseTemplate(
  * data does not hold. A parameter renders when it is a string, a number, or
  * a boolean; another value is an error that names it. A number can print
  * other than in pluginkit, as for 1.0, 1e3, and integers above 2^53. In a
- * metric query, each value is escaped for a PromQL double-quoted string.
+ * metric query, a placeholder outside a "..." or '...' string is an error,
+ * and each value is escaped for its string.
  */
 export function render(
   template: string,
@@ -118,10 +119,50 @@ export function render(
   if (parsed.usesPods && data.pods === undefined) {
     return { error: "the placeholder .pods has no value", field: "pods" };
   }
-  const fill = kind === "metric" ? promQLEscape : (v: string) => v;
+  if (kind === "metric") return renderPromQL(parsed.parts, data);
   const text = parsed.parts
-    .map((part) => (typeof part === "string" ? part : fill(value(part, data))))
+    .map((part) => (typeof part === "string" ? part : value(part, data)))
     .join("");
+  return { text };
+}
+
+// A value can change the structure of a PromQL query unless it sits in a
+// quoted string with the quote, the backslash, and the newline escaped. A
+// backtick string has no escapes.
+function renderPromQL(
+  parts: Part[],
+  data: TemplateData,
+): { text: string } | TemplateError {
+  let quote = "";
+  let escaped = false;
+  let text = "";
+  for (const part of parts) {
+    if (typeof part !== "string") {
+      if ((quote !== '"' && quote !== "'") || escaped) {
+        return {
+          error: `a placeholder in a metric query must be inside a "..." or '...' string`,
+          field: part.filter(Boolean).join("."),
+        };
+      }
+      text += value(part, data)
+        .replaceAll("\\", "\\\\")
+        .replaceAll(quote, `\\${quote}`)
+        .replaceAll("\n", "\\n");
+      continue;
+    }
+    for (const ch of part) {
+      if (!quote) {
+        if (ch === '"' || ch === "'" || ch === "`") quote = ch;
+      } else if (escaped) {
+        escaped = false;
+      } else if (ch === "\\" && quote !== "`") {
+        escaped = true;
+      } else if (ch === quote) {
+        quote = "";
+      }
+    }
+    text += part;
+  }
   return { text };
 }
 
@@ -136,13 +177,6 @@ function value([head, name]: readonly string[], data: TemplateData): string {
     default:
       return data[head as "namespace" | "claim" | "request" | "serviceAccount"];
   }
-}
-
-function promQLEscape(text: string): string {
-  return text
-    .replaceAll("\\", "\\\\")
-    .replaceAll('"', '\\"')
-    .replaceAll("\n", "\\n");
 }
 
 function parse(template: string, kind: TemplateKind): Parsed | TemplateError {
