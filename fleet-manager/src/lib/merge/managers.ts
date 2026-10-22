@@ -20,6 +20,7 @@ export function isClaimManager(manager: string): boolean {
 /** ManagedFieldsEntry holds the fields of a managedFields entry that fieldManagers reads. */
 export type ManagedFieldsEntry = {
   manager?: string;
+  operation?: string;
   time?: Date | string;
   fieldsV1?: object;
 };

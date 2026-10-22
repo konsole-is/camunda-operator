@@ -5,6 +5,7 @@ import {
   PatchStrategy,
 } from "@kubernetes/client-node";
 import { afterEach, beforeEach, describe, expect, inject, it } from "vitest";
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import { gitWriter } from "@/lib/write/git";
 import type { KubeObject, Writer } from "@/lib/write/types";
 import { directWriter, readObject, refKey } from "@/lib/write/writer";
@@ -121,6 +122,74 @@ describe("the Git writer against envtest", () => {
       "Change the display name",
       "Initial commit",
     ]);
+  });
+
+  it("a save that leaves out a field that only GitOps applied is checked without it", async () => {
+    // GitOps applied a file with releases.allowed. The save leaves it out,
+    // so the GitOps apply of the commit removes it and the CEL rule fails.
+    await api.patch(
+      {
+        ...environment(name, {
+          displayName: "One",
+          releases: { allowed: ["r1"], default: "r1" },
+        }),
+        metadata: { name, annotations: { [REVISION_ANNOTATION]: "one" } },
+      },
+      undefined,
+      undefined,
+      "gitops",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+
+    const result = await writer.apply({
+      intent: "Drop the allowed releases",
+      apply: [
+        environment(name, { displayName: "One", releases: { default: "r1" } }),
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.errors[0]).toEqual(
+      expect.objectContaining({
+        code: "Invalid",
+        message: expect.stringContaining(
+          "releases.default must be one of releases.allowed",
+        ),
+      }),
+    );
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it("a save keeps a field that another manager applied, as the GitOps apply does", async () => {
+    await api.patch(
+      {
+        ...environment(name, { displayName: "One" }),
+        metadata: { name, annotations: { [REVISION_ANNOTATION]: "one" } },
+      },
+      undefined,
+      undefined,
+      "gitops",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+    await api.patch(
+      environment(name, { releases: { allowed: ["r1"] } }),
+      undefined,
+      undefined,
+      "someone-else",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+
+    const result = await writer.apply({
+      intent: "Set the default release",
+      apply: [
+        environment(name, { displayName: "One", releases: { default: "r1" } }),
+      ],
+    });
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, mode: "git" }));
   });
 
   it("a directOnly change writes nothing to Git and creates the object in envtest", async () => {

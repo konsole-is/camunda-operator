@@ -33,7 +33,8 @@ export type RefKey = `${string}/${string}/${string}`;
  * an object. A write of that object fails with Stale when the object
  * changed since. force sends each apply of the change with the force
  * option of server-side apply. A change with directOnly goes to the API
- * in Git mode too.
+ * in Git mode too. preview applies an object of previewManagers as the
+ * field manager that it maps to, and apply ignores previewManagers.
  */
 export type Change = {
   intent: string;
@@ -42,6 +43,7 @@ export type Change = {
   preconditions?: Record<RefKey, string>;
   force?: boolean;
   directOnly?: boolean;
+  previewManagers?: Record<RefKey, string>;
 };
 
 /**

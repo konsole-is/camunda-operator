@@ -3,6 +3,12 @@ import { createHash } from "node:crypto";
 import { stringify } from "yaml";
 import type { KindInfo } from "@/lib/k8s/kinds";
 import { REVISION_ANNOTATION } from "@/lib/labels";
+import {
+  APP_FIELD_MANAGER,
+  type ManagedFieldsEntry,
+  child,
+  fieldManagers,
+} from "@/lib/merge";
 import type { KubeObject, ObjectRef } from "./types";
 import { applyBody } from "./writer";
 
@@ -67,4 +73,23 @@ export function renderObject(object: KubeObject): {
     { sortMapEntries: true },
   );
   return { text, revision };
+}
+
+/**
+ * gitOpsManager returns the field manager of the GitOps tool on live: the
+ * manager that applied REVISION_ANNOTATION with server-side apply. It
+ * is never APP_FIELD_MANAGER. It returns undefined when live is undefined,
+ * or when no such manager exists, for example when the GitOps tool applies
+ * with client-side apply.
+ */
+export function gitOpsManager(
+  live: KubeObject | undefined,
+): string | undefined {
+  const entries = (live?.metadata.managedFields ?? []) as ManagedFieldsEntry[];
+  const applied = entries.filter(
+    (e) => e.operation === "Apply" && e.manager !== APP_FIELD_MANAGER,
+  );
+  return fieldManagers({ metadata: { managedFields: applied } })[
+    child(child("metadata", "annotations"), REVISION_ANNOTATION)
+  ];
 }

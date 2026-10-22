@@ -745,6 +745,72 @@ describe("the Git writer", () => {
     );
   });
 
+  it("dry-runs an object that GitOps applied as the manager of GitOps, with the live revision", async () => {
+    repo = await serveBareRepository();
+    const envRef = refKey({ kind: "Environment", name: "prod" });
+    live.set(envRef, {
+      ...environment("prod"),
+      metadata: {
+        name: "prod",
+        annotations: { [REVISION_ANNOTATION]: "applied" },
+        managedFields: [
+          {
+            manager: "kustomize-controller",
+            operation: "Apply",
+            fieldsV1: {
+              "f:metadata": {
+                "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [environment("prod")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apply: [
+          expect.objectContaining({
+            metadata: {
+              name: "prod",
+              annotations: { [REVISION_ANNOTATION]: "applied" },
+            },
+          }),
+        ],
+        previewManagers: { [envRef]: "kustomize-controller" },
+      }),
+    );
+  });
+
+  it("dry-runs an object that GitOps did not apply with server-side apply as the app", async () => {
+    repo = await serveBareRepository();
+    live.set(
+      refKey({ kind: "Environment", name: "prod" }),
+      environment("prod"),
+    );
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [environment("prod")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apply: [environment("prod")],
+        previewManagers: {},
+      }),
+    );
+  });
+
   it("a delete of an ExternalSecret skips the dry run and removes the file", async () => {
     repo = await serveBareRepository();
     const ref: ObjectRef = {

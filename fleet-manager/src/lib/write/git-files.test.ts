@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { KindMap } from "@/lib/k8s/kinds";
-import { gitBase, gitPath, renderObject } from "./git-files";
+import { REVISION_ANNOTATION } from "@/lib/labels";
+import { APP_FIELD_MANAGER } from "@/lib/merge";
+import { gitBase, gitOpsManager, gitPath, renderObject } from "./git-files";
+import type { KubeObject } from "./types";
 
 describe("gitPath", () => {
   it("puts a namespaced object under its namespace and kind plural", () => {
@@ -102,5 +105,85 @@ describe("renderObject", () => {
     expect(
       renderObject({ ...claim, spec: { presetRef: "large" } }).revision,
     ).not.toBe(renderObject(claim).revision);
+  });
+});
+
+describe("gitOpsManager", () => {
+  const revised = (
+    ...managedFields: { manager: string; operation: string; time?: string }[]
+  ): KubeObject => ({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "Environment",
+    metadata: {
+      name: "prod",
+      annotations: { [REVISION_ANNOTATION]: "abc" },
+      managedFields: managedFields.map((entry) => ({
+        ...entry,
+        fieldsV1: {
+          "f:metadata": {
+            "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} },
+          },
+          "f:spec": { "f:displayName": {} },
+        },
+      })),
+    },
+  });
+
+  it("returns the manager that applied the revision annotation with server-side apply", () => {
+    expect(
+      gitOpsManager(
+        revised({ manager: "kustomize-controller", operation: "Apply" }),
+      ),
+    ).toBe("kustomize-controller");
+  });
+
+  it("returns undefined when only an Update entry owns the annotation", () => {
+    expect(
+      gitOpsManager(
+        revised({ manager: "argocd-controller", operation: "Update" }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when no entry owns the annotation", () => {
+    expect(
+      gitOpsManager({
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        metadata: {
+          name: "prod",
+          managedFields: [
+            {
+              manager: "fleet-manager",
+              operation: "Apply",
+              fieldsV1: { "f:spec": { "f:displayName": {} } },
+            },
+          ],
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined for an object that does not exist", () => {
+    expect(gitOpsManager(undefined)).toBeUndefined();
+  });
+
+  it("skips the app, which applies the annotation when a page saves a live object directly", () => {
+    expect(
+      gitOpsManager(
+        revised(
+          {
+            manager: "gitops",
+            operation: "Apply",
+            time: "2026-10-20T10:00:00Z",
+          },
+          {
+            manager: APP_FIELD_MANAGER,
+            operation: "Apply",
+            time: "2026-10-21T10:00:00Z",
+          },
+        ),
+      ),
+    ).toBe("gitops");
   });
 });
