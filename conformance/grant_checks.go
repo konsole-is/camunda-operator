@@ -708,7 +708,36 @@ func checkGrantReady(ctx context.Context, s *suite) error {
 		return SkipCheck("the plugin wrote no Grant")
 	}
 
-	for _, g := range all {
+	if err := servedSkip(all); err != nil {
+		return err
+	}
+
+	var errs []error
+	var skip error
+	for _, r := range life.runs {
+		if len(grants[r.name]) == 0 {
+			continue
+		}
+
+		err := s.grantReadyRun(ctx, r.name)
+		if _, skipped := skipReasonOf(err); skipped {
+			skip = err
+		} else if err != nil {
+			errs = append(errs, fmt.Errorf("request %s: %w", r.name, err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
+	return skip
+}
+
+// servedSkip returns a skip when one of grants has a Ready condition, because
+// then an identity extension serves the Grants.
+func servedSkip(grants []pluginsv1alpha1.Grant) error {
+	for _, g := range grants {
 		if meta.FindStatusCondition(g.Status.Conditions, v1.ConditionReady) != nil {
 			return SkipCheck(fmt.Sprintf(
 				"Grant %s/%s has a Ready condition, so an identity extension serves the Grants, and the suite "+
@@ -719,13 +748,7 @@ func checkGrantReady(ctx context.Context, s *suite) error {
 		}
 	}
 
-	return eachRun(life.runs, func(r requestRun) error {
-		if len(grants[r.name]) == 0 {
-			return nil
-		}
-
-		return s.grantReadyRun(ctx, r.name, grants[r.name])
-	})
+	return nil
 }
 
 // grantsAtReady returns the Grants of the request of r once the request has
@@ -760,20 +783,30 @@ func (s *suite) grantsAtReady(
 	return s.ownedGrants(ctx, req)
 }
 
-// grantReadyRun checks the request name with grants, none of which has a
-// Ready condition yet.
-func (s *suite) grantReadyRun(ctx context.Context, name string, grants []pluginsv1alpha1.Grant) error {
-	var ready *metav1.Condition
-	err := waitFor(ctx, s.cfg.Timeouts.Ready, "Ready not True while a Grant waits", func(ctx context.Context) error {
-		req, err := s.request(ctx, name)
-		if err != nil {
-			return err
-		}
-
-		ready = meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady)
-		return waitingVerdict(ready, grants[0].Name)
-	})
+// grantReadyRun returns a skip when another writer sets a Ready condition on
+// one of the Grants of the request name.
+func (s *suite) grantReadyRun(ctx context.Context, name string) error {
+	req, err := s.request(ctx, name)
 	if err != nil {
+		return err
+	}
+
+	ready := meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady)
+
+	grants, err := s.ownedGrants(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if len(grants) == 0 {
+		return nil
+	}
+
+	if err := servedSkip(grants); err != nil {
+		return err
+	}
+
+	if err := waitingVerdict(ready, grants[0].Name); err != nil {
 		return err
 	}
 
@@ -807,12 +840,16 @@ func waitingVerdict(ready *metav1.Condition, grant string) error {
 }
 
 // setGrantsReady sets Ready=True on each of grants, and keeps their other
-// conditions.
+// conditions. It returns a skip when one of grants has a Ready condition.
 func (s *suite) setGrantsReady(ctx context.Context, grants []pluginsv1alpha1.Grant) error {
 	for _, g := range grants {
 		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			var current pluginsv1alpha1.Grant
 			if err := s.client.Get(ctx, client.ObjectKeyFromObject(&g), &current); err != nil {
+				return err
+			}
+
+			if err := servedSkip([]pluginsv1alpha1.Grant{current}); err != nil {
 				return err
 			}
 

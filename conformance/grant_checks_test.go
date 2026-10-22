@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -486,4 +487,68 @@ func TestSetGrantsReadyKeepsTheOtherConditions(t *testing.T) {
 	require.NoError(t, s.client.Get(t.Context(), client.ObjectKeyFromObject(&grant), &got))
 	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, v1.ConditionReady))
 	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, "Applied"))
+}
+
+func TestSetGrantsReadySkipsAReadyOfAnotherWriter(t *testing.T) {
+	grant := goodGrant()
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, &grant)
+	served := grant.DeepCopy()
+	meta.SetStatusCondition(&served.Status.Conditions, metav1.Condition{
+		Type:   v1.ConditionReady,
+		Status: metav1.ConditionFalse,
+		Reason: "Rejected",
+	})
+	require.NoError(t, s.client.Status().Update(t.Context(), served))
+
+	err := s.setGrantsReady(t.Context(), []pluginsv1alpha1.Grant{grant})
+
+	reason, skipped := skipReasonOf(err)
+	assert.True(t, skipped, "got %v", err)
+	assert.Contains(t, reason, "has a Ready condition")
+	var got pluginsv1alpha1.Grant
+	require.NoError(t, s.client.Get(t.Context(), client.ObjectKeyFromObject(&grant), &got))
+	assert.True(t, meta.IsStatusConditionFalse(got.Status.Conditions, v1.ConditionReady))
+}
+
+// grantReadySuite is a suite with the request of grantCheckRequest, whose
+// Ready condition has status, and with grant. Its Ready timeout is long, so a
+// spec that waits for it does not end.
+func grantReadySuite(
+	t *testing.T,
+	status metav1.ConditionStatus,
+	grant pluginsv1alpha1.Grant,
+) *suite {
+	t.Helper()
+
+	req := grantCheckRequest()
+	req.Status.Conditions = []metav1.Condition{{Type: v1.ConditionReady, Status: status, Reason: v1.ReasonHealthy}}
+	cfg := validConfig()
+	cfg.Namespace = req.Namespace
+	cfg.Timeouts.Ready = time.Hour
+
+	return newTestSuite(t, cfg, interceptor.Funcs{}, req, &grant)
+}
+
+func TestGrantReadyRunFailsAReadyRequestAtOnce(t *testing.T) {
+	grant := goodGrant()
+	s := grantReadySuite(t, metav1.ConditionTrue, grant)
+
+	err := s.grantReadyRun(t.Context(), "r")
+
+	assert.ErrorContains(t, err, "Ready=True while Grant r-read has no Ready condition")
+}
+
+func TestGrantReadyRunSkipsWhenAnotherWriterSetReadyOnAGrant(t *testing.T) {
+	grant := goodGrant()
+	served := grant.DeepCopy()
+	served.Status.Conditions = []metav1.Condition{
+		{Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: "Set"},
+	}
+	s := grantReadySuite(t, metav1.ConditionTrue, *served)
+
+	err := s.grantReadyRun(t.Context(), "r")
+
+	reason, skipped := skipReasonOf(err)
+	assert.True(t, skipped, "got %v", err)
+	assert.Contains(t, reason, "has a Ready condition")
 }
