@@ -128,7 +128,7 @@ Without `spec.deletionPolicy`, the claim uses `status.resolvedPolicy.deletionPol
 
 The policy applies to the plugin requests only. The claim always deletes the `CamundaCluster` `<claim>`. It also deletes the `CamundaOptimize` `<claim>-optimize` and the `BackupSchedule` `<claim>-backups`. The `CamundaCluster` keeps or deletes its broker volumes by its own retention policy, as [Storage](camundacluster.md#storage) describes. The claim deletes an object only when the object has an owner reference with `controller: true` to the claim. An object of one of these names that you created yourself stays.
 
-When the policy is `Orphan` and a selected registration does not list `Orphan` in `spec.deletionPolicies`, the claim deletes nothing. `Ready` is `False` with reason `NotAllowed`, and the message names each such registration. The deletion continues after you set `spec.deletionPolicy: Delete` or select a registration that supports `Orphan`.
+When the policy is `Orphan` and a selected registration does not list `Orphan` in `spec.deletionPolicies`, the claim deletes nothing. `Ready` is `False` with reason `NotAllowed`, and the message names each such registration. The selections of a claim do not change after creation. To continue the deletion, set `spec.deletionPolicy: Delete`. The plugins then delete the resources of the claim.
 
 The claim stays until each plugin deleted or kept the resources of its request, by the policy. While the claim waits, `Ready` is `False` with reason `Deleting`, and the message names each object that is still there. See [Status](#status).
 
@@ -214,7 +214,7 @@ While the claim is deleted, `Ready` reports the deletion. The other conditions k
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Deleting` | The claim is deleted and waits for the objects that the message names. | Read the status of the request with `kubectl get pluginrequest <name> -o yaml`, with the name from the message. Then read the logs of the plugin that serves it. |
-| `Ready` | `NotAllowed` | The deletion policy is `Orphan`, and a selected registration does not list `Orphan` in `spec.deletionPolicies`. The claim deletes nothing. The message names each such registration. | Set `spec.deletionPolicy: Delete`, or select a registration that supports `Orphan`. |
+| `Ready` | `NotAllowed` | The deletion policy is `Orphan`, and a selected registration does not list `Orphan` in `spec.deletionPolicies`. The claim deletes nothing. The message names each such registration. | Set `spec.deletionPolicy: Delete`. The plugins then delete the resources of the claim. |
 
 ```yaml
 status:
