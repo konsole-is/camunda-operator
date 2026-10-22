@@ -538,6 +538,33 @@ func TestGrantReadyRunFailsAReadyRequestAtOnce(t *testing.T) {
 	assert.ErrorContains(t, err, "Ready=True while Grant r-read has no Ready condition")
 }
 
+func TestCheckGrantReadyFailsAReadyRequestWhoseGrantsNobodyServesNextToServedGrants(t *testing.T) {
+	ready := []metav1.Condition{{Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy}}
+	served := grantCheckRequest()
+	served.Status.Conditions = ready
+	servedGrant := goodGrant()
+	servedGrant.Status.Conditions = ready
+	unserved := grantCheckRequest()
+	unserved.Name, unserved.UID = "r2", "uid-r2"
+	unserved.Status.Conditions = ready
+	unservedGrant := goodGrant()
+	unservedGrant.Name = "r2-read"
+	unservedGrant.Labels[pluginsv1alpha1.LabelRequest] = "r2"
+	unservedGrant.OwnerReferences[0].Name, unservedGrant.OwnerReferences[0].UID = "r2", "uid-r2"
+	cfg := validConfig()
+	cfg.Namespace = served.Namespace
+	cfg.Timeouts.Ready = time.Hour
+	s := newTestSuite(t, cfg, interceptor.Funcs{}, served, &servedGrant, unserved, &unservedGrant)
+	s.life = &lifecycle{
+		runs:      []requestRun{{name: "r"}, {name: "r2"}},
+		createdAt: map[string]time.Time{"r": time.Now(), "r2": time.Now()},
+	}
+
+	err := checkGrantReady(t.Context(), s)
+
+	assert.ErrorContains(t, err, "request r2: the request is Ready=True while Grant r2-read has no Ready condition")
+}
+
 func TestGrantReadyRunSkipsWhenAnotherWriterSetReadyOnAGrant(t *testing.T) {
 	grant := goodGrant()
 	served := grant.DeepCopy()
