@@ -62,6 +62,11 @@ const cleanupRequeue = 5 * time.Second
 // manager may register an index of this name on PluginRequest.
 const contractsField = "pluginrequest.builtin.contracts"
 
+// presetsField is the index on PluginRequest with one key for each preset
+// that a built-in request reads. No other controller of the manager may
+// register an index of this name on PluginRequest.
+const presetsField = "pluginrequest.builtin.presets"
+
 // registrationField is the index on PluginRequest by spec.registration, for
 // a request with a handler. No other controller of the manager may register
 // an index of this name on PluginRequest.
@@ -365,12 +370,12 @@ func ownedBy(obj client.Object, uid types.UID) bool {
 
 // SetupWithManager returns an error that names each handler without a
 // registration in Registrations, or with a parameter schema that it cannot
-// read. Then it registers the contractsField and registrationField indexes
-// and the controller. The controller runs for a request whose registration
-// label names a handler, for a request whose ElasticsearchCluster,
-// DatabaseServer, or Database changed, for every request that reads a
-// contract that changed, and for every request whose spec.registration
-// names a registration that changed.
+// read. Then it registers the contractsField, presetsField, and
+// registrationField indexes and the controller. The controller runs for a
+// request whose registration label names a handler, for a request whose
+// ElasticsearchCluster, DatabaseServer, or Database changed, for every
+// request that reads a contract or a preset that changed, and for every
+// request whose spec.registration names a registration that changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -412,6 +417,13 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &pluginsv1alpha1.PluginRequest{},
+		presetsField, r.presetKeys,
+	); err != nil {
+		return err
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &pluginsv1alpha1.PluginRequest{},
 		registrationField, r.registrationKeys,
 	); err != nil {
 		return err
@@ -428,6 +440,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		b = b.Watches(
 			obj,
 			refindex.Enqueue(mgr.GetClient(), &pluginsv1alpha1.PluginRequestList{}, contractsField, keyOf(kind)),
+		)
+	}
+	for kind, obj := range presetKinds() {
+		b = b.Watches(
+			obj,
+			refindex.Enqueue(mgr.GetClient(), &pluginsv1alpha1.PluginRequestList{}, presetsField, keyOf(kind)),
 		)
 	}
 
@@ -469,6 +487,37 @@ func (r *Reconciler) contractKeys(o client.Object) []string {
 	}
 
 	return keys
+}
+
+// presetKeys returns the presetsField keys of a request with a handler.
+func (r *Reconciler) presetKeys(o client.Object) []string {
+	request, ok := o.(*pluginsv1alpha1.PluginRequest)
+	if !ok {
+		return nil
+	}
+
+	h, ok := r.handlers[request.Spec.Registration]
+	if !ok {
+		return nil
+	}
+
+	presets := presetKinds()
+	var keys []string
+	for _, ref := range h.backing(request) {
+		if _, ok := presets[ref.kind]; ok {
+			keys = append(keys, contractKey(ref.kind, ref.object.GetNamespace(), ref.object.GetName()))
+		}
+	}
+
+	return keys
+}
+
+// presetKinds returns an empty object of each preset kind that a handler
+// reads as a backing object, by kind. A preset kind that a handler only
+// names in a backing object is not here: the controller of that object
+// reads the preset.
+func presetKinds() map[string]client.Object {
+	return map[string]client.Object{kindDatabaseServerPreset: &v1.DatabaseServerPreset{}}
 }
 
 // registrationKeys returns the registrationField key of a request with a

@@ -110,6 +110,38 @@ var _ = Describe("Built-in PostgreSQL requests", func() {
 		Expect(live.Status.PodSelector.MatchLabels).To(Equal(map[string]string{"camunda.io/database-server": name}))
 	})
 
+	It("builds the server again when the preset that the request names changes", func() {
+		preset := createDatabaseServerPreset(&v1.DatabaseServerArchiveSpec{
+			ObjectStorageRef: "fleet-backups", RetentionPeriodDays: 7,
+		})
+		claim := "pg-" + utilrand.String(6)
+		newPostgresRequest(
+			claim,
+			`{"preset":"`+preset.Name+`","releaseRef":"camunda"}`,
+			pluginsv1alpha1.DeletionPolicyDelete,
+			func(r *pluginsv1alpha1.PluginRequest) {
+				r.Spec.Inputs = map[string]string{pluginstartup.OutputObjectStorageConfig: "orders-backup"}
+			},
+		)
+		name := claim + "-pg"
+		Eventually(func(g Gomega) {
+			g.Expect(serverRetentionDays(g, name)).To(Equal(int32(7)))
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func() error {
+			var fresh v1.DatabaseServerPreset
+			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(preset), &fresh); err != nil {
+				return err
+			}
+			fresh.Spec.Server.Archive.RetentionPeriodDays = 14
+			return k8sClient.Update(ctx, &fresh)
+		}, timeout, interval).Should(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(serverRetentionDays(g, name)).To(Equal(int32(14)))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("keeps a larger storage size and warns about the smaller one", func() {
 		claim := "pg-" + utilrand.String(6)
 		request := newPostgresRequest(
@@ -285,4 +317,15 @@ func serverStorageSize(g Gomega, name string) string {
 		return ""
 	}
 	return server.Spec.StorageSize.String()
+}
+
+// serverRetentionDays returns the archive retention of the DatabaseServer
+// name in default, or 0 when it has no archive.
+func serverRetentionDays(g Gomega, name string) int32 {
+	var server v1.DatabaseServer
+	g.Expect(k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, &server)).To(Succeed())
+	if server.Spec.Archive == nil {
+		return 0
+	}
+	return server.Spec.Archive.RetentionPeriodDays
 }
