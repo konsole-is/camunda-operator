@@ -1,5 +1,6 @@
 import type { StatusTone } from "@/components/fleet/status";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
+import type { DatabaseServerSpec } from "@/generated/crds/databaseserver";
 import { formatBytes } from "@/components/fleet/units";
 import type { Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
@@ -386,8 +387,11 @@ function archiveOf(
     };
     return view;
   }
-  const spec = mergeDatabaseServer(preset?.spec, server.spec).spec;
-  if (!spec.archive) return view;
+  const archive = heldArchive(
+    server,
+    mergeDatabaseServer(preset?.spec, server.spec).spec,
+  );
+  if (!archive) return view;
 
   const ready = server.status?.conditions?.find(
     (c) => c.type === "ArchiveReady",
@@ -400,7 +404,7 @@ function archiveOf(
   } else {
     view.state = { tone: "warn", label: ready?.reason || "Waiting", message };
   }
-  const bucket = spec.archive.objectStorageRef;
+  const bucket = archive.objectStorageRef;
   view.bucket = bucketOf(input.objectStorage, bucket);
   if (rollback) {
     const config = byName(input.objectStorage, bucket);
@@ -408,11 +412,36 @@ function archiveOf(
       server,
       bucket,
       config ? archiveLocation(config, server) : "",
-      spec.archive.retentionPeriodDays,
+      archive.retentionPeriodDays,
       input.now,
     );
   }
   return view;
+}
+
+// heldArchive is the archive that the operator runs: while a rollback is
+// unfinished, it keeps the archive that status.recovery recorded against an
+// edit of the spec (recoveryHoldsSpec and heldArchive in
+// internal/controller/databaseserver).
+function heldArchive(
+  server: Resource<"DatabaseServer">,
+  spec: DatabaseServerSpec,
+): DatabaseServerSpec["archive"] {
+  const running = server.status?.recovery;
+  const recorded = running?.archive;
+  if (!recorded || running.completedAt) return spec.archive;
+  const contractHeld =
+    !!running.contract && running.contract !== spec.databaseServerConfig;
+  if (!spec.archive && !recorded.retentionPeriodDays && !contractHeld) {
+    return undefined;
+  }
+  return {
+    objectStorageRef: recorded.objectStorageRef,
+    retentionPeriodDays:
+      recorded.retentionPeriodDays || spec.archive?.retentionPeriodDays || 0,
+    baseBackupSchedule:
+      recorded.baseBackupSchedule || spec.archive?.baseBackupSchedule,
+  };
 }
 
 // restoreWindow follows the operator: SelectArchive in

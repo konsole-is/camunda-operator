@@ -889,6 +889,109 @@ describe("backupStorageOf", () => {
     ).toEqual([]);
   });
 
+  describe("while a rollback is unfinished", () => {
+    const recovery = (archive: object, over: object = {}) => ({
+      requestID: "r1",
+      contract: "orders-pg",
+      requestedBy: "PointInTimeRestore/undo",
+      targetTime: "2026-10-17T15:30:00Z",
+      archive: { serverName: "orders-pg", ...archive },
+      ...over,
+    });
+    const status = (rec: object) => ({
+      conditions: [
+        { type: "ArchiveReady", status: "True", reason: "Archiving" },
+      ],
+      archive: {
+        history: [{ serverName: "orders-pg", from: "2026-10-01T00:00:00Z" }],
+      },
+      recovery: rec,
+    });
+    const archiveOf = (data: BackupStorageInput) => {
+      const storage = backupStorageOf(data);
+      return storage.kind === "rdbms" ? storage.database?.archive : undefined;
+    };
+
+    it("keeps the recorded archive when the spec removes it", () => {
+      expect(
+        archiveOf(
+          rdbmsChain({
+            server: { databaseServerConfig: "orders-pg" },
+            serverStatus: status(
+              recovery({ objectStorageRef: "wal", retentionPeriodDays: 7 }),
+            ),
+          }),
+        ),
+      ).toMatchObject({
+        state: { label: "Archiving" },
+        bucket: { name: "wal" },
+        window: [{ from: "2026-10-11T12:00:00.000Z" }],
+      });
+    });
+
+    it("keeps the recorded bucket and retention when the spec changes them", () => {
+      expect(
+        archiveOf(
+          rdbmsChain({
+            server: {
+              databaseServerConfig: "orders-pg",
+              archive: { objectStorageRef: "backups", retentionPeriodDays: 30 },
+            },
+            serverStatus: status(
+              recovery({ objectStorageRef: "wal", retentionPeriodDays: 7 }),
+            ),
+          }),
+        ),
+      ).toMatchObject({
+        bucket: { name: "wal" },
+        window: [{ from: "2026-10-11T12:00:00.000Z" }],
+      });
+    });
+
+    it("takes the retention of the spec for a record without one", () => {
+      expect(
+        archiveOf(
+          rdbmsChain({
+            serverStatus: status(recovery({ objectStorageRef: "wal" })),
+          }),
+        )?.window,
+      ).toEqual([{ from: "2026-10-01T00:00:00Z" }]);
+    });
+
+    it("lets the spec remove the archive against a record without a retention", () => {
+      expect(
+        archiveOf(
+          rdbmsChain({
+            server: { databaseServerConfig: "orders-pg" },
+            serverStatus: status(recovery({ objectStorageRef: "wal" })),
+          }),
+        ),
+      ).toEqual({
+        server: "orders-pg",
+        state: { tone: "muted", label: "Off" },
+      });
+    });
+
+    it("follows the spec once the rollback completed", () => {
+      expect(
+        archiveOf(
+          rdbmsChain({
+            server: { databaseServerConfig: "orders-pg" },
+            serverStatus: status(
+              recovery(
+                { objectStorageRef: "wal", retentionPeriodDays: 7 },
+                { completedAt: "2026-10-17T15:41:00Z" },
+              ),
+            ),
+          }),
+        ),
+      ).toEqual({
+        server: "orders-pg",
+        state: { tone: "muted", label: "Off" },
+      });
+    });
+  });
+
   it("an external server shows the pitr of its DatabaseServerConfig and no archive", () => {
     const storage = backupStorageOf(rdbmsChain({ owned: false }));
     expect(storage.kind === "rdbms" && storage.database).toEqual({
