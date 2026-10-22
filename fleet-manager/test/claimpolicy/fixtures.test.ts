@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   checkAllowed,
+  checkDeletionPolicy,
   checkSlotConflicts,
   environmentOf,
   resolve,
@@ -231,6 +232,12 @@ const RUNNERS: Record<AppRule, Runner> = {
       input.sections ?? [],
       input.selections ?? [],
       input.overrides,
+    ),
+  "check-deletion-policy": (input) =>
+    checkDeletionPolicy(
+      input.policy,
+      input.selections ?? [],
+      input.registrations ?? [],
     ),
 };
 

@@ -13,6 +13,7 @@ export const APP_RULES = [
   "inputs",
   "slot-fields",
   "check-slot-conflicts",
+  "check-deletion-policy",
 ] as const;
 export type AppRule = (typeof APP_RULES)[number];
 

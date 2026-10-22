@@ -121,6 +121,14 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		return res, err
 	}
 
+	if err := claimpolicy.CheckDeletionPolicy(
+		claimpolicy.DeletionPolicy(claim.Spec.DeletionPolicy, &res.resolution.Policy),
+		claim.Spec.Plugins,
+		res.registrations,
+	); err != nil {
+		return res, err
+	}
+
 	overrides := claimpolicy.Overrides{Cluster: claim.Spec.Cluster}
 	if claim.Spec.Attachments != nil {
 		overrides.Optimize = claim.Spec.Attachments.Optimize

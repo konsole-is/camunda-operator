@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "name": "Orphan is refused when a selected registration does not list Orphan, and the message names each such section",
+  "input": {
+    "policy": "Orphan",
+    "selections": [
+      {
+        "section": "access",
+        "registration": "ingress"
+      },
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      },
+      {
+        "section": "encryption-key",
+        "registration": "kms"
+      }
+    ],
+    "registrations": [
+      {
+        "metadata": {
+          "name": "ingress"
+        },
+        "spec": {
+          "label": "ingress",
+          "sections": [
+            "access"
+          ],
+          "mode": "Optional",
+          "serviceAccount": {
+            "namespace": "camunda-plugins",
+            "name": "ingress"
+          },
+          "deletionPolicies": [
+            "Delete"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "elasticsearch"
+        },
+        "spec": {
+          "label": "elasticsearch",
+          "sections": [
+            "secondary-storage"
+          ],
+          "mode": "Optional",
+          "serviceAccount": {
+            "namespace": "camunda-plugins",
+            "name": "elasticsearch"
+          },
+          "deletionPolicies": [
+            "Delete",
+            "Orphan"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "kms"
+        },
+        "spec": {
+          "label": "kms",
+          "sections": [
+            "encryption-key"
+          ],
+          "mode": "Optional",
+          "serviceAccount": {
+            "namespace": "camunda-plugins",
+            "name": "kms"
+          },
+          "deletionPolicies": [
+            "Delete"
+          ]
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "the deletion policy is Orphan, and these registrations do not support it: PluginRegistration \"ingress\" of section \"access\", PluginRegistration \"kms\" of section \"encryption-key\""
+    }
+  }
+}

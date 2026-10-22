@@ -24,6 +24,7 @@ import (
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
 	"github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
@@ -74,14 +75,7 @@ func registered(registration string) func(fleetv1alpha1.PluginSelection) bool {
 // DeletionPolicy returns the deletion policy of the requests of claim: its
 // own policy, else the default of its snapshot, else Delete.
 func DeletionPolicy(claim *fleetv1alpha1.CamundaClusterClaim) pluginsv1alpha1.DeletionPolicy {
-	if claim.Spec.DeletionPolicy != "" {
-		return claim.Spec.DeletionPolicy
-	}
-	if policy := claim.Status.ResolvedPolicy; policy != nil && policy.DeletionPolicy != "" {
-		return policy.DeletionPolicy
-	}
-
-	return pluginsv1alpha1.DeletionPolicyDelete
+	return claimpolicy.DeletionPolicy(claim.Spec.DeletionPolicy, claim.Status.ResolvedPolicy)
 }
 
 // References returns the release and the platform config of the cluster of

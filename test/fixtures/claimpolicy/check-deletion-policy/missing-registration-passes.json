@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "A registration that does not exist passes, because the reference check refuses it",
+  "input": {
+    "policy": "Orphan",
+    "selections": [
+      {
+        "section": "access",
+        "registration": "ingress"
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}

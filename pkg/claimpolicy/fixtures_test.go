@@ -58,6 +58,7 @@ var fixtureDirs = []string{
 	"slot-fields",
 	"check-slot-conflicts",
 	"check-served",
+	"check-deletion-policy",
 }
 
 // fixture is one case: the input of a function and its result. The field
