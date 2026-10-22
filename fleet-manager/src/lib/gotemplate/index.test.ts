@@ -116,6 +116,20 @@ describe("render", () => {
       ).toMatchObject({ field: `parameters.${name}` }),
   );
 
+  it("fills a parameter whose name has a letter outside ASCII, as Go does", () =>
+    expect(
+      render(
+        "{{ .parameters.région }}",
+        { ...data, parameters: { région: "eu" } },
+        "grant",
+      ),
+    ).toEqual({ text: "eu" }));
+
+  it("names the function of a call whose name has a letter outside ASCII", () => {
+    const result = render("{{ fünf .claim }}", data, "grant");
+    expect("error" in result && result.error).toContain("fünf");
+  });
+
   it("trims whitespace around {{- and -}} as Go does", () =>
     expect(render("a  {{- .claim -}}  b", data, "grant")).toEqual({
       text: "aordersb",
