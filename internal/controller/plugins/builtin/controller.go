@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -50,6 +51,11 @@ import (
 // controllerName is the name the controller registers with controller-runtime.
 // It labels every metrics series it records.
 const controllerName = "builtin"
+
+// cleanupRequeue is the wait before finalize runs again. The Owns watches
+// enqueue the request only through a controller reference, so an object with
+// a plain owner reference sends no event when it goes.
+const cleanupRequeue = 5 * time.Second
 
 // contractsField is the index on PluginRequest with one key for each
 // contract that a built-in request reads. No other controller of the
@@ -137,7 +143,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	}
 
 	if !request.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.finalize(ctx, rec, &request, h)
+		waiting, err := r.finalize(ctx, rec, &request, h)
+		if err != nil || !waiting {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: cleanupRequeue}, nil
 	}
 
 	ready, err := r.registrationReady(ctx, request.Spec.Registration)
@@ -272,20 +282,21 @@ func refuse(request *pluginsv1alpha1.PluginRequest, failure *conditions.PreCheck
 // finalize applies the deletion policy of request stage by stage. It starts a
 // stage only when every remaining object of the stage before it that the
 // request owns is gone, and removes the finalizer after the last stage. It
-// writes no status.
+// writes no status. waiting is true while an owned remaining object holds
+// the finalizer.
 func (r *Reconciler) finalize(
 	ctx context.Context,
 	rec component.ReconcileContext,
 	request *pluginsv1alpha1.PluginRequest,
 	h handler,
-) error {
+) (waiting bool, err error) {
 	if !controllerutil.ContainsFinalizer(request, pluginsv1alpha1.FinalizerCleanup) {
-		return nil
+		return false, nil
 	}
 
 	live, err := r.readBacking(ctx, request, h)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	// An orphan removes the owner reference that its read finds. A cache that
@@ -295,36 +306,35 @@ func (r *Reconciler) finalize(
 
 	c, err := h.cleanup(request, request.Spec.DeletionPolicy, live)
 	if err != nil {
-		return fmt.Errorf("building the cleanup: %w", err)
+		return false, fmt.Errorf("building the cleanup: %w", err)
 	}
 
 	for _, stage := range c.stages {
 		for _, comp := range stage.components {
 			if err := comp.Reconcile(ctx, rec); err != nil {
-				return fmt.Errorf("applying the deletion policy: %w", err)
+				return false, fmt.Errorf("applying the deletion policy: %w", err)
 			}
 		}
 
-		// The Owns watch of the kind of a remaining object reconciles the
-		// request again when the object goes. An object that the request does
-		// not own stays, so it cannot hold the finalizer.
+		// An object that the request does not own stays, so it cannot hold
+		// the finalizer.
 		for _, obj := range stage.remaining {
 			err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(obj), obj)
 			if err == nil && ownedBy(obj, request.UID) {
-				return nil
+				return true, nil
 			}
 			if err != nil && !apierrors.IsNotFound(err) {
-				return fmt.Errorf("reading %s: %w", client.ObjectKeyFromObject(obj), err)
+				return false, fmt.Errorf("reading %s: %w", client.ObjectKeyFromObject(obj), err)
 			}
 		}
 	}
 
 	controllerutil.RemoveFinalizer(request, pluginsv1alpha1.FinalizerCleanup)
 	if err := r.Update(ctx, request); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("removing the finalizer: %w", err)
+		return false, fmt.Errorf("removing the finalizer: %w", err)
 	}
 
-	return nil
+	return false, nil
 }
 
 // uncachedReads reads through reader and writes through Client.

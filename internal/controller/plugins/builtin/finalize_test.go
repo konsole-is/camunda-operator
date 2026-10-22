@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -48,7 +49,9 @@ func TestFinalizeWaitsForEachStageInOrder(t *testing.T) {
 		deleteStage(t, "second", request),
 	}}}
 
-	require.NoError(t, finalizeOnce(t, c, request, h))
+	assert.Equal(
+		t, ctrl.Result{RequeueAfter: cleanupRequeue}, finalizeOnce(t, c, request, h), "an owned object remains",
+	)
 
 	assert.False(t, liveConfigMap(t, c, "first").DeletionTimestamp.IsZero(), "the first stage deletes first")
 	assert.True(t, liveConfigMap(t, c, "second").DeletionTimestamp.IsZero(), "the second stage waits for first")
@@ -58,7 +61,7 @@ func TestFinalizeWaitsForEachStageInOrder(t *testing.T) {
 	held.Finalizers = nil
 	require.NoError(t, c.Update(t.Context(), held))
 
-	require.NoError(t, finalizeOnce(t, c, readRequest(t, c, request), h))
+	assert.Equal(t, ctrl.Result{}, finalizeOnce(t, c, request, h), "everything is gone")
 
 	assert.True(t, apierrors.IsNotFound(c.Get(t.Context(), configMapKey("second"), &corev1.ConfigMap{})))
 	assert.True(
@@ -73,7 +76,7 @@ func TestFinalizeIgnoresARemainingObjectThatTheRequestDoesNotOwn(t *testing.T) {
 	c := fakeReader(t, request, foreign)
 	h := stubHandler{c: cleanup{stages: []cleanupStage{deleteStage(t, "foreign", request)}}}
 
-	require.NoError(t, finalizeOnce(t, c, request, h))
+	assert.Equal(t, ctrl.Result{}, finalizeOnce(t, c, request, h))
 
 	assert.NoError(t, c.Get(t.Context(), configMapKey("foreign"), &corev1.ConfigMap{}), "a foreign object stays")
 	assert.True(
@@ -86,7 +89,7 @@ func TestFinalizeWithoutStagesRemovesTheFinalizer(t *testing.T) {
 	request := deletingRequest()
 	c := fakeReader(t, request)
 
-	require.NoError(t, finalizeOnce(t, c, request, stubHandler{}))
+	assert.Equal(t, ctrl.Result{}, finalizeOnce(t, c, request, stubHandler{}))
 
 	assert.True(t, apierrors.IsNotFound(c.Get(t.Context(), client.ObjectKeyFromObject(request), request)))
 }
@@ -155,11 +158,14 @@ func deleteStage(t *testing.T, name string, request *pluginsv1alpha1.PluginReque
 	}
 }
 
-func finalizeOnce(t *testing.T, c client.Client, request *pluginsv1alpha1.PluginRequest, h handler) error {
-	rec := component.ReconcileContext{
-		Client: c, Scheme: c.Scheme(), APIReader: c, Owner: request, EventRecorder: events.NewFakeRecorder(100),
+func finalizeOnce(t *testing.T, c client.Client, request *pluginsv1alpha1.PluginRequest, h handler) ctrl.Result {
+	r := &Reconciler{
+		Client: c, APIReader: c, Scheme: c.Scheme(), EventRecorder: events.NewFakeRecorder(100),
+		handlers: map[string]handler{request.Spec.Registration: h},
 	}
-	return (&Reconciler{Client: c, APIReader: c, Scheme: c.Scheme()}).finalize(t.Context(), rec, request, h)
+	result, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(request)})
+	require.NoError(t, err)
+	return result
 }
 
 func configMapKey(name string) client.ObjectKey {

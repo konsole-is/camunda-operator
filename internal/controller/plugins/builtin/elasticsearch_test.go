@@ -430,7 +430,8 @@ func TestElasticsearchOrphanReadsTheClusterWithoutTheCache(t *testing.T) {
 		APIReader: apiServer, Owner: request,
 	}
 
-	require.NoError(t, r.finalize(t.Context(), rec, request, elasticsearch{}))
+	_, err := r.finalize(t.Context(), rec, request, elasticsearch{})
+	require.NoError(t, err)
 
 	var got v1.ElasticsearchCluster
 	require.NoError(t, apiServer.Get(t.Context(), client.ObjectKeyFromObject(cluster), &got))
