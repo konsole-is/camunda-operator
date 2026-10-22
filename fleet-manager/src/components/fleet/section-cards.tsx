@@ -62,12 +62,12 @@ function parameterKey(registration: string, parameter: string): string {
  * value is one of its names. A selection holds only the parameters that differ
  * from the policy. Each x-kubernetes-validations rule of a claim-editable
  * parameter shows as a hint under it, and each rule of the root of an
- * option's schema shows under the option. The form does not check the rules.
- * A selected option that new options no longer hold, or disable, leaves the
- * selection. onChange gets the initial selections and errors once, then each
- * change. An error path is `<registration>/<parameter>`, then `.<path>` for an
- * error inside the value, or the section name when a required section has no
- * selection.
+ * option's schema shows under the option when the option has a claim-editable
+ * parameter. The form does not check the rules. A selected option that new
+ * options no longer hold, or disable, leaves the selection. onChange gets the
+ * initial selections and errors once, then each change. An error path is
+ * `<registration>/<parameter>`, then `.<path>` for an error inside the value,
+ * or the section name when a required section has no selection.
  */
 export function SectionCards({
   section,
@@ -313,9 +313,9 @@ function OptionParameters({
     choices && choiceRule?.claimEditable
       ? schemaRules(choiceRule.schema ?? {})
       : [];
-  const optionRules = schemaRules(option.schema ?? {}).filter(
-    (r) => r.path === "",
-  );
+  const optionRules = option.parameters.some((r) => r.claimEditable)
+    ? schemaRules(option.schema ?? {}).filter((r) => r.path === "")
+    : [];
   if (!choices && rest.length === 0 && optionRules.length === 0) return null;
   return (
     <div className="flex flex-col gap-3 border-t border-divider pt-3">

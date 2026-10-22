@@ -1206,6 +1206,23 @@ describe("SectionCards", () => {
       expect(screen.queryByText(/bucket must not be empty/)).toBeNull();
     });
 
+    it("shows no rule of the option when every parameter is locked", () => {
+      render(
+        <SectionCards
+          section={section(
+            {},
+            {
+              ...ruled,
+              parameters: ruled.parameters.filter((r) => !r.claimEditable),
+            },
+          )}
+        />,
+      );
+
+      expect(screen.queryByText(/min must not be above max/)).toBeNull();
+      expect(screen.queryByText("Checked after you save")).toBeNull();
+    });
+
     it("reports no error for a rule, because the app does not check it", async () => {
       const onChange = vi.fn();
       render(<SectionCards section={section({}, ruled)} onChange={onChange} />);

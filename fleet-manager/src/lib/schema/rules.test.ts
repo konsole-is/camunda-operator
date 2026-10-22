@@ -41,7 +41,7 @@ describe("schemaRules", () => {
     ]);
   });
 
-  it("names a rule of each item or map value by the property that holds it", () => {
+  it("names a rule of each item by the array, and of each map value by the map and *", () => {
     expect(
       schemaRules({
         type: "object",
@@ -64,7 +64,7 @@ describe("schemaRules", () => {
       }),
     ).toEqual([
       { path: "tags", rule: "self != ''" },
-      { path: "labels", rule: "self.size() < 64" },
+      { path: "labels.*", rule: "self.size() < 64" },
     ]);
   });
 
@@ -92,6 +92,18 @@ describe("schemaRules", () => {
       { path: "items", rule: "self > 1" },
       { path: "properties.constructor", rule: "self > 2" },
     ]);
+  });
+
+  it("names a rule of each value of a root map * and not the root", () => {
+    expect(
+      schemaRules({
+        type: "object",
+        additionalProperties: {
+          type: "string",
+          "x-kubernetes-validations": [{ rule: "self != ''" }],
+        },
+      }),
+    ).toEqual([{ path: "*", rule: "self != ''" }]);
   });
 
   it("gives a rule with only a message expression no message", () => {

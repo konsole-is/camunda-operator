@@ -7,10 +7,10 @@ export type SchemaRule = { path: string; rule: string; message?: string };
  * schemaRules lists the x-kubernetes-validations rules of a schema. It does
  * not run them. path joins the property names from the root to the schema
  * that holds the rule with dots, and the empty path is the root. A rule of
- * the items of an array, or of the values of a map, has the path of the
- * array or the map. message is absent when the rule has none or an empty
- * one, also when it has a messageExpression. A schema lists its own rules
- * before those of its properties, in property order.
+ * the items of an array has the path of the array. A rule of the values of a
+ * map has the path of the map, then "*". message is absent when the rule
+ * has none or an empty one, also when it has a messageExpression. A schema
+ * lists its own rules before those of its properties, in property order.
  */
 export function schemaRules(schema: OpenAPISchema): SchemaRule[] {
   const rules: SchemaRule[] = [];
@@ -40,7 +40,11 @@ function collect(schema: unknown, path: string, rules: SchemaRule[]): void {
       collect(property, path ? `${path}.${name}` : name, rules);
   }
   collect(ownValue(schema, "items"), path, rules);
-  collect(ownValue(schema, "additionalProperties"), path, rules);
+  collect(
+    ownValue(schema, "additionalProperties"),
+    path ? `${path}.*` : "*",
+    rules,
+  );
 }
 
 function ownValue(record: Record<string, unknown>, key: string): unknown {
