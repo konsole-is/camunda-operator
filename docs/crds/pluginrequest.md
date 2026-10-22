@@ -73,11 +73,12 @@ With both policies, the plugin deletes a route to a Service that no longer exist
 
 ## Built-in requests
 
-The operator serves the requests of five [built-in registrations](pluginregistration.md#built-in-registrations):
+The operator serves the requests of six [built-in registrations](pluginregistration.md#built-in-registrations):
 
 | Registration | Parameters | Inputs | Outputs |
 | --- | --- | --- | --- |
 | `elasticsearch` | `preset` (required), `releaseRef` (required), `overrides`: `replicas`, `resources`, `storageSize`, `scheduling`, `podLabels` | `storageClassName`, `objectStorageConfig`, `serviceAccountAnnotations` | `secondaryStorageConfig` |
+| `database-server` | `preset` (required), `releaseRef` (required), `overrides`: `instances`, `resources`, `storageSize`, `scheduling`, `podLabels` | `storageClassName`, `objectStorageConfig`, `serviceAccountAnnotations` | `secondaryStorageConfig` |
 | `existing-object-storage` | `name` (required): an `ObjectStorageConfig` | none | `objectStorageConfig` |
 | `existing-secondary-storage` | `name` (required): a `SecondaryStorageConfig` | none | `secondaryStorageConfig` |
 | `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | none | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set |
@@ -254,6 +255,110 @@ When the claim or you delete the request, the deletion policy applies to the clu
 
 - `Delete` deletes the `ElasticsearchCluster`, and the request goes away after the cluster. A cluster of that name that the request does not own stays.
 - `Orphan` keeps the `ElasticsearchCluster` with its data and its labels, without the owner reference to the request. The request goes away at once.
+
+### PostgreSQL
+
+A request of `database-server` runs a PostgreSQL server and one database as the secondary storage of the claim `<claim>`. The claim writes the request, and fills `releaseRef` with the `CamundaRelease` of the claim. A request of the claim `orders`:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: orders-secondary-storage
+  namespace: my-cluster-ns
+  labels:
+    plugins.camunda.io/section: secondary-storage
+    plugins.camunda.io/registration: database-server
+    fleet.camunda.io/claim: orders
+spec:
+  section: secondary-storage
+  registration: database-server
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  parameters:
+    preset: small
+    releaseRef: camunda-8-9
+    overrides:
+      instances: 2
+      storageSize: 30Gi
+  inputs:
+    storageClassName: encrypted
+    objectStorageConfig: orders-backup
+  # ... the rest of your request
+```
+
+The operator applies two objects in the namespace of the request:
+
+| Object | Name | What it publishes |
+| --- | --- | --- |
+| [`DatabaseServer`](databaseserver.md) | `<claim>-pg`, here `orders-pg` | The `DatabaseServerConfig` `<claim>-pg` |
+| [`Database`](database.md) | `<claim>`, here `orders`, with the logical database `camunda` | The `DatabaseConfig` `<claim>` and the `SecondaryStorageConfig` `<claim>-pg` of type `rdbms` |
+
+The server starts from the `DatabaseServerPreset` that `preset` names, and takes its PostgreSQL major version from the release. Each field in `overrides` replaces the value of the preset for that field. The output `secondaryStorageConfig` names the `SecondaryStorageConfig` `<claim>-pg`. Both objects have the labels `plugins.camunda.io/registration: database-server` and `plugins.camunda.io/request: <request name>`.
+
+The inputs come from other sections of the claim. Each input is optional:
+
+- `storageClassName` sets the StorageClass of the server volumes. Without it, the preset decides.
+- `objectStorageConfig` names the bucket of the server archive. The retention and the base backup schedule come from the `archive` of the preset. If the preset has no `archive`, or does not exist, the operator does not use the bucket. The summary then has a `Warning` item with the label `Backup storage`, for example `orders-backup is not used: the DatabaseServerPreset small sets no archive retention`. Without the input, the preset decides.
+- `serviceAccountAnnotations` is a JSON object of strings. The ServiceAccount `<claim>-pg-postgres` of the PostgreSQL pods gets these annotations, for workload identity to the bucket.
+
+If `serviceAccountAnnotations` is not a JSON object of strings, `Ready` is `False` with reason `InvalidParameters`. An override that does not fit the field of the `DatabaseServer`, or a field that the override does not know, gives the same reason.
+
+`OutputsReady` turns `True` when the `SecondaryStorageConfig` exists. `Ready` follows the `Ready` conditions of the `DatabaseServer` and the `Database`. `status.resources` lists both objects, and `status.podSelector` selects the pods of the server:
+
+```yaml
+status:
+  conditions:
+    - type: OutputsReady
+      status: "True"
+      reason: Healthy
+      message: Component is healthy.
+      observedGeneration: 1
+    - type: Ready
+      status: "True"
+      reason: Healthy
+      message: "backing: Component is healthy."
+      observedGeneration: 1
+  outputs:
+    secondaryStorageConfig: orders-pg
+  summary:
+    - label: DatabaseServer
+      value: orders-pg, PostgreSQL 17, Ready
+      severity: Info
+    - label: Database
+      value: orders, Ready
+      severity: Info
+  resources:
+    - kind: DatabaseServer
+      name: orders-pg
+      onOrphan: Kept
+    - kind: Database
+      name: orders
+      onOrphan: Kept
+  podSelector:
+    matchLabels:
+      camunda.io/database-server: orders-pg
+```
+
+While the server has not reported on its current spec, the first item is `orders-pg, updating` with the `Warning` severity.
+
+The storage size only grows. If `overrides.storageSize` is smaller than the size of the server, the server keeps its size, and the summary has a `Warning` item:
+
+```yaml
+status:
+  summary:
+    - label: Storage size
+      value: Storage size 10Gi is smaller than 20Gi, kept 20Gi
+      severity: Warning
+```
+
+Without `overrides.storageSize`, the size of the preset applies. If that size is smaller than the size of the server, the volumes keep their size, and the `DatabaseServer` records a `StorageShrinkIgnored` event.
+
+When the claim or you delete the request, the deletion policy applies to both objects:
+
+- `Delete` deletes the `Database` first. When it is gone, the operator deletes the `DatabaseServer`. The deletion of the server removes its data volumes and all the data on them. The request goes away when the server is gone. If you created a `Database` or a `DatabaseServer` of that name yourself, it stays.
+- `Orphan` keeps the `DatabaseServer`, the `Database`, and all the data, without the owner reference to the request. They keep their labels, so you can find them again.
 
 ### Management plane databases
 
