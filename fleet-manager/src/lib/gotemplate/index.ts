@@ -53,9 +53,10 @@ const KEYWORDS = new Set([
 ]);
 const LITERALS = new Set(["true", "false", "nil"]);
 // A name of Go text/template is a letter or _ and then letters, digits,
-// or _, all in Unicode.
+// or _, all in Unicode. A field can also start with a digit outside ASCII.
 const IDENTIFIER = /^[\p{L}_][\p{L}\p{Nd}_]*/u;
-const FIELD = /^\.[\p{L}_][\p{L}\p{Nd}_]*(\.[\p{L}_][\p{L}\p{Nd}_]*)*$/u;
+const SEGMENT = String.raw`\.(?:[\p{L}_]|(?![0-9])\p{Nd})[\p{L}\p{Nd}_]*`;
+const FIELD = new RegExp(`^(?:${SEGMENT})+$`, "u");
 const VARIABLE = /^\$\w*\s*:?=/;
 const SPACE = " \t\r\n";
 const ONLY_FIELDS = "a template holds field references only";

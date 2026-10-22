@@ -175,6 +175,20 @@ describe("render", () => {
       ),
     ).toEqual({ text: "eu" }));
 
+  it("fills a parameter whose name starts with a digit outside ASCII, as Go does", () =>
+    expect(
+      render(
+        "{{ .parameters.١name }}",
+        { ...data, parameters: { "١name": "eu" } },
+        "grant",
+      ),
+    ).toEqual({ text: "eu" }));
+
+  it("refuses a field that starts with an ASCII digit, as Go does", () =>
+    expect(render("{{ .parameters.1name }}", data, "grant")).toHaveProperty(
+      "error",
+    ));
+
   it("names the function of a call whose name has a letter outside ASCII", () => {
     const result = render("{{ fünf .claim }}", data, "grant");
     expect("error" in result && result.error).toContain("fünf");
