@@ -100,9 +100,11 @@ type CamundaManagementClusterClaimSpec struct {
 	ManagementAuthConfigName string `json:"managementAuthConfigName,omitempty"`
 	// DeletionPolicy says what happens to the resources of the
 	// PluginRequests of the claim when the claim is deleted. Delete deletes
-	// them. Orphan keeps them. Empty means the deletion policy of the
-	// Environment. The CamundaManagementCluster is always deleted with the
-	// claim.
+	// them. Orphan keeps them. Empty means the deletion default that the
+	// claim recorded from its Environment at creation, or Delete when it
+	// recorded none. The claim controller refuses Orphan with the reason
+	// NotAllowed when a selected registration does not support it. The
+	// CamundaManagementCluster is always deleted with the claim.
 	// +optional
 	DeletionPolicy pluginsv1alpha1.DeletionPolicy `json:"deletionPolicy,omitempty"`
 	// Suspend scales every workload of the plane to zero. The PluginRequests
@@ -289,7 +291,9 @@ type CamundaManagementClusterClaimStatus struct {
 	// Degraded, or Down, its message holds the Ready reason and message of
 	// the CamundaManagementCluster. If the CamundaManagementCluster has no
 	// Ready condition yet, the message says so. With other reasons, such as
-	// Error or PrerequisiteNotMet, the message gives that cause.
+	// Error or PrerequisiteNotMet, the message gives that cause. While the
+	// claim is deleted, Ready is False with the reason Deleting, and the
+	// message names the objects that the claim waits for.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -352,6 +356,21 @@ type CamundaManagementClusterClaim struct {
 	// status is the state of the claim
 	// +optional
 	Status CamundaManagementClusterClaimStatus `json:"status,omitzero"`
+}
+
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *CamundaManagementClusterClaim) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *CamundaManagementClusterClaim) GetKind() string { return "CamundaManagementClusterClaim" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *CamundaManagementClusterClaim) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
 }
 
 // +kubebuilder:object:root=true
