@@ -122,7 +122,7 @@ describe("ComponentSettings", () => {
     expect(
       screen.getByRole("heading", { name: "Operate (embedded)" }),
     ).toBeDefined();
-    const operate = screen.getByRole("region", { name: "Operate settings" });
+    const operate = screen.getByRole("table", { name: "Operate settings" });
     expect(within(operate).getByText("replicas")).toBeDefined();
   });
 

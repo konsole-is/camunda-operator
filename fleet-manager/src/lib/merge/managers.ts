@@ -37,6 +37,25 @@ export type ManagedObject = {
  * entry of the list.
  */
 export function fieldManagers(live: ManagedObject): Record<FieldPath, string> {
+  return owners(live, () => true);
+}
+
+/**
+ * wholeFieldManagers returns, for each field path that a managedFields entry
+ * owns with no child keys, the manager of the latest such entry. An entry
+ * that owns a path only through the key "." does not put the path in the
+ * result.
+ */
+export function wholeFieldManagers(
+  live: ManagedObject,
+): Record<FieldPath, string> {
+  return owners(live, (whole) => whole);
+}
+
+function owners(
+  live: ManagedObject,
+  keep: (whole: boolean) => boolean,
+): Record<FieldPath, string> {
   const owners = new Map<FieldPath, { manager: string; time: number }>();
   for (const entry of live.metadata?.managedFields ?? []) {
     const manager = entry.manager;
@@ -44,7 +63,8 @@ export function fieldManagers(live: ManagedObject): Record<FieldPath, string> {
     const parsed =
       entry.time === undefined ? 0 : new Date(entry.time).getTime();
     const time = Number.isNaN(parsed) ? 0 : parsed;
-    walk(entry.fieldsV1 as Record<string, unknown>, "", (path) => {
+    walk(entry.fieldsV1 as Record<string, unknown>, "", (path, whole) => {
+      if (!keep(whole)) return;
       const current = owners.get(path);
       if (current === undefined || time >= current.time)
         owners.set(path, { manager, time });
@@ -60,11 +80,11 @@ export function fieldManagers(live: ManagedObject): Record<FieldPath, string> {
 function walk(
   fields: Record<string, unknown>,
   path: FieldPath,
-  visit: (path: FieldPath) => void,
+  visit: (path: FieldPath, whole: boolean) => void,
 ): void {
   for (const [key, sub] of Object.entries(fields)) {
     if (key === ".") {
-      if (path !== "") visit(path);
+      if (path !== "") visit(path, false);
       continue;
     }
     const at = segment(path, key);
@@ -73,7 +93,7 @@ function walk(
       typeof sub === "object" && sub !== null
         ? (sub as Record<string, unknown>)
         : {};
-    if (Object.keys(children).length === 0) visit(at);
+    if (Object.keys(children).length === 0) visit(at, true);
     else walk(children, at, visit);
   }
 }

@@ -2,7 +2,6 @@ import { Lock } from "lucide-react";
 import Link from "next/link";
 import { FieldHelp } from "@/components/fleet/field-help";
 import {
-  Table,
   TableBody,
   TableHead,
   TableHeader,
@@ -49,7 +48,12 @@ export function ComponentSettings({
             {group.fields.length === 0 ? (
               <p className="text-sm text-muted">No settings.</p>
             ) : (
-              <Table label={`${group.label} settings`}>
+              // Not the Table of the kit: its scroll box clips the help of
+              // a field, so the cells wrap long values instead.
+              <table
+                aria-label={`${group.label} settings`}
+                className="w-full text-sm"
+              >
                 <TableHeader>
                   <TableRow>
                     <TableHead>Field</TableHead>
@@ -65,7 +69,9 @@ export function ComponentSettings({
                         className="px-2 py-2 text-left align-top font-normal"
                       >
                         <span className="inline-flex items-center gap-1">
-                          <code className="text-text">{field.label}</code>
+                          <code className="text-text break-words">
+                            {field.label}
+                          </code>
                           <FieldHelp
                             label={field.label}
                             doc={docs[field.key]}
@@ -82,7 +88,7 @@ export function ComponentSettings({
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+              </table>
             )}
           </div>
         ))
@@ -96,7 +102,11 @@ function Value({ value }: { value: unknown }) {
   if (typeof value === "string") return <>{value}</>;
   if (typeof value === "number" || typeof value === "boolean")
     return <>{String(value)}</>;
-  return <code className="text-xs text-text-2">{JSON.stringify(value)}</code>;
+  return (
+    <code className="text-xs text-text-2 [overflow-wrap:anywhere]">
+      {JSON.stringify(value)}
+    </code>
+  );
 }
 
 function State({

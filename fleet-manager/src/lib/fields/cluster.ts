@@ -14,6 +14,7 @@ import {
   type Layer,
   type ManagedObject,
   type Merged,
+  wholeFieldManagers,
 } from "@/lib/merge";
 import { LOCK_FIELDS, type LockKind, type LockRow } from "./locks";
 import { parameterFields } from "./parameters";
@@ -469,8 +470,8 @@ function claimPathOf(
 }
 
 // managersByField gives each field the managers that own it or a value
-// inside it. A manager of a node above the fields owns each field below it
-// that inherits returns true for.
+// inside it. A manager of a whole node above the fields owns each field below
+// it that inherits returns true for.
 function managersByField(
   live: ManagedObject,
   nodes: Map<FieldPath, WalkNode>,
@@ -492,12 +493,13 @@ function managersByField(
     return false;
   };
   for (const [path, manager] of Object.entries(fieldManagers(live))) {
-    if (!nodes.has(path)) continue;
-    const field = fieldOf(path);
+    const field = nodes.has(path) ? fieldOf(path) : undefined;
     if (field !== undefined) add(field, manager);
-    else
-      for (const f of fields)
-        if (isBelow(f, path) && inherits(f)) add(f, manager);
+  }
+  for (const [path, manager] of Object.entries(wholeFieldManagers(live))) {
+    if (!nodes.has(path) || fieldOf(path) !== undefined) continue;
+    for (const f of fields)
+      if (isBelow(f, path) && inherits(f)) add(f, manager);
   }
   return byField;
 }

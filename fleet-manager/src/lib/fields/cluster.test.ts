@@ -371,6 +371,29 @@ describe("clusterFields", () => {
     );
   });
 
+  it("a manager of the presence of a map does not own its other keys", () => {
+    const fields = fieldsOf({
+      spec: { podLabels: { team: "orders", injected: "yes" } },
+      managedFields: [
+        managedFieldsOf(CLAIM, [["spec", "podLabels", "team"]]),
+        {
+          manager: "label-injector",
+          time: LATE,
+          fieldsV1: {
+            "f:spec": { "f:podLabels": { ".": {}, "f:injected": {} } },
+          },
+        },
+      ],
+      claim: claim({ cluster: { podLabels: { team: "orders" } } }),
+    });
+    expect(stateLabel(at(fields, "spec.podLabels.team").state)).toBe(
+      "Changed in the claim",
+    );
+    expect(stateLabel(at(fields, "spec.podLabels.injected").state)).toBe(
+      "Set by label-injector",
+    );
+  });
+
   it("a manager of a whole attachment list owns each of its items", () => {
     const spec = {
       clusterRef: { name: "orders" },
