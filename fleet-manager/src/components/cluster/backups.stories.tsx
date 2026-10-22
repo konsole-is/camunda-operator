@@ -178,8 +178,15 @@ const pgInput = input({
           { type: "ArchiveReady", status: "True", reason: "Archiving" },
         ],
         archive: {
-          history: [{ serverName: "orders-pg", from: "2026-09-20T15:20:40Z" }],
-          reachableFrom: "2026-09-25T09:58:00Z",
+          history: [
+            {
+              serverName: "orders-pg",
+              from: "2026-09-01T00:00:00Z",
+              to: "2026-09-20T15:20:40Z",
+            },
+            { serverName: "orders-pg-r1", from: "2026-09-22T06:00:00Z" },
+          ],
+          reachableFrom: "2026-09-19T08:00:00Z",
         },
       },
       { uid: "uid-orders-pg" },

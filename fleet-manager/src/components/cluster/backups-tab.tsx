@@ -20,6 +20,7 @@ import {
   type BackupStorage,
   type BucketView,
   type DatabaseView,
+  type RestoreInterval,
   type RestoreRow,
   type ScheduleView,
   dateTime,
@@ -133,16 +134,44 @@ function DatabaseTerms({ database }: { database: DatabaseView }) {
           {archive.bucket && (
             <Term label="Archive bucket">{bucketText(archive.bucket)}</Term>
           )}
-          <Term label="Restore window">
-            {archive.window
-              ? archive.window.to
-                ? `${dateTime(archive.window.from)} to ${dateTime(archive.window.to)} (uploads are failing after this point)`
-                : `${dateTime(archive.window.from)} to now`
-              : "No restore point yet"}
-          </Term>
+          {archive.window && (
+            <Term label="Restore window">
+              <RestoreWindow window={archive.window} />
+            </Term>
+          )}
         </>
       )}
     </>
+  );
+}
+
+function RestoreWindow({ window }: { window: RestoreInterval[] }) {
+  if (window.length === 0) return <>No restore point yet</>;
+  return (
+    <ul className="flex flex-col gap-0.5">
+      {window.map((interval, i) => (
+        <Fragment key={interval.from}>
+          {i > 0 && !adjoins(window[i - 1], interval) && (
+            <li className="text-xs text-muted">No restore point in this gap</li>
+          )}
+          <li>
+            {dateTime(interval.from)} to{" "}
+            {interval.to ? dateTime(interval.to) : "now"}
+            {interval.failing && (
+              <span className="block text-xs text-warn">
+                Uploads are failing after this point
+              </span>
+            )}
+          </li>
+        </Fragment>
+      ))}
+    </ul>
+  );
+}
+
+function adjoins(before: RestoreInterval, after: RestoreInterval): boolean {
+  return (
+    before.to !== undefined && Date.parse(before.to) === Date.parse(after.from)
   );
 }
 
@@ -160,8 +189,7 @@ function ScheduleSection({ schedules }: { schedules: ScheduleView[] }) {
             <li key={s.name}>
               <span className="font-medium">{s.name}</span>:{" "}
               <code className="rounded bg-panel-2 px-1 text-xs">{s.cron}</code>,
-              keeps {s.completed ?? "all"} completed and {s.failed ?? "all"}{" "}
-              failed
+              keeps {s.completed} completed and {s.failed} failed
               {s.lastBackup && (
                 <span className="block text-xs text-muted">
                   Last backup {s.lastBackup}

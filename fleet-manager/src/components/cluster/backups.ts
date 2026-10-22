@@ -4,6 +4,7 @@ import { formatBytes } from "@/components/fleet/units";
 import type { Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
 import { mergeDatabaseServer } from "@/lib/merge";
+import { sha256Hex } from "@/lib/sha256";
 import {
   type BackupKind,
   type ClusterLike,
@@ -173,22 +174,31 @@ export type BucketView = { name: string; location?: string };
 export type ScheduleView = {
   name: string;
   cron: string;
-  completed?: number;
-  failed?: number;
+  completed: number;
+  failed: number;
   lastBackup?: string;
 };
 
 /**
+ * RestoreInterval is a span [from, to) that a point-in-time restore can
+ * reach. to is unset when the span runs to now. failing marks a to that is
+ * where the uploads of the write-ahead log started to fail.
+ */
+export type RestoreInterval = { from: string; to?: string; failing?: true };
+
+/**
  * ArchiveView is the WAL archive of a DatabaseServer that the operator runs.
  * bucket is unset when the archive is off or its preset is not found. window
- * is the restore window of a point-in-time restore: it is unset without a
- * restore point, and its to is unset when it ends now.
+ * is set only when the DatabaseServerConfig offers a rollback by the
+ * operator. It lists the intervals that a rollback can reach, oldest first,
+ * and a time between two intervals is a gap that no restore reaches. An
+ * empty window has no restore point.
  */
 export type ArchiveView = {
   server: string;
   state: { tone: StatusTone; label: string; message?: string };
   bucket?: BucketView;
-  window?: { from: string; to?: string };
+  window?: RestoreInterval[];
 };
 
 /**
@@ -282,8 +292,9 @@ export function backupStorageOf(input: BackupStorageInput): BackupStorage {
     .map((s): ScheduleView => ({
       name: s.metadata?.name ?? "",
       cron: s.spec.schedule,
-      completed: s.spec.retained?.completed,
-      failed: s.spec.retained?.failed,
+      // The defaults of RetainedBackups in api/v1.
+      completed: s.spec.retained?.completed ?? 7,
+      failed: s.spec.retained?.failed ?? 3,
       lastBackup: s.status?.lastBackupName,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -351,13 +362,17 @@ function databaseOf(
   const server =
     publisher &&
     input.databaseServers.find((s) => s.metadata?.uid === publisher.uid);
-  if (server) view.archive = archiveOf(input, server);
+  if (server) {
+    const rollback = pitr?.enabled === true && pitr.recovery === "operator";
+    view.archive = archiveOf(input, server, rollback);
+  }
   return view;
 }
 
 function archiveOf(
   input: BackupStorageInput,
   server: Resource<"DatabaseServer">,
+  rollback: boolean,
 ): ArchiveView {
   const view: ArchiveView = {
     server: server.metadata?.name ?? "",
@@ -367,7 +382,7 @@ function archiveOf(
   if (server.spec.presetRef && !preset) {
     view.state = {
       tone: "bad",
-      label: `DatabaseServerPreset ${server.spec.presetRef} not found`,
+      label: `DatabaseServerPreset "${server.spec.presetRef}" not found`,
     };
     return view;
   }
@@ -385,31 +400,103 @@ function archiveOf(
   } else {
     view.state = { tone: "warn", label: ready?.reason || "Waiting", message };
   }
-  view.bucket = bucketOf(input.objectStorage, spec.archive.objectStorageRef);
-
-  // A rollback reads only the open record, the one without to
-  // (docs/crds/databaseserver.md "The archive history"). The operator also
-  // refuses a point older than the retention period (outOfReach in
-  // internal/controller/databaseserver).
-  const archive = server.status?.archive;
-  const open = archive?.history?.findLast((r) => !r.to);
-  if (open) {
-    const nowMs = parse(input.now);
-    const cutoff =
-      nowMs === undefined || !spec.archive.retentionPeriodDays
-        ? undefined
-        : new Date(
-            nowMs - spec.archive.retentionPeriodDays * 86_400_000,
-          ).toISOString();
-    const from = [open.from, archive?.reachableFrom, cutoff]
-      .filter((t): t is string => parse(t) !== undefined)
-      .reduce((a, b) => (parse(b)! > parse(a)! ? b : a));
-    const to = open.unverifiedFrom;
-    if (to === undefined || parse(from)! <= (parse(to) ?? Infinity)) {
-      view.window = to ? { from, to } : { from };
-    }
+  const bucket = spec.archive.objectStorageRef;
+  view.bucket = bucketOf(input.objectStorage, bucket);
+  if (rollback) {
+    const config = byName(input.objectStorage, bucket);
+    view.window = restoreWindow(
+      server,
+      bucket,
+      config ? archiveLocation(config, server) : "",
+      spec.archive.retentionPeriodDays,
+      input.now,
+    );
   }
   return view;
+}
+
+// restoreWindow follows the operator: SelectArchive in
+// pkg/components/databaseserver picks the record and refuses one at another
+// location, and outOfReach in internal/controller/databaseserver refuses a
+// point before the retention period or reachableFrom.
+function restoreWindow(
+  server: Resource<"DatabaseServer">,
+  bucket: string,
+  location: string,
+  retentionDays: number,
+  now: string,
+): RestoreInterval[] {
+  const archive = server.status?.archive;
+  const nowMs = parse(now) ?? Date.now();
+  const cutoff = nowMs - retentionDays * 86_400_000;
+  const reachable = parse(archive?.reachableFrom);
+  const [floor, floorText] =
+    reachable !== undefined && reachable > cutoff
+      ? [reachable, archive!.reachableFrom!]
+      : [cutoff, new Date(cutoff).toISOString()];
+  const window: RestoreInterval[] = [];
+  for (const record of archive?.history ?? []) {
+    const ref = record.objectStorageRef || bucket;
+    const at = record.location || (ref === bucket ? location : "");
+    const recordFrom = parse(record.from);
+    if (!at || at !== location || recordFrom === undefined) continue;
+    const from = recordFrom >= floor ? record.from : floorText;
+    // Only the open record carries unverifiedFrom (markArchiveOutage).
+    const interval: RestoreInterval = record.to
+      ? { from, to: record.to }
+      : record.unverifiedFrom
+        ? { from, to: record.unverifiedFrom, failing: true }
+        : { from };
+    const end = interval.to ? (parse(interval.to) ?? -Infinity) : nowMs;
+    if (Math.max(recordFrom, floor) < end) window.push(interval);
+  }
+  return window;
+}
+
+/**
+ * archiveLocation returns where the operator writes the archive of server
+ * in config, as ArchiveLocation in pkg/components/databaseserver writes it.
+ * status.archive.history records hold locations of this form.
+ */
+export function archiveLocation(
+  config: Resource<"ObjectStorageConfig">,
+  server: Resource<"DatabaseServer">,
+): string {
+  const { namespace = "", name = "", uid = "" } = server.metadata ?? {};
+  const segment = `${name}-${sha256Hex(uid).slice(0, 8)}`;
+  return locationOf(config, `databaseserver/${namespace}/${segment}`);
+}
+
+// locationOf is LocationOf of ObjectStorageConfig in api/v1.
+function locationOf(
+  config: Resource<"ObjectStorageConfig">,
+  path: string,
+): string {
+  const trim = (text: string) => text.replace(/^\/+|\/+$/g, "");
+  const trimRight = (text: string) => text.replace(/\/+$/, "");
+  const { type, s3, gcs, azureBlob } = config.spec;
+  const basePath =
+    type === "S3"
+      ? s3?.basePath
+      : type === "GCS"
+        ? gcs?.basePath
+        : azureBlob?.basePath;
+  const base = trim(`${trim(basePath ?? "")}/${trim(path)}`);
+  if (type === "S3" && s3) {
+    const endpoint = trimRight(s3.endpoint ?? "");
+    const service = endpoint
+      ? `endpoint ${endpoint}`
+      : `region ${s3.region ?? ""}`;
+    return `s3://${s3.bucketName}/${base} (${service})`;
+  }
+  if (type === "GCS" && gcs) return `gs://${gcs.bucketName}/${base}`;
+  if (type === "AzureBlob" && azureBlob) {
+    const endpoint =
+      trimRight(azureBlob.endpoint ?? "") ||
+      `https://${azureBlob.accountName}.blob.core.windows.net`;
+    return `azblob://${azureBlob.accountName}/${azureBlob.container}/${base} (endpoint ${endpoint})`;
+  }
+  return "";
 }
 
 function bucketOf(

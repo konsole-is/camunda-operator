@@ -449,7 +449,7 @@ const noBackupStorage = data().backupStorage;
 function pgPage(
   server: object = {
     databaseServerConfig: "orders-pg",
-    archive: { objectStorageRef: "wal" },
+    archive: { objectStorageRef: "wal", retentionPeriodDays: 30 },
   },
   status?: object,
 ): ClusterPageData {
@@ -524,7 +524,12 @@ function pgPage(
             ],
             archive: {
               history: [
-                { serverName: "orders-pg", from: "2026-10-11T00:00:00Z" },
+                {
+                  serverName: "orders-pg",
+                  from: "2026-09-10T00:00:00Z",
+                  to: "2026-09-20T00:00:00Z",
+                },
+                { serverName: "orders-pg-r1", from: "2026-10-11T00:00:00Z" },
               ],
             },
           },
@@ -626,7 +631,7 @@ describe("Backups tab", () => {
     expect(within(restores).getByText("RestoringPrimaryStorage")).toBeTruthy();
   });
 
-  it("a PostgreSQL cluster with point-in-time restore on shows its server, archive, and window", () => {
+  it("a PostgreSQL cluster with point-in-time restore on shows its server, archive, and the intervals of its window", () => {
     render(
       view({
         initial: pgPage(),
@@ -642,8 +647,14 @@ describe("Backups tab", () => {
     expect(within(storage).getByText("Archiving")).toBeTruthy();
     expect(within(storage).getByText("gs://acme-wal")).toBeTruthy();
     expect(
-      within(storage).getByText("2026-10-11 00:00 UTC to now"),
-    ).toBeTruthy();
+      within(storage)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual([
+      "2026-09-18 12:00 UTC to 2026-09-20 00:00 UTC",
+      "No restore point in this gap",
+      "2026-10-11 00:00 UTC to now",
+    ]);
   });
 
   it("a cluster without backup storage says where a bucket comes from", () => {
@@ -757,6 +768,39 @@ describe("Backups tab", () => {
       expect(screen.getByText("2026-10-11 12:00 UTC to now")).toBeTruthy();
       act(() => {
         vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByText("2026-10-11 12:01 UTC to now")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not move the clock while another tab is open", () => {
+    vi.useFakeTimers({ now: Date.parse(now) });
+    try {
+      const page = pgPage(
+        {
+          databaseServerConfig: "orders-pg",
+          archive: { objectStorageRef: "wal", retentionPeriodDays: 7 },
+        },
+        {
+          archive: {
+            history: [
+              { serverName: "orders-pg", from: "2026-01-01T00:00:00Z" },
+            ],
+          },
+        },
+      );
+      window.history.replaceState(null, "", "?tab=overview");
+      const { rerender } = render(view({ initial: page }));
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      window.history.replaceState(null, "", "?tab=backups");
+      rerender(view({ initial: page }));
+      expect(screen.getByText("2026-10-11 12:00 UTC to now")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(1_000);
       });
       expect(screen.getByText("2026-10-11 12:01 UTC to now")).toBeTruthy();
     } finally {

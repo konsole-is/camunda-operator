@@ -36,8 +36,8 @@ import { TopologyView } from "./topology-view";
  * lists hold the objects of the namespace of the cluster. accessRequests are
  * the PluginRequests of the access section. podSelector selects the pods of
  * the cluster by its owner label, and pods holds them. backupStorage holds
- * the objects that the Backups tab follows from the cluster to its buckets
- * and its schedules. Its databaseServerPresets are cluster-scoped.
+ * the objects that the Backups tab follows from the cluster to its backup
+ * storage and its schedules. Its databaseServerPresets are cluster-scoped.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -187,11 +187,7 @@ export function ClusterView({
     initial.backupStorage.schedules,
   );
   const backups = [...backupsES.items, ...backupsRDBMS.items];
-  const clock = useClock(
-    now,
-    tab === "backups" ||
-      runningBackup(cluster.item ?? initial.cluster, backups) !== undefined,
-  );
+  const clock = useClock(now, tab === "backups");
 
   const live = cluster.item;
   if (!live) {

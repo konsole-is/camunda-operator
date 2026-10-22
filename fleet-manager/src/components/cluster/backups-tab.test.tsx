@@ -2,7 +2,13 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import type { BackupRow, BackupStorage, RestoreRow } from "./backups";
+import type {
+  ArchiveView,
+  BackupRow,
+  BackupStorage,
+  DatabaseView,
+  RestoreRow,
+} from "./backups";
 import { BackupsTab } from "./backups-tab";
 
 afterEach(cleanup);
@@ -173,32 +179,50 @@ describe("BackupsTab", () => {
     expect(screen.getByText("DatabaseConfig orders-db not found")).toBeTruthy();
   });
 
-  it("shows a failing archive with the end of its window", () => {
+  function pgStorage(
+    pitr: DatabaseView["pitr"],
+    archive: Partial<ArchiveView> = {},
+  ): BackupStorage {
+    return {
+      kind: "rdbms",
+      bucket: { name: "backups", location: "s3://acme-backups" },
+      database: {
+        serverConfig: "orders-pg",
+        endpoint: "orders-pg-rw.team-a.svc:5432",
+        pitr,
+        archive: {
+          server: "orders-pg",
+          state: { tone: "ok", label: "Archiving" },
+          bucket: { name: "wal", location: "gs://acme-wal" },
+          ...archive,
+        },
+      },
+      schedules: [],
+    };
+  }
+
+  it("shows a failing archive with the intervals of its window and the gaps between them", () => {
     render(
       <BackupsTab
-        storage={{
-          kind: "rdbms",
-          bucket: { name: "backups", location: "s3://acme-backups" },
-          database: {
-            serverConfig: "orders-pg",
-            endpoint: "orders-pg-rw.team-a.svc:5432",
-            pitr: { enabled: true, recovery: "external", retentionDays: 7 },
-            archive: {
-              server: "orders-pg",
-              state: {
-                tone: "bad",
-                label: "ArchiveFailing",
-                message: "The upload of WAL failed",
-              },
-              bucket: { name: "wal", location: "gs://acme-wal" },
-              window: {
-                from: "2026-09-25T09:58:00Z",
-                to: "2026-10-18T10:00:00Z",
-              },
+        storage={pgStorage(
+          { enabled: true, recovery: "operator", retentionDays: 30 },
+          {
+            state: {
+              tone: "bad",
+              label: "ArchiveFailing",
+              message: "The upload of WAL failed",
             },
+            window: [
+              { from: "2026-09-18T12:00:00Z", to: "2026-09-20T15:20:40Z" },
+              { from: "2026-09-22T06:00:00Z", to: "2026-09-30T00:00:00Z" },
+              {
+                from: "2026-09-30T00:00:00Z",
+                to: "2026-10-18T10:00:00Z",
+                failing: true,
+              },
+            ],
           },
-          schedules: [],
-        }}
+        )}
         backups={[]}
         restores={[]}
       />,
@@ -209,39 +233,60 @@ describe("BackupsTab", () => {
     ).toBe("The upload of WAL failed");
     expect(within(storage).getByText("gs://acme-wal")).toBeTruthy();
     expect(
-      within(storage).getByText("On, 7 days, recovery outside the operator"),
+      within(storage).getByText("On, 30 days, recovery by the operator"),
     ).toBeTruthy();
     expect(
-      within(storage).getByText(
-        "2026-09-25 09:58 UTC to 2026-10-18 10:00 UTC (uploads are failing after this point)",
-      ),
-    ).toBeTruthy();
+      within(storage)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual([
+      "2026-09-18 12:00 UTC to 2026-09-20 15:20 UTC",
+      "No restore point in this gap",
+      "2026-09-22 06:00 UTC to 2026-09-30 00:00 UTC",
+      "2026-09-30 00:00 UTC to 2026-10-18 10:00 UTC" +
+        "Uploads are failing after this point",
+    ]);
   });
 
-  it("shows point-in-time restore Off and no restore point yet", () => {
+  it("shows an open interval as running to now", () => {
     render(
       <BackupsTab
-        storage={{
-          kind: "rdbms",
-          bucket: { name: "backups", location: "s3://acme-backups" },
-          database: {
-            serverConfig: "orders-pg",
-            endpoint: "orders-pg-rw.team-a.svc:5432",
-            pitr: { enabled: false },
-            archive: {
-              server: "orders-pg",
-              state: { tone: "warn", label: "Waiting" },
-              bucket: { name: "wal", location: "gs://acme-wal" },
-            },
-          },
-          schedules: [],
-        }}
+        storage={pgStorage(
+          { enabled: true, recovery: "operator", retentionDays: 30 },
+          { window: [{ from: "2026-09-22T06:00:00Z" }] },
+        )}
+        backups={[]}
+        restores={[]}
+      />,
+    );
+    expect(screen.getByText("2026-09-22 06:00 UTC to now")).toBeTruthy();
+  });
+
+  it("shows no restore point yet for an empty window", () => {
+    render(
+      <BackupsTab
+        storage={pgStorage(
+          { enabled: true, recovery: "operator", retentionDays: 30 },
+          { state: { tone: "warn", label: "Waiting" }, window: [] },
+        )}
+        backups={[]}
+        restores={[]}
+      />,
+    );
+    expect(screen.getByText("No restore point yet")).toBeTruthy();
+  });
+
+  it("shows point-in-time restore Off and no restore window", () => {
+    render(
+      <BackupsTab
+        storage={pgStorage({ enabled: false })}
         backups={[]}
         restores={[]}
       />,
     );
     expect(screen.getByText("Off")).toBeTruthy();
-    expect(screen.getByText("No restore point yet")).toBeTruthy();
+    expect(screen.getByText("Archiving")).toBeTruthy();
+    expect(screen.queryByText("Restore window")).toBeNull();
   });
 
   it("lists each schedule with its cron, retention, and last backup", () => {

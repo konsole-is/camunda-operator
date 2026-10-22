@@ -6,6 +6,7 @@ import {
   type BackupStorageInput,
   type RestoreObject,
   backupRowsOf,
+  archiveLocation,
   backupStorageOf,
   bucketLocation,
   dateTime,
@@ -419,6 +420,7 @@ function rdbmsChain(
     server?: object | false;
     serverStatus?: object;
     owned?: boolean;
+    pitr?: object;
   } = {},
 ): BackupStorageInput {
   return input({
@@ -447,7 +449,7 @@ function rdbmsChain(
               {
                 host: "orders-pg-rw.team-a.svc",
                 port: 5432,
-                pitr: {
+                pitr: over.pitr ?? {
                   enabled: true,
                   recovery: "operator",
                   retentionPeriodDays: 30,
@@ -466,7 +468,7 @@ function rdbmsChain(
               "orders-pg",
               over.server ?? {
                 databaseServerConfig: "orders-pg",
-                archive: { objectStorageRef: "wal" },
+                archive: { objectStorageRef: "wal", retentionPeriodDays: 30 },
               },
               over.serverStatus ?? {
                 conditions: [
@@ -479,9 +481,11 @@ function rdbmsChain(
                       from: "2026-09-01T00:00:00Z",
                       to: "2026-09-20T15:20:40Z",
                     },
-                    { serverName: "orders-pg", from: "2026-09-20T15:20:40Z" },
+                    {
+                      serverName: "orders-pg-r2",
+                      from: "2026-09-22T06:00:00Z",
+                    },
                   ],
-                  reachableFrom: "2026-09-25T09:58:00Z",
                 },
               },
               { uid: "uid-orders-pg" },
@@ -489,6 +493,12 @@ function rdbmsChain(
           ],
   });
 }
+
+// The retention period of 30 days cuts the closed record at 2026-09-18 12:00.
+const chainWindow = [
+  { from: "2026-09-18T12:00:00.000Z", to: "2026-09-20T15:20:40Z" },
+  { from: "2026-09-22T06:00:00Z" },
+];
 
 const publisher = {
   apiVersion: "core.camunda.io/v1",
@@ -584,7 +594,7 @@ describe("backupStorageOf", () => {
           server: "orders-pg",
           state: { tone: "ok", label: "Archiving" },
           bucket: { name: "wal", location: "gs://acme-wal" },
-          window: { from: "2026-09-25T09:58:00Z" },
+          window: chainWindow,
         },
       },
     });
@@ -605,7 +615,7 @@ describe("backupStorageOf", () => {
     );
     expect(
       storage.kind === "rdbms" && storage.database?.archive?.window,
-    ).toEqual({ from: "2026-10-01T00:00:00Z" });
+    ).toEqual([{ from: "2026-10-01T00:00:00Z" }]);
   });
 
   it("ends the window at unverifiedFrom while uploads fail", () => {
@@ -640,12 +650,18 @@ describe("backupStorageOf", () => {
           label: "ArchiveFailing",
           message: "The upload of WAL failed",
         },
-        window: { from: "2026-09-25T09:58:00Z", to: "2026-10-18T10:00:00Z" },
+        window: [
+          {
+            from: "2026-09-25T09:58:00Z",
+            to: "2026-10-18T10:00:00Z",
+            failing: true,
+          },
+        ],
       },
     );
   });
 
-  it("has no window without an open record", () => {
+  it("offers a closed record inside the retention period", () => {
     const storage = backupStorageOf(
       rdbmsChain({
         serverStatus: {
@@ -663,7 +679,9 @@ describe("backupStorageOf", () => {
     );
     expect(
       storage.kind === "rdbms" && storage.database?.archive?.window,
-    ).toBeUndefined();
+    ).toEqual([
+      { from: "2026-09-18T12:00:00.000Z", to: "2026-09-20T00:00:00Z" },
+    ]);
   });
 
   it("starts the window at the retention cutoff when the open record is older", () => {
@@ -684,7 +702,7 @@ describe("backupStorageOf", () => {
     );
     expect(
       storage.kind === "rdbms" && storage.database?.archive?.window,
-    ).toEqual({ from: "2026-10-11T12:00:00.000Z" });
+    ).toEqual([{ from: "2026-10-11T12:00:00.000Z" }]);
   });
 
   it("takes the archive of the DatabaseServerPreset when the server sets none", () => {
@@ -695,7 +713,11 @@ describe("backupStorageOf", () => {
       {
         kind: "DatabaseServerPreset",
         metadata: { name: "pg" },
-        spec: { server: { archive: { objectStorageRef: "wal" } } },
+        spec: {
+          server: {
+            archive: { objectStorageRef: "wal", retentionPeriodDays: 30 },
+          },
+        },
       } as unknown as Resource<"DatabaseServerPreset">,
     ];
     const storage = backupStorageOf(data);
@@ -703,7 +725,7 @@ describe("backupStorageOf", () => {
       {
         state: { tone: "ok", label: "Archiving" },
         bucket: { name: "wal", location: "gs://acme-wal" },
-        window: { from: "2026-09-25T09:58:00Z" },
+        window: chainWindow,
       },
     );
   });
@@ -760,11 +782,11 @@ describe("backupStorageOf", () => {
     );
     expect(storage.kind === "rdbms" && storage.database?.archive).toEqual({
       server: "orders-pg",
-      state: { tone: "bad", label: "DatabaseServerPreset pg not found" },
+      state: { tone: "bad", label: 'DatabaseServerPreset "pg" not found' },
     });
   });
 
-  it("has no window when the retention cutoff is after unverifiedFrom", () => {
+  it("has an empty window when the retention cutoff is after unverifiedFrom", () => {
     const storage = backupStorageOf(
       rdbmsChain({
         server: {
@@ -784,10 +806,87 @@ describe("backupStorageOf", () => {
         },
       }),
     );
-    expect(storage.kind === "rdbms" && storage.database?.archive).toBeDefined();
     expect(
       storage.kind === "rdbms" && storage.database?.archive?.window,
-    ).toBeUndefined();
+    ).toEqual([]);
+  });
+
+  it("drops a closed record that reachableFrom pruned", () => {
+    const data = rdbmsChain();
+    data.databaseServers[0].status!.archive!.reachableFrom =
+      "2026-09-25T09:58:00Z";
+    const storage = backupStorageOf(data);
+    expect(
+      storage.kind === "rdbms" && storage.database?.archive?.window,
+    ).toEqual([{ from: "2026-09-25T09:58:00Z" }]);
+  });
+
+  it.each([
+    ["off", { enabled: false, recovery: "external" }],
+    ["recovered outside the operator", { enabled: true, recovery: "external" }],
+  ])(
+    "shows the archive but no window when the pitr of the config is %s",
+    (_, pitr) => {
+      const archive = (() => {
+        const storage = backupStorageOf(rdbmsChain({ pitr }));
+        return storage.kind === "rdbms" ? storage.database?.archive : undefined;
+      })();
+      expect(archive).toMatchObject({ state: { label: "Archiving" } });
+      expect(archive?.window).toBeUndefined();
+    },
+  );
+
+  it("offers only the records at the current location of the archive", () => {
+    const current = "gs://acme-wal/databaseserver/team-a/orders-pg-bb8f6134";
+    const storage = backupStorageOf(
+      rdbmsChain({
+        serverStatus: {
+          archive: {
+            history: [
+              {
+                serverName: "orders-pg",
+                location:
+                  "s3://old/databaseserver/team-a/orders-pg-bb8f6134 (region r)",
+                from: "2026-09-19T00:00:00Z",
+                to: "2026-09-20T00:00:00Z",
+              },
+              {
+                serverName: "orders-pg-r1",
+                objectStorageRef: "backups",
+                from: "2026-09-21T00:00:00Z",
+                to: "2026-09-22T00:00:00Z",
+              },
+              {
+                serverName: "orders-pg-r2",
+                objectStorageRef: "wal",
+                from: "2026-09-23T00:00:00Z",
+                to: "2026-09-24T00:00:00Z",
+              },
+              {
+                serverName: "orders-pg-r3",
+                location: current,
+                from: "2026-09-25T00:00:00Z",
+              },
+            ],
+          },
+        },
+      }),
+    );
+    expect(
+      storage.kind === "rdbms" && storage.database?.archive?.window,
+    ).toEqual([
+      { from: "2026-09-23T00:00:00Z", to: "2026-09-24T00:00:00Z" },
+      { from: "2026-09-25T00:00:00Z" },
+    ]);
+  });
+
+  it("offers no record while the archive bucket is not found", () => {
+    const data = rdbmsChain();
+    data.objectStorage = [s3Backups];
+    const storage = backupStorageOf(data);
+    expect(
+      storage.kind === "rdbms" && storage.database?.archive?.window,
+    ).toEqual([]);
   });
 
   it("an external server shows the pitr of its DatabaseServerConfig and no archive", () => {
@@ -825,6 +924,45 @@ describe("backupStorageOf", () => {
       ["nightly", undefined],
       ["weekly", "weekly-1"],
     ]);
+  });
+});
+
+describe("archiveLocation", () => {
+  const server = obj("DatabaseServer", "orders-pg", {}, undefined, {
+    uid: "uid-orders-pg",
+  });
+  const tree = "databaseserver/team-a/orders-pg-bb8f6134";
+  it.each([
+    [
+      { type: "S3", s3: { bucketName: "b", basePath: "/p/", region: "r" } },
+      `s3://b/p/${tree} (region r)`,
+    ],
+    [
+      {
+        type: "S3",
+        s3: { bucketName: "b", region: "r", endpoint: "http://minio:9000/" },
+      },
+      `s3://b/${tree} (endpoint http://minio:9000)`,
+    ],
+    [{ type: "GCS", gcs: { bucketName: "b" } }, `gs://b/${tree}`],
+    [
+      { type: "AzureBlob", azureBlob: { accountName: "acct", container: "c" } },
+      `azblob://acct/c/${tree} (endpoint https://acct.blob.core.windows.net)`,
+    ],
+    [
+      {
+        type: "AzureBlob",
+        azureBlob: {
+          accountName: "acct",
+          container: "c",
+          basePath: "p",
+          endpoint: "http://azurite:10000/acct/",
+        },
+      },
+      `azblob://acct/c/p/${tree} (endpoint http://azurite:10000/acct)`,
+    ],
+  ])("archiveLocation in %j is %s", (spec, want) => {
+    expect(archiveLocation(osc("x", spec), server)).toBe(want);
   });
 });
 
