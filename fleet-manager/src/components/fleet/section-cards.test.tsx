@@ -2,6 +2,9 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import { checkAllowed, claimEditable, resolve } from "@/lib/policy";
 import type { OptionView, SectionView } from "@/lib/policy/types";
 import { SectionCards } from "./section-cards";
 
@@ -1233,6 +1236,121 @@ describe("SectionCards", () => {
 
       expect(onChange.mock.lastCall![1]).toEqual([]);
       expect(input.getAttribute("aria-invalid")).toBeNull();
+    });
+  });
+
+  describe("an array parameter whose allowed values are whole lists", () => {
+    const messaging = [
+      "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+      "arn:aws:iam::aws:policy/AmazonSNSFullAccess",
+    ];
+    const environment: Environment = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "dev" },
+      spec: {
+        sections: {
+          "connectors-permissions": { allowed: ["aws-connectors-role"] },
+        },
+        parameters: {
+          "aws-connectors-role": {
+            policies: {
+              claimEditable: true,
+              allowed: [
+                { name: "messaging", label: "Messaging", value: messaging },
+                {
+                  name: "storage",
+                  label: "Storage",
+                  value: ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"],
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const registration = (
+      parameterValues?: Record<string, unknown>,
+    ): PluginRegistration => ({
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginRegistration",
+      metadata: { name: "aws-connectors-role" },
+      spec: {
+        sections: ["connectors-permissions"],
+        mode: "Optional",
+        label: "Role for each cluster",
+        deletionPolicies: ["Delete"],
+        serviceAccount: { name: "aws", namespace: "plugins" },
+        parameters: {
+          type: "object",
+          properties: {
+            policies: {
+              type: "array",
+              title: "Policies",
+              items: { type: "string" },
+            },
+          },
+        },
+        ...(parameterValues && { parameterValues }),
+      },
+    });
+    const listSection = (r: PluginRegistration): SectionView =>
+      section(
+        {},
+        {
+          registration: "aws-connectors-role",
+          label: "Role for each cluster",
+          isDefault: true,
+          parameters: claimEditable(r, environment),
+        },
+      );
+
+    it("offers one choice of a named list and submits the name that the policy turns into that list", async () => {
+      const onChange = vi.fn();
+      const r = registration();
+      render(<SectionCards section={listSection(r)} onChange={onChange} />);
+
+      expect(screen.queryByRole("group", { name: "Policies" })).toBeNull();
+      await userEvent.selectOptions(
+        screen.getByRole("combobox", { name: "Policies" }),
+        "Messaging",
+      );
+
+      const [selections, errors] = onChange.mock.lastCall!;
+      expect(errors).toEqual([]);
+      expect(selections).toEqual([
+        {
+          section: "connectors-permissions",
+          registration: "aws-connectors-role",
+          parameters: { policies: "messaging" },
+        },
+      ]);
+      const resolved = resolve({
+        environment,
+        registrations: [r],
+        selections,
+      });
+      expect(resolved).toHaveProperty("value");
+      if (!("value" in resolved)) return;
+      expect(
+        checkAllowed({ policy: resolved.value.policy, selections }),
+      ).toEqual({ value: {} });
+      expect(
+        JSON.stringify(resolved.value.requests?.[0].parameters?.policies),
+      ).toBe(JSON.stringify(messaging));
+    });
+
+    it("preselects the choice whose list the registration value is", () => {
+      render(
+        <SectionCards
+          section={listSection(registration({ policies: messaging }))}
+        />,
+      );
+
+      const select = screen.getByRole("combobox", {
+        name: "Policies",
+      }) as HTMLSelectElement;
+      expect(select.selectedOptions[0].textContent).toBe("Messaging");
     });
   });
 });

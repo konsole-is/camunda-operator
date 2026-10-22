@@ -58,8 +58,9 @@ function parameterKey(registration: string, parameter: string): string {
  * and, under each selected option, its parameters. A claim-editable parameter
  * is a field that is checked against its schema, or, with an allowed list, a
  * select or a checkbox group for an array that shows the labels and submits
- * the names. Nothing is preselected in an allowed list unless the environment
- * value is one of its names. A selection holds only the parameters that differ
+ * the names. An array whose choices are whole lists is a select of one name.
+ * Nothing is preselected in an allowed list unless the environment value is
+ * one of its names. A selection holds only the parameters that differ
  * from the policy. Each x-kubernetes-validations rule of a claim-editable
  * parameter shows as a hint under it, and each rule of the root of an
  * option's schema shows under the option when the option has a claim-editable
@@ -440,7 +441,7 @@ function ParameterField({
       </div>
     );
   }
-  if (rule.allowed && schema.type === "array") {
+  if (rule.allowed && schema.type === "array" && !rule.allowedLists) {
     const allowed = rule.allowed;
     const names = Array.isArray(value) ? (value as string[]) : [];
     return (
@@ -728,7 +729,7 @@ function startValue(rule: ParameterRule): unknown {
   if (!isEditable(rule)) return undefined;
   if (!rule.allowed) return rule.value;
   const names = rule.allowed.map((a) => a.name);
-  if (rule.schema?.type === "array")
+  if (rule.schema?.type === "array" && !rule.allowedLists)
     return Array.isArray(rule.value)
       ? rule.value.filter((n) => names.includes(n))
       : [];
