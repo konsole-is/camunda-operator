@@ -39,6 +39,35 @@ In this version, the Fleet page and the Setup page show only their title. This i
 
 To set the cluster name, the Git repository, and the Prometheus address, see [Fleet manager settings](settings.md).
 
+## Trust a private CA
+
+If a private CA signs the certificate of your Git server or your Prometheus server, the fleet manager does not trust it by default. Give the fleet manager the CA bundle in a ConfigMap. The bundle is a PEM file, and it can hold more than one CA. Put the ConfigMap in the release namespace:
+
+```bash
+kubectl -n camunda-operator-system create configmap fleet-manager-ca --from-file=ca.crt=<path to the PEM CA bundle>
+```
+
+Then name the ConfigMap in `fleetManager.extraCACerts.configMapName`:
+
+```bash
+helm upgrade camunda-operator \
+  oci://ghcr.io/konsole-is/charts/camunda-operator \
+  --version <version> \
+  --namespace camunda-operator-system \
+  --set fleetManager.enabled=true \
+  --set fleetManager.extraCACerts.configMapName=fleet-manager-ca
+```
+
+The fleet manager then trusts the CAs of the bundle in addition to the public CAs. It reads the bundle from the key `ca.crt`. If your ConfigMap uses another key, add `--set fleetManager.extraCACerts.key=<key>` to the command.
+
+The fleet manager reads the bundle when its pod starts. After you change the ConfigMap, restart the Deployment:
+
+```bash
+kubectl -n camunda-operator-system rollout restart deployment/camunda-operator-fleet-manager
+```
+
+If the ConfigMap or its key does not exist, the pod does not start. `kubectl -n camunda-operator-system describe pod` shows the missing ConfigMap or key in the events of the pod.
+
 ## Who can reach it
 
 !!! warning "Give `pods/portforward`, `pods/proxy`, and `services/proxy` only to the people who manage the fleet"
