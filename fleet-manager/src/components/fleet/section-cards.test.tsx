@@ -1061,4 +1061,178 @@ describe("SectionCards", () => {
       expect(inA).not.toBe(inAB);
     });
   });
+
+  describe("rules of the schema", () => {
+    const ruled: OptionView = {
+      registration: "team-bucket",
+      label: "Team bucket",
+      isDefault: false,
+      schema: {
+        type: "object",
+        "x-kubernetes-validations": [
+          {
+            rule: "self.min <= self.max",
+            message: "min must not be above max",
+          },
+        ],
+      },
+      parameters: [
+        {
+          name: "name",
+          label: "Bucket name",
+          schema: {
+            type: "string",
+            "x-kubernetes-validations": [
+              {
+                rule: "self.startsWith('team-')",
+                message: "name must start with team-",
+              },
+            ],
+          },
+          claimEditable: true,
+          value: "team-a",
+        },
+        {
+          name: "limits",
+          label: "Limits",
+          schema: {
+            type: "object",
+            properties: {
+              cpu: {
+                type: "integer",
+                "x-kubernetes-validations": [{ rule: "self > 0" }],
+              },
+            },
+          },
+          claimEditable: true,
+        },
+        {
+          name: "bucket",
+          label: "Shared bucket",
+          schema: {
+            type: "string",
+            "x-kubernetes-validations": [
+              { rule: "self != ''", message: "bucket must not be empty" },
+            ],
+          },
+          claimEditable: false,
+          summary: "shared",
+        },
+      ],
+    };
+
+    // The text of each element that describes the field.
+    const descriptionOf = (field: HTMLElement) =>
+      (field.getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join("\n");
+
+    it("shows the rule of a parameter under its field, checked after the save", () => {
+      render(<SectionCards section={section({}, ruled)} />);
+
+      const description = descriptionOf(
+        screen.getByRole("textbox", { name: "Bucket name" }),
+      );
+
+      expect(description).toContain("name must start with team-");
+      expect(description).toContain("Checked after you save");
+    });
+
+    it("shows the rule text when a rule has no message, with its path inside the parameter", () => {
+      render(<SectionCards section={section({}, ruled)} />);
+
+      const description = descriptionOf(
+        screen.getByRole("textbox", { name: "Limits" }),
+      );
+
+      expect(description).toContain("cpu");
+      expect(description).toContain("self > 0");
+    });
+
+    it("shows the rules of the registration that span parameters under the option", async () => {
+      render(
+        <SectionCards
+          section={section({ options: [{ ...ruled, isDefault: false }] })}
+        />,
+      );
+      expect(screen.queryByText(/min must not be above max/)).toBeNull();
+
+      await userEvent.click(screen.getByRole("radio", { name: /Team bucket/ }));
+
+      expect(screen.getByText(/min must not be above max/)).toBeTruthy();
+    });
+
+    it("shows the rule of a parameter that the choice cards set under the cards", () => {
+      const withCards: OptionView = {
+        registration: "elasticsearch",
+        label: "New Elasticsearch",
+        isDefault: true,
+        parameters: [
+          {
+            name: "preset",
+            label: "Preset",
+            schema: {
+              type: "string",
+              "x-kubernetes-validations": [
+                { rule: "self != 'large'", message: "large is retired" },
+              ],
+            },
+            claimEditable: true,
+            value: "small",
+          },
+        ],
+        choices: {
+          parameter: "preset",
+          items: [{ name: "small" }, { name: "large" }],
+        },
+      };
+      render(<SectionCards section={section({}, withCards)} />);
+
+      const description = descriptionOf(
+        screen.getByRole("group", { name: "Preset" }),
+      );
+
+      expect(description).toContain("large is retired");
+      expect(description).toContain("Checked after you save");
+    });
+
+    it("shows no rule for a locked parameter", () => {
+      render(<SectionCards section={section({}, ruled)} />);
+
+      const locked = screen.getByRole("group", { name: "Shared bucket" });
+
+      expect(locked.textContent).not.toContain("Checked after you save");
+      expect(screen.queryByText(/bucket must not be empty/)).toBeNull();
+    });
+
+    it("shows no rule of the option when every parameter is locked", () => {
+      render(
+        <SectionCards
+          section={section(
+            {},
+            {
+              ...ruled,
+              parameters: ruled.parameters.filter((r) => !r.claimEditable),
+            },
+          )}
+        />,
+      );
+
+      expect(screen.queryByText(/min must not be above max/)).toBeNull();
+      expect(screen.queryByText("Checked after you save")).toBeNull();
+    });
+
+    it("reports no error for a rule, because the app does not check it", async () => {
+      const onChange = vi.fn();
+      render(<SectionCards section={section({}, ruled)} onChange={onChange} />);
+      const input = screen.getByRole("textbox", { name: "Bucket name" });
+
+      await userEvent.clear(input);
+      await userEvent.type(input, "a");
+
+      expect(onChange.mock.lastCall![1]).toEqual([]);
+      expect(input.getAttribute("aria-invalid")).toBeNull();
+    });
+  });
 });

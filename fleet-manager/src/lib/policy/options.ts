@@ -15,7 +15,8 @@ import type {
  * claimEditable returns one rule for each parameter of registration: the
  * properties of its parameter schema in schema order, then the other keys of
  * its policy in code-unit order. label is the title of the property schema,
- * else the name. required follows the required list of the schema. A
+ * else the name. A key that is not a property has the additionalProperties
+ * schema, when it is one. required follows the required list of the schema. A
  * claim-editable parameter carries its policy value and the names and labels
  * of its choices. A value of a choice, or a list of such values, is given as
  * the names of the choices. A locked parameter carries lockedSummary of its value and
@@ -42,6 +43,9 @@ export function claimEditable(
     : {};
   const properties = isObject(schema.properties) ? schema.properties : {};
   const required = Array.isArray(schema.required) ? schema.required : [];
+  const otherValues = isObject(schema.additionalProperties)
+    ? (schema.additionalProperties as OpenAPISchema)
+    : undefined;
   const names = [
     ...Object.keys(properties),
     ...Object.keys(policies)
@@ -59,7 +63,7 @@ export function claimEditable(
         typeof property?.title === "string" && property.title !== ""
           ? property.title
           : name,
-      ...(property && { schema: property }),
+      ...((property ?? otherValues) && { schema: property ?? otherValues }),
       ...(required.includes(name) && { required: true }),
     };
     const policy = own(policies, name) ?? {};
@@ -170,6 +174,9 @@ function optionOf(
     ...(spec.docsUrl && { docsUrl: spec.docsUrl }),
     isDefault,
     parameters,
+    ...(isObject(spec.parameters) && {
+      schema: spec.parameters as OpenAPISchema,
+    }),
     ...(spec.choices?.length &&
       !aliased && { choices: { parameter, items: spec.choices } }),
   };

@@ -17,7 +17,8 @@ import {
  * and its schema errors, or undefined and the errors while the text has an
  * error that is not of the schema. It is called when the value or the errors
  * change, not at mount. error is an error of the parent, such as a missing
- * value, and shows while the text has no error of its own.
+ * value, and shows while the text has no error of its own. describedBy is
+ * the id of an element outside the editor that also describes the field.
  */
 export function YamlEditor({
   label,
@@ -25,6 +26,7 @@ export function YamlEditor({
   schema,
   rows = 8,
   error,
+  describedBy,
   onChange,
 }: {
   label: string;
@@ -32,6 +34,7 @@ export function YamlEditor({
   schema?: OpenAPISchema;
   rows?: number;
   error?: string;
+  describedBy?: string;
   onChange?: (value: unknown, errors: ValidationError[]) => void;
 }) {
   const id = useId();
@@ -65,7 +68,11 @@ export function YamlEditor({
         value={text}
         className="font-mono text-xs"
         aria-invalid={shown.length ? true : undefined}
-        aria-describedby={shown.length ? `${id}-errors` : undefined}
+        aria-describedby={
+          [shown.length > 0 && `${id}-errors`, describedBy]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
         onChange={(event) => {
           setText(event.target.value);
         }}

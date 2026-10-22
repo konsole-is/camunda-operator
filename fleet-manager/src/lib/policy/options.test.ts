@@ -121,6 +121,37 @@ describe("claimEditable", () => {
     ]);
   });
 
+  it("gives a key that is not a property the schema of additionalProperties, and keeps its name as the label", () => {
+    const value = {
+      type: "string",
+      title: "Any value",
+      "x-kubernetes-validations": [{ rule: "self != ''" }],
+    };
+    const rules = claimEditable(
+      reg({
+        parameters: {
+          type: "object",
+          properties: { region: { type: "string" } },
+          additionalProperties: value,
+        },
+        claimEditable: ["bucket"],
+        parameterValues: { region: "eu" },
+      }),
+      undefined,
+    );
+
+    expect(rules).toEqual([
+      {
+        name: "region",
+        label: "region",
+        schema: { type: "string" },
+        claimEditable: false,
+        summary: "eu",
+      },
+      { name: "bucket", label: "bucket", schema: value, claimEditable: true },
+    ]);
+  });
+
   it("lists the schema properties in schema order with their title, schema, and required, then the other keys by name", () => {
     const bucket = { type: "string", title: "Bucket name" };
     const rules = claimEditable(
@@ -495,5 +526,31 @@ describe("sectionOptions", () => {
       isDefault: false,
       parameters: claimEditable(registration, undefined),
     });
+  });
+
+  it("passes the parameter schema of the registration to the option", () => {
+    const parameters = {
+      type: "object",
+      properties: { min: { type: "integer" }, max: { type: "integer" } },
+      "x-kubernetes-validations": [
+        { rule: "self.min <= self.max", message: "min must not be above max" },
+      ],
+    };
+
+    const [withSchema] = sectionOptions(
+      section(),
+      [reg({ parameters })],
+      undefined,
+      "CamundaClusterClaim",
+    ).options;
+    const [withoutSchema] = sectionOptions(
+      section(),
+      [reg()],
+      undefined,
+      "CamundaClusterClaim",
+    ).options;
+
+    expect(withSchema.schema).toEqual(parameters);
+    expect(withoutSchema.schema).toBeUndefined();
   });
 });
