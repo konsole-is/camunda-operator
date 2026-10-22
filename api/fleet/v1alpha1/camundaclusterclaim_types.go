@@ -219,8 +219,8 @@ type CamundaClusterClaimStatus struct {
 	// message of the CamundaCluster. If the CamundaCluster has no Ready
 	// condition yet, the message says so. With other reasons, such as
 	// Error or PrerequisiteNotMet, the message gives that cause. While the
-	// claim is deleted, Ready is False with the reason Deleting, and the
-	// message names the objects that the claim waits for.
+	// claim is deleted and waits for objects, Ready is False with the reason
+	// Deleting, and the message names those objects.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
