@@ -50,6 +50,23 @@ var _ = Describe("Built-in registration controller", func() {
 		}
 	})
 
+	It("writes Ready after Accepted, so the conditions keep one order", func() {
+		for _, name := range builtin.Served() {
+			eventuallyReady(name)
+
+			reg := get(Default, name)
+			types := make([]string, 0, len(reg.Status.Conditions))
+			for _, c := range reg.Status.Conditions {
+				types = append(types, c.Type)
+			}
+			Expect(types).To(
+				Equal([]string{pluginsv1alpha1.ConditionAccepted, v1.ConditionReady}),
+				"registration %s",
+				name,
+			)
+		}
+	})
+
 	It("writes no Ready on a built-in registration that the operator does not serve", func() {
 		Expect(builtin.Served()).NotTo(ContainElement(pluginstartup.RegistrationDatabaseServer))
 
