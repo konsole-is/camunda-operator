@@ -25,8 +25,7 @@ export type SectionView = {
  * option cannot be chosen, for example "Needs an encryption key". choices
  * are the presets or resources of the registration, and parameter names the
  * parameter that a pick sets. schema is the parameter schema of the
- * registration; SectionCards shows the rules of its root, which span more
- * than one parameter.
+ * registration. SectionCards shows the rules of its root.
  */
 export type OptionView = {
   registration: string;

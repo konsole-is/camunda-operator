@@ -60,13 +60,14 @@ function parameterKey(registration: string, parameter: string): string {
  * select or a checkbox group for an array that shows the labels and submits
  * the names. Nothing is preselected in an allowed list unless the environment
  * value is one of its names. A selection holds only the parameters that differ
- * from the policy. Each x-kubernetes-validations rule of a schema shows as a
- * hint under its parameter, or under the option for a rule of the whole
- * schema. The form does not check the rules. A selected option that new
- * options no longer hold, or disable, leaves the selection. onChange gets the
- * initial selections and errors once, then each change. An error path is
- * `<registration>/<parameter>`, then `.<path>` for an error inside the value,
- * or the section name when a required section has no selection.
+ * from the policy. Each x-kubernetes-validations rule of a claim-editable
+ * parameter shows as a hint under it, and each rule of the root of an
+ * option's schema shows under the option. The form does not check the rules.
+ * A selected option that new options no longer hold, or disable, leaves the
+ * selection. onChange gets the initial selections and errors once, then each
+ * change. An error path is `<registration>/<parameter>`, then `.<path>` for an
+ * error inside the value, or the section name when a required section has no
+ * selection.
  */
 export function SectionCards({
   section,
