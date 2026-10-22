@@ -32,9 +32,9 @@ type Resources = {
  * podUsage returns the live CPU and memory of the pods in namespace that
  * selector selects, from metrics.k8s.io, with the requests and limits of
  * their spec. A request is set when a container of the pod has one, and a
- * limit only when every container has one. It returns "unavailable" when the API server answers 404 or
- * 503, which means that no metrics server serves metrics.k8s.io. It
- * rejects for another failure.
+ * limit only when every container has a limit above zero. It returns
+ * "unavailable" when the API server answers 404 or 503, which means that no
+ * metrics server serves metrics.k8s.io. It rejects for another failure.
  */
 export async function podUsage(
   namespace: string,
@@ -150,13 +150,14 @@ function sums(
   const total = (set: string[]) =>
     set.reduce((sum, v) => sum + parseQuantity(v), 0);
   const requests = values("requests").filter((v) => v !== undefined);
-  const limits = values("limits");
+  // A limit of zero sets no limit, as a missing one does.
+  const limits = values("limits").filter(
+    (v): v is string => v !== undefined && parseQuantity(v) > 0,
+  );
+  const unlimited = limits.length < (containers ?? []).length;
   return {
     request: requests.length ? total(requests) : undefined,
-    limit:
-      limits.length && limits.every((v) => v !== undefined)
-        ? total(limits as string[])
-        : undefined,
+    limit: limits.length && !unlimited ? total(limits) : undefined,
   };
 }
 

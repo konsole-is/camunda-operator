@@ -139,6 +139,28 @@ describe("podUsage", () => {
     expect(usageOf.cpu).toEqual({ usedCores: 0.3 });
   });
 
+  it("gives no limit when a container has a limit of zero, which means none", async () => {
+    vi.mocked(getJSON).mockResolvedValue(usage);
+    vi.mocked(list).mockResolvedValue([
+      {
+        metadata: { name: "p-0" },
+        spec: {
+          containers: [
+            { name: "a", resources: { limits: { cpu: "1", memory: "0" } } },
+            { name: "b", resources: { limits: { cpu: "0", memory: "1Gi" } } },
+          ],
+        },
+      },
+    ] as never);
+
+    const [pod] = (await podUsage("team-a", "")) as {
+      cpu: object;
+      memory: object;
+    }[];
+    expect(pod.cpu).toEqual({ usedCores: 0.3 });
+    expect(pod.memory).toEqual({ usedBytes: 80 * MI });
+  });
+
   it("gives a pod that is not in the cache no requests and no limits", async () => {
     vi.mocked(getJSON).mockResolvedValue(usage);
     vi.mocked(list).mockResolvedValue([]);
