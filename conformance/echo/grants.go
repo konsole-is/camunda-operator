@@ -97,10 +97,19 @@ func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest) ([]*pluginsv1alp
 }
 
 // grantName is the name of the Grant of request for the grant template tmpl.
-// It has at most 63 characters, the limit of the Grant CRD, and two pairs of
-// request and template get two names.
+// It is a valid object name of at most 63 characters, the limit of the Grant
+// CRD, and two pairs of request and template get two names.
 func grantName(request, tmpl string) string {
-	name := request + "-" + tmpl
+	name := strings.Map(func(r rune) rune {
+		switch {
+		case 'a' <= r && r <= 'z', '0' <= r && r <= '9':
+			return r
+		case 'A' <= r && r <= 'Z':
+			return r - 'A' + 'a'
+		default:
+			return '-'
+		}
+	}, request+"-"+tmpl)
 	if len(name) > 54 {
 		name = strings.TrimRight(name[:54], "-")
 	}

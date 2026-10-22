@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
@@ -159,4 +160,14 @@ func TestGrantNameHasAtMost63CharactersAndKeepsPairsApart(t *testing.T) {
 	}
 	assert.Len(t, slices.Compact(slices.Sorted(slices.Values(names))), len(names))
 	assert.True(t, strings.HasPrefix(grantName(requestName, "read"), requestName+"-read-"))
+}
+
+func TestGrantNameIsAValidObjectNameForAnyTemplateName(t *testing.T) {
+	names := []string{grantName(requestName, "Read S3"), grantName(requestName, "read_s3")}
+
+	for _, name := range names {
+		assert.Empty(t, validation.IsDNS1123Subdomain(name), name)
+		assert.True(t, strings.HasPrefix(name, requestName+"-read-s3-"), name)
+	}
+	assert.NotEqual(t, names[0], names[1])
 }
