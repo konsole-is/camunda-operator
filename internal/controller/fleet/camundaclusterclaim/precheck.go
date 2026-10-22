@@ -32,6 +32,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundaclusterclaim"
+	"github.com/konsole-is/camunda-operator/pkg/components/claimrequests"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
@@ -133,7 +134,7 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 	); err != nil {
 		return res, fmt.Errorf("listing the PluginRequests of the claim: %w", err)
 	}
-	res.requests = ownRequests(requests.Items, claim.Name)
+	res.requests = ownRequests(requests.Items, claim.Name, claim.Spec.Plugins)
 
 	var live v1.CamundaCluster
 	err = r.Get(ctx, client.ObjectKeyFromObject(claim), &live)
@@ -229,12 +230,19 @@ func named[T any, P interface {
 }
 
 // ownRequests returns the requests whose claimRef names the cluster claim
-// name. A request of another claim kind with the same label stays out, so
-// the claim never reads its outputs.
-func ownRequests(requests []pluginsv1alpha1.PluginRequest, name string) []pluginsv1alpha1.PluginRequest {
+// name and whose name is the request name of a section of selections. A
+// request of another claim kind, or of another name, with the same label
+// stays out, so the claim never reads its outputs.
+func ownRequests(
+	requests []pluginsv1alpha1.PluginRequest,
+	name string,
+	selections []fleetv1alpha1.PluginSelection,
+) []pluginsv1alpha1.PluginRequest {
 	own := pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: name}
 
 	return slices.DeleteFunc(slices.Clone(requests), func(r pluginsv1alpha1.PluginRequest) bool {
-		return r.Spec.ClaimRef != own
+		return r.Spec.ClaimRef != own || !slices.ContainsFunc(selections, func(s fleetv1alpha1.PluginSelection) bool {
+			return claimrequests.Name(name, s.Section) == r.Name
+		})
 	})
 }

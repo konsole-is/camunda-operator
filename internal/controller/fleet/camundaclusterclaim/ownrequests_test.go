@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
@@ -35,11 +36,13 @@ func TestOwnRequests(t *testing.T) {
 	own := request("orders-access", pluginsv1alpha1.ClaimKindCamundaClusterClaim, "orders")
 	plane := request("orders-management-database", pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim, "orders")
 	other := request("billing-access", pluginsv1alpha1.ClaimKindCamundaClusterClaim, "billing")
+	stray := request("aaa-other-request", pluginsv1alpha1.ClaimKindCamundaClusterClaim, "orders")
+	selections := []fleetv1alpha1.PluginSelection{{Section: "access", Registration: "test-access"}}
 
 	assert.Equal(
 		t,
 		[]pluginsv1alpha1.PluginRequest{own},
-		ownRequests([]pluginsv1alpha1.PluginRequest{plane, own, other}, "orders"),
+		ownRequests([]pluginsv1alpha1.PluginRequest{stray, plane, own, other}, "orders", selections),
 	)
-	assert.Empty(t, ownRequests(nil, "orders"))
+	assert.Empty(t, ownRequests(nil, "orders", selections))
 }
