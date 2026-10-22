@@ -24,7 +24,7 @@ limitations under the License.
 // registration or a plugin is malformed.
 //
 // The table tests read their cases from test/fixtures/claimpolicy. The fleet
-// manager runs its own policy code against the same cases.
+// manager runs its own policy code against the cases of six of its folders.
 package claimpolicy
 
 import (

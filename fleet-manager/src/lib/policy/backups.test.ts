@@ -22,6 +22,15 @@ function backup(
 }
 
 describe("runningBackup", () => {
+  it("returns no backup when the last backup of the cluster finished", () => {
+    expect(
+      runningBackup(cluster, [
+        backup("nightly-1", "Failed"),
+        backup("nightly-2", "Completed"),
+      ]),
+    ).toBeUndefined();
+  });
+
   it("returns a Running LogicalBackupRDBMS of the cluster", () => {
     expect(runningBackup(cluster, [backup("nightly-1", "Running")])).toEqual({
       kind: "LogicalBackupRDBMS",
