@@ -18,6 +18,7 @@ package camundaclusterclaim
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -84,6 +85,10 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 	res.release, res.platformConfig = components.References(claim, environment)
 
 	if err := r.checkReferences(ctx, claim, res); err != nil {
+		return res, err
+	}
+
+	if err := checkParameterObjects(claim.Spec.Plugins); err != nil {
 		return res, err
 	}
 
@@ -193,6 +198,27 @@ func (r *Reconciler) checkReferences(
 		Reason:  v1.ReasonInvalidReference,
 		Message: "the claim names objects that do not exist: " + strings.Join(missing, ", "),
 	}
+}
+
+// checkParameterObjects refuses with NotAllowed a selection whose
+// parameters are not a JSON object. The claim schema accepts any JSON value
+// there.
+func checkParameterObjects(selections []fleetv1alpha1.PluginSelection) error {
+	for _, s := range selections {
+		if s.Parameters == nil {
+			continue
+		}
+
+		var object map[string]json.RawMessage
+		if json.Unmarshal(s.Parameters.Raw, &object) != nil {
+			return &conditions.PreCheckFailure{
+				Reason:  fleetv1alpha1.ReasonNotAllowed,
+				Message: fmt.Sprintf("the parameters of the selection of section %q are not a JSON object", s.Section),
+			}
+		}
+	}
+
+	return nil
 }
 
 func named[T any, P interface {

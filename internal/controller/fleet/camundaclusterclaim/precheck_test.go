@@ -19,6 +19,7 @@ package camundaclusterclaim
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
@@ -79,6 +80,13 @@ var _ = Describe("CamundaClusterClaim precheck", func() {
 				createEnvironment(environment)
 				return newClaim(newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}))
 			}, fleetv1alpha1.ReasonNotAllowed, presetName,
+		),
+		Entry(
+			"parameters that are not a JSON object", func() *fleetv1alpha1.CamundaClusterClaim {
+				claim := newClaim(newNamespace(nil))
+				claim.Spec.Plugins[0].Parameters = &apiextensionsv1.JSON{Raw: []byte(`["existing-es"]`)}
+				return claim
+			}, fleetv1alpha1.ReasonNotAllowed, "not a JSON object",
 		),
 		Entry(
 			"an override of a field that a selected slot fills", func() *fleetv1alpha1.CamundaClusterClaim {
