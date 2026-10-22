@@ -1,0 +1,46 @@
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: my-plane
+    plugins.camunda.io/registration: management-database-server
+    plugins.camunda.io/section: management-database
+  name: my-plane-management-database
+  namespace: my-plane-ns
+spec:
+  claimRef:
+    kind: CamundaManagementClusterClaim
+    name: my-plane
+  deletionPolicy: Delete
+  parameters:
+    databases:
+    - keycloak
+    - identity
+    - webModeler
+  registration: management-database-server
+  section: management-database
+  target:
+    kind: CamundaManagementCluster
+    name: my-plane
+    serviceAccountName: my-plane-camunda
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: my-plane
+    plugins.camunda.io/registration: test-access
+    plugins.camunda.io/section: access
+  name: my-plane-access
+  namespace: my-plane-ns
+spec:
+  claimRef:
+    kind: CamundaManagementClusterClaim
+    name: my-plane
+  deletionPolicy: Delete
+  registration: test-access
+  section: access
+  target:
+    kind: CamundaManagementCluster
+    name: my-plane
+    serviceAccountName: my-plane-camunda

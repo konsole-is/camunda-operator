@@ -141,4 +141,5 @@ nav:
       - Fleet:
           - Environment: crds/environment.md
           - CamundaClusterClaim: crds/camundaclusterclaim.md
+          - CamundaManagementClusterClaim: crds/camundamanagementclusterclaim.md
       - API reference: crds/api-reference.md

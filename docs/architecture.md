@@ -155,9 +155,9 @@ The operator gives many objects a name that it derives from the resource, for ex
 
 ## Claims
 
-Claims sit above the core kinds. A [CamundaClusterClaim](crds/camundaclusterclaim.md) asks for a cluster under the policy of an [Environment](crds/environment.md). The operator turns it into one [PluginRequest](crds/pluginrequest.md) for each option that the claim selects, and into a `CamundaCluster` with the name of the claim. The plugins answer the requests, and their outputs fill fields of the `CamundaCluster`, such as `spec.storageRef`. The core kinds never read a claim, so a `CamundaCluster` that you write yourself works the same way.
+Claims sit above the core kinds. A [CamundaClusterClaim](crds/camundaclusterclaim.md) asks for a cluster under the policy of an [Environment](crds/environment.md). The operator turns it into one [PluginRequest](crds/pluginrequest.md) for each option that the claim selects, and into a `CamundaCluster` with the name of the claim. The plugins answer the requests, and their outputs fill fields of the `CamundaCluster`, such as `spec.storageRef`. The core kinds never read a claim, so a `CamundaCluster` that you write yourself works the same way. A [CamundaManagementClusterClaim](crds/camundamanagementclusterclaim.md) does the same for a management plane. Its requests give the databases and the URLs of the `CamundaManagementCluster`.
 
-The fields that a claim writes have a field manager that starts with `CamundaClusterClaim/`. A GitOps tool that writes the same field of a generated `CamundaCluster` reports a conflict with that manager. Set the field in `spec.cluster` of the claim instead.
+The fields that a claim writes have a field manager that starts with `CamundaClusterClaim/` or `CamundaManagementClusterClaim/`. A GitOps tool that writes the same field of a generated `CamundaCluster` reports a conflict with that manager. Set the field in `spec.cluster` or `spec.management` of the claim instead.
 
 ## The fleet manager
 

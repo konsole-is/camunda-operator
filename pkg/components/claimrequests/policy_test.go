@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package camundaclusterclaim
+package claimrequests
 
 import (
 	"testing"
@@ -26,7 +26,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
-func TestClaimPolicyDoesNotRequireASectionOfTheManagementPlane(t *testing.T) {
+func TestClaimPolicyDoesNotRequireASectionOfAnotherClaimKind(t *testing.T) {
 	policy := fleetv1alpha1.ResolvedPolicy{Sections: map[string]fleetv1alpha1.SectionPolicy{
 		"management-database": {Required: true, Allowed: []string{"management-database-server"}},
 		"backup-storage":      {Required: true, Allowed: []string{"s3-backups"}},
@@ -47,7 +47,7 @@ func TestClaimPolicyDoesNotRequireASectionOfTheManagementPlane(t *testing.T) {
 		},
 	}
 
-	claimPolicy := ClaimPolicy(policy, sections)
+	claimPolicy := ClaimPolicy(pluginsv1alpha1.ClaimKindCamundaClusterClaim, policy, sections)
 
 	assert.False(t, claimPolicy.Sections["management-database"].Required)
 	assert.True(t, claimPolicy.Sections["backup-storage"].Required)

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package camundaclusterclaim
+package claimrequests
 
 import (
 	"testing"
@@ -26,7 +26,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
-func TestOwnRequests(t *testing.T) {
+func TestOwnKeepsTheRequestsOfTheClaim(t *testing.T) {
 	request := func(name string, kind pluginsv1alpha1.ClaimKind, claim string) pluginsv1alpha1.PluginRequest {
 		return pluginsv1alpha1.PluginRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: name},
@@ -38,16 +38,17 @@ func TestOwnRequests(t *testing.T) {
 	other := request("billing-access", pluginsv1alpha1.ClaimKindCamundaClusterClaim, "billing")
 	stray := request("aaa-other-request", pluginsv1alpha1.ClaimKindCamundaClusterClaim, "orders")
 	selections := []fleetv1alpha1.PluginSelection{{Section: "access", Registration: "test-access"}}
+	clusterClaim := pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: "orders"}
 
 	assert.Equal(
 		t,
 		[]pluginsv1alpha1.PluginRequest{own},
-		ownRequests([]pluginsv1alpha1.PluginRequest{stray, plane, own, other}, "orders", selections, nil),
+		Own([]pluginsv1alpha1.PluginRequest{stray, plane, own, other}, clusterClaim, selections, nil),
 	)
-	assert.Empty(t, ownRequests(nil, "orders", selections, nil))
+	assert.Empty(t, Own(nil, clusterClaim, selections, nil))
 }
 
-func TestOwnRequestsOfAManySection(t *testing.T) {
+func TestOwnKeepsEachRequestOfAManySection(t *testing.T) {
 	request := func(name string) pluginsv1alpha1.PluginRequest {
 		return pluginsv1alpha1.PluginRequest{
 			ObjectMeta: metav1.ObjectMeta{Name: name},
@@ -69,9 +70,9 @@ func TestOwnRequestsOfAManySection(t *testing.T) {
 	assert.Equal(
 		t,
 		[]pluginsv1alpha1.PluginRequest{first, second},
-		ownRequests(
+		Own(
 			[]pluginsv1alpha1.PluginRequest{first, request("orders-alerts"), second},
-			"orders",
+			pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: "orders"},
 			selections,
 			sections,
 		),

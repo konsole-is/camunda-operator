@@ -8094,7 +8094,9 @@ export interface CamundaClusterClaimStatus {
    * Failing, Degraded, or Down, its message holds the Ready reason and
    * message of the CamundaCluster. If the CamundaCluster has no Ready
    * condition yet, the message says so. With other reasons, such as
-   * Error or PrerequisiteNotMet, the message gives that cause.
+   * Error or PrerequisiteNotMet, the message gives that cause. While the
+   * claim is deleted, Ready is False with the reason Deleting, and the
+   * message names the objects that the claim waits for.
    *
    * Items: Condition contains details for one aspect of the current state of this API Resource.
    */

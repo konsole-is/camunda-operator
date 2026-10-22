@@ -17,7 +17,8 @@ limitations under the License.
 // Package claimrequests renders the PluginRequests of a claim: one request
 // for each selection of the claim, with its labels, its target, its resolved
 // inputs, and its parameters. It also builds status.requests of the claim,
-// and the deletion policy write and the Ready message of a deleted claim.
+// the deletion policy write and the Ready message of a deleted claim, and
+// the checks and filters that both claim controllers apply before a build.
 // The cluster claim and the management cluster claim both use it, so the
 // claim comes in as a client.Object and the kinds come in as values.
 //

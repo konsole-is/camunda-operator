@@ -218,6 +218,7 @@ rules:
   - fleet.camunda.io
   resources:
   - camundaclusterclaims
+  - camundamanagementclusterclaims
   verbs:
   - get
   - list
@@ -228,12 +229,14 @@ rules:
   - fleet.camunda.io
   resources:
   - camundaclusterclaims/finalizers
+  - camundamanagementclusterclaims/finalizers
   verbs:
   - update
 - apiGroups:
   - fleet.camunda.io
   resources:
   - camundaclusterclaims/status
+  - camundamanagementclusterclaims/status
   - environments/status
   verbs:
   - get
