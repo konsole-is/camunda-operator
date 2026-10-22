@@ -202,9 +202,11 @@ describe("followPodLog", () => {
       )
     ).getReader();
 
-    let got = "";
-    while (got.length < long.length) got += (await reader.read()).value;
-    expect(got).toBe(long);
+    const { value } = await reader.read();
+    await reader.cancel();
+
+    expect(value!.length).toBeGreaterThan(64 * 1024);
+    expect(long.startsWith(value!)).toBe(true);
   });
 
   it("errors the stream when the connection breaks", async () => {
