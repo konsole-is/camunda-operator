@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -80,6 +80,26 @@ const writerFor = (
     read: async (ref) => live.get(refKey(ref)),
     ...(http ? { http } : {}),
   });
+
+// recordingFetches sends each request and adds the body of each fetch of
+// objects to bodies.
+const recordingFetches = (bodies: string[]): HttpClient => ({
+  request: async (r) => {
+    if (!r.url.endsWith("/git-upload-pack") || !r.body) {
+      return gitHttp.request(r);
+    }
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of r.body) chunks.push(chunk);
+    const body = Buffer.concat(chunks);
+    bodies.push(body.toString("utf8"));
+    // isomorphic-git passes the body as an array, which the transport
+    // sends in one piece; the test server fails on a streamed body.
+    return gitHttp.request({
+      ...r,
+      body: [body] as unknown as AsyncIterableIterator<Uint8Array>,
+    });
+  },
+});
 
 const ok = (result: WriteResult) => {
   if (!result.ok || result.mode !== "git") {
@@ -427,6 +447,81 @@ describe("the Git writer", () => {
       ],
     });
     expect(await repo.log()).toEqual(["Other admin", "Initial commit"]);
+  });
+
+  it("fetches only the head commit, and rebases once on a repository with history", async () => {
+    repo = await serveBareRepository({
+      beforeFirstPush: () =>
+        repo.commitFromOtherClone({ "other.txt": "x" }, "Other admin"),
+    });
+    await repo.commitFromOtherClone({ "a.txt": "a" }, "Older commit");
+    await repo.commitFromOtherClone({ "b.txt": "b" }, "Newer commit");
+    const fetches: string[] = [];
+
+    ok(
+      await writerFor({}, recordingFetches(fetches)).apply({
+        intent: "Create",
+        apply: [claim("team-a", "orders")],
+      }),
+    );
+
+    expect(fetches).toHaveLength(2);
+    for (const body of fetches) expect(body).toContain("deepen 1");
+    expect(await repo.log()).toEqual([
+      "Create",
+      "Other admin",
+      "Newer commit",
+      "Older commit",
+      "Initial commit",
+    ]);
+  });
+
+  it("a push from a shallow clone that another clone beat on the same file fails with Conflict", async () => {
+    repo = await serveBareRepository({
+      beforeFirstPush: () =>
+        repo.commitFromOtherClone(
+          { "team-a/camundaclusterclaims/orders.yaml": "x" },
+          "Other admin",
+        ),
+    });
+    await repo.commitFromOtherClone({ "a.txt": "a" }, "Older commit");
+    await repo.commitFromOtherClone({ "b.txt": "b" }, "Newer commit");
+
+    const result = await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Conflict" })],
+    });
+    expect(await repo.show("team-a/camundaclusterclaims/orders.yaml")).toBe(
+      "x",
+    );
+  });
+
+  it("a push that the server refuses on a branch that did not move gives Unavailable", async () => {
+    repo = await serveBareRepository();
+    const hook = path.join(repo.dir, "hooks", "pre-receive");
+    await writeFile(hook, "#!/bin/sh\nexit 1\n");
+    await chmod(hook, 0o755);
+
+    const result = await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Unavailable",
+          message: `${repo.url} refused the push to the branch main.`,
+        },
+      ],
+    });
+    expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
   it("refuses a name with a path separator and writes nothing", async () => {

@@ -285,6 +285,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
     const { dir } = remote;
     await git.clone({
       ...remote,
+      depth: 1,
       singleBranch: true,
       ...(target.branch ? { ref: target.branch } : {}),
     });
@@ -323,7 +324,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
       if (!isRejected(error)) throw error;
     }
 
-    await git.fetch({ ...remote, ref: branch, singleBranch: true });
+    await git.fetch({ ...remote, ref: branch, depth: 1, singleBranch: true });
     const fetched = await git.resolveRef({
       fs,
       dir,
