@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -272,6 +273,24 @@ func TestGrantMatchProblems(t *testing.T) {
 			[]string{"Grant r-read has no owner reference to the request"},
 		},
 		{
+			"no request label",
+			func() []pluginsv1alpha1.Grant {
+				g := goodGrant()
+				delete(g.Labels, pluginsv1alpha1.LabelRequest)
+				return []pluginsv1alpha1.Grant{g}
+			},
+			[]string{`Grant r-read has the label plugins.camunda.io/request: "", and the request needs "r"`},
+		},
+		{
+			"owner with another name",
+			func() []pluginsv1alpha1.Grant {
+				g := goodGrant()
+				g.OwnerReferences[0].Name = "another"
+				return []pluginsv1alpha1.Grant{g}
+			},
+			[]string{"Grant r-read has no owner reference to the request"},
+		},
+		{
 			"owner of another request",
 			func() []pluginsv1alpha1.Grant {
 				g := goodGrant()
@@ -329,9 +348,16 @@ func TestAdmissionVerdict(t *testing.T) {
 		`User "system:serviceaccount:ns:sa" cannot create resource "grants"`,
 	))
 
-	assert.NoError(t, admissionVerdict(policyRefusal, "u", "echo"))
-	assert.ErrorContains(t, admissionVerdict(nil, "u", "echo"), "admitted a Grant of echo from u")
-	assert.ErrorContains(t, admissionVerdict(rbacRefusal, "u", "echo"), "not through the policy")
+	policy := "plugins.camunda.io-grant-author"
+
+	assert.NoError(t, admissionVerdict(policyRefusal, policy, "u", "echo"))
+	assert.ErrorContains(t, admissionVerdict(nil, policy, "u", "echo"), "admitted a Grant of echo from u")
+	assert.ErrorContains(t, admissionVerdict(rbacRefusal, policy, "u", "echo"), "not through the policy")
+	assert.ErrorContains(
+		t,
+		admissionVerdict(policyRefusal, "camunda-operator-plugins.camunda.io-grant-author", "u", "echo"),
+		"not through the policy camunda-operator-plugins.camunda.io-grant-author",
+	)
 }
 
 func TestGrantAdmissionSkipsWhenThePolicyIsNotInstalled(t *testing.T) {
@@ -340,5 +366,41 @@ func TestGrantAdmissionSkipsWhenThePolicyIsNotInstalled(t *testing.T) {
 	reason, skipped := skipReasonOf(checkGrantAdmission(t.Context(), s))
 
 	assert.True(t, skipped)
-	assert.Equal(t, "the ValidatingAdmissionPolicy plugins.camunda.io-grant-author is not installed", reason)
+	want := "no ValidatingAdmissionPolicy whose name ends with plugins.camunda.io-grant-author is installed"
+	assert.Equal(t, want, reason)
+}
+
+func TestGrantAuthorPolicyNameFindsAPrefixedPolicy(t *testing.T) {
+	prefixed := &admissionregistrationv1.ValidatingAdmissionPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "camunda-operator-plugins.camunda.io-grant-author"},
+	}
+	other := &admissionregistrationv1.ValidatingAdmissionPolicy{ObjectMeta: metav1.ObjectMeta{Name: "other"}}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, prefixed, other)
+
+	got, err := grantAuthorPolicyName(t.Context(), s)
+
+	require.NoError(t, err)
+	assert.Equal(t, "camunda-operator-plugins.camunda.io-grant-author", got)
+}
+
+func TestRequestGrantsFindsAGrantByItsLabelOrItsOwner(t *testing.T) {
+	labelled := goodGrant()
+	labelled.OwnerReferences = nil
+	owned := goodGrant()
+	owned.Name = "r-owned"
+	delete(owned.Labels, pluginsv1alpha1.LabelRequest)
+	unrelated := goodGrant()
+	unrelated.Name = "unrelated"
+	unrelated.Labels[pluginsv1alpha1.LabelRequest] = "unrelated"
+	unrelated.OwnerReferences[0].UID = "uid-unrelated"
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, &labelled, &owned, &unrelated)
+
+	got, err := s.requestGrants(t.Context(), grantCheckRequest())
+
+	require.NoError(t, err)
+	names := make([]string, 0, len(got))
+	for _, g := range got {
+		names = append(names, g.Name)
+	}
+	assert.Equal(t, []string{"r-owned", "r-read"}, names)
 }

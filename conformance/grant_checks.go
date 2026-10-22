@@ -32,7 +32,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -292,26 +291,24 @@ func (s *suite) grantsOf(
 }
 
 // requestGrants returns the Grants in the namespace of req that carry its
-// request label, sorted by name. It does not check their other labels or
-// their owner.
+// request label or have an owner reference to it, sorted by name. It does not
+// check their labels or their owner.
 func (s *suite) requestGrants(
 	ctx context.Context,
 	req *pluginsv1alpha1.PluginRequest,
 ) ([]pluginsv1alpha1.Grant, error) {
 	var list pluginsv1alpha1.GrantList
-	err := s.client.List(
-		ctx,
-		&list,
-		client.InNamespace(req.Namespace),
-		client.MatchingLabels{pluginsv1alpha1.LabelRequest: req.Name},
-	)
-	if err != nil {
+	if err := s.client.List(ctx, &list, client.InNamespace(req.Namespace)); err != nil {
 		return nil, fmt.Errorf("listing the Grants of the request: %w", err)
 	}
 
-	slices.SortFunc(list.Items, func(a, b pluginsv1alpha1.Grant) int { return strings.Compare(a.Name, b.Name) })
+	grants := slices.DeleteFunc(list.Items, func(g pluginsv1alpha1.Grant) bool {
+		owned := slices.ContainsFunc(g.OwnerReferences, func(o metav1.OwnerReference) bool { return o.UID == req.UID })
+		return g.Labels[pluginsv1alpha1.LabelRequest] != req.Name && !owned
+	})
+	slices.SortFunc(grants, func(a, b pluginsv1alpha1.Grant) int { return strings.Compare(a.Name, b.Name) })
 
-	return list.Items, nil
+	return grants, nil
 }
 
 // grantMatchProblems names each way in which grants, the Grants of req for
@@ -325,7 +322,7 @@ func grantMatchProblems(
 	switch len(grants) {
 	case 0:
 		return []string{fmt.Sprintf(
-			"no Grant of the template %s carries the label %s: %s",
+			"no Grant of the template %s carries the label %s: %s or an owner reference to the request",
 			tmpl.Name,
 			pluginsv1alpha1.LabelRequest,
 			req.Name,
@@ -356,6 +353,7 @@ func grantMatchProblems(
 	}
 
 	for _, label := range []struct{ key, want string }{
+		{pluginsv1alpha1.LabelRequest, req.Name},
 		{pluginsv1alpha1.LabelRegistration, req.Spec.Registration},
 		{pluginsv1alpha1.LabelCluster, req.Spec.Target.Name},
 	} {
@@ -391,7 +389,7 @@ func grantMatchProblems(
 	}
 
 	owned := slices.ContainsFunc(g.OwnerReferences, func(o metav1.OwnerReference) bool {
-		return isPluginRequestOwner(o) && o.UID == req.UID
+		return isPluginRequestOwner(o) && o.Name == req.Name && o.UID == req.UID
 	})
 	if !owned {
 		problems = append(problems, fmt.Sprintf("Grant %s has no owner reference to the request", g.Name))
@@ -501,8 +499,8 @@ func checkGrantRequires(ctx context.Context, s *suite) error {
 	})
 }
 
-// grantAuthorPolicy is the ValidatingAdmissionPolicy that admits a Grant
-// only from a requester with the verb serve on its registration.
+// grantAuthorPolicy ends the name of the Grant admission policy. An install
+// can add a prefix to the name.
 const grantAuthorPolicy = "plugins.camunda.io-grant-author"
 
 // admissionTimeout is how long GRANT-ADMISSION waits for the refusal. A new
@@ -523,13 +521,12 @@ func checkGrantAdmission(ctx context.Context, s *suite) error {
 		return SkipCheck(noGrantTemplates)
 	}
 
-	var policy admissionregistrationv1.ValidatingAdmissionPolicy
-	err = s.client.Get(ctx, client.ObjectKey{Name: grantAuthorPolicy}, &policy)
-	switch {
-	case apierrors.IsNotFound(err):
-		return SkipCheck("the ValidatingAdmissionPolicy " + grantAuthorPolicy + " is not installed")
-	case err != nil:
-		return fmt.Errorf("getting the ValidatingAdmissionPolicy %s: %w", grantAuthorPolicy, err)
+	policy, err := grantAuthorPolicyName(ctx, s)
+	if err != nil {
+		return err
+	}
+	if policy == "" {
+		return SkipCheck("no ValidatingAdmissionPolicy whose name ends with " + grantAuthorPolicy + " is installed")
 	}
 
 	if _, err := s.lifecycle(ctx); err != nil {
@@ -565,7 +562,7 @@ func checkGrantAdmission(ctx context.Context, s *suite) error {
 		return fmt.Errorf("connecting as %s: %w", user, err)
 	}
 
-	what := "a refusal of the Grant by the policy " + grantAuthorPolicy
+	what := "a refusal of the Grant by the policy " + policy
 	return waitFor(ctx, admissionTimeout, what, func(ctx context.Context) error {
 		grant := &pluginsv1alpha1.Grant{
 			ObjectMeta: metav1.ObjectMeta{
@@ -585,8 +582,30 @@ func checkGrantAdmission(ctx context.Context, s *suite) error {
 
 		// A dry run stores nothing, so a policy that admits the Grant
 		// leaves no object behind.
-		return admissionVerdict(c.Create(ctx, grant, client.DryRunAll), user, reg.Name)
+		return admissionVerdict(c.Create(ctx, grant, client.DryRunAll), policy, user, reg.Name)
 	})
+}
+
+// grantAuthorPolicyName returns the name of the installed
+// ValidatingAdmissionPolicy that ends with grantAuthorPolicy, or an empty
+// name when there is none.
+func grantAuthorPolicyName(ctx context.Context, s *suite) (string, error) {
+	var list admissionregistrationv1.ValidatingAdmissionPolicyList
+	if err := s.client.List(ctx, &list); err != nil {
+		return "", fmt.Errorf("listing the ValidatingAdmissionPolicies: %w", err)
+	}
+
+	names := make([]string, 0, len(list.Items))
+	for _, p := range list.Items {
+		if strings.HasSuffix(p.Name, grantAuthorPolicy) {
+			names = append(names, p.Name)
+		}
+	}
+	if len(names) == 0 {
+		return "", nil
+	}
+
+	return slices.Min(names), nil
 }
 
 // createGrantAuthor creates, in the run namespace, a ServiceAccount with a
@@ -626,9 +645,9 @@ func createGrantAuthor(ctx context.Context, s *suite) (pluginsv1alpha1.ServiceAc
 	return sa, nil
 }
 
-// admissionVerdict passes err when it is a refusal by grantAuthorPolicy of a
-// Grant of registration from user.
-func admissionVerdict(err error, user, registration string) error {
+// admissionVerdict passes err when it is a refusal by policy of a Grant of
+// registration from user.
+func admissionVerdict(err error, policy, user, registration string) error {
 	switch {
 	case err == nil:
 		return fmt.Errorf(
@@ -636,9 +655,9 @@ func admissionVerdict(err error, user, registration string) error {
 			registration,
 			user,
 		)
-	case strings.Contains(err.Error(), grantAuthorPolicy):
+	case strings.Contains(err.Error(), "'"+policy+"'"):
 		return nil
 	default:
-		return fmt.Errorf("the API server refused the Grant, but not through the policy %s: %w", grantAuthorPolicy, err)
+		return fmt.Errorf("the API server refused the Grant, but not through the policy %s: %w", policy, err)
 	}
 }
