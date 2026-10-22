@@ -26,8 +26,10 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -403,4 +405,85 @@ func TestRequestGrantsFindsAGrantByItsLabelOrItsOwner(t *testing.T) {
 		names = append(names, g.Name)
 	}
 	assert.Equal(t, []string{"r-owned", "r-read"}, names)
+}
+
+func TestWaitingVerdict(t *testing.T) {
+	tests := []struct {
+		name    string
+		ready   *metav1.Condition
+		message string
+	}{
+		{
+			name:  "Ready=False",
+			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: reasonWaitingForGrants},
+		},
+		{
+			name:  "Ready=False with another reason",
+			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: "EchoDefect"},
+		},
+		{name: "no Ready"},
+		{
+			name:    "Ready=True",
+			ready:   &metav1.Condition{Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy},
+			message: "Ready=True while Grant g has no Ready condition",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := waitingVerdict(tt.ready, "g")
+
+			if tt.message == "" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorContains(t, err, tt.message)
+		})
+	}
+}
+
+func TestGrantsReadyVerdict(t *testing.T) {
+	tests := []struct {
+		name     string
+		ready    *metav1.Condition
+		messages []string
+	}{
+		{name: "Ready=True", ready: &metav1.Condition{Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy}},
+		{name: "no Ready", messages: []string{"has no Ready condition"}},
+		{
+			name:  "Ready=False",
+			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: reasonWaitingForGrants},
+			messages: []string{
+				"not Ready=True after every Grant of it got Ready=True",
+				reasonWaitingForGrants,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := grantsReadyVerdict(tt.ready)
+
+			if len(tt.messages) == 0 {
+				assert.NoError(t, err)
+				return
+			}
+			for _, m := range tt.messages {
+				assert.ErrorContains(t, err, m)
+			}
+		})
+	}
+}
+
+func TestSetGrantsReadyKeepsTheOtherConditions(t *testing.T) {
+	grant := goodGrant()
+	grant.Status.Conditions = []metav1.Condition{{Type: "Applied", Status: metav1.ConditionTrue, Reason: "Set"}}
+	s := newTestSuite(t, validConfig(), interceptor.Funcs{}, &grant)
+
+	require.NoError(t, s.setGrantsReady(t.Context(), []pluginsv1alpha1.Grant{grant}))
+
+	var got pluginsv1alpha1.Grant
+	require.NoError(t, s.client.Get(t.Context(), client.ObjectKeyFromObject(&grant), &got))
+	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, v1.ConditionReady))
+	assert.True(t, meta.IsStatusConditionTrue(got.Status.Conditions, "Applied"))
 }
