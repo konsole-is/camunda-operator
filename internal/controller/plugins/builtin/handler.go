@@ -26,7 +26,6 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
-	"github.com/konsole-is/camunda-operator/pkg/labels"
 )
 
 // handler serves the requests of one built-in registration. It reads no
@@ -113,13 +112,13 @@ type cleanup struct {
 	stages []cleanupStage
 }
 
-// cleanupStage is one step of a deletion policy. The next stage starts only
-// when every remaining object of this stage that the request owns is gone.
+// cleanupStage is one step of a deletion policy. The next stage starts, or
+// after the last stage the finalizer goes, only when every remaining object
+// of this stage that the request owns is gone.
 type cleanupStage struct {
 	// components apply the policy to the resources of this stage.
 	components []*component.Component
-	// remaining are the objects that must be gone before the next stage, or
-	// before the finalizer goes after the last stage.
+	// remaining are the objects that the stage waits for.
 	remaining []client.Object
 }
 
@@ -149,16 +148,5 @@ func handlers() map[string]handler {
 		},
 		pluginstartup.RegistrationExistingDatabaseConfigs:  existing{parse: databaseConfigs},
 		pluginstartup.RegistrationManagementDatabaseServer: managementDatabases{},
-	}
-}
-
-// backingLabels returns the labels of every object that a built-in handler
-// writes for request: its registration, the request, and the operator as
-// manager.
-func backingLabels(request *pluginsv1alpha1.PluginRequest) map[string]string {
-	return map[string]string{
-		pluginsv1alpha1.LabelRegistration: request.Spec.Registration,
-		pluginsv1alpha1.LabelRequest:      request.Name,
-		labels.ManagedByKey:               labels.ManagedBy,
 	}
 }

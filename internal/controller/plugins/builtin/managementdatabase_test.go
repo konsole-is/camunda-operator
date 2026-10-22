@@ -23,12 +23,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 func TestManagementDatabasesParseDeduplicatesAndOrders(t *testing.T) {
@@ -125,7 +127,7 @@ func TestManagementDatabasesReportTheServerAndTheDatabases(t *testing.T) {
 
 func TestManagementDatabasesReportTheVersionOfAReadyServer(t *testing.T) {
 	request := planeRequest(`[]`)
-	request.UID = "request-uid"
+	request.UID = requestUID
 	s := buildFor(t, request)
 	server := &v1.DatabaseServer{ObjectMeta: metav1.ObjectMeta{Name: "ops-db", Namespace: "my-cluster-ns"}}
 	server.Status.Version = "17"
@@ -145,25 +147,43 @@ func TestManagementDatabasesReportTheVersionOfAReadyServer(t *testing.T) {
 	)
 }
 
-func TestManagementDatabasesWarnAboutARemovedComponent(t *testing.T) {
+func TestManagementDatabasesWarnAboutTheOwnedDatabaseOfARemovedComponent(t *testing.T) {
 	request := planeRequest(`["identity"]`)
-	request.Status.Resources = []pluginsv1alpha1.ResourceRef{
-		{Kind: kindDatabase, Name: "ops-web-modeler", OnOrphan: pluginsv1alpha1.OnOrphanKept},
-	}
+	request.UID = requestUID
+	owned := liveDatabases(liveDatabase("ops-web-modeler", request.UID))
 
-	assert.Contains(t, buildFor(t, request).report().summary, removedItem)
+	s, err := managementDatabases{}.build(request, owned)
+	require.NoError(t, err)
+
+	assert.Contains(t, s.report().summary, removedItem, "the status of the request does not matter")
 }
 
-func TestManagementDatabasesKeepsTheWarningOfARemovedComponent(t *testing.T) {
-	request := planeRequest(`["identity"]`)
-	request.Status.Summary = []pluginsv1alpha1.SummaryItem{removedItem}
+func TestManagementDatabasesDoNotWarnWithoutAnOwnedDatabase(t *testing.T) {
+	tests := map[string]struct {
+		databases string
+		live      liveObjects
+	}{
+		"the Database is gone": {`["identity"]`, liveDatabases()},
+		"the Database has another owner": {
+			`["identity"]`, liveDatabases(liveDatabase("ops-web-modeler", "other-uid")),
+		},
+		"the component is listed": {
+			`["identity","webModeler"]`, liveDatabases(liveDatabase("ops-web-modeler", requestUID)),
+		},
+	}
 
-	assert.Contains(t, buildFor(t, request).report().summary, removedItem, "the logical database still stays")
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			request := planeRequest(tt.databases)
+			request.UID = requestUID
+			request.Status.Summary = []pluginsv1alpha1.SummaryItem{removedItem}
 
-	request = planeRequest(`["identity","webModeler"]`)
-	request.Status.Summary = []pluginsv1alpha1.SummaryItem{removedItem}
+			s, err := managementDatabases{}.build(request, tt.live)
+			require.NoError(t, err)
 
-	assert.NotContains(t, buildFor(t, request).report().summary, removedItem, "listed again, it has its Database")
+			assert.NotContains(t, s.report().summary, removedItem)
+		})
+	}
 }
 
 func TestManagementDatabasesTakeTheStorageClassInput(t *testing.T) {
@@ -188,7 +208,7 @@ func TestManagementDatabasesSetThePostgreSQLVersion(t *testing.T) {
 }
 
 func TestManagementDatabasesDeleteTheDatabasesBeforeTheServer(t *testing.T) {
-	c, err := managementDatabases{}.cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyDelete)
+	c, err := managementDatabases{}.cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyDelete, nil)
 	require.NoError(t, err)
 
 	require.Len(t, c.stages, 2)
@@ -200,7 +220,7 @@ func TestManagementDatabasesDeleteTheDatabasesBeforeTheServer(t *testing.T) {
 }
 
 func TestManagementDatabasesOrphanWaitsUntilNoObjectReferencesTheRequest(t *testing.T) {
-	c, err := managementDatabases{}.cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyOrphan)
+	c, err := managementDatabases{}.cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyOrphan, nil)
 	require.NoError(t, err)
 
 	require.Len(t, c.stages, 1)
@@ -208,21 +228,39 @@ func TestManagementDatabasesOrphanWaitsUntilNoObjectReferencesTheRequest(t *test
 	assert.ElementsMatch(
 		t, []string{
 			"DatabaseServer/ops-db", "Database/ops-keycloak", "Database/ops-identity", "Database/ops-web-modeler",
-		}, objectNames(c.stages[0].remaining), "a stale cache can leave an owner reference that garbage collection follows",
+		}, objectNames(c.stages[0].remaining), "garbage collection follows an owner reference that stays",
 	)
 }
 
-func TestManagementDatabasesReadOnlyTheExactParameterNames(t *testing.T) {
+func TestManagementDatabasesRefuseAnUnknownParameter(t *testing.T) {
 	request := planeRequest(`["identity"]`)
-	request.Spec.Parameters.Raw = []byte(`{"preset":"small","databases":["identity"],"Databases":[],"Version":"9"}`)
+	request.Spec.Parameters.Raw = []byte(`{"preset":"small","databases":["identity"],"Databases":[]}`)
+
+	_, err := managementDatabases{}.build(request, nil)
+
+	var failure *conditions.PreCheckFailure
+	require.ErrorAs(t, err, &failure)
+	assert.Equal(t, pluginsv1alpha1.ReasonInvalidParameters, failure.Reason)
+	assert.Contains(t, failure.Message, "spec.parameters.Databases")
+	assert.Nil(t, managementDatabases{}.contracts(request))
+}
+
+func TestManagementDatabasesNameEveryBackingObject(t *testing.T) {
+	refs := managementDatabases{}.backing(planeRequest(`[]`))
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		assert.Equal(t, "my-cluster-ns", ref.object.GetNamespace())
+		names = append(names, ref.kind+"/"+ref.object.GetName())
+	}
 
 	assert.Equal(
-		t, []contractRef{
-			{output: pluginstartup.OutputIdentityDatabaseConfig, kind: kindDatabaseConfig, name: "ops-identity"},
-		}, managementDatabases{}.contracts(request),
+		t, []string{
+			"DatabaseServer/ops-db", "Database/ops-keycloak", "Database/ops-identity", "Database/ops-web-modeler",
+		}, names, "the names do not depend on the parameters",
 	)
-	assert.Equal(t, pluginstartup.ManagementDatabaseServerVersion, previewServer(t, buildFor(t, request)).Spec.Version)
 }
+
+const requestUID = "request-uid"
 
 var removedItem = pluginsv1alpha1.SummaryItem{
 	Label:    kindDatabase,
@@ -248,9 +286,29 @@ func planeRequest(databases string) *pluginsv1alpha1.PluginRequest {
 // buildFor builds the components of the management databases handler for
 // request.
 func buildFor(t *testing.T, request *pluginsv1alpha1.PluginRequest) served {
-	s, err := managementDatabases{}.build(request)
+	s, err := managementDatabases{}.build(request, nil)
 	require.NoError(t, err)
 	return s
+}
+
+// liveDatabase returns the Database name in the namespace of planeRequest,
+// with an owner reference to uid.
+func liveDatabase(name string, uid types.UID) *v1.Database {
+	return &v1.Database{ObjectMeta: metav1.ObjectMeta{
+		Name: name, Namespace: "my-cluster-ns",
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: pluginsv1alpha1.GroupVersion.String(), Kind: "PluginRequest", Name: "ops", UID: uid,
+		}},
+	}}
+}
+
+// liveDatabases returns databases as the live objects of a request.
+func liveDatabases(databases ...*v1.Database) liveObjects {
+	live := liveObjects{}
+	for _, db := range databases {
+		live[liveKey{kind: kindDatabase, name: db.Name}] = db
+	}
+	return live
 }
 
 // previewServer returns the DatabaseServer ops-db that s applies.

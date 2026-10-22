@@ -18,7 +18,6 @@ package builtin
 
 import (
 	"encoding/json"
-	"fmt"
 	"slices"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -52,10 +51,8 @@ var managementOutputs = map[mdb.Component]string{
 // parameters list.
 type managementDatabases struct{}
 
-func (managementDatabases) build(request *pluginsv1alpha1.PluginRequest) (served, error) {
-	v := managementValues(request)
-	var err error
-	v.Preset, v.Version, v.Databases, err = managementParameters(request.Spec.Parameters)
+func (managementDatabases) build(request *pluginsv1alpha1.PluginRequest, live liveObjects) (served, error) {
+	v, err := managementValuesWithParameters(request)
 	if err != nil {
 		return served{}, err
 	}
@@ -71,7 +68,7 @@ func (managementDatabases) build(request *pluginsv1alpha1.PluginRequest) (served
 		return served{}, err
 	}
 
-	kept := keptComponents(request, v)
+	kept := keptComponents(request, v, live)
 
 	return served{
 		outputs: outputs,
@@ -106,6 +103,7 @@ func (managementDatabases) build(request *pluginsv1alpha1.PluginRequest) (served
 func (managementDatabases) cleanup(
 	request *pluginsv1alpha1.PluginRequest,
 	policy pluginsv1alpha1.DeletionPolicy,
+	_ liveObjects,
 ) (cleanup, error) {
 	v := managementValues(request)
 	databases := make([]client.Object, 0, len(mdb.Components))
@@ -118,9 +116,6 @@ func (managementDatabases) cleanup(
 		if err != nil {
 			return cleanup{}, err
 		}
-		// The orphan step reads through the cache. An object that the cache
-		// does not hold yet keeps its owner reference, and garbage
-		// collection deletes it once the request is gone.
 		return cleanup{stages: []cleanupStage{{
 			components: []*component.Component{orphan},
 			remaining:  append(databases, mdb.Server(v)),
@@ -143,14 +138,33 @@ func (managementDatabases) cleanup(
 }
 
 func (managementDatabases) contracts(request *pluginsv1alpha1.PluginRequest) []contractRef {
-	v := managementValues(request)
-	var err error
-	_, _, v.Databases, err = managementParameters(request.Spec.Parameters)
+	v, err := managementValuesWithParameters(request)
 	if err != nil {
 		return nil
 	}
 
 	return managementContracts(v)
+}
+
+func (managementDatabases) backing(request *pluginsv1alpha1.PluginRequest) []backingRef {
+	v := managementValues(request)
+	refs := make([]backingRef, 0, 1+len(mdb.Components))
+	refs = append(refs, backingRef{kind: kindDatabaseServer, object: mdb.Server(v)})
+	for _, c := range mdb.Components {
+		refs = append(refs, backingRef{kind: kindDatabase, object: mdb.Database(v, c)})
+	}
+
+	return refs
+}
+
+// managementValuesWithParameters returns the values of request with its
+// parameters. Parameters that do not decode return a
+// *conditions.PreCheckFailure with reason InvalidParameters.
+func managementValuesWithParameters(request *pluginsv1alpha1.PluginRequest) (mdb.Values, error) {
+	v := managementValues(request)
+	var err error
+	v.Preset, v.Version, v.Databases, err = managementParameters(request.Spec.Parameters)
+	return v, err
 }
 
 // managementValues returns the values of request that do not depend on its
@@ -162,30 +176,32 @@ func managementValues(request *pluginsv1alpha1.PluginRequest) mdb.Values {
 		Plane:            plane,
 		Server:           plane + pluginstartup.BackingSuffixManagementDatabaseServer,
 		StorageClassName: request.Spec.Inputs[pluginstartup.OutputStorageClassName],
-		Labels:           backingLabels(request),
+		Labels: map[string]string{
+			pluginsv1alpha1.LabelRegistration: request.Spec.Registration,
+			pluginsv1alpha1.LabelRequest:      request.Name,
+			labels.ManagedByKey:               labels.ManagedBy,
+		},
 	}
 }
 
-// managementParameters decodes {"preset", "version", "databases"}, matched
-// by exact name. An absent version is
+// managementParameters returns an error for a field other than preset,
+// version, and databases. An absent version is
 // pluginstartup.ManagementDatabaseServerVersion. The databases have no
 // duplicates and follow the order of mdb.Components.
 func managementParameters(parameters *apiextensionsv1.JSON) (string, string, []mdb.Component, error) {
-	var object map[string]json.RawMessage
-	if parameters != nil && len(parameters.Raw) > 0 {
-		if err := json.Unmarshal(parameters.Raw, &object); err != nil {
-			return "", "", nil, fmt.Errorf("decoding the parameters: %w", err)
-		}
+	var top map[string]json.RawMessage
+	if err := decodeStrict(parameters, &top); err != nil {
+		return "", "", nil, invalidParameter("spec.parameters", err)
 	}
 
 	var preset, version string
 	var listed []mdb.Component
-	for key, value := range map[string]any{"preset": &preset, "version": &version, "databases": &listed} {
-		if raw, ok := object[key]; ok {
-			if err := json.Unmarshal(raw, value); err != nil {
-				return "", "", nil, fmt.Errorf("decoding spec.parameters.%s: %w", key, err)
-			}
-		}
+	if err := decodeFields(top, "spec.parameters.", map[string]any{
+		"preset":    &preset,
+		"version":   &version,
+		"databases": &listed,
+	}); err != nil {
+		return "", "", nil, err
 	}
 
 	if version == "" {
@@ -217,29 +233,24 @@ func managementContracts(v mdb.Values) []contractRef {
 	return refs
 }
 
-// keptComponents returns a Warning item for each component that left the
-// databases of v while its Database exists or existed. The item stays until
-// the component is listed again, because the logical database stays on the
-// server after its Database goes.
-func keptComponents(request *pluginsv1alpha1.PluginRequest, v mdb.Values) []pluginsv1alpha1.SummaryItem {
+func keptComponents(
+	request *pluginsv1alpha1.PluginRequest,
+	v mdb.Values,
+	live liveObjects,
+) []pluginsv1alpha1.SummaryItem {
 	var items []pluginsv1alpha1.SummaryItem
 	for _, c := range mdb.Components {
-		if slices.Contains(v.Databases, c) {
+		name := mdb.DatabaseName(v.Plane, c)
+		current, ok := liveAs[*v1.Database](live, kindDatabase, name)
+		if slices.Contains(v.Databases, c) || !ok || !ownedBy(current, request.UID) {
 			continue
 		}
 
-		name := mdb.DatabaseName(v.Plane, c)
-		item := pluginsv1alpha1.SummaryItem{
+		items = append(items, pluginsv1alpha1.SummaryItem{
 			Label:    kindDatabase,
 			Value:    name + " removed, the logical database " + mdb.LogicalName(c) + " stays on " + v.Server,
 			Severity: pluginsv1alpha1.SeverityWarning,
-		}
-		written := slices.ContainsFunc(request.Status.Resources, func(r pluginsv1alpha1.ResourceRef) bool {
-			return r.Kind == kindDatabase && r.Name == name
 		})
-		if written || slices.Contains(request.Status.Summary, item) {
-			items = append(items, item)
-		}
 	}
 
 	return items

@@ -97,7 +97,11 @@ type stubHandler struct {
 	c cleanup
 }
 
-func (s stubHandler) cleanup(*pluginsv1alpha1.PluginRequest, pluginsv1alpha1.DeletionPolicy) (cleanup, error) {
+func (s stubHandler) cleanup(
+	*pluginsv1alpha1.PluginRequest,
+	pluginsv1alpha1.DeletionPolicy,
+	liveObjects,
+) (cleanup, error) {
 	return s.c, nil
 }
 

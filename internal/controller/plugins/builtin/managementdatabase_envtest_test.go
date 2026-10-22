@@ -58,7 +58,7 @@ var _ = Describe("Built-in management databases", func() {
 		}))
 	})
 
-	It("removes the Database and the output of a component that leaves databases", func() {
+	It("removes the Database and the output of a component that leaves databases, and warns while it goes", func() {
 		request, plane := newPlaneRequest(`["keycloak","identity","webModeler"]`, pluginsv1alpha1.DeletionPolicyDelete)
 		for _, c := range []string{"-keycloak", "-identity", "-web-modeler"} {
 			createContract(newDatabaseConfig(plane + c))
@@ -66,6 +66,12 @@ var _ = Describe("Built-in management databases", func() {
 		Eventually(func(g Gomega) {
 			g.Expect(liveRequest(g, request).Status.Outputs).To(HaveLen(3))
 		}, timeout, interval).Should(Succeed())
+		db := &v1.Database{ObjectMeta: metav1.ObjectMeta{Name: plane + "-web-modeler", Namespace: "default"}}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKeyFromObject(db), &v1.Database{})
+		}, timeout, interval).Should(Succeed())
+		setHold(db, true)
+		DeferCleanup(func() { setHold(db, false) })
 
 		Eventually(func() error {
 			var live pluginsv1alpha1.PluginRequest
@@ -78,16 +84,23 @@ var _ = Describe("Built-in management databases", func() {
 			return k8sClient.Update(ctx, &live)
 		}, timeout, interval).Should(Succeed())
 
-		expectGone(&v1.Database{ObjectMeta: metav1.ObjectMeta{Name: plane + "-web-modeler", Namespace: "default"}})
+		removed := pluginsv1alpha1.SummaryItem{
+			Label:    kindDatabase,
+			Value:    plane + "-web-modeler removed, the logical database web_modeler stays on " + plane + "-db",
+			Severity: pluginsv1alpha1.SeverityWarning,
+		}
 		Eventually(func(g Gomega) {
 			live := liveRequest(g, request)
 			g.Expect(live.Status.Outputs).NotTo(HaveKey(pluginstartup.OutputWebModelerDatabaseConfig))
 			g.Expect(live.Status.Outputs).To(HaveLen(2))
-			g.Expect(live.Status.Summary).To(ContainElement(pluginsv1alpha1.SummaryItem{
-				Label:    kindDatabase,
-				Value:    plane + "-web-modeler removed, the logical database web_modeler stays on " + plane + "-db",
-				Severity: pluginsv1alpha1.SeverityWarning,
-			}))
+			g.Expect(live.Status.Summary).To(ContainElement(removed))
+		}, timeout, interval).Should(Succeed())
+
+		setHold(db, false)
+
+		expectGone(db)
+		Eventually(func(g Gomega) {
+			g.Expect(liveRequest(g, request).Status.Summary).NotTo(ContainElement(removed))
 		}, timeout, interval).Should(Succeed())
 	})
 

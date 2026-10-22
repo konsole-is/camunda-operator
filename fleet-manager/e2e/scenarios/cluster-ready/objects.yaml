@@ -3800,17 +3800,17 @@ spec:
 status:
   conditions:
   - lastTransitionTime: "2026-01-01T00:00:00Z"
-    message: The operator serves the requests of this registration
-    observedGeneration: 1
-    reason: Healthy
-    status: "True"
-    type: Ready
-  - lastTransitionTime: "2026-01-01T00:00:00Z"
     message: All checks passed
     observedGeneration: 1
     reason: Healthy
     status: "True"
     type: Accepted
+  - lastTransitionTime: "2026-01-01T00:00:00Z"
+    message: The operator serves the requests of this registration
+    observedGeneration: 1
+    reason: Healthy
+    status: "True"
+    type: Ready
   observedGeneration: 1
 ---
 apiVersion: plugins.camunda.io/v1alpha1
