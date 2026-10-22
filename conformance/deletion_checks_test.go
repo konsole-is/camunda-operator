@@ -362,6 +362,14 @@ func TestOrderRunNameHoldsTheRunID(t *testing.T) {
 	assert.Equal(t, "basic-order-abc123", run.name)
 }
 
+func TestOrderRunHasAClaimOfItsOwn(t *testing.T) {
+	first := requestRun{caseName: "basic", name: "basic-delete-abc123", claim: "basic-delete-abc123"}
+
+	run := orderRun(first, "abc123")
+
+	assert.Equal(t, "basic-order-abc123", run.claim)
+}
+
 func TestCurrentTakesAnUnrelatedReplacementAsGone(t *testing.T) {
 	replacement := &corev1.ConfigMap{}
 	replacement.Namespace = "ns"

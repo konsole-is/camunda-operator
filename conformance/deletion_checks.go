@@ -169,11 +169,12 @@ func checkRegistrationFirst(ctx context.Context, s *suite) (err error) {
 }
 
 // orderRun is the run of the request of the check, made from first, with a
-// target of its own.
+// target and a claim of its own.
 func orderRun(first requestRun, runID string) requestRun {
 	run := first
 	run.policy = pluginsv1alpha1.DeletionPolicyDelete
 	run.name = requestName(first.caseName, "", "order", runID)
+	run.claim = run.name
 	run.tc.Target = targetWithSuffix(first.tc.Target, "order")
 
 	return run
