@@ -152,10 +152,11 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     resourceVersion: string | undefined,
     force: boolean,
     dryRun: boolean,
+    manager = APP_FIELD_MANAGER,
   ) =>
     send<KubeObject>(
       "PATCH",
-      `${pathOf(refOf(object))}?fieldManager=${APP_FIELD_MANAGER}&force=${force}${dryRun ? "&dryRun=All" : ""}`,
+      `${pathOf(refOf(object))}?fieldManager=${encodeURIComponent(manager)}&force=${force}${dryRun ? "&dryRun=All" : ""}`,
       applyBody(object, resourceVersion),
       "application/apply-patch+yaml",
     );
@@ -189,6 +190,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   // uids holds the uid of each object of the apply list that exists.
   const dryRun = async (
     change: Change,
+    managers: Record<RefKey, string> = {},
   ): Promise<Preview & { uids: Map<RefKey, string> }> => {
     const uids = new Map<RefKey, string>();
     const refusals = refsOf(change).flatMap(refusalOf);
@@ -215,6 +217,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           resourceVersion,
           change.force ?? false,
           true,
+          managers[refKey(ref)],
         );
         objects.push(previewObject(ref, before, after));
       } catch (error) {
@@ -237,7 +240,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   };
 
   const preview = async (change: Change): Promise<Preview> => {
-    const { objects, errors } = await dryRun(change);
+    const { objects, errors } = await dryRun(change, change.previewManagers);
     return { objects, errors };
   };
 

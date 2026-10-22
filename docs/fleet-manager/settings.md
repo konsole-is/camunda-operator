@@ -134,7 +134,7 @@ One-off backups, restores, and backup deletions go to the Kubernetes API also in
 
 ### When a save fails
 
-Before the commit, the fleet manager sends each object to the cluster as a dry run. A save that the cluster refuses makes no commit. The dry run keeps each field that only your GitOps tool set, also when the saved object leaves the field out. A validation rule that depends on such a field can still fail when GitOps applies the file. The cluster cannot check an `ExternalSecret`, or an object in a namespace that the same save creates. The cluster checks these objects only when GitOps applies them.
+Before the commit, the fleet manager sends each object to the cluster as a dry run. A save that the cluster refuses makes no commit. When your GitOps tool applies a file, it removes each field that it set before and that the file now leaves out. The dry run removes these fields too when your GitOps tool uses server-side apply. Flux uses server-side apply. Argo CD uses client-side apply, unless you set the sync option `ServerSideApply=true`. With client-side apply, the dry run keeps these fields. When a validation rule depends on such a field, the save can commit a file that GitOps then cannot apply. The cluster cannot check an `ExternalSecret`, or an object in a namespace that the same save creates. The cluster checks these objects only when GitOps applies them.
 
 When someone pushed to the branch after the fleet manager read it, the save commits on top of that push. The save fails only when that push changed a file of the save.
 

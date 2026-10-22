@@ -745,6 +745,97 @@ describe("the Git writer", () => {
     );
   });
 
+  it("dry-runs an object that GitOps applied as the manager of GitOps, with the live revision", async () => {
+    repo = await serveBareRepository();
+    const envRef = refKey({ kind: "Environment", name: "prod" });
+    live.set(envRef, {
+      ...environment("prod"),
+      metadata: {
+        name: "prod",
+        annotations: { [REVISION_ANNOTATION]: "applied" },
+        managedFields: [
+          {
+            manager: "kustomize-controller",
+            operation: "Apply",
+            fieldsV1: {
+              "f:metadata": {
+                "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [environment("prod")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apply: [
+          expect.objectContaining({
+            metadata: {
+              name: "prod",
+              annotations: { [REVISION_ANNOTATION]: "applied" },
+            },
+          }),
+        ],
+        previewManagers: { [envRef]: "kustomize-controller" },
+      }),
+    );
+  });
+
+  it("dry-runs an object that GitOps did not apply with server-side apply as the app", async () => {
+    repo = await serveBareRepository();
+    live.set(
+      refKey({ kind: "Environment", name: "prod" }),
+      environment("prod"),
+    );
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [environment("prod")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apply: [environment("prod")],
+        previewManagers: {},
+      }),
+    );
+  });
+
+  it("a failed read of an object makes no commit and returns the error, also when the dry run would pass", async () => {
+    repo = await serveBareRepository();
+    let reads = 0;
+    const writer = gitWriter({
+      target: { url: repo.url, branch: "", path: "", credentialsSecretRef: "" },
+      direct: direct(),
+      read: async () => {
+        reads += 1;
+        if (reads === 1) throw new Error("connection reset");
+        return undefined;
+      },
+    });
+
+    const result = await writer.apply({
+      intent: "Change",
+      apply: [environment("prod")],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Unavailable" })],
+    });
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
   it("a delete of an ExternalSecret skips the dry run and removes the file", async () => {
     repo = await serveBareRepository();
     const ref: ObjectRef = {

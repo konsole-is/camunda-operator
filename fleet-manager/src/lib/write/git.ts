@@ -19,7 +19,7 @@ import { inOrder } from "@/lib/serial";
 import { readSecretValues } from "@/lib/secrets/values";
 import { appNamespace } from "@/lib/settings/keys";
 import { apiErrorsOf, reasonOf, staleError } from "./errors";
-import { gitBase, gitPath, renderObject } from "./git-files";
+import { gitBase, gitOpsManager, gitPath, renderObject } from "./git-files";
 import type {
   ApiError,
   Change,
@@ -103,8 +103,11 @@ type Remote = {
  * applied yet (Conflict), or the dry run against the cluster fails. The
  * dry run skips an ExternalSecret and an object in a
  * namespace that the same change creates; the preview shows them as
- * rendered. A delete of an object without a file, and a file behind a
- * symbolic link of the repository, are Invalid.
+ * rendered. The dry run of an object that GitOps applied with server-side
+ * apply runs as the field manager of GitOps, so it drops each field of
+ * GitOps that the change leaves out. After a client-side apply, the dry run
+ * keeps these fields. A delete of an object without a file, and a file
+ * behind a symbolic link of the repository, are Invalid.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
@@ -123,12 +126,17 @@ export function gitWriter(options: GitWriterOptions): Writer {
     if (refusals.length > 0) return { objects: [], errors: refusals };
     const skipped = await notDryRun(change);
     const deletes = change.delete ?? [];
+    const { apply, previewManagers, errors } = await asGitOps(
+      change,
+      change.apply.filter((o) => !skipped.has(o)),
+    );
     // force: GitOps applies the objects under its own field manager, so a
     // dry run without force fails on each field that GitOps set.
     const checked: Change = {
       ...change,
       force: true,
-      apply: change.apply.filter((o) => !skipped.has(o)),
+      apply,
+      previewManagers,
       delete: deletes.filter((r) => r.kind !== "ExternalSecret"),
     };
     const result =
@@ -142,7 +150,10 @@ export function gitWriter(options: GitWriterOptions): Writer {
       if (ref.kind !== "ExternalSecret") continue;
       shown.push(previewObject(ref, await read(ref), undefined));
     }
-    return { objects: [...result.objects, ...shown], errors: result.errors };
+    return {
+      objects: [...result.objects, ...shown],
+      errors: [...errors, ...result.errors],
+    };
   };
 
   // notDryRun returns the objects that the API server cannot dry-run: an
@@ -163,6 +174,56 @@ export function gitWriter(options: GitWriterOptions): Writer {
             created.has(o.metadata.namespace)),
       ),
     );
+  };
+
+  // asGitOps maps each object that GitOps applied with server-side apply to
+  // the field manager of GitOps. Only a dry run as that manager removes the
+  // fields of GitOps that the file leaves out, as the GitOps apply does.
+  const asGitOps = async (
+    change: Change,
+    objects: KubeObject[],
+  ): Promise<{
+    apply: KubeObject[];
+    previewManagers: Record<RefKey, string>;
+    errors: ApiError[];
+  }> => {
+    const previewManagers: Record<RefKey, string> = {};
+    const apply: KubeObject[] = [];
+    const errors: ApiError[] = [];
+    for (const object of objects) {
+      const ref = refOf(object);
+      let live: KubeObject | undefined;
+      try {
+        live = await read(ref);
+      } catch (error) {
+        const precondition = change.preconditions?.[refKey(ref)];
+        errors.push(...apiErrorsOf(error, ref, precondition !== undefined));
+        continue;
+      }
+      const manager = gitOpsManager(live);
+      if (manager === undefined) {
+        apply.push(object);
+        continue;
+      }
+      previewManagers[refKey(ref)] = manager;
+      // The file carries the annotation, so the dry run must not remove it.
+      const annotations = (object.metadata.annotations ?? {}) as Record<
+        string,
+        string
+      >;
+      const revision =
+        (live!.metadata.annotations as Record<string, string> | undefined)?.[
+          REVISION_ANNOTATION
+        ] ?? "";
+      apply.push({
+        ...object,
+        metadata: {
+          ...object.metadata,
+          annotations: { ...annotations, [REVISION_ANNOTATION]: revision },
+        },
+      });
+    }
+    return { apply, previewManagers, errors };
   };
 
   const staleErrors = async (change: Change): Promise<ApiError[]> => {
