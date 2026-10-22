@@ -68,7 +68,8 @@ const ONLY_FIELDS = "a template holds field references only";
  * {{ .parameters.<name> }}, {{ .outputs.<key> }}, and in a metric query
  * also {{ .pods }}. {{- and -}} trim the white space around an action, as
  * in Go. Each other construct, an unknown name, and an action that is not
- * closed is an error that names it, with the messages of pluginkit.
+ * closed is an error that names it, with the messages of pluginkit. It does
+ * not check the values of a metric query; render does.
  */
 export function parseTemplate(
   template: string,
@@ -86,8 +87,10 @@ export function parseTemplate(
  * data does not hold. A parameter renders when it is a string, a number, or
  * a boolean; another value is an error that names it. A number can print
  * other than in pluginkit, as for 1.0, 1e3, and integers above 2^53. In a
- * metric query, a placeholder outside a "..." or '...' string is an error,
- * and each value is escaped for its string.
+ * metric query, a value in a "..." or '...' string is escaped for it, a
+ * value outside a string must be a decimal number or a duration, and a
+ * placeholder in a backtick string, in a comment, or right after a
+ * backslash is an error.
  */
 export function render(
   template: string,
@@ -127,9 +130,13 @@ export function render(
   return { text };
 }
 
-// A value can change the structure of a PromQL query unless it sits in a
-// quoted string with the quote, the backslash, and the newline escaped. A
-// backtick string has no escapes, and a # outside a string starts a comment.
+// A value can change the structure of a PromQL query unless it is a number,
+// a duration, or in a quoted string with the quote, the backslash, and the
+// newline escaped. A backtick string has no escapes, and a # outside a
+// string starts a comment.
+const NUMBER = /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/;
+const DURATION = /^(\d+(ms|s|m|h|d|w|y))+$/;
+
 function renderPromQL(
   parts: Part[],
   data: TemplateData,
@@ -139,10 +146,22 @@ function renderPromQL(
   let text = "";
   for (const part of parts) {
     if (typeof part !== "string") {
+      const field = part.filter(Boolean).join(".");
+      if (!quote && !escaped) {
+        const bare = value(part, data);
+        if (!NUMBER.test(bare) && !DURATION.test(bare)) {
+          return {
+            error: `.${field} outside a "..." or '...' string in a metric query must be a number or a duration`,
+            field,
+          };
+        }
+        text += bare;
+        continue;
+      }
       if ((quote !== '"' && quote !== "'") || escaped) {
         return {
-          error: `a placeholder in a metric query must be inside a "..." or '...' string`,
-          field: part.filter(Boolean).join("."),
+          error: `.${field} in a metric query must not be in a backtick string, a comment, or an escape`,
+          field,
         };
       }
       text += value(part, data)

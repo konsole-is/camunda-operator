@@ -64,13 +64,47 @@ describe("render", () => {
     }));
 
   it.each([
-    ["no string", "up{r={{ .parameters.x }}}"],
+    ["a threshold", "up > {{ .parameters.v }}", "7.5", "up > 7.5"],
+    ["a negative exponent", "up > {{ .parameters.v }}", "-1e-3", "up > -1e-3"],
+    [
+      "a range window",
+      "rate(x[{{ .parameters.v }}])",
+      "1h30m",
+      "rate(x[1h30m])",
+    ],
+    ["a topk argument", "topk({{ .parameters.v }}, up)", "5", "topk(5, up)"],
+    [
+      "a histogram_quantile argument",
+      "histogram_quantile({{ .parameters.v }}, rate(x_bucket[5m]))",
+      "0.99",
+      "histogram_quantile(0.99, rate(x_bucket[5m]))",
+    ],
+  ])(
+    "fills a number or a duration outside a string of a metric query: %s",
+    (_, template, v, want) =>
+      expect(
+        render(template, { ...data, parameters: { v } }, "metric"),
+      ).toEqual({ text: want }),
+  );
+
+  it.each([
+    ["a backtick string", "up{r=`{{ .parameters.v }}`}"],
+    ["a comment", "up # {{ .parameters.v }}"],
+  ])("refuses a number in %s of a metric query", (_, template) =>
+    expect(
+      render(template, { ...data, parameters: { v: 5 } }, "metric"),
+    ).toMatchObject({ field: "parameters.v" }),
+  );
+
+  it.each([
+    ["no string", "up > {{ .parameters.x }}"],
     ["a backtick string", "up{r=`{{ .parameters.x }}`}"],
     ["the end of a string", 'up{r="a"{{ .parameters.x }}}'],
     ["a comment that holds a quote", 'up # "\nx{r={{ .parameters.x }}}'],
     ["a comment", 'up # "{{ .parameters.x }}"'],
   ])("refuses a placeholder of a metric query in %s", (_, template) =>
     expect(render(template, data, "metric")).toMatchObject({
+      error: expect.stringContaining(".parameters.x"),
       field: "parameters.x",
     }),
   );
