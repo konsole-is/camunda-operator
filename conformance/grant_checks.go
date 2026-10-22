@@ -32,8 +32,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -728,14 +728,13 @@ func checkGrantReady(ctx context.Context, s *suite) error {
 	})
 }
 
-// grantsAtReady waits until the request of r, created at createdAt, has a
-// Ready condition, and returns its Grants then.
+// grantsAtReady returns the Grants of the request of r once the request has
+// a Ready condition, or once the Ready timeout from createdAt passed.
 func (s *suite) grantsAtReady(
 	ctx context.Context,
 	r requestRun,
 	createdAt time.Time,
 ) ([]pluginsv1alpha1.Grant, error) {
-	var owned []pluginsv1alpha1.Grant
 	deadline := createdAt.Add(s.cfg.Timeouts.Ready)
 	err := waitUntil(ctx, deadline, s.cfg.Timeouts.Ready, "a Ready condition", func(ctx context.Context) error {
 		req, err := s.request(ctx, r.name)
@@ -747,11 +746,18 @@ func (s *suite) grantsAtReady(
 			return errors.New("the request has no Ready condition")
 		}
 
-		owned, err = s.ownedGrants(ctx, req)
-		return err
+		return nil
 	})
+	if ctx.Err() != nil {
+		return nil, err
+	}
 
-	return owned, err
+	req, err := s.request(ctx, r.name)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.ownedGrants(ctx, req)
 }
 
 // grantReadyRun checks the request name with grants, none of which has a
