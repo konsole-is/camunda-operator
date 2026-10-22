@@ -19,7 +19,10 @@ package builtin
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	corev1 "k8s.io/api/core/v1"
@@ -211,7 +214,7 @@ func postgresServer(
 	if current, ok := liveAs[*v1.DatabaseServer](live, kindDatabaseServer, name); ok {
 		var shrink *pluginsv1alpha1.SummaryItem
 		server.Spec.StorageSize, shrink = keepLiveStorageSize(
-			server.Spec.StorageSize, current.Spec.StorageSize, current.Status.Volumes,
+			server.Spec.StorageSize, current.Spec.StorageSize, dataVolumes(current.Status.Volumes),
 		)
 		if shrink != nil {
 			warnings = append(warnings, *shrink)
@@ -229,6 +232,14 @@ func postgresServer(
 	}
 
 	return server, warnings, nil
+}
+
+// dataVolumes returns volumes without the write-ahead log volumes, which
+// spec.walStorageSize sizes.
+func dataVolumes(volumes []v1.VolumeStatus) []v1.VolumeStatus {
+	return slices.DeleteFunc(slices.Clone(volumes), func(volume v1.VolumeStatus) bool {
+		return strings.HasSuffix(volume.Name, cnpgv1.WalArchiveVolumeSuffix)
+	})
 }
 
 func postgresServerName(request *pluginsv1alpha1.PluginRequest) string {

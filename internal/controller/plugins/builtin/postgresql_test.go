@@ -127,9 +127,10 @@ func TestPostgreSQLKeepsTheLiveStorageSize(t *testing.T) {
 	}{
 		{"smaller", "20Gi", "50Gi", "", "50Gi", true},
 		{"larger", "80Gi", "50Gi", "", "80Gi", false},
-		{"no live server", "20Gi", "", "", "20Gi", false},
+		{"no live size", "20Gi", "", "", "20Gi", false},
 		{"no override, live 50Gi", "", "50Gi", "", "", false},
 		{"smaller than the volume of a preset size", "20Gi", "", "50Gi", "50Gi", true},
+		{"larger than the data volume, smaller than the WAL volume", "30Gi", "20Gi", "20Gi", "30Gi", false},
 	}
 
 	for _, tt := range tests {
@@ -147,6 +148,10 @@ func TestPostgreSQLKeepsTheLiveStorageSize(t *testing.T) {
 					{Name: "orders-pg-1", Capacity: resource.MustParse(tt.volume)},
 				}
 			}
+			current.Status.Volumes = append(
+				current.Status.Volumes,
+				v1.VolumeStatus{Name: "orders-pg-1-wal", Capacity: resource.MustParse("100Gi")},
+			)
 			live := liveObjects{{kind: kindDatabaseServer, name: "orders-pg"}: current}
 
 			s, err := postgresql{}.build(postgresRequest(params, nil), live)
