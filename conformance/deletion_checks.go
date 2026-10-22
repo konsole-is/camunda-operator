@@ -174,7 +174,7 @@ func orderRun(first requestRun, runID string) requestRun {
 	run := first
 	run.policy = pluginsv1alpha1.DeletionPolicyDelete
 	run.name = requestName(first.caseName, "", "order", runID)
-	run.claim = run.name
+	run.claim = claimName(first.caseName, "order", runID)
 	run.tc.Target = targetWithSuffix(first.tc.Target, "order")
 
 	return run
