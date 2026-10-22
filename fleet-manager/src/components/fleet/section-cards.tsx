@@ -22,7 +22,12 @@ import type {
   PluginSelection,
   SectionView,
 } from "@/lib/policy/types";
-import { type ValidationError, validate } from "@/lib/schema";
+import {
+  type SchemaRule,
+  type ValidationError,
+  schemaRules,
+  validate,
+} from "@/lib/schema";
 import { cn } from "@/lib/utils";
 import { LockedField } from "./locked-field";
 import { YamlEditor } from "./yaml-editor";
@@ -55,9 +60,11 @@ function parameterKey(registration: string, parameter: string): string {
  * select or a checkbox group for an array that shows the labels and submits
  * the names. Nothing is preselected in an allowed list unless the environment
  * value is one of its names. A selection holds only the parameters that differ
- * from the policy. A selected option that new options no longer hold, or
- * disable, leaves the selection. onChange gets the initial selections and
- * errors once, then each change. An error path is
+ * from the policy. Each x-kubernetes-validations rule of a schema shows as a
+ * hint under its parameter, or under the option for a rule of the whole
+ * schema. The form does not check the rules. A selected option that new
+ * options no longer hold, or disable, leaves the selection. onChange gets the
+ * initial selections and errors once, then each change. An error path is
  * `<registration>/<parameter>`, then `.<path>` for an error inside the value,
  * or the section name when a required section has no selection.
  */
@@ -301,7 +308,10 @@ function OptionParameters({
       .message;
   const rest = option.parameters.filter((r) => r.name !== choices?.parameter);
   const choiceError = choices && errorOf(choices.parameter);
-  if (!choices && rest.length === 0) return null;
+  const optionRules = schemaRules(option.schema ?? {}).filter(
+    (r) => r.path === "",
+  );
+  if (!choices && rest.length === 0 && optionRules.length === 0) return null;
   return (
     <div className="flex flex-col gap-3 border-t border-divider pt-3">
       {choices && (
@@ -366,6 +376,11 @@ function OptionParameters({
           onValue={(v, parse) => onValue(rule.name, v, parse)}
         />
       ))}
+      <RuleHints
+        id={`${idPrefix}-rules`}
+        rules={optionRules}
+        className="border-t border-divider pt-3"
+      />
     </div>
   );
 }
@@ -384,7 +399,12 @@ function ParameterField({
   onValue: (value: unknown, parse?: ValidationError[]) => void;
 }) {
   const schema = rule.schema ?? {};
-  const describedBy = error ? `${id}-error` : undefined;
+  const rules = rule.claimEditable ? schemaRules(schema) : [];
+  const hints = <RuleHints id={`${id}-rules`} rules={rules} />;
+  const describedBy =
+    [error && `${id}-error`, rules.length > 0 && `${id}-rules`]
+      .filter(Boolean)
+      .join(" ") || undefined;
   const invalid = error ? true : undefined;
   const message = error ? (
     <p id={`${id}-error`} className="text-xs text-bad">
@@ -442,6 +462,7 @@ function ParameterField({
           </div>
         ))}
         {message}
+        {hints}
       </fieldset>
     );
   }
@@ -481,21 +502,25 @@ function ParameterField({
           ))}
         </NativeSelect>
         {message}
+        {hints}
       </div>
     );
   }
   if (schema.type === "boolean") {
     return (
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id={id}
-          checked={value === true}
-          aria-invalid={invalid}
-          aria-describedby={describedBy}
-          onCheckedChange={(on) => onValue(on === true)}
-        />
-        {label}
-        {message}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={id}
+            checked={value === true}
+            aria-invalid={invalid}
+            aria-describedby={describedBy}
+            onCheckedChange={(on) => onValue(on === true)}
+          />
+          {label}
+          {message}
+        </div>
+        {hints}
       </div>
     );
   }
@@ -522,6 +547,7 @@ function ParameterField({
           <p className="text-xs text-muted">{`From ${min} to ${max}`}</p>
         )}
         {message}
+        {hints}
       </div>
     );
   }
@@ -537,17 +563,59 @@ function ParameterField({
           onChange={(e) => onValue(e.target.value)}
         />
         {message}
+        {hints}
       </div>
     );
   }
   return (
-    <YamlEditor
-      label={rule.label}
-      defaultValue={value}
-      schema={rule.schema}
-      error={error}
-      onChange={(v, found) => onValue(v, v === undefined ? found : [])}
-    />
+    <div className="flex min-w-0 flex-col gap-1">
+      <YamlEditor
+        label={rule.label}
+        defaultValue={value}
+        schema={rule.schema}
+        error={error}
+        describedBy={rules.length > 0 ? `${id}-rules` : undefined}
+        onChange={(v, found) => onValue(v, v === undefined ? found : [])}
+      />
+      {hints}
+    </div>
+  );
+}
+
+/**
+ * RuleHints lists rules that the cluster checks after the save, each by its
+ * message, or by its rule text when it has none. It renders nothing for no
+ * rules.
+ */
+function RuleHints({
+  id,
+  rules,
+  className,
+}: {
+  id: string;
+  rules: SchemaRule[];
+  className?: string;
+}) {
+  if (rules.length === 0) return null;
+  return (
+    <div
+      id={id}
+      className={cn("flex flex-col gap-0.5 text-xs text-muted", className)}
+    >
+      <p>Checked after you save</p>
+      <ul className="flex flex-col gap-0.5">
+        {rules.map((r, index) => (
+          <li key={index} className="break-words">
+            {r.path && `${r.path}: `}
+            {r.message ?? (
+              <code className="font-mono [font-variant-ligatures:none]">
+                {r.rule}
+              </code>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 function initialSelection(

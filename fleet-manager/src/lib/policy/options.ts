@@ -170,6 +170,9 @@ function optionOf(
     ...(spec.docsUrl && { docsUrl: spec.docsUrl }),
     isDefault,
     parameters,
+    ...(isObject(spec.parameters) && {
+      schema: spec.parameters as OpenAPISchema,
+    }),
     ...(spec.choices?.length &&
       !aliased && { choices: { parameter, items: spec.choices } }),
   };

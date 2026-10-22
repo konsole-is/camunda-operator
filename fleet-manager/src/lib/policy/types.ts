@@ -24,7 +24,9 @@ export type SectionView = {
  * that the environment preselects. disabledReason, when set, says why the
  * option cannot be chosen, for example "Needs an encryption key". choices
  * are the presets or resources of the registration, and parameter names the
- * parameter that a pick sets.
+ * parameter that a pick sets. schema is the parameter schema of the
+ * registration; SectionCards shows the rules of its root, which span more
+ * than one parameter.
  */
 export type OptionView = {
   registration: string;
@@ -34,6 +36,7 @@ export type OptionView = {
   isDefault: boolean;
   disabledReason?: string;
   parameters: ParameterRule[];
+  schema?: OpenAPISchema;
   choices?: {
     parameter: string;
     items: { name: string; specs?: { label: string; value: string }[] }[];

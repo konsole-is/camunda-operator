@@ -173,4 +173,61 @@ export const sectionCardsStories: Story[] = [
       },
     ],
   }),
+  story("Parameter rules", {
+    name: "team-storage",
+    label: "Team storage",
+    selection: "One",
+    required: true,
+    options: [
+      {
+        registration: "team-bucket",
+        label: "Team bucket",
+        description: "A bucket that the team shares.",
+        isDefault: true,
+        schema: {
+          type: "object",
+          "x-kubernetes-validations": [
+            {
+              rule: "self.minSizeGi <= self.maxSizeGi",
+              message: "The minimum size must not be above the maximum size",
+            },
+          ],
+        },
+        parameters: [
+          {
+            name: "name",
+            label: "Bucket name",
+            schema: {
+              type: "string",
+              "x-kubernetes-validations": [
+                {
+                  rule: "self.startsWith('team-')",
+                  message: "The name must start with team-",
+                },
+              ],
+            },
+            claimEditable: true,
+            value: "team-orders",
+          },
+          {
+            name: "maxSizeGi",
+            label: "Maximum size in GiB",
+            schema: {
+              type: "integer",
+              "x-kubernetes-validations": [{ rule: "self % 10 == 0" }],
+            },
+            claimEditable: true,
+            value: 50,
+          },
+          {
+            name: "minSizeGi",
+            label: "Minimum size in GiB",
+            schema: { type: "integer" },
+            claimEditable: true,
+            value: 10,
+          },
+        ],
+      },
+    ],
+  }),
 ];

@@ -496,4 +496,30 @@ describe("sectionOptions", () => {
       parameters: claimEditable(registration, undefined),
     });
   });
+
+  it("passes the parameter schema of the registration to the option", () => {
+    const parameters = {
+      type: "object",
+      properties: { min: { type: "integer" }, max: { type: "integer" } },
+      "x-kubernetes-validations": [
+        { rule: "self.min <= self.max", message: "min must not be above max" },
+      ],
+    };
+
+    const [withSchema] = sectionOptions(
+      section(),
+      [reg({ parameters })],
+      undefined,
+      "CamundaClusterClaim",
+    ).options;
+    const [withoutSchema] = sectionOptions(
+      section(),
+      [reg()],
+      undefined,
+      "CamundaClusterClaim",
+    ).options;
+
+    expect(withSchema.schema).toEqual(parameters);
+    expect(withoutSchema.schema).toBeUndefined();
+  });
 });
