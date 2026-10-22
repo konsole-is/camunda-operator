@@ -107,6 +107,11 @@ func TestDeletionPolicy(t *testing.T) {
 	}
 }
 
+func TestAttachmentNames(t *testing.T) {
+	assert.Equal(t, "orders-optimize", OptimizeName("orders"))
+	assert.Equal(t, "orders-backups", BackupScheduleName("orders"))
+}
+
 func TestReferences(t *testing.T) {
 	environment := &fleetv1alpha1.Environment{
 		ObjectMeta: metav1.ObjectMeta{Name: "prod"},

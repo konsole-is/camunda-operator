@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
@@ -83,4 +84,12 @@ func TestRequestsInputAddsNoAccountWithoutBuiltinStorage(t *testing.T) {
 	in.Claim.Spec.Plugins[2].Registration = "existing-secondary-storage"
 
 	assert.Nil(t, RequestsInput(in).AdditionalServiceAccounts)
+}
+
+func TestRequestsInputTakesTheClaimPolicyOverTheSnapshotDefault(t *testing.T) {
+	in := fullInput(t)
+	in.Claim.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+	in.Claim.Status.ResolvedPolicy = &fleetv1alpha1.ResolvedPolicy{DeletionPolicy: pluginsv1alpha1.DeletionPolicyDelete}
+
+	assert.Equal(t, pluginsv1alpha1.DeletionPolicyOrphan, RequestsInput(in).DeletionPolicy)
 }
