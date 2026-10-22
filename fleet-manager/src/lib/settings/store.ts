@@ -7,7 +7,7 @@ import type { KubeObject, WriteResult } from "@/lib/write/types";
 import {
   WRITE_TIMEOUT_MS,
   WriteOnlyKindMap,
-  getWriter,
+  directWriter,
   refKey,
 } from "@/lib/write/writer";
 import {
@@ -60,8 +60,7 @@ async function writePatch(patch: Partial<Settings>): Promise<WriteResult> {
     };
   }
   const object = settingsObject({ ...live.data, ...patch });
-  const writer = await getWriter();
-  return writer.apply({
+  return directWriter().apply({
     intent: `Change the settings ${Object.keys(patch).join(", ")}`,
     directOnly: true,
     // force takes over a key that another manager, such as kubectl edit,
@@ -80,9 +79,8 @@ async function writePatch(patch: Partial<Settings>): Promise<WriteResult> {
 async function readOrCreate(): Promise<ConfigMap> {
   const live = await read();
   if (live) return live;
-  const result = await (
-    await getWriter()
-  ).apply({
+  // getWriter reads the settings, so the settings write through directWriter.
+  const result = await directWriter().apply({
     intent: "Create the settings from the chart values",
     directOnly: true,
     apply: [settingsObject(seedFromEnv(process.env))],

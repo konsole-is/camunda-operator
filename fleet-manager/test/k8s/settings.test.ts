@@ -168,4 +168,18 @@ describe("settings against envtest", () => {
       before.metadata?.resourceVersion,
     );
   });
+
+  it("with git.repository set, updateSettings still writes the ConfigMap", async () => {
+    await useNewNamespace();
+    setSeed({
+      FLEET_SETTINGS_GIT_REPOSITORY: "https://git.example.com/fleet.git",
+    });
+    await getSettings();
+
+    expect(await updateSettings({ "git.path": "fleet" })).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect((await readConfigMap()).data?.["git.path"]).toBe("fleet");
+  });
 });
