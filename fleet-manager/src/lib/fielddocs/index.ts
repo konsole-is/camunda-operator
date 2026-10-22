@@ -1,5 +1,6 @@
 import "server-only";
 import { type FieldDoc, fieldDocs } from "@/generated/fielddocs";
+import type { ClusterField } from "@/lib/fields";
 
 export { apiReferenceUrl } from "./link";
 
@@ -19,6 +20,44 @@ export function fieldDocFor(
   const paths = kinds && own(kinds, kind);
   const doc = paths && own(paths, path);
   return doc?.description ? doc : undefined;
+}
+
+/**
+ * nearestFieldDoc returns the doc of the longest prefix of names that has
+ * one, for example spec.podLabels for spec.podLabels.team. names are JSON
+ * field names from the root, without list items.
+ */
+export function nearestFieldDoc(
+  group: string,
+  kind: string,
+  names: readonly string[],
+): FieldDoc | undefined {
+  for (let n = names.length; n > 0; n--) {
+    const doc = fieldDocFor(group, kind, names.slice(0, n).join("."));
+    if (doc) return doc;
+  }
+  return undefined;
+}
+
+/**
+ * fieldDocsOf returns the doc of each field with docNames, by field key. A
+ * field without docNames, such as a section parameter, or without a doc,
+ * has no entry.
+ */
+export function fieldDocsOf(
+  fields: readonly ClusterField[],
+): Record<string, FieldDoc> {
+  const docs: Record<string, FieldDoc> = {};
+  for (const field of fields) {
+    if (!field.docNames) continue;
+    const doc = nearestFieldDoc(
+      "core.camunda.io",
+      field.target.kind,
+      field.docNames,
+    );
+    if (doc) docs[field.key] = doc;
+  }
+  return docs;
 }
 
 function own<T>(
