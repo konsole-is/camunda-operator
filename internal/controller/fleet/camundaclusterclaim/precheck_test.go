@@ -91,6 +91,11 @@ var _ = Describe("CamundaClusterClaim precheck", func() {
 			}, fleetv1alpha1.ReasonNotAllowed, "not a JSON object",
 		),
 		Entry(
+			"a registration that does not serve its section", func() *fleetv1alpha1.CamundaClusterClaim {
+				return newClaim(newNamespace(nil), selection(pluginstartup.SectionAccess, registrationKey))
+			}, fleetv1alpha1.ReasonNotAllowed, "does not serve section",
+		),
+		Entry(
 			"two options of a section that takes one", func() *fleetv1alpha1.CamundaClusterClaim {
 				return newClaim(
 					newNamespace(nil),

@@ -19,18 +19,14 @@ package claimrequests
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
-	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 func TestName(t *testing.T) {
@@ -71,63 +67,4 @@ func TestNameCutsBeforeADotAtTheBoundary(t *testing.T) {
 
 	assert.Equal(t, full[:53]+"-"+hex.EncodeToString(sum[:])[:8], name)
 	assert.Empty(t, validation.IsDNS1123Subdomain(name))
-}
-
-func TestCheckNamesPassesDistinctNames(t *testing.T) {
-	selections := []fleetv1alpha1.PluginSelection{
-		{Section: "alerts", Registration: "mail"},
-		{Section: "alerts", Registration: "chat"},
-		{Section: "access", Registration: "ingress"},
-	}
-
-	assert.NoError(t, CheckNames("orders", selections, []pluginsv1alpha1.PluginSection{manySection("alerts")}))
-}
-
-func TestCheckNamesRefusesTwoOptionsOfAOneSection(t *testing.T) {
-	selections := []fleetv1alpha1.PluginSelection{
-		{Section: "secondary-storage", Registration: "elasticsearch"},
-		{Section: "secondary-storage", Registration: "database-server"},
-	}
-
-	failure := refusal(t, CheckNames("orders", selections, nil))
-
-	assert.Equal(t, fleetv1alpha1.ReasonNotAllowed, failure.Reason)
-	assert.Equal(
-		t,
-		`section "secondary-storage" takes one option, and the claim selects "elasticsearch" and "database-server"`,
-		failure.Message,
-	)
-}
-
-func TestCheckNamesRefusesNamesThatMeetAcrossSections(t *testing.T) {
-	selections := []fleetv1alpha1.PluginSelection{
-		{Section: "alerts", Registration: "mail-pager"},
-		{Section: "alerts-mail", Registration: "pager"},
-	}
-	sections := []pluginsv1alpha1.PluginSection{manySection("alerts"), manySection("alerts-mail")}
-
-	failure := refusal(t, CheckNames("orders", selections, sections))
-
-	assert.Equal(t, fleetv1alpha1.ReasonNotAllowed, failure.Reason)
-	assert.Equal(
-		t,
-		`the selections alerts/mail-pager and alerts-mail/pager get the same request name "orders-alerts-mail-pager"`,
-		failure.Message,
-	)
-}
-
-func manySection(name string) pluginsv1alpha1.PluginSection {
-	return pluginsv1alpha1.PluginSection{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec:       pluginsv1alpha1.PluginSectionSpec{Selection: pluginsv1alpha1.SelectionMany},
-	}
-}
-
-func refusal(t *testing.T, err error) *conditions.PreCheckFailure {
-	t.Helper()
-
-	var failure *conditions.PreCheckFailure
-	require.True(t, errors.As(err, &failure), "want a *conditions.PreCheckFailure, got %v", err)
-
-	return failure
 }
