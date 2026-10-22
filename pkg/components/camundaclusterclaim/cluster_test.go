@@ -26,6 +26,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -113,6 +114,50 @@ func TestClusterWaitsForTheSlotOutputsOfTheRenderBeforeTheFirstApply(t *testing.
 			assert.Equal(t, tt.wantReason, status.Reason)
 		})
 	}
+}
+
+// A missing output keeps the annotations that the claim applied, and not
+// the keys of another writer.
+func TestClusterKeepsOnlyItsOwnAnnotationsWhenTheOutputIsMissing(t *testing.T) {
+	in := fullInput(t)
+	in.Claim.UID = "claim-uid"
+	identity := slices.IndexFunc(in.Requests, func(r pluginsv1alpha1.PluginRequest) bool {
+		return r.Spec.Section == "cloud-identity"
+	})
+	in.Requests[identity].Status.Conditions = nil
+	in.Live = &v1.CamundaCluster{
+		ObjectMeta: metav1.ObjectMeta{ManagedFields: []metav1.ManagedFieldsEntry{
+			{
+				Manager:   "CamundaClusterClaim/cluster/claim-uid",
+				Operation: metav1.ManagedFieldsOperationApply,
+				FieldsV1: &metav1.FieldsV1{
+					Raw: []byte(
+						`{"f:spec":{"f:serviceAccount":{"f:annotations":{"f:eks.amazonaws.com/role-arn":{}}}}}`,
+					),
+				},
+			},
+			{
+				Manager:   "other-writer",
+				Operation: metav1.ManagedFieldsOperationApply,
+				FieldsV1: &metav1.FieldsV1{
+					Raw: []byte(`{"f:spec":{"f:serviceAccount":{"f:annotations":{"f:team":{}}}}}`),
+				},
+			},
+		}},
+		Spec: v1.CamundaClusterSpec{ServiceAccount: &v1.ServiceAccountSpec{Annotations: map[string]string{
+			"eks.amazonaws.com/role-arn": "arn:camunda",
+			"team":                       "payments",
+		}}},
+	}
+
+	cluster := previewCluster(t, in)
+
+	assert.Equal(
+		t,
+		map[string]string{"eks.amazonaws.com/role-arn": "arn:camunda"},
+		cluster.Spec.ServiceAccount.Annotations,
+	)
+	assert.Contains(t, in.Live.Spec.ServiceAccount.Annotations, "team", "the live cluster is not changed")
 }
 
 func TestClusterCarriesTheClaimFields(t *testing.T) {

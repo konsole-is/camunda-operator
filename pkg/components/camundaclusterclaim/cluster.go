@@ -133,6 +133,7 @@ func cluster(in Input) (desired *v1.CamundaCluster, waiting []string, err error)
 	var live *v1.CamundaClusterSpec
 	if in.Live != nil {
 		live = in.Live.Spec.DeepCopy()
+		keepOwnAnnotations(live, in.Live.ManagedFields, clusterFieldManager(in.Claim))
 	}
 
 	for _, f := range fields {
@@ -164,6 +165,54 @@ func cluster(in Input) (desired *v1.CamundaCluster, waiting []string, err error)
 		},
 		Spec: spec,
 	}, slices.Compact(waiting), nil
+}
+
+// clusterFieldManager is the field manager of the cluster component of
+// claim, as ocf names it.
+func clusterFieldManager(claim *fleetv1alpha1.CamundaClusterClaim) string {
+	return fleetv1alpha1.FieldManagerPrefixClusterClaim + clusterComponentName + "/" + string(claim.UID)
+}
+
+// keepOwnAnnotations removes from the two ServiceAccount annotation maps of
+// spec each key that manager does not own in managed. A missing output then
+// keeps only the keys that the claim wrote, and the apply does not take over
+// the keys of another writer.
+func keepOwnAnnotations(spec *v1.CamundaClusterSpec, managed []metav1.ManagedFieldsEntry, manager string) {
+	var owned map[string]any
+	for _, entry := range managed {
+		if entry.Manager == manager && entry.Operation == metav1.ManagedFieldsOperationApply && entry.FieldsV1 != nil {
+			_ = json.Unmarshal(entry.FieldsV1.GetRawBytes(), &owned)
+		}
+	}
+
+	if spec.ServiceAccount != nil {
+		keepKeys(spec.ServiceAccount.Annotations, owned, "f:spec", "f:serviceAccount", "f:annotations")
+	}
+	if spec.Connectors != nil && spec.Connectors.ServiceAccount != nil {
+		keepKeys(
+			spec.Connectors.ServiceAccount.Annotations,
+			owned,
+			"f:spec",
+			"f:connectors",
+			"f:serviceAccount",
+			"f:annotations",
+		)
+	}
+}
+
+// keepKeys deletes from values each key that has no entry f:<key> under
+// path in the managed fields owned.
+func keepKeys(values map[string]string, owned map[string]any, path ...string) {
+	node := owned
+	for _, step := range path {
+		node, _ = node[step].(map[string]any)
+	}
+
+	for key := range values {
+		if _, ok := node["f:"+key]; !ok {
+			delete(values, key)
+		}
+	}
 }
 
 // serviceAccount returns *account, and sets it to an empty ServiceAccountSpec
