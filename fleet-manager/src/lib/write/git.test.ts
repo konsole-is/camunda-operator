@@ -7,6 +7,7 @@ import type { HttpClient } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import { readSecretValues } from "@/lib/secrets/values";
 import {
   type BareRepository,
@@ -293,6 +294,80 @@ describe("the Git writer", () => {
     });
     expect(await repo.log()).toEqual(["Initial commit"]);
     expect(directPreview).not.toHaveBeenCalled();
+  });
+
+  it("a second save from the same read fails with Conflict while GitOps has not applied the first", async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "7" },
+    });
+    const preconditions = { "CamundaClusterClaim/team-a/orders": "7" };
+    ok(
+      await writerFor().apply({
+        intent: "First",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions,
+      }),
+    );
+
+    const second = await writerFor().apply({
+      intent: "Second",
+      apply: [claim("team-a", "orders", "medium")],
+      preconditions,
+    });
+
+    expect(second).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Conflict",
+          ref: claimRef("team-a", "orders"),
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["First", "Initial commit"]);
+    const file = parse(
+      (await repo.show("team-a/camundaclusterclaims/orders.yaml"))!,
+    );
+    expect(file.spec.presetRef).toBe("large");
+  });
+
+  it("a save after GitOps applied the previous save commits", async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "7" },
+    });
+    const first = ok(
+      await writerFor().apply({
+        intent: "First",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "7" },
+      }),
+    );
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders", "large"),
+      metadata: {
+        name: "orders",
+        namespace: "team-a",
+        resourceVersion: "8",
+        annotations: {
+          [REVISION_ANNOTATION]:
+            first.revisions["CamundaClusterClaim/team-a/orders"],
+        },
+      },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Second",
+        apply: [claim("team-a", "orders", "medium")],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "8" },
+      }),
+    );
+
+    expect(await repo.log()).toEqual(["Second", "First", "Initial commit"]);
   });
 
   it("a precondition for a deleted object returns Stale", async () => {

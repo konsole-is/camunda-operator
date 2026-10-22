@@ -1,10 +1,20 @@
 import "server-only";
 import fs from "node:fs";
-import { lstat, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import git, { type HttpClient } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
+import { parse } from "yaml";
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import { inOrder } from "@/lib/serial";
 import { readSecretValues } from "@/lib/secrets/values";
 import { appNamespace } from "@/lib/settings/keys";
@@ -89,8 +99,9 @@ type Remote = {
  *
  * apply makes no commit when the fleet manager does not write a ref, a
  * Secret is in the change (Invalid), an object with a precondition changed
- * or was deleted in the cluster (Stale), or the dry run against the
- * cluster fails. The dry run skips an ExternalSecret and an object in a
+ * or was deleted in the cluster (Stale) or has a file that GitOps has not
+ * applied yet (Conflict), or the dry run against the cluster fails. The
+ * dry run skips an ExternalSecret and an object in a
  * namespace that the same change creates; the preview shows them as
  * rendered. A delete of an object without a file, and a file behind a
  * symbolic link of the repository, are Invalid.
@@ -277,6 +288,36 @@ export function gitWriter(options: GitWriterOptions): Writer {
     };
   };
 
+  // The live object of a ref with a precondition passes the stale check
+  // until GitOps applies a pushed save, so a second save from the same
+  // read would undo the first in the repository.
+  const pendingErrors = async (
+    dir: string,
+    base: string,
+    change: Change,
+  ): Promise<ApiError[]> => {
+    const errors: ApiError[] = [];
+    for (const ref of refsOf(change)) {
+      if (change.preconditions?.[refKey(ref)] === undefined) continue;
+      const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
+      const committed = await revisionOf(dir, file);
+      if (committed === undefined) continue;
+      try {
+        const annotations = (await read(ref))?.metadata.annotations as
+          Record<string, string> | undefined;
+        if (annotations?.[REVISION_ANNOTATION] === committed) continue;
+        errors.push({
+          code: "Conflict",
+          message: `${file} in ${target.url} holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again.`,
+          ref,
+        });
+      } catch (error) {
+        errors.push(...apiErrorsOf(error, ref, false));
+      }
+    }
+    return errors;
+  };
+
   const pushChange = async (
     remote: Remote,
     base: string,
@@ -299,6 +340,8 @@ export function gitWriter(options: GitWriterOptions): Writer {
       });
     }
     const cloned = await git.resolveRef({ fs, dir, ref: "HEAD" });
+    const pending = await pendingErrors(dir, base, change);
+    if (pending.length > 0) return failure(...pending);
 
     const written = await writeFiles(dir, base, change);
     if (!written.ok) return failure(...written.errors);
@@ -427,6 +470,21 @@ async function writeFiles(
   }
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, revisions, paths, files };
+}
+
+// revisionOf returns the revision annotation of the file in the clone at
+// dir, or undefined when the file does not exist or carries none.
+async function revisionOf(
+  dir: string,
+  file: string,
+): Promise<string | undefined> {
+  if (await throughLink(dir, file)) return undefined;
+  try {
+    const object = parse(await readFile(path.join(dir, file), "utf8"));
+    return object?.metadata?.annotations?.[REVISION_ANNOTATION];
+  } catch {
+    return undefined;
+  }
 }
 
 // changed reports whether a file of files differs from the head commit.

@@ -142,6 +142,7 @@ When someone pushed to the branch after the fleet manager read it, the save comm
 | --- | --- | --- |
 | The message of the API server, for example `releases.default must be one of releases.allowed` | The cluster refuses the object. | Correct the value and save again. |
 | `The <kind> <name> changed since you opened it.` | Someone changed or deleted the object in the cluster after the page read it. | Open the page again. |
+| `<file> in <repository> holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again.` | An earlier save of the same object waits for GitOps, and this page read the object before that save. | Wait until the line of the earlier save leaves "Waiting for GitOps to apply". Then open the page again. |
 | `Someone changed <file> in <repository> since the fleet manager read it. Open the page again.` | Someone pushed a change to the same file. | Open the page again. |
 | `<repository> changed again while the fleet manager pushed. Save again.` | The branch changed again during the save. | Save again. |
 | `<repository> refused the credentials.` | The username or the token of the Secret is wrong, or the token cannot push. | Correct the Secret of `git.credentialsSecretRef`. |
