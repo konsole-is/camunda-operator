@@ -95,3 +95,56 @@ You need:
 The claim created two objects. The [PluginRequest](../crds/pluginrequest.md) `my-cluster-secondary-storage` asks the built-in option for the name of the `SecondaryStorageConfig`. The [CamundaCluster](../crds/camundacluster.md) `my-cluster` names it in `spec.storageRef`. Connect to the cluster as the [CamundaCluster](../crds/camundacluster.md) page describes.
 
 If `Ready` stays `False`, its reason tells you what to correct. The [CamundaClusterClaim](../crds/camundaclusterclaim.md#status) page lists each reason and what to do.
+
+## Delete a claim
+
+The deletion policy of the claim decides what the plugins do with the resources that they created, such as buckets and keys. `Delete` deletes them. `Orphan` keeps them. The [CamundaClusterClaim](../crds/camundaclusterclaim.md#deletion) page says what the claim always deletes.
+
+1. If you want to keep the resources of the plugins, set the policy `Orphan` before you delete the claim:
+
+    ```yaml
+    apiVersion: fleet.camunda.io/v1alpha1
+    kind: CamundaClusterClaim
+    metadata:
+      name: my-cluster
+      namespace: my-cluster-ns
+    spec:
+      deletionPolicy: Orphan
+      # ... the rest of your claim
+    ```
+
+2. Delete the claim:
+
+    ```bash
+    kubectl delete camundaclusterclaim my-cluster -n my-cluster-ns --wait=false
+    ```
+
+3. Read the status of the claim while it waits for the plugins:
+
+    ```bash
+    kubectl get camundaclusterclaim my-cluster -n my-cluster-ns -o yaml
+    ```
+
+    ```yaml
+    status:
+      conditions:
+        - type: Ready
+          status: "False"
+          reason: Deleting
+          message: 'The claim is deleted after these objects are gone: PluginRequest my-cluster-secondary-storage'
+          observedGeneration: 2
+    ```
+
+    The message names each object that the claim waits for.
+
+4. Wait until the claim is gone:
+
+    ```bash
+    kubectl wait --for=delete camundaclusterclaim/my-cluster -n my-cluster-ns --timeout=30m
+    ```
+
+The claim deletes the `CamundaCluster` `my-cluster` with both policies. If the claim stays, read the status of the request that the message names:
+
+```bash
+kubectl get pluginrequest my-cluster-secondary-storage -n my-cluster-ns -o yaml
+```

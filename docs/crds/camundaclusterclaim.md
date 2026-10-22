@@ -3,7 +3,7 @@
 A `CamundaClusterClaim` asks for one Camunda cluster. It names a preset, a release, and one option for each section of the create flow, for example the secondary storage or the backup storage. The [fleet manager](../fleet-manager/install.md) writes claims, and you can also apply one with `kubectl`. The operator creates a [PluginRequest](pluginrequest.md) for each option and a [CamundaCluster](camundacluster.md) with the name of the claim. The [Environment](environment.md) of the namespace sets what the claim can use.
 
 !!! note
-    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release. In this release, the operator creates the requests and the cluster of a claim. It does not act on `spec.attachments`, `spec.suspend`, or `spec.allowVersionDowngrade` yet, and it does not complete the deletion of a claim yet.
+    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release. In this release, the operator creates the requests and the cluster of a claim. It does not act on `spec.attachments`, `spec.suspend`, or `spec.allowVersionDowngrade` yet.
 
 The smallest claim:
 
@@ -109,9 +109,38 @@ A `CamundaCluster` needs `spec.storageRef`, so a claim without an option of `sec
 
 A `CamundaCluster` of the same name that another owner controls stays as it is. `ClusterReady` is then `False` with reason `Blocked`, and the message names the owner.
 
+## Deletion
+
+`spec.deletionPolicy` says what the plugins do with the resources that they created for the claim, such as buckets, keys, roles, and routes. `Delete` deletes them. `Orphan` keeps them. The [PluginRequest](pluginrequest.md#deletion) page says what each policy keeps.
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  deletionPolicy: Orphan
+  # ... the rest of your claim
+```
+
+Without `spec.deletionPolicy`, the claim uses `status.resolvedPolicy.deletionPolicy`. This is the default of the `Environment` at the time that the claim was created, as [Environment and policy](#environment-and-policy) describes. A later change of the `Environment` does not change it. A claim without this value uses `Delete`.
+
+The policy applies to the plugin requests only. The claim always deletes the `CamundaCluster` `<claim>`. It also deletes the `CamundaOptimize` `<claim>-optimize` and the `BackupSchedule` `<claim>-backups`. The `CamundaCluster` keeps or deletes its broker volumes by its own retention policy, as [Storage](camundacluster.md#storage) describes. The claim deletes an object only when the object has an owner reference with `controller: true` to the claim. An object of one of these names that you created yourself stays.
+
+The requests get the policy of the claim also while the check of the claim fails. One exception: when a selected registration does not list `Orphan` in `spec.deletionPolicies`, the requests keep their policy, and `Ready` is `False` with reason `NotAllowed`.
+
+The claim stays until each plugin deleted or kept the resources of its request, by the policy. While the claim waits, `Ready` is `False` with reason `Deleting`, and the message names each object that is still there. See [Status](#status).
+
+To change the policy of a claim that you delete, change `spec.deletionPolicy` first. Delete the claim after that. When a GitOps tool applies your claims, commit the change of the policy first. Before you remove the claim in a later commit, make sure that each request shows the new policy:
+
+```bash
+kubectl get pluginrequests -n my-cluster-ns -l fleet.camunda.io/claim=my-cluster -o custom-columns=NAME:.metadata.name,POLICY:.spec.deletionPolicy
+```
+
 ## Status
 
-`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates and changes nothing:
+`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates nothing. It changes only `spec.deletionPolicy` of its requests, as [Deletion](#deletion) describes:
 
 | Reason | Meaning | What to do |
 | --- | --- | --- |
@@ -178,6 +207,22 @@ status:
       secondary-storage:
         allowed:
           - existing-secondary-storage
+```
+
+While the claim is deleted, `Ready` reports the deletion. The other conditions keep their last value:
+
+| Type | Reason | Meaning | What to do |
+| --- | --- | --- | --- |
+| `Ready` | `Deleting` | The claim is deleted and waits for the objects that the message names. | Read the status of the request with `kubectl get pluginrequest <name> -o yaml`, with the name from the message. Then read the logs of the plugin that serves it. |
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: Deleting
+      message: 'The claim is deleted after these objects are gone: PluginRequest my-cluster-backup-storage'
+      observedGeneration: 2
 ```
 
 `status.requests` lists one item for each option, in the order of `spec.plugins`, with the status of the `OutputsReady` and `Ready` conditions of its request. `status.cluster.name` names the `CamundaCluster` once the claim controls it. A cluster of the same name that another owner controls is not named there.
