@@ -23,9 +23,13 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/meta/testrestmapper"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -194,6 +198,85 @@ func TestManagementClusterWaitsWhileARequiredFieldHasNoValue(t *testing.T) {
 			assert.Equal(t, tt.want, waiting)
 		})
 	}
+}
+
+// Web Modeler turned on after creation has no database until the output
+// comes, and the API server refuses a plane without it.
+func TestManagementClusterComponentHoldsTheApplyWhileADatabaseIsMissing(t *testing.T) {
+	in := fullInput(t)
+	in.Claim.UID = "claim-uid"
+	notReady(in, databaseSection)
+	in.Claim.Status.Conditions = []metav1.Condition{{
+		Type:   fleetv1alpha1.ConditionPlaneRequestsReady,
+		Status: metav1.ConditionTrue,
+		Reason: "Healthy",
+	}}
+	in.Live = &v1.CamundaManagementCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      in.Claim.Name,
+			Namespace: in.Claim.Namespace,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: fleetv1alpha1.GroupVersion.String(),
+				Kind:       in.Claim.GetKind(),
+				Name:       in.Claim.Name,
+				UID:        in.Claim.UID,
+				Controller: new(true),
+			}},
+		},
+		Spec: v1.CamundaManagementClusterSpec{
+			IdentityProvider: v1.IdentityProviderSpec{
+				Keycloak: &v1.ManagedKeycloakSpec{DatabaseConfigRef: "my-plane-keycloak"},
+			},
+			Identity: v1.IdentitySpec{DatabaseConfigRef: "my-plane-identity"},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, fleetv1alpha1.AddToScheme(scheme))
+	require.NoError(t, v1.AddToScheme(scheme))
+	var writes int
+	count := func(obj client.Object) {
+		if _, ok := obj.(*v1.CamundaManagementCluster); ok {
+			writes++
+		}
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRESTMapper(testrestmapper.TestOnlyStaticRESTMapper(scheme)).
+		WithObjects(in.Live.DeepCopy()).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Create: func(ctx context.Context, w client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				count(obj)
+				return w.Create(ctx, obj, opts...)
+			},
+			Update: func(ctx context.Context, w client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+				count(obj)
+				return w.Update(ctx, obj, opts...)
+			},
+			Patch: func(
+				ctx context.Context, w client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption,
+			) error {
+				count(obj)
+				return w.Patch(ctx, obj, patch, opts...)
+			},
+		}).
+		Build()
+
+	comps, err := Build(in)
+	require.NoError(t, err)
+	require.NoError(t, comps.ManagementCluster.Reconcile(context.Background(), component.ReconcileContext{
+		Client:        c,
+		APIReader:     c,
+		Scheme:        scheme,
+		EventRecorder: events.NewFakeRecorder(100),
+		Owner:         in.Claim,
+	}))
+
+	condition := comps.ManagementCluster.GetCondition(in.Claim)
+	assert.Equal(t, metav1.ConditionFalse, condition.Status)
+	assert.Equal(t, "Blocked", condition.Reason)
+	assert.Contains(t, condition.Message, "waiting for the outputs of management-database")
+	assert.Zero(t, writes, "the plane is not written")
 }
 
 // The apply of the plane sends only the fields that the claim and the
