@@ -18,9 +18,10 @@ import type {
  * else the name. A key that is not a property has the additionalProperties
  * schema, when it is one. required follows the required list of the schema. A
  * claim-editable parameter carries its policy value and the names and labels
- * of its choices. A value of a choice, or a list of such values, is given as
- * the names of the choices. A locked parameter carries lockedSummary of its value and
- * no value. A parameterValues that is not an object counts as no values.
+ * of its choices, and allowedLists when every choice is a list. A value of a
+ * choice, or a list of such values, is given as the names of the choices. A
+ * locked parameter carries lockedSummary of its value and no value. A
+ * parameterValues that is not an object counts as no values.
  */
 export function claimEditable(
   registration: PluginRegistration,
@@ -83,6 +84,10 @@ export function claimEditable(
       ...(policy.allowed && {
         allowed: policy.allowed.map((c) => ({ name: c.name, label: c.label })),
       }),
+      ...(policy.allowed?.length &&
+        policy.allowed.every((c) => Array.isArray(c.value)) && {
+          allowedLists: true,
+        }),
     };
   });
 }

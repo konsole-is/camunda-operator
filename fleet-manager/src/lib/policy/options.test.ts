@@ -220,6 +220,46 @@ describe("claimEditable", () => {
     expect(rule).toMatchObject({ value: "standard" });
   });
 
+  it("marks a parameter whose every choice is a list as one that takes one name", () => {
+    const [rule] = claimEditable(
+      reg({ parameterValues: { zones: ["a", "b"] } }),
+      envWith({
+        zones: {
+          claimEditable: true,
+          allowed: [
+            { name: "standard", label: "Standard", value: ["a", "b"] },
+            { name: "wide", label: "Wide", value: ["a", "b", "c"] },
+          ],
+        },
+      }),
+    );
+
+    expect(rule).toMatchObject({ value: "standard", allowedLists: true });
+  });
+
+  it.each([
+    ["one choice is not a list", ["a", "b"]],
+    ["no choice is a list", "a"],
+  ])(
+    "does not mark a parameter as one that takes one name when %s",
+    (_, value) => {
+      const [rule] = claimEditable(
+        reg(),
+        envWith({
+          zones: {
+            claimEditable: true,
+            allowed: [
+              { name: "standard", label: "Standard", value },
+              { name: "single", label: "Single", value: "c" },
+            ],
+          },
+        }),
+      );
+
+      expect(rule).not.toHaveProperty("allowedLists");
+    },
+  );
+
   it("keeps a value of an editable parameter that no choice has", () => {
     const [rule] = claimEditable(
       reg({ parameterValues: { access: ["arn:sqs", "arn:other"] } }),
