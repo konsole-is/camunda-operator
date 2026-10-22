@@ -17,6 +17,8 @@ limitations under the License.
 package conformance
 
 import (
+	"maps"
+	"slices"
 	"testing"
 	"time"
 
@@ -28,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -119,6 +122,31 @@ func TestRunsOfGivesTheSectionsOfOnePolicyOfACaseOneClaim(t *testing.T) {
 	require.Len(t, runs, 2)
 	assert.Equal(t, "basic-delete-abc123", runs[0].claim)
 	assert.Equal(t, runs[0].claim, runs[1].claim)
+}
+
+func TestRunsOfGivesClaimNamesThatAClusterClaimTakes(t *testing.T) {
+	runs, err := runsOf(
+		[]Case{{Name: "postgresql-with-backup-storage"}, {Name: "1st"}},
+		[]string{"backup-storage", "access"},
+		[]pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete, pluginsv1alpha1.DeletionPolicyOrphan},
+		"0123456789",
+	)
+	require.NoError(t, err)
+
+	claims := map[string]string{}
+	for _, r := range runs {
+		assert.LessOrEqual(t, len(r.claim), 40, "claim %s", r.claim)
+		assert.Empty(t, validation.IsDNS1035Label(r.claim), "claim %s", r.claim)
+
+		key := r.caseName + "/" + string(r.policy)
+		if other, ok := claims[key]; ok {
+			assert.Equal(t, other, r.claim, "the sections of %s share a claim", key)
+		}
+		claims[key] = r.claim
+	}
+
+	assert.Len(t, claims, 4)
+	assert.Len(t, slices.Compact(slices.Sorted(maps.Values(claims))), 4, "each case and policy has a claim of its own")
 }
 
 func TestRunsOfRefusesCaseNamesThatGiveOneRequestName(t *testing.T) {

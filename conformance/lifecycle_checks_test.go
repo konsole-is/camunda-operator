@@ -82,6 +82,28 @@ func TestReadyVerdict(t *testing.T) {
 		message string
 	}{
 		{name: "Ready=True", ready: ready(metav1.ConditionTrue, v1.ReasonHealthy)},
+		{
+			name:   "Ready=True with every Grant Ready",
+			ready:  ready(metav1.ConditionTrue, v1.ReasonHealthy),
+			grants: []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue), grantWithReady(metav1.ConditionTrue)},
+		},
+		{
+			name:   "Ready=True while no Grant has a Ready condition",
+			ready:  ready(metav1.ConditionTrue, v1.ReasonHealthy),
+			grants: []pluginsv1alpha1.Grant{{}},
+		},
+		{
+			name:    "Ready=True while a Grant waits and another is Ready",
+			ready:   ready(metav1.ConditionTrue, v1.ReasonHealthy),
+			grants:  []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue), {}},
+			message: "does not have Ready=True",
+		},
+		{
+			name:    "Ready=True while a Grant has Ready=False",
+			ready:   ready(metav1.ConditionTrue, v1.ReasonHealthy),
+			grants:  []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionFalse)},
+			message: "does not have Ready=True",
+		},
 		{name: "no Ready", message: "has no Ready condition"},
 		{
 			name:    "Ready=False with another reason",

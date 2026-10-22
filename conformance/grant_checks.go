@@ -708,11 +708,27 @@ func checkGrantReady(ctx context.Context, s *suite) error {
 		return SkipCheck("the plugin wrote no Grant")
 	}
 
+	// The skip below looks at the Grants of every request, so a request whose
+	// own Grants nobody serves is judged first.
+	var errs []error
+	for _, r := range life.runs {
+		if len(grants[r.name]) == 0 {
+			continue
+		}
+
+		_, _, err := s.unservedReady(ctx, r.name)
+		if _, skipped := skipReasonOf(err); !skipped && err != nil {
+			errs = append(errs, fmt.Errorf("request %s: %w", r.name, err))
+		}
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
 	if err := servedSkip(all); err != nil {
 		return err
 	}
 
-	var errs []error
 	var skip error
 	for _, r := range life.runs {
 		if len(grants[r.name]) == 0 {
@@ -783,30 +799,37 @@ func (s *suite) grantsAtReady(
 	return s.ownedGrants(ctx, req)
 }
 
-// grantReadyRun returns a skip when another writer sets a Ready condition on
-// one of the Grants of the request name.
-func (s *suite) grantReadyRun(ctx context.Context, name string) error {
+// unservedReady returns the Ready condition of the request name and its
+// Grants. It returns a skip when one of the Grants has a Ready condition, and
+// fails a request with Ready=True.
+func (s *suite) unservedReady(
+	ctx context.Context,
+	name string,
+) (*metav1.Condition, []pluginsv1alpha1.Grant, error) {
 	req, err := s.request(ctx, name)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	ready := meta.FindStatusCondition(req.Status.Conditions, v1.ConditionReady)
 
 	grants, err := s.ownedGrants(ctx, req)
-	if err != nil {
-		return err
-	}
-
-	if len(grants) == 0 {
-		return nil
+	if err != nil || len(grants) == 0 {
+		return ready, nil, err
 	}
 
 	if err := servedSkip(grants); err != nil {
-		return err
+		return ready, grants, err
 	}
 
-	if err := waitingVerdict(ready, grants[0].Name); err != nil {
+	return ready, grants, waitingVerdict(ready, grants[0].Name)
+}
+
+// grantReadyRun returns a skip when another writer sets a Ready condition on
+// one of the Grants of the request name.
+func (s *suite) grantReadyRun(ctx context.Context, name string) error {
+	ready, grants, err := s.unservedReady(ctx, name)
+	if err != nil || len(grants) == 0 {
 		return err
 	}
 
