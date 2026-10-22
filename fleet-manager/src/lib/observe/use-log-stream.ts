@@ -19,8 +19,8 @@ type State = { url?: string; lines: LogLine[]; error?: string; ended: boolean };
 
 /**
  * useLogStream follows the log of source through /api/logs and returns
- * the newest 1000 lines that filter keeps. ended is true when the log
- * ended. error is set when the stream broke or /api/logs refused it, with
+ * the lines of the newest 1000 that filter keeps. ended is true when the
+ * log ended. error is set when the stream broke or /api/logs refused it, with
  * the text of the refusal. The hook does not connect again. No source
  * opens no connection. A new source starts with no lines.
  */
