@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "name": "A null value in a recorded snapshot is no value, so the request does not hold the key",
+  "input": {
+    "recorded": {
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3"
+          ]
+        }
+      },
+      "parameters": {
+        "s3": {
+          "region": {
+            "value": null
+          },
+          "tier": {
+            "value": null,
+            "claimEditable": true
+          }
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "policy": {
+        "sections": {
+          "backup-storage": {
+            "allowed": [
+              "s3"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "region": {},
+            "tier": {
+              "claimEditable": true
+            }
+          }
+        },
+        "deletionPolicy": "Delete"
+      },
+      "requests": [
+        {
+          "section": "backup-storage",
+          "registration": "s3"
+        }
+      ]
+    }
+  }
+}

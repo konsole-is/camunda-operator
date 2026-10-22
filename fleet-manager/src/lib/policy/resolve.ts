@@ -22,6 +22,14 @@ export type ParameterPolicy = NonNullable<
 export type ParameterPolicies = Record<string, ParameterPolicy>;
 type Choice = NonNullable<ParameterPolicy["allowed"]>[number];
 
+/**
+ * hasValue says whether policy has a value. A null value is no value, as
+ * the operator reads "value": null back from status.resolvedPolicy.
+ */
+export function hasValue(policy: ParameterPolicy): boolean {
+  return policy.value !== undefined && policy.value !== null;
+}
+
 /** ResolveInput holds what resolve reads. recorded is status.resolvedPolicy of the claim, absent at creation. */
 export type ResolveInput = {
   recorded?: ResolvedPolicy;
@@ -46,11 +54,11 @@ export type Resolution = {
 /**
  * resolve returns the policy snapshot of a claim and the parameters of each
  * of its requests, by the rule of Resolve of pkg/claimpolicy. With recorded,
- * the policy is a copy of it, so a later change of the Environment or of a
- * registration does not change it. A claim-editable key of a selection
- * replaces the policy value, and a name of a choice, or a list of names,
- * becomes the value of the choice. A name that is not a choice stays as it
- * is, because checkAllowed refuses it.
+ * the policy is a copy of it without its null values, so a later change of
+ * the Environment or of a registration does not change it. A claim-editable
+ * key of a selection replaces the policy value, and a name of a choice, or a
+ * list of names, becomes the value of the choice. A name that is not a
+ * choice stays as it is, because checkAllowed refuses it.
  *
  * It refuses with InvalidReference a selected registration that does not
  * exist. parameterValues of a registration or parameters of a selection that
@@ -110,11 +118,11 @@ export function sectionPolicy(
 
 /**
  * parameterPolicies returns the policy of each parameter of registration.
- * Each key of parameterValues gets its value. With an Environment, its entry
- * in spec.parameters sets claimEditable and allowed, replaces the value when
- * it has one that is not null, and adds its own keys. Without one, the keys
- * of claimEditable of the registration are claim-editable. parameterValues
- * that is not a JSON object is an error.
+ * Each key of parameterValues gets its value, and a null value is no value.
+ * With an Environment, its entry in spec.parameters sets claimEditable and
+ * allowed, replaces the value when it has one that is not null, and adds its
+ * own keys. Without one, the keys of claimEditable of the registration are
+ * claim-editable. parameterValues that is not a JSON object is an error.
  */
 export function parameterPolicies(
   registration: PluginRegistration,
@@ -130,7 +138,11 @@ export function parameterPolicies(
 
   const policies: ParameterPolicies = {};
   for (const [key, value] of Object.entries(values)) {
-    setOwn(policies, key, { value: structuredClone(value) });
+    setOwn(
+      policies,
+      key,
+      value === null ? {} : { value: structuredClone(value) },
+    );
   }
 
   if (!environment) {
@@ -158,7 +170,15 @@ export function parameterPolicies(
 }
 
 function snapshot(input: ResolveInput): PolicyResult<ResolvedPolicy> {
-  if (input.recorded) return { value: structuredClone(input.recorded) };
+  if (input.recorded) {
+    const recorded = structuredClone(input.recorded);
+    for (const policies of Object.values(recorded.parameters ?? {})) {
+      for (const policy of Object.values(policies)) {
+        if (!hasValue(policy)) delete policy.value;
+      }
+    }
+    return { value: recorded };
+  }
 
   const { environment, registrations = [], selections = [] } = input;
   const policy: ResolvedPolicy = {

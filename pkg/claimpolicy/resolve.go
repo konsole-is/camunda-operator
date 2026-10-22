@@ -72,7 +72,8 @@ type RequestParameters struct {
 //     the sorted names of the registrations that serve the section, and
 //     Default is the one with mode Default when exactly one has it.
 //   - Parameters holds each selected registration. Each key of its
-//     parameterValues gets its value. With an Environment, the policy of
+//     parameterValues gets its value. A null value is no value, as the API
+//     reads "value": null back from status. With an Environment, the policy of
 //     spec.parameters decides ClaimEditable and Allowed, replaces a value
 //     when it has one, and adds its own keys. Without one, the keys of
 //     claimEditable of the registration are claim-editable.
@@ -201,7 +202,11 @@ func parameterPolicies(
 
 	policies := fleetv1alpha1.ParameterPolicies{}
 	for key, value := range values {
-		policies[key] = fleetv1alpha1.ParameterPolicy{Value: &apiextensionsv1.JSON{Raw: value}}
+		var policy fleetv1alpha1.ParameterPolicy
+		if !isNull(value) {
+			policy.Value = &apiextensionsv1.JSON{Raw: value}
+		}
+		policies[key] = policy
 	}
 
 	if environment == nil {
@@ -310,11 +315,15 @@ func valuesOfNames(value json.RawMessage, choices []fleetv1alpha1.NamedValue) js
 // decodes into a string.
 func nameOf(value json.RawMessage) (string, bool) {
 	var name string
-	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &name) != nil {
+	if isNull(value) || json.Unmarshal(value, &name) != nil {
 		return "", false
 	}
 
 	return name, true
+}
+
+func isNull(value json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
 }
 
 // listOfNames returns the names of a JSON list whose every item is a name.
