@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -276,6 +277,58 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 
 		Consistently(func(g Gomega) {
 			g.Expect(latest(g, claim).Status.ResolvedPolicy).To(Equal(recorded))
+		}, consistently, interval).Should(Succeed())
+	})
+
+	It("gives a refused claim no finalizer, so it deletes at once", func() {
+		claim := newClaim(newNamespace(nil))
+		claim.Spec.PresetRef = uniqueName("missing-preset")
+		create(claim)
+		expectFalse(claim, v1.ConditionReady, v1.ReasonInvalidReference, Not(BeEmpty()))
+
+		Expect(latest(Default, claim).Finalizers).To(BeEmpty())
+		Expect(k8sClient.Delete(ctx, claim)).To(Succeed())
+		Eventually(func() bool {
+			return apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), claim))
+		}, timeout, interval).Should(BeTrue())
+	})
+
+	It("writes the same requests on each pass when the Environment gives a parameter null", func() {
+		environment := allowingEnvironment(map[string][]string{
+			pluginstartup.SectionSecondaryStorage: {pluginstartup.RegistrationExistingSecondaryStorage},
+			pluginstartup.SectionEncryptionKey:    {registrationKey},
+		})
+		environment.Spec.Parameters = map[string]fleetv1alpha1.ParameterPolicies{
+			registrationKey: {
+				"region": {Value: &apiextensionsv1.JSON{Raw: []byte(`"eu"`)}},
+				"tier":   {Value: &apiextensionsv1.JSON{Raw: []byte(`null`)}},
+			},
+		}
+		createEnvironment(environment)
+		claim := newClaim(
+			newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}),
+			selection(pluginstartup.SectionEncryptionKey, registrationKey),
+		)
+		create(claim)
+
+		var first *pluginsv1alpha1.PluginRequest
+		Eventually(func(g Gomega) {
+			request, err := requestOf(claim, pluginstartup.SectionEncryptionKey)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(request.Spec.Parameters).NotTo(BeNil())
+			first = request
+		}, timeout, interval).Should(Succeed())
+		Expect(string(first.Spec.Parameters.Raw)).To(MatchJSON(`{"region":"eu"}`))
+
+		current := latest(Default, claim)
+		current.Annotations = map[string]string{"test.camunda.io/touch": "1"}
+		Expect(k8sClient.Update(ctx, current)).To(Succeed())
+
+		Consistently(func(g Gomega) {
+			request, err := requestOf(claim, pluginstartup.SectionEncryptionKey)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(request.Generation).To(Equal(first.Generation))
+			g.Expect(request.Spec).To(Equal(first.Spec))
 		}, consistently, interval).Should(Succeed())
 	})
 
