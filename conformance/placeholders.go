@@ -30,21 +30,32 @@ import (
 
 // placeholders is a set of the field references that a template may hold.
 // A name of fields stands alone, as .namespace. A name of maps takes one
-// key, as .parameters.<name>.
+// key, as .parameters.<name>. A name of refused that fields and maps do not
+// hold is not allowed, and its value is the reason.
 type placeholders struct {
-	fields map[string]bool
-	maps   map[string]bool
+	fields  map[string]bool
+	maps    map[string]bool
+	refused map[string]string
 }
 
-// templatePlaceholders are the placeholders of a grant template and of the
-// default of an x-fleet-template parameter.
-var templatePlaceholders = placeholders{
+// grantPlaceholders are the placeholders of a grant template.
+var grantPlaceholders = placeholders{
 	fields: map[string]bool{"namespace": true, "claim": true, "request": true, "serviceAccount": true},
 	maps:   map[string]bool{"parameters": true, "outputs": true},
 }
 
+// parameterPlaceholders are the placeholders of an x-fleet-template
+// parameter.
+var parameterPlaceholders = placeholders{
+	fields: map[string]bool{"namespace": true, "claim": true, "request": true, "serviceAccount": true},
+	maps:   map[string]bool{"parameters": true},
+	refused: map[string]string{
+		"outputs": "an x-fleet-template parameter is rendered before the plugin writes the outputs",
+	},
+}
+
 // metricPlaceholders are the placeholders of a metric query: those of a
-// template, and .pods.
+// grant template, and .pods.
 var metricPlaceholders = placeholders{
 	fields: map[string]bool{"namespace": true, "claim": true, "request": true, "serviceAccount": true, "pods": true},
 	maps:   map[string]bool{"parameters": true, "outputs": true},
@@ -231,6 +242,9 @@ func checkAction(action *parse.ActionNode, allowed placeholders, notAllowed func
 	}
 
 	dotted := "." + strings.Join(ident, ".")
+	if reason := allowed.refused[ident[0]]; reason != "" {
+		return fmt.Errorf("%s: the placeholder %s is not allowed, %s", action, dotted, reason)
+	}
 	if allowed.maps[ident[0]] {
 		return fmt.Errorf(
 			"%s: the placeholder %s is not in the contract, .%s takes one key, as .%s.<key>",

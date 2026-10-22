@@ -305,7 +305,7 @@ func templateDefaultErrors(path string, tree any) []error {
 
 		raw, err := json.Marshal(def)
 		if err == nil {
-			err = checkJSONTemplates(path+".default", raw, templatePlaceholders)
+			err = checkJSONTemplates(path+".default", raw, parameterPlaceholders)
 		}
 		errs = append(errs, err)
 	})

@@ -214,6 +214,8 @@ func expectedFragment(
 		return nil, err
 	}
 
+	parameterData := data
+	parameterData.outputs = nil
 	rendered := maps.Clone(data.parameters)
 	for _, name := range marked {
 		value, ok := data.parameters[name]
@@ -226,7 +228,7 @@ func expectedFragment(
 			return nil, fmt.Errorf("spec.parameters.%s: %w", name, err)
 		}
 
-		raw, err = renderJSONTemplate("spec.parameters."+name, raw, templatePlaceholders, data)
+		raw, err = renderJSONTemplate("spec.parameters."+name, raw, parameterPlaceholders, parameterData)
 		if err != nil {
 			return nil, err
 		}
@@ -240,7 +242,7 @@ func expectedFragment(
 
 	data.parameters = rendered
 
-	return renderJSONTemplate("the grant template "+tmpl.Name, tmpl.Template.Raw, templatePlaceholders, data)
+	return renderJSONTemplate("the grant template "+tmpl.Name, tmpl.Template.Raw, grantPlaceholders, data)
 }
 
 // decodeNumbers decodes raw into v, with each number as a json.Number, so

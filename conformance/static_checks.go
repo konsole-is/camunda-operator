@@ -233,7 +233,7 @@ func checkGrants(ctx context.Context, s *suite) error {
 			continue
 		}
 
-		errs = append(errs, checkJSONTemplates(path, tmpl.Template.Raw, templatePlaceholders))
+		errs = append(errs, checkJSONTemplates(path, tmpl.Template.Raw, grantPlaceholders))
 	}
 
 	return errors.Join(errs...)

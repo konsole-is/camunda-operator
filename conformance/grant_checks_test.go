@@ -125,17 +125,17 @@ func TestExpectedFragmentRendersTemplateParametersFirst(t *testing.T) {
 	assert.JSONEq(t, `{"Resource":"team-a/data"}`, string(got))
 }
 
-func TestExpectedFragmentRendersAnOutputInATemplateParameter(t *testing.T) {
+func TestExpectedFragmentRefusesAnOutputInATemplateParameter(t *testing.T) {
 	parameters := &apiextensionsv1.JSON{Raw: []byte(
 		`{"type":"object","properties":{"prefix":{"type":"string","x-fleet-template":true}}}`)}
 	tmpl := grantTemplate(`{"Resource":"{{ .parameters.prefix }}"}`)
 	req := grantCheckRequest()
 	req.Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(`{"prefix":"{{ .outputs.bucket }}/data"}`)}
 
-	got, err := expectedFragment(tmpl, parameters, req)
+	_, err := expectedFragment(tmpl, parameters, req)
 
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"Resource":"orders-bucket/data"}`, string(got))
+	assert.ErrorContains(t, err, "spec.parameters.prefix")
+	assert.ErrorContains(t, err, "is rendered before the plugin writes the outputs")
 }
 
 func TestExpectedFragmentKeepsAnUnmarkedParameterAsItIs(t *testing.T) {
