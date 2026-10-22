@@ -96,8 +96,9 @@ var lifecycleChecks = []Check{
 	},
 	{
 		ID: ReqLabels,
-		Description: "Each object of the request carries both writer labels, and a namespaced object has an " +
-			"owner reference to the request.",
+		Description: "Each object of the request carries both writer labels. A cluster-scoped object also " +
+			"carries plugins.camunda.io/request-namespace with the namespace of the request, and a namespaced " +
+			"object has an owner reference to the request.",
 		run: checkLabels,
 	},
 	{
@@ -725,7 +726,8 @@ func readyVerdict(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) error
 
 // labelProblems names each writer rule of the contract that obj breaks. A
 // namespaced object is in the namespace of request and has an owner
-// reference to it. A cluster-scoped object has no owner reference to a
+// reference to it. A cluster-scoped object carries the request namespace
+// label with the namespace of request, and has no owner reference to a
 // PluginRequest.
 func labelProblems(obj *unstructured.Unstructured, request *pluginsv1alpha1.PluginRequest) []string {
 	ref := objectRef(obj)
@@ -742,6 +744,14 @@ func labelProblems(obj *unstructured.Unstructured, request *pluginsv1alpha1.Plug
 
 	switch {
 	case obj.GetNamespace() == "":
+		if obj.GetLabels()[labelRequestNamespace] != request.Namespace {
+			problems = append(problems, fmt.Sprintf(
+				"%s has no label %s: %q",
+				ref,
+				labelRequestNamespace,
+				request.Namespace,
+			))
+		}
 		if slices.ContainsFunc(obj.GetOwnerReferences(), isPluginRequestOwner) {
 			problems = append(problems, ref+" is cluster-scoped and has an owner reference to the request. "+
 				"A cluster-scoped object carries the labels only")

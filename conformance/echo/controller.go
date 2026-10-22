@@ -393,7 +393,9 @@ func (c *Controller) objects(
 	}
 
 	clusterLabels := maps.Clone(labels)
-	clusterLabels[labelRequestNamespace] = req.Namespace
+	if c.opts.Defect != DefectNoRequestNamespace {
+		clusterLabels[labelRequestNamespace] = req.Namespace
+	}
 
 	sc := &storagev1.StorageClass{
 		TypeMeta: metav1.TypeMeta{APIVersion: "storage.k8s.io/v1", Kind: "StorageClass"},

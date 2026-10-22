@@ -210,6 +210,10 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			ReqLabels, "StorageClass",
 		),
 		ginkgo.Entry(
+			"a cluster-scoped object without the request namespace", echoRun, echo.DefectNoRequestNamespace,
+			ReqLabels, labelRequestNamespace,
+		),
+		ginkgo.Entry(
 			"an unlisted resource",
 			echoRun,
 			echo.DefectUnlistedResource,

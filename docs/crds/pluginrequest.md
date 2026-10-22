@@ -50,6 +50,14 @@ kubectl get pluginrequests -n my-cluster-ns -l fleet.camunda.io/claim=orders
 
 Each resource that a plugin writes for a request carries the labels `plugins.camunda.io/registration` and `plugins.camunda.io/request`.
 
+A cluster-scoped resource, for example a StorageClass, also carries the label `plugins.camunda.io/request-namespace` with the namespace of the request. Two claims with the same name in two namespaces each get their own cluster-scoped resources, and this label tells them apart.
+
+To list the StorageClasses of one request:
+
+```bash
+kubectl get storageclasses -l plugins.camunda.io/request=orders-backup-storage,plugins.camunda.io/request-namespace=my-cluster-ns
+```
+
 ## Outputs
 
 `status.outputs` holds the values that the plugin publishes for the request, by output key. Read them only when the condition `OutputsReady` is `True` and its `observedGeneration` equals `metadata.generation`. Before that, the outputs can belong to an older spec.
