@@ -52,6 +52,8 @@ const (
 	registrationDeleteOnly = "test-delete-only"
 
 	managementHost = "plane.example.com"
+	// ownIdentityURL is the Identity URL that a claim sets itself.
+	ownIdentityURL = "https://own.example.com/identity"
 )
 
 // databaseOutputs are the outputs of every management-database request.
@@ -230,7 +232,7 @@ func newPlaneClaim() *fleetv1alpha1.CamundaManagementClusterClaim {
 func setURLs(claim *fleetv1alpha1.CamundaManagementClusterClaim) {
 	m := &claim.Spec.Management
 	m.IdentityProvider.Keycloak.ExternalURL = "https://login.example.com/auth"
-	m.Identity.ExternalURL = "https://own.example.com/identity"
+	m.Identity.ExternalURL = ownIdentityURL
 	m.Console.ExternalURL = "https://console.example.com"
 	m.WebModeler.ExternalURL = "https://modeler.example.com"
 	m.WebModeler.WebsocketsExternalURL = "https://modeler-ws.example.com"

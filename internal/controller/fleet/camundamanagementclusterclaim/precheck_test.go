@@ -104,7 +104,7 @@ var _ = Describe("CamundaManagementClusterClaim precheck", func() {
 		Entry(
 			"an external URL with an access selection", func() *fleetv1alpha1.CamundaManagementClusterClaim {
 				claim := newPlaneClaim()
-				claim.Spec.Management.Identity.ExternalURL = "https://own.example.com/identity"
+				claim.Spec.Management.Identity.ExternalURL = ownIdentityURL
 				return claim
 			}, fleetv1alpha1.ReasonSlotConflict, "spec.management.identity.externalUrl",
 		),

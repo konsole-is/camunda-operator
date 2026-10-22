@@ -158,7 +158,7 @@ var _ = Describe("CamundaManagementClusterClaim controller", func() {
 
 		eventuallyPlane(claim, func(g Gomega, plane *v1.CamundaManagementCluster) {
 			g.Expect(plane.Spec.IdentityProvider.Keycloak.ExternalURL).To(Equal("https://login.example.com/auth"))
-			g.Expect(plane.Spec.Identity.ExternalURL).To(Equal("https://own.example.com/identity"))
+			g.Expect(plane.Spec.Identity.ExternalURL).To(Equal(ownIdentityURL))
 			g.Expect(plane.Spec.Console.ExternalURL).To(Equal("https://console.example.com"))
 			g.Expect(plane.Spec.WebModeler.ExternalURL).To(Equal("https://modeler.example.com"))
 			g.Expect(plane.Spec.WebModeler.WebsocketsExternalURL).To(Equal("https://modeler-ws.example.com"))
@@ -234,7 +234,7 @@ var _ = Describe("CamundaManagementClusterClaim controller", func() {
 		eventuallyPlane(claim, nil)
 
 		update(claim, func(c *fleetv1alpha1.CamundaManagementClusterClaim) {
-			c.Spec.Management.Identity.ExternalURL = "https://own.example.com/identity"
+			c.Spec.Management.Identity.ExternalURL = ownIdentityURL
 		})
 
 		expectFalse(
@@ -264,7 +264,7 @@ var _ = Describe("CamundaManagementClusterClaim controller", func() {
 		var fields map[string]any
 		for _, entry := range plane.ManagedFields {
 			if strings.HasPrefix(entry.Manager, fleetv1alpha1.FieldManagerPrefixPlaneClaim) {
-				Expect(json.Unmarshal(entry.FieldsV1.Raw, &fields)).To(Succeed())
+				Expect(json.Unmarshal(entry.FieldsV1.GetRawBytes(), &fields)).To(Succeed())
 			}
 		}
 		Expect(fields).To(HaveKey("f:spec"))
