@@ -136,6 +136,8 @@ export function render(
 // string starts a comment.
 const NUMBER = /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/;
 const DURATION = /^(\d+(ms|s|m|h|d|w|y))+$/;
+// A bare value next to one of these characters joins the token beside it.
+const JOINS = /[\w:.]/;
 
 function renderPromQL(
   parts: Part[],
@@ -144,7 +146,7 @@ function renderPromQL(
   let quote = "";
   let escaped = false;
   let text = "";
-  for (const part of parts) {
+  for (const [i, part] of parts.entries()) {
     if (typeof part !== "string") {
       const field = part.filter(Boolean).join(".");
       if (!quote && !escaped) {
@@ -152,6 +154,17 @@ function renderPromQL(
         if (!NUMBER.test(bare) && !DURATION.test(bare)) {
           return {
             error: `.${field} outside a "..." or '...' string in a metric query must be a number or a duration`,
+            field,
+          };
+        }
+        const next = parts[i + 1];
+        if (
+          JOINS.test(text.at(-1) ?? "") ||
+          (next !== undefined &&
+            (typeof next !== "string" || JOINS.test(next[0] ?? "")))
+        ) {
+          return {
+            error: `.${field} outside a "..." or '...' string in a metric query must stand apart from the text beside it`,
             field,
           };
         }

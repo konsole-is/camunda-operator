@@ -88,6 +88,19 @@ describe("render", () => {
   );
 
   it.each([
+    ["a metric name before it", "requests_total{{ .parameters.v }}"],
+    ["a number after it", "up > {{ .parameters.v }}0"],
+    [
+      "another placeholder after it",
+      "up > {{ .parameters.v }}{{ .parameters.v }}",
+    ],
+  ])("refuses a number of a metric query that joins %s", (_, template) =>
+    expect(
+      render(template, { ...data, parameters: { v: "-1" } }, "metric"),
+    ).toMatchObject({ field: "parameters.v" }),
+  );
+
+  it.each([
     ["a backtick string", "up{r=`{{ .parameters.v }}`}"],
     ["a comment", "up # {{ .parameters.v }}"],
   ])("refuses a number in %s of a metric query", (_, template) =>
