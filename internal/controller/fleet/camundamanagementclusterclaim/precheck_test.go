@@ -34,7 +34,7 @@ var _ = Describe("CamundaManagementClusterClaim precheck", func() {
 			claim := claimOf()
 			create(claim)
 
-			expectFalse(claim, v1.ConditionReady, reason, ContainSubstring(message))
+			expectNotReady(claim, reason, ContainSubstring(message))
 			Consistently(func(g Gomega) {
 				current := latest(g, claim)
 				g.Expect(current.Status.ResolvedPolicy).To(BeNil())

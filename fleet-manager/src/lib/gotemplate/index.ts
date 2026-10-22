@@ -62,7 +62,7 @@ const SPACE = " \t\r\n";
 const ONLY_FIELDS = "a template holds field references only";
 
 /**
- * parseTemplate checks a template of the plugin contract (CL41). A template
+ * parseTemplate checks a template of the plugin contract. A template
  * holds plain text and field references only: {{ .namespace }},
  * {{ .claim }}, {{ .request }}, {{ .serviceAccount }},
  * {{ .parameters.<name> }}, {{ .outputs.<key> }}, and in a metric query

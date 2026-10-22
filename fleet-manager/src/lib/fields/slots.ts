@@ -1,5 +1,5 @@
-import type { PluginSectionSpec } from "@/generated/crds/pluginsection";
 import { child } from "@/lib/merge";
+import type { ClaimKind, Slot } from "@/lib/policy/types";
 
 /** SlotKind is a kind of resource whose fields a slot fills. */
 export type SlotKind =
@@ -14,8 +14,8 @@ export type SlotKind =
  * object as text.
  */
 export type SlotField = {
-  claimKind: PluginSectionSpec["appliesTo"][number];
-  slot: NonNullable<PluginSectionSpec["slot"]>;
+  claimKind: ClaimKind;
+  slot: Slot;
   kind: SlotKind;
   path: string;
   names: readonly string[];

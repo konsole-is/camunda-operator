@@ -48,7 +48,7 @@ const (
 	registrationVolumes    = "test-volumes"
 	registrationConnectors = "test-connectors"
 	registrationAccess     = "test-access"
-	// registrationVersioned declares the parameter releaseRef (CL55).
+	// registrationVersioned declares the parameter releaseRef.
 	registrationVersioned = "test-versioned"
 	// registrationDeleteOnly supports only the deletion policy Delete.
 	registrationDeleteOnly = "test-delete-only"

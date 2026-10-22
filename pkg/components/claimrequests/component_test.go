@@ -100,7 +100,7 @@ func TestComponentCarriesTheParametersAndAdditionalServiceAccounts(t *testing.T)
 }
 
 // A registration whose parameter schema declares releaseRef gets the release
-// of the claim, over the value that the policy gave it (CL55).
+// of the claim, over the value that the policy gave it.
 func TestComponentSetsTheReleaseOfARegistrationThatDeclaresIt(t *testing.T) {
 	tests := []struct {
 		name       string

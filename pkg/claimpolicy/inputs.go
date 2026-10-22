@@ -92,3 +92,13 @@ func readyOutputs(requests []pluginsv1alpha1.PluginRequest, section, registratio
 
 	return nil
 }
+
+// WaitingReason returns the guard reason of a claim resource that waits for
+// the outputs of sections, or "" when sections is empty.
+func WaitingReason(sections []string) string {
+	if len(sections) == 0 {
+		return ""
+	}
+
+	return "waiting for the outputs of " + strings.Join(sections, ", ")
+}

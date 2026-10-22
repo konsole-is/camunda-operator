@@ -237,8 +237,8 @@ var _ = Describe("CamundaManagementClusterClaim controller", func() {
 			c.Spec.Management.Identity.ExternalURL = ownIdentityURL
 		})
 
-		expectFalse(
-			claim, v1.ConditionReady, fleetv1alpha1.ReasonSlotConflict,
+		expectNotReady(
+			claim, fleetv1alpha1.ReasonSlotConflict,
 			ContainSubstring("spec.management.identity.externalUrl"),
 		)
 		Consistently(func(g Gomega) {

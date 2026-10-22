@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { valueImports } from "../../../test/imports/scan";
 import { parseQuantity } from "./quantity";
 
 describe("parseQuantity", () => {
@@ -26,3 +28,10 @@ describe("parseQuantity", () => {
     },
   );
 });
+
+it("quantity.ts imports no values", () =>
+  expect(
+    valueImports(
+      readFileSync(new URL("./quantity.ts", import.meta.url), "utf8"),
+    ),
+  ).toEqual([]));

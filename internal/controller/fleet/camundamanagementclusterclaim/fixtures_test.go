@@ -309,16 +309,11 @@ func expectCondition(
 	}, timeout, interval).Should(Succeed())
 }
 
-// expectFalse polls until the condition of claim is False with reason, and
-// its message matches message.
-func expectFalse(
-	claim *fleetv1alpha1.CamundaManagementClusterClaim,
-	conditionType string,
-	reason string,
-	message OmegaMatcher,
-) {
+// expectNotReady polls until Ready of claim is False with reason, and its
+// message matches message.
+func expectNotReady(claim *fleetv1alpha1.CamundaManagementClusterClaim, reason string, message OmegaMatcher) {
 	GinkgoHelper()
-	expectCondition(claim, conditionType, metav1.ConditionFalse, reason, message)
+	expectCondition(claim, v1.ConditionReady, metav1.ConditionFalse, reason, message)
 }
 
 // eventuallyPlane polls until the CamundaManagementCluster of claim exists

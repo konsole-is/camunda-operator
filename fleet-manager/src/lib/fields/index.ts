@@ -1,8 +1,4 @@
-export {
-  clusterFields,
-  type ClusterFieldsInput,
-  type ResolvedPolicy,
-} from "./cluster";
+export { clusterFields, type ClusterFieldsInput } from "./cluster";
 export { lockLabel, stateLabel, stateNote } from "./labels";
 export { parameterFields } from "./parameters";
 export type {

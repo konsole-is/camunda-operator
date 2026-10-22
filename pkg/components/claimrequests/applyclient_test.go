@@ -33,8 +33,7 @@ import (
 )
 
 // The apply of a request sends only the fields that the claim and the
-// outputs set, so that another writer can own the rest (E spec "Empty
-// values").
+// outputs set, so that another writer can own the rest.
 func TestRequestApplySendsOnlyTheSetFields(t *testing.T) {
 	var sent []byte
 	recorder := fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{

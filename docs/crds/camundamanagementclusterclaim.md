@@ -196,7 +196,7 @@ When the check passes, `Ready` follows two conditions:
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `RequestsReady` | `OperationPending` | A plugin has not reported the outputs of its request. The message names the section. | Read the status of the request with `kubectl get pluginrequest <name> -o yaml`, with the name from `status.requests`. |
-| `RequestsReady` | `Blocked` | Another owner controls a request of this name. The message names the owner. | Rename one of the two claims. |
+| `RequestsReady` | `Blocked` | A request waits for the outputs of another section, or another owner controls it. The message says which. | Wait, or rename one of the two claims. |
 | `RequestsReady` | `Healthy` | The request of each option reports its outputs. | Nothing. |
 | `ManagementClusterReady` | `PrerequisiteNotMet` | The plane waits for `RequestsReady`. | See `RequestsReady`. |
 | `ManagementClusterReady` | `Creating`, `Updating`, `Failing`, `Degraded`, `Down` | The `CamundaManagementCluster` is not ready. The message holds its `Ready` reason and message, as `<Reason>: <Message>`. | See [CamundaManagementCluster](camundamanagementcluster.md#status). |
