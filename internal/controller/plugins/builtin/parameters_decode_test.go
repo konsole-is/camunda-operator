@@ -60,6 +60,8 @@ func TestDecodeFieldsRefusesAFieldThatDoesNotDecode(t *testing.T) {
 		{"an unknown name", `{"nodeCount":3}`, "spec.parameters.nodeCount"},
 		{"a value of the wrong type", `{"name":3}`, "spec.parameters.name"},
 		{"an unknown nested field", `{"nested":{"sise":"1Gi"}}`, "spec.parameters.nested"},
+		{"a nested field in another case", `{"nested":{"Size":"1Gi"}}`, "Size"},
+		{"a field twice", `{"nested":{"size":"1Gi","size":"2Gi"}}`, "size"},
 	}
 
 	for _, tt := range tests {

@@ -17,13 +17,14 @@ limitations under the License.
 package builtin
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	sigsjson "sigs.k8s.io/json"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -47,16 +48,19 @@ func decodeFields(values map[string]json.RawMessage, prefix string, targets map[
 	return nil
 }
 
-// decodeStrict decodes raw into target and refuses an unknown field. Nil or
-// empty raw decodes nothing.
+// decodeStrict decodes raw into target and refuses an unknown field and a
+// field twice. Nil or empty raw decodes nothing.
 func decodeStrict(raw *apiextensionsv1.JSON, target any) error {
 	if raw == nil || len(raw.Raw) == 0 {
 		return nil
 	}
 
-	d := json.NewDecoder(bytes.NewReader(raw.Raw))
-	d.DisallowUnknownFields()
-	return d.Decode(target)
+	strict, err := sigsjson.UnmarshalStrict(raw.Raw, target)
+	if err != nil {
+		return err
+	}
+
+	return errors.Join(strict...)
 }
 
 func invalidParameter(field string, err error) *conditions.PreCheckFailure {

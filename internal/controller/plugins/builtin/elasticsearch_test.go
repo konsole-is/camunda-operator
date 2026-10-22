@@ -204,6 +204,16 @@ func TestElasticsearchRefusesParameterNamesInAnotherCase(t *testing.T) {
 		{`{"preset":"small","releaseRef":"approved","releaseref":"other"}`, "releaseref"},
 		{`{"preset":"small","releaseRef":"approved","Overrides":{"replicas":0}}`, "Overrides"},
 		{`{"preset":"small","releaseRef":"approved","overrides":{"Replicas":0}}`, "Replicas"},
+		{
+			`{"preset":"small","releaseRef":"approved","overrides":{"resources":` +
+				`{"limits":{"memory":"1Gi"},"Limits":{"memory":"4Gi"}}}}`,
+			"Limits",
+		},
+		{
+			`{"preset":"small","releaseRef":"approved","overrides":{"scheduling":` +
+				`{"tolerations":[{"Key":"pool","value":"es"}]}}}`,
+			"Key",
+		},
 	}
 
 	for _, tt := range tests {
