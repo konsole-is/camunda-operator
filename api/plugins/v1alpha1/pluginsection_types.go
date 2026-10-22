@@ -49,7 +49,10 @@ type PluginSectionSpec struct {
 	// other registrations.
 	// +optional
 	Slot Slot `json:"slot,omitempty"`
-	// AppliesTo lists the claim kinds whose create flow shows the section.
+	// AppliesTo lists the claim kinds that can select an option of the
+	// section. A claim of another kind that selects one is refused with
+	// NotAllowed. For that kind, the section is never required, also when the
+	// Environment marks it required.
 	// +kubebuilder:validation:XValidation:rule="self.size() >= 1",message="appliesTo must list at least one claim kind"
 	AppliesTo []ClaimKind `json:"appliesTo"`
 	// Outputs declares the outputs that every registration of the section

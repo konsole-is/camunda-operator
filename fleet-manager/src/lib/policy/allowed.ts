@@ -1,4 +1,5 @@
 import type { Environment } from "@/generated/crds/environment";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
   byCodeUnit,
   decodeObject,
@@ -14,14 +15,24 @@ import {
   type ParameterPolicy,
   type ResolvedPolicy,
 } from "./resolve";
-import type { PluginSelection, PolicyResult, Refusal } from "./types";
+import type {
+  ClaimKind,
+  PluginSelection,
+  PolicyResult,
+  Refusal,
+} from "./types";
 
 /**
  * AllowedInput holds what checkAllowed reads. environment is the current
- * Environment of the namespace. policy is the snapshot of the claim.
- * presetRef and releaseRef are absent for a plane claim.
+ * Environment of the namespace. kind is the kind of the claim. A section of
+ * the policy that is not in sections applies to every claim kind. policy is
+ * the snapshot of the claim. presetRef and releaseRef are absent for a plane
+ * claim.
  */
-export type AllowedInput = {
+export type AllowedInput = (
+  | { kind?: undefined; sections?: undefined }
+  | { kind: ClaimKind; sections: readonly PluginSection[] }
+) & {
   environment?: Environment;
   policy: ResolvedPolicy;
   presetRef?: string;
@@ -32,8 +43,10 @@ export type AllowedInput = {
 /**
  * checkAllowed refuses with NotAllowed the first value of a claim that its
  * policy does not allow, by the rule of CheckAllowed of pkg/claimpolicy, in
- * this order: the preset, the release, each registration in claim order, each
- * required section without a selection in name order, and each parameter.
+ * this order: the preset, the release, each selection in claim order in a
+ * section whose appliesTo does not list kind, each registration in claim
+ * order, each required section that applies to kind and has no selection in
+ * name order, and each parameter.
  * Without an Environment, every preset and release passes. The registrations
  * and the parameters are checked against the snapshot. A key that is not
  * claim-editable passes only with the value of the snapshot, and a null
@@ -45,7 +58,7 @@ export type AllowedInput = {
 export function checkAllowed(
   input: AllowedInput,
 ): PolicyResult<Record<string, never>> {
-  const { environment, policy, selections = [] } = input;
+  const { environment, kind, policy, selections = [], sections = [] } = input;
   if (environment) {
     const env = environment.metadata.name ?? "";
     if (
@@ -65,6 +78,12 @@ export function checkAllowed(
     }
   }
 
+  for (const s of selections) {
+    if (!appliesTo(s.section, kind, sections)) {
+      return notAllowed(`section "${s.section}" does not apply to a ${kind}`);
+    }
+  }
+
   const selected = new Set<string>();
   for (const s of selections) {
     if (
@@ -80,7 +99,11 @@ export function checkAllowed(
   }
 
   for (const section of Object.keys(policy.sections ?? {}).sort(byCodeUnit)) {
-    if (policy.sections?.[section].required && !selected.has(section)) {
+    if (
+      policy.sections?.[section].required &&
+      !selected.has(section) &&
+      appliesTo(section, kind, sections)
+    ) {
       return notAllowed(
         `section "${section}" is required, and the claim selects nothing in it`,
       );
@@ -109,6 +132,15 @@ export function releaseAllowed(
 ): boolean {
   if (!environment) return true;
   return (environment.spec.releases?.allowed ?? []).includes(release);
+}
+
+function appliesTo(
+  section: string,
+  kind: ClaimKind | undefined,
+  sections: readonly PluginSection[],
+): boolean {
+  const found = sections.find((s) => s.metadata.name === section);
+  return !found || (kind !== undefined && found.spec.appliesTo.includes(kind));
 }
 
 function checkParameters(

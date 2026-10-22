@@ -96,6 +96,18 @@ var _ = Describe("CamundaClusterClaim precheck", func() {
 			}, fleetv1alpha1.ReasonNotAllowed, "does not serve section",
 		),
 		Entry(
+			"a section that does not apply to a cluster", func() *fleetv1alpha1.CamundaClusterClaim {
+				return newClaim(
+					newNamespace(nil),
+					selection(
+						pluginstartup.SectionManagementDatabase,
+						pluginstartup.RegistrationManagementDatabaseServer,
+					),
+				)
+			}, fleetv1alpha1.ReasonNotAllowed,
+			`section "`+pluginstartup.SectionManagementDatabase+`" does not apply to a CamundaClusterClaim`,
+		),
+		Entry(
 			"Orphan with a registration that does not list Orphan", func() *fleetv1alpha1.CamundaClusterClaim {
 				claim := newClaim(
 					newNamespace(nil),

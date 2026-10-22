@@ -5271,7 +5271,7 @@ _Appears in:_
 | `selection` _[Selection](#selection)_ | Selection says how many options of the section one claim can select. |  | Enum: [One Many] <br /> |
 | `emptyOptionLabel` _string_ | EmptyOptionLabel is the label of the option that selects nothing, for<br />example "No backups". When it is empty, the section has no empty<br />option. Display only. No controller reads it. |  | Optional: \{\} <br /> |
 | `slot` _[Slot](#slot)_ | Slot names the fields of the generated resource that the outputs of<br />the section fill. When it is empty, the outputs are only inputs of<br />other registrations. |  | Enum: [workloadIdentity volumeEncryption backupStorage secondaryStorage externalAccess managementDatabases connectorsIdentity] <br />Optional: \{\} <br /> |
-| `appliesTo` _[ClaimKind](#claimkind) array_ | AppliesTo lists the claim kinds whose create flow shows the section. |  | Enum: [CamundaClusterClaim CamundaManagementClusterClaim] <br /> |
+| `appliesTo` _[ClaimKind](#claimkind) array_ | AppliesTo lists the claim kinds that can select an option of the<br />section. A claim of another kind that selects one is refused with<br />NotAllowed. For that kind, the section is never required, also when the<br />Environment marks it required. |  | Enum: [CamundaClusterClaim CamundaManagementClusterClaim] <br /> |
 | `outputs` _[OutputDecl](#outputdecl) array_ | Outputs declares the outputs that every registration of the section<br />writes. |  | Optional: \{\} <br /> |
 
 

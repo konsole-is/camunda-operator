@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "name": "A plane claim without a selection in a required section that applies to both claim kinds is refused",
+  "input": {
+    "kind": "CamundaManagementClusterClaim",
+    "sections": [
+      {
+        "metadata": {
+          "name": "backup-storage"
+        },
+        "spec": {
+          "label": "backup-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "management-database"
+        },
+        "spec": {
+          "label": "management-database",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaManagementClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "access"
+        },
+        "spec": {
+          "label": "access",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim",
+            "CamundaManagementClusterClaim"
+          ]
+        }
+      }
+    ],
+    "policy": {
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3"
+          ]
+        },
+        "management-database": {
+          "allowed": [
+            "management-database-server"
+          ]
+        },
+        "access": {
+          "allowed": [
+            "ingress"
+          ],
+          "required": true
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "selections": [
+      {
+        "section": "management-database",
+        "registration": "management-database-server"
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "section \"access\" is required, and the claim selects nothing in it"
+    }
+  }
+}

@@ -6255,7 +6255,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pluginsection"
       },
       "spec.appliesTo": {
-        "description": "AppliesTo lists the claim kinds whose create flow shows the section.",
+        "description": "AppliesTo lists the claim kinds that can select an option of the\nsection. A claim of another kind that selects one is refused with\nNotAllowed. For that kind, the section is never required, also when the\nEnvironment marks it required.",
         "anchor": "#pluginsectionspec"
       },
       "spec.description": {
