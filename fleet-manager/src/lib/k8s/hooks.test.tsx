@@ -466,4 +466,29 @@ describe("useGitSync", () => {
 
     await waitFor(() => expect(result.current).toBe("waiting"));
   });
+
+  it("stays waiting when the cached object carries the revision, and turns applied on a fresh snapshot", async () => {
+    const first = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    const old = await source();
+    old.emit("snapshot", {
+      watch: old.ids()[0],
+      kind: "CamundaClusterClaim",
+      objects: [claim("abc")],
+    });
+    await waitFor(() => expect(first.result.current).toBe("applied"));
+    first.unmount();
+    await flush();
+
+    const { result } = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    expect(result.current).toBe("waiting");
+
+    const s = FakeEventSource.instances[1];
+    s.emit("snapshot", {
+      watch: s.ids()[0],
+      kind: "CamundaClusterClaim",
+      objects: [claim("abc")],
+    });
+    await waitFor(() => expect(result.current).toBe("applied"));
+  });
 });

@@ -44,6 +44,20 @@ export function failureKey(spec: WatchSpec) {
   ] as const;
 }
 
+/**
+ * freshKey is the query key that is true once the watch got its snapshot on
+ * the current connection. A list from before that can be out of date.
+ */
+export function freshKey(spec: WatchSpec) {
+  return [
+    "k8s-fresh",
+    spec.kind,
+    spec.namespace ?? "",
+    spec.labelSelector ?? "",
+    spec.name ?? "",
+  ] as const;
+}
+
 /** watchId is the value of the parameter watch of /api/watch for spec. */
 export function watchId(spec: WatchSpec): string {
   const params = new URLSearchParams({ kind: spec.kind });
@@ -67,12 +81,14 @@ export interface SharedWatch {
   /**
    * subscribe adds one subscriber to the watch of spec. Subscribers of an
    * equal spec share one watch, which is the only writer of its entries at
-   * watchKey and failureKey. It writes nothing before the first snapshot, so
-   * the initial data of a query stays. The function it returns removes the
-   * subscriber once, also when it is called again. A change of the set of
-   * watches opens a new connection in a microtask, so the subscribes of one
-   * render share one connection. A watch without subscribers leaves its list
-   * in the cache and sets its failure to null.
+   * watchKey, failureKey, and freshKey. It writes no list before the first
+   * snapshot, so the initial data of a query stays. The function it returns
+   * removes the subscriber once, also when it is called again. A change of
+   * the set of watches opens a new connection in a microtask, so the
+   * subscribes of one render share one connection. A new connection sets
+   * freshKey of each watch to false until its snapshot. A watch without
+   * subscribers leaves its list in the cache, sets its failure to null, and
+   * sets freshKey to false.
    */
   subscribe(spec: WatchSpec): () => void;
 }
@@ -128,6 +144,7 @@ class Connection implements SharedWatch {
         if (watch.count > 0) continue;
         this.watches.delete(id);
         this.client.setQueryData(failureKey(watch.spec), null);
+        this.client.setQueryData(freshKey(watch.spec), false);
       }
       const ids = [...this.watches.keys()].sort();
       if (ids.join("\n") !== this.openIds.join("\n")) this.open(ids);
@@ -139,6 +156,10 @@ class Connection implements SharedWatch {
     clearTimeout(this.reopen);
     this.openIds = ids;
     this.source = undefined;
+    for (const id of ids) {
+      const watch = this.watches.get(id);
+      if (watch) this.client.setQueryData(freshKey(watch.spec), false);
+    }
     if (ids.length === 0) return;
     const params = new URLSearchParams(ids.map((id) => ["watch", id]));
     const source = new EventSource(`/api/watch?${params}`);
@@ -158,6 +179,7 @@ class Connection implements SharedWatch {
     on<WatchSnapshot>("snapshot", (spec, frame) => {
       this.client.setQueryData(watchKey(spec), frame.objects);
       this.client.setQueryData(failureKey(spec), null);
+      this.client.setQueryData(freshKey(spec), true);
     });
     on<WatchDelta>("delta", (spec, frame) => {
       this.client.setQueryData<NamedObject[]>(watchKey(spec), (list = []) =>
