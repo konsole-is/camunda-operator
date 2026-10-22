@@ -33,8 +33,8 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// grants returns one Grant for each grant template of
-// the options whose required inputs all have a value in req.
+// grants returns one Grant for each grant template of the options whose
+// required inputs all have a value in req.
 func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest) ([]*pluginsv1alpha1.Grant, error) {
 	parameters := map[string]any{}
 	if req.Spec.Parameters != nil && len(req.Spec.Parameters.Raw) > 0 {
@@ -56,7 +56,10 @@ func (c *Controller) grants(req *pluginsv1alpha1.PluginRequest) ([]*pluginsv1alp
 
 	var grants []*pluginsv1alpha1.Grant
 	for _, tmpl := range c.opts.GrantTemplates {
-		if slices.ContainsFunc(tmpl.RequiresInputs, func(name string) bool { return req.Spec.Inputs[name] == "" }) {
+		missing := slices.ContainsFunc(tmpl.RequiresInputs, func(name string) bool {
+			return req.Spec.Inputs[name] == ""
+		})
+		if missing && c.opts.Defect != DefectIgnoreRequiredInputs {
 			continue
 		}
 

@@ -107,6 +107,9 @@ const (
 	// DefectWrongFragment adds the key EchoDefect to the fragment of each
 	// Grant, so that it is not the filled-in template.
 	DefectWrongFragment Defect = "WrongFragment"
+	// DefectIgnoreRequiredInputs writes the Grant of each grant template, also
+	// when a required input of the template has no value.
+	DefectIgnoreRequiredInputs Defect = "IgnoreRequiredInputs"
 )
 
 // defects are the defects that New accepts.
@@ -126,6 +129,7 @@ var defects = []Defect{
 	DefectKeepOwnerOnOrphan,
 	DefectKeepRouteOnOrphan,
 	DefectWrongFragment,
+	DefectIgnoreRequiredInputs,
 }
 
 func (o Options) validate() error {

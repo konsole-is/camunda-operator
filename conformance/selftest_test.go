@@ -225,5 +225,12 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		),
 		ginkgo.Entry("a route kept on Orphan", accessRun, echo.DefectKeepRouteOnOrphan, DeleteRoutes, "Ingress"),
 		ginkgo.Entry("a wrong fragment", grantRun, echo.DefectWrongFragment, GrantMatch, "has the fragment"),
+		ginkgo.Entry(
+			"a Grant without its required input",
+			grantRun,
+			echo.DefectIgnoreRequiredInputs,
+			GrantRequires,
+			"without a value",
+		),
 	)
 })

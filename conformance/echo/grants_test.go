@@ -140,6 +140,16 @@ func TestWrongFragmentDefectChangesTheFragment(t *testing.T) {
 	assert.Contains(t, string(grants[0].Spec.Fragment.Raw), `"EchoDefect":"WrongFragment"`)
 }
 
+func TestIgnoreRequiredInputsDefectWritesTheGrantWithoutTheInput(t *testing.T) {
+	c := newGrantController(t, DefectIgnoreRequiredInputs)
+
+	grants, err := c.grants(grantRequest(nil))
+
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+	assert.Equal(t, "read", grants[0].Spec.Template)
+}
+
 func TestRenderFragmentNamesAMissingValue(t *testing.T) {
 	_, err := renderFragment([]byte(`{"a":"{{ .outputs.nope }}"}`), map[string]any{"outputs": map[string]string{}})
 
