@@ -52,7 +52,7 @@ graph LR
 
 A plane claim follows the `Environment` of its own namespace, as a [CamundaClusterClaim](camundaclusterclaim.md#environment-and-policy) does. The label `fleet.camunda.io/environment` of the namespace names it. The claim records the policy of that `Environment` in `status.resolvedPolicy` on its first check. A later change of the `Environment` does not change the policy of the claim.
 
-A section of the policy that does not apply to a plane claim, such as `secondary-storage`, is never required for a plane. A claim that selects an option in such a section is refused with `NotAllowed`. The [PluginSection](pluginsection.md#core-sections) page lists the claim kinds of each core section.
+A section of the policy that does not apply to a plane claim, such as `secondary-storage`, is never required for a plane. A claim that selects an option in such a section is refused with `NotAllowed`. The [PluginSection](pluginsection.md#claim-kinds) page says what `appliesTo` does, and its [core sections](pluginsection.md#core-sections) list the claim kinds of each core section.
 
 `spec.platformConfigRef` is optional. Without it, the plane gets `spec.platformConfigRef` of the `Environment`. When neither names a platform config, the claim is refused with `MissingInput`.
 

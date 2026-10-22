@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "name": "A required section of the policy that is not a PluginSection stays required",
+  "input": {
+    "kind": "CamundaClusterClaim",
+    "sections": [
+      {
+        "metadata": {
+          "name": "backup-storage"
+        },
+        "spec": {
+          "label": "backup-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "management-database"
+        },
+        "spec": {
+          "label": "management-database",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaManagementClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "access"
+        },
+        "spec": {
+          "label": "access",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim",
+            "CamundaManagementClusterClaim"
+          ]
+        }
+      }
+    ],
+    "policy": {
+      "sections": {
+        "brought-by-a-plugin": {
+          "required": true,
+          "allowed": [
+            "plugin-option"
+          ]
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "selections": []
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "section \"brought-by-a-plugin\" is required, and the claim selects nothing in it"
+    }
+  }
+}

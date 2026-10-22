@@ -108,11 +108,6 @@ func (r *Reconciler) preCheck(
 		return res, err
 	}
 
-	// TODO(#891): claimpolicy applies appliesTo for both claim kinds.
-	if err := checkAppliesTo(claim.Spec.Plugins, res.sections); err != nil {
-		return res, err
-	}
-
 	res.resolution, err = claimpolicy.Resolve(claimpolicy.ResolveInput{
 		Recorded:      claim.Status.ResolvedPolicy,
 		Environment:   environment,
@@ -125,7 +120,9 @@ func (r *Reconciler) preCheck(
 
 	if err := claimpolicy.CheckAllowed(claimpolicy.AllowedInput{
 		Environment: environment,
-		Policy:      claimrequests.ClaimPolicy(planeClaim, res.resolution.Policy, res.sections),
+		Kind:        planeClaim,
+		Sections:    res.sections,
+		Policy:      res.resolution.Policy,
 		Selections:  claim.Spec.Plugins,
 	}); err != nil {
 		return res, err
@@ -245,24 +242,6 @@ func named[T any, P interface {
 	GetName() string
 }](name string) func(T) bool {
 	return func(item T) bool { return P(&item).GetName() == name }
-}
-
-// checkAppliesTo refuses with NotAllowed the first selection in a section
-// whose spec.appliesTo does not list plane claims.
-func checkAppliesTo(selections []fleetv1alpha1.PluginSelection, sections []pluginsv1alpha1.PluginSection) error {
-	for _, s := range selections {
-		i := slices.IndexFunc(sections, named[pluginsv1alpha1.PluginSection](s.Section))
-		if i < 0 || slices.Contains(sections[i].Spec.AppliesTo, planeClaim) {
-			continue
-		}
-
-		return &conditions.PreCheckFailure{
-			Reason:  fleetv1alpha1.ReasonNotAllowed,
-			Message: fmt.Sprintf("section %q does not apply to a CamundaManagementClusterClaim", s.Section),
-		}
-	}
-
-	return nil
 }
 
 // checkPlaneInputs refuses with MissingInput a claim from which no valid

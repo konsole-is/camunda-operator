@@ -112,14 +112,12 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 
 	if err := claimpolicy.CheckAllowed(claimpolicy.AllowedInput{
 		Environment: environment,
-		Policy: claimrequests.ClaimPolicy(
-			pluginsv1alpha1.ClaimKindCamundaClusterClaim,
-			res.resolution.Policy,
-			res.sections,
-		),
-		PresetRef:  claim.Spec.PresetRef,
-		ReleaseRef: claim.Spec.ReleaseRef,
-		Selections: claim.Spec.Plugins,
+		Kind:        pluginsv1alpha1.ClaimKindCamundaClusterClaim,
+		Sections:    res.sections,
+		Policy:      res.resolution.Policy,
+		PresetRef:   claim.Spec.PresetRef,
+		ReleaseRef:  claim.Spec.ReleaseRef,
+		Selections:  claim.Spec.Plugins,
 	}); err != nil {
 		return res, err
 	}

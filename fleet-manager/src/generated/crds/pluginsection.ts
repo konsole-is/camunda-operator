@@ -20,7 +20,10 @@ export interface PluginSection {
  */
 export interface PluginSectionSpec {
   /**
-   * AppliesTo lists the claim kinds whose create flow shows the section.
+   * AppliesTo lists the claim kinds that can select an option of the
+   * section. A claim of another kind that selects one is refused with
+   * NotAllowed. For that kind, the section is never required, also when the
+   * Environment marks it required.
    *
    * Items: ClaimKind names a claim kind of the fleet.camunda.io group.
    */
