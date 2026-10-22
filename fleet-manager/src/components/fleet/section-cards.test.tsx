@@ -1163,6 +1163,40 @@ describe("SectionCards", () => {
       expect(screen.getByText(/min must not be above max/)).toBeTruthy();
     });
 
+    it("shows the rule of a parameter that the choice cards set under the cards", () => {
+      const withCards: OptionView = {
+        registration: "elasticsearch",
+        label: "New Elasticsearch",
+        isDefault: true,
+        parameters: [
+          {
+            name: "preset",
+            label: "Preset",
+            schema: {
+              type: "string",
+              "x-kubernetes-validations": [
+                { rule: "self != 'large'", message: "large is retired" },
+              ],
+            },
+            claimEditable: true,
+            value: "small",
+          },
+        ],
+        choices: {
+          parameter: "preset",
+          items: [{ name: "small" }, { name: "large" }],
+        },
+      };
+      render(<SectionCards section={section({}, withCards)} />);
+
+      const description = descriptionOf(
+        screen.getByRole("group", { name: "Preset" }),
+      );
+
+      expect(description).toContain("large is retired");
+      expect(description).toContain("Checked after you save");
+    });
+
     it("shows no rule for a locked parameter", () => {
       render(<SectionCards section={section({}, ruled)} />);
 

@@ -308,6 +308,10 @@ function OptionParameters({
       .message;
   const rest = option.parameters.filter((r) => r.name !== choices?.parameter);
   const choiceError = choices && errorOf(choices.parameter);
+  const choiceRules =
+    choices && choiceRule?.claimEditable
+      ? schemaRules(choiceRule.schema ?? {})
+      : [];
   const optionRules = schemaRules(option.schema ?? {}).filter(
     (r) => r.path === "",
   );
@@ -317,7 +321,12 @@ function OptionParameters({
       {choices && (
         <fieldset
           aria-describedby={
-            choiceError ? `${idPrefix}-choice-error` : undefined
+            [
+              choiceError && `${idPrefix}-choice-error`,
+              choiceRules.length > 0 && `${idPrefix}-choice-rules`,
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined
           }
           className="flex flex-col gap-2"
         >
@@ -364,6 +373,7 @@ function OptionParameters({
               {choiceError}
             </p>
           )}
+          <RuleHints id={`${idPrefix}-choice-rules`} rules={choiceRules} />
         </fieldset>
       )}
       {rest.map((rule, index) => (
