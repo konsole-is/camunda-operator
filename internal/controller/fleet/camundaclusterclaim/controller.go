@@ -101,7 +101,8 @@ type Reconciler struct {
 // cluster, and set Ready from RequestsReady and ClusterReady. A deleted claim
 // reports Ready=False with reason Deleting until nothing that it generated is
 // left, or with reason NotAllowed while a selected registration does not
-// support its deletion policy. Status is written once per reconcile.
+// support its deletion policy. Status is written at most once per
+// reconcile.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	var claim fleetv1alpha1.CamundaClusterClaim
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &claim); err != nil {
