@@ -406,18 +406,37 @@ function archiveOf(
     view.state = { tone: "warn", label: ready?.reason || "Waiting", message };
   }
   const bucket = archive.objectStorageRef;
-  view.bucket = bucketOf(input.objectStorage, bucket);
+  const config = byName(input.objectStorage, bucket);
+  const live = config ? archiveLocation(config, server) : "";
+  const held = heldLocation(server, live);
+  view.bucket = held
+    ? { name: bucket, location: held }
+    : bucketOf(input.objectStorage, bucket);
   if (rollback) {
-    const config = byName(input.objectStorage, bucket);
     view.window = restoreWindow(
       server,
       bucket,
-      config ? archiveLocation(config, server) : "",
+      held ?? live,
       archive.retentionPeriodDays,
       input.now,
     );
   }
   return view;
+}
+
+// heldLocation is the location that an unfinished rollback recorded, when the
+// bucket moved under it. The operator keeps the archive there until the
+// rollback finishes (recoveryHoldsLocation in internal/controller/databaseserver).
+function heldLocation(
+  server: Resource<"DatabaseServer">,
+  live: string,
+): string | undefined {
+  const running = server.status?.recovery;
+  const recorded = running?.archive?.location;
+  if (running?.completedAt || !recorded || !live || recorded === live) {
+    return undefined;
+  }
+  return recorded;
 }
 
 // heldArchive is the archive that the operator runs: while a rollback is

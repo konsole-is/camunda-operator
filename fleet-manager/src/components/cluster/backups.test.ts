@@ -973,6 +973,49 @@ describe("backupStorageOf", () => {
       });
     });
 
+    it("keeps the recorded location when the bucket moved in place", () => {
+      const held = "gs://acme-wal-old/databaseserver/team-a/orders-pg-bb8f6134";
+      const data = rdbmsChain({
+        serverStatus: {
+          ...status(
+            recovery({
+              objectStorageRef: "wal",
+              retentionPeriodDays: 30,
+              location: held,
+            }),
+          ),
+          archive: {
+            history: [
+              {
+                serverName: "orders-pg",
+                location: held,
+                from: "2026-10-01T00:00:00Z",
+              },
+            ],
+          },
+        },
+      });
+      expect(archiveOf(data)).toMatchObject({
+        bucket: { name: "wal", location: held },
+        window: [{ from: "2026-10-01T00:00:00Z" }],
+      });
+    });
+
+    it("uses the live location for a record without a location", () => {
+      expect(
+        archiveOf(
+          rdbmsChain({
+            serverStatus: status(
+              recovery({ objectStorageRef: "wal", retentionPeriodDays: 30 }),
+            ),
+          }),
+        ),
+      ).toMatchObject({
+        bucket: { name: "wal", location: "gs://acme-wal" },
+        window: [{ from: "2026-10-01T00:00:00Z" }],
+      });
+    });
+
     it("follows the spec once the rollback completed", () => {
       expect(
         archiveOf(
