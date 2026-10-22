@@ -78,10 +78,9 @@ export type PreviewObject = {
 export type Preview = { objects: PreviewObject[]; errors: ApiError[] };
 
 /**
- * WriteResult is the result of a write. In Git mode, commit is the commit
- * that holds the change, revisions maps each pushed object to its revision
- * hash, and paths maps it to its file in the repository. A deleted object
- * is in neither map.
+ * WriteResult is the result of a write. In Git mode, revisions maps each
+ * pushed object to its revision hash, and paths maps it to its file in the
+ * repository. A deleted object is in neither map.
  */
 export type WriteResult =
   | { ok: true; mode: "direct" }

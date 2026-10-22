@@ -145,6 +145,10 @@ When someone pushed to the branch after the fleet manager read it, the save comm
 | `Someone changed <file> in <repository> since the fleet manager read it. Open the page again.` | Someone pushed a change to the same file. | Open the page again. |
 | `<repository> changed again while the fleet manager pushed. Save again.` | The branch changed again during the save. | Save again. |
 | `<repository> refused the credentials.` | The username or the token of the Secret is wrong, or the token cannot push. | Correct the Secret of `git.credentialsSecretRef`. |
+| `<repository> refused the push to the branch <branch>.` | The Git server accepts the credentials, but the branch is protected, or a rule of the server refuses the push. | Let the user of the token push to the branch, or set `git.branch` to a branch that accepts a push. |
+| `<repository> must start with https:// to use the credentials of the Secret <secret>.` | `git.credentialsSecretRef` is set, and `git.repository` is not an `https://` address. | Set `git.repository` to the `https://` address of the repository. |
+| `The Secret <secret> does not exist in namespace <namespace>.` | The Secret of `git.credentialsSecretRef` is not in the release namespace. | Create the Secret, as [Git credentials](#git-credentials) shows. |
+| `The Secret <secret> has no key <key>.` | The Secret has no key `username` or no key `token`, or the value is empty. | Add the key to the Secret. |
 | `<repository> has no branch <branch>.` | The branch of `git.branch` does not exist. | Create the branch, or correct `git.branch`. |
 | `<file> is not in the repository. GitOps does not manage <kind> <name>.` | A delete of an object that has no file in the repository. | Delete the object in the cluster with `kubectl delete`. |
 | `<file> is behind a symbolic link in the repository. The fleet manager does not write through a link.` | A folder or the file on the path of the object is a symbolic link in the repository. | Replace the link with a real folder or file in the repository. |

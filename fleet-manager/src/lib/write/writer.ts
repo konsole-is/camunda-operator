@@ -293,9 +293,9 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 }
 
 /**
- * getWriter returns the writer of the app for the settings: the Git writer
- * when git.repository is set, else the direct writer of kubeConfig(). It
- * throws when the settings cannot be read.
+ * getWriter returns the Git writer when the setting git.repository is set,
+ * else the direct writer of kubeConfig(). It throws when the settings
+ * cannot be read.
  */
 export async function getWriter(): Promise<Writer> {
   // The settings store writes through directWriter of this module, so a

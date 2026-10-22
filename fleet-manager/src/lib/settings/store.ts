@@ -75,11 +75,11 @@ async function writePatch(patch: Partial<Settings>): Promise<WriteResult> {
 }
 
 // An apply cannot create only a missing ConfigMap, so callers hold
-// inOrder: a late first create would undo an update. getWriter reads the
-// settings, so the settings write through directWriter.
+// inOrder: a late first create would undo an update.
 async function readOrCreate(): Promise<ConfigMap> {
   const live = await read();
   if (live) return live;
+  // getWriter reads the settings, so the settings write through directWriter.
   const result = await directWriter().apply({
     intent: "Create the settings from the chart values",
     directOnly: true,

@@ -206,8 +206,7 @@ describe("a first read beside an update", () => {
   });
 });
 
-// Contract 6.1: the settings never go to Git. getWriter reads the settings,
-// so a write of the settings through it would read the settings again.
+// Contract 6.1: the settings never go to Git.
 describe("in Git mode", () => {
   it("the first create and each update go to the API, not to Git", async () => {
     const missing = new KubernetesRequestError(404, "not found");
