@@ -122,7 +122,7 @@ A user with the verb `*` on `pluginregistrations`, for example through the Clust
 | `Ready` | `Healthy` | `Applied` and `MatchesTemplate` are both `True`. | Nothing. |
 | `Ready` | the reason of the first `False` condition | `Applied` or `MatchesTemplate` is `False`. The message is the message of that condition. | See the row of that reason. |
 
-A grant with `Ready=False` makes the `Ready` condition of its request `False` with reason `GrantRejected`. Until every grant of a request has `Ready=True`, the `Ready` condition of the request is `False` with reason `WaitingForGrants`. The outputs of the request stay usable in both cases.
+A grant with `Ready=False` makes the `Ready` condition of its request `False` with reason `GrantRejected`. When no grant of a request has `Ready=False`, a grant without `Ready=True` makes the `Ready` condition of the request `False` with reason `WaitingForGrants`. The outputs of the request stay usable in both cases.
 
 ## Fields
 

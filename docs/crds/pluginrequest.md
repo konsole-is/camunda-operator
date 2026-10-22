@@ -164,7 +164,7 @@ When the claim or you delete the request, the contracts stay, with both deletion
 | `OutputsReady` | `Blocked` | A contract that the request names does not exist. The message names the contract. | Create the contract, or correct the name in the claim. |
 | `Ready` | `Healthy` | The resources of the request are ready. | Nothing. |
 | `Ready` | `GrantRejected` | A `Grant` of the request has `Ready=False`. The outputs stay usable. | Read the status of the grant. See [Grant](grant.md#status). |
-| `Ready` | `WaitingForGrants` | A `Grant` of the request does not have `Ready=True` yet. The cloud permissions of the cluster are not in place. The outputs stay usable. | Wait for the identity extension to apply the grant. If it stays, read the status of the grant and the logs of the identity extension. See [Grant](grant.md#status). |
+| `Ready` | `WaitingForGrants` | No `Grant` of the request has `Ready=False`, and a `Grant` does not have `Ready=True` yet. The cloud permissions of the cluster are not in place. The outputs stay usable. | Wait for the identity extension to apply the grant. If it stays, read the status of the grant and the logs of the identity extension. See [Grant](grant.md#status). |
 | `Ready` | `WaitingForEndpoints` | An access request waits for the endpoints in the status of its target. | Wait for the target to report its endpoints. |
 | `Ready` | `InvalidParameters` | The parameters do not pass the schema or the rules of the registration. | Correct the parameters in the claim. |
 | `Ready` | `Blocked` | A contract that the request names does not exist. The message names the contract. | Create the contract, or correct the name in the claim. |
