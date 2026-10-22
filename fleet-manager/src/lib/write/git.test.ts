@@ -92,8 +92,8 @@ const recordingFetches = (bodies: string[]): HttpClient => ({
     for await (const chunk of r.body) chunks.push(chunk);
     const body = Buffer.concat(chunks);
     bodies.push(body.toString("utf8"));
-    // isomorphic-git passes the body as an array, which the transport
-    // sends in one piece; the test server fails on a streamed body.
+    // The test server fails on a streamed body, and the transport sends
+    // an array body in one piece.
     return gitHttp.request({
       ...r,
       body: [body] as unknown as AsyncIterableIterator<Uint8Array>,
