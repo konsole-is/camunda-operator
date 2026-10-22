@@ -1,0 +1,40 @@
+apiVersion: core.camunda.io/v1
+kind: CamundaManagementCluster
+metadata:
+  labels:
+    fleet.camunda.io/claim: my-plane
+  name: my-plane
+  namespace: my-plane-ns
+spec:
+  console:
+    externalUrl: https://plane.example.com/console
+    version: 8.9.122
+  identity:
+    admin:
+      email: admin@example.com
+      username: admin
+    databaseConfigRef: my-plane-identity
+    externalUrl: https://plane.example.com/identity
+    version: 8.9.10
+  identityProvider:
+    keycloak:
+      databaseConfigRef: my-plane-keycloak
+      externalUrl: https://plane.example.com/auth
+      replicas: 2
+      version: 26.3.1
+  namespaceSelector:
+    matchExpressions:
+    - key: fleet.camunda.io/environment
+      operator: In
+      values:
+      - dev
+      - test
+  platformConfigRef: default
+  webModeler:
+    databaseConfigRef: my-plane-webmodeler
+    externalUrl: https://plane.example.com/modeler
+    mail:
+      fromAddress: modeler@example.com
+      smtpHost: smtp.example.com
+    version: 8.9.11
+    websocketsExternalUrl: https://plane.example.com/modeler-ws
