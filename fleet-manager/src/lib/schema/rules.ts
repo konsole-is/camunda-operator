@@ -8,9 +8,9 @@ export type SchemaRule = { path: string; rule: string; message?: string };
  * not run them. path joins the property names from the root to the schema
  * that holds the rule with dots, and the empty path is the root. A rule of
  * the items of an array, or of the values of a map, has the path of the
- * array or the map. message is absent when the rule has none, also when it
- * has a messageExpression. A schema lists its own rules before those of its
- * properties, in property order.
+ * array or the map. message is absent when the rule has none or an empty
+ * one, also when it has a messageExpression. A schema lists its own rules
+ * before those of its properties, in property order.
  */
 export function schemaRules(schema: OpenAPISchema): SchemaRule[] {
   const rules: SchemaRule[] = [];
@@ -29,7 +29,8 @@ function collect(schema: unknown, path: string, rules: SchemaRule[]): void {
       rules.push({
         path,
         rule: entry.rule,
-        ...(typeof entry.message === "string" && { message: entry.message }),
+        ...(typeof entry.message === "string" &&
+          entry.message !== "" && { message: entry.message }),
       });
     }
   }

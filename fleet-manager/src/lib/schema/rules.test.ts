@@ -105,6 +105,15 @@ describe("schemaRules", () => {
     ).toEqual([{ path: "", rule: "self > 1" }]);
   });
 
+  it("gives a rule with an empty message no message", () => {
+    expect(
+      schemaRules({
+        type: "integer",
+        "x-kubernetes-validations": [{ rule: "self > 1", message: "" }],
+      }),
+    ).toEqual([{ path: "", rule: "self > 1" }]);
+  });
+
   it("skips an entry without a rule, and a schema without rules has none", () => {
     expect(
       schemaRules({
