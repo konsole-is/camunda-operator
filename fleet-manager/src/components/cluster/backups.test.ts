@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
@@ -1067,6 +1068,20 @@ describe("archiveLocation", () => {
   ])("archiveLocation in %j is %s", (spec, want) => {
     expect(archiveLocation(osc("x", spec), server)).toBe(want);
   });
+
+  it.each(["uid-orders-pg", "8f7c1e2a-4b3d-4e5f-9a6b-7c8d9e0f1a2b", ""])(
+    "names the server directory with the SHA-256 of the UID %j, as node:crypto computes it",
+    (uid) => {
+      const hash = createHash("sha256").update(uid).digest("hex");
+      const named = obj("DatabaseServer", "orders-pg", {}, undefined, { uid });
+      expect(
+        archiveLocation(
+          osc("x", { type: "GCS", gcs: { bucketName: "b" } }),
+          named,
+        ),
+      ).toBe(`gs://b/databaseserver/team-a/orders-pg-${hash.slice(0, 8)}`);
+    },
+  );
 });
 
 describe("bucketLocation", () => {

@@ -1,3 +1,5 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import type { StatusTone } from "@/components/fleet/status";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { DatabaseServerSpec } from "@/generated/crds/databaseserver";
@@ -5,7 +7,6 @@ import { formatBytes } from "@/components/fleet/units";
 import type { Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
 import { mergeDatabaseServer } from "@/lib/merge";
-import { sha256Hex } from "@/lib/sha256";
 import {
   type BackupKind,
   type ClusterLike,
@@ -470,7 +471,7 @@ function restoreWindow(
     const recordFrom = parse(record.from);
     if (!at || at !== location || recordFrom === undefined) continue;
     const from = recordFrom >= floor ? record.from : floorText;
-    // Only the open record carries unverifiedFrom (markArchiveOutage).
+    // The API says a restore cannot reach past unverifiedFrom.
     const interval: RestoreInterval = record.to
       ? { from, to: record.to }
       : record.unverifiedFrom
@@ -492,7 +493,7 @@ export function archiveLocation(
   server: Resource<"DatabaseServer">,
 ): string {
   const { namespace = "", name = "", uid = "" } = server.metadata ?? {};
-  const segment = `${name}-${sha256Hex(uid).slice(0, 8)}`;
+  const segment = `${name}-${bytesToHex(sha256(utf8ToBytes(uid))).slice(0, 8)}`;
   return locationOf(config, `databaseserver/${namespace}/${segment}`);
 }
 
