@@ -99,7 +99,7 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 
 	if err := claimpolicy.CheckAllowed(claimpolicy.AllowedInput{
 		Environment: environment,
-		Policy:      res.resolution.Policy,
+		Policy:      components.ClaimPolicy(res.resolution.Policy, res.sections),
 		PresetRef:   claim.Spec.PresetRef,
 		ReleaseRef:  claim.Spec.ReleaseRef,
 		Selections:  claim.Spec.Plugins,
