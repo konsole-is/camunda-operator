@@ -93,7 +93,8 @@ var lifecycleChecks = []Check{
 	},
 	{
 		ID: ReqReady,
-		Description: "The request gets Ready=True within the Ready timeout, or Ready=False with the reason " +
+		Description: "The request gets Ready=True within the Ready timeout, and not while a Grant has a Ready " +
+			"condition and another Grant does not have Ready=True, or Ready=False with the reason " +
 			"GrantRejected while one of its Grants has Ready=False, or with the reason WaitingForGrants while " +
 			"one of its Grants does not have Ready=True yet.",
 		run: checkReady,
@@ -704,16 +705,17 @@ func outputProblems(section, declared []pluginsv1alpha1.OutputDecl, outputs map[
 	return problems
 }
 
-// readyVerdict passes Ready=True, Ready=False with the reason GrantRejected
-// while one of grants has Ready=False, and Ready=False with the reason
-// WaitingForGrants while one of grants does not have Ready=True and none has
-// Ready=False.
+// readyVerdict passes Ready=False with the reason GrantRejected while one of
+// grants has Ready=False, and Ready=False with the reason WaitingForGrants
+// while one of grants does not have Ready=True and none has Ready=False. It
+// fails Ready=True while one of grants has a Ready condition and one of grants
+// does not have Ready=True.
 func readyVerdict(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) error {
 	switch {
 	case ready == nil:
 		return errors.New("the request has no Ready condition")
 	case ready.Status == metav1.ConditionTrue:
-		return nil
+		return servedGrantsVerdict(grants)
 	case ready.Status == metav1.ConditionFalse && ready.Reason == pluginsv1alpha1.ReasonGrantRejected:
 		failed := slices.ContainsFunc(grants, func(g pluginsv1alpha1.Grant) bool {
 			return meta.IsStatusConditionFalse(g.Status.Conditions, v1.ConditionReady)
@@ -730,6 +732,24 @@ func readyVerdict(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) error
 	}
 
 	return fmt.Errorf("the Ready condition is %s, reason %s: %s", ready.Status, ready.Reason, ready.Message)
+}
+
+func servedGrantsVerdict(grants []pluginsv1alpha1.Grant) error {
+	served := slices.ContainsFunc(grants, func(g pluginsv1alpha1.Grant) bool {
+		return meta.FindStatusCondition(g.Status.Conditions, v1.ConditionReady) != nil
+	})
+	if !served {
+		// GRANT-READY judges Ready=True while no Grant has a Ready condition.
+		return nil
+	}
+
+	for _, g := range grants {
+		if !meta.IsStatusConditionTrue(g.Status.Conditions, v1.ConditionReady) {
+			return fmt.Errorf("the Ready condition is True while the Grant %s does not have Ready=True", g.Name)
+		}
+	}
+
+	return nil
 }
 
 func waitingForGrantsVerdict(grants []pluginsv1alpha1.Grant) error {
