@@ -126,7 +126,8 @@ export function gitWriter(options: GitWriterOptions): Writer {
     if (refusals.length > 0) return { objects: [], errors: refusals };
     const skipped = await notDryRun(change);
     const deletes = change.delete ?? [];
-    const { apply, previewManagers } = await asGitOps(
+    const { apply, previewManagers, errors } = await asGitOps(
+      change,
       change.apply.filter((o) => !skipped.has(o)),
     );
     // force: GitOps applies the objects under its own field manager, so a
@@ -149,7 +150,10 @@ export function gitWriter(options: GitWriterOptions): Writer {
       if (ref.kind !== "ExternalSecret") continue;
       shown.push(previewObject(ref, await read(ref), undefined));
     }
-    return { objects: [...result.objects, ...shown], errors: result.errors };
+    return {
+      objects: [...result.objects, ...shown],
+      errors: [...errors, ...result.errors],
+    };
   };
 
   // notDryRun returns the objects that the API server cannot dry-run: an
@@ -176,22 +180,32 @@ export function gitWriter(options: GitWriterOptions): Writer {
   // the field manager of GitOps. Only a dry run as that manager removes the
   // fields of GitOps that the file leaves out, as the GitOps apply does.
   const asGitOps = async (
+    change: Change,
     objects: KubeObject[],
   ): Promise<{
     apply: KubeObject[];
     previewManagers: Record<RefKey, string>;
+    errors: ApiError[];
   }> => {
     const previewManagers: Record<RefKey, string> = {};
     const apply: KubeObject[] = [];
+    const errors: ApiError[] = [];
     for (const object of objects) {
-      // A read that fails fails again in the dry run, which reports it.
-      const live = await read(refOf(object)).catch(() => undefined);
+      const ref = refOf(object);
+      let live: KubeObject | undefined;
+      try {
+        live = await read(ref);
+      } catch (error) {
+        const precondition = change.preconditions?.[refKey(ref)];
+        errors.push(...apiErrorsOf(error, ref, precondition !== undefined));
+        continue;
+      }
       const manager = gitOpsManager(live);
       if (manager === undefined) {
         apply.push(object);
         continue;
       }
-      previewManagers[refKey(refOf(object))] = manager;
+      previewManagers[refKey(ref)] = manager;
       // The file carries the annotation, so the dry run must not remove it.
       const annotations = (object.metadata.annotations ?? {}) as Record<
         string,
@@ -209,7 +223,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
         },
       });
     }
-    return { apply, previewManagers };
+    return { apply, previewManagers, errors };
   };
 
   const staleErrors = async (change: Change): Promise<ApiError[]> => {
