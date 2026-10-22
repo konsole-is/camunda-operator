@@ -181,6 +181,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		}
 	}
 
+	// A component joins the messages of its requests, and the claim schema
+	// caps the message of a condition.
+	boundMessages(claim.Status.Conditions)
+
 	// The cluster goes first: on a tie of priority the first component
 	// gives the reason, so a claim that waits for outputs reports
 	// PrerequisiteNotMet with the message of RequestsReady.
@@ -192,4 +196,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	}
 
 	return ctrl.Result{}, reconcileErr
+}
+
+// boundMessages bounds the message of each condition in conds to
+// conditions.MaxMessageLength.
+func boundMessages(conds []metav1.Condition) {
+	for i := range conds {
+		conds[i].Message = conditions.BoundMessage(conds[i].Message)
+	}
 }
