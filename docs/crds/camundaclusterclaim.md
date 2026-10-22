@@ -118,7 +118,7 @@ A `CamundaCluster` of the same name that another owner controls stays as it is. 
 | `NoEnvironment` | The namespace has no label `fleet.camunda.io/environment`, and an `Environment` exists. | Label the namespace. |
 | `UnknownEnvironment` | The label names no `Environment`. | Create the `Environment`, or fix the label. |
 | `InvalidReference` | The preset, the release, the platform config, a section, or a registration does not exist. The message names each one. | Create the object, or fix the name. |
-| `NotAllowed` | The `Environment` does not allow the preset, the release, or a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. The message names the value. | Pick an allowed value, or change the `Environment`. |
+| `NotAllowed` | The `Environment` does not allow the preset, the release, or a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. The claim selects two options of a section that takes one, or two selections get the same request name. The message names the value. | Pick an allowed value, or change the `Environment`. Select one option of a section that takes one. |
 | `SlotConflict` | `spec.cluster` sets a field that a selected section fills, for example `externalUrl` with an option of `access`. | Remove the field from `spec.cluster`. |
 | `MissingInput` | An option needs an output of a section in which the claim selects nothing. | Select an option of that section. |
 | `WiringCycle` | The options read the outputs of each other in a cycle. The message names the sections. | Pick other options. |

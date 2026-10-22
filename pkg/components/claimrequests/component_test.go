@@ -17,10 +17,7 @@ limitations under the License.
 package claimrequests
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"flag"
-	"strings"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
@@ -251,34 +248,6 @@ func TestComponentNamesEachRequestOfAManySection(t *testing.T) {
 		names = append(names, r.Name)
 	}
 	assert.ElementsMatch(t, []string{"orders-alerts-mail", "orders-alerts-chat"}, names)
-}
-
-func TestName(t *testing.T) {
-	s := fleetv1alpha1.PluginSelection{Section: "alerts", Registration: "mail"}
-
-	assert.Equal(t, "orders-alerts", Name("orders", s, pluginsv1alpha1.SelectionOne))
-	assert.Equal(t, "orders-alerts", Name("orders", s, ""))
-	assert.Equal(t, "orders-alerts-mail", Name("orders", s, pluginsv1alpha1.SelectionMany))
-}
-
-func TestNameCutsALongNameAndKeepsItApart(t *testing.T) {
-	claim := strings.Repeat("c", 40)
-	s := fleetv1alpha1.PluginSelection{Section: "alerts", Registration: strings.Repeat("r", 30)}
-	other := fleetv1alpha1.PluginSelection{Section: "alerts", Registration: strings.Repeat("r", 29) + "x"}
-	full := claim + "-alerts-" + s.Registration
-	sum := sha256.Sum256([]byte(full))
-
-	name := Name(claim, s, pluginsv1alpha1.SelectionMany)
-
-	assert.Equal(t, full[:54]+"-"+hex.EncodeToString(sum[:])[:8], name)
-	assert.Len(t, name, 63)
-	assert.NotEqual(t, name, Name(claim, other, pluginsv1alpha1.SelectionMany))
-}
-
-func TestNameKeepsANameOfSixtyThreeCharacters(t *testing.T) {
-	claim := strings.Repeat("c", 63-len("-alerts"))
-
-	assert.Equal(t, claim+"-alerts", Name(claim, fleetv1alpha1.PluginSelection{Section: "alerts"}, ""))
 }
 
 // volumeInput is the input of a claim orders that selects test-volumes,

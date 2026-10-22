@@ -34,15 +34,10 @@ import (
 func Statuses(claim client.Object, in Input) []fleetv1alpha1.RequestStatus {
 	statuses := make([]fleetv1alpha1.RequestStatus, 0, len(in.Selections))
 	for _, s := range in.Selections {
-		var mode pluginsv1alpha1.Selection
-		if section := find(in.Sections, s.Section); section != nil {
-			mode = section.Spec.Selection
-		}
-
 		status := fleetv1alpha1.RequestStatus{
 			Section:      s.Section,
 			Registration: s.Registration,
-			Name:         Name(claim.GetName(), s, mode),
+			Name:         Name(claim.GetName(), s, modeOf(in.Sections, s.Section)),
 		}
 		if request := find(in.Requests, status.Name); request != nil {
 			status.OutputsReady = conditionStatus(request, pluginsv1alpha1.ConditionOutputsReady)

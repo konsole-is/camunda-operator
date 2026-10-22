@@ -93,6 +93,10 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		return res, err
 	}
 
+	if err := claimrequests.CheckNames(claim.Name, claim.Spec.Plugins, res.sections); err != nil {
+		return res, err
+	}
+
 	res.resolution, err = claimpolicy.Resolve(claimpolicy.ResolveInput{
 		Recorded:      claim.Status.ResolvedPolicy,
 		Environment:   environment,

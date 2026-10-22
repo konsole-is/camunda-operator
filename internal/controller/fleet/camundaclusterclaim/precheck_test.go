@@ -37,7 +37,9 @@ var _ = Describe("CamundaClusterClaim precheck", func() {
 
 			expectFalse(claim, v1.ConditionReady, reason, ContainSubstring(message))
 			Consistently(func(g Gomega) {
-				g.Expect(latest(g, claim).Status.ResolvedPolicy).To(BeNil())
+				current := latest(g, claim)
+				g.Expect(current.Status.ResolvedPolicy).To(BeNil())
+				g.Expect(current.Finalizers).To(BeEmpty())
 
 				var requests pluginsv1alpha1.PluginRequestList
 				g.Expect(k8sClient.List(
@@ -87,6 +89,15 @@ var _ = Describe("CamundaClusterClaim precheck", func() {
 				claim.Spec.Plugins[0].Parameters = &apiextensionsv1.JSON{Raw: []byte(`["existing-es"]`)}
 				return claim
 			}, fleetv1alpha1.ReasonNotAllowed, "not a JSON object",
+		),
+		Entry(
+			"two options of a section that takes one", func() *fleetv1alpha1.CamundaClusterClaim {
+				return newClaim(
+					newNamespace(nil),
+					selection(pluginstartup.SectionEncryptionKey, registrationKey),
+					selection(pluginstartup.SectionEncryptionKey, registrationVersioned),
+				)
+			}, fleetv1alpha1.ReasonNotAllowed, "takes one option",
 		),
 		Entry(
 			"an override of a field that a selected slot fills", func() *fleetv1alpha1.CamundaClusterClaim {
