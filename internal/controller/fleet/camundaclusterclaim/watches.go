@@ -40,12 +40,11 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/pluginrequest"
 )
 
-// The field indexes of CamundaClusterClaim: the distinct section and
-// registration names of spec.plugins, and the <namespace>/<name> of each
+// The field indexes of CamundaClusterClaim: the distinct registration
+// names of spec.plugins, and the <namespace>/<name> of each
 // PluginRequest that the claim can write. The index holds, for each item,
 // the request name for a One section and for a Many section.
 const (
-	pluginSectionsField      = "spec.plugins.section"
 	pluginRegistrationsField = "spec.plugins.registration"
 	requestNamesField        = "spec.plugins.request"
 )
@@ -77,9 +76,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	indexers := map[string]func(*fleetv1alpha1.CamundaClusterClaim, fleetv1alpha1.PluginSelection) []string{
-		pluginSectionsField: func(_ *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) []string {
-			return []string{s.Section}
-		},
 		pluginRegistrationsField: func(_ *fleetv1alpha1.CamundaClusterClaim, s fleetv1alpha1.PluginSelection) []string {
 			return []string{s.Registration}
 		},
@@ -114,10 +110,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			refindex.Enqueue(cached, list, requestNamesField, refindex.ObjectNamespacedName),
 		).
 		Watches(&v1.CamundaCluster{}, &handler.EnqueueRequestForObject{}).
-		Watches(
-			&pluginsv1alpha1.PluginSection{},
-			refindex.Enqueue(cached, list, pluginSectionsField, refindex.ObjectName),
-		).
+		// A required section that the claim does not select decides NotAllowed.
+		Watches(&pluginsv1alpha1.PluginSection{}, all).
 		Watches(
 			&pluginsv1alpha1.PluginRegistration{},
 			refindex.Enqueue(cached, list, pluginRegistrationsField, refindex.ObjectName),

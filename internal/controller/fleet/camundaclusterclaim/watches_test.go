@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 )
@@ -47,6 +48,37 @@ var _ = Describe("CamundaClusterClaim watches", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: claim.Namespace}, &namespace)).To(Succeed())
 		namespace.Labels = map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}
 		Expect(k8sClient.Update(ctx, &namespace)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			g.Expect(latest(g, claim).Status.ResolvedPolicy).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
+	})
+
+	It("leaves NotAllowed when a required section stops applying to cluster claims", func() {
+		section := &pluginsv1alpha1.PluginSection{
+			ObjectMeta: metav1.ObjectMeta{Name: uniqueName("required")},
+			Spec: pluginsv1alpha1.PluginSectionSpec{
+				Label:     "Required",
+				Selection: pluginsv1alpha1.SelectionOne,
+				AppliesTo: []pluginsv1alpha1.ClaimKind{pluginsv1alpha1.ClaimKindCamundaClusterClaim},
+			},
+		}
+		create(section)
+		environment := allowingEnvironment(map[string][]string{
+			pluginstartup.SectionSecondaryStorage: {pluginstartup.RegistrationExistingSecondaryStorage},
+		})
+		environment.Spec.Sections[section.Name] = fleetv1alpha1.SectionPolicy{
+			Required: true,
+			Allowed:  []string{registrationKey},
+		}
+		createEnvironment(environment)
+		claim := newClaim(newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}))
+		create(claim)
+		expectFalse(claim, v1.ConditionReady, fleetv1alpha1.ReasonNotAllowed, ContainSubstring(section.Name))
+
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(section), section)).To(Succeed())
+		section.Spec.AppliesTo = []pluginsv1alpha1.ClaimKind{pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim}
+		Expect(k8sClient.Update(ctx, section)).To(Succeed())
 
 		Eventually(func(g Gomega) {
 			g.Expect(latest(g, claim).Status.ResolvedPolicy).NotTo(BeNil())
