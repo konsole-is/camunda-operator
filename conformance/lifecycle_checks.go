@@ -67,6 +67,9 @@ const (
 // kindPluginRequest is the kind of an owner reference to a request.
 const kindPluginRequest = "PluginRequest"
 
+// TODO(#867): use pluginsv1alpha1.LabelRequestNamespace.
+const labelRequestNamespace = "plugins.camunda.io/request-namespace"
+
 // lifecycleChecks run for each request of the run, in this order.
 var lifecycleChecks = []Check{
 	{

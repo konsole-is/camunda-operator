@@ -57,10 +57,14 @@ const (
 	docsURL            = "https://example.com/echo"
 )
 
+// TODO(#867): use pluginsv1alpha1.LabelRequestNamespace.
+const labelRequestNamespace = "plugins.camunda.io/request-namespace"
+
 // Controller is one echo controller. It writes its registration when it
 // starts and sets Ready=True on it. It serves each request of the
 // registration: the cleanup finalizer first, then a ConfigMap
-// <request>-echo, a StorageClass <namespace>-<request>-echo, and with the
+// <request>-echo, a StorageClass <namespace>-<request>-echo that also carries
+// the request namespace label, and with the
 // access section an Ingress <request>-echo to the Service <target>-echo, and
 // a Grant for each grant template whose required inputs have a value, then
 // the status of the request. With Delete it deletes these objects. With
@@ -272,7 +276,7 @@ func (c *Controller) releaseOwner(ctx context.Context, obj client.Object, uid ty
 
 // applyObjects applies the objects of req, and deletes each Grant of req that
 // is not one of them. It fails, and writes nothing, when an object of one of
-// their names exists without the request label of req.
+// their names exists and is not an object of req.
 func (c *Controller) applyObjects(ctx context.Context, req *pluginsv1alpha1.PluginRequest) error {
 	grants, err := c.grants(req)
 	if err != nil {
@@ -292,7 +296,7 @@ func (c *Controller) applyObjects(ctx context.Context, req *pluginsv1alpha1.Plug
 		case apierrors.IsNotFound(err):
 		case err != nil:
 			return err
-		case current.GetLabels()[pluginsv1alpha1.LabelRequest] != req.Name:
+		case !ofRequest(current, req):
 			return fmt.Errorf("the %T %s is not an object of the request", obj, obj.GetName())
 		}
 	}
@@ -388,11 +392,14 @@ func (c *Controller) objects(
 		Data: data,
 	}
 
+	clusterLabels := maps.Clone(labels)
+	clusterLabels[labelRequestNamespace] = req.Namespace
+
 	sc := &storagev1.StorageClass{
 		TypeMeta: metav1.TypeMeta{APIVersion: "storage.k8s.io/v1", Kind: "StorageClass"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            req.Namespace + "-" + req.Name + "-echo",
-			Labels:          labels,
+			Labels:          clusterLabels,
 			OwnerReferences: ownerUnless(c.opts.Defect != DefectClusterOwnerReference),
 		},
 		Provisioner: storageProvisioner,
@@ -655,8 +662,8 @@ func (c *Controller) apply(ctx context.Context, obj client.Object) error {
 	return nil
 }
 
-// deleteOwn deletes each of objs that carries the labels of req, and
-// ignores an object that is gone.
+// deleteOwn deletes each of objs that is an object of req and carries the
+// registration label, and ignores an object that is gone.
 func (c *Controller) deleteOwn(ctx context.Context, req *pluginsv1alpha1.PluginRequest, objs ...client.Object) error {
 	for _, obj := range objs {
 		if err := c.client.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
@@ -666,9 +673,7 @@ func (c *Controller) deleteOwn(ctx context.Context, req *pluginsv1alpha1.PluginR
 			return err
 		}
 
-		labels := obj.GetLabels()
-		if labels[pluginsv1alpha1.LabelRequest] != req.Name ||
-			labels[pluginsv1alpha1.LabelRegistration] != c.opts.Registration {
+		if !ofRequest(obj, req) || obj.GetLabels()[pluginsv1alpha1.LabelRegistration] != c.opts.Registration {
 			continue
 		}
 
@@ -680,4 +685,18 @@ func (c *Controller) deleteOwn(ctx context.Context, req *pluginsv1alpha1.PluginR
 	}
 
 	return nil
+}
+
+// ofRequest says whether obj carries the request label of req and, when obj
+// is cluster-scoped, no request namespace label other than the namespace of
+// req. A cluster-scoped object without the label is an object of req, so the
+// objects of an older echo are still deleted.
+func ofRequest(obj client.Object, req *pluginsv1alpha1.PluginRequest) bool {
+	labels := obj.GetLabels()
+	if labels[pluginsv1alpha1.LabelRequest] != req.Name {
+		return false
+	}
+
+	namespace, labeled := labels[labelRequestNamespace]
+	return obj.GetNamespace() != "" || !labeled || namespace == req.Namespace
 }
