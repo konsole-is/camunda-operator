@@ -93,10 +93,11 @@ type Reconciler struct {
 
 // Reconcile converges a CamundaClusterClaim. A failed precheck reports its
 // reason on Ready and writes nothing else. The first pass that passes the
-// precheck records status.environment and status.resolvedPolicy and writes
-// no resource, so no request exists before the policy of the claim does.
-// Later passes apply the requests, then the cluster, and set Ready from
-// RequestsReady and ClusterReady. Status is written once per reconcile.
+// precheck adds the finalizer, records status.environment and
+// status.resolvedPolicy, and writes no resource, so no request exists before
+// the policy of the claim does. Later passes apply the requests, then the
+// cluster, and set Ready from RequestsReady and ClusterReady. Status is
+// written once per reconcile.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	var claim fleetv1alpha1.CamundaClusterClaim
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &claim); err != nil {
@@ -111,17 +112,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	if !claim.DeletionTimestamp.IsZero() {
 		// TODO(#606): apply the deletion policy and remove the finalizer.
 		return ctrl.Result{}, nil
-	}
-
-	// The response of the update replaces the claim in memory, so the
-	// finalizer goes on before anything is staged.
-	if controllerutil.AddFinalizer(&claim, fleetv1alpha1.FinalizerCleanup) {
-		if err := r.Update(ctx, &claim); err != nil {
-			if apierrors.IsNotFound(err) {
-				return ctrl.Result{}, nil
-			}
-			return ctrl.Result{}, fmt.Errorf("adding the finalizer: %w", err)
-		}
 	}
 
 	rec := component.ReconcileContext{
@@ -149,6 +139,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	// Record, then act: the flush of this pass writes the policy, and the
 	// next pass reads it back before it writes a request.
 	if claim.Status.ResolvedPolicy == nil {
+		// The response of the update replaces the claim in memory, so the
+		// finalizer goes on before the policy is staged.
+		if controllerutil.AddFinalizer(&claim, fleetv1alpha1.FinalizerCleanup) {
+			if err := r.Update(ctx, &claim); err != nil {
+				return ctrl.Result{}, fmt.Errorf("adding the finalizer: %w", err)
+			}
+		}
+
 		claim.Status.Environment = ""
 		if res.environment != nil {
 			claim.Status.Environment = res.environment.Name
