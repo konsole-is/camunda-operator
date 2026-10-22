@@ -93,7 +93,7 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		return res, err
 	}
 
-	if err := claimrequests.CheckServed(claim.Spec.Plugins, res.registrations); err != nil {
+	if err := claimpolicy.CheckServed(claim.Spec.Plugins, res.registrations); err != nil {
 		return res, err
 	}
 

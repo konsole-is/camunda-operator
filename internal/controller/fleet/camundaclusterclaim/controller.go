@@ -139,20 +139,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	// Record, then act: the flush of this pass writes the policy, and the
 	// next pass reads it back before it writes a request.
 	if claim.Status.ResolvedPolicy == nil {
-		// The response of the update replaces the claim in memory, so the
-		// finalizer goes on before the policy is staged.
-		if controllerutil.AddFinalizer(&claim, fleetv1alpha1.FinalizerCleanup) {
-			if err := r.Update(ctx, &claim); err != nil {
-				return ctrl.Result{}, fmt.Errorf("adding the finalizer: %w", err)
-			}
-		}
-
-		claim.Status.Environment = ""
-		if res.environment != nil {
-			claim.Status.Environment = res.environment.Name
-		}
-		claim.Status.ResolvedPolicy = &res.resolution.Policy
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.recordSnapshot(ctx, &claim, res)
 	}
 
 	in := components.Input{
@@ -194,6 +181,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	}
 
 	return ctrl.Result{}, reconcileErr
+}
+
+// recordSnapshot adds the finalizer to claim with an update, then stages
+// status.environment and status.resolvedPolicy from res for the flush.
+func (r *Reconciler) recordSnapshot(ctx context.Context, claim *fleetv1alpha1.CamundaClusterClaim, res resolved) error {
+	// The response of the update replaces the claim in memory, so the
+	// finalizer goes on before the policy is staged.
+	if controllerutil.AddFinalizer(claim, fleetv1alpha1.FinalizerCleanup) {
+		if err := r.Update(ctx, claim); err != nil {
+			return fmt.Errorf("adding the finalizer: %w", err)
+		}
+	}
+
+	claim.Status.Environment = ""
+	if res.environment != nil {
+		claim.Status.Environment = res.environment.Name
+	}
+	claim.Status.ResolvedPolicy = &res.resolution.Policy
+
+	return nil
 }
 
 // boundMessages bounds the message of each condition in conds to

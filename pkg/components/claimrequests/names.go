@@ -19,12 +19,14 @@ package claimrequests
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 // Name returns the name of the request of claim for selection s in a
@@ -46,6 +48,47 @@ func Name(claim string, s fleetv1alpha1.PluginSelection, mode pluginsv1alpha1.Se
 
 	// A "." or "-" before the hash would end a DNS label of the name.
 	return strings.TrimRight(name[:54], "-.") + "-" + hex.EncodeToString(sum[:4])
+}
+
+// CheckNames refuses with NotAllowed the first two selections of claim
+// whose requests get one name: two options of a One section, or names that
+// meet across sections. A selection whose section is not in sections counts
+// as One. The refusal is a *conditions.PreCheckFailure.
+func CheckNames(
+	claim string,
+	selections []fleetv1alpha1.PluginSelection,
+	sections []pluginsv1alpha1.PluginSection,
+) error {
+	seen := map[string]fleetv1alpha1.PluginSelection{}
+	for _, s := range selections {
+		name := Name(claim, s, modeOf(sections, s.Section))
+		first, taken := seen[name]
+		if !taken {
+			seen[name] = s
+			continue
+		}
+
+		message := fmt.Sprintf(
+			"the selections %s/%s and %s/%s get the same request name %q",
+			first.Section,
+			first.Registration,
+			s.Section,
+			s.Registration,
+			name,
+		)
+		if first.Section == s.Section {
+			message = fmt.Sprintf(
+				"section %q takes one option, and the claim selects %q and %q",
+				s.Section,
+				first.Registration,
+				s.Registration,
+			)
+		}
+
+		return &conditions.PreCheckFailure{Reason: fleetv1alpha1.ReasonNotAllowed, Message: message}
+	}
+
+	return nil
 }
 
 // modeOf returns the selection mode of section, or "" when sections does

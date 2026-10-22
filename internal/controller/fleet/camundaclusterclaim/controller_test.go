@@ -320,9 +320,13 @@ var _ = Describe("CamundaClusterClaim controller", func() {
 		}, timeout, interval).Should(Succeed())
 		Expect(string(first.Spec.Parameters.Raw)).To(MatchJSON(`{"region":"eu"}`))
 
+		applies := len(witness.recorded(client.ObjectKeyFromObject(claim)))
 		current := latest(Default, claim)
 		current.Annotations = map[string]string{"test.camunda.io/touch": "1"}
 		Expect(k8sClient.Update(ctx, current)).To(Succeed())
+		Eventually(func() int {
+			return len(witness.recorded(client.ObjectKeyFromObject(claim)))
+		}, timeout, interval).Should(BeNumerically(">", applies))
 
 		Consistently(func(g Gomega) {
 			request, err := requestOf(claim, pluginstartup.SectionEncryptionKey)

@@ -16,8 +16,16 @@ export const APP_RULES = [
 ] as const;
 export type AppRule = (typeof APP_RULES)[number];
 
-/** EXCLUDED are controller-only rules: no page of the app applies them. */
-export const EXCLUDED = ["order", "target-service-account"] as const;
+/**
+ * EXCLUDED are controller-only rules: no page of the app applies them. The
+ * create flow offers only a registration that serves its section, so it
+ * never meets a check-served refusal.
+ */
+export const EXCLUDED = [
+  "order",
+  "target-service-account",
+  "check-served",
+] as const;
 
 export const FIXTURES_DIR = fileURLToPath(
   new URL("../../../test/fixtures/claimpolicy", import.meta.url),

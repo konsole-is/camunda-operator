@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "name": "A registration that does not list its section is refused",
+  "input": {
+    "selections": [
+      {
+        "section": "access",
+        "registration": "ingress"
+      },
+      {
+        "section": "secondary-storage",
+        "registration": "existing-object-storage"
+      }
+    ],
+    "registrations": [
+      {
+        "metadata": {
+          "name": "ingress"
+        },
+        "spec": {
+          "label": "ingress",
+          "sections": [
+            "access"
+          ],
+          "mode": "Optional",
+          "serviceAccount": {
+            "namespace": "camunda-plugins",
+            "name": "ingress"
+          },
+          "deletionPolicies": [
+            "Delete"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "existing-object-storage"
+        },
+        "spec": {
+          "label": "existing-object-storage",
+          "sections": [
+            "object-storage"
+          ],
+          "mode": "Optional",
+          "serviceAccount": {
+            "namespace": "camunda-plugins",
+            "name": "existing-object-storage"
+          },
+          "deletionPolicies": [
+            "Delete"
+          ]
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "PluginRegistration \"existing-object-storage\" does not serve section \"secondary-storage\""
+    }
+  }
+}

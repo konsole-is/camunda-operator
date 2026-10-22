@@ -57,6 +57,7 @@ var fixtureDirs = []string{
 	"target-service-account",
 	"slot-fields",
 	"check-slot-conflicts",
+	"check-served",
 }
 
 // fixture is one case: the input of a function and its result. The field
