@@ -136,9 +136,8 @@ func (elasticsearch) build(request *pluginsv1alpha1.PluginRequest, live liveObje
 }
 
 // elasticsearchClusterFor returns the ElasticsearchCluster to apply for
-// request. When the asked storage size is smaller than the live size of the
-// cluster, the cluster keeps the live size, and shrink is the summary item
-// that says so.
+// request. An asked storage size below the live size of the cluster keeps
+// the live size, and shrink is the summary item that says so.
 func elasticsearchClusterFor(
 	request *pluginsv1alpha1.PluginRequest,
 	p elasticsearchParameters,
