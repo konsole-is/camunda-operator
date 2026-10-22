@@ -66,7 +66,9 @@ export function checkAllowed(
   const selected = new Set<string>();
   for (const s of selections) {
     if (
-      !(policy.sections?.[s.section]?.allowed ?? []).includes(s.registration)
+      !(own(policy.sections ?? {}, s.section)?.allowed ?? []).includes(
+        s.registration,
+      )
     ) {
       return notAllowed(
         `registration "${s.registration}" is not allowed in section "${s.section}"`,
@@ -86,7 +88,7 @@ export function checkAllowed(
   for (const s of selections) {
     const refused = checkParameters(
       s,
-      policy.parameters?.[s.registration] ?? {},
+      own(policy.parameters ?? {}, s.registration) ?? {},
     );
     if (refused) return refused;
   }

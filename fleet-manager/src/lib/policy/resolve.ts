@@ -64,7 +64,7 @@ export function resolve(input: ResolveInput): PolicyResult<Resolution> {
   for (const s of input.selections ?? []) {
     const parameters = requestParameters(
       s,
-      policy.value.parameters?.[s.registration] ?? {},
+      own(policy.value.parameters ?? {}, s.registration) ?? {},
     );
     if (!("value" in parameters)) return parameters;
     requests.push({
@@ -94,7 +94,7 @@ export function sectionPolicy(
   registrations: readonly PluginRegistration[],
 ): SectionPolicy | undefined {
   if (environment) {
-    const entry = environment.spec.sections?.[section];
+    const entry = own(environment.spec.sections ?? {}, section);
     return entry && compactSection(entry);
   }
 
@@ -141,7 +141,7 @@ export function parameterPolicies(
   }
 
   for (const [key, entry] of Object.entries(
-    environment.spec.parameters?.[name] ?? {},
+    own(environment.spec.parameters ?? {}, name) ?? {},
   )) {
     const policy: ParameterPolicy = { ...own(policies, key) };
     delete policy.claimEditable;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import { resolve } from "./resolve";
+import { resolve, sectionPolicy } from "./resolve";
 
 // JSON.parse gives an own __proto__ key, as the API does.
 const protoValues = JSON.parse('{"__proto__": "kept", "region": "eu"}');
@@ -50,5 +51,16 @@ describe("resolve", () => {
     expect(
       Object.getOwnPropertyDescriptor(parameters, "__proto__")?.value,
     ).toBe("kept");
+  });
+});
+
+describe("sectionPolicy with a section named after a key of Object", () => {
+  it("returns undefined when the Environment has no entry for it", () => {
+    const environment = {
+      metadata: { name: "prod" },
+      spec: { sections: { dns: { allowed: ["route53"] } } },
+    } as unknown as Environment;
+
+    expect(sectionPolicy("constructor", environment, [])).toBeUndefined();
   });
 });
