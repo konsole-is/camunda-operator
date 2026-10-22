@@ -46,7 +46,8 @@ const kindElasticsearchCluster = "ElasticsearchCluster"
 // elasticsearch serves the built-in registration elasticsearch. It applies
 // the ElasticsearchCluster <claim>-es, from the preset, the release, and the
 // overrides of the parameters and from the inputs, and publishes the
-// SecondaryStorageConfig of the same name. The storage size only grows.
+// SecondaryStorageConfig of the same name. An override never lowers the
+// live storage size.
 type elasticsearch struct{}
 
 // elasticsearchParameters are the parameters of an elasticsearch request.

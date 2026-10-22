@@ -3237,8 +3237,8 @@ spec:
             type: object
             x-kubernetes-preserve-unknown-fields: true
           storageSize:
-            description: The volume size of each node, for example 50Gi. The size
-              only grows.
+            description: The volume size of each node, for example 50Gi. An override
+              never lowers the live storage size.
             type: string
         type: object
       preset:

@@ -239,6 +239,8 @@ status:
       severity: Warning
 ```
 
+Without `overrides.storageSize`, the size of the preset applies. If that size is smaller than the size of the cluster, the volumes keep their size, and the `ElasticsearchCluster` records a `StorageShrinkIgnored` event.
+
 When the claim or you delete the request, the deletion policy applies to the cluster:
 
 - `Delete` deletes the `ElasticsearchCluster`, and the request goes away after the cluster. A cluster of that name that the request does not own stays.

@@ -64,9 +64,8 @@ const registrationField = "pluginrequest.builtin.registration"
 // handler.
 type Reconciler struct {
 	client.Client
-	// APIReader reads the request at the top of each reconcile, the backing
-	// objects of the request, and the remaining objects of a deletion,
-	// without the cache.
+	// APIReader reads without the cache: the request, its registration, its
+	// backing objects, and every read of a deletion.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// Registrations are the built-in registrations. A request is checked
@@ -104,8 +103,6 @@ type Reconciler struct {
 // registration has Ready=True at its current generation. Then the finalizer
 // is added first, the parameters are checked against the schema and the
 // rules of the registration, and the components of the handler converge.
-// The handler gets the backing objects of the request, read without the
-// cache.
 // OutputsReady comes from the outputs component, and Ready from the backing
 // component, or from the outputs when the handler writes nothing. The
 // outputs are published only while OutputsReady is True.

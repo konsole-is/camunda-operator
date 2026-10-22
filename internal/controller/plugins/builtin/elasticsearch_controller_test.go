@@ -40,8 +40,17 @@ var _ = Describe("Built-in elasticsearch requests", func() {
 		claim := "es-" + utilrand.String(6)
 		request := newElasticsearchRequest(
 			claim,
-			`{"preset":"small","releaseRef":"camunda"}`,
+			`{"preset":"small","releaseRef":"camunda","overrides":{`+
+				`"resources":{"limits":{"memory":"4Gi"}},`+
+				`"scheduling":{"tolerations":[{"key":"pool","value":"es"}]}}}`,
 			pluginsv1alpha1.DeletionPolicyDelete,
+			func(r *pluginsv1alpha1.PluginRequest) {
+				r.Spec.Inputs = map[string]string{
+					pluginstartup.OutputServiceAccountAnnotations: `{"eks.amazonaws.com/role-arn":"arn:aws:iam::1:role/es"}`,
+					pluginstartup.OutputObjectStorageConfig:       "orders-backup",
+					pluginstartup.OutputStorageClassName:          "encrypted",
+				}
+			},
 		)
 		name := claim + "-es"
 
@@ -52,6 +61,16 @@ var _ = Describe("Built-in elasticsearch requests", func() {
 				To(HaveKeyWithValue(pluginsv1alpha1.LabelRegistration, pluginstartup.RegistrationElasticsearch))
 			g.Expect(cluster.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRequest, request.Name))
 			g.Expect(cluster.Spec.SecondaryStorageConfig).To(Equal(name))
+			g.Expect(cluster.Spec.SnapshotStorageRef).To(Equal("orders-backup"))
+			g.Expect(cluster.Spec.StorageClassName).To(HaveValue(Equal("encrypted")))
+			g.Expect(cluster.Spec.ServiceAccount).NotTo(BeNil())
+			g.Expect(cluster.Spec.ServiceAccount.Annotations).
+				To(HaveKeyWithValue("eks.amazonaws.com/role-arn", "arn:aws:iam::1:role/es"))
+			g.Expect(cluster.Spec.Resources).NotTo(BeNil())
+			g.Expect(cluster.Spec.Resources.Limits.Memory().String()).To(Equal("4Gi"))
+			g.Expect(cluster.Spec.Scheduling).NotTo(BeNil())
+			g.Expect(cluster.Spec.Scheduling.Tolerations).
+				To(ConsistOf(corev1.Toleration{Key: "pool", Value: "es"}))
 		}, timeout, interval).Should(Succeed())
 		expectCondition(request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionFalse, "Blocked")
 
@@ -203,16 +222,18 @@ var _ = Describe("Built-in elasticsearch requests", func() {
 })
 
 // newElasticsearchRequest creates an elasticsearch request of claim with
-// params and policy.
+// params and policy. Each edit changes the request before it is created.
 func newElasticsearchRequest(
 	claim, params string,
 	policy pluginsv1alpha1.DeletionPolicy,
+	edits ...func(*pluginsv1alpha1.PluginRequest),
 ) *pluginsv1alpha1.PluginRequest {
 	GinkgoHelper()
-	return newRequest(pluginstartup.RegistrationElasticsearch, params, policy, func(r *pluginsv1alpha1.PluginRequest) {
+	claimEdit := func(r *pluginsv1alpha1.PluginRequest) {
 		r.Spec.ClaimRef.Name = claim
 		r.Labels[fleetv1alpha1.LabelClaim] = claim
-	})
+	}
+	return newRequest(pluginstartup.RegistrationElasticsearch, params, policy, append(edits, claimEdit)...)
 }
 
 // liveCluster reads the ElasticsearchCluster name in default.
