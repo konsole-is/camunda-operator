@@ -27,9 +27,10 @@ const (
 	// ReasonUnknownEnvironment means that the environment label of the
 	// namespace of a claim names an Environment that does not exist.
 	ReasonUnknownEnvironment = "UnknownEnvironment"
-	// ReasonNotAllowed means that the policy of the environment does not
-	// allow a value of the claim, such as a preset, a release, a
-	// registration, or a parameter. The message names each value.
+	// ReasonNotAllowed means that the policy of the environment, or a
+	// selected registration, does not allow a value of the claim, such as a
+	// preset, a release, a registration, a parameter, or the deletion policy
+	// Orphan. The message names each value.
 	ReasonNotAllowed = "NotAllowed"
 	// ReasonMissingInput means that a registration of the claim needs an
 	// input that no selected section gives.

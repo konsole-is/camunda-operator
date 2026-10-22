@@ -1,6 +1,7 @@
 export * from "./allowed";
 export * from "./backups";
 export * from "./conflicts";
+export * from "./deletion";
 export * from "./environment";
 export * from "./inputs";
 export * from "./json";

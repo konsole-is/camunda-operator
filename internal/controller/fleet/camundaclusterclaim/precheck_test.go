@@ -96,6 +96,28 @@ var _ = Describe("CamundaClusterClaim precheck", func() {
 			}, fleetv1alpha1.ReasonNotAllowed, "does not serve section",
 		),
 		Entry(
+			"Orphan with a registration that does not list Orphan", func() *fleetv1alpha1.CamundaClusterClaim {
+				claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionEncryptionKey, registrationKey))
+				claim.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+				return claim
+			}, fleetv1alpha1.ReasonNotAllowed, `section "`+pluginstartup.SectionEncryptionKey+`"`,
+		),
+		Entry(
+			"the Orphan default of the Environment with a registration that does not list Orphan",
+			func() *fleetv1alpha1.CamundaClusterClaim {
+				environment := allowingEnvironment(map[string][]string{
+					pluginstartup.SectionSecondaryStorage: {pluginstartup.RegistrationExistingSecondaryStorage},
+					pluginstartup.SectionEncryptionKey:    {registrationKey},
+				})
+				environment.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+				createEnvironment(environment)
+				return newClaim(
+					newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}),
+					selection(pluginstartup.SectionEncryptionKey, registrationKey),
+				)
+			}, fleetv1alpha1.ReasonNotAllowed, `section "`+pluginstartup.SectionEncryptionKey+`"`,
+		),
+		Entry(
 			"two options of a section that takes one", func() *fleetv1alpha1.CamundaClusterClaim {
 				return newClaim(
 					newNamespace(nil),
