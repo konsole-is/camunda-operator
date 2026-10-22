@@ -20,10 +20,10 @@ const KEYS = {
  * parseLogLine reads one log line. A JSON object gives time, level,
  * message, logger, and request from the keys of zap (ts, level, msg,
  * logger) and of Spring Boot (timestamp, severity, message, logger_name),
- * and its other keys as fields. A plugin controller writes the request as
- * "namespace/name" (contract 6.4). A key whose value is not a string stays
- * in fields. A JSON object without a message, and every other line, has the
- * raw line as its message.
+ * and its other keys as fields. A request object with a name gives
+ * "namespace/name", or the name when it has no namespace. Another key whose
+ * value is not a string stays in fields. A JSON object without a message,
+ * and every other line, has the raw line as its message.
  */
 export function parseLogLine(raw: string): LogLine {
   const object = parseObject(raw);
@@ -35,6 +35,14 @@ export function parseLogLine(raw: string): LogLine {
     if (key === undefined) continue;
     line[name as keyof typeof KEYS] = object[key] as string;
     delete fields[key];
+  }
+  const request = object.request as { name?: unknown; namespace?: unknown };
+  if (line.request === undefined && typeof request?.name === "string") {
+    line.request =
+      typeof request.namespace === "string"
+        ? `${request.namespace}/${request.name}`
+        : request.name;
+    delete fields.request;
   }
   return line;
 }

@@ -27,6 +27,20 @@ describe("parseLogLine", () => {
     });
   });
 
+  it.each([
+    ['{"name":"basic-delete","namespace":"ns"}', "ns/basic-delete"],
+    ['{"name":"basic-delete"}', "basic-delete"],
+  ])("reads the request object %s as %s", (request, want) => {
+    const line = parseLogLine(`{"msg":"m","request":${request}}`);
+    expect(line.request).toBe(want);
+    expect(line.fields).toEqual({});
+  });
+
+  it("keeps a request object without a name in the fields", () =>
+    expect(parseLogLine('{"msg":"m","request":{"id":1}}')).toMatchObject({
+      fields: { request: { id: 1 } },
+    }));
+
   it("keeps a text line as raw and message only", () =>
     expect(parseLogLine("Started broker 0")).toEqual({
       raw: "Started broker 0",
@@ -76,6 +90,16 @@ describe("filterLines", () => {
       '{"msg":"a","request":"ns/one"}',
       '{"msg":"b","request":"ns/two"}',
       "plain",
+    ].map(parseLogLine);
+    expect(
+      filterLines(lines, { request: "ns/one" }).map((l) => l.message),
+    ).toEqual(["a"]);
+  });
+
+  it("the request filter keeps a line with a request object", () => {
+    const lines = [
+      '{"msg":"a","request":{"name":"one","namespace":"ns"}}',
+      '{"msg":"b","request":"ns/two"}',
     ].map(parseLogLine);
     expect(
       filterLines(lines, { request: "ns/one" }).map((l) => l.message),
