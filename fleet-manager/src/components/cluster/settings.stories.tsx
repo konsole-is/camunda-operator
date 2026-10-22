@@ -119,7 +119,20 @@ export const settingsStories: Story[] = [
           operate: { replicas: 1, podLabels: { team: "orders" } },
           tasklist: { replicas: 1 },
         },
-        [],
+        [
+          owned(
+            CLAIM,
+            {
+              "f:gateway": { "f:mode": {} },
+              "f:operate": {
+                "f:replicas": {},
+                "f:podLabels": { "f:team": {} },
+              },
+              "f:tasklist": { "f:replicas": {} },
+            },
+            "2026-10-01T00:00:00Z",
+          ),
+        ],
       ),
   },
   {

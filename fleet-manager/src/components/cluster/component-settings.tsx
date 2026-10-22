@@ -73,7 +73,7 @@ export function ComponentSettings({
                           />
                         </span>
                       </th>
-                      <TableCell className="max-w-80 align-top break-all whitespace-normal">
+                      <TableCell className="max-w-80 align-top break-words whitespace-normal">
                         <Value value={field.value} />
                       </TableCell>
                       <TableCell className="align-top whitespace-normal">
