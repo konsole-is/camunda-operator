@@ -22,16 +22,17 @@ package pluginstartup
 const (
 	elasticsearchParameters = `{
   "type": "object",
-  "required": ["preset"],
+  "required": ["preset", "releaseRef"],
   "properties": {
     "preset": {"type": "string", "minLength": 1, "description": "The name of the ElasticsearchClusterPreset that the Elasticsearch cluster starts from."},
+    "releaseRef": {"type": "string", "minLength": 1, "description": "The name of the CamundaRelease that gives the Elasticsearch version. The claim controller sets it to the release of the claim."},
     "overrides": {
       "type": "object",
       "description": "The values that replace the values of the preset.",
       "properties": {
         "replicas": {"type": "integer", "format": "int32", "minimum": 1, "description": "The number of Elasticsearch nodes."},
         "resources": {"type": "object", "x-kubernetes-preserve-unknown-fields": true, "description": "The CPU and memory of each node, as spec.resources of an ElasticsearchCluster."},
-        "storageSize": {"type": "string", "description": "The volume size of each node, for example 50Gi. The size only grows."},
+        "storageSize": {"type": "string", "description": "The volume size of each node, for example 50Gi. An override never lowers the live storage size."},
         "scheduling": {"type": "object", "x-kubernetes-preserve-unknown-fields": true, "description": "Where the nodes run, as spec.scheduling of an ElasticsearchCluster."},
         "podLabels": {"type": "object", "additionalProperties": {"type": "string"}, "description": "The labels to add to the Elasticsearch pods."}
       }

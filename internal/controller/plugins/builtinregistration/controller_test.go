@@ -50,16 +50,33 @@ var _ = Describe("Built-in registration controller", func() {
 		}
 	})
 
+	It("writes Ready after Accepted, so the conditions keep one order", func() {
+		for _, name := range builtin.Served() {
+			eventuallyReady(name)
+
+			reg := get(Default, name)
+			types := make([]string, 0, len(reg.Status.Conditions))
+			for _, c := range reg.Status.Conditions {
+				types = append(types, c.Type)
+			}
+			Expect(types).To(
+				Equal([]string{pluginsv1alpha1.ConditionAccepted, v1.ConditionReady}),
+				"registration %s",
+				name,
+			)
+		}
+	})
+
 	It("writes no Ready on a built-in registration that the operator does not serve", func() {
-		Expect(builtin.Served()).NotTo(ContainElement(pluginstartup.RegistrationElasticsearch))
+		Expect(builtin.Served()).NotTo(ContainElement(pluginstartup.RegistrationDatabaseServer))
 
 		Eventually(func(g Gomega) {
-			reg := get(g, pluginstartup.RegistrationElasticsearch)
+			reg := get(g, pluginstartup.RegistrationDatabaseServer)
 			expectTrue(g, &reg, pluginsv1alpha1.ConditionAccepted)
 		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
-			reg := get(g, pluginstartup.RegistrationElasticsearch)
+			reg := get(g, pluginstartup.RegistrationDatabaseServer)
 			g.Expect(meta.FindStatusCondition(reg.Status.Conditions, v1.ConditionReady)).To(BeNil())
 			g.Expect(reg.Status.ObservedGeneration).To(BeZero())
 		}, 3*time.Second, interval).Should(Succeed())

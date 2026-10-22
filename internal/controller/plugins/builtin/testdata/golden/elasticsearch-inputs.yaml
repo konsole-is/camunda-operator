@@ -1,0 +1,16 @@
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  labels:
+    plugins.camunda.io/registration: elasticsearch
+    plugins.camunda.io/request: orders-secondary-storage
+  name: orders-es
+  namespace: my-cluster-ns
+spec:
+  presetRef: small
+  releaseRef: camunda-8-9
+  secondaryStorageConfig: orders-es
+  serviceAccount:
+    name: orders-es-es
+  snapshotStorageRef: orders-backup
+  storageClassName: encrypted

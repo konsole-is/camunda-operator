@@ -50,7 +50,7 @@ type existing struct {
 	parse func(parameters *apiextensionsv1.JSON) ([]contractRef, error)
 }
 
-func (e existing) build(request *pluginsv1alpha1.PluginRequest) (served, error) {
+func (e existing) build(request *pluginsv1alpha1.PluginRequest, _ liveObjects) (served, error) {
 	refs, err := e.parse(request.Spec.Parameters)
 	if err != nil {
 		return served{}, err
@@ -87,7 +87,7 @@ func (e existing) build(request *pluginsv1alpha1.PluginRequest) (served, error) 
 	}, nil
 }
 
-func (existing) cleanup(*pluginsv1alpha1.PluginRequest, pluginsv1alpha1.DeletionPolicy) (cleanup, error) {
+func (existing) cleanup(*pluginsv1alpha1.PluginRequest, pluginsv1alpha1.DeletionPolicy, liveObjects) (cleanup, error) {
 	return cleanup{}, nil
 }
 
@@ -98,6 +98,10 @@ func (e existing) contracts(request *pluginsv1alpha1.PluginRequest) []contractRe
 	}
 
 	return refs
+}
+
+func (existing) backing(*pluginsv1alpha1.PluginRequest) []backingRef {
+	return nil
 }
 
 // oneContract returns a parse function for the parameters {"name": string},

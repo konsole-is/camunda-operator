@@ -52,7 +52,7 @@ func TestExistingHandlersReadTheNamedContract(t *testing.T) {
 			request := requestFor(tt.registration, `{"name":"my-bucket"}`)
 			h := handlers()[tt.registration]
 
-			s, err := h.build(request)
+			s, err := h.build(request, nil)
 			require.NoError(t, err)
 
 			assert.Nil(t, s.backing, "an existing handler writes nothing")
@@ -67,7 +67,7 @@ func TestDatabaseConfigsReadEachNamedConfig(t *testing.T) {
 	request := requestFor(pluginstartup.RegistrationExistingDatabaseConfigs, `{"webModeler":"wm","keycloak":"kc"}`)
 	h := handlers()[pluginstartup.RegistrationExistingDatabaseConfigs]
 
-	s, err := h.build(request)
+	s, err := h.build(request, nil)
 	require.NoError(t, err)
 
 	assert.Nil(t, s.backing)
@@ -89,7 +89,7 @@ func TestDatabaseConfigsRefuseEqualNames(t *testing.T) {
 		`{"keycloak":"shared","identity":"shared","webModeler":"wm"}`,
 	)
 
-	_, err := handlers()[pluginstartup.RegistrationExistingDatabaseConfigs].build(request)
+	_, err := handlers()[pluginstartup.RegistrationExistingDatabaseConfigs].build(request, nil)
 
 	var failure *conditions.PreCheckFailure
 	require.ErrorAs(t, err, &failure)
@@ -104,7 +104,7 @@ func TestDatabaseConfigsWithoutNamesReadNothing(t *testing.T) {
 	request := requestFor(pluginstartup.RegistrationExistingDatabaseConfigs, `{}`)
 	h := handlers()[pluginstartup.RegistrationExistingDatabaseConfigs]
 
-	s, err := h.build(request)
+	s, err := h.build(request, nil)
 	require.NoError(t, err)
 	reconcileOutputs(t, s, request, fakeReader(t))
 
@@ -115,7 +115,7 @@ func TestDatabaseConfigsWithoutNamesReadNothing(t *testing.T) {
 
 func TestExistingPublishesTheOutputAndTheReadyStateOfTheContract(t *testing.T) {
 	request := requestFor(pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`)
-	s, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].build(request)
+	s, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].build(request, nil)
 	require.NoError(t, err)
 
 	reconcileOutputs(t, s, request, fakeReader(t, objectStorageConfig("my-bucket", &metav1.Condition{
@@ -134,7 +134,7 @@ func TestExistingPublishesTheOutputAndTheReadyStateOfTheContract(t *testing.T) {
 
 func TestExistingWaitsForAMissingContract(t *testing.T) {
 	request := requestFor(pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`)
-	s, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].build(request)
+	s, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].build(request, nil)
 	require.NoError(t, err)
 
 	reconcileOutputs(t, s, request, fakeReader(t))
@@ -166,7 +166,7 @@ func TestExistingReportsAContractThatIsNotReady(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			request := requestFor(pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`)
-			s, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].build(request)
+			s, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].build(request, nil)
 			require.NoError(t, err)
 
 			reconcileOutputs(t, s, request, fakeReader(t, objectStorageConfig("my-bucket", tt.ready)))
@@ -188,11 +188,23 @@ func TestExistingCleanupWritesNothing(t *testing.T) {
 		t.Run(string(policy), func(t *testing.T) {
 			request := requestFor(pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`)
 
-			c, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].cleanup(request, policy)
+			c, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].cleanup(request, policy, nil)
 			require.NoError(t, err)
 
 			assert.Empty(t, c.components)
 			assert.Empty(t, c.remaining)
+		})
+	}
+}
+
+func TestExistingHasNoBackingObjects(t *testing.T) {
+	for _, name := range []string{
+		pluginstartup.RegistrationExistingObjectStorage,
+		pluginstartup.RegistrationExistingSecondaryStorage,
+		pluginstartup.RegistrationExistingDatabaseConfigs,
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Nil(t, handlers()[name].backing(requestFor(name, `{"name":"my-bucket"}`)))
 		})
 	}
 }

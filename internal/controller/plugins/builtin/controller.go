@@ -64,8 +64,8 @@ const registrationField = "pluginrequest.builtin.registration"
 // handler.
 type Reconciler struct {
 	client.Client
-	// APIReader reads the request at the top of each reconcile, and the
-	// remaining objects of a deletion, without the cache.
+	// APIReader reads without the cache: the request, its registration, its
+	// backing objects, and every read of a deletion.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// Registrations are the built-in registrations. A request is checked
@@ -89,7 +89,8 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=get;list;watch
 // A new handler adds its registration here: REG-RBAC and the Grant admission policy check serve.
-// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=existing-object-storage;existing-secondary-storage;existing-database-configs
+// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=elasticsearch;existing-object-storage;existing-secondary-storage;existing-database-configs
+// +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs;secondarystorageconfigs;databaseconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
@@ -217,7 +218,34 @@ func (r *Reconciler) build(ctx context.Context, request *pluginsv1alpha1.PluginR
 		return served{}, err
 	}
 
-	return h.build(request)
+	live, err := r.readBacking(ctx, request, h)
+	if err != nil {
+		return served{}, err
+	}
+
+	return h.build(request, live)
+}
+
+// readBacking reads each backing object of request that h names, without
+// the cache. A missing object is absent from the result, not an error.
+func (r *Reconciler) readBacking(
+	ctx context.Context,
+	request *pluginsv1alpha1.PluginRequest,
+	h handler,
+) (liveObjects, error) {
+	live := liveObjects{}
+	for _, ref := range h.backing(request) {
+		key := client.ObjectKeyFromObject(ref.object)
+		if err := r.APIReader.Get(ctx, key, ref.object); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("reading the backing %s %s: %w", ref.kind, key, err)
+		}
+		live[liveKey{kind: ref.kind, name: key.Name}] = ref.object
+	}
+
+	return live, nil
 }
 
 // refuse sets OutputsReady and Ready of request to False with the reason
@@ -251,7 +279,17 @@ func (r *Reconciler) finalize(
 		return nil
 	}
 
-	c, err := h.cleanup(request, request.Spec.DeletionPolicy)
+	live, err := r.readBacking(ctx, request, h)
+	if err != nil {
+		return err
+	}
+
+	// An orphan removes the owner reference that its read finds. A cache that
+	// has not seen the reference yet removes nothing, and the garbage
+	// collector then deletes the object with the request.
+	rec.Client = uncachedReads{Client: rec.Client, reader: r.APIReader}
+
+	c, err := h.cleanup(request, request.Spec.DeletionPolicy, live)
 	if err != nil {
 		return fmt.Errorf("building the cleanup: %w", err)
 	}
@@ -282,13 +320,32 @@ func (r *Reconciler) finalize(
 	return nil
 }
 
+// uncachedReads reads through reader and writes through Client.
+type uncachedReads struct {
+	client.Client
+	reader client.Reader
+}
+
+func (u uncachedReads) Get(
+	ctx context.Context,
+	key client.ObjectKey,
+	obj client.Object,
+	opts ...client.GetOption,
+) error {
+	return u.reader.Get(ctx, key, obj, opts...)
+}
+
+func (u uncachedReads) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return u.reader.List(ctx, list, opts...)
+}
+
 // SetupWithManager returns an error that names each handler without a
 // registration in Registrations, or with a parameter schema that it cannot
 // read. Then it registers the contractsField and registrationField indexes
 // and the controller. The controller runs for a request whose registration
-// label names a handler, for every request that reads a contract that
-// changed, and for every request whose spec.registration names a
-// registration that changed.
+// label names a handler, for a request whose ElasticsearchCluster changed,
+// for every request that reads a contract that changed, and for every
+// request whose spec.registration names a registration that changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -336,7 +393,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.serves)))
+		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.serves))).
+		Owns(&v1.ElasticsearchCluster{})
 	for kind, obj := range map[string]client.Object{
 		kindObjectStorageConfig:    &v1.ObjectStorageConfig{},
 		kindSecondaryStorageConfig: &v1.SecondaryStorageConfig{},

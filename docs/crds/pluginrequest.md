@@ -73,15 +73,22 @@ With both policies, the plugin deletes a route to a Service that no longer exist
 
 ## Built-in requests
 
-The operator serves the requests of three [built-in registrations](pluginregistration.md#built-in-registrations). Each one points a section at a contract that is already in the namespace of the claim:
+The operator serves the requests of four [built-in registrations](pluginregistration.md#built-in-registrations):
 
-| Registration | Parameters | Outputs |
-| --- | --- | --- |
-| `existing-object-storage` | `name` (required): an `ObjectStorageConfig` | `objectStorageConfig` |
-| `existing-secondary-storage` | `name` (required): a `SecondaryStorageConfig` | `secondaryStorageConfig` |
-| `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set |
+| Registration | Parameters | Inputs | Outputs |
+| --- | --- | --- | --- |
+| `elasticsearch` | `preset` (required), `releaseRef` (required), `overrides`: `replicas`, `resources`, `storageSize`, `scheduling`, `podLabels` | `storageClassName`, `objectStorageConfig`, `serviceAccountAnnotations` | `secondaryStorageConfig` |
+| `existing-object-storage` | `name` (required): an `ObjectStorageConfig` | none | `objectStorageConfig` |
+| `existing-secondary-storage` | `name` (required): a `SecondaryStorageConfig` | none | `secondaryStorageConfig` |
+| `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | none | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set |
 
-The claim writes the request. A request for the bucket `my-backup-bucket`:
+A built-in request waits until its registration is `Ready` at the current generation of the registration. Until then, the operator does not change the status of the request. A deletion does not wait.
+
+If the parameters do not pass the schema of the registration, for example without a required field, `OutputsReady` and `Ready` are `False` with reason `InvalidParameters`. The message names each field that fails.
+
+### Existing resources
+
+The three `existing-*` registrations point a section at a contract that is already in the namespace of the claim. The claim writes the request. A request for the bucket `my-backup-bucket`:
 
 ```yaml
 apiVersion: plugins.camunda.io/v1alpha1
@@ -100,8 +107,6 @@ spec:
     name: my-backup-bucket
   # ... the rest of your request
 ```
-
-A built-in request waits until its registration is `Ready` at the current generation of the registration. Until then, the operator does not change the status of the request. A deletion does not wait.
 
 The outputs hold the names of the contracts. `OutputsReady` turns `True` when every named contract exists, and `Ready` follows `OutputsReady`. The first item of `summary` names the contract and says if its `Ready` condition is `True`:
 
@@ -151,9 +156,103 @@ status:
       severity: Warning
 ```
 
-If the parameters do not pass the schema of the registration, for example without the required `name`, `OutputsReady` and `Ready` are `False` with reason `InvalidParameters`. The message names each field that fails. `existing-database-configs` also refuses two fields with the same name, and the message names both fields.
+`existing-database-configs` refuses two fields with the same name, with reason `InvalidParameters`, and the message names both fields.
 
 When the claim or you delete the request, the contracts stay, with both deletion policies. The request goes away at once.
+
+### Elasticsearch
+
+A request of `elasticsearch` runs an Elasticsearch cluster for the claim `<claim>`. The claim writes the request, and fills `releaseRef` with the `CamundaRelease` of the claim. A request of the claim `orders`:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: orders-secondary-storage
+  namespace: my-cluster-ns
+  labels:
+    plugins.camunda.io/section: secondary-storage
+    plugins.camunda.io/registration: elasticsearch
+    fleet.camunda.io/claim: orders
+spec:
+  section: secondary-storage
+  registration: elasticsearch
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  parameters:
+    preset: small
+    releaseRef: camunda-8-9
+    overrides:
+      replicas: 5
+      storageSize: 80Gi
+  inputs:
+    storageClassName: encrypted
+    objectStorageConfig: orders-backup
+  # ... the rest of your request
+```
+
+The operator creates the [ElasticsearchCluster](elasticsearchcluster.md) `<claim>-es`, here `orders-es`, in the namespace of the request. It starts from the `ElasticsearchClusterPreset` that `preset` names and takes its Elasticsearch version from the release. Each field in `overrides` replaces the value of the preset for that field. The cluster publishes the `SecondaryStorageConfig` `<claim>-es`, and the output `secondaryStorageConfig` names it. The cluster has the labels `plugins.camunda.io/registration: elasticsearch` and `plugins.camunda.io/request: <request name>`.
+
+The inputs come from other sections of the claim. Each input is optional:
+
+- `storageClassName` sets the StorageClass of the data volumes. Without it, the preset decides.
+- `objectStorageConfig` names the bucket of the snapshot repository. Without it, the preset decides.
+- `serviceAccountAnnotations` is a JSON object of strings. The ServiceAccount `<claim>-es-es` of the Elasticsearch pods gets these annotations, for workload identity to the bucket.
+
+With `objectStorageConfig` or `serviceAccountAnnotations`, the ServiceAccount of the pods is always `<claim>-es-es`, and the operator creates it. This replaces the ServiceAccount settings of the preset. Without both inputs, the preset decides the ServiceAccount. If `serviceAccountAnnotations` is not a JSON object of strings, `Ready` is `False` with reason `InvalidParameters`. An override that does not fit the field of the `ElasticsearchCluster`, or a field that the override does not know, gives the same reason.
+
+`OutputsReady` turns `True` when the `SecondaryStorageConfig` exists. `Ready` follows the `Ready` condition of the `ElasticsearchCluster`. `status.resources` lists the cluster, and `status.podSelector` selects its pods:
+
+```yaml
+status:
+  conditions:
+    - type: OutputsReady
+      status: "True"
+      reason: Healthy
+      message: Component is healthy.
+      observedGeneration: 1
+    - type: Ready
+      status: "True"
+      reason: Healthy
+      message: "backing: Component is healthy."
+      observedGeneration: 1
+  outputs:
+    secondaryStorageConfig: orders-es
+  summary:
+    - label: Elasticsearch
+      value: Ready, 5 nodes
+      severity: Info
+    - label: Disk
+      value: 80Gi per node
+      severity: Info
+  resources:
+    - kind: ElasticsearchCluster
+      name: orders-es
+      onOrphan: Kept
+  podSelector:
+    matchLabels:
+      camunda.io/elasticsearch-cluster: orders-es
+```
+
+The first summary item counts the nodes by their data volumes. While the cluster is not `Ready`, its value is `not Ready (<reason>), <n> nodes` with the `Warning` severity. While the cluster has not yet reported on its current spec, the value is `updating, <n> nodes`, also with `Warning`.
+
+The storage size only grows. If `overrides.storageSize` is smaller than the size of the cluster, the cluster keeps its size, and the summary has a `Warning` item:
+
+```yaml
+status:
+  summary:
+    - label: Storage size
+      value: Storage size 20Gi is smaller than 50Gi, kept 50Gi
+      severity: Warning
+```
+
+Without `overrides.storageSize`, the size of the preset applies. If that size is smaller than the size of the cluster, the volumes keep their size, and the `ElasticsearchCluster` records a `StorageShrinkIgnored` event.
+
+When the claim or you delete the request, the deletion policy applies to the cluster:
+
+- `Delete` deletes the `ElasticsearchCluster`, and the request goes away after the cluster. A cluster of that name that the request does not own stays.
+- `Orphan` keeps the `ElasticsearchCluster` with its data and its labels, without the owner reference to the request. The request goes away at once.
 
 ## Status
 

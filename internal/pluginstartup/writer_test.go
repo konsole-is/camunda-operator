@@ -165,7 +165,7 @@ var _ = Describe("Writer", Ordered, func() {
 		},
 		Entry("elasticsearch", "elasticsearch", wantRegistration{
 			sections: []string{"secondary-storage"}, mode: pluginsv1alpha1.ModeDefault,
-			required: []string{"preset"}, properties: []string{"preset", "overrides"},
+			required: []string{"preset", "releaseRef"}, properties: []string{"preset", "releaseRef", "overrides"},
 			claimEditable: []string{"overrides"}, inputs: storageIn,
 			outputs: []string{"secondaryStorageConfig"}, deletionPolicies: bothPolicies,
 		}),

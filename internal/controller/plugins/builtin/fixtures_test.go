@@ -35,18 +35,25 @@ import (
 )
 
 // newRequest creates a request in default for registration, with the label
-// and spec.registration both set to it, and registers its deletion.
-func newRequest(registration, parameters string, policy pluginsv1alpha1.DeletionPolicy) *pluginsv1alpha1.PluginRequest {
+// and spec.registration both set to it, and registers its deletion. Each
+// edit changes the request before it is created.
+func newRequest(
+	registration, parameters string,
+	policy pluginsv1alpha1.DeletionPolicy,
+	edits ...func(*pluginsv1alpha1.PluginRequest),
+) *pluginsv1alpha1.PluginRequest {
 	GinkgoHelper()
-	return createRequest(registration, registration, parameters, policy)
+	return createRequest(registration, registration, parameters, policy, edits...)
 }
 
 // createRequest creates a request in default whose registration label is
 // label and whose spec.registration is registration, and registers its
-// deletion. The cleanup strips the finalizer, so no spec waits on it.
+// deletion. The cleanup strips the finalizer, so no spec waits on it. Each
+// edit changes the request before it is created.
 func createRequest(
 	label, registration, parameters string,
 	policy pluginsv1alpha1.DeletionPolicy,
+	edits ...func(*pluginsv1alpha1.PluginRequest),
 ) *pluginsv1alpha1.PluginRequest {
 	GinkgoHelper()
 	section := registrationSection(registration)
@@ -76,6 +83,9 @@ func createRequest(
 	}
 	if parameters != "" {
 		request.Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(parameters)}
+	}
+	for _, edit := range edits {
+		edit(request)
 	}
 
 	Expect(k8sClient.Create(ctx, request)).To(Succeed())

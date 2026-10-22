@@ -29,19 +29,51 @@ import (
 )
 
 // handler serves the requests of one built-in registration. It reads no
-// cluster state. The controller reconciles what it returns.
+// cluster state: the controller gives it the live backing objects of the
+// request, and reconciles what it returns.
 type handler interface {
 	// build returns the components that serve request. Parameters that
 	// break a rule of the registration that its schema cannot state return
 	// a *conditions.PreCheckFailure with reason InvalidParameters.
-	build(request *pluginsv1alpha1.PluginRequest) (served, error)
+	build(request *pluginsv1alpha1.PluginRequest, live liveObjects) (served, error)
 	// cleanup returns what applies policy to the resources that build
 	// writes, for a request that is being deleted.
-	cleanup(request *pluginsv1alpha1.PluginRequest, policy pluginsv1alpha1.DeletionPolicy) (cleanup, error)
+	cleanup(
+		request *pluginsv1alpha1.PluginRequest,
+		policy pluginsv1alpha1.DeletionPolicy,
+		live liveObjects,
+	) (cleanup, error)
 	// contracts returns the contracts that request reads, in its own
 	// namespace. Parameters that do not parse read none.
 	contracts(request *pluginsv1alpha1.PluginRequest) []contractRef
+	// backing returns the objects that build reads or writes for request.
+	// The controller reads them before it calls build and cleanup.
+	// Parameters that do not parse return the objects whose names do not
+	// depend on them.
+	backing(request *pluginsv1alpha1.PluginRequest) []backingRef
 }
+
+// backingRef is one backing object of a request.
+type backingRef struct {
+	kind string // a kind* constant of the handler
+	// object is an empty typed object with its name, and its namespace
+	// unless the kind is cluster-scoped.
+	object client.Object
+}
+
+// liveObjects are the backing objects of one request as the API server
+// holds them before the pass, by kind and name. An object that does not
+// exist is absent.
+type liveObjects map[liveKey]client.Object
+
+// liveAs returns the live object of kind and name as T. It reports false
+// when the object is absent or is not a T.
+func liveAs[T client.Object](live liveObjects, kind, name string) (T, bool) {
+	obj, ok := live[liveKey{kind: kind, name: name}].(T)
+	return obj, ok
+}
+
+type liveKey struct{ kind, name string }
 
 // served is what serves one request.
 type served struct {
@@ -99,6 +131,7 @@ func Served() []string {
 // controller serves, by registration name.
 func handlers() map[string]handler {
 	return map[string]handler{
+		pluginstartup.RegistrationElasticsearch: elasticsearch{},
 		pluginstartup.RegistrationExistingObjectStorage: existing{
 			parse: oneContract(pluginstartup.OutputObjectStorageConfig, kindObjectStorageConfig),
 		},

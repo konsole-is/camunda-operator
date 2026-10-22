@@ -45,6 +45,12 @@ const (
 	RegistrationExistingDatabaseConfigs  = "existing-database-configs"
 )
 
+// The suffixes that a built-in registration adds to the claim name to name
+// its backing resource (CL4).
+const (
+	BackingSuffixElasticsearch = "-es"
+)
+
 // The output keys of the core sections. A registration that serves a
 // section writes the outputs of the section.
 const (
