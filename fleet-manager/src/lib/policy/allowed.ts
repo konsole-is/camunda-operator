@@ -29,10 +29,11 @@ import type {
  * the snapshot of the claim. presetRef and releaseRef are absent for a plane
  * claim.
  */
-export type AllowedInput = {
+export type AllowedInput = (
+  | { kind?: undefined; sections?: undefined }
+  | { kind: ClaimKind; sections: readonly PluginSection[] }
+) & {
   environment?: Environment;
-  kind?: ClaimKind;
-  sections?: readonly PluginSection[];
   policy: ResolvedPolicy;
   presetRef?: string;
   releaseRef?: string;
