@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,7 +41,7 @@ var _ = Describe("Deleting a cluster claim", func() {
 	It("copies the claim policy to every request before it gets a deletion timestamp", func() {
 		claim := readyClaim(newNamespace(nil))
 
-		setOrphanPolicy(claim)
+		setDeletionPolicy(claim, pluginsv1alpha1.DeletionPolicyOrphan)
 		Expect(k8sClient.Delete(ctx, claim)).To(Succeed())
 
 		expectPoliciesAtDeletion(claim, pluginsv1alpha1.DeletionPolicyOrphan)
@@ -186,7 +187,7 @@ var _ = Describe("Deleting a cluster claim", func() {
 		Expect(k8sClient.Delete(ctx, claim)).To(Succeed())
 		expectDeleting(cluster)
 
-		setOrphanPolicy(claim)
+		setDeletionPolicy(claim, pluginsv1alpha1.DeletionPolicyOrphan)
 		Eventually(func(g Gomega) {
 			for _, section := range []string{pluginstartup.SectionSecondaryStorage, pluginstartup.SectionEncryptionKey} {
 				request, err := requestOf(claim, section)
@@ -237,7 +238,7 @@ var _ = Describe("A live cluster claim", func() {
 	It("writes a policy change on every request", func() {
 		claim := readyClaim(newNamespace(nil))
 
-		setOrphanPolicy(claim)
+		setDeletionPolicy(claim, pluginsv1alpha1.DeletionPolicyOrphan)
 
 		Eventually(func(g Gomega) {
 			var requests pluginsv1alpha1.PluginRequestList
@@ -255,38 +256,13 @@ var _ = Describe("A live cluster claim", func() {
 	})
 })
 
-var _ = Describe("A blocked cluster claim", func() {
-	It("writes a policy change on every request", func() {
-		environment := allowingEnvironment(map[string][]string{
-			pluginstartup.SectionSecondaryStorage: {pluginstartup.RegistrationExistingSecondaryStorage},
-			pluginstartup.SectionEncryptionKey:    {registrationKey},
-		})
-		createEnvironment(environment)
-		claim := readyClaim(newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}))
-		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(environment), environment)).To(Succeed())
-		environment.Spec.Presets.CamundaCluster = []string{"other-preset"}
-		Expect(k8sClient.Update(ctx, environment)).To(Succeed())
-		expectFalse(claim, v1.ConditionReady, fleetv1alpha1.ReasonNotAllowed, Not(BeEmpty()))
-
-		setOrphanPolicy(claim)
-
-		Eventually(func(g Gomega) {
-			for _, section := range []string{pluginstartup.SectionSecondaryStorage, pluginstartup.SectionEncryptionKey} {
-				request, err := requestOf(claim, section)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(request.Spec.DeletionPolicy).To(Equal(pluginsv1alpha1.DeletionPolicyOrphan))
-			}
-		}, timeout, interval).Should(Succeed())
-	})
-})
-
 var _ = Describe("A cluster claim with a registration that cannot orphan", func() {
 	It("keeps the policy Delete on its requests when it asks for Orphan", func() {
 		claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionEncryptionKey, registrationDeleteOnly))
 		create(claim)
 		eventuallyCluster(claim)
 
-		setOrphanPolicy(claim)
+		setDeletionPolicy(claim, pluginsv1alpha1.DeletionPolicyOrphan)
 		expectFalse(claim, v1.ConditionReady, fleetv1alpha1.ReasonNotAllowed, ContainSubstring(registrationDeleteOnly))
 
 		Consistently(func(g Gomega) {
@@ -296,6 +272,34 @@ var _ = Describe("A cluster claim with a registration that cannot orphan", func(
 				g.Expect(request.Spec.DeletionPolicy).To(Equal(pluginsv1alpha1.DeletionPolicyDelete))
 			}
 		}, consistently, interval).Should(Succeed())
+	})
+
+	It("deletes nothing while it asks for Orphan, and is gone after the policy is Delete", func() {
+		claim := newClaim(newNamespace(nil), selection(pluginstartup.SectionEncryptionKey, registrationDeleteOnly))
+		create(claim)
+		cluster := eventuallyCluster(claim)
+		setDeletionPolicy(claim, pluginsv1alpha1.DeletionPolicyOrphan)
+		expectFalse(claim, v1.ConditionReady, fleetv1alpha1.ReasonNotAllowed, ContainSubstring(registrationDeleteOnly))
+
+		Expect(k8sClient.Delete(ctx, claim)).To(Succeed())
+
+		Consistently(func(g Gomega) {
+			current := latest(g, claim)
+			g.Expect(current.DeletionTimestamp).NotTo(BeNil())
+			ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).To(Equal(fleetv1alpha1.ReasonNotAllowed))
+			g.Expect(ready.Message).To(ContainSubstring(registrationDeleteOnly))
+		}, consistently, interval).Should(Succeed())
+		expectNotDeleting(cluster)
+		for _, section := range []string{pluginstartup.SectionSecondaryStorage, pluginstartup.SectionEncryptionKey} {
+			expectNotDeleting(&pluginsv1alpha1.PluginRequest{ObjectMeta: objectMeta(requestKey(claim, section))})
+		}
+
+		setDeletionPolicy(claim, pluginsv1alpha1.DeletionPolicyDelete)
+
+		expectGone(claim)
+		expectGone(cluster)
 	})
 })
 
@@ -349,15 +353,15 @@ func objectMeta(key types.NamespacedName) metav1.ObjectMeta {
 	return metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}
 }
 
-// setOrphanPolicy writes spec.deletionPolicy: Orphan on claim.
-func setOrphanPolicy(claim *fleetv1alpha1.CamundaClusterClaim) {
+// setDeletionPolicy writes policy in spec.deletionPolicy of claim.
+func setDeletionPolicy(claim *fleetv1alpha1.CamundaClusterClaim, policy pluginsv1alpha1.DeletionPolicy) {
 	GinkgoHelper()
 	Eventually(func() error {
 		current := &fleetv1alpha1.CamundaClusterClaim{}
 		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), current); err != nil {
 			return err
 		}
-		current.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
+		current.Spec.DeletionPolicy = policy
 		return k8sClient.Update(ctx, current)
 	}, timeout, interval).Should(Succeed())
 }

@@ -93,15 +93,15 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
-// Reconcile converges a CamundaClusterClaim. A pass writes the effective
-// deletion policy on the requests of the claim before the precheck. A failed
-// precheck reports its reason on Ready and writes no resource except that
-// policy. The first pass that passes the precheck adds the finalizer, records
-// status.environment and status.resolvedPolicy, and writes no resource, so no
-// request exists before the policy of the claim does. Later passes apply the
-// requests, then the cluster, and set Ready from RequestsReady and
-// ClusterReady. A deleted claim reports Ready=False with reason Deleting until
-// nothing that it generated is left. Status is written once per reconcile.
+// Reconcile converges a CamundaClusterClaim. A failed precheck reports its
+// reason on Ready and writes nothing else. The first pass that passes the
+// precheck adds the finalizer, records status.environment and
+// status.resolvedPolicy, and writes no resource, so no request exists before
+// the policy of the claim does. Later passes apply the requests, then the
+// cluster, and set Ready from RequestsReady and ClusterReady. A deleted claim
+// reports Ready=False with reason Deleting until nothing that it generated is
+// left, or with reason NotAllowed while a selected registration does not
+// support its deletion policy. Status is written once per reconcile.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	var claim fleetv1alpha1.CamundaClusterClaim
 	if err := r.APIReader.Get(ctx, req.NamespacedName, &claim); err != nil {
@@ -133,6 +133,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 
 	if !claim.DeletionTimestamp.IsZero() {
 		remaining, err := r.finalize(ctx, &claim)
+		var failure *conditions.PreCheckFailure
+		if errors.As(err, &failure) {
+			conditions.Stage(&claim, conditions.Failed(&claim, failure))
+			return ctrl.Result{}, nil
+		}
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -148,12 +153,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 			claim.Generation,
 		))
 		return ctrl.Result{}, nil
-	}
-
-	// A foreground deletion lets the garbage collector delete the requests,
-	// so the policy goes on also when the check fails.
-	if err := r.syncDeletionPolicy(ctx, &claim); err != nil {
-		return ctrl.Result{}, err
 	}
 
 	res, err := r.preCheck(ctx, &claim)

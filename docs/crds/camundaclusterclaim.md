@@ -128,19 +128,19 @@ Without `spec.deletionPolicy`, the claim uses `status.resolvedPolicy.deletionPol
 
 The policy applies to the plugin requests only. The claim always deletes the `CamundaCluster` `<claim>`. It also deletes the `CamundaOptimize` `<claim>-optimize` and the `BackupSchedule` `<claim>-backups`. The `CamundaCluster` keeps or deletes its broker volumes by its own retention policy, as [Storage](camundacluster.md#storage) describes. The claim deletes an object only when the object has an owner reference with `controller: true` to the claim. An object of one of these names that you created yourself stays.
 
-The requests get the policy of the claim also while the check of the claim fails. One exception: when a selected registration does not list `Orphan` in `spec.deletionPolicies`, the requests keep their policy, and `Ready` is `False` with reason `NotAllowed`.
+When the policy is `Orphan` and a selected registration does not list `Orphan` in `spec.deletionPolicies`, the claim deletes nothing. `Ready` is `False` with reason `NotAllowed`, and the message names each such registration. The deletion continues after you set `spec.deletionPolicy: Delete` or select a registration that supports `Orphan`.
 
 The claim stays until each plugin deleted or kept the resources of its request, by the policy. While the claim waits, `Ready` is `False` with reason `Deleting`, and the message names each object that is still there. See [Status](#status).
 
-To change the policy of a claim that you delete, change `spec.deletionPolicy` first. Delete the claim after that. When a GitOps tool applies your claims, commit the change of the policy first. Before you remove the claim in a later commit, make sure that each request shows the new policy:
+To change the policy of a claim that you delete, change `spec.deletionPolicy` first. Delete the claim after that. When a GitOps tool applies your claims, commit the change of the policy first. Before you remove the claim in a later commit, make sure that the claim shows the new policy:
 
 ```bash
-kubectl get pluginrequests -n my-cluster-ns -l fleet.camunda.io/claim=my-cluster -o custom-columns=NAME:.metadata.name,POLICY:.spec.deletionPolicy
+kubectl get camundaclusterclaim my-cluster -n my-cluster-ns -o jsonpath='{.spec.deletionPolicy}'
 ```
 
 ## Status
 
-`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates nothing. It changes only `spec.deletionPolicy` of its requests, as [Deletion](#deletion) describes:
+`Ready` is `False` with a reason of the check of the claim when that check fails. The claim then creates and changes nothing:
 
 | Reason | Meaning | What to do |
 | --- | --- | --- |
@@ -214,6 +214,7 @@ While the claim is deleted, `Ready` reports the deletion. The other conditions k
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
 | `Ready` | `Deleting` | The claim is deleted and waits for the objects that the message names. | Read the status of the request with `kubectl get pluginrequest <name> -o yaml`, with the name from the message. Then read the logs of the plugin that serves it. |
+| `Ready` | `NotAllowed` | The deletion policy is `Orphan`, and a selected registration does not list `Orphan` in `spec.deletionPolicies`. The claim deletes nothing. The message names each such registration. | Set `spec.deletionPolicy: Delete`, or select a registration that supports `Orphan`. |
 
 ```yaml
 status:

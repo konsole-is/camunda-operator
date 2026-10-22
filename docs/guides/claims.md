@@ -135,7 +135,7 @@ The deletion policy of the claim decides what the plugins do with the resources 
           observedGeneration: 2
     ```
 
-    The message names each object that the claim waits for.
+    The message names each object that the claim waits for. When the reason is `NotAllowed`, the claim deletes nothing. A selected registration does not support `Orphan`. Set `spec.deletionPolicy: Delete`, or select another registration.
 
 4. Wait until the claim is gone:
 
