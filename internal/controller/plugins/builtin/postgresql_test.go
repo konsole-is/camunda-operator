@@ -164,15 +164,16 @@ func TestPostgreSQLKeepsTheLiveStorageSize(t *testing.T) {
 				require.NotNil(t, server.Spec.StorageSize)
 				assert.Equal(t, tt.wantSize, server.Spec.StorageSize.String())
 			}
-			item := pluginsv1alpha1.SummaryItem{
-				Label:    "Storage size",
-				Value:    "Storage size 20Gi is smaller than 50Gi, kept 50Gi",
-				Severity: pluginsv1alpha1.SeverityWarning,
-			}
 			if tt.wantItem {
-				assert.Contains(t, s.report().summary, item)
+				assert.Contains(t, s.report().summary, pluginsv1alpha1.SummaryItem{
+					Label:    "Storage size",
+					Value:    "Storage size 20Gi is smaller than 50Gi, kept 50Gi",
+					Severity: pluginsv1alpha1.SeverityWarning,
+				})
 			} else {
-				assert.NotContains(t, s.report().summary, item)
+				for _, item := range s.report().summary {
+					assert.NotEqual(t, "Storage size", item.Label)
+				}
 			}
 		})
 	}

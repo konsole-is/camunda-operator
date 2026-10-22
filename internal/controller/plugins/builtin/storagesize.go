@@ -24,10 +24,9 @@ import (
 )
 
 // keepLiveStorageSize returns the storage size to apply for asked. The live
-// size is the larger of spec and the largest of volumes, the spec storage
-// size and the volumes of the live object. When asked is smaller than the
-// live size, it returns the live size and the summary item that says so.
-// Otherwise it returns asked and no item. A nil asked stays nil.
+// size is the larger of spec and the largest volume. When asked is smaller
+// than the live size, it returns the live size and the summary item that says
+// so. Otherwise it returns asked and no item. A nil asked stays nil.
 func keepLiveStorageSize(
 	asked, spec *resource.Quantity,
 	volumes []v1.VolumeStatus,
