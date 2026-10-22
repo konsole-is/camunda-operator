@@ -110,6 +110,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			refindex.Enqueue(cached, list, requestNamesField, refindex.ObjectNamespacedName),
 		).
 		Watches(&v1.CamundaCluster{}, &handler.EnqueueRequestForObject{}).
+		Owns(&v1.CamundaOptimize{}).
+		Owns(&v1.BackupSchedule{}).
 		// A required section that the claim does not select decides NotAllowed.
 		Watches(&pluginsv1alpha1.PluginSection{}, all).
 		Watches(

@@ -109,7 +109,8 @@ type CamundaClusterClaimSpec struct {
 	Attachments *ClusterAttachments `json:"attachments,omitempty"`
 	// DeletionPolicy says what happens to the resources of the plugin
 	// requests when the claim is deleted. Delete deletes them. Orphan keeps
-	// them. Empty means spec.deletionPolicy of the Environment. The
+	// them. Empty means the deletion default that the claim recorded from its
+	// Environment at creation, or Delete when it recorded none. The
 	// CamundaCluster and the attachments are always deleted with the claim,
 	// under their own retention rules.
 	// +optional

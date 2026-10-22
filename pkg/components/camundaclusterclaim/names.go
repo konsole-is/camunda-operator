@@ -47,6 +47,16 @@ func clusterNamed(name string) *v1.CamundaCluster {
 	return &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: name}}
 }
 
+// OptimizeName returns the name of the CamundaOptimize of claim.
+func OptimizeName(claim string) string {
+	return claim + "-optimize"
+}
+
+// BackupScheduleName returns the name of the BackupSchedule of claim.
+func BackupScheduleName(claim string) string {
+	return claim + "-backups"
+}
+
 // AdditionalServiceAccounts returns the ServiceAccounts of the built-in
 // storage that selections run for claim: the Elasticsearch account, then the
 // PostgreSQL account. It returns nil when the claim selects neither.

@@ -50,6 +50,8 @@ const (
 	registrationAccess     = "test-access"
 	// registrationVersioned declares the parameter releaseRef (CL55).
 	registrationVersioned = "test-versioned"
+	// registrationDeleteOnly supports only the deletion policy Delete.
+	registrationDeleteOnly = "test-delete-only"
 
 	camundaRoleARN      = `{"eks.amazonaws.com/role-arn":"arn:camunda"}`
 	connectorsRoleARN   = `{"eks.amazonaws.com/role-arn":"arn:connectors"}`
@@ -82,7 +84,10 @@ func createFixtures() {
 	versioned.Spec.Parameters = &apiextensionsv1.JSON{
 		Raw: []byte(`{"type":"object","properties":{"releaseRef":{"type":"string"}}}`),
 	}
+	deleteOnly := testRegistration(registrationDeleteOnly, pluginstartup.SectionEncryptionKey)
+	deleteOnly.Spec.DeletionPolicies = []pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete}
 	for _, registration := range []*pluginsv1alpha1.PluginRegistration{
+		deleteOnly,
 		testRegistration(registrationIdentity, pluginstartup.SectionCloudIdentity),
 		testRegistration(registrationKey, pluginstartup.SectionEncryptionKey),
 		volumes,
@@ -109,6 +114,7 @@ func createFixtures() {
 		pluginstartup.OutputServiceAccountAnnotations: camundaRoleARN,
 	})
 	plugin.serve(registrationKey, map[string]string{pluginstartup.OutputKeyRef: keyARN})
+	plugin.serve(registrationDeleteOnly, map[string]string{pluginstartup.OutputKeyRef: keyARN})
 	plugin.serve(registrationVolumes, map[string]string{pluginstartup.OutputStorageClassName: encryptedClass})
 	plugin.serve(registrationConnectors, map[string]string{
 		pluginstartup.OutputServiceAccountAnnotations: connectorsRoleARN,
@@ -122,8 +128,8 @@ func createFixtures() {
 	})
 }
 
-// testRegistration returns a registration that serves section and declares
-// the outputs of the section.
+// testRegistration returns a registration that serves section, declares
+// the outputs of the section, and supports both deletion policies.
 func testRegistration(name, section string) *pluginsv1alpha1.PluginRegistration {
 	return &pluginsv1alpha1.PluginRegistration{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
@@ -135,7 +141,10 @@ func testRegistration(name, section string) *pluginsv1alpha1.PluginRegistration 
 				Namespace: "camunda-plugins",
 				Name:      name,
 			},
-			DeletionPolicies: []pluginsv1alpha1.DeletionPolicy{pluginsv1alpha1.DeletionPolicyDelete},
+			DeletionPolicies: []pluginsv1alpha1.DeletionPolicy{
+				pluginsv1alpha1.DeletionPolicyDelete,
+				pluginsv1alpha1.DeletionPolicyOrphan,
+			},
 		},
 	}
 }
