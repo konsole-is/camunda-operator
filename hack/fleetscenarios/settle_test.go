@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -65,9 +66,19 @@ func TestSettle(t *testing.T) {
 		defer stop()
 		go keepChanging(writerCtx, c, flapping)
 
+		// settle names an object only after a tick read the whole scope. A
+		// tick of the full scope sends about 80 requests, and on a loaded
+		// machine it took more than the timeout.
+		configMaps := &scope{
+			client:     sc.client,
+			namespaced: []schema.GroupVersionResource{{Version: "v1", Resource: "configmaps"}},
+			observed:   sc.observed,
+			namespaces: []string{"fight"},
+		}
+
 		const timeout = 3 * time.Second
 		start := time.Now()
-		err := settle(ctx, sim, sc, timeout, before)
+		err := settle(ctx, sim, configMaps, timeout, before)
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "ConfigMap fight/flapping")
 		assert.Less(t, time.Since(start), timeout+time.Second)
@@ -89,7 +100,7 @@ func TestSettle(t *testing.T) {
 		start := time.Now()
 		err = settle(ctx, slowSim, sc, timeout, before)
 		require.Error(t, err)
-		assert.ErrorContains(t, err, "did not settle within 1s")
+		assert.EqualError(t, err, "the scenario did not settle within 1s: no tick read the whole scenario")
 		assert.Less(t, time.Since(start), timeout+time.Second)
 	})
 
