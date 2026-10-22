@@ -35,7 +35,8 @@ export type RefKey = `${string}/${string}/${string}`;
  * option of server-side apply. A change with directOnly goes to the API
  * in Git mode too. The preview of the direct writer applies an object of
  * previewManagers as the field manager that it maps to, and apply ignores
- * previewManagers. The Git writer sets previewManagers itself.
+ * previewManagers. For a change without directOnly, the Git writer sets
+ * previewManagers itself.
  */
 export type Change = {
   intent: string;
