@@ -38,6 +38,7 @@ export async function followPodLog(
   const names = [
     ...(pod?.spec?.containers ?? []),
     ...(pod?.spec?.initContainers ?? []),
+    ...(pod?.spec?.ephemeralContainers ?? []),
   ].map((c) => c.name);
   const container = req.container ?? names[0];
   if (!pod) {

@@ -119,6 +119,26 @@ describe("followPodLog", () => {
     expect(asked[0].searchParams.get("container")).toBe("sidecar");
   });
 
+  it("follows an ephemeral container that the request names", async () => {
+    vi.mocked(get).mockResolvedValue({
+      metadata: { name: "p", namespace: "n" },
+      spec: {
+        containers: [{ name: "main" }],
+        ephemeralContainers: [{ name: "debugger" }],
+      },
+    } as never);
+    await serve((_req, res) => res.end());
+
+    await readAll(
+      await followPodLog(
+        { namespace: "n", pod: "p", container: "debugger" },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(asked[0].searchParams.get("container")).toBe("debugger");
+  });
+
   it.each([
     ["a pod that is not in the cache", undefined, {}],
     ["a container that the pod does not have", pod("main"), { container: "x" }],
