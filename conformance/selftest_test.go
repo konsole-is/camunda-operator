@@ -17,9 +17,12 @@ limitations under the License.
 package conformance
 
 import (
+	"time"
+
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,7 +38,9 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, DeleteRoutes))
+		Expect(skippedIDs(got)).To(ConsistOf(
+			ReqLogs, OrderRegistrationFirst, DeleteRoutes, GrantMatch, GrantRequires, GrantAdmission,
+		))
 		Expect(got[DeleteDelete].skipped).To(BeEmpty())
 		Expect(got[DeleteOrphan].skipped).To(BeEmpty())
 	})
@@ -46,7 +51,9 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst))
+		Expect(skippedIDs(got)).To(ConsistOf(
+			ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires, GrantAdmission,
+		))
 	})
 
 	ginkgo.It("runs each case for each section of a registration that serves two", func() {
@@ -57,7 +64,9 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst))
+		Expect(skippedIDs(got)).To(ConsistOf(
+			ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires, GrantAdmission,
+		))
 
 		// The orphaned ConfigMap of each section shows that a request of
 		// each section ran.
@@ -66,6 +75,53 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			var cm corev1.ConfigMap
 			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: cfg.Namespace, Name: name}, &cm)).To(Succeed())
 		}
+	})
+
+	ginkgo.It("passes every grant check when it writes a grant from a template", func() {
+		got := runAll(grantRun(echo.DefectNone))
+
+		for id, o := range got {
+			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
+		}
+		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, DeleteRoutes))
+	})
+
+	ginkgo.It("fails GRANT-ADMISSION when a role gives serve to its ServiceAccount", func() {
+		cfg := grantRun(echo.DefectNone)
+		role := &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: cfg.Registration + "-serve-all"},
+			Rules: []rbacv1.PolicyRule{{
+				APIGroups: []string{pluginsv1alpha1.GroupVersion.Group},
+				Resources: []string{"pluginregistrations"},
+				Verbs:     []string{"serve"},
+			}},
+		}
+		binding := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: role.Name},
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: role.Name},
+			Subjects: []rbacv1.Subject{
+				{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: "system:serviceaccounts:" + cfg.Namespace},
+			},
+		}
+		Expect(k8sClient.Create(ctx, role)).To(Succeed())
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		ginkgo.DeferCleanup(func() {
+			Expect(k8sClient.Delete(ctx, binding)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, role)).To(Succeed())
+		})
+		s := newSuite(cfg, restCfg, k8sClient)
+		ginkgo.DeferCleanup(func() { Expect(s.close(ctx)).To(Succeed()) })
+
+		// A new binding reaches the authorizer a short time after it is
+		// created.
+		Eventually(func(g Gomega) {
+			sa := pluginsv1alpha1.ServiceAccountRef{Namespace: cfg.Namespace, Name: "any"}
+			review, err := serveReview(ctx, s, sa, cfg.Registration)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(review.Status.Allowed).To(BeTrue())
+		}, time.Minute).Should(Succeed())
+
+		Expect(checkGrantAdmission(ctx, s)).To(MatchError(ContainSubstring("cannot test a refusal")))
 	})
 
 	ginkgo.It("passes REQ-LABELS and DELETE-ORPHAN with a cluster-scoped object that carries the labels only", func() {
@@ -168,5 +224,13 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			"owner reference",
 		),
 		ginkgo.Entry("a route kept on Orphan", accessRun, echo.DefectKeepRouteOnOrphan, DeleteRoutes, "Ingress"),
+		ginkgo.Entry("a wrong fragment", grantRun, echo.DefectWrongFragment, GrantMatch, "has the fragment"),
+		ginkgo.Entry(
+			"a Grant without its required input",
+			grantRun,
+			echo.DefectIgnoreRequiredInputs,
+			GrantRequires,
+			"without a value",
+		),
 	)
 })

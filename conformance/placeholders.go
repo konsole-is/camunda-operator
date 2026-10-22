@@ -17,35 +17,59 @@ limitations under the License.
 package conformance
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
+	"text/template"
 	"text/template/parse"
 )
 
 // placeholders is a set of the field references that a template may hold.
 // A name of fields stands alone, as .namespace. A name of maps takes one
-// key, as .parameters.<name>.
+// key, as .parameters.<name>. refused maps a name that is not allowed to the
+// reason.
 type placeholders struct {
-	fields map[string]bool
-	maps   map[string]bool
+	fields  map[string]bool
+	maps    map[string]bool
+	refused map[string]string
 }
 
-// templatePlaceholders are the placeholders of a grant template and of the
-// default of an x-fleet-template parameter.
-var templatePlaceholders = placeholders{
+// grantPlaceholders are the placeholders of a grant template.
+var grantPlaceholders = placeholders{
 	fields: map[string]bool{"namespace": true, "claim": true, "request": true, "serviceAccount": true},
 	maps:   map[string]bool{"parameters": true, "outputs": true},
 }
 
+// parameterPlaceholders are the placeholders of an x-fleet-template
+// parameter.
+var parameterPlaceholders = placeholders{
+	fields: map[string]bool{"namespace": true, "claim": true, "request": true, "serviceAccount": true},
+	maps:   map[string]bool{"parameters": true},
+	refused: map[string]string{
+		"outputs": "an x-fleet-template parameter is rendered before the plugin writes the outputs",
+	},
+}
+
 // metricPlaceholders are the placeholders of a metric query: those of a
-// template, and .pods.
+// grant template, and .pods.
 var metricPlaceholders = placeholders{
 	fields: map[string]bool{"namespace": true, "claim": true, "request": true, "serviceAccount": true, "pods": true},
 	maps:   map[string]bool{"parameters": true, "outputs": true},
+}
+
+// templateData holds the values of the placeholders for one request.
+type templateData struct {
+	namespace      string
+	claim          string
+	request        string
+	serviceAccount string
+	pods           string
+	parameters     map[string]any
+	outputs        map[string]string
 }
 
 // jsonLeaf is one string value of a JSON document, with its field path.
@@ -218,6 +242,9 @@ func checkAction(action *parse.ActionNode, allowed placeholders, notAllowed func
 	}
 
 	dotted := "." + strings.Join(ident, ".")
+	if reason := allowed.refused[ident[0]]; reason != "" {
+		return fmt.Errorf("%s: the placeholder %s is not allowed, %s", action, dotted, reason)
+	}
 	if allowed.maps[ident[0]] {
 		return fmt.Errorf(
 			"%s: the placeholder %s is not in the contract, .%s takes one key, as .%s.<key>",
@@ -229,4 +256,118 @@ func checkAction(action *parse.ActionNode, allowed placeholders, notAllowed func
 	}
 
 	return fmt.Errorf("%s: the placeholder %s is not in the contract", action, dotted)
+}
+
+// renderTemplate fills the placeholders of text from data. It refuses what
+// checkTemplate refuses, and a parameter or an output that text references
+// and data does not hold. It is the conformance copy of the renderer of
+// pluginkit, and both hold the same named test cases.
+func renderTemplate(text string, allowed placeholders, data templateData) (string, error) {
+	if err := checkTemplate(text, allowed); err != nil {
+		return "", err
+	}
+
+	tree, _, err := parseTemplate(text)
+	if err != nil {
+		return "", err
+	}
+
+	for _, node := range tree.Root.Nodes {
+		action, ok := node.(*parse.ActionNode)
+		if !ok {
+			continue
+		}
+
+		field, ok := action.Pipe.Cmds[0].Args[0].(*parse.FieldNode)
+		if !ok || len(field.Ident) != 2 {
+			continue
+		}
+
+		name := field.Ident[1]
+		if _, ok := data.parameters[name]; field.Ident[0] == "parameters" && !ok {
+			return "", fmt.Errorf("parameter %q has no value", name)
+		}
+		if _, ok := data.outputs[name]; field.Ident[0] == "outputs" && !ok {
+			return "", fmt.Errorf("output %q has no value", name)
+		}
+	}
+
+	tmpl, err := template.New("").Option("missingkey=error").Parse(text)
+	if err != nil {
+		return "", err
+	}
+
+	var out strings.Builder
+	err = tmpl.Execute(&out, map[string]any{
+		"namespace":      data.namespace,
+		"claim":          data.claim,
+		"request":        data.request,
+		"serviceAccount": data.serviceAccount,
+		"pods":           data.pods,
+		"parameters":     data.parameters,
+		"outputs":        data.outputs,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return out.String(), nil
+}
+
+// renderJSONTemplate runs renderTemplate on each string value of raw, at any
+// depth, and returns the document as JSON. An object key is never a
+// template. A rendered value stays inside its string, and a number keeps its
+// exact digits. An error names the path of its value under path, as
+// checkJSONTemplates does. It is the conformance copy of pluginkit
+// RenderJSON.
+func renderJSONTemplate(path string, raw []byte, allowed placeholders, data templateData) ([]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var doc any
+	if err := decoder.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+
+	rendered, err := renderLeaves(path, doc, allowed, data)
+	if err != nil {
+		return nil, err
+	}
+
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(rendered); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+
+	return bytes.TrimSuffix(out.Bytes(), []byte("\n")), nil
+}
+
+func renderLeaves(path string, value any, allowed placeholders, data templateData) (any, error) {
+	switch v := value.(type) {
+	case string:
+		rendered, err := renderTemplate(v, allowed, data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		return rendered, nil
+	case []any:
+		for i, item := range v {
+			rendered, err := renderLeaves(fmt.Sprintf("%s[%d]", path, i), item, allowed, data)
+			if err != nil {
+				return nil, err
+			}
+			v[i] = rendered
+		}
+	case map[string]any:
+		for _, key := range slices.Sorted(maps.Keys(v)) {
+			rendered, err := renderLeaves(path+"."+key, v[key], allowed, data)
+			if err != nil {
+				return nil, err
+			}
+			v[key] = rendered
+		}
+	}
+
+	return value, nil
 }

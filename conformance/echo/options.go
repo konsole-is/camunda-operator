@@ -17,6 +17,7 @@ limitations under the License.
 package echo
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -39,6 +40,10 @@ type Options struct {
 	Inputs []pluginsv1alpha1.InputDecl
 	// Outputs are the outputs that the controller writes for each request.
 	Outputs []Output
+	// GrantTemplates are the grant templates that the registration
+	// publishes. The controller writes one Grant for each template whose
+	// required inputs all have a value in the request.
+	GrantTemplates []pluginsv1alpha1.GrantTemplate
 	// Defect makes the controller break one rule of the contract. The zero
 	// value keeps the contract.
 	Defect Defect
@@ -99,6 +104,12 @@ const (
 	// DefectKeepRouteOnOrphan keeps the Ingress to a missing Service with the
 	// deletion policy Orphan.
 	DefectKeepRouteOnOrphan Defect = "KeepRouteOnOrphan"
+	// DefectWrongFragment adds the key EchoDefect to the fragment of each
+	// Grant, so that it is not the filled-in template.
+	DefectWrongFragment Defect = "WrongFragment"
+	// DefectIgnoreRequiredInputs writes the Grant of each grant template, also
+	// when a required input of the template has no value.
+	DefectIgnoreRequiredInputs Defect = "IgnoreRequiredInputs"
 )
 
 // defects are the defects that New accepts.
@@ -117,6 +128,8 @@ var defects = []Defect{
 	DefectKeepOnDelete,
 	DefectKeepOwnerOnOrphan,
 	DefectKeepRouteOnOrphan,
+	DefectWrongFragment,
+	DefectIgnoreRequiredInputs,
 }
 
 func (o Options) validate() error {
@@ -162,9 +175,38 @@ func (o Options) validate() error {
 		}
 	}
 
+	for i, tmpl := range o.GrantTemplates {
+		errs = append(errs, grantTemplateErrors(i, tmpl, o.Inputs)...)
+	}
+
 	if !slices.Contains(defects, o.Defect) {
 		errs = append(errs, fmt.Errorf("option Defect %q is not a defect of this package", o.Defect))
 	}
 
 	return errors.Join(errs...)
+}
+
+func grantTemplateErrors(i int, tmpl pluginsv1alpha1.GrantTemplate, inputs []pluginsv1alpha1.InputDecl) []error {
+	var errs []error
+
+	if tmpl.Name == "" {
+		errs = append(errs, fmt.Errorf("option GrantTemplates[%d].Name is empty", i))
+	}
+
+	var object map[string]any
+	if tmpl.Template == nil || json.Unmarshal(tmpl.Template.Raw, &object) != nil || object == nil {
+		errs = append(errs, fmt.Errorf("option GrantTemplates[%d].Template is not a JSON object", i))
+	}
+
+	for _, name := range tmpl.RequiresInputs {
+		if !slices.ContainsFunc(inputs, func(in pluginsv1alpha1.InputDecl) bool { return in.Name == name }) {
+			errs = append(errs, fmt.Errorf(
+				"option GrantTemplates[%d].RequiresInputs names %q, which Inputs does not declare",
+				i,
+				name,
+			))
+		}
+	}
+
+	return errs
 }

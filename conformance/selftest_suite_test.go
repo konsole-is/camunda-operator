@@ -27,6 +27,7 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -39,6 +40,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/yaml"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -99,6 +101,8 @@ var _ = ginkgo.BeforeSuite(func() {
 		}
 		Expect(k8sClient.Create(ctx, section)).To(Succeed())
 	}
+
+	installGrantAdmissionPolicy()
 })
 
 var _ = ginkgo.AfterSuite(func() {
@@ -130,6 +134,36 @@ func envtestBinaryDir() string {
 	return ""
 }
 
+// installGrantAdmissionPolicy creates the Grant admission policy that the
+// operator ships, and waits until it refuses a Grant without the
+// registration label.
+func installGrantAdmissionPolicy() {
+	for file, obj := range map[string]client.Object{
+		"grant_admission_policy.yaml":         &admissionregistrationv1.ValidatingAdmissionPolicy{},
+		"grant_admission_policy_binding.yaml": &admissionregistrationv1.ValidatingAdmissionPolicyBinding{},
+	} {
+		raw, err := os.ReadFile(filepath.Join("..", "config", "plugins", file))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(yaml.Unmarshal(raw, obj)).To(Succeed())
+		Expect(k8sClient.Create(ctx, obj)).To(Succeed())
+	}
+
+	// The policy acts a short time after it is created. The binding covers
+	// every requester, so a refusal of an admin request shows that it acts.
+	unlabelled := &pluginsv1alpha1.Grant{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "unlabelled"},
+		Spec: pluginsv1alpha1.GrantSpec{
+			Cluster:  v1.ClusterRef{Name: "conformance"},
+			Template: "read",
+			Format:   pluginsv1alpha1.GrantFormatAWSIAMStatement,
+			Fragment: &apiextensionsv1.JSON{Raw: []byte(`{"Effect":"Allow"}`)},
+		},
+	}
+	Eventually(func() error {
+		return k8sClient.Create(ctx, unlabelled, client.DryRunAll)
+	}, time.Minute).Should(MatchError(ContainSubstring(grantAuthorPolicy)))
+}
+
 // installPlugin creates the namespace and the ServiceAccount of the plugin
 // name, with a ClusterRole that a plugin chart gives its controller.
 func installPlugin(name string) pluginsv1alpha1.ServiceAccountRef {
@@ -154,6 +188,8 @@ func installPlugin(name string) pluginsv1alpha1.ServiceAccountRef {
 				Verbs: []string{"get", "list", "watch", "update", "patch"}},
 			{APIGroups: []string{plugins}, Resources: []string{"pluginrequests/status", "pluginrequests/finalizers"},
 				Verbs: []string{"update"}},
+			{APIGroups: []string{plugins}, Resources: []string{"grants"},
+				Verbs: []string{"get", "list", "watch", "create", "patch", "delete"}},
 			{APIGroups: []string{"", "storage.k8s.io", "networking.k8s.io"},
 				Resources: []string{"configmaps", "storageclasses", "ingresses"},
 				Verbs:     []string{"get", "list", "watch", "create", "patch", "delete"}},
@@ -323,6 +359,35 @@ func twoSectionRun() Config {
 			{Key: "optimizeUrl", Value: "https://camunda.example.com/optimize", Section: "access"},
 		},
 	})
+}
+
+// grantRun starts an echo controller of the echo section with one grant
+// template that needs the input source, and returns the config of a run
+// against it. The case nosource leaves the input empty.
+func grantRun(defect echo.Defect) Config {
+	cfg := pluginRun(echo.Options{
+		Sections: []string{"echo"},
+		Inputs:   []pluginsv1alpha1.InputDecl{{Name: "source", From: "echo-source/value"}},
+		Outputs:  []echo.Output{{Key: "message", Value: "echo-bucket"}},
+		GrantTemplates: []pluginsv1alpha1.GrantTemplate{{
+			Name:           "read",
+			Format:         pluginsv1alpha1.GrantFormatAWSIAMStatement,
+			RequiresInputs: []string{"source"},
+			Template: &apiextensionsv1.JSON{Raw: []byte(
+				`{"Effect":"Allow","Action":["s3:GetObject"],` +
+					`"Resource":"arn:aws:s3:::{{ .outputs.message }}/{{ .namespace }}/{{ .claim }}/{{ .request }}/*",` +
+					`"Sid":"{{ .parameters.message }}","Condition":{"StringEquals":{"sa":"{{ .serviceAccount }}"}}}`,
+			)},
+		}},
+		Defect: defect,
+	})
+
+	nosource := cfg.Cases[0]
+	nosource.Name = "nosource"
+	nosource.Inputs = nil
+	cfg.Cases = append(cfg.Cases, nosource)
+
+	return cfg
 }
 
 func pluginRun(opts echo.Options) Config {

@@ -361,6 +361,12 @@ func TestParameterTemplatesCheck(t *testing.T) {
 			"spec.parameters.properties.policy.default: {{.pods}}",
 		},
 		{
+			"marked default with an output",
+			`{"type":"object","properties":{"policy":{"type":"string","x-fleet-template":true,` +
+				`"default":"{{ .outputs.bucket }}"}}}`,
+			"is rendered before the plugin writes the outputs",
+		},
+		{
 			"nested marked default",
 			`{"type":"object","properties":{"overrides":{"type":"object","properties":{"policy":` +
 				`{"type":"string","x-fleet-template":true,"default":"{{ .unknown }}"}}}}}`,
