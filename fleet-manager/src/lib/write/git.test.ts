@@ -333,6 +333,43 @@ describe("the Git writer", () => {
     expect(file.spec.presetRef).toBe("large");
   });
 
+  it("while GitOps does not apply a commit, a save from a fresh read still fails with Conflict that names the way out", async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "7" },
+    });
+    ok(
+      await writerFor().apply({
+        intent: "Never applied",
+        apply: [claim("team-a", "orders", "large")],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "7" },
+      }),
+    );
+
+    const fresh = live.get("CamundaClusterClaim/team-a/orders")!;
+    const result = await writerFor().apply({
+      intent: "Later",
+      apply: [claim("team-a", "orders", "medium")],
+      preconditions: {
+        "CamundaClusterClaim/team-a/orders": fresh.metadata.resourceVersion!,
+      },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Conflict",
+          message: expect.stringContaining(
+            "If GitOps cannot apply it, correct or revert team-a/camundaclusterclaims/orders.yaml in the repository.",
+          ),
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["Never applied", "Initial commit"]);
+  });
+
   it("a save from an older read fails with Stale when GitOps applies the previous save during the clone", async () => {
     repo = await serveBareRepository();
     live.set("CamundaClusterClaim/team-a/orders", {

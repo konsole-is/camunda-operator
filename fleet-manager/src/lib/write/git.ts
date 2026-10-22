@@ -315,7 +315,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
         if (annotations?.[REVISION_ANNOTATION] === committed) continue;
         errors.push({
           code: "Conflict",
-          message: `${file} in ${target.url} holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again.`,
+          message: `${file} in ${target.url} holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again. If GitOps cannot apply it, correct or revert ${file} in the repository.`,
           ref,
         });
       } catch (error) {
