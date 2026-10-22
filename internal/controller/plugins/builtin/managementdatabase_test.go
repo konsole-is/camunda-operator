@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
+	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -145,6 +146,50 @@ func TestManagementDatabasesReportTheVersionOfAReadyServer(t *testing.T) {
 			Label: kindDatabaseServer, Value: "ops-db, PostgreSQL 17, Ready", Severity: pluginsv1alpha1.SeverityInfo,
 		}, s.report().summary[0],
 	)
+}
+
+func TestManagementDatabasesReportTheServer(t *testing.T) {
+	ready := func(generation int64) []metav1.Condition {
+		return []metav1.Condition{{
+			Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy,
+			ObservedGeneration: generation,
+		}}
+	}
+	tests := map[string]struct {
+		status v1.DatabaseServerStatus
+		want   pluginsv1alpha1.SummaryItem
+	}{
+		"Ready at the current generation": {
+			v1.DatabaseServerStatus{ObservedGeneration: 2, Version: "17", Conditions: ready(2)},
+			pluginsv1alpha1.SummaryItem{
+				Label: kindDatabaseServer, Value: "ops-db, PostgreSQL 17, Ready", Severity: pluginsv1alpha1.SeverityInfo,
+			},
+		},
+		"Ready from an older generation": {
+			v1.DatabaseServerStatus{ObservedGeneration: 2, Version: "17", Conditions: ready(1)},
+			pluginsv1alpha1.SummaryItem{
+				Label: kindDatabaseServer, Value: "ops-db, updating", Severity: pluginsv1alpha1.SeverityWarning,
+			},
+		},
+		"status from an older generation": {
+			v1.DatabaseServerStatus{ObservedGeneration: 1, Version: "17", Conditions: ready(2)},
+			pluginsv1alpha1.SummaryItem{
+				Label: kindDatabaseServer, Value: "ops-db, updating", Severity: pluginsv1alpha1.SeverityWarning,
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			cell := concepts.NewData[v1.DatabaseServer]("server")
+			cell.Set(v1.DatabaseServer{
+				ObjectMeta: metav1.ObjectMeta{Name: "ops-db", Generation: 2},
+				Status:     tt.status,
+			})
+
+			assert.Equal(t, tt.want, serverItem("ops-db", cell))
+		})
+	}
 }
 
 func TestManagementDatabasesWarnAboutTheOwnedDatabaseOfARemovedComponent(t *testing.T) {

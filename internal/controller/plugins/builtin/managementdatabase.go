@@ -258,16 +258,25 @@ func keptComponents(
 
 // serverItem says whether the DatabaseServer server is there and Ready, with
 // its PostgreSQL version once the server reports it.
-func serverItem(server string, cell *concepts.Data[v1.DatabaseServerStatus]) pluginsv1alpha1.SummaryItem {
+func serverItem(server string, cell *concepts.Data[v1.DatabaseServer]) pluginsv1alpha1.SummaryItem {
 	ready := concepts.NewData[metav1.Condition](server)
-	status, ok := cell.Get()
+	live, ok := cell.Get()
 	if ok {
-		ready.Set(readyOf(status.Conditions))
+		cond := readyOf(live.Status.Conditions)
+		if live.Status.ObservedGeneration != live.Generation ||
+			cond.Type != "" && cond.ObservedGeneration != live.Generation {
+			return pluginsv1alpha1.SummaryItem{
+				Label:    kindDatabaseServer,
+				Value:    server + ", updating",
+				Severity: pluginsv1alpha1.SeverityWarning,
+			}
+		}
+		ready.Set(cond)
 	}
 
 	item := summaryItem(kindDatabaseServer, server, ready)
-	if item.Severity == pluginsv1alpha1.SeverityInfo && status.Version != "" {
-		item.Value = server + ", PostgreSQL " + status.Version + ", Ready"
+	if item.Severity == pluginsv1alpha1.SeverityInfo && live.Status.Version != "" {
+		item.Value = server + ", PostgreSQL " + live.Status.Version + ", Ready"
 	}
 
 	return item

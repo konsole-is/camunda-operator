@@ -34,8 +34,8 @@ import (
 // and deletes the Database of each component that is not listed.
 type Backing struct {
 	Component *component.Component
-	// Server holds the status of the DatabaseServer once it is read.
-	Server *concepts.Data[v1.DatabaseServerStatus]
+	// Server holds the DatabaseServer once it is read.
+	Server *concepts.Data[v1.DatabaseServer]
 	// Databases holds the Ready condition of the Database of each listed
 	// component once it is read. The zero condition means it has none.
 	Databases map[Component]*concepts.Data[metav1.Condition]
@@ -45,13 +45,13 @@ type Backing struct {
 // object is deleted only if the owner owns it.
 func NewBacking(v Values, conditionType string) (Backing, error) {
 	backing := Backing{
-		Server:    concepts.NewData[v1.DatabaseServerStatus]("server"),
+		Server:    concepts.NewData[v1.DatabaseServer]("server"),
 		Databases: map[Component]*concepts.Data[metav1.Condition]{},
 	}
 
 	sb := databaseserver.NewBuilder(Server(v))
-	databaseserver.ExtractInto(sb, backing.Server, func(s v1.DatabaseServer) (v1.DatabaseServerStatus, error) {
-		return s.Status, nil
+	databaseserver.ExtractInto(sb, backing.Server, func(s v1.DatabaseServer) (v1.DatabaseServer, error) {
+		return s, nil
 	})
 	server, err := sb.Build()
 	if err != nil {

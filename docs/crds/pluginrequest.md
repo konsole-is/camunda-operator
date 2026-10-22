@@ -336,6 +336,8 @@ status:
       onOrphan: Kept
 ```
 
+While the server has not reported on its current spec, the first item is `my-plane-db, updating` with the `Warning` severity.
+
 When a component leaves `databases`, the operator deletes its `Database`, and the request removes its output. If you created a `Database` of that name yourself, it stays. The logical database and its data stay on the server, as [Database deletion](database.md#deletion) says. Until the `Database` is gone, the summary shows a `Warning` item:
 
 ```yaml
