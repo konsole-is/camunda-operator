@@ -14,10 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builtin
+package managementdatabase
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
@@ -31,6 +30,7 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
@@ -39,19 +39,27 @@ func TestManagementDatabasesParseDeduplicatesAndOrders(t *testing.T) {
 	request := planeRequest(`["webModeler","identity","identity"]`)
 
 	assert.Equal(
-		t, []contractRef{
-			{output: pluginstartup.OutputIdentityDatabaseConfig, kind: kindDatabaseConfig, name: "ops-identity"},
-			{output: pluginstartup.OutputWebModelerDatabaseConfig, kind: kindDatabaseConfig, name: "ops-web-modeler"},
-		}, managementDatabases{}.contracts(request),
+		t, []adapter.ContractRef{
+			{
+				Output: pluginstartup.OutputIdentityDatabaseConfig,
+				Kind:   adapter.KindDatabaseConfig,
+				Name:   "ops-identity",
+			},
+			{
+				Output: pluginstartup.OutputWebModelerDatabaseConfig,
+				Kind:   adapter.KindDatabaseConfig,
+				Name:   "ops-web-modeler",
+			},
+		}, Handler{}.Contracts(request),
 	)
 }
 
 func TestManagementDatabasesReadTheListedDatabaseConfigs(t *testing.T) {
 	s := buildFor(t, planeRequest(`["keycloak","identity"]`))
 
-	require.NotNil(t, s.backing)
+	require.NotNil(t, s.Backing)
 	for name, want := range map[string]bool{"ops-keycloak": true, "ops-identity": true, "ops-web-modeler": false} {
-		_, ok := s.outputs.Resource("core.camunda.io/v1/DatabaseConfig/my-cluster-ns/" + name)
+		_, ok := s.Outputs.Resource("core.camunda.io/v1/DatabaseConfig/my-cluster-ns/" + name)
 		assert.Equal(t, want, ok, name)
 	}
 }
@@ -62,12 +70,12 @@ func TestManagementDatabasesPublishOnlyTheListedOutputs(t *testing.T) {
 
 	reconcileOutputs(t, s, request, fakeReader(t, databaseConfig("ops-keycloak"), databaseConfig("ops-identity")))
 
-	assert.Equal(t, metav1.ConditionTrue, s.outputs.GetCondition(request).Status)
+	assert.Equal(t, metav1.ConditionTrue, s.Outputs.GetCondition(request).Status)
 	assert.Equal(
 		t, map[string]string{
 			pluginstartup.OutputKeycloakDatabaseConfig: "ops-keycloak",
 			pluginstartup.OutputIdentityDatabaseConfig: "ops-identity",
-		}, s.report().outputs,
+		}, s.Report().Outputs,
 	)
 }
 
@@ -77,7 +85,7 @@ func TestManagementDatabasesWaitForAMissingDatabaseConfig(t *testing.T) {
 
 	reconcileOutputs(t, s, request, fakeReader(t, databaseConfig("ops-keycloak")))
 
-	cond := s.outputs.GetCondition(request)
+	cond := s.Outputs.GetCondition(request)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, string(component.GuardBlocked), cond.Reason)
 }
@@ -94,13 +102,13 @@ func TestManagementDatabasesWithoutDatabasesWritesTheServerOnly(t *testing.T) {
 
 			reconcileOutputs(t, s, request, fakeReader(t))
 
-			assert.Empty(t, managementDatabases{}.contracts(request))
-			assert.Equal(t, metav1.ConditionTrue, s.outputs.GetCondition(request).Status)
-			assert.Empty(t, s.report().outputs)
+			assert.Empty(t, Handler{}.Contracts(request))
+			assert.Equal(t, metav1.ConditionTrue, s.Outputs.GetCondition(request).Status)
+			assert.Empty(t, s.Report().Outputs)
 			assert.Equal(
 				t, []pluginsv1alpha1.ResourceRef{
-					{Kind: kindDatabaseServer, Name: "ops-db", OnOrphan: pluginsv1alpha1.OnOrphanKept},
-				}, s.report().resources,
+					{Kind: adapter.KindDatabaseServer, Name: "ops-db", OnOrphan: pluginsv1alpha1.OnOrphanKept},
+				}, s.Report().Resources,
 			)
 		})
 	}
@@ -109,21 +117,21 @@ func TestManagementDatabasesWithoutDatabasesWritesTheServerOnly(t *testing.T) {
 func TestManagementDatabasesReportTheServerAndTheDatabases(t *testing.T) {
 	s := buildFor(t, planeRequest(`["identity"]`))
 
-	rep := s.report()
+	rep := s.Report()
 
 	assert.Equal(
 		t, []pluginsv1alpha1.ResourceRef{
-			{Kind: kindDatabaseServer, Name: "ops-db", OnOrphan: pluginsv1alpha1.OnOrphanKept},
-			{Kind: kindDatabase, Name: "ops-identity", OnOrphan: pluginsv1alpha1.OnOrphanKept},
-		}, rep.resources,
+			{Kind: adapter.KindDatabaseServer, Name: "ops-db", OnOrphan: pluginsv1alpha1.OnOrphanKept},
+			{Kind: adapter.KindDatabase, Name: "ops-identity", OnOrphan: pluginsv1alpha1.OnOrphanKept},
+		}, rep.Resources,
 	)
-	require.NotNil(t, rep.podSelector)
-	assert.Equal(t, map[string]string{"camunda.io/database-server": "ops-db"}, rep.podSelector.MatchLabels)
+	require.NotNil(t, rep.PodSelector)
+	assert.Equal(t, map[string]string{"camunda.io/database-server": "ops-db"}, rep.PodSelector.MatchLabels)
 	assert.Equal(
 		t, []pluginsv1alpha1.SummaryItem{
-			{Label: kindDatabaseServer, Value: "ops-db, waiting", Severity: pluginsv1alpha1.SeverityWarning},
-			{Label: kindDatabase, Value: "ops-identity, waiting", Severity: pluginsv1alpha1.SeverityWarning},
-		}, rep.summary,
+			{Label: adapter.KindDatabaseServer, Value: "ops-db, waiting", Severity: pluginsv1alpha1.SeverityWarning},
+			{Label: adapter.KindDatabase, Value: "ops-identity, waiting", Severity: pluginsv1alpha1.SeverityWarning},
+		}, rep.Summary,
 	)
 }
 
@@ -138,14 +146,14 @@ func TestManagementDatabasesReportTheVersionOfAReadyServer(t *testing.T) {
 	}
 	c := fakeReader(t, request, server)
 
-	require.NoError(t, s.backing.Reconcile(t.Context(), component.ReconcileContext{
+	require.NoError(t, s.Backing.Reconcile(t.Context(), component.ReconcileContext{
 		Client: c, APIReader: c, Scheme: c.Scheme(), Owner: request, EventRecorder: events.NewFakeRecorder(100),
 	}))
 
 	assert.Equal(
 		t, pluginsv1alpha1.SummaryItem{
-			Label: kindDatabaseServer, Value: "ops-db, PostgreSQL 17, Ready", Severity: pluginsv1alpha1.SeverityInfo,
-		}, s.report().summary[0],
+			Label: adapter.KindDatabaseServer, Value: "ops-db, PostgreSQL 17, Ready", Severity: pluginsv1alpha1.SeverityInfo,
+		}, s.Report().Summary[0],
 	)
 }
 
@@ -163,19 +171,19 @@ func TestManagementDatabasesReportTheServer(t *testing.T) {
 		"Ready at the current generation": {
 			v1.DatabaseServerStatus{ObservedGeneration: 2, Version: "17", Conditions: ready(2)},
 			pluginsv1alpha1.SummaryItem{
-				Label: kindDatabaseServer, Value: "ops-db, PostgreSQL 17, Ready", Severity: pluginsv1alpha1.SeverityInfo,
+				Label: adapter.KindDatabaseServer, Value: "ops-db, PostgreSQL 17, Ready", Severity: pluginsv1alpha1.SeverityInfo,
 			},
 		},
 		"Ready from an older generation": {
 			v1.DatabaseServerStatus{ObservedGeneration: 2, Version: "17", Conditions: ready(1)},
 			pluginsv1alpha1.SummaryItem{
-				Label: kindDatabaseServer, Value: "ops-db, updating", Severity: pluginsv1alpha1.SeverityWarning,
+				Label: adapter.KindDatabaseServer, Value: "ops-db, updating", Severity: pluginsv1alpha1.SeverityWarning,
 			},
 		},
 		"status from an older generation": {
 			v1.DatabaseServerStatus{ObservedGeneration: 1, Version: "17", Conditions: ready(2)},
 			pluginsv1alpha1.SummaryItem{
-				Label: kindDatabaseServer, Value: "ops-db, updating", Severity: pluginsv1alpha1.SeverityWarning,
+				Label: adapter.KindDatabaseServer, Value: "ops-db, updating", Severity: pluginsv1alpha1.SeverityWarning,
 			},
 		},
 	}
@@ -188,7 +196,7 @@ func TestManagementDatabasesReportTheServer(t *testing.T) {
 				Status:     tt.status,
 			})
 
-			assert.Equal(t, tt.want, serverItem("ops-db", cell))
+			assert.Equal(t, tt.want, adapter.ServerItem("ops-db", cell))
 		})
 	}
 }
@@ -198,16 +206,16 @@ func TestManagementDatabasesWarnAboutTheOwnedDatabaseOfARemovedComponent(t *test
 	request.UID = requestUID
 	owned := liveDatabases(liveDatabase("ops-web-modeler", request.UID))
 
-	s, err := managementDatabases{}.build(request, owned)
+	s, err := Handler{}.Build(request, owned)
 	require.NoError(t, err)
 
-	assert.Contains(t, s.report().summary, removedItem, "the status of the request does not matter")
+	assert.Contains(t, s.Report().Summary, removedItem, "the status of the request does not matter")
 }
 
 func TestManagementDatabasesDoNotWarnWithoutAnOwnedDatabase(t *testing.T) {
 	tests := map[string]struct {
 		databases string
-		live      liveObjects
+		live      adapter.LiveObjects
 	}{
 		"the Database is gone": {`["identity"]`, liveDatabases()},
 		"the Database has another owner": {
@@ -224,10 +232,10 @@ func TestManagementDatabasesDoNotWarnWithoutAnOwnedDatabase(t *testing.T) {
 			request.UID = requestUID
 			request.Status.Summary = []pluginsv1alpha1.SummaryItem{removedItem}
 
-			s, err := managementDatabases{}.build(request, tt.live)
+			s, err := Handler{}.Build(request, tt.live)
 			require.NoError(t, err)
 
-			assert.NotContains(t, s.report().summary, removedItem)
+			assert.NotContains(t, s.Report().Summary, removedItem)
 		})
 	}
 }
@@ -254,27 +262,27 @@ func TestManagementDatabasesSetThePostgreSQLVersion(t *testing.T) {
 }
 
 func TestManagementDatabasesDeleteTheDatabasesBeforeTheServer(t *testing.T) {
-	c, err := managementDatabases{}.cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyDelete, nil)
+	c, err := Handler{}.Cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyDelete, nil)
 	require.NoError(t, err)
 
-	require.Len(t, c.stages, 2)
+	require.Len(t, c.Stages, 2)
 	assert.Equal(
 		t, []string{"Database/ops-keycloak", "Database/ops-identity", "Database/ops-web-modeler"},
-		objectNames(c.stages[0].remaining), "every Database, also one that is not listed now",
+		objectNames(c.Stages[0].Remaining), "every Database, also one that is not listed now",
 	)
-	assert.Equal(t, []string{"DatabaseServer/ops-db"}, objectNames(c.stages[1].remaining))
+	assert.Equal(t, []string{"DatabaseServer/ops-db"}, objectNames(c.Stages[1].Remaining))
 }
 
 func TestManagementDatabasesOrphanWaitsUntilNoObjectReferencesTheRequest(t *testing.T) {
-	c, err := managementDatabases{}.cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyOrphan, nil)
+	c, err := Handler{}.Cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyOrphan, nil)
 	require.NoError(t, err)
 
-	require.Len(t, c.stages, 1)
-	assert.Len(t, c.stages[0].components, 1)
+	require.Len(t, c.Stages, 1)
+	assert.Len(t, c.Stages[0].Components, 1)
 	assert.ElementsMatch(
 		t, []string{
 			"DatabaseServer/ops-db", "Database/ops-keycloak", "Database/ops-identity", "Database/ops-web-modeler",
-		}, objectNames(c.stages[0].remaining), "garbage collection follows an owner reference that stays",
+		}, objectNames(c.Stages[0].Remaining), "garbage collection follows an owner reference that stays",
 	)
 }
 
@@ -282,18 +290,18 @@ func TestManagementDatabasesRefuseAnUnknownParameter(t *testing.T) {
 	request := planeRequest(`["identity"]`)
 	request.Spec.Parameters.Raw = []byte(`{"preset":"small","databases":["identity"],"Databases":[]}`)
 
-	_, err := managementDatabases{}.build(request, nil)
+	_, err := Handler{}.Build(request, nil)
 
 	var failure *conditions.PreCheckFailure
 	require.ErrorAs(t, err, &failure)
 	assert.Equal(t, pluginsv1alpha1.ReasonInvalidParameters, failure.Reason)
 	assert.Contains(t, failure.Message, "spec.parameters.Databases")
-	assert.Nil(t, managementDatabases{}.contracts(request))
+	assert.Nil(t, Handler{}.Contracts(request))
 }
 
 func TestManagementDatabasesLabelEveryBackingObject(t *testing.T) {
 	request := planeRequest(`["keycloak","identity","webModeler"]`)
-	objs, err := buildFor(t, request).backing.Preview()
+	objs, err := buildFor(t, request).Backing.Preview()
 	require.NoError(t, err)
 
 	require.Len(t, objs, 4)
@@ -309,11 +317,11 @@ func TestManagementDatabasesLabelEveryBackingObject(t *testing.T) {
 }
 
 func TestManagementDatabasesNameEveryBackingObject(t *testing.T) {
-	refs := managementDatabases{}.backing(planeRequest(`[]`))
+	refs := Handler{}.Backing(planeRequest(`[]`))
 	names := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		assert.Equal(t, "my-cluster-ns", ref.object.GetNamespace())
-		names = append(names, ref.kind+"/"+ref.object.GetName())
+		assert.Equal(t, "my-cluster-ns", ref.Object.GetNamespace())
+		names = append(names, ref.Kind+"/"+ref.Object.GetName())
 	}
 
 	assert.Equal(
@@ -326,7 +334,7 @@ func TestManagementDatabasesNameEveryBackingObject(t *testing.T) {
 const requestUID = "request-uid"
 
 var removedItem = pluginsv1alpha1.SummaryItem{
-	Label:    kindDatabase,
+	Label:    adapter.KindDatabase,
 	Value:    "ops-web-modeler removed, the logical database web_modeler stays on ops-db",
 	Severity: pluginsv1alpha1.SeverityWarning,
 }
@@ -348,8 +356,8 @@ func planeRequest(databases string) *pluginsv1alpha1.PluginRequest {
 
 // buildFor builds the components of the management databases handler for
 // request.
-func buildFor(t *testing.T, request *pluginsv1alpha1.PluginRequest) served {
-	s, err := managementDatabases{}.build(request, nil)
+func buildFor(t *testing.T, request *pluginsv1alpha1.PluginRequest) adapter.Served {
+	s, err := Handler{}.Build(request, nil)
 	require.NoError(t, err)
 	return s
 }
@@ -366,17 +374,17 @@ func liveDatabase(name string, uid types.UID) *v1.Database {
 }
 
 // liveDatabases returns databases as the live objects of a request.
-func liveDatabases(databases ...*v1.Database) liveObjects {
-	live := liveObjects{}
+func liveDatabases(databases ...*v1.Database) adapter.LiveObjects {
+	live := adapter.LiveObjects{}
 	for _, db := range databases {
-		live[liveKey{kind: kindDatabase, name: db.Name}] = db
+		live[adapter.LiveKey{Kind: adapter.KindDatabase, Name: db.Name}] = db
 	}
 	return live
 }
 
 // previewServer returns the DatabaseServer ops-db that s applies.
-func previewServer(t *testing.T, s served) *v1.DatabaseServer {
-	res, ok := s.backing.Resource("core.camunda.io/v1/DatabaseServer/my-cluster-ns/ops-db")
+func previewServer(t *testing.T, s adapter.Served) *v1.DatabaseServer {
+	res, ok := s.Backing.Resource("core.camunda.io/v1/DatabaseServer/my-cluster-ns/ops-db")
 	require.True(t, ok)
 	previewer, ok := res.(interface{ Preview() (client.Object, error) })
 	require.True(t, ok)
@@ -389,12 +397,4 @@ func previewServer(t *testing.T, s served) *v1.DatabaseServer {
 
 func databaseConfig(name string) *v1.DatabaseConfig {
 	return &v1.DatabaseConfig{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "my-cluster-ns"}}
-}
-
-func objectNames(objs []client.Object) []string {
-	names := make([]string, 0, len(objs))
-	for _, o := range objs {
-		names = append(names, reflect.TypeOf(o).Elem().Name()+"/"+o.GetName())
-	}
-	return names
 }

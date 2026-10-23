@@ -32,6 +32,7 @@ import (
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	servercomponents "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -104,8 +105,8 @@ var _ = Describe("Built-in PostgreSQL requests", func() {
 
 		live = expectCondition(request, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
 		Expect(live.Status.Resources).To(Equal([]pluginsv1alpha1.ResourceRef{
-			{Kind: kindDatabaseServer, Name: name, OnOrphan: pluginsv1alpha1.OnOrphanKept},
-			{Kind: kindDatabase, Name: claim, OnOrphan: pluginsv1alpha1.OnOrphanKept},
+			{Kind: adapter.KindDatabaseServer, Name: name, OnOrphan: pluginsv1alpha1.OnOrphanKept},
+			{Kind: adapter.KindDatabase, Name: claim, OnOrphan: pluginsv1alpha1.OnOrphanKept},
 		}))
 		Expect(live.Status.PodSelector.MatchLabels).To(Equal(map[string]string{"camunda.io/database-server": name}))
 	})

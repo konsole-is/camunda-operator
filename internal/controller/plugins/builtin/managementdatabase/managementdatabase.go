@@ -14,29 +14,25 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builtin
+// Package managementdatabase serves the built-in registration
+// management-database-server.
+package managementdatabase
 
 import (
 	"encoding/json"
 	"slices"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
-	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	mdb "github.com/konsole-is/camunda-operator/pkg/components/managementdatabases"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
-)
-
-// The kinds of the backing resources of management-database-server.
-const (
-	kindDatabaseServer = "DatabaseServer"
-	kindDatabase       = "Database"
 )
 
 // managementOutputs are the output keys of the components.
@@ -46,65 +42,67 @@ var managementOutputs = map[mdb.Component]string{
 	mdb.WebModeler: pluginstartup.OutputWebModelerDatabaseConfig,
 }
 
-// managementDatabases serves management-database-server. It applies the
+// Handler serves management-database-server. It applies the
 // DatabaseServer <plane>-db and one Database for each component that the
 // parameters list.
-type managementDatabases struct{}
+type Handler struct{}
 
-func (managementDatabases) build(request *pluginsv1alpha1.PluginRequest, live liveObjects) (served, error) {
+// Build implements adapter.Handler.
+func (Handler) Build(request *pluginsv1alpha1.PluginRequest, live adapter.LiveObjects) (adapter.Served, error) {
 	v, err := managementValuesWithParameters(request)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
 	refs := managementContracts(v)
-	outputs, _, err := outputsComponent(refs, request.Namespace)
+	outputs, _, err := adapter.OutputsComponent(refs, request.Namespace)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
 	backing, err := mdb.NewBacking(v, v1.ConditionReady)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
 	kept := keptComponents(request, v, live)
 
-	return served{
-		outputs: outputs,
-		backing: backing.Component,
-		report: func() report {
-			rep := report{
-				outputs: map[string]string{},
-				summary: []pluginsv1alpha1.SummaryItem{serverItem(v.Server, backing.Server)},
-				resources: []pluginsv1alpha1.ResourceRef{{
-					Kind: kindDatabaseServer, Name: v.Server, OnOrphan: pluginsv1alpha1.OnOrphanKept,
+	return adapter.Served{
+		Outputs: outputs,
+		Backing: backing.Component,
+		Report: func() adapter.Report {
+			rep := adapter.Report{
+				Outputs: map[string]string{},
+				Summary: []pluginsv1alpha1.SummaryItem{adapter.ServerItem(v.Server, backing.Server)},
+				Resources: []pluginsv1alpha1.ResourceRef{{
+					Kind: adapter.KindDatabaseServer, Name: v.Server, OnOrphan: pluginsv1alpha1.OnOrphanKept,
 				}},
-				podSelector: &metav1.LabelSelector{
+				PodSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{labels.DatabaseServerKey: labels.DatabaseServer(v.Server).Name},
 				},
 			}
 			for i, ref := range refs {
-				rep.outputs[ref.output] = ref.name
-				rep.summary = append(
-					rep.summary,
-					summaryItem(kindDatabase, ref.name, backing.Databases[v.Databases[i]]),
+				rep.Outputs[ref.Output] = ref.Name
+				rep.Summary = append(
+					rep.Summary,
+					adapter.SummaryItem(adapter.KindDatabase, ref.Name, backing.Databases[v.Databases[i]]),
 				)
-				rep.resources = append(rep.resources, pluginsv1alpha1.ResourceRef{
-					Kind: kindDatabase, Name: ref.name, OnOrphan: pluginsv1alpha1.OnOrphanKept,
+				rep.Resources = append(rep.Resources, pluginsv1alpha1.ResourceRef{
+					Kind: adapter.KindDatabase, Name: ref.Name, OnOrphan: pluginsv1alpha1.OnOrphanKept,
 				})
 			}
-			rep.summary = append(rep.summary, kept...)
+			rep.Summary = append(rep.Summary, kept...)
 			return rep
 		},
 	}, nil
 }
 
-func (managementDatabases) cleanup(
+// Cleanup implements adapter.Handler.
+func (Handler) Cleanup(
 	request *pluginsv1alpha1.PluginRequest,
 	policy pluginsv1alpha1.DeletionPolicy,
-	_ liveObjects,
-) (cleanup, error) {
+	_ adapter.LiveObjects,
+) (adapter.Cleanup, error) {
 	v := managementValues(request)
 	databases := make([]client.Object, 0, len(mdb.Components))
 	for _, c := range mdb.Components {
@@ -114,30 +112,31 @@ func (managementDatabases) cleanup(
 	if policy == pluginsv1alpha1.DeletionPolicyOrphan {
 		orphan, err := mdb.Orphan(v)
 		if err != nil {
-			return cleanup{}, err
+			return adapter.Cleanup{}, err
 		}
-		return cleanup{stages: []cleanupStage{{
-			components: []*component.Component{orphan},
-			remaining:  append(databases, mdb.Server(v)),
+		return adapter.Cleanup{Stages: []adapter.CleanupStage{{
+			Components: []*component.Component{orphan},
+			Remaining:  append(databases, mdb.Server(v)),
 		}}}, nil
 	}
 
 	deleteDatabases, err := mdb.DeleteDatabases(v)
 	if err != nil {
-		return cleanup{}, err
+		return adapter.Cleanup{}, err
 	}
 	deleteServer, err := mdb.DeleteServer(v)
 	if err != nil {
-		return cleanup{}, err
+		return adapter.Cleanup{}, err
 	}
 
-	return cleanup{stages: []cleanupStage{
-		{components: []*component.Component{deleteDatabases}, remaining: databases},
-		{components: []*component.Component{deleteServer}, remaining: []client.Object{mdb.Server(v)}},
+	return adapter.Cleanup{Stages: []adapter.CleanupStage{
+		{Components: []*component.Component{deleteDatabases}, Remaining: databases},
+		{Components: []*component.Component{deleteServer}, Remaining: []client.Object{mdb.Server(v)}},
 	}}, nil
 }
 
-func (managementDatabases) contracts(request *pluginsv1alpha1.PluginRequest) []contractRef {
+// Contracts implements adapter.Handler.
+func (Handler) Contracts(request *pluginsv1alpha1.PluginRequest) []adapter.ContractRef {
 	v, err := managementValuesWithParameters(request)
 	if err != nil {
 		return nil
@@ -146,12 +145,13 @@ func (managementDatabases) contracts(request *pluginsv1alpha1.PluginRequest) []c
 	return managementContracts(v)
 }
 
-func (managementDatabases) backing(request *pluginsv1alpha1.PluginRequest) []backingRef {
+// Backing implements adapter.Handler.
+func (Handler) Backing(request *pluginsv1alpha1.PluginRequest) []adapter.BackingRef {
 	v := managementValues(request)
-	refs := make([]backingRef, 0, 1+len(mdb.Components))
-	refs = append(refs, backingRef{kind: kindDatabaseServer, object: mdb.Server(v)})
+	refs := make([]adapter.BackingRef, 0, 1+len(mdb.Components))
+	refs = append(refs, adapter.BackingRef{Kind: adapter.KindDatabaseServer, Object: mdb.Server(v)})
 	for _, c := range mdb.Components {
-		refs = append(refs, backingRef{kind: kindDatabase, object: mdb.Database(v, c)})
+		refs = append(refs, adapter.BackingRef{Kind: adapter.KindDatabase, Object: mdb.Database(v, c)})
 	}
 
 	return refs
@@ -180,7 +180,7 @@ func managementValues(request *pluginsv1alpha1.PluginRequest) mdb.Values {
 		Plane:            plane,
 		Server:           plane + pluginstartup.BackingSuffixManagementDatabaseServer,
 		StorageClassName: request.Spec.Inputs[pluginstartup.OutputStorageClassName],
-		Labels:           backingLabels(request),
+		Labels:           adapter.BackingLabels(request),
 	}
 }
 
@@ -199,13 +199,13 @@ type managementParameters struct {
 // duplicates and follow the order of mdb.Components.
 func decodeManagementParameters(parameters *apiextensionsv1.JSON) (managementParameters, error) {
 	var top map[string]json.RawMessage
-	if err := decodeStrict(parameters, &top); err != nil {
-		return managementParameters{}, invalidParameter("spec.parameters", err)
+	if err := adapter.DecodeStrict(parameters, &top); err != nil {
+		return managementParameters{}, adapter.InvalidParameter("spec.parameters", err)
 	}
 
 	var p managementParameters
 	var listed []mdb.Component
-	if err := decodeFields(top, "spec.parameters.", map[string]any{
+	if err := adapter.DecodeFields(top, "spec.parameters.", map[string]any{
 		"preset":    &p.Preset,
 		"version":   &p.Version,
 		"databases": &listed,
@@ -228,13 +228,13 @@ func decodeManagementParameters(parameters *apiextensionsv1.JSON) (managementPar
 
 // managementContracts returns the DatabaseConfig of each listed component of
 // v, in the order of v.Databases.
-func managementContracts(v mdb.Values) []contractRef {
-	refs := make([]contractRef, 0, len(v.Databases))
+func managementContracts(v mdb.Values) []adapter.ContractRef {
+	refs := make([]adapter.ContractRef, 0, len(v.Databases))
 	for _, c := range v.Databases {
-		refs = append(refs, contractRef{
-			output: managementOutputs[c],
-			kind:   kindDatabaseConfig,
-			name:   mdb.DatabaseName(v.Plane, c),
+		refs = append(refs, adapter.ContractRef{
+			Output: managementOutputs[c],
+			Kind:   adapter.KindDatabaseConfig,
+			Name:   mdb.DatabaseName(v.Plane, c),
 		})
 	}
 
@@ -244,48 +244,22 @@ func managementContracts(v mdb.Values) []contractRef {
 func keptComponents(
 	request *pluginsv1alpha1.PluginRequest,
 	v mdb.Values,
-	live liveObjects,
+	live adapter.LiveObjects,
 ) []pluginsv1alpha1.SummaryItem {
 	var items []pluginsv1alpha1.SummaryItem
 	for _, c := range mdb.Components {
 		name := mdb.DatabaseName(v.Plane, c)
-		current, ok := liveAs[*v1.Database](live, kindDatabase, name)
-		if slices.Contains(v.Databases, c) || !ok || !ownedBy(current, request.UID) {
+		current, ok := adapter.LiveAs[*v1.Database](live, adapter.KindDatabase, name)
+		if slices.Contains(v.Databases, c) || !ok || !adapter.OwnedBy(current, request.UID) {
 			continue
 		}
 
 		items = append(items, pluginsv1alpha1.SummaryItem{
-			Label:    kindDatabase,
+			Label:    adapter.KindDatabase,
 			Value:    name + " removed, the logical database " + mdb.LogicalName(c) + " stays on " + v.Server,
 			Severity: pluginsv1alpha1.SeverityWarning,
 		})
 	}
 
 	return items
-}
-
-// serverItem says whether the DatabaseServer server is there and Ready, with
-// its PostgreSQL version once the server reports it.
-func serverItem(server string, cell *concepts.Data[v1.DatabaseServer]) pluginsv1alpha1.SummaryItem {
-	ready := concepts.NewData[metav1.Condition](server)
-	live, ok := cell.Get()
-	if ok {
-		cond := readyOf(live.Status.Conditions)
-		if live.Status.ObservedGeneration != live.Generation ||
-			cond.Type != "" && cond.ObservedGeneration != live.Generation {
-			return pluginsv1alpha1.SummaryItem{
-				Label:    kindDatabaseServer,
-				Value:    server + ", updating",
-				Severity: pluginsv1alpha1.SeverityWarning,
-			}
-		}
-		ready.Set(cond)
-	}
-
-	item := summaryItem(kindDatabaseServer, server, ready)
-	if item.Severity == pluginsv1alpha1.SeverityInfo && live.Status.Version != "" {
-		item.Value = server + ", PostgreSQL " + live.Status.Version + ", Ready"
-	}
-
-	return item
 }

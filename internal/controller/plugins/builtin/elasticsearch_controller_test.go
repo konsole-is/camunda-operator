@@ -33,6 +33,7 @@ import (
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 )
 
@@ -91,7 +92,7 @@ var _ = Describe("Built-in elasticsearch requests", func() {
 
 		live = expectCondition(request, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
 		Expect(live.Status.Resources).To(Equal([]pluginsv1alpha1.ResourceRef{{
-			Kind: kindElasticsearchCluster, Name: name, OnOrphan: pluginsv1alpha1.OnOrphanKept,
+			Kind: adapter.KindElasticsearchCluster, Name: name, OnOrphan: pluginsv1alpha1.OnOrphanKept,
 		}}))
 		Expect(
 			live.Status.PodSelector.MatchLabels,

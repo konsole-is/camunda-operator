@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builtin
+package adapter
 
 import (
 	"encoding/json"
@@ -24,11 +24,11 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
-// decodeAnnotations returns the ServiceAccount annotations of the input
+// DecodeAnnotations returns the ServiceAccount annotations of the input
 // serviceAccountAnnotations of inputs, or nil when the input is absent or
 // empty. A value that is not a JSON object of strings returns a
 // *conditions.PreCheckFailure with reason InvalidParameters.
-func decodeAnnotations(inputs map[string]string) (map[string]string, error) {
+func DecodeAnnotations(inputs map[string]string) (map[string]string, error) {
 	raw := inputs[pluginstartup.OutputServiceAccountAnnotations]
 	if raw == "" {
 		return nil, nil
