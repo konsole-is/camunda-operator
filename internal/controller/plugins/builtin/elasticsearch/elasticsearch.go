@@ -14,7 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builtin
+// Package elasticsearch serves the built-in registration elasticsearch.
+package elasticsearch
 
 import (
 	"encoding/json"
@@ -33,21 +34,19 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	escomponents "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	eswrapper "github.com/konsole-is/camunda-operator/pkg/wrappers/elasticsearchcluster"
 )
 
-// kindElasticsearchCluster is the kind of the backing object of elasticsearch.
-const kindElasticsearchCluster = "ElasticsearchCluster"
-
-// elasticsearch serves the built-in registration elasticsearch. It applies
+// Handler serves the built-in registration elasticsearch. It applies
 // the ElasticsearchCluster <claim>-es, from the preset, the release, and the
 // overrides of the parameters and from the inputs, and publishes the
 // SecondaryStorageConfig of the same name. An override never lowers the
 // live storage size.
-type elasticsearch struct{}
+type Handler struct{}
 
 // elasticsearchParameters are the parameters of an elasticsearch request.
 type elasticsearchParameters struct {
@@ -64,15 +63,16 @@ type elasticsearchOverrides struct {
 	PodLabels   map[string]string
 }
 
-func (elasticsearch) build(request *pluginsv1alpha1.PluginRequest, live liveObjects) (served, error) {
+// Build implements adapter.Handler.
+func (Handler) Build(request *pluginsv1alpha1.PluginRequest, live adapter.LiveObjects) (adapter.Served, error) {
 	p, err := decodeElasticsearchParameters(request.Spec.Parameters)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
 	desired, shrink, err := elasticsearchClusterFor(request, p, live)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
 	cell := concepts.NewData[v1.ElasticsearchCluster]("cluster")
@@ -82,7 +82,7 @@ func (elasticsearch) build(request *pluginsv1alpha1.PluginRequest, live liveObje
 	})
 	res, err := b.Build()
 	if err != nil {
-		return served{}, fmt.Errorf("building the ElasticsearchCluster: %w", err)
+		return adapter.Served{}, fmt.Errorf("building the ElasticsearchCluster: %w", err)
 	}
 	backing, err := component.NewComponentBuilder().
 		WithName("backing").
@@ -90,32 +90,32 @@ func (elasticsearch) build(request *pluginsv1alpha1.PluginRequest, live liveObje
 		WithResource(res, component.DeleteOnlyIfOwned()).
 		Build()
 	if err != nil {
-		return served{}, fmt.Errorf("building the backing component: %w", err)
+		return adapter.Served{}, fmt.Errorf("building the backing component: %w", err)
 	}
 
 	contract := elasticsearchContract(request)
-	outputs, _, err := outputsComponent([]contractRef{contract}, request.Namespace)
+	outputs, _, err := adapter.OutputsComponent([]adapter.ContractRef{contract}, request.Namespace)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
-	return served{
-		outputs: outputs,
-		backing: backing,
-		report: func() report {
+	return adapter.Served{
+		Outputs: outputs,
+		Backing: backing,
+		Report: func() adapter.Report {
 			summary := elasticsearchSummary(cell.Get())
 			if shrink != nil {
 				summary = append(summary, *shrink)
 			}
-			return report{
-				outputs: map[string]string{contract.output: contract.name},
-				summary: summary,
-				resources: []pluginsv1alpha1.ResourceRef{{
-					Kind:     kindElasticsearchCluster,
+			return adapter.Report{
+				Outputs: map[string]string{contract.Output: contract.Name},
+				Summary: summary,
+				Resources: []pluginsv1alpha1.ResourceRef{{
+					Kind:     adapter.KindElasticsearchCluster,
 					Name:     desired.Name,
 					OnOrphan: pluginsv1alpha1.OnOrphanKept,
 				}},
-				podSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+				PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
 					labels.ElasticsearchClusterKey: labels.ElasticsearchCluster(desired.Name).Name,
 				}},
 			}
@@ -129,14 +129,14 @@ func (elasticsearch) build(request *pluginsv1alpha1.PluginRequest, live liveObje
 func elasticsearchClusterFor(
 	request *pluginsv1alpha1.PluginRequest,
 	p elasticsearchParameters,
-	live liveObjects,
+	live adapter.LiveObjects,
 ) (cluster *v1.ElasticsearchCluster, shrink *pluginsv1alpha1.SummaryItem, err error) {
 	name := elasticsearchClusterName(request)
 	cluster = &v1.ElasticsearchCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: request.Namespace,
-			Labels:    backingLabels(request),
+			Labels:    adapter.BackingLabels(request),
 		},
 		Spec: v1.ElasticsearchClusterSpec{
 			PresetRef:              p.Preset,
@@ -155,8 +155,8 @@ func elasticsearchClusterFor(
 		cluster.Spec.StorageClassName = &class
 	}
 
-	if current, ok := liveAs[*v1.ElasticsearchCluster](live, kindElasticsearchCluster, name); ok {
-		cluster.Spec.StorageSize, shrink = keepLiveStorageSize(
+	if current, ok := adapter.LiveAs[*v1.ElasticsearchCluster](live, adapter.KindElasticsearchCluster, name); ok {
+		cluster.Spec.StorageSize, shrink = adapter.KeepLiveStorageSize(
 			cluster.Spec.StorageSize, current.Spec.StorageSize, current.Status.Volumes,
 		)
 	}
@@ -174,7 +174,7 @@ func elasticsearchClusterFor(
 // cloud identity request trusts, so that a preset cannot move the account
 // away from it. Without both, it is nil and the preset decides.
 func serviceAccountFor(cluster *v1.ElasticsearchCluster, inputs map[string]string) (*v1.ServiceAccountSpec, error) {
-	annotations, err := decodeAnnotations(inputs)
+	annotations, err := adapter.DecodeAnnotations(inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -229,20 +229,20 @@ func elasticsearchSummary(cluster v1.ElasticsearchCluster, ok bool) []pluginsv1a
 	return summary
 }
 
-// cleanup deletes the ElasticsearchCluster with the Delete policy, only
+// Cleanup deletes the ElasticsearchCluster with the Delete policy, only
 // when the request owns it, and keeps it without the owner reference with
 // the Orphan policy.
-func (elasticsearch) cleanup(
+func (Handler) Cleanup(
 	request *pluginsv1alpha1.PluginRequest,
 	policy pluginsv1alpha1.DeletionPolicy,
-	_ liveObjects,
-) (cleanup, error) {
+	_ adapter.LiveObjects,
+) (adapter.Cleanup, error) {
 	cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{
 		Name: elasticsearchClusterName(request), Namespace: request.Namespace,
 	}}
 	res, err := eswrapper.NewBuilder(cluster.DeepCopy()).Build()
 	if err != nil {
-		return cleanup{}, fmt.Errorf("building the ElasticsearchCluster: %w", err)
+		return adapter.Cleanup{}, fmt.Errorf("building the ElasticsearchCluster: %w", err)
 	}
 
 	if policy == pluginsv1alpha1.DeletionPolicyOrphan {
@@ -252,11 +252,11 @@ func (elasticsearch) cleanup(
 			WithResource(res, component.OrphanWhen(true)).
 			Build()
 		if err != nil {
-			return cleanup{}, fmt.Errorf("building the orphan component: %w", err)
+			return adapter.Cleanup{}, fmt.Errorf("building the orphan component: %w", err)
 		}
-		return cleanup{stages: []cleanupStage{{
-			components: []*component.Component{orphan},
-			remaining:  []client.Object{cluster},
+		return adapter.Cleanup{Stages: []adapter.CleanupStage{{
+			Components: []*component.Component{orphan},
+			Remaining:  []client.Object{cluster},
 		}}}, nil
 	}
 
@@ -266,27 +266,28 @@ func (elasticsearch) cleanup(
 		WithResource(res, component.Delete(), component.DeleteOnlyIfOwned()).
 		Build()
 	if err != nil {
-		return cleanup{}, fmt.Errorf("building the cluster component: %w", err)
+		return adapter.Cleanup{}, fmt.Errorf("building the cluster component: %w", err)
 	}
 
-	return cleanup{stages: []cleanupStage{
-		{components: []*component.Component{deleteCluster}, remaining: []client.Object{cluster}},
+	return adapter.Cleanup{Stages: []adapter.CleanupStage{
+		{Components: []*component.Component{deleteCluster}, Remaining: []client.Object{cluster}},
 	}}, nil
 }
 
-// contracts returns the SecondaryStorageConfig of the cluster.
-func (elasticsearch) contracts(request *pluginsv1alpha1.PluginRequest) []contractRef {
+// Contracts returns the SecondaryStorageConfig of the cluster.
+func (Handler) Contracts(request *pluginsv1alpha1.PluginRequest) []adapter.ContractRef {
 	if _, err := decodeElasticsearchParameters(request.Spec.Parameters); err != nil {
 		return nil
 	}
 
-	return []contractRef{elasticsearchContract(request)}
+	return []adapter.ContractRef{elasticsearchContract(request)}
 }
 
-func (elasticsearch) backing(request *pluginsv1alpha1.PluginRequest) []backingRef {
-	return []backingRef{{
-		kind: kindElasticsearchCluster,
-		object: &v1.ElasticsearchCluster{
+// Backing implements adapter.Handler.
+func (Handler) Backing(request *pluginsv1alpha1.PluginRequest) []adapter.BackingRef {
+	return []adapter.BackingRef{{
+		Kind: adapter.KindElasticsearchCluster,
+		Object: &v1.ElasticsearchCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: elasticsearchClusterName(request), Namespace: request.Namespace},
 		},
 	}}
@@ -298,11 +299,11 @@ func elasticsearchClusterName(request *pluginsv1alpha1.PluginRequest) string {
 
 // elasticsearchContract returns the SecondaryStorageConfig that the cluster
 // of request publishes.
-func elasticsearchContract(request *pluginsv1alpha1.PluginRequest) contractRef {
-	return contractRef{
-		output: pluginstartup.OutputSecondaryStorageConfig,
-		kind:   kindSecondaryStorageConfig,
-		name:   elasticsearchClusterName(request),
+func elasticsearchContract(request *pluginsv1alpha1.PluginRequest) adapter.ContractRef {
+	return adapter.ContractRef{
+		Output: pluginstartup.OutputSecondaryStorageConfig,
+		Kind:   adapter.KindSecondaryStorageConfig,
+		Name:   elasticsearchClusterName(request),
 	}
 }
 
@@ -311,13 +312,13 @@ func elasticsearchContract(request *pluginsv1alpha1.PluginRequest) contractRef {
 // reason InvalidParameters, whose message names the field.
 func decodeElasticsearchParameters(parameters *apiextensionsv1.JSON) (elasticsearchParameters, error) {
 	var top map[string]json.RawMessage
-	if err := decodeStrict(parameters, &top); err != nil {
-		return elasticsearchParameters{}, invalidParameter("spec.parameters", err)
+	if err := adapter.DecodeStrict(parameters, &top); err != nil {
+		return elasticsearchParameters{}, adapter.InvalidParameter("spec.parameters", err)
 	}
 
 	var p elasticsearchParameters
 	var overrides map[string]json.RawMessage
-	if err := decodeFields(top, "spec.parameters.", map[string]any{
+	if err := adapter.DecodeFields(top, "spec.parameters.", map[string]any{
 		"preset":     &p.Preset,
 		"releaseRef": &p.ReleaseRef,
 		"overrides":  &overrides,
@@ -325,7 +326,7 @@ func decodeElasticsearchParameters(parameters *apiextensionsv1.JSON) (elasticsea
 		return elasticsearchParameters{}, err
 	}
 
-	if err := decodeFields(overrides, "spec.parameters.overrides.", map[string]any{
+	if err := adapter.DecodeFields(overrides, "spec.parameters.overrides.", map[string]any{
 		"replicas":    &p.Overrides.Replicas,
 		"resources":   &p.Overrides.Resources,
 		"storageSize": &p.Overrides.StorageSize,

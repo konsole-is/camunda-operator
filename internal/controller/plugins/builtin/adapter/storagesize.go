@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builtin
+package adapter
 
 import (
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -23,11 +23,11 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 )
 
-// keepLiveStorageSize returns the storage size to apply for asked. The live
+// KeepLiveStorageSize returns the storage size to apply for asked. The live
 // size is the larger of spec and the largest volume. When asked is smaller
 // than the live size, it returns the live size and the summary item that says
 // so. Otherwise it returns asked and no item. A nil asked stays nil.
-func keepLiveStorageSize(
+func KeepLiveStorageSize(
 	asked, spec *resource.Quantity,
 	volumes []v1.VolumeStatus,
 ) (*resource.Quantity, *pluginsv1alpha1.SummaryItem) {

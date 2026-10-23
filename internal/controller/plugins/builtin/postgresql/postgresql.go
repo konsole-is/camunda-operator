@@ -14,7 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builtin
+// Package postgresql serves the built-in registration database-server.
+package postgresql
 
 import (
 	"encoding/json"
@@ -34,25 +35,22 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	dbwrapper "github.com/konsole-is/camunda-operator/pkg/wrappers/database"
 	serverwrapper "github.com/konsole-is/camunda-operator/pkg/wrappers/databaseserver"
 )
 
-// kindDatabaseServerPreset is the kind of the preset that a database-server
-// request reads.
-const kindDatabaseServerPreset = "DatabaseServerPreset"
-
 // postgresDatabaseName is the logical database on the server of a
 // database-server request.
 const postgresDatabaseName = "camunda"
 
-// postgresql serves the built-in registration database-server. It applies
+// Handler serves the built-in registration database-server. It applies
 // the DatabaseServer <claim>-pg and the Database <claim> on it, and publishes
 // the SecondaryStorageConfig <claim>-pg that the Database writes. An override
 // never lowers the live storage size.
-type postgresql struct{}
+type Handler struct{}
 
 // postgresParameters are the parameters of a database-server request.
 type postgresParameters struct {
@@ -69,15 +67,16 @@ type postgresOverrides struct {
 	PodLabels   map[string]string
 }
 
-func (postgresql) build(request *pluginsv1alpha1.PluginRequest, live liveObjects) (served, error) {
+// Build implements adapter.Handler.
+func (Handler) Build(request *pluginsv1alpha1.PluginRequest, live adapter.LiveObjects) (adapter.Served, error) {
 	p, err := decodePostgresParameters(request.Spec.Parameters)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
 	server, warnings, err := postgresServer(request, p, live)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 	database := postgresDatabase(request)
 
@@ -88,17 +87,17 @@ func (postgresql) build(request *pluginsv1alpha1.PluginRequest, live liveObjects
 	})
 	serverRes, err := sb.Build()
 	if err != nil {
-		return served{}, fmt.Errorf("building the DatabaseServer: %w", err)
+		return adapter.Served{}, fmt.Errorf("building the DatabaseServer: %w", err)
 	}
 
 	databaseCell := concepts.NewData[metav1.Condition]("database")
 	db := dbwrapper.NewBuilder(database)
 	dbwrapper.ExtractInto(db, databaseCell, func(d v1.Database) (metav1.Condition, error) {
-		return readyOf(d.Status.Conditions), nil
+		return adapter.ReadyOf(d.Status.Conditions), nil
 	})
 	databaseRes, err := db.Build()
 	if err != nil {
-		return served{}, fmt.Errorf("building the Database: %w", err)
+		return adapter.Served{}, fmt.Errorf("building the Database: %w", err)
 	}
 
 	backing, err := component.NewComponentBuilder().
@@ -108,31 +107,31 @@ func (postgresql) build(request *pluginsv1alpha1.PluginRequest, live liveObjects
 		WithResource(databaseRes, component.DeleteOnlyIfOwned()).
 		Build()
 	if err != nil {
-		return served{}, fmt.Errorf("building the backing component: %w", err)
+		return adapter.Served{}, fmt.Errorf("building the backing component: %w", err)
 	}
 
 	contract := postgresContract(request)
-	outputs, _, err := outputsComponent([]contractRef{contract}, request.Namespace)
+	outputs, _, err := adapter.OutputsComponent([]adapter.ContractRef{contract}, request.Namespace)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
-	return served{
-		outputs: outputs,
-		backing: backing,
-		report: func() report {
+	return adapter.Served{
+		Outputs: outputs,
+		Backing: backing,
+		Report: func() adapter.Report {
 			summary := []pluginsv1alpha1.SummaryItem{
-				serverItem(server.Name, serverCell),
-				summaryItem(kindDatabase, database.Name, databaseCell),
+				adapter.ServerItem(server.Name, serverCell),
+				adapter.SummaryItem(adapter.KindDatabase, database.Name, databaseCell),
 			}
-			return report{
-				outputs: map[string]string{contract.output: contract.name},
-				summary: append(summary, warnings...),
-				resources: []pluginsv1alpha1.ResourceRef{
-					{Kind: kindDatabaseServer, Name: server.Name, OnOrphan: pluginsv1alpha1.OnOrphanKept},
-					{Kind: kindDatabase, Name: database.Name, OnOrphan: pluginsv1alpha1.OnOrphanKept},
+			return adapter.Report{
+				Outputs: map[string]string{contract.Output: contract.Name},
+				Summary: append(summary, warnings...),
+				Resources: []pluginsv1alpha1.ResourceRef{
+					{Kind: adapter.KindDatabaseServer, Name: server.Name, OnOrphan: pluginsv1alpha1.OnOrphanKept},
+					{Kind: adapter.KindDatabase, Name: database.Name, OnOrphan: pluginsv1alpha1.OnOrphanKept},
 				},
-				podSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
+				PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{
 					labels.DatabaseServerKey: labels.DatabaseServer(server.Name).Name,
 				}},
 			}
@@ -145,13 +144,13 @@ func (postgresql) build(request *pluginsv1alpha1.PluginRequest, live liveObjects
 // InvalidParameters, whose message names the field.
 func decodePostgresParameters(parameters *apiextensionsv1.JSON) (postgresParameters, error) {
 	var top map[string]json.RawMessage
-	if err := decodeStrict(parameters, &top); err != nil {
-		return postgresParameters{}, invalidParameter("spec.parameters", err)
+	if err := adapter.DecodeStrict(parameters, &top); err != nil {
+		return postgresParameters{}, adapter.InvalidParameter("spec.parameters", err)
 	}
 
 	var p postgresParameters
 	var overrides map[string]json.RawMessage
-	if err := decodeFields(top, "spec.parameters.", map[string]any{
+	if err := adapter.DecodeFields(top, "spec.parameters.", map[string]any{
 		"preset":     &p.Preset,
 		"releaseRef": &p.ReleaseRef,
 		"overrides":  &overrides,
@@ -159,7 +158,7 @@ func decodePostgresParameters(parameters *apiextensionsv1.JSON) (postgresParamet
 		return postgresParameters{}, err
 	}
 
-	if err := decodeFields(overrides, "spec.parameters.overrides.", map[string]any{
+	if err := adapter.DecodeFields(overrides, "spec.parameters.overrides.", map[string]any{
 		"instances":   &p.Overrides.Instances,
 		"resources":   &p.Overrides.Resources,
 		"storageSize": &p.Overrides.StorageSize,
@@ -178,14 +177,14 @@ func decodePostgresParameters(parameters *apiextensionsv1.JSON) (postgresParamet
 func postgresServer(
 	request *pluginsv1alpha1.PluginRequest,
 	p postgresParameters,
-	live liveObjects,
+	live adapter.LiveObjects,
 ) (*v1.DatabaseServer, []pluginsv1alpha1.SummaryItem, error) {
 	name := postgresServerName(request)
 	server := &v1.DatabaseServer{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: request.Namespace,
-			Labels:    backingLabels(request),
+			Labels:    adapter.BackingLabels(request),
 		},
 		Spec: v1.DatabaseServerSpec{
 			PresetRef:            p.Preset,
@@ -203,7 +202,7 @@ func postgresServer(
 		server.Spec.StorageClassName = &class
 	}
 
-	annotations, err := decodeAnnotations(request.Spec.Inputs)
+	annotations, err := adapter.DecodeAnnotations(request.Spec.Inputs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -212,9 +211,9 @@ func postgresServer(
 	}
 
 	var warnings []pluginsv1alpha1.SummaryItem
-	if current, ok := liveAs[*v1.DatabaseServer](live, kindDatabaseServer, name); ok {
+	if current, ok := adapter.LiveAs[*v1.DatabaseServer](live, adapter.KindDatabaseServer, name); ok {
 		var shrink *pluginsv1alpha1.SummaryItem
-		server.Spec.StorageSize, shrink = keepLiveStorageSize(
+		server.Spec.StorageSize, shrink = adapter.KeepLiveStorageSize(
 			server.Spec.StorageSize, current.Spec.StorageSize, dataVolumes(current.Status.Volumes),
 		)
 		if shrink != nil {
@@ -254,7 +253,7 @@ func postgresServerName(request *pluginsv1alpha1.PluginRequest) string {
 // summary item that says why when the preset is absent or has no archive.
 func postgresArchive(
 	bucket, preset string,
-	live liveObjects,
+	live adapter.LiveObjects,
 ) (*v1.DatabaseServerArchiveSpec, *pluginsv1alpha1.SummaryItem) {
 	if bucket == "" {
 		return nil, nil
@@ -264,13 +263,13 @@ func postgresArchive(
 		Label:    "Backup storage",
 		Severity: pluginsv1alpha1.SeverityWarning,
 	}
-	current, ok := liveAs[*v1.DatabaseServerPreset](live, kindDatabaseServerPreset, preset)
+	current, ok := adapter.LiveAs[*v1.DatabaseServerPreset](live, adapter.KindDatabaseServerPreset, preset)
 	switch {
 	case !ok:
-		skipped.Value = bucket + " is not used: the " + kindDatabaseServerPreset + " " + preset + " does not exist"
+		skipped.Value = bucket + " is not used: the " + adapter.KindDatabaseServerPreset + " " + preset + " does not exist"
 		return nil, skipped
 	case current.Spec.Server.Archive == nil:
-		skipped.Value = bucket + " is not used: the " + kindDatabaseServerPreset + " " + preset +
+		skipped.Value = bucket + " is not used: the " + adapter.KindDatabaseServerPreset + " " + preset +
 			" sets no archive retention"
 		return nil, skipped
 	}
@@ -289,7 +288,7 @@ func postgresDatabase(request *pluginsv1alpha1.PluginRequest) *v1.Database {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      request.Spec.ClaimRef.Name,
 			Namespace: request.Namespace,
-			Labels:    backingLabels(request),
+			Labels:    adapter.BackingLabels(request),
 		},
 		Spec: v1.DatabaseSpec{
 			ServerRef:              postgresServerName(request),
@@ -302,22 +301,22 @@ func postgresDatabase(request *pluginsv1alpha1.PluginRequest) *v1.Database {
 
 // postgresContract returns the SecondaryStorageConfig that the Database of
 // request publishes.
-func postgresContract(request *pluginsv1alpha1.PluginRequest) contractRef {
-	return contractRef{
-		output: pluginstartup.OutputSecondaryStorageConfig,
-		kind:   kindSecondaryStorageConfig,
-		name:   postgresServerName(request),
+func postgresContract(request *pluginsv1alpha1.PluginRequest) adapter.ContractRef {
+	return adapter.ContractRef{
+		Output: pluginstartup.OutputSecondaryStorageConfig,
+		Kind:   adapter.KindSecondaryStorageConfig,
+		Name:   postgresServerName(request),
 	}
 }
 
-// cleanup deletes the Database and then the DatabaseServer with the Delete
+// Cleanup deletes the Database and then the DatabaseServer with the Delete
 // policy, each only when the request owns it. With the Orphan policy it
 // keeps both without the owner reference.
-func (postgresql) cleanup(
+func (Handler) Cleanup(
 	request *pluginsv1alpha1.PluginRequest,
 	policy pluginsv1alpha1.DeletionPolicy,
-	_ liveObjects,
-) (cleanup, error) {
+	_ adapter.LiveObjects,
+) (adapter.Cleanup, error) {
 	server := &v1.DatabaseServer{ObjectMeta: metav1.ObjectMeta{
 		Name: postgresServerName(request), Namespace: request.Namespace,
 	}}
@@ -326,11 +325,11 @@ func (postgresql) cleanup(
 	}}
 	serverRes, err := serverwrapper.NewBuilder(server.DeepCopy()).Build()
 	if err != nil {
-		return cleanup{}, fmt.Errorf("building the DatabaseServer: %w", err)
+		return adapter.Cleanup{}, fmt.Errorf("building the DatabaseServer: %w", err)
 	}
 	databaseRes, err := dbwrapper.NewBuilder(database.DeepCopy()).Build()
 	if err != nil {
-		return cleanup{}, fmt.Errorf("building the Database: %w", err)
+		return adapter.Cleanup{}, fmt.Errorf("building the Database: %w", err)
 	}
 
 	if policy == pluginsv1alpha1.DeletionPolicyOrphan {
@@ -341,11 +340,11 @@ func (postgresql) cleanup(
 			WithResource(serverRes, component.OrphanWhen(true)).
 			Build()
 		if err != nil {
-			return cleanup{}, fmt.Errorf("building the orphan component: %w", err)
+			return adapter.Cleanup{}, fmt.Errorf("building the orphan component: %w", err)
 		}
-		return cleanup{stages: []cleanupStage{{
-			components: []*component.Component{orphan},
-			remaining:  []client.Object{database, server},
+		return adapter.Cleanup{Stages: []adapter.CleanupStage{{
+			Components: []*component.Component{orphan},
+			Remaining:  []client.Object{database, server},
 		}}}, nil
 	}
 
@@ -355,7 +354,7 @@ func (postgresql) cleanup(
 		WithResource(databaseRes, component.Delete(), component.DeleteOnlyIfOwned()).
 		Build()
 	if err != nil {
-		return cleanup{}, fmt.Errorf("building the database component: %w", err)
+		return adapter.Cleanup{}, fmt.Errorf("building the database component: %w", err)
 	}
 	deleteServer, err := component.NewComponentBuilder().
 		WithName("server").
@@ -363,33 +362,33 @@ func (postgresql) cleanup(
 		WithResource(serverRes, component.Delete(), component.DeleteOnlyIfOwned()).
 		Build()
 	if err != nil {
-		return cleanup{}, fmt.Errorf("building the server component: %w", err)
+		return adapter.Cleanup{}, fmt.Errorf("building the server component: %w", err)
 	}
 
-	return cleanup{stages: []cleanupStage{
-		{components: []*component.Component{deleteDatabase}, remaining: []client.Object{database}},
-		{components: []*component.Component{deleteServer}, remaining: []client.Object{server}},
+	return adapter.Cleanup{Stages: []adapter.CleanupStage{
+		{Components: []*component.Component{deleteDatabase}, Remaining: []client.Object{database}},
+		{Components: []*component.Component{deleteServer}, Remaining: []client.Object{server}},
 	}}, nil
 }
 
-// contracts returns the SecondaryStorageConfig that the Database publishes.
-func (postgresql) contracts(request *pluginsv1alpha1.PluginRequest) []contractRef {
+// Contracts returns the SecondaryStorageConfig that the Database publishes.
+func (Handler) Contracts(request *pluginsv1alpha1.PluginRequest) []adapter.ContractRef {
 	if _, err := decodePostgresParameters(request.Spec.Parameters); err != nil {
 		return nil
 	}
 
-	return []contractRef{postgresContract(request)}
+	return []adapter.ContractRef{postgresContract(request)}
 }
 
-// backing returns the DatabaseServer, the Database, and the
+// Backing returns the DatabaseServer, the Database, and the
 // DatabaseServerPreset of the parameters, which gives the retention of the
 // archive.
-func (postgresql) backing(request *pluginsv1alpha1.PluginRequest) []backingRef {
-	refs := []backingRef{
-		{kind: kindDatabaseServer, object: &v1.DatabaseServer{ObjectMeta: metav1.ObjectMeta{
+func (Handler) Backing(request *pluginsv1alpha1.PluginRequest) []adapter.BackingRef {
+	refs := []adapter.BackingRef{
+		{Kind: adapter.KindDatabaseServer, Object: &v1.DatabaseServer{ObjectMeta: metav1.ObjectMeta{
 			Name: postgresServerName(request), Namespace: request.Namespace,
 		}}},
-		{kind: kindDatabase, object: &v1.Database{ObjectMeta: metav1.ObjectMeta{
+		{Kind: adapter.KindDatabase, Object: &v1.Database{ObjectMeta: metav1.ObjectMeta{
 			Name: request.Spec.ClaimRef.Name, Namespace: request.Namespace,
 		}}},
 	}
@@ -401,8 +400,8 @@ func (postgresql) backing(request *pluginsv1alpha1.PluginRequest) []backingRef {
 		return refs
 	}
 
-	return append(refs, backingRef{
-		kind:   kindDatabaseServerPreset,
-		object: &v1.DatabaseServerPreset{ObjectMeta: metav1.ObjectMeta{Name: p.Preset}},
+	return append(refs, adapter.BackingRef{
+		Kind:   adapter.KindDatabaseServerPreset,
+		Object: &v1.DatabaseServerPreset{ObjectMeta: metav1.ObjectMeta{Name: p.Preset}},
 	})
 }

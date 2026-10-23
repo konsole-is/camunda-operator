@@ -14,31 +14,29 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builtin
+package elasticsearch
 
 import (
 	"flag"
 	"testing"
 
-	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/testing/golden"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/events"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	escomponents "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
-// go test ./internal/controller/plugins/builtin/ -run Golden -update-golden
+// go test ./internal/controller/plugins/builtin/elasticsearch/ -run Golden -update-golden
 var updateGolden = flag.Bool("update-golden", false, "update golden files")
 
 func TestElasticsearchGolden(t *testing.T) {
@@ -70,11 +68,11 @@ func TestElasticsearchGolden(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := elasticsearch{}.build(elasticsearchRequest(tt.params, tt.inputs), nil)
+			s, err := Handler{}.Build(elasticsearchRequest(tt.params, tt.inputs), nil)
 			require.NoError(t, err)
 
 			golden.AssertComponentYAML(
-				t, "testdata/golden/elasticsearch-"+tt.name+".yaml", s.backing,
+				t, "testdata/golden/elasticsearch-"+tt.name+".yaml", s.Backing,
 				golden.WithScheme(goldenScheme(t)), golden.Update(*updateGolden),
 			)
 		})
@@ -82,7 +80,7 @@ func TestElasticsearchGolden(t *testing.T) {
 }
 
 func TestElasticsearchMapsReplicasToSpecReplicas(t *testing.T) {
-	s, err := elasticsearch{}.build(elasticsearchRequest(`{"preset":"small","overrides":{"replicas":5}}`, nil), nil)
+	s, err := Handler{}.Build(elasticsearchRequest(`{"preset":"small","overrides":{"replicas":5}}`, nil), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, int32(5), *rendered(t, s).Spec.Replicas)
@@ -91,7 +89,7 @@ func TestElasticsearchMapsReplicasToSpecReplicas(t *testing.T) {
 func TestElasticsearchNamesTheClusterAfterTheClaim(t *testing.T) {
 	request := elasticsearchRequest(`{"preset":"small","releaseRef":"camunda-8-9"}`, nil)
 
-	s, err := elasticsearch{}.build(request, nil)
+	s, err := Handler{}.Build(request, nil)
 	require.NoError(t, err)
 
 	cluster := rendered(t, s)
@@ -107,21 +105,21 @@ func TestElasticsearchNamesTheClusterAfterTheClaim(t *testing.T) {
 			"app.kubernetes.io/managed-by":    "camunda-operator",
 		}, cluster.Labels,
 	)
-	assert.Equal(t, map[string]string{pluginstartup.OutputSecondaryStorageConfig: "orders-es"}, s.report().outputs)
+	assert.Equal(t, map[string]string{pluginstartup.OutputSecondaryStorageConfig: "orders-es"}, s.Report().Outputs)
 	assert.Equal(
-		t, []contractRef{{
-			output: pluginstartup.OutputSecondaryStorageConfig, kind: kindSecondaryStorageConfig, name: "orders-es",
-		}}, elasticsearch{}.contracts(request),
+		t, []adapter.ContractRef{{
+			Output: pluginstartup.OutputSecondaryStorageConfig, Kind: adapter.KindSecondaryStorageConfig, Name: "orders-es",
+		}}, Handler{}.Contracts(request),
 	)
-	refs := elasticsearch{}.backing(request)
+	refs := Handler{}.Backing(request)
 	require.Len(t, refs, 1)
-	assert.Equal(t, kindElasticsearchCluster, refs[0].kind)
-	assert.Equal(t, "orders-es", refs[0].object.GetName())
-	assert.Equal(t, request.Namespace, refs[0].object.GetNamespace())
+	assert.Equal(t, adapter.KindElasticsearchCluster, refs[0].Kind)
+	assert.Equal(t, "orders-es", refs[0].Object.GetName())
+	assert.Equal(t, request.Namespace, refs[0].Object.GetNamespace())
 }
 
 func TestElasticsearchClusterPassesTheValidationOfItsKind(t *testing.T) {
-	s, err := elasticsearch{}.build(elasticsearchRequest(`{"preset":"small","releaseRef":"camunda-8-9"}`, nil), nil)
+	s, err := Handler{}.Build(elasticsearchRequest(`{"preset":"small","releaseRef":"camunda-8-9"}`, nil), nil)
 	require.NoError(t, err)
 	preset := v1.ElasticsearchClusterPresetSpec{Cluster: v1.ElasticsearchClusterSpec{
 		Replicas:    new(int32(3)),
@@ -159,9 +157,9 @@ func TestElasticsearchKeepsTheLiveStorageSize(t *testing.T) {
 			if tt.volume != "" {
 				current.Status.Volumes = []v1.VolumeStatus{{Name: "data", Capacity: resource.MustParse(tt.volume)}}
 			}
-			live := liveObjects{{kind: kindElasticsearchCluster, name: "orders-es"}: current}
+			live := adapter.LiveObjects{{Kind: adapter.KindElasticsearchCluster, Name: "orders-es"}: current}
 
-			s, err := elasticsearch{}.build(elasticsearchRequest(params, nil), live)
+			s, err := Handler{}.Build(elasticsearchRequest(params, nil), live)
 			require.NoError(t, err)
 
 			size := rendered(t, s).Spec.StorageSize
@@ -177,9 +175,9 @@ func TestElasticsearchKeepsTheLiveStorageSize(t *testing.T) {
 				Severity: pluginsv1alpha1.SeverityWarning,
 			}
 			if tt.wantItem {
-				assert.Contains(t, s.report().summary, item)
+				assert.Contains(t, s.Report().Summary, item)
 			} else {
-				for _, got := range s.report().summary {
+				for _, got := range s.Report().Summary {
 					assert.NotEqual(t, "Storage size", got.Label)
 				}
 			}
@@ -197,42 +195,7 @@ func TestElasticsearchRefusesOverridesThatDoNotDecode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {
-			_, err := elasticsearch{}.build(elasticsearchRequest(tt.params, nil), nil)
-
-			var failure *conditions.PreCheckFailure
-			require.ErrorAs(t, err, &failure)
-			assert.Equal(t, pluginsv1alpha1.ReasonInvalidParameters, failure.Reason)
-			assert.Contains(t, failure.Message, tt.field)
-		})
-	}
-}
-
-func TestElasticsearchRefusesParameterNamesInAnotherCase(t *testing.T) {
-	schema, err := newParameterSchema(schemaOf(t, pluginstartup.RegistrationElasticsearch))
-	require.NoError(t, err)
-	r := &Reconciler{
-		APIReader: fakeReader(t),
-		schemas:   map[string]*parameterSchema{pluginstartup.RegistrationElasticsearch: schema},
-	}
-	tests := []struct{ params, field string }{
-		{`{"preset":"small","releaseRef":"approved","releaseref":"other"}`, "releaseref"},
-		{`{"preset":"small","releaseRef":"approved","Overrides":{"replicas":0}}`, "Overrides"},
-		{`{"preset":"small","releaseRef":"approved","overrides":{"Replicas":0}}`, "Replicas"},
-		{
-			`{"preset":"small","releaseRef":"approved","overrides":{"resources":` +
-				`{"limits":{"memory":"1Gi"},"Limits":{"memory":"4Gi"}}}}`,
-			"Limits",
-		},
-		{
-			`{"preset":"small","releaseRef":"approved","overrides":{"scheduling":` +
-				`{"tolerations":[{"Key":"pool","value":"es"}]}}}`,
-			"Key",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.field, func(t *testing.T) {
-			_, err := r.build(t.Context(), elasticsearchRequest(tt.params, nil), elasticsearch{})
+			_, err := Handler{}.Build(elasticsearchRequest(tt.params, nil), nil)
 
 			var failure *conditions.PreCheckFailure
 			require.ErrorAs(t, err, &failure)
@@ -247,7 +210,7 @@ func TestElasticsearchRefusesAnnotationsThatAreNotAnObject(t *testing.T) {
 		t.Run(value, func(t *testing.T) {
 			request := elasticsearchRequest(`{"preset":"small"}`, map[string]string{"serviceAccountAnnotations": value})
 
-			_, err := elasticsearch{}.build(request, nil)
+			_, err := Handler{}.Build(request, nil)
 
 			var failure *conditions.PreCheckFailure
 			require.ErrorAs(t, err, &failure)
@@ -281,7 +244,7 @@ func TestElasticsearchPinsTheServiceAccountForTheBucket(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := elasticsearch{}.build(elasticsearchRequest(`{"preset":"small"}`, tt.inputs), nil)
+			s, err := Handler{}.Build(elasticsearchRequest(`{"preset":"small"}`, tt.inputs), nil)
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.want, rendered(t, s).Spec.ServiceAccount)
@@ -290,20 +253,20 @@ func TestElasticsearchPinsTheServiceAccountForTheBucket(t *testing.T) {
 }
 
 func TestElasticsearchReportsTheResourceAndThePods(t *testing.T) {
-	s, err := elasticsearch{}.build(elasticsearchRequest(`{"preset":"small"}`, nil), nil)
+	s, err := Handler{}.Build(elasticsearchRequest(`{"preset":"small"}`, nil), nil)
 	require.NoError(t, err)
 
-	rep := s.report()
+	rep := s.Report()
 	assert.Equal(
 		t, []pluginsv1alpha1.ResourceRef{{
 			Kind: "ElasticsearchCluster", Name: "orders-es", OnOrphan: pluginsv1alpha1.OnOrphanKept,
-		}}, rep.resources,
+		}}, rep.Resources,
 	)
-	assert.Equal(t, map[string]string{"camunda.io/elasticsearch-cluster": "orders-es"}, rep.podSelector.MatchLabels)
+	assert.Equal(t, map[string]string{"camunda.io/elasticsearch-cluster": "orders-es"}, rep.PodSelector.MatchLabels)
 	assert.Equal(
 		t, []pluginsv1alpha1.SummaryItem{{
 			Label: "Elasticsearch", Value: "waiting", Severity: pluginsv1alpha1.SeverityWarning,
-		}}, rep.summary,
+		}}, rep.Summary,
 	)
 }
 
@@ -405,45 +368,14 @@ func TestElasticsearchCleanupWaitsForTheCluster(t *testing.T) {
 		pluginsv1alpha1.DeletionPolicyOrphan,
 	} {
 		t.Run(string(policy), func(t *testing.T) {
-			c, err := elasticsearch{}.cleanup(request, policy, nil)
+			c, err := Handler{}.Cleanup(request, policy, nil)
 			require.NoError(t, err)
 
-			require.Len(t, c.stages, 1)
-			assert.Len(t, c.stages[0].components, 1)
-			assert.Equal(t, []string{"ElasticsearchCluster/orders-es"}, objectNames(c.stages[0].remaining))
+			require.Len(t, c.Stages, 1)
+			assert.Len(t, c.Stages[0].Components, 1)
+			assert.Equal(t, []string{"ElasticsearchCluster/orders-es"}, objectNames(c.Stages[0].Remaining))
 		})
 	}
-}
-
-func TestElasticsearchOrphanReadsTheClusterWithoutTheCache(t *testing.T) {
-	stored := elasticsearchRequest(`{"preset":"small"}`, nil)
-	stored.UID = "request-uid"
-	stored.Spec.DeletionPolicy = pluginsv1alpha1.DeletionPolicyOrphan
-	stored.Finalizers = []string{pluginsv1alpha1.FinalizerCleanup}
-	cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{
-		Name: "orders-es", Namespace: stored.Namespace,
-		OwnerReferences: []metav1.OwnerReference{{
-			APIVersion: pluginsv1alpha1.GroupVersion.String(), Kind: "PluginRequest",
-			Name: stored.Name, UID: stored.UID, Controller: new(true),
-		}},
-	}}
-	apiServer := fakeReader(t, stored, cluster)
-	// The cache has not seen the cluster yet. Writes reach the API server.
-	cached := uncachedReads{Client: apiServer, reader: fakeReader(t)}
-	request := &pluginsv1alpha1.PluginRequest{}
-	require.NoError(t, apiServer.Get(t.Context(), client.ObjectKeyFromObject(stored), request))
-	r := &Reconciler{Client: cached, APIReader: apiServer}
-	rec := component.ReconcileContext{
-		Client: cached, Scheme: apiServer.Scheme(), EventRecorder: events.NewFakeRecorder(10),
-		APIReader: apiServer, Owner: request,
-	}
-
-	_, err := r.finalize(t.Context(), rec, request, elasticsearch{})
-	require.NoError(t, err)
-
-	var got v1.ElasticsearchCluster
-	require.NoError(t, apiServer.Get(t.Context(), client.ObjectKeyFromObject(cluster), &got))
-	assert.Empty(t, got.OwnerReferences)
 }
 
 // elasticsearchRequest returns an elasticsearch request of the claim orders
@@ -458,8 +390,8 @@ func elasticsearchRequest(params string, inputs map[string]string) *pluginsv1alp
 
 // rendered returns the ElasticsearchCluster that the backing component of s
 // applies.
-func rendered(t *testing.T, s served) *v1.ElasticsearchCluster {
-	objs, err := s.backing.Preview()
+func rendered(t *testing.T, s adapter.Served) *v1.ElasticsearchCluster {
+	objs, err := s.Backing.Preview()
 	require.NoError(t, err)
 	require.Len(t, objs, 1)
 	cluster, ok := objs[0].(*v1.ElasticsearchCluster)

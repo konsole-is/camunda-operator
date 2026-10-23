@@ -29,6 +29,7 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 )
 
@@ -85,7 +86,7 @@ var _ = Describe("Built-in management databases", func() {
 		}, timeout, interval).Should(Succeed())
 
 		removed := pluginsv1alpha1.SummaryItem{
-			Label:    kindDatabase,
+			Label:    adapter.KindDatabase,
 			Value:    plane + "-web-modeler removed, the logical database web_modeler stays on " + plane + "-db",
 			Severity: pluginsv1alpha1.SeverityWarning,
 		}

@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/existing"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 )
 
@@ -44,7 +46,7 @@ func TestFinalizeWaitsForEachStageInOrder(t *testing.T) {
 	first.Finalizers = []string{testHold}
 	second := ownedConfigMap("second", request.UID)
 	c := fakeReader(t, request, first, second)
-	h := stubHandler{c: cleanup{stages: []cleanupStage{
+	h := stubHandler{c: adapter.Cleanup{Stages: []adapter.CleanupStage{
 		deleteStage(t, "first", request),
 		deleteStage(t, "second", request),
 	}}}
@@ -74,7 +76,7 @@ func TestFinalizeIgnoresARemainingObjectThatTheRequestDoesNotOwn(t *testing.T) {
 	request := deletingRequest()
 	foreign := ownedConfigMap("foreign", "")
 	c := fakeReader(t, request, foreign)
-	h := stubHandler{c: cleanup{stages: []cleanupStage{deleteStage(t, "foreign", request)}}}
+	h := stubHandler{c: adapter.Cleanup{Stages: []adapter.CleanupStage{deleteStage(t, "foreign", request)}}}
 
 	assert.Equal(t, ctrl.Result{}, finalizeOnce(t, c, request, h))
 
@@ -96,15 +98,15 @@ func TestFinalizeWithoutStagesRemovesTheFinalizer(t *testing.T) {
 
 // stubHandler returns c as its cleanup.
 type stubHandler struct {
-	existing
-	c cleanup
+	existing.Handler
+	c adapter.Cleanup
 }
 
-func (s stubHandler) cleanup(
+func (s stubHandler) Cleanup(
 	*pluginsv1alpha1.PluginRequest,
 	pluginsv1alpha1.DeletionPolicy,
-	liveObjects,
-) (cleanup, error) {
+	adapter.LiveObjects,
+) (adapter.Cleanup, error) {
 	return s.c, nil
 }
 
@@ -137,7 +139,7 @@ func ownedConfigMap(name string, uid types.UID) *corev1.ConfigMap {
 
 // deleteStage returns a stage that deletes the ConfigMap name if the
 // request owns it, and waits for it.
-func deleteStage(t *testing.T, name string, request *pluginsv1alpha1.PluginRequest) cleanupStage {
+func deleteStage(t *testing.T, name string, request *pluginsv1alpha1.PluginRequest) adapter.CleanupStage {
 	res, err := configmap.NewBuilder(&corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: request.Namespace},
 	}).Build()
@@ -150,18 +152,23 @@ func deleteStage(t *testing.T, name string, request *pluginsv1alpha1.PluginReque
 		Build()
 	require.NoError(t, err)
 
-	return cleanupStage{
-		components: []*component.Component{comp},
-		remaining: []client.Object{
+	return adapter.CleanupStage{
+		Components: []*component.Component{comp},
+		Remaining: []client.Object{
 			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: request.Namespace}},
 		},
 	}
 }
 
-func finalizeOnce(t *testing.T, c client.Client, request *pluginsv1alpha1.PluginRequest, h handler) ctrl.Result {
+func finalizeOnce(
+	t *testing.T,
+	c client.Client,
+	request *pluginsv1alpha1.PluginRequest,
+	h adapter.Handler,
+) ctrl.Result {
 	r := &Reconciler{
 		Client: c, APIReader: c, Scheme: c.Scheme(), EventRecorder: events.NewFakeRecorder(100),
-		handlers: map[string]handler{request.Spec.Registration: h},
+		handlers: map[string]adapter.Handler{request.Spec.Registration: h},
 	}
 	result, err := r.Reconcile(t.Context(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(request)})
 	require.NoError(t, err)

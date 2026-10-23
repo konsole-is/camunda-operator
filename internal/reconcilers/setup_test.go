@@ -71,7 +71,9 @@ var _ = Describe("Setup", func() {
 
 // controllerPackages returns the name of each directory under controllerDir
 // that holds a non-test .go file. A directory without one, such as a group
-// directory or a package of tests only, is walked into and not counted.
+// directory or a package of tests only, is walked into and not counted. A
+// package under a controller package belongs to that controller and is not
+// counted.
 func controllerPackages() []string {
 	GinkgoHelper()
 
@@ -88,7 +90,7 @@ func controllerPackages() []string {
 		for _, file := range files {
 			if !strings.HasSuffix(file, "_test.go") {
 				names = append(names, entry.Name())
-				break
+				return filepath.SkipDir
 			}
 		}
 		return nil

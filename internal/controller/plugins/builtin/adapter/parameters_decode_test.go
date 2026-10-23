@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builtin
+package adapter
 
 import (
 	"encoding/json"
@@ -32,7 +32,7 @@ func TestDecodeFieldsDecodesEachFieldByItsExactName(t *testing.T) {
 	var replicas *int32
 	values := map[string]json.RawMessage{"name": json.RawMessage(`"a"`), "replicas": json.RawMessage(`3`)}
 
-	err := decodeFields(values, "spec.parameters.", map[string]any{"name": &name, "replicas": &replicas})
+	err := DecodeFields(values, "spec.parameters.", map[string]any{"name": &name, "replicas": &replicas})
 
 	require.NoError(t, err)
 	assert.Equal(t, "a", name)
@@ -43,7 +43,7 @@ func TestDecodeFieldsDecodesEachFieldByItsExactName(t *testing.T) {
 func TestDecodeFieldsDecodesNoValues(t *testing.T) {
 	name := "kept"
 
-	err := decodeFields(nil, "spec.parameters.", map[string]any{"name": &name})
+	err := DecodeFields(nil, "spec.parameters.", map[string]any{"name": &name})
 
 	require.NoError(t, err)
 	assert.Equal(t, "kept", name)
@@ -71,7 +71,7 @@ func TestDecodeFieldsRefusesAFieldThatDoesNotDecode(t *testing.T) {
 			var name string
 			var nested target
 
-			err := decodeFields(values, "spec.parameters.", map[string]any{"name": &name, "nested": &nested})
+			err := DecodeFields(values, "spec.parameters.", map[string]any{"name": &name, "nested": &nested})
 
 			var failure *conditions.PreCheckFailure
 			require.ErrorAs(t, err, &failure)

@@ -32,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -42,6 +41,7 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -92,7 +92,7 @@ type Reconciler struct {
 	// when it is nil.
 	Metrics component.MetricsRecorder
 
-	handlers map[string]handler
+	handlers map[string]adapter.Handler
 	schemas  map[string]*parameterSchema
 }
 
@@ -188,10 +188,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	}
 
 	var errs []error
-	if s.backing != nil {
-		errs = append(errs, s.backing.Reconcile(ctx, rec))
+	if s.Backing != nil {
+		errs = append(errs, s.Backing.Reconcile(ctx, rec))
 	}
-	errs = append(errs, s.outputs.Reconcile(ctx, rec))
+	errs = append(errs, s.Outputs.Reconcile(ctx, rec))
 	// The message of OutputsReady can carry a contract name from the
 	// parameters, whose length the schema does not bound.
 	if outputs := meta.FindStatusCondition(
@@ -201,16 +201,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		outputs.Message = conditions.BoundMessage(outputs.Message)
 	}
 
-	conditions.Stage(&request, conditions.Aggregate(&request, s.readiness()))
+	conditions.Stage(&request, conditions.Aggregate(&request, s.Readiness()))
 
-	rep := s.report()
+	rep := s.Report()
 	request.Status.Outputs = nil
-	if s.outputs.GetCondition(&request).Status == metav1.ConditionTrue {
-		request.Status.Outputs = rep.outputs
+	if s.Outputs.GetCondition(&request).Status == metav1.ConditionTrue {
+		request.Status.Outputs = rep.Outputs
 	}
-	setSummary(&request.Status, rep.summary, metav1.Now())
-	request.Status.Resources = rep.resources
-	request.Status.PodSelector = rep.podSelector
+	setSummary(&request.Status, rep.Summary, metav1.Now())
+	request.Status.Resources = rep.Resources
+	request.Status.PodSelector = rep.PodSelector
 
 	return ctrl.Result{}, errors.Join(errs...)
 }
@@ -231,17 +231,21 @@ func (r *Reconciler) registrationReady(ctx context.Context, name string) (bool, 
 }
 
 // build checks the parameters of request and returns the components of h.
-func (r *Reconciler) build(ctx context.Context, request *pluginsv1alpha1.PluginRequest, h handler) (served, error) {
+func (r *Reconciler) build(
+	ctx context.Context,
+	request *pluginsv1alpha1.PluginRequest,
+	h adapter.Handler,
+) (adapter.Served, error) {
 	if err := r.schemas[request.Spec.Registration].check(ctx, request.Spec.Parameters); err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
 	live, err := r.readBacking(ctx, request, h)
 	if err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
-	return h.build(request, live)
+	return h.Build(request, live)
 }
 
 // readBacking reads each backing object of request that h names, without
@@ -249,18 +253,18 @@ func (r *Reconciler) build(ctx context.Context, request *pluginsv1alpha1.PluginR
 func (r *Reconciler) readBacking(
 	ctx context.Context,
 	request *pluginsv1alpha1.PluginRequest,
-	h handler,
-) (liveObjects, error) {
-	live := liveObjects{}
-	for _, ref := range h.backing(request) {
-		key := client.ObjectKeyFromObject(ref.object)
-		if err := r.APIReader.Get(ctx, key, ref.object); err != nil {
+	h adapter.Handler,
+) (adapter.LiveObjects, error) {
+	live := adapter.LiveObjects{}
+	for _, ref := range h.Backing(request) {
+		key := client.ObjectKeyFromObject(ref.Object)
+		if err := r.APIReader.Get(ctx, key, ref.Object); err != nil {
 			if apierrors.IsNotFound(err) {
 				continue
 			}
-			return nil, fmt.Errorf("reading the backing %s %s: %w", ref.kind, key, err)
+			return nil, fmt.Errorf("reading the backing %s %s: %w", ref.Kind, key, err)
 		}
-		live[liveKey{kind: ref.kind, name: key.Name}] = ref.object
+		live[adapter.LiveKey{Kind: ref.Kind, Name: key.Name}] = ref.Object
 	}
 
 	return live, nil
@@ -294,7 +298,7 @@ func (r *Reconciler) finalize(
 	ctx context.Context,
 	rec component.ReconcileContext,
 	request *pluginsv1alpha1.PluginRequest,
-	h handler,
+	h adapter.Handler,
 ) (waiting bool, err error) {
 	if !controllerutil.ContainsFinalizer(request, pluginsv1alpha1.FinalizerCleanup) {
 		return false, nil
@@ -310,13 +314,13 @@ func (r *Reconciler) finalize(
 	// collector then deletes the object with the request.
 	rec.Client = uncachedReads{Client: rec.Client, reader: r.APIReader}
 
-	c, err := h.cleanup(request, request.Spec.DeletionPolicy, live)
+	c, err := h.Cleanup(request, request.Spec.DeletionPolicy, live)
 	if err != nil {
 		return false, fmt.Errorf("building the cleanup: %w", err)
 	}
 
-	for _, stage := range c.stages {
-		for _, comp := range stage.components {
+	for _, stage := range c.Stages {
+		for _, comp := range stage.Components {
 			if err := comp.Reconcile(ctx, rec); err != nil {
 				return false, fmt.Errorf("applying the deletion policy: %w", err)
 			}
@@ -324,9 +328,9 @@ func (r *Reconciler) finalize(
 
 		// An object that the request does not own stays, so it cannot hold
 		// the finalizer.
-		for _, obj := range stage.remaining {
+		for _, obj := range stage.Remaining {
 			err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-			if err == nil && ownedBy(obj, request.UID) {
+			if err == nil && adapter.OwnedBy(obj, request.UID) {
 				return true, nil
 			}
 			if err != nil && !apierrors.IsNotFound(err) {
@@ -360,12 +364,6 @@ func (u uncachedReads) Get(
 
 func (u uncachedReads) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	return u.reader.List(ctx, list, opts...)
-}
-
-func ownedBy(obj client.Object, uid types.UID) bool {
-	return slices.ContainsFunc(obj.GetOwnerReferences(), func(ref metav1.OwnerReference) bool {
-		return ref.UID == uid
-	})
 }
 
 // SetupWithManager returns an error that names each handler without a
@@ -433,9 +431,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.serves))).
 		Owns(&v1.ElasticsearchCluster{})
 	for kind, obj := range map[string]client.Object{
-		kindObjectStorageConfig:    &v1.ObjectStorageConfig{},
-		kindSecondaryStorageConfig: &v1.SecondaryStorageConfig{},
-		kindDatabaseConfig:         &v1.DatabaseConfig{},
+		adapter.KindObjectStorageConfig:    &v1.ObjectStorageConfig{},
+		adapter.KindSecondaryStorageConfig: &v1.SecondaryStorageConfig{},
+		adapter.KindDatabaseConfig:         &v1.DatabaseConfig{},
 	} {
 		b = b.Watches(
 			obj,
@@ -482,8 +480,8 @@ func (r *Reconciler) contractKeys(o client.Object) []string {
 	}
 
 	var keys []string
-	for _, ref := range h.contracts(request) {
-		keys = append(keys, contractKey(ref.kind, request.Namespace, ref.name))
+	for _, ref := range h.Contracts(request) {
+		keys = append(keys, contractKey(ref.Kind, request.Namespace, ref.Name))
 	}
 
 	return keys
@@ -503,9 +501,9 @@ func (r *Reconciler) presetKeys(o client.Object) []string {
 
 	presets := presetKinds()
 	var keys []string
-	for _, ref := range h.backing(request) {
-		if _, ok := presets[ref.kind]; ok {
-			keys = append(keys, contractKey(ref.kind, ref.object.GetNamespace(), ref.object.GetName()))
+	for _, ref := range h.Backing(request) {
+		if _, ok := presets[ref.Kind]; ok {
+			keys = append(keys, contractKey(ref.Kind, ref.Object.GetNamespace(), ref.Object.GetName()))
 		}
 	}
 
@@ -517,7 +515,7 @@ func (r *Reconciler) presetKeys(o client.Object) []string {
 // names in a backing object is not here: the controller of that object
 // reads the preset.
 func presetKinds() map[string]client.Object {
-	return map[string]client.Object{kindDatabaseServerPreset: &v1.DatabaseServerPreset{}}
+	return map[string]client.Object{adapter.KindDatabaseServerPreset: &v1.DatabaseServerPreset{}}
 }
 
 // registrationKeys returns the registrationField key of a request with a
