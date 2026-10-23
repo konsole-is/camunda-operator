@@ -28,6 +28,7 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/elasticsearch"
 	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/postgresql"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
@@ -35,6 +36,41 @@ import (
 )
 
 const requestUID = "request-uid"
+
+func TestExistingRegistrationsReadTheirContracts(t *testing.T) {
+	tests := []struct {
+		registration, params string
+		want                 []adapter.ContractRef
+	}{
+		{
+			pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`,
+			[]adapter.ContractRef{{
+				Output: pluginstartup.OutputObjectStorageConfig, Kind: adapter.KindObjectStorageConfig, Name: "my-bucket",
+			}},
+		},
+		{
+			pluginstartup.RegistrationExistingSecondaryStorage, `{"name":"my-es"}`,
+			[]adapter.ContractRef{{
+				Output: pluginstartup.OutputSecondaryStorageConfig, Kind: adapter.KindSecondaryStorageConfig, Name: "my-es",
+			}},
+		},
+		{
+			pluginstartup.RegistrationExistingDatabaseConfigs, `{"webModeler":"wm","keycloak":"kc"}`,
+			[]adapter.ContractRef{
+				{Output: pluginstartup.OutputKeycloakDatabaseConfig, Kind: adapter.KindDatabaseConfig, Name: "kc"},
+				{Output: pluginstartup.OutputWebModelerDatabaseConfig, Kind: adapter.KindDatabaseConfig, Name: "wm"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.registration, func(t *testing.T) {
+			h, ok := handlers()[tt.registration]
+			require.True(t, ok)
+			assert.Equal(t, tt.want, h.Contracts(requestFor(tt.registration, tt.params)))
+		})
+	}
+}
 
 func TestContractsOfUnparsableParametersAreEmpty(t *testing.T) {
 	for name, h := range handlers() {
