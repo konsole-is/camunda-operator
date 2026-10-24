@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -40,6 +41,7 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/internal/ownerstatus"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
@@ -50,10 +52,20 @@ import (
 // It labels every metrics series it records.
 const controllerName = "builtin"
 
+// cleanupRequeue is the wait before finalize runs again. The Owns watches
+// enqueue the request only through a controller reference, so an object with
+// a plain owner reference sends no event when it goes.
+const cleanupRequeue = 5 * time.Second
+
 // contractsField is the index on PluginRequest with one key for each
 // contract that a built-in request reads. No other controller of the
 // manager may register an index of this name on PluginRequest.
 const contractsField = "pluginrequest.builtin.contracts"
+
+// presetsField is the index on PluginRequest with one key for each preset
+// that a built-in request reads. No other controller of the manager may
+// register an index of this name on PluginRequest.
+const presetsField = "pluginrequest.builtin.presets"
 
 // registrationField is the index on PluginRequest by spec.registration, for
 // a request with a handler. No other controller of the manager may register
@@ -64,8 +76,8 @@ const registrationField = "pluginrequest.builtin.registration"
 // handler.
 type Reconciler struct {
 	client.Client
-	// APIReader reads the request at the top of each reconcile, and the
-	// remaining objects of a deletion, without the cache.
+	// APIReader reads without the cache: the request, its registration, its
+	// backing objects, and every read of a deletion.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 	// Registrations are the built-in registrations. A request is checked
@@ -80,7 +92,7 @@ type Reconciler struct {
 	// when it is nil.
 	Metrics component.MetricsRecorder
 
-	handlers map[string]handler
+	handlers map[string]adapter.Handler
 	schemas  map[string]*parameterSchema
 }
 
@@ -89,8 +101,11 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests/finalizers,verbs=update
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=get;list;watch
 // A new handler adds its registration here: REG-RBAC and the Grant admission policy check serve.
-// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=existing-object-storage;existing-secondary-storage;existing-database-configs
+// +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginregistrations,verbs=serve,resourceNames=database-server;elasticsearch;existing-object-storage;existing-secondary-storage;existing-database-configs;management-database-server
+// +kubebuilder:rbac:groups=core.camunda.io,resources=elasticsearchclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=objectstorageconfigs;secondarystorageconfigs;databaseconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core.camunda.io,resources=databaseservers;databases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core.camunda.io,resources=databaseserverpresets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile serves a request whose registration label and
@@ -134,7 +149,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	}
 
 	if !request.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.finalize(ctx, rec, &request, h)
+		waiting, err := r.finalize(ctx, rec, &request, h)
+		if err != nil || !waiting {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: cleanupRequeue}, nil
 	}
 
 	ready, err := r.registrationReady(ctx, request.Spec.Registration)
@@ -169,10 +188,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	}
 
 	var errs []error
-	if s.backing != nil {
-		errs = append(errs, s.backing.Reconcile(ctx, rec))
+	if s.Backing != nil {
+		errs = append(errs, s.Backing.Reconcile(ctx, rec))
 	}
-	errs = append(errs, s.outputs.Reconcile(ctx, rec))
+	errs = append(errs, s.Outputs.Reconcile(ctx, rec))
 	// The message of OutputsReady can carry a contract name from the
 	// parameters, whose length the schema does not bound.
 	if outputs := meta.FindStatusCondition(
@@ -182,16 +201,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		outputs.Message = conditions.BoundMessage(outputs.Message)
 	}
 
-	conditions.Stage(&request, conditions.Aggregate(&request, s.readiness()))
+	conditions.Stage(&request, conditions.Aggregate(&request, s.Readiness()))
 
-	rep := s.report()
+	rep := s.Report()
 	request.Status.Outputs = nil
-	if s.outputs.GetCondition(&request).Status == metav1.ConditionTrue {
-		request.Status.Outputs = rep.outputs
+	if s.Outputs.GetCondition(&request).Status == metav1.ConditionTrue {
+		request.Status.Outputs = rep.Outputs
 	}
-	setSummary(&request.Status, rep.summary, metav1.Now())
-	request.Status.Resources = rep.resources
-	request.Status.PodSelector = rep.podSelector
+	setSummary(&request.Status, rep.Summary, metav1.Now())
+	request.Status.Resources = rep.Resources
+	request.Status.PodSelector = rep.PodSelector
 
 	return ctrl.Result{}, errors.Join(errs...)
 }
@@ -212,12 +231,43 @@ func (r *Reconciler) registrationReady(ctx context.Context, name string) (bool, 
 }
 
 // build checks the parameters of request and returns the components of h.
-func (r *Reconciler) build(ctx context.Context, request *pluginsv1alpha1.PluginRequest, h handler) (served, error) {
+func (r *Reconciler) build(
+	ctx context.Context,
+	request *pluginsv1alpha1.PluginRequest,
+	h adapter.Handler,
+) (adapter.Served, error) {
 	if err := r.schemas[request.Spec.Registration].check(ctx, request.Spec.Parameters); err != nil {
-		return served{}, err
+		return adapter.Served{}, err
 	}
 
-	return h.build(request)
+	live, err := r.readBacking(ctx, request, h)
+	if err != nil {
+		return adapter.Served{}, err
+	}
+
+	return h.Build(request, live)
+}
+
+// readBacking reads each backing object of request that h names, without
+// the cache. A missing object is absent from the result, not an error.
+func (r *Reconciler) readBacking(
+	ctx context.Context,
+	request *pluginsv1alpha1.PluginRequest,
+	h adapter.Handler,
+) (adapter.LiveObjects, error) {
+	live := adapter.LiveObjects{}
+	for _, ref := range h.Backing(request) {
+		key := client.ObjectKeyFromObject(ref.Object)
+		if err := r.APIReader.Get(ctx, key, ref.Object); err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("reading the backing %s %s: %w", ref.Kind, key, err)
+		}
+		live[adapter.LiveKey{Kind: ref.Kind, Name: key.Name}] = ref.Object
+	}
+
+	return live, nil
 }
 
 // refuse sets OutputsReady and Ready of request to False with the reason
@@ -239,56 +289,87 @@ func refuse(request *pluginsv1alpha1.PluginRequest, failure *conditions.PreCheck
 	setSummary(&request.Status, nil, metav1.Now())
 }
 
-// finalize applies the deletion policy of request and removes the finalizer
-// once every remaining object of the handler is gone. It writes no status.
+// finalize applies the deletion policy of request, and removes the finalizer
+// once every remaining object that the request owns is gone. It writes no
+// status. waiting is true while an owned remaining object holds the finalizer.
 func (r *Reconciler) finalize(
 	ctx context.Context,
 	rec component.ReconcileContext,
 	request *pluginsv1alpha1.PluginRequest,
-	h handler,
-) error {
+	h adapter.Handler,
+) (waiting bool, err error) {
 	if !controllerutil.ContainsFinalizer(request, pluginsv1alpha1.FinalizerCleanup) {
-		return nil
+		return false, nil
 	}
 
-	c, err := h.cleanup(request, request.Spec.DeletionPolicy)
+	live, err := r.readBacking(ctx, request, h)
 	if err != nil {
-		return fmt.Errorf("building the cleanup: %w", err)
+		return false, err
 	}
 
-	for _, comp := range c.components {
-		if err := comp.Reconcile(ctx, rec); err != nil {
-			return fmt.Errorf("applying the deletion policy: %w", err)
+	// An orphan removes the owner reference that its read finds. A cache that
+	// has not seen the reference yet removes nothing, and the garbage
+	// collector then deletes the object with the request.
+	rec.Client = uncachedReads{Client: rec.Client, reader: r.APIReader}
+
+	c, err := h.Cleanup(request, request.Spec.DeletionPolicy, live)
+	if err != nil {
+		return false, fmt.Errorf("building the cleanup: %w", err)
+	}
+
+	if c.Backing != nil {
+		if err := c.Backing.Reconcile(ctx, rec); err != nil {
+			return false, fmt.Errorf("applying the deletion policy: %w", err)
 		}
 	}
 
-	// The Owns watch of the kind of a remaining object reconciles the
-	// request again when the object goes.
-	for _, obj := range c.remaining {
+	// An object that the request does not own stays, so it cannot hold the
+	// finalizer.
+	for _, obj := range c.Remaining {
 		err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-		if err == nil {
-			return nil
+		if err == nil && adapter.OwnedBy(obj, request.UID) {
+			return true, nil
 		}
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("reading %s: %w", client.ObjectKeyFromObject(obj), err)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("reading %s: %w", client.ObjectKeyFromObject(obj), err)
 		}
 	}
 
 	controllerutil.RemoveFinalizer(request, pluginsv1alpha1.FinalizerCleanup)
 	if err := r.Update(ctx, request); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("removing the finalizer: %w", err)
+		return false, fmt.Errorf("removing the finalizer: %w", err)
 	}
 
-	return nil
+	return false, nil
+}
+
+// uncachedReads reads through reader and writes through Client.
+type uncachedReads struct {
+	client.Client
+	reader client.Reader
+}
+
+func (u uncachedReads) Get(
+	ctx context.Context,
+	key client.ObjectKey,
+	obj client.Object,
+	opts ...client.GetOption,
+) error {
+	return u.reader.Get(ctx, key, obj, opts...)
+}
+
+func (u uncachedReads) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return u.reader.List(ctx, list, opts...)
 }
 
 // SetupWithManager returns an error that names each handler without a
 // registration in Registrations, or with a parameter schema that it cannot
-// read. Then it registers the contractsField and registrationField indexes
-// and the controller. The controller runs for a request whose registration
-// label names a handler, for every request that reads a contract that
-// changed, and for every request whose spec.registration names a
-// registration that changed.
+// read. Then it registers the contractsField, presetsField, and
+// registrationField indexes and the controller. The controller runs for a
+// request whose registration label names a handler, for a request whose
+// ElasticsearchCluster, DatabaseServer, or Database changed, for every
+// request that reads a contract or a preset that changed, and for every
+// request whose spec.registration names a registration that changed.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics == nil {
 		r.Metrics = observability.Recorder(controllerName)
@@ -330,25 +411,41 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(), &pluginsv1alpha1.PluginRequest{},
+		presetsField, r.presetKeys,
+	); err != nil {
+		return err
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &pluginsv1alpha1.PluginRequest{},
 		registrationField, r.registrationKeys,
 	); err != nil {
 		return err
 	}
 
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.serves)))
+		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.serves))).
+		Owns(&v1.ElasticsearchCluster{})
 	for kind, obj := range map[string]client.Object{
-		kindObjectStorageConfig:    &v1.ObjectStorageConfig{},
-		kindSecondaryStorageConfig: &v1.SecondaryStorageConfig{},
-		kindDatabaseConfig:         &v1.DatabaseConfig{},
+		adapter.KindObjectStorageConfig:    &v1.ObjectStorageConfig{},
+		adapter.KindSecondaryStorageConfig: &v1.SecondaryStorageConfig{},
+		adapter.KindDatabaseConfig:         &v1.DatabaseConfig{},
 	} {
 		b = b.Watches(
 			obj,
 			refindex.Enqueue(mgr.GetClient(), &pluginsv1alpha1.PluginRequestList{}, contractsField, keyOf(kind)),
 		)
 	}
+	for kind, obj := range presetKinds() {
+		b = b.Watches(
+			obj,
+			refindex.Enqueue(mgr.GetClient(), &pluginsv1alpha1.PluginRequestList{}, presetsField, keyOf(kind)),
+		)
+	}
 
 	return b.
+		Owns(&v1.DatabaseServer{}).
+		Owns(&v1.Database{}).
 		Watches(
 			&pluginsv1alpha1.PluginRegistration{},
 			refindex.Enqueue(
@@ -379,11 +476,42 @@ func (r *Reconciler) contractKeys(o client.Object) []string {
 	}
 
 	var keys []string
-	for _, ref := range h.contracts(request) {
-		keys = append(keys, contractKey(ref.kind, request.Namespace, ref.name))
+	for _, ref := range h.Contracts(request) {
+		keys = append(keys, contractKey(ref.Kind, request.Namespace, ref.Name))
 	}
 
 	return keys
+}
+
+// presetKeys returns the presetsField keys of a request with a handler.
+func (r *Reconciler) presetKeys(o client.Object) []string {
+	request, ok := o.(*pluginsv1alpha1.PluginRequest)
+	if !ok {
+		return nil
+	}
+
+	h, ok := r.handlers[request.Spec.Registration]
+	if !ok {
+		return nil
+	}
+
+	presets := presetKinds()
+	var keys []string
+	for _, ref := range h.Backing(request) {
+		if _, ok := presets[ref.Kind]; ok {
+			keys = append(keys, contractKey(ref.Kind, ref.Object.GetNamespace(), ref.Object.GetName()))
+		}
+	}
+
+	return keys
+}
+
+// presetKinds returns an empty object of each preset kind that a handler
+// reads as a backing object, by kind. A preset kind that a handler only
+// names in a backing object is not here: the controller of that object
+// reads the preset.
+func presetKinds() map[string]client.Object {
+	return map[string]client.Object{adapter.KindDatabaseServerPreset: &v1.DatabaseServerPreset{}}
 }
 
 // registrationKeys returns the registrationField key of a request with a

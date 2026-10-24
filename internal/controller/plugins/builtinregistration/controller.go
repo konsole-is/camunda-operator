@@ -25,6 +25,7 @@ import (
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -61,7 +62,8 @@ type Reconciler struct {
 // status.observedGeneration, on a registration in Names. The operator serves
 // the requests of these registrations in the manager, so they are ready
 // while the manager runs. It leaves every other condition as it finds it,
-// and it ignores a registration that is not in Names.
+// and it ignores a registration that is not in Names. It writes nothing
+// while Accepted is missing.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	if !slices.Contains(r.Names, req.Name) {
 		return ctrl.Result{}, nil
@@ -75,6 +77,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 
 		return ctrl.Result{}, err
+	}
+
+	// The write of Accepted starts the next reconcile.
+	if meta.FindStatusCondition(reg.Status.Conditions, pluginsv1alpha1.ConditionAccepted) == nil {
+		return ctrl.Result{}, nil
 	}
 
 	conditions.Stage(&reg, conditions.Ready(

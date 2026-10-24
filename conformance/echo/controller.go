@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -57,14 +58,22 @@ const (
 	docsURL            = "https://example.com/echo"
 )
 
+// TODO(#867): use pluginsv1alpha1.LabelRequestNamespace.
+const labelRequestNamespace = "plugins.camunda.io/request-namespace"
+
+// TODO(#867): use pluginsv1alpha1.ReasonWaitingForGrants.
+const reasonWaitingForGrants = "WaitingForGrants"
+
 // Controller is one echo controller. It writes its registration when it
 // starts and sets Ready=True on it. It serves each request of the
 // registration: the cleanup finalizer first, then a ConfigMap
-// <request>-echo, a StorageClass <namespace>-<request>-echo, and with the
-// access section an Ingress <request>-echo to the Service <target>-echo, then
-// the status of the request. With Delete it deletes the three objects. With
-// Orphan it keeps the ConfigMap without its owner reference, keeps the
-// StorageClass, and deletes the Ingress.
+// <request>-echo, a StorageClass <namespace>-<request>-echo that also carries
+// the request namespace label, and with the
+// access section an Ingress <request>-echo to the Service <target>-echo, and
+// a Grant for each grant template whose required inputs have a value, then
+// the status of the request. With Delete it deletes these objects. With
+// Orphan it keeps the ConfigMap and the Grants without their owner
+// reference, keeps the StorageClass, and deletes the Ingress.
 type Controller struct {
 	opts     Options
 	client   client.Client
@@ -110,6 +119,7 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 	err = ctrl.NewControllerManagedBy(mgr).
 		Named(name).
 		For(&pluginsv1alpha1.PluginRequest{}, builder.WithPredicates(predicate.NewPredicateFuncs(c.serves))).
+		Watches(&pluginsv1alpha1.Grant{}, handler.EnqueueRequestsFromMapFunc(c.requestOfGrant)).
 		Complete(reconcileFunc(c.reconcileRequest))
 	if err != nil {
 		return fmt.Errorf("adding the request controller: %w", err)
@@ -124,6 +134,19 @@ func (c *Controller) SetupWithManager(mgr ctrl.Manager) error {
 func (c *Controller) serves(obj client.Object) bool {
 	req, ok := obj.(*pluginsv1alpha1.PluginRequest)
 	return ok && req.Spec.Registration == c.opts.Registration
+}
+
+// requestOfGrant maps a Grant of the registration to its request.
+func (c *Controller) requestOfGrant(_ context.Context, obj client.Object) []ctrl.Request {
+	labels := obj.GetLabels()
+	if labels[pluginsv1alpha1.LabelRegistration] != c.opts.Registration || labels[pluginsv1alpha1.LabelRequest] == "" {
+		return nil
+	}
+
+	return []ctrl.Request{{NamespacedName: types.NamespacedName{
+		Namespace: obj.GetNamespace(),
+		Name:      labels[pluginsv1alpha1.LabelRequest],
+	}}}
 }
 
 type reconcileFunc func(ctx context.Context, req ctrl.Request) (ctrl.Result, error)
@@ -203,6 +226,10 @@ func (c *Controller) registrationReady(ctx context.Context) (bool, error) {
 // cleanUp applies the deletion policy of req to its objects.
 func (c *Controller) cleanUp(ctx context.Context, req *pluginsv1alpha1.PluginRequest) error {
 	cm, sc, ing := c.objects(req, true)
+	grants, err := c.existingGrants(ctx, req)
+	if err != nil {
+		return err
+	}
 
 	if req.Spec.DeletionPolicy != pluginsv1alpha1.DeletionPolicyOrphan {
 		if c.opts.Defect == DefectKeepOnDelete {
@@ -213,11 +240,20 @@ func (c *Controller) cleanUp(ctx context.Context, req *pluginsv1alpha1.PluginReq
 		if ing != nil {
 			objs = append(objs, ing)
 		}
+		for _, g := range grants {
+			objs = append(objs, g)
+		}
 		return c.deleteOwn(ctx, req, objs...)
 	}
 
 	if c.opts.Defect != DefectKeepOwnerOnOrphan {
 		if err := c.releaseOwner(ctx, cm, req.UID); err != nil {
+			return err
+		}
+	}
+
+	for _, g := range grants {
+		if err := c.releaseOwner(ctx, g, req.UID); err != nil {
 			return err
 		}
 	}
@@ -256,15 +292,16 @@ func (c *Controller) releaseOwner(ctx context.Context, obj client.Object, uid ty
 	return nil
 }
 
-// applyObjects applies the objects of req. It fails, and writes nothing,
-// when an object of one of their names exists without the request label of
-// req.
+// applyObjects applies the objects of req, and deletes each Grant of req that
+// is not one of them. It fails, and writes nothing, when an object of one of
+// their names exists and is not an object of req.
 func (c *Controller) applyObjects(ctx context.Context, req *pluginsv1alpha1.PluginRequest) error {
-	cm, sc, ing := c.objects(req, false)
-	objs := []client.Object{cm, sc}
-	if ing != nil {
-		objs = append(objs, ing)
+	grants, err := c.grants(req)
+	if err != nil {
+		return err
 	}
+
+	objs := c.objectList(req, grants)
 
 	for _, obj := range objs {
 		current, ok := obj.DeepCopyObject().(client.Object)
@@ -277,7 +314,7 @@ func (c *Controller) applyObjects(ctx context.Context, req *pluginsv1alpha1.Plug
 		case apierrors.IsNotFound(err):
 		case err != nil:
 			return err
-		case current.GetLabels()[pluginsv1alpha1.LabelRequest] != req.Name:
+		case !ofRequest(current, req):
 			return fmt.Errorf("the %T %s is not an object of the request", obj, obj.GetName())
 		}
 	}
@@ -288,7 +325,56 @@ func (c *Controller) applyObjects(ctx context.Context, req *pluginsv1alpha1.Plug
 		}
 	}
 
-	return nil
+	existing, err := c.existingGrants(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	var stale []client.Object
+	for _, g := range existing {
+		if !slices.ContainsFunc(grants, func(want *pluginsv1alpha1.Grant) bool { return want.Name == g.Name }) {
+			stale = append(stale, g)
+		}
+	}
+
+	return c.deleteOwn(ctx, req, stale...)
+}
+
+// existingGrants lists the Grants in the namespace of req that carry the
+// labels of req.
+func (c *Controller) existingGrants(
+	ctx context.Context,
+	req *pluginsv1alpha1.PluginRequest,
+) ([]*pluginsv1alpha1.Grant, error) {
+	var list pluginsv1alpha1.GrantList
+	err := c.client.List(ctx, &list, client.InNamespace(req.Namespace), client.MatchingLabels{
+		pluginsv1alpha1.LabelRegistration: c.opts.Registration,
+		pluginsv1alpha1.LabelRequest:      req.Name,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing the Grants of the request: %w", err)
+	}
+
+	grants := make([]*pluginsv1alpha1.Grant, 0, len(list.Items))
+	for i := range list.Items {
+		grants = append(grants, &list.Items[i])
+	}
+
+	return grants, nil
+}
+
+// objectList is the objects of req, with grants, in one list.
+func (c *Controller) objectList(req *pluginsv1alpha1.PluginRequest, grants []*pluginsv1alpha1.Grant) []client.Object {
+	cm, sc, ing := c.objects(req, false)
+	objs := []client.Object{cm, sc}
+	if ing != nil {
+		objs = append(objs, ing)
+	}
+	for _, g := range grants {
+		objs = append(objs, g)
+	}
+
+	return objs
 }
 
 // objects returns the ConfigMap, the StorageClass, and the Ingress of req.
@@ -303,19 +389,11 @@ func (c *Controller) objects(
 		pluginsv1alpha1.LabelRegistration: c.opts.Registration,
 		pluginsv1alpha1.LabelRequest:      req.Name,
 	}
-	owner := []metav1.OwnerReference{{
-		APIVersion:         pluginsv1alpha1.GroupVersion.String(),
-		Kind:               "PluginRequest",
-		Name:               req.Name,
-		UID:                req.UID,
-		Controller:         new(true),
-		BlockOwnerDeletion: new(true),
-	}}
 	ownerUnless := func(drop bool) []metav1.OwnerReference {
 		if drop {
 			return nil
 		}
-		return owner
+		return requestOwner(req)
 	}
 
 	data := map[string]string{"message": message(req)}
@@ -332,11 +410,16 @@ func (c *Controller) objects(
 		Data: data,
 	}
 
+	clusterLabels := maps.Clone(labels)
+	if c.opts.Defect != DefectNoRequestNamespace {
+		clusterLabels[labelRequestNamespace] = req.Namespace
+	}
+
 	sc := &storagev1.StorageClass{
 		TypeMeta: metav1.TypeMeta{APIVersion: "storage.k8s.io/v1", Kind: "StorageClass"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            req.Namespace + "-" + req.Name + "-echo",
-			Labels:          labels,
+			Labels:          clusterLabels,
 			OwnerReferences: ownerUnless(c.opts.Defect != DefectClusterOwnerReference),
 		},
 		Provisioner: storageProvisioner,
@@ -365,6 +448,18 @@ func (c *Controller) objects(
 	}
 
 	return cm, sc, ing
+}
+
+// requestOwner is the owner reference of an object of req.
+func requestOwner(req *pluginsv1alpha1.PluginRequest) []metav1.OwnerReference {
+	return []metav1.OwnerReference{{
+		APIVersion:         pluginsv1alpha1.GroupVersion.String(),
+		Kind:               "PluginRequest",
+		Name:               req.Name,
+		UID:                req.UID,
+		Controller:         new(true),
+		BlockOwnerDeletion: new(true),
+	}}
 }
 
 // message is the parameter message of req, or empty.
@@ -402,6 +497,16 @@ func (c *Controller) outputs(req *pluginsv1alpha1.PluginRequest) map[string]stri
 // writeStatus writes the status of req on the copy that it read. It records
 // one event for each resource row that the status did not list yet.
 func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.PluginRequest) (ctrl.Result, error) {
+	grants, err := c.grants(req)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	existing, err := c.existingGrants(ctx, req)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	status := req.Status.DeepCopy()
 	status.ObservedGeneration = req.Generation
 	status.Outputs = c.outputs(req)
@@ -418,19 +523,10 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 		ObservedGeneration: outputsGeneration,
 	})
 
-	ready := metav1.Condition{
-		Type:               v1.ConditionReady,
-		Status:             metav1.ConditionTrue,
-		Reason:             v1.ReasonHealthy,
-		Message:            "The echo controller serves the request",
-		ObservedGeneration: req.Generation,
-	}
-	if c.opts.Defect == DefectNotReady {
-		ready.Status = metav1.ConditionFalse
-		ready.Reason = reasonEchoDefect
-		ready.Message = "The echo controller reports a defect"
-	}
-	meta.SetStatusCondition(&status.Conditions, ready)
+	meta.SetStatusCondition(
+		&status.Conditions,
+		readyCondition(servedGrants(grants, existing), c.opts.Defect, req.Generation),
+	)
 
 	summary := []pluginsv1alpha1.SummaryItem{
 		{Label: "Message", Value: message(req), Severity: pluginsv1alpha1.SeverityInfo},
@@ -445,7 +541,7 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 		link = "/echo"
 	}
 	status.Links = []pluginsv1alpha1.Link{{Name: "Docs", URL: link}}
-	status.Resources = c.resources(req)
+	status.Resources = c.resources(req, grants)
 
 	if equality.Semantic.DeepEqual(*status, req.Status) {
 		if c.opts.Defect == DefectDropAccepted {
@@ -454,7 +550,7 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 		return ctrl.Result{}, nil
 	}
 
-	c.recordNewResources(req, status.Resources)
+	c.recordNewResources(req, status.Resources, grants)
 
 	req.Status = *status
 	if err := c.client.Status().Update(ctx, req); err != nil {
@@ -469,8 +565,63 @@ func (c *Controller) writeStatus(ctx context.Context, req *pluginsv1alpha1.Plugi
 	return ctrl.Result{}, nil
 }
 
-// resources are the rows of status.resources of req.
-func (c *Controller) resources(req *pluginsv1alpha1.PluginRequest) []pluginsv1alpha1.ResourceRef {
+// servedGrants are existing, the Grants that the cache holds, and each Grant
+// of want that it does not hold yet, without a status.
+func servedGrants(want, existing []*pluginsv1alpha1.Grant) []*pluginsv1alpha1.Grant {
+	served := slices.Clone(existing)
+	for _, g := range want {
+		if !slices.ContainsFunc(existing, func(e *pluginsv1alpha1.Grant) bool { return e.Name == g.Name }) {
+			served = append(served, g)
+		}
+	}
+
+	return served
+}
+
+// readyCondition is the Ready condition of a request of generation with
+// grants. A Grant with Ready=False gives GrantRejected, and then a Grant
+// without Ready=True gives WaitingForGrants. DefectReadyIgnoresGrants skips
+// both, and DefectNotReady gives EchoDefect.
+func readyCondition(grants []*pluginsv1alpha1.Grant, defect Defect, generation int64) metav1.Condition {
+	ready := metav1.Condition{
+		Type:               v1.ConditionReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             v1.ReasonHealthy,
+		Message:            "The echo controller serves the request",
+		ObservedGeneration: generation,
+	}
+
+	rejected := slices.IndexFunc(grants, func(g *pluginsv1alpha1.Grant) bool {
+		return meta.IsStatusConditionFalse(g.Status.Conditions, v1.ConditionReady)
+	})
+	waiting := slices.IndexFunc(grants, func(g *pluginsv1alpha1.Grant) bool {
+		return !meta.IsStatusConditionTrue(g.Status.Conditions, v1.ConditionReady)
+	})
+
+	switch {
+	case defect == DefectNotReady:
+		ready.Status = metav1.ConditionFalse
+		ready.Reason = reasonEchoDefect
+		ready.Message = "The echo controller reports a defect"
+	case defect == DefectReadyIgnoresGrants:
+	case rejected >= 0:
+		ready.Status = metav1.ConditionFalse
+		ready.Reason = pluginsv1alpha1.ReasonGrantRejected
+		ready.Message = fmt.Sprintf("Grant %s has Ready=False", grants[rejected].Name)
+	case waiting >= 0:
+		ready.Status = metav1.ConditionFalse
+		ready.Reason = reasonWaitingForGrants
+		ready.Message = fmt.Sprintf("Grant %s does not have Ready=True yet", grants[waiting].Name)
+	}
+
+	return ready
+}
+
+// resources are the rows of status.resources of req, which has grants.
+func (c *Controller) resources(
+	req *pluginsv1alpha1.PluginRequest,
+	grants []*pluginsv1alpha1.Grant,
+) []pluginsv1alpha1.ResourceRef {
 	cm, sc, ing := c.objects(req, false)
 	rows := []pluginsv1alpha1.ResourceRef{
 		{Kind: "ConfigMap", Name: cm.Name, Role: "echo", OnOrphan: pluginsv1alpha1.OnOrphanKept},
@@ -496,22 +647,35 @@ func (c *Controller) resources(req *pluginsv1alpha1.PluginRequest) []pluginsv1al
 		)
 	}
 
+	for _, g := range grants {
+		rows = append(
+			rows,
+			pluginsv1alpha1.ResourceRef{
+				Kind:     "Grant",
+				Name:     g.Name,
+				Role:     "grant",
+				OnOrphan: pluginsv1alpha1.OnOrphanKept,
+			},
+		)
+	}
+
 	return rows
 }
 
 // recordNewResources records one event for each object of rows that the
-// status of req does not list yet. The object is the related object of the
-// event, so the recorder does not fold the events of two objects into one.
-func (c *Controller) recordNewResources(req *pluginsv1alpha1.PluginRequest, rows []pluginsv1alpha1.ResourceRef) {
+// status of req, which has grants, does not list yet. The object is the
+// related object of the event, so the recorder does not fold the events of
+// two objects into one.
+func (c *Controller) recordNewResources(
+	req *pluginsv1alpha1.PluginRequest,
+	rows []pluginsv1alpha1.ResourceRef,
+	grants []*pluginsv1alpha1.Grant,
+) {
 	if c.opts.Defect == DefectNoEvents {
 		return
 	}
 
-	cm, sc, ing := c.objects(req, false)
-	objs := []client.Object{cm, sc}
-	if ing != nil {
-		objs = append(objs, ing)
-	}
+	objs := c.objectList(req, grants)
 
 	for _, row := range rows {
 		listed := slices.ContainsFunc(req.Status.Resources, func(r pluginsv1alpha1.ResourceRef) bool {
@@ -566,8 +730,8 @@ func (c *Controller) apply(ctx context.Context, obj client.Object) error {
 	return nil
 }
 
-// deleteOwn deletes each of objs that carries the labels of req, and
-// ignores an object that is gone.
+// deleteOwn deletes each of objs that is an object of req and carries the
+// registration label, and ignores an object that is gone.
 func (c *Controller) deleteOwn(ctx context.Context, req *pluginsv1alpha1.PluginRequest, objs ...client.Object) error {
 	for _, obj := range objs {
 		if err := c.client.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
@@ -577,9 +741,7 @@ func (c *Controller) deleteOwn(ctx context.Context, req *pluginsv1alpha1.PluginR
 			return err
 		}
 
-		labels := obj.GetLabels()
-		if labels[pluginsv1alpha1.LabelRequest] != req.Name ||
-			labels[pluginsv1alpha1.LabelRegistration] != c.opts.Registration {
+		if !ofRequest(obj, req) || obj.GetLabels()[pluginsv1alpha1.LabelRegistration] != c.opts.Registration {
 			continue
 		}
 
@@ -591,4 +753,18 @@ func (c *Controller) deleteOwn(ctx context.Context, req *pluginsv1alpha1.PluginR
 	}
 
 	return nil
+}
+
+// ofRequest says whether obj carries the request label of req and, when obj
+// is cluster-scoped, no request namespace label other than the namespace of
+// req. A cluster-scoped object without the label is an object of req, so the
+// objects of an older echo are still deleted.
+func ofRequest(obj client.Object, req *pluginsv1alpha1.PluginRequest) bool {
+	labels := obj.GetLabels()
+	if labels[pluginsv1alpha1.LabelRequest] != req.Name {
+		return false
+	}
+
+	namespace, labeled := labels[labelRequestNamespace]
+	return obj.GetNamespace() != "" || !labeled || namespace == req.Namespace
 }

@@ -56,7 +56,7 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	env = envtest.StartWith(
-		envtest.Options{WithoutECK: true, WithoutKeycloak: true, WithoutCNPG: true},
+		envtest.Options{WithoutKeycloak: true, WithoutCNPG: true},
 		func(mgr ctrl.Manager) error {
 			return (&Reconciler{
 				Client:        mgr.GetClient(),

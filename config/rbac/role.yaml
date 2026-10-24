@@ -284,9 +284,12 @@ rules:
 - apiGroups:
   - plugins.camunda.io
   resourceNames:
+  - database-server
+  - elasticsearch
   - existing-database-configs
   - existing-object-storage
   - existing-secondary-storage
+  - management-database-server
   resources:
   - pluginregistrations
   verbs:

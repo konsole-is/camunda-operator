@@ -93,7 +93,7 @@ func newTestSuite(t *testing.T, cfg Config, funcs interceptor.Funcs, objs ...cli
 
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithStatusSubresource(&pluginsv1alpha1.PluginRegistration{}).
+		WithStatusSubresource(&pluginsv1alpha1.PluginRegistration{}, &pluginsv1alpha1.Grant{}).
 		WithObjects(objs...).
 		Build()
 

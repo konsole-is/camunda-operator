@@ -1,0 +1,36 @@
+apiVersion: core.camunda.io/v1
+kind: DatabaseServer
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    plugins.camunda.io/registration: database-server
+    plugins.camunda.io/request: orders-secondary-storage
+  name: orders-pg
+  namespace: my-cluster-ns
+spec:
+  archive:
+    baseBackupSchedule: 0 0 3 * * *
+    objectStorageRef: orders-backup
+    retentionPeriodDays: 7
+  databaseServerConfig: orders-pg
+  presetRef: small
+  releaseRef: camunda-8-9
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::1:role/orders
+  storageClassName: encrypted
+---
+apiVersion: core.camunda.io/v1
+kind: Database
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    plugins.camunda.io/registration: database-server
+    plugins.camunda.io/request: orders-secondary-storage
+  name: orders
+  namespace: my-cluster-ns
+spec:
+  databaseConfig: orders
+  databaseName: camunda
+  secondaryStorageConfig: orders-pg
+  serverRef: orders-pg

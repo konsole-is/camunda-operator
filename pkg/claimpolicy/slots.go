@@ -27,6 +27,7 @@ import (
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 )
 
 // The kinds of the resources whose fields a slot fills.
@@ -37,7 +38,8 @@ const (
 )
 
 // The fields that a slot fills, as paths from the root of the object in the
-// field path grammar of the fleet manager.
+// field path grammar of the fleet manager. The slot managementDatabases
+// fills the field paths of planedatabases.All.
 const (
 	// PathExternalURL is a field of CamundaCluster and of CamundaOptimize.
 	PathExternalURL                         = "spec.externalUrl"
@@ -51,9 +53,6 @@ const (
 	PathConsoleExternalURL                  = "spec.console.externalUrl"
 	PathWebModelerExternalURL               = "spec.webModeler.externalUrl"
 	PathWebModelerWebsocketsExternalURL     = "spec.webModeler.websocketsExternalUrl"
-	PathKeycloakDatabaseConfigRef           = "spec.identityProvider.keycloak.databaseConfigRef"
-	PathIdentityDatabaseConfigRef           = "spec.identity.databaseConfigRef"
-	PathWebModelerDatabaseConfigRef         = "spec.webModeler.databaseConfigRef"
 )
 
 // FieldValue is one field that a slot fills.
@@ -77,9 +76,6 @@ const (
 	outputExternalURL               = "externalUrl"
 	outputOptimizeURL               = "optimizeUrl"
 	outputManagementHost            = "managementHost"
-	outputKeycloakDatabaseConfig    = "keycloakDatabaseConfig"
-	outputIdentityDatabaseConfig    = "identityDatabaseConfig"
-	outputWebModelerDatabaseConfig  = "webModelerDatabaseConfig"
 )
 
 // slotField is one field that a slot fills for one claim kind.
@@ -123,7 +119,7 @@ var (
 
 // slotTable is the slot table of the contract: the fields that each slot
 // fills, for each claim kind.
-var slotTable = []slotField{
+var slotTable = append([]slotField{
 	{
 		claimKind: clusterClaim, slot: pluginsv1alpha1.SlotWorkloadIdentity,
 		kind: KindCamundaCluster, path: PathServiceAccountAnnotations,
@@ -179,18 +175,18 @@ var slotTable = []slotField{
 		kind: KindCamundaManagementCluster, path: PathWebModelerWebsocketsExternalURL,
 		output: outputManagementHost, prefix: "https://", suffix: "/modeler-ws",
 	},
-	{
-		claimKind: planeClaim, slot: pluginsv1alpha1.SlotManagementDatabases,
-		kind: KindCamundaManagementCluster, path: PathKeycloakDatabaseConfigRef, output: outputKeycloakDatabaseConfig,
-	},
-	{
-		claimKind: planeClaim, slot: pluginsv1alpha1.SlotManagementDatabases,
-		kind: KindCamundaManagementCluster, path: PathIdentityDatabaseConfigRef, output: outputIdentityDatabaseConfig,
-	},
-	{
-		claimKind: planeClaim, slot: pluginsv1alpha1.SlotManagementDatabases,
-		kind: KindCamundaManagementCluster, path: PathWebModelerDatabaseConfigRef, output: outputWebModelerDatabaseConfig,
-	},
+}, managementDatabaseFields()...)
+
+func managementDatabaseFields() []slotField {
+	fields := make([]slotField, 0, len(planedatabases.All))
+	for _, d := range planedatabases.All {
+		fields = append(fields, slotField{
+			claimKind: planeClaim, slot: pluginsv1alpha1.SlotManagementDatabases,
+			kind: KindCamundaManagementCluster, path: d.FieldPath, output: d.Output,
+		})
+	}
+
+	return fields
 }
 
 // SlotFields returns the fields of the generated resources of a claim of

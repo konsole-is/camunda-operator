@@ -45,8 +45,22 @@ const (
 	RegistrationExistingDatabaseConfigs  = "existing-database-configs"
 )
 
+// The suffixes that a built-in registration adds to the claim name to name
+// its backing resource (CL4).
+const (
+	BackingSuffixElasticsearch            = "-es"
+	BackingSuffixDatabaseServer           = "-pg"
+	BackingSuffixManagementDatabaseServer = "-db"
+)
+
+// ManagementDatabaseServerVersion is the PostgreSQL major version of the
+// server of management-database-server when its parameters set none. Management
+// Identity supports PostgreSQL 14 to 17.
+const ManagementDatabaseServerVersion = "17"
+
 // The output keys of the core sections. A registration that serves a
-// section writes the outputs of the section.
+// section writes the outputs of the section. The outputs of the section
+// management-database are the outputs of planedatabases.All.
 const (
 	OutputPrincipal                 = "principal"
 	OutputServiceAccountAnnotations = "serviceAccountAnnotations"
@@ -59,7 +73,4 @@ const (
 	OutputGRPCHost                  = "grpcHost"
 	OutputOptimizeURL               = "optimizeUrl"
 	OutputManagementHost            = "managementHost"
-	OutputKeycloakDatabaseConfig    = "keycloakDatabaseConfig"
-	OutputIdentityDatabaseConfig    = "identityDatabaseConfig"
-	OutputWebModelerDatabaseConfig  = "webModelerDatabaseConfig"
 )

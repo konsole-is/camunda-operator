@@ -35,18 +35,24 @@ import (
 )
 
 // newRequest creates a request in default for registration, with the label
-// and spec.registration both set to it, and registers its deletion.
-func newRequest(registration, parameters string, policy pluginsv1alpha1.DeletionPolicy) *pluginsv1alpha1.PluginRequest {
+// and spec.registration both set to it, and registers its deletion. Each
+// edit changes the request before it is created.
+func newRequest(
+	registration, parameters string,
+	policy pluginsv1alpha1.DeletionPolicy,
+	edits ...func(*pluginsv1alpha1.PluginRequest),
+) *pluginsv1alpha1.PluginRequest {
 	GinkgoHelper()
-	return createRequest(registration, registration, parameters, policy)
+	return createRequest(registration, registration, parameters, policy, edits...)
 }
 
 // createRequest creates a request in default whose registration label is
 // label and whose spec.registration is registration, and registers its
-// deletion. The cleanup strips the finalizer, so no spec waits on it.
+// deletion. Each edit changes the request before it is created.
 func createRequest(
 	label, registration, parameters string,
 	policy pluginsv1alpha1.DeletionPolicy,
+	edits ...func(*pluginsv1alpha1.PluginRequest),
 ) *pluginsv1alpha1.PluginRequest {
 	GinkgoHelper()
 	section := registrationSection(registration)
@@ -77,7 +83,52 @@ func createRequest(
 	if parameters != "" {
 		request.Spec.Parameters = &apiextensionsv1.JSON{Raw: []byte(parameters)}
 	}
+	for _, edit := range edits {
+		edit(request)
+	}
 
+	submitRequest(request)
+	return request
+}
+
+// newPlaneRequest creates a request of management-database-server for a
+// plane with a unique name in default, and returns the request and the
+// plane. databases is the JSON list of the databases parameter.
+func newPlaneRequest(databases string, policy pluginsv1alpha1.DeletionPolicy) (*pluginsv1alpha1.PluginRequest, string) {
+	GinkgoHelper()
+	plane := "ops-" + utilrand.String(6)
+	registration := pluginstartup.RegistrationManagementDatabaseServer
+	request := &pluginsv1alpha1.PluginRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      plane + "-management-database",
+			Namespace: "default",
+			Labels: map[string]string{
+				pluginsv1alpha1.LabelSection:      pluginstartup.SectionManagementDatabase,
+				pluginsv1alpha1.LabelRegistration: registration,
+				fleetv1alpha1.LabelClaim:          plane,
+			},
+		},
+		Spec: pluginsv1alpha1.PluginRequestSpec{
+			Section:      pluginstartup.SectionManagementDatabase,
+			Registration: registration,
+			ClaimRef: pluginsv1alpha1.ClaimRef{
+				Kind: pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim,
+				Name: plane,
+			},
+			Target:         pluginsv1alpha1.TargetRef{Kind: "CamundaManagementCluster", Name: plane},
+			DeletionPolicy: policy,
+			Parameters:     &apiextensionsv1.JSON{Raw: []byte(`{"preset":"small","databases":` + databases + `}`)},
+		},
+	}
+
+	submitRequest(request)
+	return request, plane
+}
+
+// submitRequest creates request and registers its deletion. The cleanup
+// strips the finalizer, so no spec waits on it.
+func submitRequest(request *pluginsv1alpha1.PluginRequest) {
+	GinkgoHelper()
 	Expect(k8sClient.Create(ctx, request)).To(Succeed())
 	DeferCleanup(func() {
 		var live pluginsv1alpha1.PluginRequest
@@ -89,8 +140,6 @@ func createRequest(
 		}
 		_ = k8sClient.Delete(ctx, &live)
 	})
-
-	return request
 }
 
 // newObjectStorageConfig returns an S3 ObjectStorageConfig with workload
@@ -120,6 +169,21 @@ func newSecondaryStorageConfig() *v1.SecondaryStorageConfig {
 		Spec: v1.SecondaryStorageConfigSpec{
 			Type:  v1.SecondaryStorageTypeRDBMS,
 			RDBMS: &v1.RDBMSStorage{DatabaseConfigRef: "my-camunda-db"},
+		},
+	}
+}
+
+// newDatabaseConfig returns the DatabaseConfig name in default, as the
+// operator publishes it for a Database.
+func newDatabaseConfig(name string) *v1.DatabaseConfig {
+	return &v1.DatabaseConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Spec: v1.DatabaseConfigSpec{
+			ServerRef:    "my-db-server",
+			DatabaseName: "camunda",
+			CredentialsSecretRef: v1.LocalCredentialsSecretRef{
+				Name: "my-camunda-db-credentials", UsernameKey: "username", PasswordKey: "password",
+			},
 		},
 	}
 }

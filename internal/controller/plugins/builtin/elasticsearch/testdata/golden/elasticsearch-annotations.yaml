@@ -1,0 +1,17 @@
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    plugins.camunda.io/registration: elasticsearch
+    plugins.camunda.io/request: orders-secondary-storage
+  name: orders-es
+  namespace: my-cluster-ns
+spec:
+  presetRef: small
+  releaseRef: camunda-8-9
+  secondaryStorageConfig: orders-es
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::1:role/orders
+    name: orders-es-es

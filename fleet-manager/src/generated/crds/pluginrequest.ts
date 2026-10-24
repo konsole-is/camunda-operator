@@ -102,7 +102,9 @@ export interface PluginRequestStatus {
   /**
    * Conditions are OutputsReady and Ready. OutputsReady is True when the
    * outputs are written for the current generation. Ready is False with
-   * reason GrantRejected while a Grant of the request is not Ready. Ready
+   * reason GrantRejected while a Grant of the request has Ready=False.
+   * Ready is False with reason WaitingForGrants while no Grant of the
+   * request has Ready=False and a Grant does not have Ready=True yet. Ready
    * is False with reason WaitingForEndpoints while an access request waits
    * for the endpoints of its target. Ready is False with reason
    * InvalidParameters when the parameters do not pass the registration.

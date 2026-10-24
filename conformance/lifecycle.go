@@ -42,17 +42,16 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
-// claimName is the claim that every request of a run names. No such claim
-// exists.
-const claimName = "conformance"
-
 // requestRun is one request of the run: one case, section and deletion policy.
 type requestRun struct {
 	caseName string
 	section  string
 	policy   pluginsv1alpha1.DeletionPolicy
 	name     string
-	tc       Case
+	// claim is the claim that the request names, one for each case and
+	// policy. No such claim exists.
+	claim string
+	tc    Case
 }
 
 // lifecycle is the state that the lifecycle and deletion checks of one run
@@ -221,7 +220,14 @@ func runsOf(
 				}
 
 				caseOf[name] = tc.Name
-				run := requestRun{caseName: tc.Name, section: section, policy: policy, name: name, tc: tc}
+				run := requestRun{
+					caseName: tc.Name,
+					section:  section,
+					policy:   policy,
+					name:     name,
+					claim:    claimName(tc.Name, string(policy), runID),
+					tc:       tc,
+				}
 				if len(casePolicies) > 1 {
 					run.tc.Target = targetWithSuffix(tc.Target, strings.ToLower(string(policy)))
 				}
@@ -250,6 +256,21 @@ func targetWithSuffix(target pluginsv1alpha1.TargetRef, suffix string) pluginsv1
 func requestName(caseName, section, policy, runID string) string {
 	parts := []string{strings.ToLower(caseName), section, strings.ToLower(policy), runID}
 	return strings.Join(slices.DeleteFunc(parts, func(p string) bool { return p == "" }), "-")
+}
+
+const maxClaimName = 40
+
+// claimName is the name of the claim of a case under one policy, in the run
+// runID. It is a DNS-1035 label of at most 40 characters, as the name of a
+// cluster claim is, because a plugin can name its objects after the claim.
+func claimName(caseName, policy, runID string) string {
+	name := requestName(caseName, "", policy, runID)
+	if len(name) <= maxClaimName && len(validation.IsDNS1035Label(name)) == 0 {
+		return name
+	}
+
+	sum := sha256.Sum256([]byte(name))
+	return "claim-" + hex.EncodeToString(sum[:8])
 }
 
 // runIDOf is the part of the request names of a run in namespace. Two runs
@@ -545,13 +566,13 @@ func requestFor(
 			Labels: map[string]string{
 				pluginsv1alpha1.LabelSection:      section.Name,
 				pluginsv1alpha1.LabelRegistration: registration,
-				fleetv1alpha1.LabelClaim:          claimName,
+				fleetv1alpha1.LabelClaim:          run.claim,
 			},
 		},
 		Spec: pluginsv1alpha1.PluginRequestSpec{
 			Section:        section.Name,
 			Registration:   registration,
-			ClaimRef:       pluginsv1alpha1.ClaimRef{Kind: kind, Name: claimName},
+			ClaimRef:       pluginsv1alpha1.ClaimRef{Kind: kind, Name: run.claim},
 			Target:         run.tc.Target,
 			Inputs:         run.tc.Inputs,
 			Parameters:     run.tc.Parameters,

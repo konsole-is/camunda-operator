@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package builtin
+package existing
 
 import (
 	"testing"
@@ -23,10 +23,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 )
@@ -36,12 +36,12 @@ func TestExistingHandlersReadTheNamedContract(t *testing.T) {
 		registration, kind, output, identity string
 	}{
 		{
-			pluginstartup.RegistrationExistingObjectStorage, kindObjectStorageConfig,
+			pluginstartup.RegistrationExistingObjectStorage, adapter.KindObjectStorageConfig,
 			pluginstartup.OutputObjectStorageConfig,
 			"core.camunda.io/v1/ObjectStorageConfig/my-cluster-ns/my-bucket",
 		},
 		{
-			pluginstartup.RegistrationExistingSecondaryStorage, kindSecondaryStorageConfig,
+			pluginstartup.RegistrationExistingSecondaryStorage, adapter.KindSecondaryStorageConfig,
 			pluginstartup.OutputSecondaryStorageConfig,
 			"core.camunda.io/v1/SecondaryStorageConfig/my-cluster-ns/my-bucket",
 		},
@@ -50,35 +50,39 @@ func TestExistingHandlersReadTheNamedContract(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.registration, func(t *testing.T) {
 			request := requestFor(tt.registration, `{"name":"my-bucket"}`)
-			h := handlers()[tt.registration]
+			h := handlerFor(tt.registration)
 
-			s, err := h.build(request)
+			s, err := h.Build(request, nil)
 			require.NoError(t, err)
 
-			assert.Nil(t, s.backing, "an existing handler writes nothing")
-			_, ok := s.outputs.Resource(tt.identity)
+			assert.Nil(t, s.Backing, "an existing handler writes nothing")
+			_, ok := s.Outputs.Resource(tt.identity)
 			assert.True(t, ok)
-			assert.Equal(t, []contractRef{{output: tt.output, kind: tt.kind, name: "my-bucket"}}, h.contracts(request))
+			assert.Equal(
+				t,
+				[]adapter.ContractRef{{Output: tt.output, Kind: tt.kind, Name: "my-bucket"}},
+				h.Contracts(request),
+			)
 		})
 	}
 }
 
 func TestDatabaseConfigsReadEachNamedConfig(t *testing.T) {
 	request := requestFor(pluginstartup.RegistrationExistingDatabaseConfigs, `{"webModeler":"wm","keycloak":"kc"}`)
-	h := handlers()[pluginstartup.RegistrationExistingDatabaseConfigs]
+	h := handlerFor(pluginstartup.RegistrationExistingDatabaseConfigs)
 
-	s, err := h.build(request)
+	s, err := h.Build(request, nil)
 	require.NoError(t, err)
 
-	assert.Nil(t, s.backing)
+	assert.Nil(t, s.Backing)
 	assert.Equal(
-		t, []contractRef{
-			{output: pluginstartup.OutputKeycloakDatabaseConfig, kind: kindDatabaseConfig, name: "kc"},
-			{output: pluginstartup.OutputWebModelerDatabaseConfig, kind: kindDatabaseConfig, name: "wm"},
-		}, h.contracts(request),
+		t, []adapter.ContractRef{
+			{Output: "keycloakDatabaseConfig", Kind: adapter.KindDatabaseConfig, Name: "kc"},
+			{Output: "webModelerDatabaseConfig", Kind: adapter.KindDatabaseConfig, Name: "wm"},
+		}, h.Contracts(request),
 	)
 	for _, name := range []string{"kc", "wm"} {
-		_, ok := s.outputs.Resource("core.camunda.io/v1/DatabaseConfig/my-cluster-ns/" + name)
+		_, ok := s.Outputs.Resource("core.camunda.io/v1/DatabaseConfig/my-cluster-ns/" + name)
 		assert.True(t, ok, name)
 	}
 }
@@ -89,7 +93,7 @@ func TestDatabaseConfigsRefuseEqualNames(t *testing.T) {
 		`{"keycloak":"shared","identity":"shared","webModeler":"wm"}`,
 	)
 
-	_, err := handlers()[pluginstartup.RegistrationExistingDatabaseConfigs].build(request)
+	_, err := handlerFor(pluginstartup.RegistrationExistingDatabaseConfigs).Build(request, nil)
 
 	var failure *conditions.PreCheckFailure
 	require.ErrorAs(t, err, &failure)
@@ -102,50 +106,50 @@ func TestDatabaseConfigsRefuseEqualNames(t *testing.T) {
 
 func TestDatabaseConfigsWithoutNamesReadNothing(t *testing.T) {
 	request := requestFor(pluginstartup.RegistrationExistingDatabaseConfigs, `{}`)
-	h := handlers()[pluginstartup.RegistrationExistingDatabaseConfigs]
+	h := handlerFor(pluginstartup.RegistrationExistingDatabaseConfigs)
 
-	s, err := h.build(request)
+	s, err := h.Build(request, nil)
 	require.NoError(t, err)
 	reconcileOutputs(t, s, request, fakeReader(t))
 
-	assert.Empty(t, h.contracts(request))
-	assert.Equal(t, metav1.ConditionTrue, s.outputs.GetCondition(request).Status)
-	assert.Empty(t, s.report().outputs)
+	assert.Empty(t, h.Contracts(request))
+	assert.Equal(t, metav1.ConditionTrue, s.Outputs.GetCondition(request).Status)
+	assert.Empty(t, s.Report().Outputs)
 }
 
 func TestExistingPublishesTheOutputAndTheReadyStateOfTheContract(t *testing.T) {
 	request := requestFor(pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`)
-	s, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].build(request)
+	s, err := handlerFor(pluginstartup.RegistrationExistingObjectStorage).Build(request, nil)
 	require.NoError(t, err)
 
 	reconcileOutputs(t, s, request, fakeReader(t, objectStorageConfig("my-bucket", &metav1.Condition{
 		Type: v1.ConditionReady, Status: metav1.ConditionTrue, Reason: v1.ReasonHealthy,
 	})))
 
-	assert.Equal(t, metav1.ConditionTrue, s.outputs.GetCondition(request).Status)
-	assert.Equal(t, map[string]string{pluginstartup.OutputObjectStorageConfig: "my-bucket"}, s.report().outputs)
+	assert.Equal(t, metav1.ConditionTrue, s.Outputs.GetCondition(request).Status)
+	assert.Equal(t, map[string]string{pluginstartup.OutputObjectStorageConfig: "my-bucket"}, s.Report().Outputs)
 	assert.Equal(
 		t, []pluginsv1alpha1.SummaryItem{{
-			Label: kindObjectStorageConfig, Value: "my-bucket, Ready", Severity: pluginsv1alpha1.SeverityInfo,
-		}}, s.report().summary,
+			Label: adapter.KindObjectStorageConfig, Value: "my-bucket, Ready", Severity: pluginsv1alpha1.SeverityInfo,
+		}}, s.Report().Summary,
 	)
-	assert.Empty(t, s.report().resources)
+	assert.Empty(t, s.Report().Resources)
 }
 
 func TestExistingWaitsForAMissingContract(t *testing.T) {
 	request := requestFor(pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`)
-	s, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].build(request)
+	s, err := handlerFor(pluginstartup.RegistrationExistingObjectStorage).Build(request, nil)
 	require.NoError(t, err)
 
 	reconcileOutputs(t, s, request, fakeReader(t))
 
-	cond := s.outputs.GetCondition(request)
+	cond := s.Outputs.GetCondition(request)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, string(component.GuardBlocked), cond.Reason)
 	assert.Equal(
 		t, []pluginsv1alpha1.SummaryItem{{
-			Label: kindObjectStorageConfig, Value: "my-bucket, waiting", Severity: pluginsv1alpha1.SeverityWarning,
-		}}, s.report().summary,
+			Label: adapter.KindObjectStorageConfig, Value: "my-bucket, waiting", Severity: pluginsv1alpha1.SeverityWarning,
+		}}, s.Report().Summary,
 	)
 }
 
@@ -166,15 +170,15 @@ func TestExistingReportsAContractThatIsNotReady(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			request := requestFor(pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`)
-			s, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].build(request)
+			s, err := handlerFor(pluginstartup.RegistrationExistingObjectStorage).Build(request, nil)
 			require.NoError(t, err)
 
 			reconcileOutputs(t, s, request, fakeReader(t, objectStorageConfig("my-bucket", tt.ready)))
 
 			assert.Equal(
 				t, []pluginsv1alpha1.SummaryItem{{
-					Label: kindObjectStorageConfig, Value: tt.want, Severity: pluginsv1alpha1.SeverityWarning,
-				}}, s.report().summary,
+					Label: adapter.KindObjectStorageConfig, Value: tt.want, Severity: pluginsv1alpha1.SeverityWarning,
+				}}, s.Report().Summary,
 			)
 		})
 	}
@@ -188,11 +192,23 @@ func TestExistingCleanupWritesNothing(t *testing.T) {
 		t.Run(string(policy), func(t *testing.T) {
 			request := requestFor(pluginstartup.RegistrationExistingObjectStorage, `{"name":"my-bucket"}`)
 
-			c, err := handlers()[pluginstartup.RegistrationExistingObjectStorage].cleanup(request, policy)
+			c, err := handlerFor(pluginstartup.RegistrationExistingObjectStorage).Cleanup(request, policy, nil)
 			require.NoError(t, err)
 
-			assert.Empty(t, c.components)
-			assert.Empty(t, c.remaining)
+			assert.Nil(t, c.Backing)
+			assert.Empty(t, c.Remaining)
+		})
+	}
+}
+
+func TestExistingHasNoBackingObjects(t *testing.T) {
+	for _, name := range []string{
+		pluginstartup.RegistrationExistingObjectStorage,
+		pluginstartup.RegistrationExistingSecondaryStorage,
+		pluginstartup.RegistrationExistingDatabaseConfigs,
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Nil(t, handlerFor(name).Backing(requestFor(name, `{"name":"my-bucket"}`)))
 		})
 	}
 }
@@ -200,46 +216,33 @@ func TestExistingCleanupWritesNothing(t *testing.T) {
 func TestExistingReadsOnlyTheExactParameterNames(t *testing.T) {
 	tests := []struct {
 		registration, parameters string
-		want                     []contractRef
+		want                     []adapter.ContractRef
 	}{
 		{
 			pluginstartup.RegistrationExistingObjectStorage, `{"name":"bucket-a","NAME":"bucket-b"}`,
-			[]contractRef{{
-				output: pluginstartup.OutputObjectStorageConfig, kind: kindObjectStorageConfig, name: "bucket-a",
+			[]adapter.ContractRef{{
+				Output: pluginstartup.OutputObjectStorageConfig, Kind: adapter.KindObjectStorageConfig, Name: "bucket-a",
 			}},
 		},
 		{
 			pluginstartup.RegistrationExistingObjectStorage, `{"name":"bucket-a","NAME":3}`,
-			[]contractRef{{
-				output: pluginstartup.OutputObjectStorageConfig, kind: kindObjectStorageConfig, name: "bucket-a",
+			[]adapter.ContractRef{{
+				Output: pluginstartup.OutputObjectStorageConfig, Kind: adapter.KindObjectStorageConfig, Name: "bucket-a",
 			}},
 		},
 		{
 			pluginstartup.RegistrationExistingDatabaseConfigs, `{"KEYCLOAK":"kc","identity":"id"}`,
-			[]contractRef{{output: pluginstartup.OutputIdentityDatabaseConfig, kind: kindDatabaseConfig, name: "id"}},
+			[]adapter.ContractRef{{
+				Output: "identityDatabaseConfig", Kind: adapter.KindDatabaseConfig, Name: "id",
+			}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.parameters, func(t *testing.T) {
-			assert.Equal(t, tt.want, handlers()[tt.registration].contracts(requestFor(tt.registration, tt.parameters)))
+			assert.Equal(t, tt.want, handlerFor(tt.registration).Contracts(requestFor(tt.registration, tt.parameters)))
 		})
 	}
-}
-
-func TestContractsOfUnparsableParametersAreEmpty(t *testing.T) {
-	for name, h := range handlers() {
-		t.Run(name, func(t *testing.T) {
-			assert.Empty(t, h.contracts(requestFor(name, `{"name":3,"keycloak":3}`)))
-		})
-	}
-}
-
-// reconcileOutputs reconciles the outputs component of s against c.
-func reconcileOutputs(t *testing.T, s served, request *pluginsv1alpha1.PluginRequest, c client.Client) {
-	require.NoError(t, s.outputs.Reconcile(t.Context(), component.ReconcileContext{
-		Client: c, Scheme: c.Scheme(), Owner: request,
-	}))
 }
 
 // objectStorageConfig returns an ObjectStorageConfig of name in the namespace
