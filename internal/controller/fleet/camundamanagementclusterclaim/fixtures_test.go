@@ -33,6 +33,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 )
 
 // consistently is how long a spec watches that nothing changes.
@@ -58,9 +59,9 @@ const (
 
 // databaseOutputs are the outputs of every management-database request.
 var databaseOutputs = map[string]string{
-	pluginstartup.OutputKeycloakDatabaseConfig:   "plane-keycloak",
-	pluginstartup.OutputIdentityDatabaseConfig:   "plane-identity",
-	pluginstartup.OutputWebModelerDatabaseConfig: "plane-webmodeler",
+	planedatabases.Of(planedatabases.Keycloak).Output:   "plane-keycloak",
+	planedatabases.Of(planedatabases.Identity).Output:   "plane-identity",
+	planedatabases.Of(planedatabases.WebModeler).Output: "plane-webmodeler",
 }
 
 // createFixtures creates the core sections, the built-in and test

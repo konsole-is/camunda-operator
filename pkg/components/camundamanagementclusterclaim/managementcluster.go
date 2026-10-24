@@ -31,6 +31,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/camundamanagementcluster"
 )
 
@@ -50,13 +51,13 @@ var slotFields = map[string]slotField{
 	claimpolicy.PathKeycloakExternalURL: keycloakField(func(k *v1.ManagedKeycloakSpec) *string {
 		return &k.ExternalURL
 	}),
-	claimpolicy.PathKeycloakDatabaseConfigRef: keycloakField(func(k *v1.ManagedKeycloakSpec) *string {
+	planedatabases.Of(planedatabases.Keycloak).FieldPath: keycloakField(func(k *v1.ManagedKeycloakSpec) *string {
 		return &k.DatabaseConfigRef
 	}),
 	claimpolicy.PathIdentityExternalURL: func(s *v1.CamundaManagementClusterSpec) *string {
 		return &s.Identity.ExternalURL
 	},
-	claimpolicy.PathIdentityDatabaseConfigRef: func(s *v1.CamundaManagementClusterSpec) *string {
+	planedatabases.Of(planedatabases.Identity).FieldPath: func(s *v1.CamundaManagementClusterSpec) *string {
 		return &s.Identity.DatabaseConfigRef
 	},
 	claimpolicy.PathConsoleExternalURL: func(s *v1.CamundaManagementClusterSpec) *string {
@@ -71,7 +72,7 @@ var slotFields = map[string]slotField{
 	claimpolicy.PathWebModelerWebsocketsExternalURL: webModelerField(func(w *v1.WebModelerSpec) *string {
 		return &w.WebsocketsExternalURL
 	}),
-	claimpolicy.PathWebModelerDatabaseConfigRef: webModelerField(func(w *v1.WebModelerSpec) *string {
+	planedatabases.Of(planedatabases.WebModeler).FieldPath: webModelerField(func(w *v1.WebModelerSpec) *string {
 		return &w.DatabaseConfigRef
 	}),
 }
