@@ -27,12 +27,13 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
+	"github.com/konsole-is/camunda-operator/pkg/pluginbacking"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/database"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/databaseserver"
 )
 
-// Backing is the component that applies the server and the listed databases,
-// and deletes the Database of each component that is not listed.
+// Backing is the component that writes the server and the Database of every
+// component for one lifecycle of the request.
 type Backing struct {
 	Component *component.Component
 	// Server holds the DatabaseServer once it is read.
@@ -42,9 +43,13 @@ type Backing struct {
 	Databases map[planedatabases.Component]*concepts.Data[metav1.Condition]
 }
 
-// NewBacking returns the component with condition type conditionType. Every
-// object is deleted only if the owner owns it.
-func NewBacking(v Values, conditionType string) (Backing, error) {
+// NewBacking returns the component with condition type conditionType. While
+// the request lives, it applies the server and the listed databases, and
+// deletes the Database of each component that is not listed. While the
+// request is deleted, it applies the deletion policy to the server and to the
+// Database of every component. Every object is deleted only if the owner owns
+// it.
+func NewBacking(v Values, lifecycle pluginbacking.Lifecycle, conditionType string) (Backing, error) {
 	backing := Backing{
 		Server:    concepts.NewData[v1.DatabaseServer]("server"),
 		Databases: map[planedatabases.Component]*concepts.Data[metav1.Condition]{},
@@ -62,7 +67,7 @@ func NewBacking(v Values, conditionType string) (Backing, error) {
 	b := component.NewComponentBuilder().
 		WithName("backing").
 		WithConditionType(component.ConditionType(conditionType)).
-		WithResource(server, component.DeleteOnlyIfOwned())
+		WithResource(server, lifecycle.Options(false)...)
 	for _, c := range planedatabases.Components() {
 		db := database.NewBuilder(Database(v, c))
 		listed := slices.Contains(v.Databases, c)
@@ -81,7 +86,7 @@ func NewBacking(v Values, conditionType string) (Backing, error) {
 		if err != nil {
 			return Backing{}, fmt.Errorf("building the Database of %s: %w", c, err)
 		}
-		b.WithResource(res, component.DeleteWhen(!listed), component.DeleteOnlyIfOwned())
+		b.WithResource(res, lifecycle.Options(!listed)...)
 	}
 
 	backing.Component, err = b.Build()
@@ -90,59 +95,4 @@ func NewBacking(v Values, conditionType string) (Backing, error) {
 	}
 
 	return backing, nil
-}
-
-// DeleteDatabases returns the component that deletes the Database of every
-// component, if the owner owns it.
-func DeleteDatabases(v Values) (*component.Component, error) {
-	b := component.NewComponentBuilder().
-		WithName("databases").
-		WithConditionType(v1.ConditionReady)
-	for _, c := range planedatabases.Components() {
-		res, err := database.NewBuilder(Database(v, c)).Build()
-		if err != nil {
-			return nil, fmt.Errorf("building the Database of %s: %w", c, err)
-		}
-		b.WithResource(res, component.Delete(), component.DeleteOnlyIfOwned())
-	}
-
-	return b.Build()
-}
-
-// DeleteServer returns the component that deletes the DatabaseServer, if the
-// owner owns it.
-func DeleteServer(v Values) (*component.Component, error) {
-	res, err := databaseserver.NewBuilder(Server(v)).Build()
-	if err != nil {
-		return nil, fmt.Errorf("building the DatabaseServer: %w", err)
-	}
-
-	return component.NewComponentBuilder().
-		WithName("server").
-		WithConditionType(v1.ConditionReady).
-		WithResource(res, component.Delete(), component.DeleteOnlyIfOwned()).
-		Build()
-}
-
-// Orphan returns the component that removes the owner reference from the
-// server and from the Database of every component, and keeps the objects.
-func Orphan(v Values) (*component.Component, error) {
-	server, err := databaseserver.NewBuilder(Server(v)).Build()
-	if err != nil {
-		return nil, fmt.Errorf("building the DatabaseServer: %w", err)
-	}
-
-	b := component.NewComponentBuilder().
-		WithName("orphan").
-		WithConditionType(v1.ConditionReady).
-		WithResource(server, component.OrphanWhen(true))
-	for _, c := range planedatabases.Components() {
-		res, err := database.NewBuilder(Database(v, c)).Build()
-		if err != nil {
-			return nil, fmt.Errorf("building the Database of %s: %w", c, err)
-		}
-		b.WithResource(res, component.OrphanWhen(true))
-	}
-
-	return b.Build()
 }

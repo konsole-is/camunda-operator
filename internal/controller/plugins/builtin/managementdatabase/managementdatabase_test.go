@@ -261,29 +261,25 @@ func TestManagementDatabasesSetThePostgreSQLVersion(t *testing.T) {
 	assert.Equal(t, "16", previewServer(t, buildFor(t, request)).Spec.Version)
 }
 
-func TestManagementDatabasesDeleteTheDatabasesBeforeTheServer(t *testing.T) {
-	c, err := Handler{}.Cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyDelete, nil)
-	require.NoError(t, err)
+// With Orphan, garbage collection follows an owner reference that stays, so
+// the finalizer waits until no object references the request.
+func TestManagementDatabasesCleanupWaitsForEveryObjectThatTheRequestCanOwn(t *testing.T) {
+	for _, policy := range []pluginsv1alpha1.DeletionPolicy{
+		pluginsv1alpha1.DeletionPolicyDelete,
+		pluginsv1alpha1.DeletionPolicyOrphan,
+	} {
+		t.Run(string(policy), func(t *testing.T) {
+			c, err := Handler{}.Cleanup(planeRequest(`["identity"]`), policy, nil)
+			require.NoError(t, err)
 
-	require.Len(t, c.Stages, 2)
-	assert.Equal(
-		t, []string{"Database/ops-keycloak", "Database/ops-identity", "Database/ops-web-modeler"},
-		objectNames(c.Stages[0].Remaining), "every Database, also one that is not listed now",
-	)
-	assert.Equal(t, []string{"DatabaseServer/ops-db"}, objectNames(c.Stages[1].Remaining))
-}
-
-func TestManagementDatabasesOrphanWaitsUntilNoObjectReferencesTheRequest(t *testing.T) {
-	c, err := Handler{}.Cleanup(planeRequest(`["identity"]`), pluginsv1alpha1.DeletionPolicyOrphan, nil)
-	require.NoError(t, err)
-
-	require.Len(t, c.Stages, 1)
-	assert.Len(t, c.Stages[0].Components, 1)
-	assert.ElementsMatch(
-		t, []string{
-			"DatabaseServer/ops-db", "Database/ops-keycloak", "Database/ops-identity", "Database/ops-web-modeler",
-		}, objectNames(c.Stages[0].Remaining), "garbage collection follows an owner reference that stays",
-	)
+			assert.NotNil(t, c.Backing)
+			assert.ElementsMatch(
+				t, []string{
+					"DatabaseServer/ops-db", "Database/ops-keycloak", "Database/ops-identity", "Database/ops-web-modeler",
+				}, objectNames(c.Remaining), "every Database, also one that is not listed now",
+			)
+		})
+	}
 }
 
 func TestManagementDatabasesRefuseAnUnknownParameter(t *testing.T) {

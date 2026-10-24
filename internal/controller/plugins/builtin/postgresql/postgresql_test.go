@@ -378,32 +378,24 @@ func TestPostgreSQLReportsTheResourcesAndThePods(t *testing.T) {
 	)
 }
 
-func TestPostgreSQLDeleteRemovesTheDatabaseBeforeTheServer(t *testing.T) {
-	c, err := Handler{}.Cleanup(
-		postgresRequest(`{"preset":"small"}`, nil),
+// With Orphan, garbage collection follows an owner reference that stays, so
+// the finalizer waits until neither object references the request.
+func TestPostgreSQLCleanupWaitsForTheServerAndTheDatabase(t *testing.T) {
+	for _, policy := range []pluginsv1alpha1.DeletionPolicy{
 		pluginsv1alpha1.DeletionPolicyDelete,
-		nil,
-	)
-	require.NoError(t, err)
-
-	require.Len(t, c.Stages, 2)
-	assert.Equal(t, []string{"Database my-cluster-ns/orders"}, remainingOf(c.Stages[0]))
-	assert.Equal(t, []string{"DatabaseServer my-cluster-ns/orders-pg"}, remainingOf(c.Stages[1]))
-}
-
-func TestPostgreSQLOrphanWaitsForBothOwnerReferencesToGo(t *testing.T) {
-	c, err := Handler{}.Cleanup(
-		postgresRequest(`{"preset":"small"}`, nil),
 		pluginsv1alpha1.DeletionPolicyOrphan,
-		nil,
-	)
-	require.NoError(t, err)
+	} {
+		t.Run(string(policy), func(t *testing.T) {
+			c, err := Handler{}.Cleanup(postgresRequest(`{"preset":"small"}`, nil), policy, nil)
+			require.NoError(t, err)
 
-	require.Len(t, c.Stages, 1)
-	assert.Equal(
-		t, []string{"Database my-cluster-ns/orders", "DatabaseServer my-cluster-ns/orders-pg"},
-		remainingOf(c.Stages[0]),
-	)
+			assert.NotNil(t, c.Backing)
+			assert.ElementsMatch(
+				t, []string{"Database my-cluster-ns/orders", "DatabaseServer my-cluster-ns/orders-pg"},
+				remainingOf(c.Remaining),
+			)
+		})
+	}
 }
 
 // postgresRequest returns a database-server request of the claim orders with
@@ -439,9 +431,9 @@ func renderedPostgres(t *testing.T, s adapter.Served) (*v1.DatabaseServer, *v1.D
 	return server, db
 }
 
-func remainingOf(stage adapter.CleanupStage) []string {
-	names := make([]string, 0, len(stage.Remaining))
-	for _, obj := range stage.Remaining {
+func remainingOf(remaining []client.Object) []string {
+	names := make([]string, 0, len(remaining))
+	for _, obj := range remaining {
 		kind := "Database"
 		if _, ok := obj.(*v1.DatabaseServer); ok {
 			kind = "DatabaseServer"

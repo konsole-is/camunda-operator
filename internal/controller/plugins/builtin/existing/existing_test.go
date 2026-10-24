@@ -195,7 +195,8 @@ func TestExistingCleanupWritesNothing(t *testing.T) {
 			c, err := handlerFor(pluginstartup.RegistrationExistingObjectStorage).Cleanup(request, policy, nil)
 			require.NoError(t, err)
 
-			assert.Empty(t, c.Stages)
+			assert.Nil(t, c.Backing)
+			assert.Empty(t, c.Remaining)
 		})
 	}
 }

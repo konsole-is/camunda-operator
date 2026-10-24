@@ -38,6 +38,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	escomponents "github.com/konsole-is/camunda-operator/pkg/components/elasticsearchcluster"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/pluginbacking"
 	eswrapper "github.com/konsole-is/camunda-operator/pkg/wrappers/elasticsearchcluster"
 )
 
@@ -75,22 +76,9 @@ func (Handler) Build(request *pluginsv1alpha1.PluginRequest, live adapter.LiveOb
 		return adapter.Served{}, err
 	}
 
-	cell := concepts.NewData[v1.ElasticsearchCluster]("cluster")
-	b := eswrapper.NewBuilder(desired)
-	eswrapper.ExtractInto(b, cell, func(c v1.ElasticsearchCluster) (v1.ElasticsearchCluster, error) {
-		return c, nil
-	})
-	res, err := b.Build()
+	backing, cell, err := backingComponent(desired, pluginbacking.Lifecycle{})
 	if err != nil {
-		return adapter.Served{}, fmt.Errorf("building the ElasticsearchCluster: %w", err)
-	}
-	backing, err := component.NewComponentBuilder().
-		WithName("backing").
-		WithConditionType(component.ConditionType(v1.ConditionReady)).
-		WithResource(res, component.DeleteOnlyIfOwned()).
-		Build()
-	if err != nil {
-		return adapter.Served{}, fmt.Errorf("building the backing component: %w", err)
+		return adapter.Served{}, err
 	}
 
 	contract := elasticsearchContract(request)
@@ -188,6 +176,34 @@ func serviceAccountFor(cluster *v1.ElasticsearchCluster, inputs map[string]strin
 	}, nil
 }
 
+// backingComponent returns the component that writes cluster for a request in
+// lifecycle, and the cell that holds the live cluster once it is read.
+func backingComponent(
+	cluster *v1.ElasticsearchCluster,
+	lifecycle pluginbacking.Lifecycle,
+) (*component.Component, *concepts.Data[v1.ElasticsearchCluster], error) {
+	cell := concepts.NewData[v1.ElasticsearchCluster]("cluster")
+	b := eswrapper.NewBuilder(cluster)
+	eswrapper.ExtractInto(b, cell, func(c v1.ElasticsearchCluster) (v1.ElasticsearchCluster, error) {
+		return c, nil
+	})
+	res, err := b.Build()
+	if err != nil {
+		return nil, nil, fmt.Errorf("building the ElasticsearchCluster: %w", err)
+	}
+
+	backing, err := component.NewComponentBuilder().
+		WithName("backing").
+		WithConditionType(component.ConditionType(v1.ConditionReady)).
+		WithResource(res, lifecycle.Options(false)...).
+		Build()
+	if err != nil {
+		return nil, nil, fmt.Errorf("building the backing component: %w", err)
+	}
+
+	return backing, cell, nil
+}
+
 // elasticsearchSummary returns the summary of a request from the
 // ElasticsearchCluster as the backing component last read it. ok is false
 // before the first read.
@@ -240,38 +256,12 @@ func (Handler) Cleanup(
 	cluster := &v1.ElasticsearchCluster{ObjectMeta: metav1.ObjectMeta{
 		Name: elasticsearchClusterName(request), Namespace: request.Namespace,
 	}}
-	res, err := eswrapper.NewBuilder(cluster.DeepCopy()).Build()
+	backing, _, err := backingComponent(cluster.DeepCopy(), pluginbacking.Deleting(policy))
 	if err != nil {
-		return adapter.Cleanup{}, fmt.Errorf("building the ElasticsearchCluster: %w", err)
+		return adapter.Cleanup{}, err
 	}
 
-	if policy == pluginsv1alpha1.DeletionPolicyOrphan {
-		orphan, err := component.NewComponentBuilder().
-			WithName("orphan").
-			WithConditionType(component.ConditionType(v1.ConditionReady)).
-			WithResource(res, component.OrphanWhen(true)).
-			Build()
-		if err != nil {
-			return adapter.Cleanup{}, fmt.Errorf("building the orphan component: %w", err)
-		}
-		return adapter.Cleanup{Stages: []adapter.CleanupStage{{
-			Components: []*component.Component{orphan},
-			Remaining:  []client.Object{cluster},
-		}}}, nil
-	}
-
-	deleteCluster, err := component.NewComponentBuilder().
-		WithName("cluster").
-		WithConditionType(component.ConditionType(v1.ConditionReady)).
-		WithResource(res, component.Delete(), component.DeleteOnlyIfOwned()).
-		Build()
-	if err != nil {
-		return adapter.Cleanup{}, fmt.Errorf("building the cluster component: %w", err)
-	}
-
-	return adapter.Cleanup{Stages: []adapter.CleanupStage{
-		{Components: []*component.Component{deleteCluster}, Remaining: []client.Object{cluster}},
-	}}, nil
+	return adapter.Cleanup{Backing: backing, Remaining: []client.Object{cluster}}, nil
 }
 
 // Contracts returns the SecondaryStorageConfig of the cluster.

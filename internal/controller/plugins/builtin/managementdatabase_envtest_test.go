@@ -105,7 +105,7 @@ var _ = Describe("Built-in management databases", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
-	It("deletes the DatabaseServer only after every Database is gone", func() {
+	It("deletes the server with the Databases, and keeps the request until each one is gone", func() {
 		request, plane := newPlaneRequest(`["identity"]`, pluginsv1alpha1.DeletionPolicyDelete)
 		server := &v1.DatabaseServer{ObjectMeta: metav1.ObjectMeta{Name: plane + "-db", Namespace: "default"}}
 		db := &v1.Database{ObjectMeta: metav1.ObjectMeta{Name: plane + "-identity", Namespace: "default"}}
@@ -118,23 +118,21 @@ var _ = Describe("Built-in management databases", func() {
 		DeferCleanup(func() { setHold(db, false) })
 		Expect(k8sClient.Delete(ctx, request)).To(Succeed())
 
+		expectGone(server)
 		Eventually(func(g Gomega) {
 			var live v1.Database
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(db), &live)).To(Succeed())
 			g.Expect(live.DeletionTimestamp.IsZero()).To(BeFalse())
 		}, timeout, interval).Should(Succeed())
 		Consistently(func(g Gomega) {
-			var live v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &live)).To(Succeed())
-			g.Expect(live.DeletionTimestamp.IsZero()).To(BeTrue())
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(request), &pluginsv1alpha1.PluginRequest{})).
-				To(Succeed())
+			var live pluginsv1alpha1.PluginRequest
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(request), &live)).To(Succeed())
+			g.Expect(live.Finalizers).To(ContainElement(pluginsv1alpha1.FinalizerCleanup))
 		}, 2*time.Second, interval).Should(Succeed())
 
 		setHold(db, false)
 
 		expectGone(db)
-		expectGone(server)
 		expectGone(request)
 	})
 

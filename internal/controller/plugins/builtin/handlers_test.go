@@ -22,6 +22,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -146,7 +147,7 @@ func TestElasticsearchOrphanReadsTheClusterWithoutTheCache(t *testing.T) {
 	assert.Empty(t, got.OwnerReferences)
 }
 
-func TestPostgreSQLDeleteKeepsTheServerWhileTheDatabaseRemains(t *testing.T) {
+func TestPostgreSQLDeleteKeepsTheFinalizerWhileTheDatabaseRemains(t *testing.T) {
 	stored := postgresRequest(`{"preset":"small"}`, nil)
 	stored.UID = requestUID
 	stored.Finalizers = []string{pluginsv1alpha1.FinalizerCleanup}
@@ -172,9 +173,13 @@ func TestPostgreSQLDeleteKeepsTheServerWhileTheDatabaseRemains(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, waiting)
-	var live v1.DatabaseServer
-	require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(server), &live))
-	assert.True(t, live.DeletionTimestamp.IsZero())
+	assert.True(
+		t, apierrors.IsNotFound(c.Get(t.Context(), client.ObjectKeyFromObject(server), &v1.DatabaseServer{})),
+		"the server does not wait for the Database",
+	)
+	var live v1.Database
+	require.NoError(t, c.Get(t.Context(), client.ObjectKeyFromObject(db), &live))
+	assert.False(t, live.DeletionTimestamp.IsZero())
 }
 
 // elasticsearchRequest returns an elasticsearch request of the claim orders

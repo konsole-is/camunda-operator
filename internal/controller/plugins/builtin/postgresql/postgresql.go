@@ -38,6 +38,7 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/pluginbacking"
 	dbwrapper "github.com/konsole-is/camunda-operator/pkg/wrappers/database"
 	serverwrapper "github.com/konsole-is/camunda-operator/pkg/wrappers/databaseserver"
 )
@@ -80,34 +81,9 @@ func (Handler) Build(request *pluginsv1alpha1.PluginRequest, live adapter.LiveOb
 	}
 	database := postgresDatabase(request)
 
-	serverCell := concepts.NewData[v1.DatabaseServer]("server")
-	sb := serverwrapper.NewBuilder(server)
-	serverwrapper.ExtractInto(sb, serverCell, func(s v1.DatabaseServer) (v1.DatabaseServer, error) {
-		return s, nil
-	})
-	serverRes, err := sb.Build()
+	backing, serverCell, databaseCell, err := backingComponent(server, database, pluginbacking.Lifecycle{})
 	if err != nil {
-		return adapter.Served{}, fmt.Errorf("building the DatabaseServer: %w", err)
-	}
-
-	databaseCell := concepts.NewData[metav1.Condition]("database")
-	db := dbwrapper.NewBuilder(database)
-	dbwrapper.ExtractInto(db, databaseCell, func(d v1.Database) (metav1.Condition, error) {
-		return adapter.ReadyOf(d.Status.Conditions), nil
-	})
-	databaseRes, err := db.Build()
-	if err != nil {
-		return adapter.Served{}, fmt.Errorf("building the Database: %w", err)
-	}
-
-	backing, err := component.NewComponentBuilder().
-		WithName("backing").
-		WithConditionType(component.ConditionType(v1.ConditionReady)).
-		WithResource(serverRes, component.DeleteOnlyIfOwned()).
-		WithResource(databaseRes, component.DeleteOnlyIfOwned()).
-		Build()
-	if err != nil {
-		return adapter.Served{}, fmt.Errorf("building the backing component: %w", err)
+		return adapter.Served{}, err
 	}
 
 	contract := postgresContract(request)
@@ -299,6 +275,47 @@ func postgresDatabase(request *pluginsv1alpha1.PluginRequest) *v1.Database {
 	}
 }
 
+// backingComponent returns the component that writes server and database for
+// a request in lifecycle, with the cells that hold the live server and the
+// Ready condition of the live database once they are read.
+func backingComponent(
+	server *v1.DatabaseServer,
+	database *v1.Database,
+	lifecycle pluginbacking.Lifecycle,
+) (*component.Component, *concepts.Data[v1.DatabaseServer], *concepts.Data[metav1.Condition], error) {
+	serverCell := concepts.NewData[v1.DatabaseServer]("server")
+	sb := serverwrapper.NewBuilder(server)
+	serverwrapper.ExtractInto(sb, serverCell, func(s v1.DatabaseServer) (v1.DatabaseServer, error) {
+		return s, nil
+	})
+	serverRes, err := sb.Build()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("building the DatabaseServer: %w", err)
+	}
+
+	databaseCell := concepts.NewData[metav1.Condition]("database")
+	db := dbwrapper.NewBuilder(database)
+	dbwrapper.ExtractInto(db, databaseCell, func(d v1.Database) (metav1.Condition, error) {
+		return adapter.ReadyOf(d.Status.Conditions), nil
+	})
+	databaseRes, err := db.Build()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("building the Database: %w", err)
+	}
+
+	backing, err := component.NewComponentBuilder().
+		WithName("backing").
+		WithConditionType(component.ConditionType(v1.ConditionReady)).
+		WithResource(serverRes, lifecycle.Options(false)...).
+		WithResource(databaseRes, lifecycle.Options(false)...).
+		Build()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("building the backing component: %w", err)
+	}
+
+	return backing, serverCell, databaseCell, nil
+}
+
 // postgresContract returns the SecondaryStorageConfig that the Database of
 // request publishes.
 func postgresContract(request *pluginsv1alpha1.PluginRequest) adapter.ContractRef {
@@ -309,9 +326,9 @@ func postgresContract(request *pluginsv1alpha1.PluginRequest) adapter.ContractRe
 	}
 }
 
-// Cleanup deletes the Database and then the DatabaseServer with the Delete
-// policy, each only when the request owns it. With the Orphan policy it
-// keeps both without the owner reference.
+// Cleanup deletes the DatabaseServer and the Database with the Delete
+// policy, each only when the request owns it. With the Orphan policy it keeps
+// both without the owner reference.
 func (Handler) Cleanup(
 	request *pluginsv1alpha1.PluginRequest,
 	policy pluginsv1alpha1.DeletionPolicy,
@@ -323,52 +340,12 @@ func (Handler) Cleanup(
 	database := &v1.Database{ObjectMeta: metav1.ObjectMeta{
 		Name: request.Spec.ClaimRef.Name, Namespace: request.Namespace,
 	}}
-	serverRes, err := serverwrapper.NewBuilder(server.DeepCopy()).Build()
+	backing, _, _, err := backingComponent(server.DeepCopy(), database.DeepCopy(), pluginbacking.Deleting(policy))
 	if err != nil {
-		return adapter.Cleanup{}, fmt.Errorf("building the DatabaseServer: %w", err)
-	}
-	databaseRes, err := dbwrapper.NewBuilder(database.DeepCopy()).Build()
-	if err != nil {
-		return adapter.Cleanup{}, fmt.Errorf("building the Database: %w", err)
+		return adapter.Cleanup{}, err
 	}
 
-	if policy == pluginsv1alpha1.DeletionPolicyOrphan {
-		orphan, err := component.NewComponentBuilder().
-			WithName("orphan").
-			WithConditionType(component.ConditionType(v1.ConditionReady)).
-			WithResource(databaseRes, component.OrphanWhen(true)).
-			WithResource(serverRes, component.OrphanWhen(true)).
-			Build()
-		if err != nil {
-			return adapter.Cleanup{}, fmt.Errorf("building the orphan component: %w", err)
-		}
-		return adapter.Cleanup{Stages: []adapter.CleanupStage{{
-			Components: []*component.Component{orphan},
-			Remaining:  []client.Object{database, server},
-		}}}, nil
-	}
-
-	deleteDatabase, err := component.NewComponentBuilder().
-		WithName("database").
-		WithConditionType(component.ConditionType(v1.ConditionReady)).
-		WithResource(databaseRes, component.Delete(), component.DeleteOnlyIfOwned()).
-		Build()
-	if err != nil {
-		return adapter.Cleanup{}, fmt.Errorf("building the database component: %w", err)
-	}
-	deleteServer, err := component.NewComponentBuilder().
-		WithName("server").
-		WithConditionType(component.ConditionType(v1.ConditionReady)).
-		WithResource(serverRes, component.Delete(), component.DeleteOnlyIfOwned()).
-		Build()
-	if err != nil {
-		return adapter.Cleanup{}, fmt.Errorf("building the server component: %w", err)
-	}
-
-	return adapter.Cleanup{Stages: []adapter.CleanupStage{
-		{Components: []*component.Component{deleteDatabase}, Remaining: []client.Object{database}},
-		{Components: []*component.Component{deleteServer}, Remaining: []client.Object{server}},
-	}}, nil
+	return adapter.Cleanup{Backing: backing, Remaining: []client.Object{server, database}}, nil
 }
 
 // Contracts returns the SecondaryStorageConfig that the Database publishes.

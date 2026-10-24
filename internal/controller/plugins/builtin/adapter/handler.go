@@ -131,19 +131,14 @@ type Report struct {
 	PodSelector *metav1.LabelSelector
 }
 
-// Cleanup applies a deletion policy, one stage after the other. A cleanup
-// without stages removes the finalizer at once.
+// Cleanup applies a deletion policy. The finalizer stays until every
+// Remaining object that the request owns is gone. A zero Cleanup removes the
+// finalizer at once.
 type Cleanup struct {
-	Stages []CleanupStage
-}
-
-// CleanupStage is one step of a deletion policy. The next stage starts, or
-// after the last stage the finalizer goes, only when every remaining object
-// of this stage that the request owns is gone.
-type CleanupStage struct {
-	// Components apply the policy to the resources of this stage.
-	Components []*component.Component
-	// Remaining are the objects that the stage waits for.
+	// Backing applies the policy to the resources that Build writes. It is
+	// nil when the handler writes nothing.
+	Backing *component.Component
+	// Remaining are the objects that the finalizer waits for.
 	Remaining []client.Object
 }
 
