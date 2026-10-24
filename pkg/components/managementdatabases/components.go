@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/database"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/databaseserver"
 )
@@ -38,7 +39,7 @@ type Backing struct {
 	Server *concepts.Data[v1.DatabaseServer]
 	// Databases holds the Ready condition of the Database of each listed
 	// component once it is read. The zero condition means it has none.
-	Databases map[Component]*concepts.Data[metav1.Condition]
+	Databases map[planedatabases.Component]*concepts.Data[metav1.Condition]
 }
 
 // NewBacking returns the component with condition type conditionType. Every
@@ -46,7 +47,7 @@ type Backing struct {
 func NewBacking(v Values, conditionType string) (Backing, error) {
 	backing := Backing{
 		Server:    concepts.NewData[v1.DatabaseServer]("server"),
-		Databases: map[Component]*concepts.Data[metav1.Condition]{},
+		Databases: map[planedatabases.Component]*concepts.Data[metav1.Condition]{},
 	}
 
 	sb := databaseserver.NewBuilder(Server(v))
@@ -62,7 +63,7 @@ func NewBacking(v Values, conditionType string) (Backing, error) {
 		WithName("backing").
 		WithConditionType(component.ConditionType(conditionType)).
 		WithResource(server, component.DeleteOnlyIfOwned())
-	for _, c := range Components {
+	for _, c := range planedatabases.Components() {
 		db := database.NewBuilder(Database(v, c))
 		listed := slices.Contains(v.Databases, c)
 		if listed {
@@ -97,7 +98,7 @@ func DeleteDatabases(v Values) (*component.Component, error) {
 	b := component.NewComponentBuilder().
 		WithName("databases").
 		WithConditionType(v1.ConditionReady)
-	for _, c := range Components {
+	for _, c := range planedatabases.Components() {
 		res, err := database.NewBuilder(Database(v, c)).Build()
 		if err != nil {
 			return nil, fmt.Errorf("building the Database of %s: %w", c, err)
@@ -135,7 +136,7 @@ func Orphan(v Values) (*component.Component, error) {
 		WithName("orphan").
 		WithConditionType(v1.ConditionReady).
 		WithResource(server, component.OrphanWhen(true))
-	for _, c := range Components {
+	for _, c := range planedatabases.Components() {
 		res, err := database.NewBuilder(Database(v, c)).Build()
 		if err != nil {
 			return nil, fmt.Errorf("building the Database of %s: %w", c, err)

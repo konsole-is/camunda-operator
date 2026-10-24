@@ -33,14 +33,8 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	mdb "github.com/konsole-is/camunda-operator/pkg/components/managementdatabases"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 )
-
-// managementOutputs are the output keys of the components.
-var managementOutputs = map[mdb.Component]string{
-	mdb.Keycloak:   pluginstartup.OutputKeycloakDatabaseConfig,
-	mdb.Identity:   pluginstartup.OutputIdentityDatabaseConfig,
-	mdb.WebModeler: pluginstartup.OutputWebModelerDatabaseConfig,
-}
 
 // Handler serves management-database-server. It applies the
 // DatabaseServer <plane>-db and one Database for each component that the
@@ -104,8 +98,8 @@ func (Handler) Cleanup(
 	_ adapter.LiveObjects,
 ) (adapter.Cleanup, error) {
 	v := managementValues(request)
-	databases := make([]client.Object, 0, len(mdb.Components))
-	for _, c := range mdb.Components {
+	databases := make([]client.Object, 0, len(planedatabases.All))
+	for _, c := range planedatabases.Components() {
 		databases = append(databases, mdb.Database(v, c))
 	}
 
@@ -148,9 +142,9 @@ func (Handler) Contracts(request *pluginsv1alpha1.PluginRequest) []adapter.Contr
 // Backing implements adapter.Handler.
 func (Handler) Backing(request *pluginsv1alpha1.PluginRequest) []adapter.BackingRef {
 	v := managementValues(request)
-	refs := make([]adapter.BackingRef, 0, 1+len(mdb.Components))
+	refs := make([]adapter.BackingRef, 0, 1+len(planedatabases.All))
 	refs = append(refs, adapter.BackingRef{Kind: adapter.KindDatabaseServer, Object: mdb.Server(v)})
-	for _, c := range mdb.Components {
+	for _, c := range planedatabases.Components() {
 		refs = append(refs, adapter.BackingRef{Kind: adapter.KindDatabase, Object: mdb.Database(v, c)})
 	}
 
@@ -189,14 +183,14 @@ func managementValues(request *pluginsv1alpha1.PluginRequest) mdb.Values {
 type managementParameters struct {
 	Preset    string
 	Version   string
-	Databases []mdb.Component
+	Databases []planedatabases.Component
 }
 
 // decodeManagementParameters decodes parameters with no unknown field. A
 // value that does not decode returns a *conditions.PreCheckFailure with
 // reason InvalidParameters, whose message names the field. An absent version
 // is pluginstartup.ManagementDatabaseServerVersion. The databases have no
-// duplicates and follow the order of mdb.Components.
+// duplicates and follow the order of planedatabases.All.
 func decodeManagementParameters(parameters *apiextensionsv1.JSON) (managementParameters, error) {
 	var top map[string]json.RawMessage
 	if err := adapter.DecodeStrict(parameters, &top); err != nil {
@@ -204,7 +198,7 @@ func decodeManagementParameters(parameters *apiextensionsv1.JSON) (managementPar
 	}
 
 	var p managementParameters
-	var listed []mdb.Component
+	var listed []planedatabases.Component
 	if err := adapter.DecodeFields(top, "spec.parameters.", map[string]any{
 		"preset":    &p.Preset,
 		"version":   &p.Version,
@@ -217,7 +211,7 @@ func decodeManagementParameters(parameters *apiextensionsv1.JSON) (managementPar
 		p.Version = pluginstartup.ManagementDatabaseServerVersion
 	}
 
-	for _, c := range mdb.Components {
+	for _, c := range planedatabases.Components() {
 		if slices.Contains(listed, c) {
 			p.Databases = append(p.Databases, c)
 		}
@@ -232,7 +226,7 @@ func managementContracts(v mdb.Values) []adapter.ContractRef {
 	refs := make([]adapter.ContractRef, 0, len(v.Databases))
 	for _, c := range v.Databases {
 		refs = append(refs, adapter.ContractRef{
-			Output: managementOutputs[c],
+			Output: planedatabases.Of(c).Output,
 			Kind:   adapter.KindDatabaseConfig,
 			Name:   mdb.DatabaseName(v.Plane, c),
 		})
@@ -247,7 +241,7 @@ func keptComponents(
 	live adapter.LiveObjects,
 ) []pluginsv1alpha1.SummaryItem {
 	var items []pluginsv1alpha1.SummaryItem
-	for _, c := range mdb.Components {
+	for _, c := range planedatabases.Components() {
 		name := mdb.DatabaseName(v.Plane, c)
 		current, ok := adapter.LiveAs[*v1.Database](live, adapter.KindDatabase, name)
 		if slices.Contains(v.Databases, c) || !ok || !adapter.OwnedBy(current, request.UID) {

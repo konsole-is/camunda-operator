@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
@@ -34,19 +35,19 @@ var updateGolden = flag.Bool("update-golden", false, "update golden files")
 func TestBackingGoldenAllComponents(t *testing.T) {
 	t.Parallel()
 
-	assertBackingGolden(t, "testdata/golden/all.yaml", goldenValues(Components...))
+	assertBackingGolden(t, "testdata/golden/all.yaml", goldenValues(planedatabases.Components()...))
 }
 
 func TestBackingGoldenIdentityOnly(t *testing.T) {
 	t.Parallel()
 
-	assertBackingGolden(t, "testdata/golden/identity.yaml", goldenValues(Identity))
+	assertBackingGolden(t, "testdata/golden/identity.yaml", goldenValues(planedatabases.Identity))
 }
 
 func TestBackingGoldenStorageClass(t *testing.T) {
 	t.Parallel()
 
-	v := goldenValues(Identity)
+	v := goldenValues(planedatabases.Identity)
 	v.StorageClassName = "encrypted"
 	assertBackingGolden(t, "testdata/golden/storage-class.yaml", v)
 }

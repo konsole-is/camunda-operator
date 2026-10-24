@@ -77,8 +77,8 @@ func TestDatabaseConfigsReadEachNamedConfig(t *testing.T) {
 	assert.Nil(t, s.Backing)
 	assert.Equal(
 		t, []adapter.ContractRef{
-			{Output: pluginstartup.OutputKeycloakDatabaseConfig, Kind: adapter.KindDatabaseConfig, Name: "kc"},
-			{Output: pluginstartup.OutputWebModelerDatabaseConfig, Kind: adapter.KindDatabaseConfig, Name: "wm"},
+			{Output: "keycloakDatabaseConfig", Kind: adapter.KindDatabaseConfig, Name: "kc"},
+			{Output: "webModelerDatabaseConfig", Kind: adapter.KindDatabaseConfig, Name: "wm"},
 		}, h.Contracts(request),
 	)
 	for _, name := range []string{"kc", "wm"} {
@@ -232,7 +232,7 @@ func TestExistingReadsOnlyTheExactParameterNames(t *testing.T) {
 		{
 			pluginstartup.RegistrationExistingDatabaseConfigs, `{"KEYCLOAK":"kc","identity":"id"}`,
 			[]adapter.ContractRef{{
-				Output: pluginstartup.OutputIdentityDatabaseConfig, Kind: adapter.KindDatabaseConfig, Name: "id",
+				Output: "identityDatabaseConfig", Kind: adapter.KindDatabaseConfig, Name: "id",
 			}},
 		},
 	}

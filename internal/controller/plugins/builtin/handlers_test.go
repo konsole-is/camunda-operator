@@ -57,8 +57,8 @@ func TestExistingRegistrationsReadTheirContracts(t *testing.T) {
 		{
 			pluginstartup.RegistrationExistingDatabaseConfigs, `{"webModeler":"wm","keycloak":"kc"}`,
 			[]adapter.ContractRef{
-				{Output: pluginstartup.OutputKeycloakDatabaseConfig, Kind: adapter.KindDatabaseConfig, Name: "kc"},
-				{Output: pluginstartup.OutputWebModelerDatabaseConfig, Kind: adapter.KindDatabaseConfig, Name: "wm"},
+				{Output: "keycloakDatabaseConfig", Kind: adapter.KindDatabaseConfig, Name: "kc"},
+				{Output: "webModelerDatabaseConfig", Kind: adapter.KindDatabaseConfig, Name: "wm"},
 			},
 		},
 	}

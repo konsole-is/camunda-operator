@@ -27,8 +27,8 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/controller/plugins/builtin/adapter"
-	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 )
 
 // Handler serves a registration that publishes contracts that are already
@@ -46,8 +46,8 @@ func OneContract(output, kind string) Handler {
 }
 
 // DatabaseConfigs returns the handler of existing-database-configs, which
-// publishes a DatabaseConfig for each of keycloak, identity, and webModeler
-// that the parameters name.
+// publishes a DatabaseConfig for each component of planedatabases.All that
+// the parameters name.
 func DatabaseConfigs() Handler {
 	return Handler{parse: databaseConfigs}
 }
@@ -115,34 +115,33 @@ func oneContract(output, kind string) func(*apiextensionsv1.JSON) ([]adapter.Con
 }
 
 // databaseConfigs returns a contract for each DatabaseConfig name that the
-// parameters set, in the order keycloak, identity, webModeler. Two fields
-// with one name return a *conditions.PreCheckFailure with reason
-// InvalidParameters.
+// parameters set, in the order of planedatabases.All. Two fields with one
+// name return a *conditions.PreCheckFailure with reason InvalidParameters.
 func databaseConfigs(parameters *apiextensionsv1.JSON) ([]adapter.ContractRef, error) {
-	p, err := decodeParameters(parameters, "keycloak", "identity", "webModeler")
-	if err != nil {
-		return nil, err
+	fields := make([]string, 0, len(planedatabases.All))
+	for _, c := range planedatabases.Components() {
+		fields = append(fields, string(c))
 	}
 
-	fields := []struct{ field, output string }{
-		{"keycloak", pluginstartup.OutputKeycloakDatabaseConfig},
-		{"identity", pluginstartup.OutputIdentityDatabaseConfig},
-		{"webModeler", pluginstartup.OutputWebModelerDatabaseConfig},
+	p, err := decodeParameters(parameters, fields...)
+	if err != nil {
+		return nil, err
 	}
 
 	var refs []adapter.ContractRef
 	fieldsOf := map[string][]string{}
 	var names []string
-	for _, f := range fields {
-		name := p[f.field]
+	for _, d := range planedatabases.All {
+		field := string(d.Component)
+		name := p[field]
 		if name == "" {
 			continue
 		}
-		refs = append(refs, adapter.ContractRef{Output: f.output, Kind: adapter.KindDatabaseConfig, Name: name})
+		refs = append(refs, adapter.ContractRef{Output: d.Output, Kind: adapter.KindDatabaseConfig, Name: name})
 		if len(fieldsOf[name]) == 0 {
 			names = append(names, name)
 		}
-		fieldsOf[name] = append(fieldsOf[name], "spec.parameters."+f.field)
+		fieldsOf[name] = append(fieldsOf[name], "spec.parameters."+field)
 	}
 
 	var shared []string

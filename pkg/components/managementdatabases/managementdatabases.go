@@ -23,20 +23,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 )
-
-// Component is a component of a management plane that gets its own database.
-type Component string
-
-// The components of a management plane that get a database.
-const (
-	Keycloak   Component = "keycloak"
-	Identity   Component = "identity"
-	WebModeler Component = "webModeler"
-)
-
-// Components are all components, in the order keycloak, identity, webModeler.
-var Components = []Component{Keycloak, Identity, WebModeler}
 
 // Values are the inputs of the backing resources of one request.
 type Values struct {
@@ -54,8 +42,8 @@ type Values struct {
 	// when the preset sets none.
 	StorageClassName string
 	// Databases are the listed components, without duplicates, in the order
-	// of Components.
-	Databases []Component
+	// of planedatabases.All.
+	Databases []planedatabases.Component
 	// Labels are the labels of every object.
 	Labels map[string]string
 }
@@ -79,7 +67,7 @@ func Server(v Values) *v1.DatabaseServer {
 
 // Database returns the Database of c on the server of v. It publishes its
 // DatabaseConfig under its own name.
-func Database(v Values, c Component) *v1.Database {
+func Database(v Values, c planedatabases.Component) *v1.Database {
 	name := DatabaseName(v.Plane, c)
 	return &v1.Database{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: v.Namespace, Labels: v.Labels},
@@ -91,22 +79,14 @@ func Database(v Values, c Component) *v1.Database {
 	}
 }
 
-// DatabaseName returns the name of the Database of c for the plane:
-// <plane>-keycloak, <plane>-identity, or <plane>-web-modeler.
-func DatabaseName(plane string, c Component) string {
-	if c == WebModeler {
-		return plane + "-web-modeler"
-	}
-
-	return plane + "-" + string(c)
+// DatabaseName returns the name of the Database of c for the plane, for
+// example <plane>-web-modeler.
+func DatabaseName(plane string, c planedatabases.Component) string {
+	return plane + "-" + planedatabases.Of(c).NameSuffix
 }
 
-// LogicalName returns the logical database of c on the server: keycloak,
-// identity, or web_modeler.
-func LogicalName(c Component) string {
-	if c == WebModeler {
-		return "web_modeler"
-	}
-
-	return string(c)
+// LogicalName returns the logical database of c on the server, for example
+// web_modeler.
+func LogicalName(c planedatabases.Component) string {
+	return planedatabases.Of(c).LogicalName
 }

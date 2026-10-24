@@ -24,18 +24,19 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 )
 
 func TestDatabaseNameAndLogicalName(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		component     Component
+		component     planedatabases.Component
 		name, logical string
 	}{
-		{Keycloak, "ops-keycloak", "keycloak"},
-		{Identity, "ops-identity", "identity"},
-		{WebModeler, "ops-web-modeler", "web_modeler"},
+		{planedatabases.Keycloak, "ops-keycloak", "keycloak"},
+		{planedatabases.Identity, "ops-identity", "identity"},
+		{planedatabases.WebModeler, "ops-web-modeler", "web_modeler"},
 	}
 
 	for _, tt := range tests {
@@ -47,7 +48,7 @@ func TestDatabaseNameAndLogicalName(t *testing.T) {
 func TestServerSetsThePresetTheVersionTheContractAndTheStorageClass(t *testing.T) {
 	t.Parallel()
 
-	v := goldenValues(Identity)
+	v := goldenValues(planedatabases.Identity)
 	v.StorageClassName = "encrypted"
 
 	server := Server(v)
@@ -65,7 +66,7 @@ func TestServerSetsThePresetTheVersionTheContractAndTheStorageClass(t *testing.T
 func TestServerWithoutStorageClassKeepsTheDefault(t *testing.T) {
 	t.Parallel()
 
-	assert.Nil(t, Server(goldenValues(Identity)).Spec.StorageClassName)
+	assert.Nil(t, Server(goldenValues(planedatabases.Identity)).Spec.StorageClassName)
 }
 
 // The DatabaseServer controller refuses a merged spec that ValidateMerged
@@ -74,7 +75,7 @@ func TestServerWithoutStorageClassKeepsTheDefault(t *testing.T) {
 func TestServerPassesTheMergedValidationOverAPresetWithAStorageSize(t *testing.T) {
 	t.Parallel()
 
-	server := Server(goldenValues(Identity))
+	server := Server(goldenValues(planedatabases.Identity))
 	server.Spec.StorageSize = new(resource.MustParse("10Gi"))
 
 	assert.NoError(t, databaseserver.ValidateMerged(server.Spec))
@@ -83,7 +84,7 @@ func TestServerPassesTheMergedValidationOverAPresetWithAStorageSize(t *testing.T
 func TestDatabasePublishesTheDatabaseConfigOfItsName(t *testing.T) {
 	t.Parallel()
 
-	db := Database(goldenValues(WebModeler), WebModeler)
+	db := Database(goldenValues(planedatabases.WebModeler), planedatabases.WebModeler)
 
 	assert.Equal(t, "ops-web-modeler", db.Name)
 	assert.Equal(t, "ops-ns", db.Namespace)
@@ -95,7 +96,7 @@ func TestDatabasePublishesTheDatabaseConfigOfItsName(t *testing.T) {
 
 // goldenValues returns the values of the plane ops with the listed
 // components.
-func goldenValues(databases ...Component) Values {
+func goldenValues(databases ...planedatabases.Component) Values {
 	return Values{
 		Namespace: "ops-ns",
 		Plane:     "ops",

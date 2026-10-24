@@ -41,12 +41,12 @@ func TestManagementDatabasesParseDeduplicatesAndOrders(t *testing.T) {
 	assert.Equal(
 		t, []adapter.ContractRef{
 			{
-				Output: pluginstartup.OutputIdentityDatabaseConfig,
+				Output: "identityDatabaseConfig",
 				Kind:   adapter.KindDatabaseConfig,
 				Name:   "ops-identity",
 			},
 			{
-				Output: pluginstartup.OutputWebModelerDatabaseConfig,
+				Output: "webModelerDatabaseConfig",
 				Kind:   adapter.KindDatabaseConfig,
 				Name:   "ops-web-modeler",
 			},
@@ -73,8 +73,8 @@ func TestManagementDatabasesPublishOnlyTheListedOutputs(t *testing.T) {
 	assert.Equal(t, metav1.ConditionTrue, s.Outputs.GetCondition(request).Status)
 	assert.Equal(
 		t, map[string]string{
-			pluginstartup.OutputKeycloakDatabaseConfig: "ops-keycloak",
-			pluginstartup.OutputIdentityDatabaseConfig: "ops-identity",
+			"keycloakDatabaseConfig": "ops-keycloak",
+			"identityDatabaseConfig": "ops-identity",
 		}, s.Report().Outputs,
 	)
 }

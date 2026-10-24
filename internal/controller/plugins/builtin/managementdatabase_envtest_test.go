@@ -54,8 +54,8 @@ var _ = Describe("Built-in management databases", func() {
 
 		live := expectCondition(request, pluginsv1alpha1.ConditionOutputsReady, metav1.ConditionTrue, v1.ReasonHealthy)
 		Expect(live.Status.Outputs).To(Equal(map[string]string{
-			pluginstartup.OutputKeycloakDatabaseConfig: plane + "-keycloak",
-			pluginstartup.OutputIdentityDatabaseConfig: plane + "-identity",
+			"keycloakDatabaseConfig": plane + "-keycloak",
+			"identityDatabaseConfig": plane + "-identity",
 		}))
 	})
 
@@ -92,7 +92,7 @@ var _ = Describe("Built-in management databases", func() {
 		}
 		Eventually(func(g Gomega) {
 			live := liveRequest(g, request)
-			g.Expect(live.Status.Outputs).NotTo(HaveKey(pluginstartup.OutputWebModelerDatabaseConfig))
+			g.Expect(live.Status.Outputs).NotTo(HaveKey("webModelerDatabaseConfig"))
 			g.Expect(live.Status.Outputs).To(HaveLen(2))
 			g.Expect(live.Status.Summary).To(ContainElement(removed))
 		}, timeout, interval).Should(Succeed())

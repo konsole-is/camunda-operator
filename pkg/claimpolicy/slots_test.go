@@ -67,7 +67,4 @@ func TestOutputKeysAreTheOutputsOfTheCoreSections(t *testing.T) {
 	assert.Equal(t, pluginstartup.OutputExternalURL, outputExternalURL)
 	assert.Equal(t, pluginstartup.OutputOptimizeURL, outputOptimizeURL)
 	assert.Equal(t, pluginstartup.OutputManagementHost, outputManagementHost)
-	assert.Equal(t, pluginstartup.OutputKeycloakDatabaseConfig, outputKeycloakDatabaseConfig)
-	assert.Equal(t, pluginstartup.OutputIdentityDatabaseConfig, outputIdentityDatabaseConfig)
-	assert.Equal(t, pluginstartup.OutputWebModelerDatabaseConfig, outputWebModelerDatabaseConfig)
 }
