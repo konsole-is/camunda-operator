@@ -155,11 +155,18 @@ func section(name string, spec pluginsv1alpha1.PluginSectionSpec) pluginsv1alpha
 }
 
 // managementDatabaseTitles returns the titles of planedatabases.All as an
-// English list, such as "A, B, and C".
+// English list: "A", "A and B", or "A, B, and C".
 func managementDatabaseTitles() string {
 	titles := make([]string, 0, len(planedatabases.All))
 	for _, d := range planedatabases.All {
 		titles = append(titles, d.Title)
+	}
+
+	switch len(titles) {
+	case 1:
+		return titles[0]
+	case 2:
+		return titles[0] + " and " + titles[1]
 	}
 	titles[len(titles)-1] = "and " + titles[len(titles)-1]
 
