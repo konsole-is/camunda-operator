@@ -289,11 +289,9 @@ func refuse(request *pluginsv1alpha1.PluginRequest, failure *conditions.PreCheck
 	setSummary(&request.Status, nil, metav1.Now())
 }
 
-// finalize applies the deletion policy of request stage by stage. It starts a
-// stage only when every remaining object of the stage before it that the
-// request owns is gone, and removes the finalizer after the last stage. It
-// writes no status. waiting is true while an owned remaining object holds
-// the finalizer.
+// finalize applies the deletion policy of request, and removes the finalizer
+// once every remaining object that the request owns is gone. It writes no
+// status. waiting is true while an owned remaining object holds the finalizer.
 func (r *Reconciler) finalize(
 	ctx context.Context,
 	rec component.ReconcileContext,
@@ -319,23 +317,21 @@ func (r *Reconciler) finalize(
 		return false, fmt.Errorf("building the cleanup: %w", err)
 	}
 
-	for _, stage := range c.Stages {
-		for _, comp := range stage.Components {
-			if err := comp.Reconcile(ctx, rec); err != nil {
-				return false, fmt.Errorf("applying the deletion policy: %w", err)
-			}
+	if c.Backing != nil {
+		if err := c.Backing.Reconcile(ctx, rec); err != nil {
+			return false, fmt.Errorf("applying the deletion policy: %w", err)
 		}
+	}
 
-		// An object that the request does not own stays, so it cannot hold
-		// the finalizer.
-		for _, obj := range stage.Remaining {
-			err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-			if err == nil && adapter.OwnedBy(obj, request.UID) {
-				return true, nil
-			}
-			if err != nil && !apierrors.IsNotFound(err) {
-				return false, fmt.Errorf("reading %s: %w", client.ObjectKeyFromObject(obj), err)
-			}
+	// An object that the request does not own stays, so it cannot hold the
+	// finalizer.
+	for _, obj := range c.Remaining {
+		err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(obj), obj)
+		if err == nil && adapter.OwnedBy(obj, request.UID) {
+			return true, nil
+		}
+		if err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("reading %s: %w", client.ObjectKeyFromObject(obj), err)
 		}
 	}
 

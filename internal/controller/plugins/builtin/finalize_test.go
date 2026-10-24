@@ -40,32 +40,31 @@ import (
 
 const testHold = "test.camunda.io/hold"
 
-func TestFinalizeWaitsForEachStageInOrder(t *testing.T) {
+func TestFinalizeKeepsTheFinalizerWhileAnOwnedRemainingObjectExists(t *testing.T) {
 	request := deletingRequest()
-	first := ownedConfigMap("first", request.UID)
-	first.Finalizers = []string{testHold}
-	second := ownedConfigMap("second", request.UID)
-	c := fakeReader(t, request, first, second)
-	h := stubHandler{c: adapter.Cleanup{Stages: []adapter.CleanupStage{
-		deleteStage(t, "first", request),
-		deleteStage(t, "second", request),
-	}}}
+	held := ownedConfigMap("held", request.UID)
+	held.Finalizers = []string{testHold}
+	free := ownedConfigMap("free", request.UID)
+	c := fakeReader(t, request, held, free)
+	h := stubHandler{c: deleteCleanup(t, request, "held", "free")}
 
 	assert.Equal(
 		t, ctrl.Result{RequeueAfter: cleanupRequeue}, finalizeOnce(t, c, request, h), "an owned object remains",
 	)
 
-	assert.False(t, liveConfigMap(t, c, "first").DeletionTimestamp.IsZero(), "the first stage deletes first")
-	assert.True(t, liveConfigMap(t, c, "second").DeletionTimestamp.IsZero(), "the second stage waits for first")
+	assert.False(t, liveConfigMap(t, c, "held").DeletionTimestamp.IsZero())
+	assert.True(
+		t, apierrors.IsNotFound(c.Get(t.Context(), configMapKey("free"), &corev1.ConfigMap{})),
+		"every object is deleted in the same pass",
+	)
 	assert.True(t, controllerutil.ContainsFinalizer(readRequest(t, c, request), pluginsv1alpha1.FinalizerCleanup))
 
-	held := liveConfigMap(t, c, "first")
-	held.Finalizers = nil
-	require.NoError(t, c.Update(t.Context(), held))
+	live := liveConfigMap(t, c, "held")
+	live.Finalizers = nil
+	require.NoError(t, c.Update(t.Context(), live))
 
 	assert.Equal(t, ctrl.Result{}, finalizeOnce(t, c, request, h), "everything is gone")
 
-	assert.True(t, apierrors.IsNotFound(c.Get(t.Context(), configMapKey("second"), &corev1.ConfigMap{})))
 	assert.True(
 		t, apierrors.IsNotFound(c.Get(t.Context(), client.ObjectKeyFromObject(request), request)),
 		"the request goes once it has no finalizer",
@@ -76,7 +75,7 @@ func TestFinalizeIgnoresARemainingObjectThatTheRequestDoesNotOwn(t *testing.T) {
 	request := deletingRequest()
 	foreign := ownedConfigMap("foreign", "")
 	c := fakeReader(t, request, foreign)
-	h := stubHandler{c: adapter.Cleanup{Stages: []adapter.CleanupStage{deleteStage(t, "foreign", request)}}}
+	h := stubHandler{c: deleteCleanup(t, request, "foreign")}
 
 	assert.Equal(t, ctrl.Result{}, finalizeOnce(t, c, request, h))
 
@@ -87,7 +86,7 @@ func TestFinalizeIgnoresARemainingObjectThatTheRequestDoesNotOwn(t *testing.T) {
 	)
 }
 
-func TestFinalizeWithoutStagesRemovesTheFinalizer(t *testing.T) {
+func TestFinalizeWithoutCleanupRemovesTheFinalizer(t *testing.T) {
 	request := deletingRequest()
 	c := fakeReader(t, request)
 
@@ -137,27 +136,26 @@ func ownedConfigMap(name string, uid types.UID) *corev1.ConfigMap {
 	return cm
 }
 
-// deleteStage returns a stage that deletes the ConfigMap name if the
-// request owns it, and waits for it.
-func deleteStage(t *testing.T, name string, request *pluginsv1alpha1.PluginRequest) adapter.CleanupStage {
-	res, err := configmap.NewBuilder(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: request.Namespace},
-	}).Build()
-	require.NoError(t, err)
-
-	comp, err := component.NewComponentBuilder().
-		WithName("cleanup-"+name).
-		WithConditionType("Ready").
-		WithResource(res, component.Delete(), component.DeleteOnlyIfOwned()).
-		Build()
-	require.NoError(t, err)
-
-	return adapter.CleanupStage{
-		Components: []*component.Component{comp},
-		Remaining: []client.Object{
-			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: request.Namespace}},
-		},
+// deleteCleanup returns a cleanup that deletes the ConfigMaps names if the
+// request owns them, and waits for them.
+func deleteCleanup(t *testing.T, request *pluginsv1alpha1.PluginRequest, names ...string) adapter.Cleanup {
+	b := component.NewComponentBuilder().WithName("cleanup").WithConditionType("Ready")
+	remaining := make([]client.Object, 0, len(names))
+	for _, name := range names {
+		res, err := configmap.NewBuilder(&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: request.Namespace},
+		}).Build()
+		require.NoError(t, err)
+		b.WithResource(res, component.Delete(), component.DeleteOnlyIfOwned())
+		remaining = append(remaining, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: request.Namespace},
+		})
 	}
+
+	comp, err := b.Build()
+	require.NoError(t, err)
+
+	return adapter.Cleanup{Backing: comp, Remaining: remaining}
 }
 
 func finalizeOnce(

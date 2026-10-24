@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"slices"
 
-	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,6 +33,7 @@ import (
 	mdb "github.com/konsole-is/camunda-operator/pkg/components/managementdatabases"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
+	"github.com/konsole-is/camunda-operator/pkg/pluginbacking"
 )
 
 // Handler serves management-database-server. It applies the
@@ -54,7 +54,7 @@ func (Handler) Build(request *pluginsv1alpha1.PluginRequest, live adapter.LiveOb
 		return adapter.Served{}, err
 	}
 
-	backing, err := mdb.NewBacking(v, v1.ConditionReady)
+	backing, err := mdb.NewBacking(v, pluginbacking.Lifecycle{}, v1.ConditionReady)
 	if err != nil {
 		return adapter.Served{}, err
 	}
@@ -98,35 +98,18 @@ func (Handler) Cleanup(
 	_ adapter.LiveObjects,
 ) (adapter.Cleanup, error) {
 	v := managementValues(request)
-	databases := make([]client.Object, 0, len(planedatabases.All))
+	backing, err := mdb.NewBacking(v, pluginbacking.Deleting(policy), v1.ConditionReady)
+	if err != nil {
+		return adapter.Cleanup{}, err
+	}
+
+	remaining := make([]client.Object, 0, 1+len(planedatabases.All))
+	remaining = append(remaining, mdb.Server(v))
 	for _, c := range planedatabases.Components() {
-		databases = append(databases, mdb.Database(v, c))
+		remaining = append(remaining, mdb.Database(v, c))
 	}
 
-	if policy == pluginsv1alpha1.DeletionPolicyOrphan {
-		orphan, err := mdb.Orphan(v)
-		if err != nil {
-			return adapter.Cleanup{}, err
-		}
-		return adapter.Cleanup{Stages: []adapter.CleanupStage{{
-			Components: []*component.Component{orphan},
-			Remaining:  append(databases, mdb.Server(v)),
-		}}}, nil
-	}
-
-	deleteDatabases, err := mdb.DeleteDatabases(v)
-	if err != nil {
-		return adapter.Cleanup{}, err
-	}
-	deleteServer, err := mdb.DeleteServer(v)
-	if err != nil {
-		return adapter.Cleanup{}, err
-	}
-
-	return adapter.Cleanup{Stages: []adapter.CleanupStage{
-		{Components: []*component.Component{deleteDatabases}, Remaining: databases},
-		{Components: []*component.Component{deleteServer}, Remaining: []client.Object{mdb.Server(v)}},
-	}}, nil
+	return adapter.Cleanup{Backing: backing.Component, Remaining: remaining}, nil
 }
 
 // Contracts implements adapter.Handler.

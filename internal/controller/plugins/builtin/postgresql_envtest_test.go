@@ -182,7 +182,7 @@ var _ = Describe("Built-in PostgreSQL requests", func() {
 		}, 2*time.Second, interval).Should(Succeed())
 	})
 
-	It("deletes the DatabaseServer only after the Database is gone", func() {
+	It("deletes the server with the Database, and keeps the request until both are gone", func() {
 		claim := "pg-" + utilrand.String(6)
 		request := newPostgresRequest(
 			claim,
@@ -200,23 +200,21 @@ var _ = Describe("Built-in PostgreSQL requests", func() {
 		DeferCleanup(func() { setHold(db, false) })
 		Expect(k8sClient.Delete(ctx, request)).To(Succeed())
 
+		expectGone(server)
 		Eventually(func(g Gomega) {
 			var live v1.Database
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(db), &live)).To(Succeed())
 			g.Expect(live.DeletionTimestamp.IsZero()).To(BeFalse())
 		}, timeout, interval).Should(Succeed())
 		Consistently(func(g Gomega) {
-			var live v1.DatabaseServer
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(server), &live)).To(Succeed())
-			g.Expect(live.DeletionTimestamp.IsZero()).To(BeTrue())
-			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(request), &pluginsv1alpha1.PluginRequest{})).
-				To(Succeed())
+			var live pluginsv1alpha1.PluginRequest
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(request), &live)).To(Succeed())
+			g.Expect(live.Finalizers).To(ContainElement(pluginsv1alpha1.FinalizerCleanup))
 		}, 3*time.Second, interval).Should(Succeed())
 
 		setHold(db, false)
 
 		expectGone(db)
-		expectGone(server)
 		expectGone(request)
 	})
 

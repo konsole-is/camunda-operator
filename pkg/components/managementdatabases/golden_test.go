@@ -26,6 +26,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
+	"github.com/konsole-is/camunda-operator/pkg/pluginbacking"
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
@@ -55,7 +56,7 @@ func TestBackingGoldenStorageClass(t *testing.T) {
 func assertBackingGolden(t *testing.T, path string, v Values) {
 	t.Helper()
 
-	b, err := NewBacking(v, "Ready")
+	b, err := NewBacking(v, pluginbacking.Lifecycle{}, "Ready")
 	require.NoError(t, err)
 
 	scheme := runtime.NewScheme()

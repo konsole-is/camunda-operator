@@ -33,6 +33,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
+	"github.com/konsole-is/camunda-operator/pkg/pluginbacking"
 )
 
 func TestBackingDeletesTheUnlistedDatabasesOnlyIfOwned(t *testing.T) {
@@ -48,7 +49,7 @@ func TestBackingDeletesTheUnlistedDatabasesOnlyIfOwned(t *testing.T) {
 	foreign := &v1.Database{ObjectMeta: metav1.ObjectMeta{Name: "ops-web-modeler", Namespace: "ops-ns"}}
 	c := testClient(t, owner, owned, foreign)
 
-	b, err := NewBacking(goldenValues(planedatabases.Identity), "Ready")
+	b, err := NewBacking(goldenValues(planedatabases.Identity), pluginbacking.Lifecycle{}, "Ready")
 	require.NoError(t, err)
 	require.NoError(t, b.Component.Reconcile(t.Context(), component.ReconcileContext{
 		Client: c, APIReader: c, Scheme: c.Scheme(), Owner: owner, EventRecorder: events.NewFakeRecorder(100),
@@ -66,7 +67,7 @@ func TestBackingDeletesTheUnlistedDatabasesOnlyIfOwned(t *testing.T) {
 	)
 }
 
-func TestDeleteDatabasesAndDeleteServerDeleteOnlyOwnedObjects(t *testing.T) {
+func TestBackingOfADeletedRequestDeletesEveryOwnedObjectAndNothingElse(t *testing.T) {
 	t.Parallel()
 
 	owner := testOwner()
@@ -79,26 +80,31 @@ func TestDeleteDatabasesAndDeleteServerDeleteOnlyOwnedObjects(t *testing.T) {
 		&v1.Database{ObjectMeta: metav1.ObjectMeta{Name: "ops-keycloak", Namespace: "ops-ns"}},
 		&v1.DatabaseServer{ObjectMeta: metav1.ObjectMeta{Name: "ops-db", Namespace: "ops-ns", OwnerReferences: ref}},
 	)
-	rec := component.ReconcileContext{
+
+	b, err := NewBacking(
+		goldenValues(), pluginbacking.Deleting(pluginsv1alpha1.DeletionPolicyDelete), "Ready",
+	)
+	require.NoError(t, err)
+	require.NoError(t, b.Component.Reconcile(t.Context(), component.ReconcileContext{
 		Client: c, APIReader: c, Scheme: c.Scheme(), Owner: owner, EventRecorder: events.NewFakeRecorder(100),
-	}
+	}))
 
-	databases, err := DeleteDatabases(goldenValues())
-	require.NoError(t, err)
-	require.NoError(t, databases.Reconcile(t.Context(), rec))
-
-	assert.True(t, apierrors.IsNotFound(c.Get(t.Context(), key("ops-identity"), &v1.Database{})))
-	assert.NoError(t, c.Get(t.Context(), key("ops-keycloak"), &v1.Database{}))
-	assert.NoError(t, c.Get(t.Context(), key("ops-db"), &v1.DatabaseServer{}), "the databases stage keeps the server")
-
-	server, err := DeleteServer(goldenValues())
-	require.NoError(t, err)
-	require.NoError(t, server.Reconcile(t.Context(), rec))
-
+	assert.True(
+		t, apierrors.IsNotFound(c.Get(t.Context(), key("ops-identity"), &v1.Database{})),
+		"an owned Database of a component that is not listed goes too",
+	)
 	assert.True(t, apierrors.IsNotFound(c.Get(t.Context(), key("ops-db"), &v1.DatabaseServer{})))
+	assert.NoError(
+		t, c.Get(t.Context(), key("ops-keycloak"), &v1.Database{}),
+		"a Database that the owner does not own stays",
+	)
+	assert.True(
+		t, apierrors.IsNotFound(c.Get(t.Context(), key("ops-web-modeler"), &v1.Database{})),
+		"nothing is created",
+	)
 }
 
-func TestOrphanRemovesTheOwnerReferenceAndKeepsTheObjects(t *testing.T) {
+func TestBackingOfAnOrphanedRequestRemovesTheOwnerReferenceAndKeepsTheObjects(t *testing.T) {
 	t.Parallel()
 
 	owner := testOwner()
@@ -119,9 +125,9 @@ func TestOrphanRemovesTheOwnerReferenceAndKeepsTheObjects(t *testing.T) {
 	objs = append(objs, server)
 	c := testClient(t, objs...)
 
-	orphan, err := Orphan(v)
+	b, err := NewBacking(v, pluginbacking.Deleting(pluginsv1alpha1.DeletionPolicyOrphan), "Ready")
 	require.NoError(t, err)
-	require.NoError(t, orphan.Reconcile(t.Context(), component.ReconcileContext{
+	require.NoError(t, b.Component.Reconcile(t.Context(), component.ReconcileContext{
 		Client: c, APIReader: c, Scheme: c.Scheme(), Owner: owner, EventRecorder: events.NewFakeRecorder(100),
 	}))
 

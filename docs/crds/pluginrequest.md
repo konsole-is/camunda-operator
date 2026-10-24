@@ -365,7 +365,7 @@ Without `overrides.storageSize`, the size of the preset applies. If that size is
 
 When the claim or you delete the request, the deletion policy applies to both objects:
 
-- `Delete` deletes the `Database` first. When it is gone, the operator deletes the `DatabaseServer`. The deletion of the server removes its data volumes and all the data on them. The request goes away when the server is gone. A `Database` or a `DatabaseServer` of that name that another resource controls stays.
+- `Delete` deletes the `DatabaseServer` and the `Database`. The deletion of the server removes its data volumes and all the data on them. The request goes away when both objects are gone. A `Database` or a `DatabaseServer` of that name that another resource controls stays.
 - `Orphan` keeps the `DatabaseServer`, the `Database`, and all the data, without the owner reference to the request. They keep their labels, so you can find them again.
 
 ### Management plane databases
@@ -463,7 +463,7 @@ status:
 
 If you do not need the data, drop the logical database on the server yourself.
 
-With the deletion policy `Delete`, the operator deletes the `Database` objects first. When they are gone, it deletes the `DatabaseServer`. The deletion of the server removes its data volumes and all the data on them. The request goes away when the server is gone. With `Orphan`, the server, every `Database`, and all the data stay, without the owner reference to the request. They keep the labels `plugins.camunda.io/registration` and `plugins.camunda.io/request`, so you can find them again.
+With the deletion policy `Delete`, the operator deletes the `DatabaseServer` and the `Database` objects. The deletion of the server removes its data volumes and all the data on them. The request goes away when all of them are gone. With `Orphan`, the server, every `Database`, and all the data stay, without the owner reference to the request. They keep the labels `plugins.camunda.io/registration` and `plugins.camunda.io/request`, so you can find them again.
 
 ## Status
 

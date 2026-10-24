@@ -371,9 +371,8 @@ func TestElasticsearchCleanupWaitsForTheCluster(t *testing.T) {
 			c, err := Handler{}.Cleanup(request, policy, nil)
 			require.NoError(t, err)
 
-			require.Len(t, c.Stages, 1)
-			assert.Len(t, c.Stages[0].Components, 1)
-			assert.Equal(t, []string{"ElasticsearchCluster/orders-es"}, objectNames(c.Stages[0].Remaining))
+			assert.NotNil(t, c.Backing)
+			assert.Equal(t, []string{"ElasticsearchCluster/orders-es"}, objectNames(c.Remaining))
 		})
 	}
 }
