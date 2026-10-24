@@ -32,6 +32,7 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 )
 
 func TestBackingDeletesTheUnlistedDatabasesOnlyIfOwned(t *testing.T) {
@@ -47,7 +48,7 @@ func TestBackingDeletesTheUnlistedDatabasesOnlyIfOwned(t *testing.T) {
 	foreign := &v1.Database{ObjectMeta: metav1.ObjectMeta{Name: "ops-web-modeler", Namespace: "ops-ns"}}
 	c := testClient(t, owner, owned, foreign)
 
-	b, err := NewBacking(goldenValues(Identity), "Ready")
+	b, err := NewBacking(goldenValues(planedatabases.Identity), "Ready")
 	require.NoError(t, err)
 	require.NoError(t, b.Component.Reconcile(t.Context(), component.ReconcileContext{
 		Client: c, APIReader: c, Scheme: c.Scheme(), Owner: owner, EventRecorder: events.NewFakeRecorder(100),
@@ -106,9 +107,9 @@ func TestOrphanRemovesTheOwnerReferenceAndKeepsTheObjects(t *testing.T) {
 		Controller: new(true), BlockOwnerDeletion: new(true),
 	}}
 	v := goldenValues()
-	objs := make([]client.Object, 0, len(Components)+2)
+	objs := make([]client.Object, 0, len(planedatabases.All)+2)
 	objs = append(objs, owner)
-	for _, c := range Components {
+	for _, c := range planedatabases.Components() {
 		db := Database(v, c)
 		db.OwnerReferences = ref
 		objs = append(objs, db)

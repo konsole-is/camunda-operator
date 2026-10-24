@@ -17,9 +17,12 @@ limitations under the License.
 package pluginstartup
 
 import (
+	"strings"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
 )
 
 // Sections returns the core PluginSections, in the order of the create flow.
@@ -129,18 +132,11 @@ func Sections() []pluginsv1alpha1.PluginSection {
 		}),
 		section(SectionManagementDatabase, pluginsv1alpha1.PluginSectionSpec{
 			Label:       "Databases",
-			Description: "The databases of Keycloak, Management Identity, and Web Modeler.",
+			Description: "The databases of " + managementDatabaseTitles() + ".",
 			Order:       80,
 			Slot:        pluginsv1alpha1.SlotManagementDatabases,
 			AppliesTo:   plane,
-			Outputs: []pluginsv1alpha1.OutputDecl{
-				{Key: OutputKeycloakDatabaseConfig, Description: "The name of the DatabaseConfig of Keycloak."},
-				{
-					Key:         OutputIdentityDatabaseConfig,
-					Description: "The name of the DatabaseConfig of Management Identity.",
-				},
-				{Key: OutputWebModelerDatabaseConfig, Description: "The name of the DatabaseConfig of Web Modeler."},
-			},
+			Outputs:     managementDatabaseOutputs(),
 		}),
 	}
 }
@@ -156,4 +152,27 @@ func section(name string, spec pluginsv1alpha1.PluginSectionSpec) pluginsv1alpha
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec:       spec,
 	}
+}
+
+// managementDatabaseTitles returns the titles of planedatabases.All as an
+// English list, such as "A, B, and C".
+func managementDatabaseTitles() string {
+	titles := make([]string, 0, len(planedatabases.All))
+	for _, d := range planedatabases.All {
+		titles = append(titles, d.Title)
+	}
+	titles[len(titles)-1] = "and " + titles[len(titles)-1]
+
+	return strings.Join(titles, ", ")
+}
+
+// managementDatabaseOutputs returns the outputs of the section
+// management-database, which its registrations write too.
+func managementDatabaseOutputs() []pluginsv1alpha1.OutputDecl {
+	outputs := make([]pluginsv1alpha1.OutputDecl, 0, len(planedatabases.All))
+	for _, d := range planedatabases.All {
+		outputs = append(outputs, pluginsv1alpha1.OutputDecl{Key: d.Output, Description: d.OutputDescription()})
+	}
+
+	return outputs
 }

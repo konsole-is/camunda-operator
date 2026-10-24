@@ -16,6 +16,14 @@ limitations under the License.
 
 package pluginstartup
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/konsole-is/camunda-operator/pkg/planedatabases"
+)
+
 // The parameter schemas of the built-in registrations, in OpenAPI v3.
 // resources and scheduling keep unknown fields, because the adapter applies
 // them to a kind whose own schema validates them.
@@ -60,20 +68,6 @@ const (
   }
 }`
 
-	managementDatabaseServerParameters = `{
-  "type": "object",
-  "required": ["preset"],
-  "properties": {
-    "preset": {"type": "string", "minLength": 1, "description": "The name of the DatabaseServerPreset that the PostgreSQL server starts from."},
-    "version": {"type": "string", "pattern": "^\\d+$", "default": "` + ManagementDatabaseServerVersion + `", "description": "The PostgreSQL major version of the server, for example 17."},
-    "databases": {
-      "type": "array",
-      "description": "The components that get a database. The management plane claim sets it.",
-      "items": {"type": "string", "enum": ["keycloak", "identity", "webModeler"]}
-    }
-  }
-}`
-
 	existingSecondaryStorageParameters = `{
   "type": "object",
   "required": ["name"],
@@ -89,14 +83,56 @@ const (
     "name": {"type": "string", "minLength": 1, "description": "The name of an ObjectStorageConfig in the namespace of the claim."}
   }
 }`
+)
+
+// The parameter schemas of the management database registrations. They
+// list the components of planedatabases.All.
+var (
+	managementDatabaseServerParameters = `{
+  "type": "object",
+  "required": ["preset"],
+  "properties": {
+    "preset": {"type": "string", "minLength": 1, "description": "The name of the DatabaseServerPreset that the PostgreSQL server starts from."},
+    "version": {"type": "string", "pattern": "^\\d+$", "default": "` + ManagementDatabaseServerVersion + `", "description": "The PostgreSQL major version of the server, for example 17."},
+    "databases": {
+      "type": "array",
+      "description": "The components that get a database. The management plane claim sets it.",
+      "items": {"type": "string", "enum": ` + managementDatabaseEnum() + `}
+    }
+  }
+}`
 
 	// The adapter refuses two equal names. The schema cannot say it.
 	existingDatabaseConfigsParameters = `{
   "type": "object",
   "properties": {
-    "keycloak": {"type": "string", "minLength": 1, "description": "The name of the DatabaseConfig of Keycloak."},
-    "identity": {"type": "string", "minLength": 1, "description": "The name of the DatabaseConfig of Management Identity."},
-    "webModeler": {"type": "string", "minLength": 1, "description": "The name of the DatabaseConfig of Web Modeler."}
+` + existingDatabaseConfigsProperties() + `
   }
 }`
 )
+
+// managementDatabaseEnum returns the components of planedatabases.All as a
+// JSON array.
+func managementDatabaseEnum() string {
+	quoted := make([]string, 0, len(planedatabases.All))
+	for _, c := range planedatabases.Components() {
+		quoted = append(quoted, strconv.Quote(string(c)))
+	}
+
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
+// existingDatabaseConfigsProperties returns one JSON property for each
+// component of planedatabases.All, which names its DatabaseConfig.
+func existingDatabaseConfigsProperties() string {
+	properties := make([]string, 0, len(planedatabases.All))
+	for _, d := range planedatabases.All {
+		properties = append(properties, fmt.Sprintf(
+			`    %q: {"type": "string", "minLength": 1, "description": %q}`,
+			string(d.Component),
+			d.OutputDescription(),
+		))
+	}
+
+	return strings.Join(properties, ",\n")
+}
