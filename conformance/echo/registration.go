@@ -80,6 +80,7 @@ func (c *Controller) registration() *pluginsv1alpha1.PluginRegistration {
 			Parameters:     &apiextensionsv1.JSON{Raw: []byte(parametersSchema)},
 			Inputs:         c.opts.Inputs,
 			Outputs:        outputs,
+			GrantTemplates: c.opts.GrantTemplates,
 			DeletionPolicies: []pluginsv1alpha1.DeletionPolicy{
 				pluginsv1alpha1.DeletionPolicyDelete,
 				pluginsv1alpha1.DeletionPolicyOrphan,

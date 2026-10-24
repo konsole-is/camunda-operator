@@ -17,27 +17,48 @@ limitations under the License.
 package conformance
 
 import (
+	"maps"
+	"sync"
+	"time"
+
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/conformance/echo"
 )
 
 var _ = ginkgo.Describe("The echo plugin", func() {
-	ginkgo.It("passes every check", func() {
-		got := runAll(echoRun(echo.DefectNone))
+	ginkgo.It("passes every check, with a claim name of its own for the Delete and the Orphan request", func() {
+		cfg := echoRun(echo.DefectNone)
+		requests := watchRequests(cfg.Namespace)
+
+		got := runAll(cfg)
 
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, DeleteRoutes))
+		Expect(skippedIDs(got)).To(ConsistOf(
+			ReqLogs, OrderRegistrationFirst, DeleteRoutes, GrantMatch, GrantRequires, GrantAdmission, GrantReady,
+		))
+		Expect(got[GrantReady].skipped).To(Equal("the plugin wrote no Grant"))
 		Expect(got[DeleteDelete].skipped).To(BeEmpty())
 		Expect(got[DeleteOrphan].skipped).To(BeEmpty())
+		for _, policy := range []string{"delete", "orphan"} {
+			name := requestName("basic", "", policy, runIDOf(cfg.Namespace))
+			Eventually(func(g Gomega) {
+				seen := requests()
+				g.Expect(seen).To(HaveKey(name))
+				g.Expect(seen[name].Spec.ClaimRef.Name).To(Equal(name))
+				g.Expect(seen[name].Labels).To(HaveKeyWithValue(fleetv1alpha1.LabelClaim, name))
+			}, time.Minute).Should(Succeed())
+		}
 	})
 
 	ginkgo.It("passes every check when it serves the access section", func() {
@@ -46,7 +67,9 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst))
+		Expect(skippedIDs(got)).To(ConsistOf(
+			ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires, GrantAdmission, GrantReady,
+		))
 	})
 
 	ginkgo.It("runs each case for each section of a registration that serves two", func() {
@@ -57,7 +80,9 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		for id, o := range got {
 			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
 		}
-		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst))
+		Expect(skippedIDs(got)).To(ConsistOf(
+			ReqLogs, OrderRegistrationFirst, GrantMatch, GrantRequires, GrantAdmission, GrantReady,
+		))
 
 		// The orphaned ConfigMap of each section shows that a request of
 		// each section ran.
@@ -66,6 +91,65 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			var cm corev1.ConfigMap
 			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: cfg.Namespace, Name: name}, &cm)).To(Succeed())
 		}
+	})
+
+	ginkgo.It("passes every grant check when it writes a grant from a template", func() {
+		got := runAll(grantRun(echo.DefectNone))
+
+		for id, o := range got {
+			Expect(o.err).NotTo(HaveOccurred(), "check %s", id)
+		}
+		Expect(skippedIDs(got)).To(ConsistOf(ReqLogs, OrderRegistrationFirst, DeleteRoutes))
+		Expect(got[GrantReady].skipped).To(BeEmpty())
+	})
+
+	ginkgo.It("skips GRANT-READY when a Grant already has Ready", func() {
+		s := newSuite(grantRun(echo.DefectNone), restCfg, k8sClient)
+		ginkgo.DeferCleanup(func() { Expect(s.close(ctx)).To(Succeed()) })
+		Expect(checkGrantReady(ctx, s)).To(Succeed())
+
+		reason, skipped := skipReasonOf(checkGrantReady(ctx, s))
+
+		Expect(skipped).To(BeTrue())
+		Expect(reason).To(ContainSubstring("has a Ready condition"))
+	})
+
+	ginkgo.It("fails GRANT-ADMISSION when a role gives serve to its ServiceAccount", func() {
+		cfg := grantRun(echo.DefectNone)
+		role := &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: cfg.Registration + "-serve-all"},
+			Rules: []rbacv1.PolicyRule{{
+				APIGroups: []string{pluginsv1alpha1.GroupVersion.Group},
+				Resources: []string{"pluginregistrations"},
+				Verbs:     []string{"serve"},
+			}},
+		}
+		binding := &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: role.Name},
+			RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: role.Name},
+			Subjects: []rbacv1.Subject{
+				{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: "system:serviceaccounts:" + cfg.Namespace},
+			},
+		}
+		Expect(k8sClient.Create(ctx, role)).To(Succeed())
+		Expect(k8sClient.Create(ctx, binding)).To(Succeed())
+		ginkgo.DeferCleanup(func() {
+			Expect(k8sClient.Delete(ctx, binding)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, role)).To(Succeed())
+		})
+		s := newSuite(cfg, restCfg, k8sClient)
+		ginkgo.DeferCleanup(func() { Expect(s.close(ctx)).To(Succeed()) })
+
+		// A new binding reaches the authorizer a short time after it is
+		// created.
+		Eventually(func(g Gomega) {
+			sa := pluginsv1alpha1.ServiceAccountRef{Namespace: cfg.Namespace, Name: "any"}
+			review, err := serveReview(ctx, s, sa, cfg.Registration)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(review.Status.Allowed).To(BeTrue())
+		}, time.Minute).Should(Succeed())
+
+		Expect(checkGrantAdmission(ctx, s)).To(MatchError(ContainSubstring("cannot test a refusal")))
 	})
 
 	ginkgo.It("passes REQ-LABELS and DELETE-ORPHAN with a cluster-scoped object that carries the labels only", func() {
@@ -78,6 +162,7 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: cfg.Namespace + "-" + request + "-echo"}, &sc)).To(Succeed())
 		Expect(sc.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRequest, request))
 		Expect(sc.Labels).To(HaveKeyWithValue(pluginsv1alpha1.LabelRegistration, cfg.Registration))
+		Expect(sc.Labels).To(HaveKeyWithValue(labelRequestNamespace, cfg.Namespace))
 		Expect(sc.OwnerReferences).To(BeEmpty())
 		Expect(got[ReqLabels].err).NotTo(HaveOccurred())
 		Expect(got[DeleteOrphan].err).NotTo(HaveOccurred())
@@ -153,6 +238,10 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			ReqLabels, "StorageClass",
 		),
 		ginkgo.Entry(
+			"a cluster-scoped object without the request namespace", echoRun, echo.DefectNoRequestNamespace,
+			ReqLabels, labelRequestNamespace,
+		),
+		ginkgo.Entry(
 			"an unlisted resource",
 			echoRun,
 			echo.DefectUnlistedResource,
@@ -168,5 +257,49 @@ var _ = ginkgo.Describe("The echo plugin", func() {
 			"owner reference",
 		),
 		ginkgo.Entry("a route kept on Orphan", accessRun, echo.DefectKeepRouteOnOrphan, DeleteRoutes, "Ingress"),
+		ginkgo.Entry("a wrong fragment", grantRun, echo.DefectWrongFragment, GrantMatch, "has the fragment"),
+		ginkgo.Entry(
+			"a Grant without its required input",
+			grantRun,
+			echo.DefectIgnoreRequiredInputs,
+			GrantRequires,
+			"without a value",
+		),
+		ginkgo.Entry(
+			"Ready=True while a Grant waits",
+			grantRun,
+			echo.DefectReadyIgnoresGrants,
+			GrantReady,
+			"has no Ready condition",
+		),
 	)
 })
+
+// watchRequests watches the PluginRequests of namespace until the spec ends,
+// and returns a func that gives the latest copy of each, by name.
+func watchRequests(namespace string) func() map[string]pluginsv1alpha1.PluginRequest {
+	c, err := client.NewWithWatch(restCfg, client.Options{Scheme: k8sClient.Scheme()})
+	Expect(err).NotTo(HaveOccurred())
+	w, err := c.Watch(ctx, &pluginsv1alpha1.PluginRequestList{}, client.InNamespace(namespace))
+	Expect(err).NotTo(HaveOccurred())
+	ginkgo.DeferCleanup(w.Stop)
+
+	var mu sync.Mutex
+	seen := map[string]pluginsv1alpha1.PluginRequest{}
+	go func() {
+		for event := range w.ResultChan() {
+			if req, ok := event.Object.(*pluginsv1alpha1.PluginRequest); ok {
+				mu.Lock()
+				seen[req.Name] = *req
+				mu.Unlock()
+			}
+		}
+	}()
+
+	return func() map[string]pluginsv1alpha1.PluginRequest {
+		mu.Lock()
+		defer mu.Unlock()
+
+		return maps.Clone(seen)
+	}
+}

@@ -20,6 +20,7 @@ limitations under the License.
 //
 // For each request, the controller copies inputs to outputs and writes a
 // ConfigMap and a StorageClass. When it serves the access section, it also
-// writes an Ingress. It keeps the promise of both deletion policies. A
-// Defect in the Options makes it break one rule of the contract.
+// writes an Ingress. It writes a Grant for each grant template whose
+// required inputs have a value. It keeps the promise of both deletion
+// policies. A Defect in the Options makes it break one rule of the contract.
 package echo

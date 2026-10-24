@@ -67,6 +67,12 @@ const (
 // kindPluginRequest is the kind of an owner reference to a request.
 const kindPluginRequest = "PluginRequest"
 
+// TODO(#867): use pluginsv1alpha1.LabelRequestNamespace.
+const labelRequestNamespace = "plugins.camunda.io/request-namespace"
+
+// TODO(#867): use pluginsv1alpha1.ReasonWaitingForGrants.
+const reasonWaitingForGrants = "WaitingForGrants"
+
 // lifecycleChecks run for each request of the run, in this order.
 var lifecycleChecks = []Check{
 	{
@@ -87,14 +93,17 @@ var lifecycleChecks = []Check{
 	},
 	{
 		ID: ReqReady,
-		Description: "The request gets Ready=True within the Ready timeout, or Ready=False with the reason " +
-			"GrantRejected while one of its Grants has Ready=False.",
+		Description: "The request gets Ready=True within the Ready timeout, and not while a Grant has a Ready " +
+			"condition and another Grant does not have Ready=True, or Ready=False with the reason " +
+			"GrantRejected while one of its Grants has Ready=False, or with the reason WaitingForGrants while " +
+			"one of its Grants does not have Ready=True yet.",
 		run: checkReady,
 	},
 	{
 		ID: ReqLabels,
-		Description: "Each object of the request carries both writer labels, and a namespaced object has an " +
-			"owner reference to the request.",
+		Description: "Each object of the request carries both writer labels. A cluster-scoped object also " +
+			"carries plugins.camunda.io/request-namespace with the namespace of the request, and a namespaced " +
+			"object has an owner reference to the request.",
 		run: checkLabels,
 	},
 	{
@@ -696,14 +705,17 @@ func outputProblems(section, declared []pluginsv1alpha1.OutputDecl, outputs map[
 	return problems
 }
 
-// readyVerdict passes Ready=True, and Ready=False with the reason
-// GrantRejected while one of grants has Ready=False.
+// readyVerdict passes Ready=False with the reason GrantRejected while one of
+// grants has Ready=False, and Ready=False with the reason WaitingForGrants
+// while one of grants does not have Ready=True and none has Ready=False. It
+// fails Ready=True while one of grants has a Ready condition and one of grants
+// does not have Ready=True.
 func readyVerdict(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) error {
 	switch {
 	case ready == nil:
 		return errors.New("the request has no Ready condition")
 	case ready.Status == metav1.ConditionTrue:
-		return nil
+		return servedGrantsVerdict(grants)
 	case ready.Status == metav1.ConditionFalse && ready.Reason == pluginsv1alpha1.ReasonGrantRejected:
 		failed := slices.ContainsFunc(grants, func(g pluginsv1alpha1.Grant) bool {
 			return meta.IsStatusConditionFalse(g.Status.Conditions, v1.ConditionReady)
@@ -715,14 +727,57 @@ func readyVerdict(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) error
 		return errors.New(
 			"the Ready condition is False with the reason GrantRejected while no Grant of the request has Ready=False",
 		)
+	case ready.Status == metav1.ConditionFalse && ready.Reason == reasonWaitingForGrants:
+		return waitingForGrantsVerdict(grants)
 	}
 
 	return fmt.Errorf("the Ready condition is %s, reason %s: %s", ready.Status, ready.Reason, ready.Message)
 }
 
+func servedGrantsVerdict(grants []pluginsv1alpha1.Grant) error {
+	served := slices.ContainsFunc(grants, func(g pluginsv1alpha1.Grant) bool {
+		return meta.FindStatusCondition(g.Status.Conditions, v1.ConditionReady) != nil
+	})
+	if !served {
+		// GRANT-READY judges Ready=True while no Grant has a Ready condition.
+		return nil
+	}
+
+	for _, g := range grants {
+		if !meta.IsStatusConditionTrue(g.Status.Conditions, v1.ConditionReady) {
+			return fmt.Errorf("the Ready condition is True while the Grant %s does not have Ready=True", g.Name)
+		}
+	}
+
+	return nil
+}
+
+func waitingForGrantsVerdict(grants []pluginsv1alpha1.Grant) error {
+	if slices.ContainsFunc(grants, func(g pluginsv1alpha1.Grant) bool {
+		return meta.IsStatusConditionFalse(g.Status.Conditions, v1.ConditionReady)
+	}) {
+		return errors.New(
+			"the Ready condition is False with the reason WaitingForGrants while a Grant of the request has " +
+				"Ready=False: the reason is GrantRejected",
+		)
+	}
+
+	if !slices.ContainsFunc(grants, func(g pluginsv1alpha1.Grant) bool {
+		return !meta.IsStatusConditionTrue(g.Status.Conditions, v1.ConditionReady)
+	}) {
+		return errors.New(
+			"the Ready condition is False with the reason WaitingForGrants while every Grant of the request has " +
+				"Ready=True",
+		)
+	}
+
+	return nil
+}
+
 // labelProblems names each writer rule of the contract that obj breaks. A
 // namespaced object is in the namespace of request and has an owner
-// reference to it. A cluster-scoped object has no owner reference to a
+// reference to it. A cluster-scoped object carries the request namespace
+// label with the namespace of request, and has no owner reference to a
 // PluginRequest.
 func labelProblems(obj *unstructured.Unstructured, request *pluginsv1alpha1.PluginRequest) []string {
 	ref := objectRef(obj)
@@ -739,6 +794,14 @@ func labelProblems(obj *unstructured.Unstructured, request *pluginsv1alpha1.Plug
 
 	switch {
 	case obj.GetNamespace() == "":
+		if obj.GetLabels()[labelRequestNamespace] != request.Namespace {
+			problems = append(problems, fmt.Sprintf(
+				"%s has no label %s: %q",
+				ref,
+				labelRequestNamespace,
+				request.Namespace,
+			))
+		}
 		if slices.ContainsFunc(obj.GetOwnerReferences(), isPluginRequestOwner) {
 			problems = append(problems, ref+" is cluster-scoped and has an owner reference to the request. "+
 				"A cluster-scoped object carries the labels only")

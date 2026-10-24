@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
@@ -360,6 +361,27 @@ func TestOrderRunNameHoldsTheRunID(t *testing.T) {
 	run := orderRun(requestRun{caseName: "Basic", name: "basic-delete-abc123"}, "abc123")
 
 	assert.Equal(t, "basic-order-abc123", run.name)
+}
+
+func TestOrderRunHasAClaimOfItsOwn(t *testing.T) {
+	first := requestRun{caseName: "basic", name: "basic-delete-abc123", claim: "basic-delete-abc123"}
+
+	run := orderRun(first, "abc123")
+
+	assert.Equal(t, "basic-order-abc123", run.claim)
+}
+
+func TestOrderRunGivesALongCaseAClaimNameThatAClusterClaimTakes(t *testing.T) {
+	first := requestRun{
+		caseName: "postgresql-with-backup-storage",
+		name:     "postgresql-with-backup-storage-delete-0123456789",
+	}
+
+	run := orderRun(first, "0123456789")
+
+	assert.LessOrEqual(t, len(run.claim), 40)
+	assert.Empty(t, validation.IsDNS1035Label(run.claim))
+	assert.NotEqual(t, claimName(first.caseName, string(pluginsv1alpha1.DeletionPolicyDelete), "0123456789"), run.claim)
 }
 
 func TestCurrentTakesAnUnrelatedReplacementAsGone(t *testing.T) {

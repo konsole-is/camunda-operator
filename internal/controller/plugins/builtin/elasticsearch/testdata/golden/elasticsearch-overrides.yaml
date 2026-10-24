@@ -1,0 +1,24 @@
+apiVersion: core.camunda.io/v1
+kind: ElasticsearchCluster
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: camunda-operator
+    plugins.camunda.io/registration: elasticsearch
+    plugins.camunda.io/request: orders-secondary-storage
+  name: orders-es
+  namespace: my-cluster-ns
+spec:
+  podLabels:
+    team: a
+  presetRef: small
+  releaseRef: camunda-8-9
+  replicas: 5
+  resources:
+    limits:
+      memory: 4Gi
+  scheduling:
+    tolerations:
+    - key: pool
+      value: es
+  secondaryStorageConfig: orders-es
+  storageSize: 80Gi

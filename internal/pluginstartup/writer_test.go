@@ -165,13 +165,13 @@ var _ = Describe("Writer", Ordered, func() {
 		},
 		Entry("elasticsearch", "elasticsearch", wantRegistration{
 			sections: []string{"secondary-storage"}, mode: pluginsv1alpha1.ModeDefault,
-			required: []string{"preset"}, properties: []string{"preset", "overrides"},
+			required: []string{"preset", "releaseRef"}, properties: []string{"preset", "releaseRef", "overrides"},
 			claimEditable: []string{"overrides"}, inputs: storageIn,
 			outputs: []string{"secondaryStorageConfig"}, deletionPolicies: bothPolicies,
 		}),
 		Entry("database-server", "database-server", wantRegistration{
 			sections: []string{"secondary-storage"}, mode: pluginsv1alpha1.ModeOptional,
-			required: []string{"preset"}, properties: []string{"preset", "overrides"},
+			required: []string{"preset", "releaseRef"}, properties: []string{"preset", "releaseRef", "overrides"},
 			claimEditable: []string{"overrides"}, inputs: storageIn,
 			outputs: []string{"secondaryStorageConfig"}, deletionPolicies: bothPolicies,
 		}),
@@ -187,7 +187,7 @@ var _ = Describe("Writer", Ordered, func() {
 		}),
 		Entry("management-database-server", "management-database-server", wantRegistration{
 			sections: []string{"management-database"}, mode: pluginsv1alpha1.ModeDefault,
-			required: []string{"preset"}, properties: []string{"preset", "databases"},
+			required: []string{"preset"}, properties: []string{"preset", "version", "databases"},
 			inputs:  map[string]string{"storageClassName": "volume-encryption/storageClassName"},
 			outputs: databaseOut, deletionPolicies: bothPolicies,
 		}),

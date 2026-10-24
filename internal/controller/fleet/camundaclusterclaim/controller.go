@@ -53,12 +53,10 @@ const controllerName = "camundaclusterclaim"
 // builtinStorage names the built-in storage whose ServiceAccounts the cloud
 // identity of a claim trusts.
 var builtinStorage = components.BuiltinStorage{
-	ElasticsearchRegistration: pluginstartup.RegistrationElasticsearch,
-	// TODO(#589): use the backing-name constant of internal/pluginstartup.
-	ElasticsearchSuffix:        "-es",
+	ElasticsearchRegistration:  pluginstartup.RegistrationElasticsearch,
+	ElasticsearchSuffix:        pluginstartup.BackingSuffixElasticsearch,
 	DatabaseServerRegistration: pluginstartup.RegistrationDatabaseServer,
-	// TODO(#590): use the backing-name constant of internal/pluginstartup.
-	DatabaseServerSuffix: "-pg",
+	DatabaseServerSuffix:       pluginstartup.BackingSuffixDatabaseServer,
 }
 
 // Reconciler turns a CamundaClusterClaim into its PluginRequests and its

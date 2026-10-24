@@ -82,6 +82,28 @@ func TestReadyVerdict(t *testing.T) {
 		message string
 	}{
 		{name: "Ready=True", ready: ready(metav1.ConditionTrue, v1.ReasonHealthy)},
+		{
+			name:   "Ready=True with every Grant Ready",
+			ready:  ready(metav1.ConditionTrue, v1.ReasonHealthy),
+			grants: []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue), grantWithReady(metav1.ConditionTrue)},
+		},
+		{
+			name:   "Ready=True while no Grant has a Ready condition",
+			ready:  ready(metav1.ConditionTrue, v1.ReasonHealthy),
+			grants: []pluginsv1alpha1.Grant{{}},
+		},
+		{
+			name:    "Ready=True while a Grant waits and another is Ready",
+			ready:   ready(metav1.ConditionTrue, v1.ReasonHealthy),
+			grants:  []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue), {}},
+			message: "does not have Ready=True",
+		},
+		{
+			name:    "Ready=True while a Grant has Ready=False",
+			ready:   ready(metav1.ConditionTrue, v1.ReasonHealthy),
+			grants:  []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionFalse)},
+			message: "does not have Ready=True",
+		},
 		{name: "no Ready", message: "has no Ready condition"},
 		{
 			name:    "Ready=False with another reason",
@@ -101,6 +123,33 @@ func TestReadyVerdict(t *testing.T) {
 			ready:   ready(metav1.ConditionFalse, pluginsv1alpha1.ReasonGrantRejected),
 			grants:  []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue)},
 			message: "no Grant of the request has Ready=False",
+		},
+		{
+			name:   "WaitingForGrants with a Grant without Ready",
+			ready:  ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			grants: []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue), {}},
+		},
+		{
+			name:   "WaitingForGrants with an Unknown Grant",
+			ready:  ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			grants: []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionUnknown)},
+		},
+		{
+			name:    "WaitingForGrants while every Grant is Ready",
+			ready:   ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			grants:  []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue)},
+			message: "while every Grant of the request has Ready=True",
+		},
+		{
+			name:    "WaitingForGrants without a Grant",
+			ready:   ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			message: "while every Grant of the request has Ready=True",
+		},
+		{
+			name:    "WaitingForGrants while a Grant has Ready=False",
+			ready:   ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			grants:  []pluginsv1alpha1.Grant{{}, grantWithReady(metav1.ConditionFalse)},
+			message: "the reason is GrantRejected",
 		},
 	}
 
@@ -150,6 +199,13 @@ func writerLabels() map[string]string {
 	}
 }
 
+// clusterLabels are the labels of a cluster-scoped object of testRequest.
+func clusterLabels() map[string]string {
+	labels := writerLabels()
+	labels[labelRequestNamespace] = "ns"
+	return labels
+}
+
 func ownerOf(req *pluginsv1alpha1.PluginRequest) metav1.OwnerReference {
 	return metav1.OwnerReference{
 		APIVersion: pluginsv1alpha1.GroupVersion.String(),
@@ -169,14 +225,28 @@ func TestLabelProblems(t *testing.T) {
 		obj      *unstructured.Unstructured
 		contains []string
 	}{
-		{name: "a namespaced object with both labels and the owner reference",
+		{name: "a namespaced object with both labels, the owner reference, and no request namespace label",
 			obj: written("ConfigMap", "ns", "x", writerLabels(), ownerOf(req))},
 		{name: "a cluster-scoped object with both labels and no owner reference",
-			obj: written("StorageClass", "", "x", writerLabels())},
+			obj: written("StorageClass", "", "x", clusterLabels())},
 		{
 			name:     "a cluster-scoped object with an owner reference to the request",
-			obj:      written("StorageClass", "", "x", writerLabels(), ownerOf(req)),
+			obj:      written("StorageClass", "", "x", clusterLabels(), ownerOf(req)),
 			contains: []string{"StorageClass x is cluster-scoped and has an owner reference to the request"},
+		},
+		{
+			name:     "a cluster-scoped object without the request namespace label",
+			obj:      written("StorageClass", "", "x", writerLabels()),
+			contains: []string{`StorageClass x has no label plugins.camunda.io/request-namespace: "ns"`},
+		},
+		{
+			name: "a cluster-scoped object with the request namespace of another request",
+			obj: written("StorageClass", "", "x", func() map[string]string {
+				labels := clusterLabels()
+				labels[labelRequestNamespace] = "team-b"
+				return labels
+			}()),
+			contains: []string{`StorageClass x has no label plugins.camunda.io/request-namespace: "ns"`},
 		},
 		{
 			name:     "a namespaced object without the owner reference",

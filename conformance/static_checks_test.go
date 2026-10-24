@@ -181,6 +181,7 @@ func TestGrantsCheck(t *testing.T) {
 			setTemplate(`{"Resource":"{{ .unknown }}"}`),
 			"spec.grantTemplates[0].template.Resource: {{.unknown}}: the placeholder .unknown",
 		},
+		{"output", setTemplate(`{"Resource":"{{ .outputs.bucket }}"}`), ""},
 		{"pods", setTemplate(`{"Resource":"{{ .pods }}"}`), ".pods is not in the contract"},
 		{"not an object", setTemplate(`[]`), "spec.grantTemplates[0].template is not a JSON object"},
 		{

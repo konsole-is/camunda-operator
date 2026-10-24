@@ -88,7 +88,8 @@ func (c Config) validate() error {
 	return errors.Join(errs...)
 }
 
-// Case is one request of a run, as a claim controller writes it.
+// Case is one request of a run, as a claim controller writes it. Each
+// deletion policy of a case names a claim of its own.
 type Case struct {
 	// Name names the case in the report. It is unique in the config.
 	Name string

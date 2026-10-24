@@ -50,6 +50,14 @@ kubectl get pluginrequests -n my-cluster-ns -l fleet.camunda.io/claim=orders
 
 Each resource that a plugin writes for a request carries the labels `plugins.camunda.io/registration` and `plugins.camunda.io/request`.
 
+A cluster-scoped resource, for example a StorageClass, also carries the label `plugins.camunda.io/request-namespace` with the namespace of the request. Two claims with the same name in two namespaces each get their own cluster-scoped resources, and this label tells them apart.
+
+To list the StorageClasses of one request:
+
+```bash
+kubectl get storageclasses -l plugins.camunda.io/request=orders-backup-storage,plugins.camunda.io/request-namespace=my-cluster-ns
+```
+
 ## Outputs
 
 `status.outputs` holds the values that the plugin publishes for the request, by output key. Read them only when the condition `OutputsReady` is `True` and its `observedGeneration` equals `metadata.generation`. Before that, the outputs can belong to an older spec.
@@ -65,15 +73,32 @@ With both policies, the plugin deletes a route to a Service that no longer exist
 
 ## Built-in requests
 
-The operator serves the requests of three [built-in registrations](pluginregistration.md#built-in-registrations). Each one points a section at a contract that is already in the namespace of the claim:
+The operator serves the requests of six [built-in registrations](pluginregistration.md#built-in-registrations):
 
-| Registration | Parameters | Outputs |
-| --- | --- | --- |
-| `existing-object-storage` | `name` (required): an `ObjectStorageConfig` | `objectStorageConfig` |
-| `existing-secondary-storage` | `name` (required): a `SecondaryStorageConfig` | `secondaryStorageConfig` |
-| `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set |
+| Registration | Parameters | Inputs | Outputs |
+| --- | --- | --- | --- |
+| `elasticsearch` | `preset` (required), `releaseRef` (required), `overrides`: `replicas`, `resources`, `storageSize`, `scheduling`, `podLabels` | `storageClassName`, `objectStorageConfig`, `serviceAccountAnnotations` | `secondaryStorageConfig` |
+| `database-server` | `preset` (required), `releaseRef` (required), `overrides`: `instances`, `resources`, `storageSize`, `scheduling`, `podLabels` | `storageClassName`, `objectStorageConfig`, `serviceAccountAnnotations` | `secondaryStorageConfig` |
+| `existing-object-storage` | `name` (required): an `ObjectStorageConfig` | none | `objectStorageConfig` |
+| `existing-secondary-storage` | `name` (required): a `SecondaryStorageConfig` | none | `secondaryStorageConfig` |
+| `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | none | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set |
+| `management-database-server` | `preset` (required), `version`, `databases` | `storageClassName` | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each listed component |
 
-The claim writes the request. A request for the bucket `my-backup-bucket`:
+A built-in request waits until its registration is `Ready` at the current generation of the registration. Until then, the operator does not change the status of the request. A deletion does not wait.
+
+If the parameters do not pass the schema of the registration, for example without a required field, `OutputsReady` and `Ready` are `False` with reason `InvalidParameters`. The message names each field that fails.
+
+Each object that the operator creates for a built-in request has these labels:
+
+| Label | Value |
+| --- | --- |
+| `plugins.camunda.io/registration` | The name of the registration, for example `elasticsearch`. |
+| `plugins.camunda.io/request` | The name of the request. |
+| `app.kubernetes.io/managed-by` | `camunda-operator` |
+
+### Existing resources
+
+The three `existing-*` registrations point a section at a contract that is already in the namespace of the claim. The claim writes the request. A request for the bucket `my-backup-bucket`:
 
 ```yaml
 apiVersion: plugins.camunda.io/v1alpha1
@@ -92,8 +117,6 @@ spec:
     name: my-backup-bucket
   # ... the rest of your request
 ```
-
-A built-in request waits until its registration is `Ready` at the current generation of the registration. Until then, the operator does not change the status of the request. A deletion does not wait.
 
 The outputs hold the names of the contracts. `OutputsReady` turns `True` when every named contract exists, and `Ready` follows `OutputsReady`. The first item of `summary` names the contract and says if its `Ready` condition is `True`:
 
@@ -143,9 +166,304 @@ status:
       severity: Warning
 ```
 
-If the parameters do not pass the schema of the registration, for example without the required `name`, `OutputsReady` and `Ready` are `False` with reason `InvalidParameters`. The message names each field that fails. `existing-database-configs` also refuses two fields with the same name, and the message names both fields.
+`existing-database-configs` refuses two fields with the same name, with reason `InvalidParameters`, and the message names both fields.
 
 When the claim or you delete the request, the contracts stay, with both deletion policies. The request goes away at once.
+
+### Elasticsearch
+
+A request of `elasticsearch` runs an Elasticsearch cluster for the claim `<claim>`. The claim writes the request, and fills `releaseRef` with the `CamundaRelease` of the claim. A request of the claim `orders`:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: orders-secondary-storage
+  namespace: my-cluster-ns
+  labels:
+    plugins.camunda.io/section: secondary-storage
+    plugins.camunda.io/registration: elasticsearch
+    fleet.camunda.io/claim: orders
+spec:
+  section: secondary-storage
+  registration: elasticsearch
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  parameters:
+    preset: small
+    releaseRef: camunda-8-9
+    overrides:
+      replicas: 5
+      storageSize: 80Gi
+  inputs:
+    storageClassName: encrypted
+    objectStorageConfig: orders-backup
+  # ... the rest of your request
+```
+
+The operator creates the [ElasticsearchCluster](elasticsearchcluster.md) `<claim>-es`, here `orders-es`, in the namespace of the request. It starts from the `ElasticsearchClusterPreset` that `preset` names and takes its Elasticsearch version from the release. Each field in `overrides` replaces the value of the preset for that field. The cluster publishes the `SecondaryStorageConfig` `<claim>-es`, and the output `secondaryStorageConfig` names it. The cluster has the [labels of a built-in request](#built-in-requests).
+
+The inputs come from other sections of the claim. Each input is optional:
+
+- `storageClassName` sets the StorageClass of the data volumes. Without it, the preset decides.
+- `objectStorageConfig` names the bucket of the snapshot repository. Without it, the preset decides.
+- `serviceAccountAnnotations` is a JSON object of strings. The ServiceAccount `<claim>-es-es` of the Elasticsearch pods gets these annotations, for workload identity to the bucket.
+
+With `objectStorageConfig` or `serviceAccountAnnotations`, the ServiceAccount of the pods is always `<claim>-es-es`, and the operator creates it. This replaces the ServiceAccount settings of the preset. Without both inputs, the preset decides the ServiceAccount. If `serviceAccountAnnotations` is not a JSON object of strings, `Ready` is `False` with reason `InvalidParameters`. An override that does not fit the field of the `ElasticsearchCluster`, or a field that the override does not know, gives the same reason.
+
+`OutputsReady` turns `True` when the `SecondaryStorageConfig` exists. `Ready` follows the `Ready` condition of the `ElasticsearchCluster`. `status.resources` lists the cluster, and `status.podSelector` selects its pods:
+
+```yaml
+status:
+  conditions:
+    - type: OutputsReady
+      status: "True"
+      reason: Healthy
+      message: Component is healthy.
+      observedGeneration: 1
+    - type: Ready
+      status: "True"
+      reason: Healthy
+      message: "backing: Component is healthy."
+      observedGeneration: 1
+  outputs:
+    secondaryStorageConfig: orders-es
+  summary:
+    - label: Elasticsearch
+      value: Ready, 5 nodes
+      severity: Info
+    - label: Disk
+      value: 80Gi per node
+      severity: Info
+  resources:
+    - kind: ElasticsearchCluster
+      name: orders-es
+      onOrphan: Kept
+  podSelector:
+    matchLabels:
+      camunda.io/elasticsearch-cluster: orders-es
+```
+
+The first summary item counts the nodes by their data volumes. While the cluster is not `Ready`, its value is `not Ready (<reason>), <n> nodes` with the `Warning` severity. While the cluster has not yet reported on its current spec, the value is `updating, <n> nodes`, also with `Warning`.
+
+The storage size only grows. If `overrides.storageSize` is smaller than the size of the cluster, the cluster keeps its size, and the summary has a `Warning` item:
+
+```yaml
+status:
+  summary:
+    - label: Storage size
+      value: Storage size 20Gi is smaller than 50Gi, kept 50Gi
+      severity: Warning
+```
+
+Without `overrides.storageSize`, the size of the preset applies. If that size is smaller than the size of the cluster, the volumes keep their size, and the `ElasticsearchCluster` records a `StorageShrinkIgnored` event.
+
+When the claim or you delete the request, the deletion policy applies to the cluster:
+
+- `Delete` deletes the `ElasticsearchCluster`, and the request goes away after the cluster. A cluster of that name that the request does not own stays.
+- `Orphan` keeps the `ElasticsearchCluster` with its data and its labels, without the owner reference to the request. The request goes away when the owner reference is gone.
+
+### PostgreSQL
+
+A request of `database-server` runs a PostgreSQL server and one database as the secondary storage of the claim `<claim>`. The claim writes the request, and fills `releaseRef` with the `CamundaRelease` of the claim. A request of the claim `orders`:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: orders-secondary-storage
+  namespace: my-cluster-ns
+  labels:
+    plugins.camunda.io/section: secondary-storage
+    plugins.camunda.io/registration: database-server
+    fleet.camunda.io/claim: orders
+spec:
+  section: secondary-storage
+  registration: database-server
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  parameters:
+    preset: small
+    releaseRef: camunda-8-9
+    overrides:
+      instances: 2
+      storageSize: 30Gi
+  inputs:
+    storageClassName: encrypted
+    objectStorageConfig: orders-backup
+  # ... the rest of your request
+```
+
+The operator applies two objects in the namespace of the request:
+
+| Object | Name | What it publishes |
+| --- | --- | --- |
+| [`DatabaseServer`](databaseserver.md) | `<claim>-pg`, here `orders-pg` | The `DatabaseServerConfig` `<claim>-pg` |
+| [`Database`](database.md) | `<claim>`, here `orders`, with the logical database `camunda` | The `DatabaseConfig` `<claim>` and the `SecondaryStorageConfig` `<claim>-pg` of type `rdbms` |
+
+The server starts from the `DatabaseServerPreset` that `preset` names, and takes its PostgreSQL major version from the release. Each field in `overrides` replaces the value of the preset for that field. The output `secondaryStorageConfig` names the `SecondaryStorageConfig` `<claim>-pg`. Both objects have the [labels of a built-in request](#built-in-requests).
+
+The inputs come from other sections of the claim. Each input is optional:
+
+- `storageClassName` sets the StorageClass of the server volumes. Without it, the preset decides.
+- `objectStorageConfig` names the bucket of the server archive. The retention and the base backup schedule come from the `archive` of the preset. If the preset has no `archive`, or does not exist, the operator does not use the bucket. The summary then has a `Warning` item with the label `Backup storage`, for example `orders-backup is not used: the DatabaseServerPreset small sets no archive retention`. Without the input, the preset decides.
+- `serviceAccountAnnotations` is a JSON object of strings. The ServiceAccount `<claim>-pg-postgres` of the PostgreSQL pods gets these annotations, for workload identity to the bucket.
+
+If `serviceAccountAnnotations` is not a JSON object of strings, `Ready` is `False` with reason `InvalidParameters`. An override that does not fit the field of the `DatabaseServer`, or a field that the override does not know, gives the same reason.
+
+`OutputsReady` turns `True` when the `SecondaryStorageConfig` exists. `Ready` follows the `Ready` conditions of the `DatabaseServer` and the `Database`. `status.resources` lists both objects, and `status.podSelector` selects the pods of the server:
+
+```yaml
+status:
+  conditions:
+    - type: OutputsReady
+      status: "True"
+      reason: Healthy
+      message: Component is healthy.
+      observedGeneration: 1
+    - type: Ready
+      status: "True"
+      reason: Healthy
+      message: "backing: Component is healthy."
+      observedGeneration: 1
+  outputs:
+    secondaryStorageConfig: orders-pg
+  summary:
+    - label: DatabaseServer
+      value: orders-pg, PostgreSQL 17, Ready
+      severity: Info
+    - label: Database
+      value: orders, Ready
+      severity: Info
+  resources:
+    - kind: DatabaseServer
+      name: orders-pg
+      onOrphan: Kept
+    - kind: Database
+      name: orders
+      onOrphan: Kept
+  podSelector:
+    matchLabels:
+      camunda.io/database-server: orders-pg
+```
+
+While the server has not reported on its current spec, the first item is `orders-pg, updating` with the `Warning` severity.
+
+The storage size only grows. If `overrides.storageSize` is smaller than the size of the server, the server keeps its size, and the summary has a `Warning` item:
+
+```yaml
+status:
+  summary:
+    - label: Storage size
+      value: Storage size 10Gi is smaller than 20Gi, kept 20Gi
+      severity: Warning
+```
+
+Without `overrides.storageSize`, the size of the preset applies. If that size is smaller than the size of the server, the volumes keep their size, and the `DatabaseServer` records a `StorageShrinkIgnored` event.
+
+When the claim or you delete the request, the deletion policy applies to both objects:
+
+- `Delete` deletes the `DatabaseServer` and the `Database`. The deletion of the server removes its data volumes and all the data on them. The request goes away when both objects are gone. A `Database` or a `DatabaseServer` of that name that another resource controls stays.
+- `Orphan` keeps the `DatabaseServer`, the `Database`, and all the data, without the owner reference to the request. They keep their labels, so you can find them again.
+
+### Management plane databases
+
+A request of `management-database-server` gives a management plane a PostgreSQL server and one database for each component that needs one. The management plane claim writes the request:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: my-plane-management-database
+  namespace: my-plane-ns
+  labels:
+    plugins.camunda.io/section: management-database
+    plugins.camunda.io/registration: management-database-server
+    fleet.camunda.io/claim: my-plane
+spec:
+  section: management-database
+  registration: management-database-server
+  inputs:
+    storageClassName: encrypted-ssd
+  parameters:
+    preset: small
+    databases: [keycloak, identity]
+  # ... the rest of your request
+```
+
+`preset` names the `DatabaseServerPreset` that the server starts from. `version` is the PostgreSQL major version of the server. Without `version`, the server runs PostgreSQL 17. `databases` lists the components that get a database: `keycloak`, `identity`, and `webModeler`. The input `storageClassName` sets the StorageClass of the server volumes. The claim fills it from the `volume-encryption` section. Without it, the volumes use the StorageClass of the preset, or the default StorageClass when the preset sets none.
+
+A parameter that the registration does not know, or a value of the wrong type, gives `OutputsReady` and `Ready` `False` with reason `InvalidParameters`. The message names the parameter.
+
+The operator applies a [`DatabaseServer`](databaseserver.md) and a [`Database`](database.md) for each listed component, in the namespace of the request. `<plane>` is the name of the management plane claim:
+
+| Object | Name | Logical database | Output |
+| --- | --- | --- | --- |
+| `DatabaseServer` | `<plane>-db` | none | none |
+| `Database` of `keycloak` | `<plane>-keycloak` | `keycloak` | `keycloakDatabaseConfig: <plane>-keycloak` |
+| `Database` of `identity` | `<plane>-identity` | `identity` | `identityDatabaseConfig: <plane>-identity` |
+| `Database` of `webModeler` | `<plane>-web-modeler` | `web_modeler` | `webModelerDatabaseConfig: <plane>-web-modeler` |
+
+Each `Database` publishes a `DatabaseConfig` of its own name. `OutputsReady` turns `True` when the `DatabaseConfig` of every listed component exists. Without listed components, the operator applies the `DatabaseServer` only. The request then has no outputs, and `OutputsReady` is `True`. `Ready` follows the `DatabaseServer` and the `Database` objects. The first item of `summary` names the server and its PostgreSQL version:
+
+```yaml
+status:
+  conditions:
+    - type: OutputsReady
+      status: "True"
+      reason: Healthy
+      message: Component is healthy.
+      observedGeneration: 1
+    - type: Ready
+      status: "True"
+      reason: Healthy
+      message: "backing: Component is healthy."
+      observedGeneration: 1
+  outputs:
+    keycloakDatabaseConfig: my-plane-keycloak
+    identityDatabaseConfig: my-plane-identity
+  summary:
+    - label: DatabaseServer
+      value: my-plane-db, PostgreSQL 17, Ready
+      severity: Info
+    - label: Database
+      value: my-plane-keycloak, Ready
+      severity: Info
+    - label: Database
+      value: my-plane-identity, Ready
+      severity: Info
+  podSelector:
+    matchLabels:
+      camunda.io/database-server: my-plane-db
+  resources:
+    - kind: DatabaseServer
+      name: my-plane-db
+      onOrphan: Kept
+    - kind: Database
+      name: my-plane-keycloak
+      onOrphan: Kept
+    - kind: Database
+      name: my-plane-identity
+      onOrphan: Kept
+```
+
+While the server has not reported on its current spec, the first item is `my-plane-db, updating` with the `Warning` severity.
+
+When a component leaves `databases`, the operator deletes its `Database`, and the request removes its output. If you created a `Database` of that name yourself, it stays. The logical database and its data stay on the server, as [Database deletion](database.md#deletion) says. Until the `Database` is gone, the summary shows a `Warning` item:
+
+```yaml
+status:
+  summary:
+    - label: Database
+      value: my-plane-web-modeler removed, the logical database web_modeler stays on my-plane-db
+      severity: Warning
+```
+
+If you do not need the data, drop the logical database on the server yourself.
+
+With the deletion policy `Delete`, the operator deletes the `DatabaseServer` and the `Database` objects. The deletion of the server removes its data volumes and all the data on them. The request goes away when all of them are gone. With `Orphan`, the server, every `Database`, and all the data stay, without the owner reference to the request. They keep the labels `plugins.camunda.io/registration` and `plugins.camunda.io/request`, so you can find them again.
 
 ## Status
 
@@ -155,7 +473,8 @@ When the claim or you delete the request, the contracts stay, with both deletion
 | `OutputsReady` | `InvalidParameters` | The parameters do not pass the schema or the rules of the registration. | Correct the parameters in the claim. |
 | `OutputsReady` | `Blocked` | A contract that the request names does not exist. The message names the contract. | Create the contract, or correct the name in the claim. |
 | `Ready` | `Healthy` | The resources of the request are ready. | Nothing. |
-| `Ready` | `GrantRejected` | A `Grant` of the request is not `Ready`. The outputs stay usable. | Read the status of the grant. See [Grant](grant.md#status). |
+| `Ready` | `GrantRejected` | A `Grant` of the request has `Ready=False`. The outputs stay usable. | Read the status of the grant. See [Grant](grant.md#status). |
+| `Ready` | `WaitingForGrants` | No `Grant` of the request has `Ready=False`, and a `Grant` does not have `Ready=True` yet. The cloud permissions of the cluster are not in place. The outputs stay usable. | Wait for the identity extension to apply the grant. If it stays, read the status of the grant and the logs of the identity extension. See [Grant](grant.md#status). |
 | `Ready` | `WaitingForEndpoints` | An access request waits for the endpoints in the status of its target. | Wait for the target to report its endpoints. |
 | `Ready` | `InvalidParameters` | The parameters do not pass the schema or the rules of the registration. | Correct the parameters in the claim. |
 | `Ready` | `Blocked` | A contract that the request names does not exist. The message names the contract. | Create the contract, or correct the name in the claim. |

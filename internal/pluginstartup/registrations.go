@@ -42,11 +42,7 @@ func Registrations(
 			Description: "The name of the SecondaryStorageConfig that the cluster reads.",
 		},
 	}
-	databaseOutputs := []pluginsv1alpha1.OutputDecl{
-		{Key: OutputKeycloakDatabaseConfig, Description: "The name of the DatabaseConfig of Keycloak."},
-		{Key: OutputIdentityDatabaseConfig, Description: "The name of the DatabaseConfig of Management Identity."},
-		{Key: OutputWebModelerDatabaseConfig, Description: "The name of the DatabaseConfig of Web Modeler."},
-	}
+	databaseOutputs := managementDatabaseOutputs()
 
 	specs := []struct {
 		name string
