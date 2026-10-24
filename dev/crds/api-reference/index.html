@@ -18436,7 +18436,7 @@ controller that serves the registration writes it.</p>
 </tr>
 <tr>
 <td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta">Condition</a> array</em></td>
-<td>Conditions are OutputsReady and Ready. OutputsReady is True when the<br />outputs are written for the current generation. Ready is False with<br />reason GrantRejected while a Grant of the request is not Ready. Ready<br />is False with reason WaitingForEndpoints while an access request waits<br />for the endpoints of its target. Ready is False with reason<br />InvalidParameters when the parameters do not pass the registration.<br />The plugin sets the other reasons.</td>
+<td>Conditions are OutputsReady and Ready. OutputsReady is True when the<br />outputs are written for the current generation. Ready is False with<br />reason GrantRejected while a Grant of the request has Ready=False.<br />Ready is False with reason WaitingForGrants while no Grant of the<br />request has Ready=False and a Grant does not have Ready=True yet. Ready<br />is False with reason WaitingForEndpoints while an access request waits<br />for the endpoints of its target. Ready is False with reason<br />InvalidParameters when the parameters do not pass the registration.<br />The plugin sets the other reasons.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
