@@ -3,11 +3,13 @@
 // modules of src/lib/k8s, and the isomorphic deltas module.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import type { NamedObject } from "./deltas";
 import type { KindName, Resource } from "./kinds";
 import type { ListOptions } from "./read";
 import {
   failureKey,
+  freshKey,
   sharedWatch,
   watchKey,
   type WatchSpec,
@@ -36,11 +38,12 @@ export function useResources<K extends KindName>(
   opts: ListOptions,
   initial: Resource<K>[],
 ): { items: Resource<K>[]; error?: string } {
-  return useWatchedList(
+  const { items, error } = useWatchedList(
     kind,
     { namespace: opts.namespace, labelSelector: opts.labelSelector },
     initial,
   );
+  return error === undefined ? { items } : { items, error };
 }
 
 /**
@@ -53,7 +56,42 @@ export function useResource<K extends KindName>(
   ref: Ref,
   initial?: Resource<K>,
 ): { item?: Resource<K>; error?: string } {
-  const { items, error } = useWatchedList(
+  const { item, error } = useWatchedObject(kind, ref, initial);
+  return error === undefined ? { item } : { item, error };
+}
+
+/** GitSyncRef names the object of a push. */
+export interface GitSyncRef extends Ref {
+  kind: KindName;
+}
+
+/** GitSync is "waiting" until the live object carries the pushed revision. */
+export type GitSync = "waiting" | "applied";
+
+/**
+ * useGitSync follows the object of ref and returns "applied" once its
+ * annotation REVISION_ANNOTATION equals revision. It returns "waiting" for
+ * any other revision, while the object does not exist, while the watch
+ * fails, and until the watch got a snapshot on the current connection. It
+ * needs a QueryClientProvider above it, as useResource does.
+ */
+export function useGitSync(ref: GitSyncRef, revision: string): GitSync {
+  const { item, error, fresh } = useWatchedObject(ref.kind, ref);
+  if (error !== undefined || !fresh) return "waiting";
+  const annotations = (
+    item as { metadata?: { annotations?: Record<string, string> } } | undefined
+  )?.metadata?.annotations;
+  return annotations?.[REVISION_ANNOTATION] === revision
+    ? "applied"
+    : "waiting";
+}
+
+function useWatchedObject<K extends KindName>(
+  kind: K,
+  ref: Ref,
+  initial?: Resource<K>,
+): { item?: Resource<K>; error?: string; fresh: boolean } {
+  const { items, error, fresh } = useWatchedList(
     kind,
     { namespace: ref.namespace, name: ref.name },
     initial ? [initial] : [],
@@ -63,14 +101,14 @@ export function useResource<K extends KindName>(
       (o as NamedObject).metadata?.name === ref.name &&
       (o as NamedObject).metadata?.namespace === ref.namespace,
   );
-  return error === undefined ? { item } : { item, error };
+  return { item, error, fresh };
 }
 
 function useWatchedList<K extends KindName>(
   kind: K,
   filter: Omit<WatchSpec, "kind">,
   initial: Resource<K>[],
-): { items: Resource<K>[]; error?: string } {
+): { items: Resource<K>[]; error?: string; fresh: boolean } {
   const client = useQueryClient();
   const { namespace, labelSelector, name } = filter;
   const spec = { kind, namespace, labelSelector, name };
@@ -91,6 +129,14 @@ function useWatchedList<K extends KindName>(
     staleTime: Infinity,
   });
 
+  const isFreshKey = freshKey(spec);
+  const { data: fresh } = useQuery({
+    queryKey: isFreshKey,
+    queryFn: () => client.getQueryData<boolean>(isFreshKey) ?? false,
+    initialData: false,
+    staleTime: Infinity,
+  });
+
   useEffect(
     () =>
       sharedWatch(client).subscribe({ kind, namespace, labelSelector, name }),
@@ -98,6 +144,6 @@ function useWatchedList<K extends KindName>(
   );
 
   return typeof failure === "string"
-    ? { items: data, error: failure }
-    : { items: data };
+    ? { items: data, error: failure, fresh }
+    : { items: data, fresh };
 }

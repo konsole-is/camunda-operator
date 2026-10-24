@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "name": "A plane claim that selects in sections that apply to plane claims passes",
+  "input": {
+    "kind": "CamundaManagementClusterClaim",
+    "sections": [
+      {
+        "metadata": {
+          "name": "backup-storage"
+        },
+        "spec": {
+          "label": "backup-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "management-database"
+        },
+        "spec": {
+          "label": "management-database",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaManagementClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "access"
+        },
+        "spec": {
+          "label": "access",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim",
+            "CamundaManagementClusterClaim"
+          ]
+        }
+      }
+    ],
+    "policy": {
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3"
+          ]
+        },
+        "management-database": {
+          "allowed": [
+            "management-database-server"
+          ]
+        },
+        "access": {
+          "allowed": [
+            "ingress"
+          ]
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "selections": [
+      {
+        "section": "management-database",
+        "registration": "management-database-server"
+      },
+      {
+        "section": "access",
+        "registration": "ingress"
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}

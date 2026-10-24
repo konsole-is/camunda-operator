@@ -10,7 +10,7 @@ import {
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEventSource } from "../../../test/fakes/event-source";
-import { useResource, useResources } from "./hooks";
+import { useGitSync, useResource, useResources } from "./hooks";
 import { watchId } from "./shared-watch";
 
 // TanStack Query sends cache updates to the hooks on a later tick, so the
@@ -365,5 +365,130 @@ describe("useResource", () => {
     await waitFor(() =>
       expect(result.current.error).toBe("The API server is down"),
     );
+  });
+});
+
+describe("useGitSync", () => {
+  const ref = {
+    kind: "CamundaClusterClaim" as const,
+    namespace: "team-a",
+    name: "orders",
+  };
+  const claim = (revision?: string) =>
+    ({
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: {
+        namespace: "team-a",
+        name: "orders",
+        ...(revision
+          ? { annotations: { "fleet.camunda.io/revision": revision } }
+          : {}),
+      },
+    }) as never;
+
+  it("is waiting while the live object has no revision", async () => {
+    const { result } = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    const s = await source();
+    s.emit("snapshot", {
+      watch: s.ids()[0],
+      kind: "CamundaClusterClaim",
+      objects: [claim()],
+    });
+    await flush();
+    expect(result.current).toBe("waiting");
+  });
+
+  it("turns from waiting to applied when the live object gets the pushed revision", async () => {
+    const { result } = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    const s = await source();
+    const watch = s.ids()[0];
+    s.emit("snapshot", {
+      watch,
+      kind: "CamundaClusterClaim",
+      objects: [claim()],
+    });
+    await flush();
+    expect(result.current).toBe("waiting");
+
+    s.emit("delta", {
+      watch,
+      type: "MODIFIED",
+      kind: "CamundaClusterClaim",
+      object: claim("abc"),
+    });
+    await waitFor(() => expect(result.current).toBe("applied"));
+  });
+
+  it("stays waiting for another revision", async () => {
+    const { result } = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    const s = await source();
+    const watch = s.ids()[0];
+    s.emit("snapshot", {
+      watch,
+      kind: "CamundaClusterClaim",
+      objects: [claim()],
+    });
+    s.emit("delta", {
+      watch,
+      type: "MODIFIED",
+      kind: "CamundaClusterClaim",
+      object: claim("old"),
+    });
+    await flush();
+    expect(result.current).toBe("waiting");
+  });
+
+  it("is waiting while the object does not exist", async () => {
+    const { result } = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    const s = await source();
+    s.emit("snapshot", {
+      watch: s.ids()[0],
+      kind: "CamundaClusterClaim",
+      objects: [],
+    });
+    await flush();
+    expect(result.current).toBe("waiting");
+  });
+
+  it("is waiting while the watch fails, also when the cached object carries the revision", async () => {
+    const { result } = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    const s = await source();
+    const watch = s.ids()[0];
+    s.emit("snapshot", {
+      watch,
+      kind: "CamundaClusterClaim",
+      objects: [claim("abc")],
+    });
+    await waitFor(() => expect(result.current).toBe("applied"));
+
+    s.emit("failure", { watch, kind: "CamundaClusterClaim", message: "lost" });
+
+    await waitFor(() => expect(result.current).toBe("waiting"));
+  });
+
+  it("stays waiting when the cached object carries the revision, and turns applied on a fresh snapshot", async () => {
+    const first = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    const old = await source();
+    old.emit("snapshot", {
+      watch: old.ids()[0],
+      kind: "CamundaClusterClaim",
+      objects: [claim("abc")],
+    });
+    await waitFor(() => expect(first.result.current).toBe("applied"));
+    first.unmount();
+    await flush();
+
+    const { result } = renderHook(() => useGitSync(ref, "abc"), { wrapper });
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    expect(result.current).toBe("waiting");
+
+    const s = FakeEventSource.instances[1];
+    s.emit("snapshot", {
+      watch: s.ids()[0],
+      kind: "CamundaClusterClaim",
+      objects: [claim("abc")],
+    });
+    await waitFor(() => expect(result.current).toBe("applied"));
   });
 });

@@ -75,10 +75,14 @@ func settle(
 	var seen time.Time
 
 	// notSettled reports the state of the last tick that read the whole
-	// scenario, because a tick that the timeout stops read only a part.
+	// scenario, because a tick that the timeout stops read only a part. When
+	// no tick read it, lists of none would tell of a quiet scenario.
 	notSettled := func(err error) error {
 		if !errors.Is(context.Cause(ctx), errNotSettled) || parent.Err() != nil {
 			return err
+		}
+		if seen.IsZero() {
+			return fmt.Errorf("the scenario did not settle within %s: no tick read the whole scenario", timeout)
 		}
 		return fmt.Errorf(
 			"the scenario did not settle within %s: objects that kept changing: %s; "+

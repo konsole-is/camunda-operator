@@ -53,7 +53,13 @@ describe("toastResultOf", () => {
   it("maps a Git push to waiting with the commit", () => {
     expect(
       toastResultOf(
-        { ok: true, mode: "git", commit: "4f1c3a7e9b", revisions: {} },
+        {
+          ok: true,
+          mode: "git",
+          commit: "4f1c3a7e9b",
+          revisions: {},
+          paths: {},
+        },
         "x",
       ),
     ).toEqual({ kind: "waiting", commit: "4f1c3a7e9b" });

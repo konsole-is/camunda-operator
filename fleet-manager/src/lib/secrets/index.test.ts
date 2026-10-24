@@ -29,7 +29,13 @@ const gitWriter: Writer = {
   preview: vi.fn(),
   apply: vi.fn(async (change: Change): Promise<WriteResult> => {
     changes.push(change);
-    return { ok: true, mode: "git", commit: "abc123", revisions: {} };
+    return {
+      ok: true,
+      mode: "git",
+      commit: "abc123",
+      revisions: {},
+      paths: {},
+    };
   }),
 };
 
@@ -58,6 +64,7 @@ describe("writeSecretValue in Git mode", () => {
       mode: "git",
       commit: "abc123",
       revisions: {},
+      paths: {},
     });
     expect(changes).toHaveLength(1);
     expect(changes[0].apply).toEqual([

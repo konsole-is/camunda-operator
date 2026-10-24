@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "name": "A null value in parameterValues of a registration is no value, in the snapshot and in the request",
+  "input": {
+    "registrations": [
+      {
+        "metadata": {
+          "name": "s3"
+        },
+        "spec": {
+          "sections": [
+            "backup-storage"
+          ],
+          "mode": "Default",
+          "parameterValues": {
+            "region": null,
+            "tier": "standard"
+          }
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "policy": {
+        "sections": {
+          "backup-storage": {
+            "default": "s3",
+            "allowed": [
+              "s3"
+            ]
+          }
+        },
+        "parameters": {
+          "s3": {
+            "region": {},
+            "tier": {
+              "value": "standard"
+            }
+          }
+        },
+        "deletionPolicy": "Delete"
+      },
+      "requests": [
+        {
+          "section": "backup-storage",
+          "registration": "s3",
+          "parameters": {
+            "tier": "standard"
+          }
+        }
+      ]
+    }
+  }
+}

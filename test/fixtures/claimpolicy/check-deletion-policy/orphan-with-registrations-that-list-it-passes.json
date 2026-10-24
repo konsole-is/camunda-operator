@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "Orphan passes when each selected registration lists Orphan",
+  "input": {
+    "policy": "Orphan",
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      }
+    ],
+    "registrations": [
+      {
+        "metadata": {
+          "name": "elasticsearch"
+        },
+        "spec": {
+          "label": "elasticsearch",
+          "sections": [
+            "secondary-storage"
+          ],
+          "mode": "Optional",
+          "serviceAccount": {
+            "namespace": "camunda-plugins",
+            "name": "elasticsearch"
+          },
+          "deletionPolicies": [
+            "Delete",
+            "Orphan"
+          ]
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}

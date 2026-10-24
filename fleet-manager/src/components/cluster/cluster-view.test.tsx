@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Resource } from "@/lib/k8s/kinds";
+import type { KindName, Resource } from "@/lib/k8s/kinds";
 import {
   CLAIM_LABEL,
+  BACKUP_SCHEDULE_LABEL,
   COMPONENT_LABEL,
   ENVIRONMENT_LABEL,
   REVISION_ANNOTATION,
@@ -138,6 +139,14 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     podSelector: "camunda.io/cluster=orders",
     backups: { elasticsearch: [], rdbms: [] },
     restores: { elasticsearch: [], rdbms: [], pointInTime: [] },
+    backupStorage: {
+      objectStorage: [],
+      databaseConfigs: [],
+      databaseServerConfigs: [],
+      databaseServers: [],
+      databaseServerPresets: [],
+      schedules: [],
+    },
     ...over,
   };
 }
@@ -402,5 +411,422 @@ describe("ClusterView", () => {
       "orders-zeebe-1 Ready",
       "orders-zeebe-2 Ready",
     ]);
+  });
+});
+
+function nsObject<K extends KindName>(
+  kind: K,
+  name: string,
+  spec: object,
+  status: object = {},
+  meta: object = {},
+): Resource<K> {
+  return {
+    kind,
+    metadata: { namespace: "team-a", name, ...meta },
+    spec,
+    status,
+  } as unknown as Resource<K>;
+}
+
+function esBackup(
+  name: string,
+  phase: string,
+  created: string,
+  labels?: Record<string, string>,
+) {
+  return nsObject(
+    "LogicalBackupElasticsearch",
+    name,
+    { clusterRef: { name: "orders" } },
+    { phase },
+    { creationTimestamp: created, labels },
+  );
+}
+
+const noBackupStorage = data().backupStorage;
+
+function pgPage(
+  server: object = {
+    databaseServerConfig: "orders-pg",
+    archive: { objectStorageRef: "wal", retentionPeriodDays: 30 },
+  },
+  status?: object,
+): ClusterPageData {
+  return data({
+    cluster: cluster({
+      spec: {
+        storageRef: "orders-db-storage",
+        backupStorageRef: "backups",
+      },
+    }),
+    storage: [
+      nsObject("SecondaryStorageConfig", "orders-db-storage", {
+        type: "rdbms",
+        rdbms: { databaseConfigRef: "orders-db" },
+      }),
+    ],
+    backupStorage: {
+      objectStorage: [
+        nsObject("ObjectStorageConfig", "backups", {
+          type: "S3",
+          s3: { bucketName: "acme-backups" },
+        }),
+        nsObject("ObjectStorageConfig", "wal", {
+          type: "GCS",
+          gcs: { bucketName: "acme-wal" },
+        }),
+      ],
+      databaseConfigs: [
+        nsObject("DatabaseConfig", "orders-db", {
+          serverRef: "orders-pg",
+        }),
+      ],
+      databaseServerConfigs: [
+        nsObject(
+          "DatabaseServerConfig",
+          "orders-pg",
+          {
+            host: "orders-pg-rw.team-a.svc",
+            port: 5432,
+            pitr: {
+              enabled: true,
+              recovery: "operator",
+              retentionPeriodDays: 30,
+            },
+          },
+          {},
+          {
+            ownerReferences: [
+              {
+                apiVersion: "core.camunda.io/v1",
+                kind: "DatabaseServer",
+                name: "orders-pg",
+                uid: "uid-orders-pg",
+                controller: true,
+              },
+            ],
+          },
+        ),
+      ],
+      databaseServers: [
+        nsObject(
+          "DatabaseServer",
+          "orders-pg",
+          server,
+          status ?? {
+            conditions: [
+              {
+                type: "ArchiveReady",
+                status: "True",
+                reason: "Archiving",
+              },
+            ],
+            archive: {
+              history: [
+                {
+                  serverName: "orders-pg",
+                  from: "2026-09-10T00:00:00Z",
+                  to: "2026-09-20T00:00:00Z",
+                },
+                { serverName: "orders-pg-r1", from: "2026-10-11T00:00:00Z" },
+              ],
+            },
+          },
+          { uid: "uid-orders-pg" },
+        ),
+      ],
+      databaseServerPresets: [],
+      schedules: [],
+    },
+  });
+}
+
+describe("Backups tab", () => {
+  beforeEach(() => {
+    window.history.replaceState(null, "", "?tab=backups");
+  });
+
+  it("an Elasticsearch cluster shows its storage, a running, a completed, and a failed backup, and a running restore", () => {
+    const live = cluster({
+      spec: { storageRef: "orders-es", backupStorageRef: "backups" },
+    });
+    live.status!.management!.backupRepository = "camunda-backups";
+    render(
+      view({
+        initial: data({
+          cluster: live,
+          storage: [
+            nsObject("SecondaryStorageConfig", "orders-es", {
+              type: "elasticsearch",
+              elasticsearch: { endpoint: "http://orders-es:9200" },
+            }),
+          ],
+          backupStorage: {
+            ...noBackupStorage,
+            objectStorage: [
+              nsObject("ObjectStorageConfig", "backups", {
+                type: "S3",
+                s3: { bucketName: "acme-backups" },
+              }),
+            ],
+            schedules: [
+              nsObject("BackupSchedule", "nightly", {
+                clusterRef: { name: "orders" },
+                schedule: "0 2 * * *",
+                retained: { completed: 7, failed: 3 },
+              }),
+            ],
+          },
+          backups: {
+            elasticsearch: [
+              esBackup("nightly-1", "Completed", "2026-10-18T02:00:00Z", {
+                [BACKUP_SCHEDULE_LABEL]: "nightly",
+              }),
+              esBackup("manual-1", "Failed", "2026-10-18T10:00:00Z"),
+              esBackup("running-1", "Running", "2026-10-18T11:30:00Z"),
+            ],
+            rdbms: [],
+          },
+          restores: {
+            elasticsearch: [
+              nsObject(
+                "LogicalRestoreElasticsearch",
+                "restore-1",
+                {
+                  targetClusterRef: { name: "orders" },
+                  backupRef: { name: "nightly-1" },
+                },
+                { phase: "RestoringPrimaryStorage" },
+              ),
+            ],
+            rdbms: [],
+            pointInTime: [],
+          },
+        }),
+      }),
+    );
+    const storage = screen.getByRole("region", { name: "Backup storage" });
+    expect(within(storage).getByText("camunda-backups")).toBeTruthy();
+    expect(within(storage).getByText("s3://acme-backups")).toBeTruthy();
+    const schedule = screen.getByRole("region", { name: "Backup schedule" });
+    expect(schedule.textContent).toContain(
+      "nightly: 0 2 * * *, keeps 7 completed and 3 failed",
+    );
+    const backups = screen.getByRole("region", { name: "Backups" });
+    const rows = within(backups).getAllByRole("row").slice(1);
+    expect(
+      rows.map((r) => [
+        within(r).getByRole("button").textContent,
+        within(r).getAllByRole("cell")[1].textContent,
+        within(r).getAllByRole("cell")[5].textContent,
+      ]),
+    ).toEqual([
+      ["running-1", "Manual", "Running"],
+      ["manual-1", "Manual", "Failed"],
+      ["nightly-1", "Scheduled", "Completed"],
+    ]);
+    const restores = screen.getByRole("region", { name: "Restores" });
+    expect(within(restores).getByText("restore-1")).toBeTruthy();
+    expect(within(restores).getByText("RestoringPrimaryStorage")).toBeTruthy();
+  });
+
+  it("a PostgreSQL cluster with point-in-time restore on shows its server, archive, and the intervals of its window", () => {
+    render(
+      view({
+        initial: pgPage(),
+      }),
+    );
+    const storage = screen.getByRole("region", { name: "Backup storage" });
+    expect(
+      within(storage).getByText("orders-pg-rw.team-a.svc:5432"),
+    ).toBeTruthy();
+    expect(
+      within(storage).getByText("On, 30 days, recovery by the operator"),
+    ).toBeTruthy();
+    expect(within(storage).getByText("Archiving")).toBeTruthy();
+    expect(within(storage).getByText("gs://acme-wal")).toBeTruthy();
+    expect(
+      within(storage)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual([
+      "2026-09-18 12:00 UTC to 2026-09-20 00:00 UTC",
+      "No restore point in this gap",
+      "2026-10-11 00:00 UTC to now",
+    ]);
+  });
+
+  it("a cluster without backup storage says where a bucket comes from", () => {
+    render(view());
+    expect(
+      screen.getByText(
+        "This cluster has no backup storage. Backups need a bucket from the Backup storage section.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/^s3:\/\//)).toBeNull();
+  });
+
+  it("an unmanaged cluster shows its backups and no actions slot", () => {
+    const { container } = render(
+      view({
+        initial: data({
+          cluster: cluster({ labels: {} }),
+          backups: {
+            elasticsearch: [
+              esBackup("nightly-1", "Completed", "2026-10-18T02:00:00Z"),
+            ],
+            rdbms: [],
+          },
+        }),
+        slots: filled,
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Details of nightly-1" }),
+    ).toBeTruthy();
+    expect(container.querySelector("[data-action-slot]")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Slot cluster.backups.actions" }),
+    ).toBeNull();
+  });
+
+  it("a managed cluster mounts the backups actions slot in the tab", () => {
+    render(view({ slots: filled }));
+    expect(
+      screen.getByRole("button", { name: "Slot cluster.backups.actions" }),
+    ).toBeTruthy();
+  });
+
+  it("follows a backup that appears after the first render", () => {
+    const { rerender } = render(view());
+    expect(screen.getByText("No backups yet.")).toBeTruthy();
+    live.objects.LogicalBackupRDBMS = [
+      nsObject(
+        "LogicalBackupRDBMS",
+        "manual-2",
+        { clusterRef: { name: "orders" } },
+        { phase: "Running" },
+        { creationTimestamp: "2026-10-18T11:59:00Z" },
+      ),
+    ];
+    rerender(view());
+    expect(
+      screen.getByRole("button", { name: "Details of manual-2" }),
+    ).toBeTruthy();
+  });
+
+  it("a running backup counts its duration on with the clock", () => {
+    vi.useFakeTimers({ now: Date.parse(now) });
+    try {
+      render(
+        view({
+          initial: data({
+            backups: {
+              elasticsearch: [
+                esBackup("running-1", "Running", "2026-10-18T11:30:00Z"),
+              ],
+              rdbms: [],
+            },
+          }),
+        }),
+      );
+      const row = () =>
+        within(screen.getByRole("region", { name: "Backups" })).getAllByRole(
+          "row",
+        )[1];
+      expect(row().textContent).toContain("30m");
+      act(() => {
+        vi.advanceTimersByTime(65_000);
+      });
+      expect(row().textContent).toContain("31m 5s");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("moves the start of the restore window on with the clock on the Backups tab", () => {
+    vi.useFakeTimers({ now: Date.parse(now) });
+    try {
+      render(
+        view({
+          initial: pgPage(
+            {
+              databaseServerConfig: "orders-pg",
+              archive: { objectStorageRef: "wal", retentionPeriodDays: 7 },
+            },
+            {
+              archive: {
+                history: [
+                  { serverName: "orders-pg", from: "2026-01-01T00:00:00Z" },
+                ],
+              },
+            },
+          ),
+        }),
+      );
+      expect(screen.getByText("2026-10-11 12:00 UTC to now")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByText("2026-10-11 12:01 UTC to now")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not move the clock while another tab is open", () => {
+    vi.useFakeTimers({ now: Date.parse(now) });
+    try {
+      const page = pgPage(
+        {
+          databaseServerConfig: "orders-pg",
+          archive: { objectStorageRef: "wal", retentionPeriodDays: 7 },
+        },
+        {
+          archive: {
+            history: [
+              { serverName: "orders-pg", from: "2026-01-01T00:00:00Z" },
+            ],
+          },
+        },
+      );
+      window.history.replaceState(null, "", "?tab=overview");
+      const { rerender } = render(view({ initial: page }));
+      act(() => {
+        vi.advanceTimersByTime(60_000);
+      });
+      window.history.replaceState(null, "", "?tab=backups");
+      rerender(view({ initial: page }));
+      expect(screen.getByText("2026-10-11 12:00 UTC to now")).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(screen.getByText("2026-10-11 12:01 UTC to now")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("watches the DatabaseServerPresets of every namespace", () => {
+    render(view());
+    expect(
+      live.calls.find((c) => c.kind === "DatabaseServerPreset")?.opts,
+    ).toEqual({});
+  });
+
+  it("watches the backup kinds in the namespace of the cluster", () => {
+    render(view());
+    for (const kind of [
+      "ObjectStorageConfig",
+      "DatabaseConfig",
+      "DatabaseServerConfig",
+      "DatabaseServer",
+      "BackupSchedule",
+    ]) {
+      expect(live.calls.find((c) => c.kind === kind)?.opts).toEqual({
+        namespace: "team-a",
+      });
+    }
   });
 });

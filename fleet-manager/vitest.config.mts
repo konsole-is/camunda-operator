@@ -21,8 +21,8 @@ export default defineConfig({
     },
   },
   test: {
-    // A component test sets jsdom for its own file with the docblock
-    // `// @vitest-environment jsdom`. Every other test runs in Node.
+    // A test outside src/**/*.test.tsx that needs jsdom sets it for its own
+    // file with the docblock `// @vitest-environment jsdom`.
     environment: "node",
     projects: [
       {
@@ -31,11 +31,22 @@ export default defineConfig({
           name: "unit",
           include: [
             "eslint/**/*.test.ts",
-            "src/**/*.test.{ts,tsx}",
+            "src/**/*.test.ts",
             "test/**/*.test.ts",
             "e2e/**/*.test.ts",
           ],
           exclude: [...configDefaults.exclude, "test/k8s/**"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "components",
+          include: ["src/**/*.test.tsx"],
+          environment: "jsdom",
+          // The first test of a file pays the cold start of jsdom and its
+          // imports, which went over the 5 s default under a full parallel run.
+          testTimeout: 15_000,
         },
       },
       {

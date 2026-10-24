@@ -44,9 +44,13 @@ const (
 	// ReasonDefaultConflict means that another registration of the same
 	// section also has mode Default.
 	ReasonDefaultConflict = "DefaultConflict"
-	// ReasonGrantRejected means that a Grant of the request is not Ready.
+	// ReasonGrantRejected means that a Grant of the request has Ready=False.
 	// The outputs of the request stay usable.
 	ReasonGrantRejected = "GrantRejected"
+	// ReasonWaitingForGrants means that a Grant of the request does not have
+	// Ready=True yet, and no Grant of the request has Ready=False. The
+	// outputs of the request stay usable.
+	ReasonWaitingForGrants = "WaitingForGrants"
 	// ReasonWaitingForEndpoints means that an access request waits for the
 	// endpoints in the status of its target.
 	ReasonWaitingForEndpoints = "WaitingForEndpoints"

@@ -14,6 +14,10 @@ CONFORMANCE_IMG ?= ghcr.io/konsole-is/camunda-operator-plugin-conformance:latest
 # CONFORMANCE_PLATFORMS are the platforms of the plugin-conformance binaries
 # that dist-conformance builds for the release assets.
 CONFORMANCE_PLATFORMS ?= linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+# Images of the fake plugin and the Git server of the kind harness of the
+# fleet manager. The harness builds them and loads them into kind.
+FAKEPLUGIN_IMG ?= fleet-harness-fakeplugin:dev
+GITSERVER_IMG ?= fleet-harness-gitserver:dev
 # OPERATOR_VERSION is the version that the manager reports, without the v of
 # the tag. The release workflow sets it from the tag. Without it the manager
 # reports 0.0.0-dev.
@@ -134,7 +138,7 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	cd api && go test ./...
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go -C conformance test ./...
-	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -v '/test/e2e$$') -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
@@ -299,6 +303,14 @@ docker-push-cli: ## Push docker image with camunda-operator-cli.
 .PHONY: docker-build-conformance
 docker-build-conformance: ## Build docker image with plugin-conformance.
 	$(CONTAINER_TOOL) build -t ${CONFORMANCE_IMG} -f Dockerfile.conformance .
+
+.PHONY: docker-build-fakeplugin
+docker-build-fakeplugin: ## Build the image of the fake plugin of the fleet manager harness on kind.
+	$(CONTAINER_TOOL) build -t ${FAKEPLUGIN_IMG} -f test/e2e/fakeplugin/Dockerfile .
+
+.PHONY: docker-build-gitserver
+docker-build-gitserver: ## Build the image of the Git server of the fleet manager harness on kind.
+	$(CONTAINER_TOOL) build -t ${GITSERVER_IMG} -f test/e2e/gitserver/Dockerfile .
 
 .PHONY: docker-push-conformance
 docker-push-conformance: ## Push docker image with plugin-conformance.
@@ -556,7 +568,8 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		echo "$(HELM_CHART_DIR)/values.schema.json not found; run 'make helm-generate' first." >&2; exit 1; }
 	$(HELM) lint "$(HELM_CHART_DIR)"
 	@# The schema must reject an unknown key and a value of the wrong type.
-	@for opts in "--set prometheus.enabeld=true" "--set prometheus.enabled=yes" "--set fleetManager.enabeld=true"; do \
+	@for opts in "--set prometheus.enabeld=true" "--set prometheus.enabled=yes" "--set fleetManager.enabeld=true" \
+		"--set fleetManager.extraCACerts.configMapname=x" "--set fleetManager.extraCACerts.configMapName=1"; do \
 		err="$$($(HELM) template verify "$(HELM_CHART_DIR)" $$opts 2>&1 >/dev/null || true)"; \
 		case "$$err" in *"meet the specifications of the schema"*) ;; *) \
 			echo "ERROR: the values schema did not reject: helm template $$opts" >&2; exit 1 ;; \
@@ -595,6 +608,18 @@ helm-verify: install-helm ## Lint and render the Helm chart across value permuta
 		--show-only templates/fleet-manager/deployment.yaml | grep -q 'name: verify-pull' || { \
 		echo "ERROR: the fleet manager Pod does not use manager.imagePullSecrets" >&2; exit 1; }
 	@echo "  the fleet manager Pod uses manager.imagePullSecrets"
+	@out="$$($(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		--set fleetManager.extraCACerts.configMapName=verify-ca --set fleetManager.extraCACerts.key=bundle.pem \
+		--show-only templates/fleet-manager/deployment.yaml)"; \
+	for want in 'name: NODE_EXTRA_CA_CERTS' 'value: /etc/fleet-manager/extra-ca/ca.crt' \
+		'name: "verify-ca"' 'key: "bundle.pem"' 'mountPath: /etc/fleet-manager/extra-ca'; do \
+		printf '%s\n' "$$out" | grep -qF "$$want" || { \
+			echo "ERROR: fleetManager.extraCACerts does not render '$$want'" >&2; exit 1; }; \
+	done
+	@$(HELM) template verify "$(HELM_CHART_DIR)" --set fleetManager.enabled=true \
+		--show-only templates/fleet-manager/deployment.yaml | grep -q NODE_EXTRA_CA_CERTS && { \
+		echo "ERROR: the fleet manager sets NODE_EXTRA_CA_CERTS without extraCACerts" >&2; exit 1; } || true
+	@echo "  fleetManager.extraCACerts mounts the CA and sets NODE_EXTRA_CA_CERTS"
 	@# Measure the release Secret that an install writes, for each set of values.
 	@echo "  release Secret size (limit 1048576 bytes):"
 	@for opts in \
@@ -696,6 +721,22 @@ fleet-playwright: fleet-install ## Install the Chromium browser that the fleet m
 fleet-gallery: fleet-build fleet-playwright setup-envtest ## Screenshot each fleet manager gallery story at 1440 px and 390 px into fleet-manager/ui-gallery, fail on a serious or critical axe violation, and check that a page of 8 data hooks opens one watch connection.
 	$(FLEET_PNPM) run build:gallery
 	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run gallery
+
+# The kind cluster of the fleet manager journeys. The harness targets run in
+# CI only: they create and fill a kind cluster.
+FLEET_HARNESS_CLUSTER ?= fleet-harness
+
+.PHONY: fleet-harness-up
+fleet-harness-up: ## Create the kind cluster of the fleet manager journeys and install the operator, the app, the fake plugin, and the Git server. CI only.
+	KIND_CLUSTER=$(FLEET_HARNESS_CLUSTER) $(FLEET_DIR)/e2e/harness/up.sh
+
+.PHONY: fleet-harness-check
+fleet-harness-check: ## Check the fake plugin outputs, the Git apply loop, and the CA trust of the app on the harness cluster.
+	$(FLEET_DIR)/e2e/harness/check.sh
+
+.PHONY: fleet-journeys
+fleet-journeys: fleet-playwright ## Run the fleet manager journeys on the harness cluster and write fleet-manager/ui-journeys.
+	$(FLEET_DIR)/e2e/harness/journeys.sh "$(FLEET_PNPM_BIN)" exec playwright test -c playwright.journeys.config.ts
 
 .PHONY: docker-build-fleet
 docker-build-fleet: ## Build the fleet manager image.

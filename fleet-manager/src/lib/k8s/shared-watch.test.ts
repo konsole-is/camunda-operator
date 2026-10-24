@@ -6,6 +6,7 @@ import { FakeEventSource } from "../../../test/fakes/event-source";
 import type { KindName } from "./kinds";
 import {
   failureKey,
+  freshKey,
   REOPEN_DELAY_MS,
   sharedWatch,
   watchId,
@@ -227,5 +228,56 @@ describe("sharedWatch", () => {
     vi.advanceTimersByTime(REOPEN_DELAY_MS);
 
     expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it("marks a watch not fresh after a resubscribe, and fresh after its first snapshot", async () => {
+    const watch = sharedWatch(client);
+    const leave = watch.subscribe(team);
+    await flush();
+    FakeEventSource.instances[0].emit(
+      "snapshot",
+      snapshot(team, [pod("team", "a")]),
+    );
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+
+    leave();
+    await flush();
+    watch.subscribe(team);
+    await flush();
+    expect(client.getQueryData(watchKey(team))).toEqual([pod("team", "a")]);
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+
+    FakeEventSource.instances
+      .at(-1)!
+      .emit("snapshot", snapshot(team, [pod("team", "a", "Running")]));
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+  });
+
+  it("marks its watches not fresh on a new connection until their snapshot", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    sharedWatch(client).subscribe(team);
+    await flush();
+    FakeEventSource.instances[0].emit("snapshot", snapshot(team, []));
+
+    FakeEventSource.instances[0].fail(2);
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+    vi.advanceTimersByTime(REOPEN_DELAY_MS);
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+
+    FakeEventSource.instances[1].emit("snapshot", snapshot(team, []));
+    expect(client.getQueryData(freshKey(team))).toBe(true);
+  });
+
+  it("marks its watches not fresh when the browser connects again by itself, until their snapshot", async () => {
+    sharedWatch(client).subscribe(team);
+    await flush();
+    const source = FakeEventSource.instances[0];
+    source.emit("snapshot", snapshot(team, []));
+
+    source.fail(0);
+    expect(client.getQueryData(freshKey(team))).toBe(false);
+
+    source.emit("snapshot", snapshot(team, []));
+    expect(client.getQueryData(freshKey(team))).toBe(true);
   });
 });

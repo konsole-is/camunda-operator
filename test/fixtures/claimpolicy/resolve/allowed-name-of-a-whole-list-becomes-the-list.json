@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "name": "The request gets the whole list of the allowed name that the claim picks",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "sections": {
+          "connectors-permissions": {
+            "allowed": [
+              "aws-connectors-role"
+            ]
+          }
+        },
+        "parameters": {
+          "aws-connectors-role": {
+            "policies": {
+              "claimEditable": true,
+              "allowed": [
+                {
+                  "name": "messaging",
+                  "label": "Messaging",
+                  "value": [
+                    "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+                  ]
+                },
+                {
+                  "name": "storage",
+                  "label": "Storage",
+                  "value": [
+                    "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "registrations": [
+      {
+        "metadata": {
+          "name": "aws-connectors-role"
+        },
+        "spec": {
+          "sections": [
+            "connectors-permissions"
+          ],
+          "mode": "Optional"
+        }
+      }
+    ],
+    "selections": [
+      {
+        "section": "connectors-permissions",
+        "registration": "aws-connectors-role",
+        "parameters": {
+          "policies": "messaging"
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {
+      "policy": {
+        "sections": {
+          "connectors-permissions": {
+            "allowed": [
+              "aws-connectors-role"
+            ]
+          }
+        },
+        "parameters": {
+          "aws-connectors-role": {
+            "policies": {
+              "claimEditable": true,
+              "allowed": [
+                {
+                  "name": "messaging",
+                  "label": "Messaging",
+                  "value": [
+                    "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+                    "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+                  ]
+                },
+                {
+                  "name": "storage",
+                  "label": "Storage",
+                  "value": [
+                    "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "deletionPolicy": "Delete"
+      },
+      "requests": [
+        {
+          "section": "connectors-permissions",
+          "registration": "aws-connectors-role",
+          "parameters": {
+            "policies": [
+              "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+              "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

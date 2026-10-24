@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   type BackupLike,
   type RestoreLike,
+  clusterBackups,
+  clusterRestores,
   runningBackup,
   runningRestore,
 } from "./backups";
@@ -22,6 +24,15 @@ function backup(
 }
 
 describe("runningBackup", () => {
+  it("returns no backup when the last backup of the cluster finished", () => {
+    expect(
+      runningBackup(cluster, [
+        backup("nightly-1", "Failed"),
+        backup("nightly-2", "Completed"),
+      ]),
+    ).toBeUndefined();
+  });
+
   it("returns a Running LogicalBackupRDBMS of the cluster", () => {
     expect(runningBackup(cluster, [backup("nightly-1", "Running")])).toEqual({
       kind: "LogicalBackupRDBMS",
@@ -132,5 +143,63 @@ describe("runningRestore", () => {
         restore("PointInTimeRestore", "Pending", "a"),
       ])?.name,
     ).toBe("a");
+  });
+});
+
+describe("clusterBackups", () => {
+  it("keeps the backups of the cluster in their order, in every phase", () => {
+    const kept = [
+      backup("b", "Completed"),
+      backup("a", "Failed", { kind: "LogicalBackupElasticsearch" }),
+      backup("c", undefined),
+    ];
+    expect(clusterBackups(cluster, kept)).toEqual(kept);
+  });
+
+  it("drops another cluster, another namespace, and another kind", () => {
+    expect(
+      clusterBackups(cluster, [
+        backup("x", "Completed", { cluster: "payments" }),
+        backup("y", "Completed", { namespace: "team-b" }),
+        backup("z", "Completed", { kind: "PointInTimeRestore" }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("clusterRestores", () => {
+  it("matches a logical restore by targetClusterRef and a PointInTimeRestore by clusterRef", () => {
+    const logical = {
+      kind: "LogicalRestoreRDBMS",
+      metadata: { namespace: "team-a", name: "r1" },
+      spec: {
+        targetClusterRef: { name: "orders" },
+        clusterRef: { name: "payments" },
+      },
+      status: { phase: "Completed" },
+    };
+    const pitr = {
+      kind: "PointInTimeRestore",
+      metadata: { namespace: "team-a", name: "p1" },
+      spec: {
+        clusterRef: { name: "orders" },
+        targetClusterRef: { name: "payments" },
+      },
+      status: {},
+    };
+    expect(clusterRestores(cluster, [logical, pitr])).toEqual([logical, pitr]);
+  });
+
+  it("drops a restore of another cluster, namespace, or kind", () => {
+    expect(
+      clusterRestores(cluster, [
+        restore("LogicalRestoreRDBMS", "Completed", "a", "payments"),
+        {
+          ...restore("PointInTimeRestore", "Failed", "b"),
+          metadata: { namespace: "team-b", name: "b" },
+        },
+        restore("LogicalBackupRDBMS", "Completed", "c"),
+      ]),
+    ).toEqual([]);
   });
 });

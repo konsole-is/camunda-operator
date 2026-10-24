@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "name": "A cluster claim that selects in a section that applies only to plane claims is refused",
+  "input": {
+    "kind": "CamundaClusterClaim",
+    "sections": [
+      {
+        "metadata": {
+          "name": "backup-storage"
+        },
+        "spec": {
+          "label": "backup-storage",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "management-database"
+        },
+        "spec": {
+          "label": "management-database",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaManagementClusterClaim"
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "name": "access"
+        },
+        "spec": {
+          "label": "access",
+          "selection": "One",
+          "appliesTo": [
+            "CamundaClusterClaim",
+            "CamundaManagementClusterClaim"
+          ]
+        }
+      }
+    ],
+    "policy": {
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3"
+          ]
+        },
+        "management-database": {
+          "allowed": [
+            "management-database-server"
+          ]
+        },
+        "access": {
+          "allowed": [
+            "ingress"
+          ]
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "selections": [
+      {
+        "section": "management-database",
+        "registration": "management-database-server"
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "section \"management-database\" does not apply to a CamundaClusterClaim"
+    }
+  }
+}

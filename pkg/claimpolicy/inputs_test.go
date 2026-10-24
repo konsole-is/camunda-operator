@@ -19,6 +19,8 @@ package claimpolicy
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
@@ -35,4 +37,13 @@ func TestInputsFixtures(t *testing.T) {
 	runFixtures(t, "inputs", func(in input) (any, error) {
 		return Inputs(in.Registration, in.Selections, in.Requests), nil
 	})
+}
+
+func TestWaitingReasonNamesTheSections(t *testing.T) {
+	assert.Empty(t, WaitingReason(nil))
+	assert.Equal(
+		t,
+		"waiting for the outputs of access, encryption-key",
+		WaitingReason([]string{"access", "encryption-key"}),
+	)
 }

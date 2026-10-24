@@ -1,0 +1,43 @@
+# The two requests of the sample cluster to the fake plugin. No claim
+# controller writes them in the harness, so the harness applies them.
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: camundacluster-sample-access
+  namespace: fleet-smoke
+  labels:
+    plugins.camunda.io/section: access
+    plugins.camunda.io/registration: fleet-harness
+    fleet.camunda.io/claim: camundacluster-sample
+spec:
+  section: access
+  registration: fleet-harness
+  claimRef:
+    kind: CamundaClusterClaim
+    name: camundacluster-sample
+  target:
+    kind: CamundaCluster
+    name: camundacluster-sample
+    serviceAccountName: camundacluster-sample-camunda
+  deletionPolicy: Delete
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  name: camundacluster-sample-backup-storage
+  namespace: fleet-smoke
+  labels:
+    plugins.camunda.io/section: backup-storage
+    plugins.camunda.io/registration: fleet-harness
+    fleet.camunda.io/claim: camundacluster-sample
+spec:
+  section: backup-storage
+  registration: fleet-harness
+  claimRef:
+    kind: CamundaClusterClaim
+    name: camundacluster-sample
+  target:
+    kind: CamundaCluster
+    name: camundacluster-sample
+    serviceAccountName: camundacluster-sample-camunda
+  deletionPolicy: Delete

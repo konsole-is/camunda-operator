@@ -6,6 +6,7 @@ coverage/
 src/lib/__lint_probe__/
 .next-gallery/
 ui-gallery/
+ui-journeys/
 test-results/
 test-reports/
 playwright-report/

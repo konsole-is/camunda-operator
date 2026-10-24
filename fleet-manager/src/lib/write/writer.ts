@@ -16,6 +16,7 @@ import {
 } from "@/lib/k8s/kinds";
 import { APP_FIELD_MANAGER } from "@/lib/merge";
 import { apiErrorsOf, staleError } from "./errors";
+import { gitWriter } from "./git";
 import type {
   ApiError,
   Change,
@@ -144,18 +145,18 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       timeoutMs: WRITE_TIMEOUT_MS,
     });
 
-  const read = (path: string): Promise<KubeObject | undefined> =>
-    unlessNotFound(send<KubeObject>("GET", path));
+  const read = (ref: ObjectRef) => readObject(kc, ref);
 
   const applyObject = (
     object: KubeObject,
     resourceVersion: string | undefined,
     force: boolean,
     dryRun: boolean,
+    manager = APP_FIELD_MANAGER,
   ) =>
     send<KubeObject>(
       "PATCH",
-      `${pathOf(refOf(object))}?fieldManager=${APP_FIELD_MANAGER}&force=${force}${dryRun ? "&dryRun=All" : ""}`,
+      `${pathOf(refOf(object))}?fieldManager=${encodeURIComponent(manager)}&force=${force}${dryRun ? "&dryRun=All" : ""}`,
       applyBody(object, resourceVersion),
       "application/apply-patch+yaml",
     );
@@ -189,6 +190,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   // uids holds the uid of each object of the apply list that exists.
   const dryRun = async (
     change: Change,
+    managers: Record<RefKey, string> = {},
   ): Promise<Preview & { uids: Map<RefKey, string> }> => {
     const uids = new Map<RefKey, string>();
     const refusals = refsOf(change).flatMap(refusalOf);
@@ -200,7 +202,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       const ref = refOf(object);
       const resourceVersion = change.preconditions?.[refKey(ref)];
       try {
-        const before = await read(pathOf(ref));
+        const before = await read(ref);
         // The API server creates a missing object even when the applied
         // object carries a resourceVersion.
         if (before === undefined && resourceVersion !== undefined) {
@@ -215,6 +217,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           resourceVersion,
           change.force ?? false,
           true,
+          managers[refKey(ref)],
         );
         objects.push(previewObject(ref, before, after));
       } catch (error) {
@@ -224,7 +227,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
     for (const ref of change.delete ?? []) {
       const resourceVersion = change.preconditions?.[refKey(ref)];
       try {
-        const before = await read(pathOf(ref));
+        const before = await read(ref);
         if (before === undefined) continue;
         await deleteObject(ref, { resourceVersion }, true);
         objects.push(previewObject(ref, before, undefined));
@@ -237,7 +240,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   };
 
   const preview = async (change: Change): Promise<Preview> => {
-    const { objects, errors } = await dryRun(change);
+    const { objects, errors } = await dryRun(change, change.previewManagers);
     return { objects, errors };
   };
 
@@ -292,12 +295,50 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   return { mode: "direct", preview, apply };
 }
 
-/** getWriter returns the writer of the app: the direct writer of kubeConfig(). */
+/**
+ * getWriter returns the Git writer when the setting git.repository is set,
+ * else the direct writer of kubeConfig(). It throws when the settings
+ * cannot be read.
+ */
 export async function getWriter(): Promise<Writer> {
-  return directWriter();
+  // The settings store writes through directWriter of this module, so a
+  // static import of the store would be a cycle.
+  const { getSettings } = await import("@/lib/settings/store");
+  const settings = await getSettings();
+  const url = settings["git.repository"];
+  const kc = kubeConfig();
+  if (!url) return directWriter(kc);
+  return gitWriter({
+    target: {
+      url,
+      branch: settings["git.branch"],
+      path: settings["git.path"],
+      credentialsSecretRef: settings["git.credentialsSecretRef"],
+    },
+    direct: directWriter(kc),
+    read: (ref) => readObject(kc, ref),
+  });
 }
 
-function kindInfoOf(kind: string): KindInfo | undefined {
+/**
+ * readObject returns the object of ref from the API server of kc, or
+ * undefined when it does not exist. ref must pass refusalOf.
+ */
+export function readObject(
+  kc: KubeConfig,
+  ref: ObjectRef,
+): Promise<KubeObject | undefined> {
+  return unlessNotFound(
+    requestJSON<KubeObject>(kc, {
+      method: "GET",
+      path: pathOf(ref),
+      timeoutMs: WRITE_TIMEOUT_MS,
+    }),
+  );
+}
+
+/** kindInfoOf returns the kind of KindMap or WriteOnlyKindMap, or undefined for any other kind. */
+export function kindInfoOf(kind: string): KindInfo | undefined {
   if (isKindName(kind)) return KindMap[kind];
   return Object.hasOwn(WriteOnlyKindMap, kind)
     ? WriteOnlyKindMap[kind as keyof typeof WriteOnlyKindMap]
@@ -309,11 +350,18 @@ function pathOf(ref: ObjectRef): string {
   return objectPath(kindInfoOf(ref.kind)!, ref.namespace, ref.name);
 }
 
-function refsOf(change: Change): ObjectRef[] {
+/** refsOf returns the refs of the objects that change applies, then of those it deletes. */
+export function refsOf(change: Change): ObjectRef[] {
   return [...change.apply.map(refOf), ...(change.delete ?? [])];
 }
 
-function refusalOf(ref: ObjectRef): ApiError[] {
+/**
+ * refusalOf returns one Invalid error when the fleet manager does not write
+ * ref: a kind outside KindMap and WriteOnlyKindMap, another apiVersion, a
+ * name that is not a valid name, or a namespace that does not match the
+ * scope of the kind. It returns none for a ref that it accepts.
+ */
+export function refusalOf(ref: ObjectRef): ApiError[] {
   const info = kindInfoOf(ref.kind);
   if (info === undefined || ref.apiVersion !== apiVersionOf(info)) {
     return [
@@ -351,7 +399,11 @@ function refusalOf(ref: ObjectRef): ApiError[] {
   return [];
 }
 
-function previewObject(
+/**
+ * previewObject returns the preview of ref from before and after, without
+ * server fields. A Secret shows "(hidden)" or "(changed)" for each value.
+ */
+export function previewObject(
   ref: ObjectRef,
   before: KubeObject | undefined,
   after: KubeObject | undefined,

@@ -6,6 +6,7 @@ import {
   PLANE_CLAIM_MANAGER_PREFIX,
   fieldManagers,
   isClaimManager,
+  wholeFieldManagers,
 } from "./managers";
 
 describe("isClaimManager", () => {
@@ -132,5 +133,31 @@ describe("fieldManagers", () => {
   it("returns no entries for an object without managed fields", () => {
     expect(fieldManagers({})).toEqual({});
     expect(fieldManagers({ metadata: {} })).toEqual({});
+  });
+});
+
+describe("wholeFieldManagers", () => {
+  it("returns a node owned as a whole and not a node owned only by its presence", () => {
+    const live = {
+      metadata: {
+        managedFields: [
+          {
+            manager: "env-injector",
+            fieldsV1: { "f:spec": { "f:extraEnvFrom": {} } },
+          },
+          {
+            manager: "label-injector",
+            fieldsV1: {
+              "f:spec": { "f:podLabels": { ".": {}, "f:injected": {} } },
+            },
+          },
+        ],
+      },
+    };
+    expect(wholeFieldManagers(live)).toEqual({
+      "spec.extraEnvFrom": "env-injector",
+      "spec.podLabels.injected": "label-injector",
+    });
+    expect(fieldManagers(live)["spec.podLabels"]).toBe("label-injector");
   });
 });

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "name": "A registration that does not exist passes, because the reference check refuses it",
+  "input": {
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}

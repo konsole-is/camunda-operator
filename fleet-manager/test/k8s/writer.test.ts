@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { KubeConfig, KubernetesObjectApi } from "@kubernetes/client-node";
+import {
+  KubeConfig,
+  KubernetesObjectApi,
+  PatchStrategy,
+} from "@kubernetes/client-node";
 import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 import type { KubeObject } from "@/lib/write/types";
 import { directWriter, refKey } from "@/lib/write/writer";
@@ -162,6 +166,60 @@ describe("the direct writer against envtest", () => {
     expect(await live(name)).toMatchObject({
       spec: { displayName: "Ours" },
     });
+  });
+
+  it("a preview applies an object of previewManagers as that manager, so a field that only it owns and the object leaves out is gone", async () => {
+    await api.patch(
+      environment(name, { displayName: "One", releases: { allowed: ["r1"] } }),
+      undefined,
+      undefined,
+      "gitops",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+
+    const preview = await writer.preview({
+      intent: "Rename",
+      apply: [environment(name, { displayName: "Two" })],
+      force: true,
+      previewManagers: { [refKey(environmentRef(name))]: "gitops" },
+    });
+
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects[0].after?.spec).toMatchObject({
+      displayName: "Two",
+    });
+    expect(preview.objects[0].after?.spec).not.toHaveProperty("releases");
+    expect(await live(name)).toMatchObject({
+      spec: { displayName: "One", releases: { allowed: ["r1"] } },
+    });
+  });
+
+  it("an apply ignores previewManagers and writes as fleet-manager", async () => {
+    await api.patch(
+      environment(name, { displayName: "One", releases: { allowed: ["r1"] } }),
+      undefined,
+      undefined,
+      "gitops",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+
+    const result = await writer.apply({
+      intent: "Rename",
+      apply: [environment(name, { displayName: "Two" })],
+      force: true,
+      previewManagers: { [refKey(environmentRef(name))]: "gitops" },
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    const object = await live(name);
+    expect(object).toMatchObject({
+      spec: { displayName: "Two", releases: { allowed: ["r1"] } },
+    });
+    expect(object.metadata?.managedFields).toContainEqual(
+      expect.objectContaining({ manager: "fleet-manager", operation: "Apply" }),
+    );
   });
 
   it("a forced apply with the resourceVersion of an older copy still fails with Stale", async () => {

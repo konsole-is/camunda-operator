@@ -1,0 +1,43 @@
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+    plugins.camunda.io/registration: test-key
+    plugins.camunda.io/section: encryption-key
+  name: orders-encryption-key
+  namespace: team-a
+spec:
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  deletionPolicy: Delete
+  registration: test-key
+  section: encryption-key
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda
+---
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRequest
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+    plugins.camunda.io/registration: test-volumes
+    plugins.camunda.io/section: volume-encryption
+  name: orders-volume-encryption
+  namespace: team-a
+spec:
+  claimRef:
+    kind: CamundaClusterClaim
+    name: orders
+  deletionPolicy: Delete
+  inputs:
+    keyRef: arn:aws:kms:key
+  registration: test-volumes
+  section: volume-encryption
+  target:
+    kind: CamundaCluster
+    name: orders
+    serviceAccountName: orders-camunda

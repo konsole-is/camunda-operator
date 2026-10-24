@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render as renderPage, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import FleetLayout from "./fleet/layout";
 import SetupLayout from "./setup/layout";
 
@@ -11,6 +14,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 afterEach(cleanup);
+
+// The root layout gives each section layout these providers.
+const render = (page: ReactElement) =>
+  renderPage(
+    <QueryClientProvider client={new QueryClient()}>
+      <GitPushesProvider>{page}</GitPushesProvider>
+    </QueryClientProvider>,
+  );
 
 describe("section layouts", () => {
   it.each([
@@ -33,4 +44,11 @@ describe("section layouts", () => {
       expect(screen.getByRole("navigation", { name: "Setup" })).toBeTruthy();
     },
   );
+
+  it("a section layout shows no banner while nothing waits", () => {
+    pathname.current = "/fleet";
+    render(<FleetLayout>page</FleetLayout>);
+    render(<SetupLayout>page</SetupLayout>);
+    expect(screen.queryByText("Waiting for GitOps to apply")).toBeNull();
+  });
 });

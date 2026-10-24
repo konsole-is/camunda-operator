@@ -30,6 +30,11 @@ const (
 	// LabelRequest names the PluginRequest that a Grant or a resource that a
 	// plugin writes belongs to.
 	LabelRequest = "plugins.camunda.io/request"
+	// LabelRequestNamespace holds the namespace of the PluginRequest that a
+	// cluster-scoped resource that a plugin writes belongs to. With
+	// LabelRequest, it keeps apart the resources of two requests that have
+	// the same name in two namespaces.
+	LabelRequestNamespace = "plugins.camunda.io/request-namespace"
 	// LabelCluster names the CamundaCluster whose identity a Grant changes.
 	LabelCluster = "plugins.camunda.io/cluster"
 	// FinalizerCleanup is the finalizer that the plugin controller holds on a

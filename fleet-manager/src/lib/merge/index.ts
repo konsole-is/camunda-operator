@@ -8,6 +8,7 @@ export {
   CLUSTER_CLAIM_MANAGER_PREFIX,
   PLANE_CLAIM_MANAGER_PREFIX,
   fieldManagers,
+  wholeFieldManagers,
   isClaimManager,
   type ManagedFieldsEntry,
   type ManagedObject,
