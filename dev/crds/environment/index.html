@@ -16,7 +16,7 @@
         <link rel="prev" href="../grant/">
       
       
-        <link rel="next" href="../api-reference/">
+        <link rel="next" href="../camundaclusterclaim/">
       
       
         
@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -588,6 +588,8 @@
       
         
       
+        
+      
     
     
     
@@ -783,6 +785,34 @@
     
   
     Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims
   
 
     
@@ -2136,6 +2166,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2339,6 +2373,62 @@
 
               
             
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../camundaclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../camundamanagementclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
           </ul>
         </nav>
       
@@ -2521,7 +2611,7 @@
 <p>The policy names the releases and the presets that a claim can use. It also names the plugin options of each <code>PluginSection</code> of the create flow, for example "Backup storage". Each option is a <code>PluginRegistration</code>. The policy sets the parameter values of each option and the deletion default.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p><code>fleet.camunda.io/v1alpha1</code> is an alpha API. Its fields can change in a later release. In this release, the operator reports the status of an environment. It does not create anything from a claim yet.</p>
+<p><code>fleet.camunda.io/v1alpha1</code> is an alpha API. Its fields can change in a later release. The operator creates the cluster of a <a href="../camundaclusterclaim/">CamundaClusterClaim</a> and the plane of a <a href="../camundamanagementclusterclaim/">CamundaManagementClusterClaim</a>.</p>
 </div>
 <p>The smallest manifest:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
@@ -2658,7 +2748,8 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">            </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arn:aws:iam::aws:policy/AmazonSQSFullAccess</span>
 </span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">  </span><span class="c1"># ... the rest of your environment</span>
 </span></code></pre></div>
-<p><code>spec.deletionPolicy</code> is the deletion policy of a claim that sets none itself. <code>Delete</code> deletes the resources that the plugins created for the claim when you delete the claim. <code>Orphan</code> keeps them. The default is <code>Delete</code>.</p>
+<p>The fleet manager shows a parameter that a claim cannot change as "Set by your admin", with a summary in place of a field. The summary of a string, a number, or a boolean is its text. The summary of a list is the count of its items, for example "3 items". The summary of an object is the count of its fields, for example "2 fields". A parameter without a value shows "Not set". The fleet manager shows a choice of <code>allowed</code> by its <code>label</code>, and never shows its <code>value</code>.</p>
+<p><code>spec.deletionPolicy</code> is the deletion policy of a claim that sets none itself. <code>Delete</code> deletes the resources that the plugins created for the claim when you delete the claim. <code>Orphan</code> keeps them. The default is <code>Delete</code>. When a claim gets <code>Orphan</code> from its own field or from this default, each registration that it selects must list <code>Orphan</code> in <code>spec.deletionPolicies</code>. Otherwise the claim is refused with <code>NotAllowed</code>.</p>
 <p><code>spec.namespaceCreation</code> lets the create flow of the fleet manager create a namespace in the environment. <code>allowed: true</code> turns it on. <code>labels</code> are fixed labels of each new namespace. <code>requiredLabelKeys</code> are label keys that the create flow asks a value for. The create flow always sets the label <code>fleet.camunda.io/environment</code> on the new namespace:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Environment</span>
@@ -2821,13 +2912,13 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
         
         
           
-          <a href="../api-reference/" class="md-footer__link md-footer__link--next" aria-label="Next: API reference">
+          <a href="../camundaclusterclaim/" class="md-footer__link md-footer__link--next" aria-label="Next: CamundaClusterClaim">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                API reference
+                CamundaClusterClaim
               </div>
             </div>
             <div class="md-footer__button md-icon">

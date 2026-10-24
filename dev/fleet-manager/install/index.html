@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -595,6 +595,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#trust-a-private-ca" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trust a private CA
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#who-can-reach-it" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -679,6 +690,8 @@
   
     
     
+      
+        
       
         
       
@@ -887,6 +900,34 @@
     
   
     Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims
   
 
     
@@ -2236,6 +2277,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2291,6 +2336,62 @@
     
   
     Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundamanagementclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementClusterClaim
   
 
     
@@ -2396,6 +2497,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#trust-a-private-ca" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Trust a private CA
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#who-can-reach-it" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2471,6 +2583,23 @@
 <p>Then open <a href="http://localhost:3000">http://localhost:3000</a> in a browser.</p>
 <p>In this version, the Fleet page and the Setup page show only their title. This is expected, and the install works.</p>
 <p>To set the cluster name, the Git repository, and the Prometheus address, see <a href="../settings/">Fleet manager settings</a>.</p>
+<h2 id="trust-a-private-ca">Trust a private CA<a class="headerlink" href="#trust-a-private-ca" title="Permanent link">&para;</a></h2>
+<p>If a private CA signs the certificate of your Git server or your Prometheus server, the fleet manager does not trust it by default. Give the fleet manager the CA bundle in a ConfigMap. The bundle is a PEM file, and it can hold more than one CA. Put the ConfigMap in the release namespace:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>configmap<span class="w"> </span>fleet-manager-ca<span class="w"> </span>--from-file<span class="o">=</span>ca.crt<span class="o">=</span>&lt;path<span class="w"> </span>to<span class="w"> </span>the<span class="w"> </span>PEM<span class="w"> </span>CA<span class="w"> </span>bundle&gt;
+</span></code></pre></div>
+<p>Then name the ConfigMap in <code>fleetManager.extraCACerts.configMapName</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>camunda-operator<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>oci://ghcr.io/konsole-is/charts/camunda-operator<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--version<span class="w"> </span>&lt;version&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--namespace<span class="w"> </span>camunda-operator-system<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.extraCACerts.configMapName<span class="o">=</span>fleet-manager-ca
+</span></code></pre></div>
+<p>The fleet manager then trusts the CAs of the bundle in addition to the public CAs. It reads the bundle from the key <code>ca.crt</code>. If your ConfigMap uses another key, add <code>--set fleetManager.extraCACerts.key=&lt;key&gt;</code> to the command.</p>
+<p>The fleet manager reads the bundle when its pod starts. After you change the ConfigMap, restart the Deployment:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>rollout<span class="w"> </span>restart<span class="w"> </span>deployment/camunda-operator-fleet-manager
+</span></code></pre></div>
+<p>If the ConfigMap or its key does not exist, the pod does not start. <code>kubectl -n camunda-operator-system describe pod</code> shows the missing ConfigMap or key in the events of the pod.</p>
 <h2 id="who-can-reach-it">Who can reach it<a class="headerlink" href="#who-can-reach-it" title="Permanent link">&para;</a></h2>
 <div class="admonition warning">
 <p class="admonition-title">Give <code>pods/portforward</code>, <code>pods/proxy</code>, and <code>services/proxy</code> only to the people who manage the fleet</p>
@@ -2479,20 +2608,20 @@
 <p>The chart adds a NetworkPolicy that allows no traffic from other pods to the pod of the fleet manager. This includes the operator and your monitoring. Kubernetes adds up the traffic that each NetworkPolicy allows. So another policy that selects this pod, such as a policy that allows all traffic in the namespace, still lets other pods in. Make sure that no other NetworkPolicy of the release namespace selects the pod of the fleet manager. A NetworkPolicy takes effect only with a network plugin that enforces it. <code>kubectl port-forward</code> still works, because it does not go through the pod network.</p>
 <h2 id="size">Size<a class="headerlink" href="#size" title="Permanent link">&para;</a></h2>
 <p>The fleet manager requests <code>50m</code> CPU and <code>256Mi</code> memory, with a memory limit of <code>512Mi</code>. It needs more memory when the Kubernetes cluster holds more resources. If the pod restarts with <code>OOMKilled</code>, raise the limit:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>camunda-operator<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>oci://ghcr.io/konsole-is/charts/camunda-operator<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--version<span class="w"> </span>&lt;version&gt;<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--namespace<span class="w"> </span>camunda-operator-system<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.resources.limits.memory<span class="o">=</span>1Gi
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>camunda-operator<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>oci://ghcr.io/konsole-is/charts/camunda-operator<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span>--version<span class="w"> </span>&lt;version&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span>--namespace<span class="w"> </span>camunda-operator-system<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.resources.limits.memory<span class="o">=</span>1Gi
 </span></code></pre></div>
 <h2 id="turn-it-off">Turn it off<a class="headerlink" href="#turn-it-off" title="Permanent link">&para;</a></h2>
 <p>Upgrade the release with <code>fleetManager.enabled=false</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>camunda-operator<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>oci://ghcr.io/konsole-is/charts/camunda-operator<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--version<span class="w"> </span>&lt;version&gt;<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span>--namespace<span class="w"> </span>camunda-operator-system<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.enabled<span class="o">=</span><span class="nb">false</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>camunda-operator<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span>oci://ghcr.io/konsole-is/charts/camunda-operator<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span>--version<span class="w"> </span>&lt;version&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span>--namespace<span class="w"> </span>camunda-operator-system<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.enabled<span class="o">=</span><span class="nb">false</span>
 </span></code></pre></div>
 <p>The chart then removes the objects of the fleet manager. The operator and your Camunda clusters do not change.</p>
 

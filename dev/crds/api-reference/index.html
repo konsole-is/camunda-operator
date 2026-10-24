@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://konsole-is.github.io/camunda-operator/dev/crds/api-reference/">
       
       
-        <link rel="prev" href="../environment/">
+        <link rel="prev" href="../camundamanagementclusterclaim/">
       
       
       
@@ -60,7 +60,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -586,6 +586,8 @@
       
         
       
+        
+      
     
     
     
@@ -781,6 +783,34 @@
     
   
     Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims
   
 
     
@@ -2132,6 +2162,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2187,6 +2221,62 @@
     
   
     Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../camundaclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../camundamanagementclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementClusterClaim
   
 
     
@@ -16237,7 +16327,7 @@ selection, and the attachments.</p>
 </tr>
 <tr>
 <td><code>deletionPolicy</code> <em><a href="#deletionpolicy">DeletionPolicy</a></em></td>
-<td>DeletionPolicy says what happens to the resources of the plugin<br />requests when the claim is deleted. Delete deletes them. Orphan keeps<br />them. Empty means spec.deletionPolicy of the Environment. The<br />CamundaCluster and the attachments are always deleted with the claim,<br />under their own retention rules.</td>
+<td>DeletionPolicy says what happens to the resources of the plugin<br />requests when the claim is deleted. Delete deletes them. Orphan keeps<br />them. Empty means the deletion default that the claim recorded from its<br />Environment at creation, or Delete when it recorded none. The claim<br />controller refuses Orphan with the reason NotAllowed when a selected<br />registration does not support it. The CamundaCluster and the<br />attachments are always deleted with the claim, under their own<br />retention rules.</td>
 <td></td>
 <td>Enum: [Delete Orphan] <br />Optional: {} <br /></td>
 </tr>
@@ -16278,7 +16368,7 @@ cluster claim controller writes it.</p>
 </tr>
 <tr>
 <td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta">Condition</a> array</em></td>
-<td>Conditions report the state of the claim. Ready is False with reason<br />NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when a check of the<br />claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and<br />AttachmentsReady. When ClusterReady has the reason Creating, Updating,<br />Failing, Degraded, or Down, its message holds the Ready reason and<br />message of the CamundaCluster. If the CamundaCluster has no Ready<br />condition yet, the message says so. With other reasons, such as<br />Error or PrerequisiteNotMet, the message gives that cause.</td>
+<td>Conditions report the state of the claim. Ready is False with reason<br />NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when a check of the<br />claim fails. Otherwise Ready follows RequestsReady, ClusterReady, and<br />AttachmentsReady. When ClusterReady has the reason Creating, Updating,<br />Failing, Degraded, or Down, its message holds the Ready reason and<br />message of the CamundaCluster. If the CamundaCluster has no Ready<br />condition yet, the message says so. With other reasons, such as<br />Error or PrerequisiteNotMet, the message gives that cause. While the<br />claim is deleted and waits for objects, Ready is False with the reason<br />Deleting, and the message names those objects.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -16417,7 +16507,7 @@ section and one CamundaManagementCluster with the name of the claim.</p>
 </tr>
 <tr>
 <td><code>deletionPolicy</code> <em><a href="#deletionpolicy">DeletionPolicy</a></em></td>
-<td>DeletionPolicy says what happens to the resources of the<br />PluginRequests of the claim when the claim is deleted. Delete deletes<br />them. Orphan keeps them. Empty means the deletion policy of the<br />Environment. The CamundaManagementCluster is always deleted with the<br />claim.</td>
+<td>DeletionPolicy says what happens to the resources of the<br />PluginRequests of the claim when the claim is deleted. Delete deletes<br />them. Orphan keeps them. Empty means the deletion default that the<br />claim recorded from its Environment at creation, or Delete when it<br />recorded none. The claim controller refuses Orphan with the reason<br />NotAllowed when a selected registration does not support it. The<br />CamundaManagementCluster is always deleted with the claim.</td>
 <td></td>
 <td>Enum: [Delete Orphan] <br />Optional: {} <br /></td>
 </tr>
@@ -16452,7 +16542,7 @@ plane claim controller writes it.</p>
 </tr>
 <tr>
 <td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta">Condition</a> array</em></td>
-<td>Conditions report the state of the claim. Ready is False with the<br />reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when the plane claim<br />controller refuses the claim. The message names the cause. Otherwise<br />Ready follows RequestsReady and ManagementClusterReady. When<br />ManagementClusterReady has the reason Creating, Updating, Failing,<br />Degraded, or Down, its message holds the Ready reason and message of<br />the CamundaManagementCluster. If the CamundaManagementCluster has no<br />Ready condition yet, the message says so. With other reasons, such as<br />Error or PrerequisiteNotMet, the message gives that cause.</td>
+<td>Conditions report the state of the claim. Ready is False with the<br />reason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,<br />InvalidReference, SlotConflict, or WiringCycle when the plane claim<br />controller refuses the claim. The message names the cause. Otherwise<br />Ready follows RequestsReady and ManagementClusterReady. When<br />ManagementClusterReady has the reason Creating, Updating, Failing,<br />Degraded, or Down, its message holds the Ready reason and message of<br />the CamundaManagementCluster. If the CamundaManagementCluster has no<br />Ready condition yet, the message says so. With other reasons, such as<br />Error or PrerequisiteNotMet, the message gives that cause. While the<br />claim is deleted and waits for objects, Ready is False with the reason<br />Deleting, and the message names those objects.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -18219,8 +18309,9 @@ for.</p>
 <p>PluginRequest asks a plugin for the resources of one section of a claim.
 A claim controller writes the spec, and the plugin controller that serves
 the registration writes the status. The claim names a request
-&lt;claim&gt;-&lt;section&gt;. The name is at most 63 characters, because other
-objects carry it in a label value.</p>
+&lt;claim&gt;-&lt;section&gt;, or &lt;claim&gt;-&lt;section&gt;-&lt;registration&gt; in a section with
+selection Many. The name is at most 63 characters, because other objects
+carry it in a label value. A longer name is cut and ends with a hash.</p>
 <table>
 <thead>
 <tr>
@@ -18481,7 +18572,7 @@ registrations that serve the section are its options.</p>
 </tr>
 <tr>
 <td><code>appliesTo</code> <em><a href="#claimkind">ClaimKind</a> array</em></td>
-<td>AppliesTo lists the claim kinds whose create flow shows the section.</td>
+<td>AppliesTo lists the claim kinds that can select an option of the<br />section. A claim of another kind that selects one is refused with<br />NotAllowed. For that kind, the section is never required, also when the<br />Environment marks it required.</td>
 <td></td>
 <td>Enum: [CamundaClusterClaim CamundaManagementClusterClaim] <br /></td>
 </tr>
@@ -18786,7 +18877,7 @@ before the resource exists.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../environment/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Environment">
+          <a href="../camundamanagementclusterclaim/" class="md-footer__link md-footer__link--prev" aria-label="Previous: CamundaManagementClusterClaim">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -18796,7 +18887,7 @@ before the resource exists.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Environment
+                CamundaManagementClusterClaim
               </div>
             </div>
           </a>

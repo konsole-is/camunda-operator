@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -588,6 +588,8 @@
       
         
       
+        
+      
     
     
     
@@ -783,6 +785,34 @@
     
   
     Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims
   
 
     
@@ -2304,6 +2334,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2359,6 +2393,62 @@
     
   
     Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../camundaclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../camundamanagementclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementClusterClaim
   
 
     
@@ -2722,7 +2812,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </ul>
 <p>The operator writes these fields with the field manager <code>camunda-operator-builtins</code>. A GitOps tool that writes the same fields shows this name in its conflict message.</p>
 <h2 id="mode">Mode<a class="headerlink" href="#mode" title="Permanent link">&para;</a></h2>
-<p><code>mode</code> says what a new claim selects when no <a href="../#planned-kinds"><code>Environment</code></a> applies to its namespace:</p>
+<p><code>mode</code> says what a new claim selects when no <a href="../environment/"><code>Environment</code></a> applies to its namespace:</p>
 <ul>
 <li><code>Default</code>: a new claim selects the option. A section has at most one <code>Default</code> option.</li>
 <li><code>Optional</code>: the fleet manager offers the option, and a new claim does not select it.</li>

@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -645,6 +645,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Git mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waiting-for-gitops" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Waiting for GitOps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changes-that-go-to-the-api-in-git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes that go to the API in Git mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-a-save-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a save fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prometheus-credentials" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -701,6 +751,8 @@
   
     
     
+      
+        
       
         
       
@@ -909,6 +961,34 @@
     
   
     Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims
   
 
     
@@ -2258,6 +2338,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2313,6 +2397,62 @@
     
   
     Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundaclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../crds/camundamanagementclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementClusterClaim
   
 
     
@@ -2440,6 +2580,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Git mode
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Git mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#waiting-for-gitops" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Waiting for GitOps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changes-that-go-to-the-api-in-git-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changes that go to the API in Git mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-a-save-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When a save fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prometheus-credentials" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2494,7 +2684,7 @@
 
 <h1 id="fleet-manager-settings">Fleet manager settings<a class="headerlink" href="#fleet-manager-settings" title="Permanent link">&para;</a></h1>
 <p>The settings of the fleet manager name this Kubernetes cluster, the Git repository and the Secret store for Git mode, and the Prometheus address. The fleet manager keeps them in the ConfigMap <code>fleet-manager-settings</code> in the release namespace. The release namespace is the namespace of the Helm release, <code>camunda-operator-system</code> in the examples on this page.</p>
-<p>In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. In this version, Git mode is not available yet, and no page of the fleet manager shows or uses the settings.</p>
+<p>In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. Git mode is on when <code>git.repository</code> is set. In this version, no page of the fleet manager shows the settings or saves a change yet.</p>
 <h2 id="set-the-settings-at-install">Set the settings at install<a class="headerlink" href="#set-the-settings-at-install" title="Permanent link">&para;</a></h2>
 <p>The chart values <code>fleetManager.settings.*</code> give the first value of each setting:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>--install<span class="w"> </span>camunda-operator<span class="w"> </span><span class="se">\</span>
@@ -2600,32 +2790,140 @@
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span>&lt;token&gt;
 </span></code></pre></div>
 <p>Then set <code>git.credentialsSecretRef</code> to <code>fleet-git</code>. Without the setting, the fleet manager connects to the repository without credentials.</p>
+<h2 id="git-mode">Git mode<a class="headerlink" href="#git-mode" title="Permanent link">&para;</a></h2>
+<p>Set <code>git.repository</code> to turn on Git mode. Set the branch, the folder, and the Secret with the credentials in the same ConfigMap:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet-manager-settings</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-operator-system</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">git.repository</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://git.example.com/platform/fleet.git</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="nt">git.branch</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">main</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="w">  </span><span class="nt">git.path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">clusters/prod</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="w">  </span><span class="nt">git.credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet-git</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">  </span><span class="c1"># ... the rest of your settings</span>
+</span></code></pre></div>
+<p>An empty <code>git.branch</code> uses the default branch of the repository. The branch must exist before the first save. An empty <code>git.path</code> puts the files at the root of the repository. <code>git.path</code> must be a folder inside the repository, so a save fails when the path holds <code>..</code>.</p>
+<p>Each save in the fleet manager becomes one commit on the branch. The subject of the commit names the change, and the author is <code>fleet-manager</code>. When the repository already holds the same content, the save makes no commit. The fleet manager writes each object to one file under <code>git.path</code>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>clusters/prod/
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>├── _cluster/
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>│   └── namespaces/
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>│       └── team-a.yaml
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>└── team-a/
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>    └── camundaclusterclaims/
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a>        └── orders.yaml
+</span></code></pre></div>
+<p>A namespaced object goes to <code>&lt;git.path&gt;/&lt;namespace&gt;/&lt;plural&gt;/&lt;name&gt;.yaml</code>. A cluster-scoped object goes to <code>&lt;git.path&gt;/_cluster/&lt;plural&gt;/&lt;name&gt;.yaml</code>. <code>&lt;plural&gt;</code> is the plural resource name of the kind, as <code>kubectl api-resources</code> shows it. A file holds the object without <code>status</code> and without the fields that the API server sets. Each object carries the annotation <code>fleet.camunda.io/revision</code> with the SHA-256 of its content. A delete in the fleet manager removes the file of the object. Point your GitOps tool at the folder of <code>git.path</code>.</p>
+<h3 id="waiting-for-gitops">Waiting for GitOps<a class="headerlink" href="#waiting-for-gitops" title="Permanent link">&para;</a></h3>
+<p>After a save in Git mode, each page shows "Waiting for GitOps to apply" at the top, with one line for each pushed file. A line goes away when the object in the cluster carries the <code>fleet.camunda.io/revision</code> of the push. The list belongs to the browser tab, so a reload of the page clears it. If a line stays, make sure that your GitOps tool syncs the folder of <code>git.path</code>.</p>
+<h3 id="changes-that-go-to-the-api-in-git-mode">Changes that go to the API in Git mode<a class="headerlink" href="#changes-that-go-to-the-api-in-git-mode" title="Permanent link">&para;</a></h3>
+<p>One-off backups, restores, and backup deletions go to the Kubernetes API also in Git mode. The settings go to the API too, and the fleet manager never commits them. For Secrets, see <a href="#secrets-in-git-mode">Secrets in Git mode</a>.</p>
+<h3 id="when-a-save-fails">When a save fails<a class="headerlink" href="#when-a-save-fails" title="Permanent link">&para;</a></h3>
+<p>Before the commit, the fleet manager sends each object to the cluster as a dry run. A save that the cluster refuses makes no commit. When your GitOps tool applies a file, it removes each field that it set before and that the file now leaves out. The dry run removes these fields too when your GitOps tool uses server-side apply. Flux uses server-side apply. Argo CD uses client-side apply, unless you set the sync option <code>ServerSideApply=true</code>. With client-side apply, the dry run keeps these fields. When a validation rule depends on such a field, the save can commit a file that GitOps then cannot apply. The cluster cannot check an <code>ExternalSecret</code>, or an object in a namespace that the same save creates. The cluster checks these objects only when GitOps applies them.</p>
+<p>When someone pushed to the branch after the fleet manager read it, the save commits on top of that push. The save fails only when that push changed a file of the save.</p>
+<table>
+<thead>
+<tr>
+<th>Message</th>
+<th>Cause</th>
+<th>What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The message of the API server, for example <code>releases.default must be one of releases.allowed</code></td>
+<td>The cluster refuses the object.</td>
+<td>Correct the value and save again.</td>
+</tr>
+<tr>
+<td><code>The &lt;kind&gt; &lt;name&gt; changed since you opened it.</code></td>
+<td>Someone changed or deleted the object in the cluster after the page read it.</td>
+<td>Open the page again.</td>
+</tr>
+<tr>
+<td><code>&lt;file&gt; in &lt;repository&gt; holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again. If GitOps cannot apply it, correct or revert &lt;file&gt; in the repository.</code></td>
+<td>An earlier save of the same object is in the repository, and GitOps has not applied it. Each save of the object fails until GitOps applies the file.</td>
+<td>Wait until GitOps applies the earlier save, then open the page again. If GitOps cannot apply it, correct or revert the file in the repository.</td>
+</tr>
+<tr>
+<td><code>Someone changed &lt;file&gt; in &lt;repository&gt; since the fleet manager read it. Open the page again.</code></td>
+<td>Someone pushed a change to the same file.</td>
+<td>Open the page again.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; changed again while the fleet manager pushed. Save again.</code></td>
+<td>The branch changed again during the save.</td>
+<td>Save again.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; refused the credentials.</code></td>
+<td>The username or the token of the Secret is wrong, or the token cannot push.</td>
+<td>Correct the Secret of <code>git.credentialsSecretRef</code>.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; refused the push to the branch &lt;branch&gt;.</code></td>
+<td>The Git server accepts the credentials, but the branch is protected, or a rule of the server refuses the push.</td>
+<td>Let the user of the token push to the branch, or set <code>git.branch</code> to a branch that accepts a push.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; must start with https:// to use the credentials of the Secret &lt;secret&gt;.</code></td>
+<td><code>git.credentialsSecretRef</code> is set, and <code>git.repository</code> is not an <code>https://</code> address.</td>
+<td>Set <code>git.repository</code> to the <code>https://</code> address of the repository.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; does not exist in namespace &lt;namespace&gt;.</code></td>
+<td>The Secret of <code>git.credentialsSecretRef</code> is not in the release namespace.</td>
+<td>Create the Secret, as <a href="#git-credentials">Git credentials</a> shows.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has no key &lt;key&gt;.</code></td>
+<td>The Secret has no key <code>username</code> or no key <code>token</code>, or the value is empty.</td>
+<td>Add the key to the Secret.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; has no branch &lt;branch&gt;.</code></td>
+<td>The branch of <code>git.branch</code> does not exist.</td>
+<td>Create the branch, or correct <code>git.branch</code>.</td>
+</tr>
+<tr>
+<td><code>&lt;file&gt; is not in the repository. GitOps does not manage &lt;kind&gt; &lt;name&gt;.</code></td>
+<td>A delete of an object that has no file in the repository.</td>
+<td>Delete the object in the cluster with <code>kubectl delete</code>.</td>
+</tr>
+<tr>
+<td><code>&lt;file&gt; is behind a symbolic link in the repository. The fleet manager does not write through a link.</code></td>
+<td>A folder or the file on the path of the object is a symbolic link in the repository.</td>
+<td>Replace the link with a real folder or file in the repository.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="prometheus-credentials">Prometheus credentials<a class="headerlink" href="#prometheus-credentials" title="Permanent link">&para;</a></h2>
 <p>The Secret of <code>prometheus.credentialsSecretRef</code> holds the keys <code>username</code> and <code>password</code> for basic authentication, or the key <code>token</code> for a bearer token. Create it in the release namespace:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>fleet-prometheus<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span>&lt;token&gt;
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>fleet-prometheus<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span>&lt;token&gt;
 </span></code></pre></div>
 <p>Then set <code>prometheus.credentialsSecretRef</code> to <code>fleet-prometheus</code>. Without the setting, the fleet manager sends no credentials to Prometheus.</p>
 <h2 id="secret-values">Secret values<a class="headerlink" href="#secret-values" title="Permanent link">&para;</a></h2>
 <p>The fleet manager shows the names of Secrets and the names of their keys. It never shows the value of a key, and no page and no response of the fleet manager holds one.</p>
 <h2 id="secrets-in-git-mode">Secrets in Git mode<a class="headerlink" href="#secrets-in-git-mode" title="Permanent link">&para;</a></h2>
 <p>In Git mode, the fleet manager does not write a Secret value. It commits an <code>ExternalSecret</code> to the Git repository, and External Secrets makes the Secret from the store of <code>secretStore.kind</code> and <code>secretStore.name</code>. For the Secret <code>db</code> in the namespace <code>orders</code>, the commit holds this object:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">external-secrets.io/v1</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ExternalSecret</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">db</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">refreshInterval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1h</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">secretStoreRef</span><span class="p">:</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SecretStore</span>
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vault</span>
-</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span>
-</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">db</span>
-</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">    </span><span class="nt">creationPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Owner</span>
-</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">  </span><span class="nt">dataFrom</span><span class="p">:</span>
-</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">extract</span><span class="p">:</span>
-</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">        </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders/db</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">external-secrets.io/v1</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ExternalSecret</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">db</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">refreshInterval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1h</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span><span class="nt">secretStoreRef</span><span class="p">:</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">    </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SecretStore</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vault</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">  </span><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">db</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">    </span><span class="nt">creationPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Owner</span>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="w">  </span><span class="nt">dataFrom</span><span class="p">:</span>
+</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">extract</span><span class="p">:</span>
+</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="w">        </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders/db</span>
 </span></code></pre></div>
 <p>Put each key of the Secret as a property of the store entry <code>&lt;namespace&gt;/&lt;name&gt;</code>, here <code>orders/db</code>. External Secrets copies each property of the entry into the Secret. If <code>secretStore.kind</code> or <code>secretStore.name</code> is not set, the fleet manager refuses to write a Secret in Git mode.</p>
 

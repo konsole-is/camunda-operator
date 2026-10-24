@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -588,6 +588,8 @@
       
         
       
+        
+      
     
     
     
@@ -783,6 +785,34 @@
     
   
     Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims
   
 
     
@@ -2083,6 +2113,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#claim-kinds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claim kinds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#core-sections" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2260,6 +2301,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2315,6 +2360,62 @@
     
   
     Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../camundaclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../camundamanagementclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementClusterClaim
   
 
     
@@ -2402,6 +2503,17 @@
     <span class="md-ellipsis">
       
         Slots
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#claim-kinds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Claim kinds
       
     </span>
   </a>
@@ -2581,6 +2693,9 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </table>
 <p>The set of slots is closed, and only core sections use them. A section that a plugin brings has no slot. Its outputs fill nothing in the generated resource. They are only inputs of other registrations, as in <a href="#a-section-that-a-plugin-brings">A section that a plugin brings</a>. The core section <code>encryption-key</code> has no slot either. Other sections read its key as an input.</p>
 <p>A slot takes the outputs of one option only, so a section with a slot must have <code>selection: One</code>. A section without a slot can have <code>selection: One</code> or <code>selection: Many</code>.</p>
+<h2 id="claim-kinds">Claim kinds<a class="headerlink" href="#claim-kinds" title="Permanent link">&para;</a></h2>
+<p><code>appliesTo</code> lists the claim kinds that can select an option of the section: <code>CamundaClusterClaim</code>, <code>CamundaManagementClusterClaim</code>, or both. The create flow of the fleet manager offers no option of the section to a claim of another kind.</p>
+<p>A claim of another kind that selects an option of the section is refused with <code>NotAllowed</code>. The message is <code>section "&lt;name&gt;" does not apply to a &lt;kind&gt;</code>. For that kind, the section is never required, also when the <code>Environment</code> marks it required. Thus one <code>Environment</code> can require <code>backup-storage</code> for its clusters and <code>management-database</code> for its planes.</p>
 <h2 id="core-sections">Core sections<a class="headerlink" href="#core-sections" title="Permanent link">&para;</a></h2>
 <p>The operator writes eight core sections:</p>
 <table>

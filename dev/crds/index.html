@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://konsole-is.github.io/camunda-operator/dev/crds/">
       
       
-        <link rel="prev" href="../guides/operations/">
+        <link rel="prev" href="../guides/claims/">
       
       
         <link rel="next" href="camundacluster/">
@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -588,6 +588,8 @@
       
         
       
+        
+      
     
     
     
@@ -783,6 +785,34 @@
     
   
     Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/claims/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claims
   
 
     
@@ -2134,6 +2164,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -2189,6 +2223,62 @@
     
   
     Environment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="camundaclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaClusterClaim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="camundamanagementclusterclaim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CamundaManagementClusterClaim
   
 
     
@@ -2364,17 +2454,6 @@
     <span class="md-ellipsis">
       
         Fleet
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#planned-kinds" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Planned kinds
       
     </span>
   </a>
@@ -2755,28 +2834,15 @@ Each page opens with what the kind is and a minimal manifest. Then it covers one
 <td>Cluster</td>
 <td>The policy for the claims in the namespaces whose label <code>fleet.camunda.io/environment</code> names it.</td>
 </tr>
-</tbody>
-</table>
-<h2 id="planned-kinds">Planned kinds<a class="headerlink" href="#planned-kinds" title="Permanent link">&para;</a></h2>
-<p>The kinds below are an alpha API in the group <code>fleet.camunda.io/v1alpha1</code>. No controller acts on them yet, and their fields can change in a later release. The install includes their CRDs, so the API server accepts and checks them.</p>
-<table>
-<thead>
 <tr>
-<th>Kind</th>
-<th>Scope</th>
-<th>What it is</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>CamundaClusterClaim</code></td>
+<td><a href="camundaclusterclaim/">CamundaClusterClaim</a></td>
 <td>Namespaced</td>
-<td>A request for one Camunda cluster under the policy of the environment of its namespace.</td>
+<td>A request for one Camunda cluster under the policy of the environment of its namespace. The operator creates the cluster and a <code>PluginRequest</code> for each option.</td>
 </tr>
 <tr>
-<td><code>CamundaManagementClusterClaim</code></td>
+<td><a href="camundamanagementclusterclaim/">CamundaManagementClusterClaim</a></td>
 <td>Namespaced</td>
-<td>A request for one management plane that serves the clusters of one or more environments.</td>
+<td>A request for one management plane that serves the clusters of one or more environments. The operator creates the <code>CamundaManagementCluster</code> and a <code>PluginRequest</code> for each option.</td>
 </tr>
 </tbody>
 </table>
@@ -3120,7 +3186,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../guides/operations/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Operations">
+          <a href="../guides/claims/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Claims">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -3130,7 +3196,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
                 Previous
               </span>
               <div class="md-ellipsis">
-                Operations
+                Claims
               </div>
             </div>
           </a>
