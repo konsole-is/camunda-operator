@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "name": "A locked key whose recorded value is null has no value, so a claim cannot set it, not even to null",
+  "input": {
+    "policy": {
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3"
+          ]
+        }
+      },
+      "parameters": {
+        "s3": {
+          "region": {
+            "value": null
+          }
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3",
+        "parameters": {
+          "region": null
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "parameter \"region\" of registration \"s3\" is not claim-editable"
+    }
+  }
+}

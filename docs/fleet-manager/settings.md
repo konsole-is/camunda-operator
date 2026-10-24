@@ -2,7 +2,7 @@
 
 The settings of the fleet manager name this Kubernetes cluster, the Git repository and the Secret store for Git mode, and the Prometheus address. The fleet manager keeps them in the ConfigMap `fleet-manager-settings` in the release namespace. The release namespace is the namespace of the Helm release, `camunda-operator-system` in the examples on this page.
 
-In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. In this version, Git mode is not available yet, and no page of the fleet manager shows or uses the settings.
+In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. Git mode is on when `git.repository` is set. In this version, no page of the fleet manager shows the settings or saves a change yet.
 
 ## Set the settings at install
 
@@ -89,6 +89,70 @@ kubectl -n camunda-operator-system create secret generic fleet-git \
 ```
 
 Then set `git.credentialsSecretRef` to `fleet-git`. Without the setting, the fleet manager connects to the repository without credentials.
+
+## Git mode
+
+Set `git.repository` to turn on Git mode. Set the branch, the folder, and the Secret with the credentials in the same ConfigMap:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fleet-manager-settings
+  namespace: camunda-operator-system
+data:
+  git.repository: https://git.example.com/platform/fleet.git
+  git.branch: main
+  git.path: clusters/prod
+  git.credentialsSecretRef: fleet-git
+  # ... the rest of your settings
+```
+
+An empty `git.branch` uses the default branch of the repository. The branch must exist before the first save. An empty `git.path` puts the files at the root of the repository. `git.path` must be a folder inside the repository, so a save fails when the path holds `..`.
+
+Each save in the fleet manager becomes one commit on the branch. The subject of the commit names the change, and the author is `fleet-manager`. When the repository already holds the same content, the save makes no commit. The fleet manager writes each object to one file under `git.path`:
+
+```text
+clusters/prod/
+├── _cluster/
+│   └── namespaces/
+│       └── team-a.yaml
+└── team-a/
+    └── camundaclusterclaims/
+        └── orders.yaml
+```
+
+A namespaced object goes to `<git.path>/<namespace>/<plural>/<name>.yaml`. A cluster-scoped object goes to `<git.path>/_cluster/<plural>/<name>.yaml`. `<plural>` is the plural resource name of the kind, as `kubectl api-resources` shows it. A file holds the object without `status` and without the fields that the API server sets. Each object carries the annotation `fleet.camunda.io/revision` with the SHA-256 of its content. A delete in the fleet manager removes the file of the object. Point your GitOps tool at the folder of `git.path`.
+
+### Waiting for GitOps
+
+After a save in Git mode, each page shows "Waiting for GitOps to apply" at the top, with one line for each pushed file. A line goes away when the object in the cluster carries the `fleet.camunda.io/revision` of the push. The list belongs to the browser tab, so a reload of the page clears it. If a line stays, make sure that your GitOps tool syncs the folder of `git.path`.
+
+### Changes that go to the API in Git mode
+
+One-off backups, restores, and backup deletions go to the Kubernetes API also in Git mode. The settings go to the API too, and the fleet manager never commits them. For Secrets, see [Secrets in Git mode](#secrets-in-git-mode).
+
+### When a save fails
+
+Before the commit, the fleet manager sends each object to the cluster as a dry run. A save that the cluster refuses makes no commit. When your GitOps tool applies a file, it removes each field that it set before and that the file now leaves out. The dry run removes these fields too when your GitOps tool uses server-side apply. Flux uses server-side apply. Argo CD uses client-side apply, unless you set the sync option `ServerSideApply=true`. With client-side apply, the dry run keeps these fields. When a validation rule depends on such a field, the save can commit a file that GitOps then cannot apply. The cluster cannot check an `ExternalSecret`, or an object in a namespace that the same save creates. The cluster checks these objects only when GitOps applies them.
+
+When someone pushed to the branch after the fleet manager read it, the save commits on top of that push. The save fails only when that push changed a file of the save.
+
+| Message | Cause | What to do |
+| --- | --- | --- |
+| The message of the API server, for example `releases.default must be one of releases.allowed` | The cluster refuses the object. | Correct the value and save again. |
+| `The <kind> <name> changed since you opened it.` | Someone changed or deleted the object in the cluster after the page read it. | Open the page again. |
+| `<file> in <repository> holds a save that GitOps has not applied yet. Wait until GitOps applies it, then open the page again. If GitOps cannot apply it, correct or revert <file> in the repository.` | An earlier save of the same object is in the repository, and GitOps has not applied it. Each save of the object fails until GitOps applies the file. | Wait until GitOps applies the earlier save, then open the page again. If GitOps cannot apply it, correct or revert the file in the repository. |
+| `Someone changed <file> in <repository> since the fleet manager read it. Open the page again.` | Someone pushed a change to the same file. | Open the page again. |
+| `<repository> changed again while the fleet manager pushed. Save again.` | The branch changed again during the save. | Save again. |
+| `<repository> refused the credentials.` | The username or the token of the Secret is wrong, or the token cannot push. | Correct the Secret of `git.credentialsSecretRef`. |
+| `<repository> refused the push to the branch <branch>.` | The Git server accepts the credentials, but the branch is protected, or a rule of the server refuses the push. | Let the user of the token push to the branch, or set `git.branch` to a branch that accepts a push. |
+| `<repository> must start with https:// to use the credentials of the Secret <secret>.` | `git.credentialsSecretRef` is set, and `git.repository` is not an `https://` address. | Set `git.repository` to the `https://` address of the repository. |
+| `The Secret <secret> does not exist in namespace <namespace>.` | The Secret of `git.credentialsSecretRef` is not in the release namespace. | Create the Secret, as [Git credentials](#git-credentials) shows. |
+| `The Secret <secret> has no key <key>.` | The Secret has no key `username` or no key `token`, or the value is empty. | Add the key to the Secret. |
+| `<repository> has no branch <branch>.` | The branch of `git.branch` does not exist. | Create the branch, or correct `git.branch`. |
+| `<file> is not in the repository. GitOps does not manage <kind> <name>.` | A delete of an object that has no file in the repository. | Delete the object in the cluster with `kubectl delete`. |
+| `<file> is behind a symbolic link in the repository. The fleet manager does not write through a link.` | A folder or the file on the path of the object is a symbolic link in the repository. | Replace the link with a real folder or file in the repository. |
 
 ## Prometheus credentials
 

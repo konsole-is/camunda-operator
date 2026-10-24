@@ -1,0 +1,31 @@
+# The bucket contract that the backup-storage request of the fake plugin
+# names. It points at the RustFS server of the namespace fleet-harness-store.
+# The Secret holds the access-key pair of test/e2e/testdata/rustfs.yaml.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rustfs-credentials
+  namespace: fleet-smoke
+type: Opaque
+stringData:
+  accessKeyId: camundabackup
+  secretAccessKey: camunda-backup-secret
+---
+apiVersion: core.camunda.io/v1
+kind: ObjectStorageConfig
+metadata:
+  name: fleet-harness-backups
+  namespace: fleet-smoke
+spec:
+  type: S3
+  s3:
+    bucketName: camunda-backup
+    endpoint: http://rustfs.fleet-harness-store.svc:9000
+    forcePathStyle: true
+    auth:
+      type: credentials
+      credentials:
+        secretRef:
+          name: rustfs-credentials
+          accessKeyIdKey: accessKeyId
+          secretAccessKeyKey: secretAccessKey

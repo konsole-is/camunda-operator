@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "name": "A registration that lists its section passes",
+  "input": {
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      }
+    ],
+    "registrations": [
+      {
+        "metadata": {
+          "name": "elasticsearch"
+        },
+        "spec": {
+          "label": "elasticsearch",
+          "sections": [
+            "secondary-storage"
+          ],
+          "mode": "Optional",
+          "serviceAccount": {
+            "namespace": "camunda-plugins",
+            "name": "elasticsearch"
+          },
+          "deletionPolicies": [
+            "Delete"
+          ]
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}

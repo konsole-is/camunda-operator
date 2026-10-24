@@ -12,6 +12,7 @@ import {
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { ping } from "@/app/dev/watch-probe/actions";
 import { GET as healthz } from "@/app/api/healthz/route";
+import { GET as logsRoute } from "@/app/api/logs/route";
 import { GET as watchRoute } from "@/app/api/watch/route";
 import { defaultCache } from "@/lib/k8s/cache";
 import * as secrets from "@/lib/secrets";
@@ -132,6 +133,16 @@ async function watchText(watch: string): Promise<string> {
 
 const ROUTE_CALLS: Record<string, () => Promise<string>> = {
   "api/healthz": async () => healthz().text(),
+  // envtest runs no kubelet, so no pod has a log: the call reads a pod that
+  // does not exist.
+  "api/logs": async () =>
+    (
+      await logsRoute(
+        new Request(
+          `http://localhost/api/logs?namespace=${namespace}&pod=missing`,
+        ),
+      )
+    ).text(),
   "api/watch": () => watchText(`kind=Secret&namespace=${namespace}`),
 };
 // "<file under src>#<export>".

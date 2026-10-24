@@ -41,6 +41,12 @@ The set of slots is closed, and only core sections use them. A section that a pl
 
 A slot takes the outputs of one option only, so a section with a slot must have `selection: One`. A section without a slot can have `selection: One` or `selection: Many`.
 
+## Claim kinds
+
+`appliesTo` lists the claim kinds that can select an option of the section: `CamundaClusterClaim`, `CamundaManagementClusterClaim`, or both. The create flow of the fleet manager offers no option of the section to a claim of another kind.
+
+A claim of another kind that selects an option of the section is refused with `NotAllowed`. The message is `section "<name>" does not apply to a <kind>`. For that kind, the section is never required, also when the `Environment` marks it required. Thus one `Environment` can require `backup-storage` for its clusters and `management-database` for its planes.
+
 ## Core sections
 
 The operator writes eight core sections:

@@ -15,7 +15,8 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/konsole-is/camunda-operator/api v0.2.0
+	github.com/konsole-is/camunda-operator/api v0.2.1-0.20261015084104-bb2edca2c2db
+	github.com/konsole-is/camunda-operator/conformance v0.0.0-20261021214556-8982ff45676b
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.44.0
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.1
@@ -225,5 +226,7 @@ require (
 tool github.com/sourcehawk/operator-component-framework/cmd/ocf
 
 replace github.com/konsole-is/camunda-operator/api => ./api
+
+replace github.com/konsole-is/camunda-operator/conformance => ./conformance
 
 ignore ./fleet-manager

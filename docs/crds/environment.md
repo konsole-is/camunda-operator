@@ -5,7 +5,7 @@ An `Environment` sets the policy for the claims in its namespaces. A claim is a 
 The policy names the releases and the presets that a claim can use. It also names the plugin options of each `PluginSection` of the create flow, for example "Backup storage". Each option is a `PluginRegistration`. The policy sets the parameter values of each option and the deletion default.
 
 !!! note
-    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release. In this release, the operator reports the status of an environment. It does not create anything from a claim yet.
+    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release. The operator creates the cluster of a [CamundaClusterClaim](camundaclusterclaim.md) and the plane of a [CamundaManagementClusterClaim](camundamanagementclusterclaim.md).
 
 The smallest manifest:
 
@@ -117,7 +117,9 @@ spec:
   # ... the rest of your environment
 ```
 
-`spec.deletionPolicy` is the deletion policy of a claim that sets none itself. `Delete` deletes the resources that the plugins created for the claim when you delete the claim. `Orphan` keeps them. The default is `Delete`.
+The fleet manager shows a parameter that a claim cannot change as "Set by your admin", with a summary in place of a field. The summary of a string, a number, or a boolean is its text. The summary of a list is the count of its items, for example "3 items". The summary of an object is the count of its fields, for example "2 fields". A parameter without a value shows "Not set". The fleet manager shows a choice of `allowed` by its `label`, and never shows its `value`.
+
+`spec.deletionPolicy` is the deletion policy of a claim that sets none itself. `Delete` deletes the resources that the plugins created for the claim when you delete the claim. `Orphan` keeps them. The default is `Delete`. When a claim gets `Orphan` from its own field or from this default, each registration that it selects must list `Orphan` in `spec.deletionPolicies`. Otherwise the claim is refused with `NotAllowed`.
 
 `spec.namespaceCreation` lets the create flow of the fleet manager create a namespace in the environment. `allowed: true` turns it on. `labels` are fixed labels of each new namespace. `requiredLabelKeys` are label keys that the create flow asks a value for. The create flow always sets the label `fleet.camunda.io/environment` on the new namespace:
 

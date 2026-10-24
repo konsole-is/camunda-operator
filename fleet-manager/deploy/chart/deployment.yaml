@@ -59,6 +59,12 @@ spec:
               value: {{ .Values.fleetManager.settings.prometheus.url | quote }}
             - name: FLEET_SETTINGS_PROMETHEUS_CREDENTIALS_SECRET_REF
               value: {{ .Values.fleetManager.settings.prometheus.credentialsSecretRef | quote }}
+            {{- if .Values.fleetManager.extraCACerts.configMapName }}
+            # Node.js reads this file once at start and trusts it for every
+            # TLS client.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/fleet-manager/extra-ca/ca.crt
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /api/healthz
@@ -85,9 +91,23 @@ spec:
               mountPath: /app/.next/cache
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.fleetManager.extraCACerts.configMapName }}
+            - name: extra-ca
+              mountPath: /etc/fleet-manager/extra-ca
+              readOnly: true
+            {{- end }}
       volumes:
         - name: next-cache
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        {{- if .Values.fleetManager.extraCACerts.configMapName }}
+        # Not optional: a wrong name or key stops the pod, so the admin sees it.
+        - name: extra-ca
+          configMap:
+            name: {{ .Values.fleetManager.extraCACerts.configMapName | quote }}
+            items:
+              - key: {{ .Values.fleetManager.extraCACerts.key | quote }}
+                path: ca.crt
+        {{- end }}
 {{- end }}

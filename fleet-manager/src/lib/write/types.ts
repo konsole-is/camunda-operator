@@ -33,7 +33,10 @@ export type RefKey = `${string}/${string}/${string}`;
  * an object. A write of that object fails with Stale when the object
  * changed since. force sends each apply of the change with the force
  * option of server-side apply. A change with directOnly goes to the API
- * in Git mode too.
+ * in Git mode too. The preview of the direct writer applies an object of
+ * previewManagers as the field manager that it maps to, and apply ignores
+ * previewManagers. For a change without directOnly, the Git writer sets
+ * previewManagers itself.
  */
 export type Change = {
   intent: string;
@@ -42,6 +45,7 @@ export type Change = {
   preconditions?: Record<RefKey, string>;
   force?: boolean;
   directOnly?: boolean;
+  previewManagers?: Record<RefKey, string>;
 };
 
 /**
@@ -77,7 +81,11 @@ export type PreviewObject = {
 /** Preview is the result of a dry run. An object with an error is not in objects. */
 export type Preview = { objects: PreviewObject[]; errors: ApiError[] };
 
-/** WriteResult is the result of a write. revisions maps each pushed object to its revision hash. */
+/**
+ * WriteResult is the result of a write. In Git mode, revisions maps each
+ * pushed object to its revision hash, and paths maps it to its file in the
+ * repository. A deleted object is in neither map.
+ */
 export type WriteResult =
   | { ok: true; mode: "direct" }
   | {
@@ -85,6 +93,7 @@ export type WriteResult =
       mode: "git";
       commit: string;
       revisions: Record<RefKey, string>;
+      paths: Record<RefKey, string>;
     }
   | { ok: false; errors: ApiError[] };
 

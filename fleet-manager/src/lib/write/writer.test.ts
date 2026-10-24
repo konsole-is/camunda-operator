@@ -1,8 +1,18 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { KubeConfig } from "@kubernetes/client-node";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { objectPath } from "@/lib/k8s/kinds";
+import { SETTING_KEYS, type Settings } from "@/lib/settings/keys";
+import { getSettings } from "@/lib/settings/store";
 import {
   WriteOnlyKindMap,
   applyBody,
@@ -10,6 +20,8 @@ import {
   getWriter,
   refKey,
 } from "./writer";
+
+vi.mock("@/lib/settings/store", () => ({ getSettings: vi.fn() }));
 
 function configFor(server: string): KubeConfig {
   const kc = new KubeConfig();
@@ -372,7 +384,23 @@ describe("WriteOnlyKindMap", () => {
 });
 
 describe("getWriter", () => {
-  it("returns the direct writer", async () => {
+  const settings = (values: Partial<Settings>): Settings => ({
+    ...(Object.fromEntries(SETTING_KEYS.map((k) => [k, ""])) as Settings),
+    ...values,
+  });
+
+  it("getWriter is the Git writer when git.repository is set, else the direct writer", async () => {
+    vi.mocked(getSettings).mockResolvedValueOnce(
+      settings({ "git.repository": "https://git.example.com/fleet.git" }),
+    );
+    expect((await getWriter()).mode).toBe("git");
+
+    vi.mocked(getSettings).mockResolvedValueOnce(settings({}));
     expect((await getWriter()).mode).toBe("direct");
+  });
+
+  it("throws when the settings cannot be read", async () => {
+    vi.mocked(getSettings).mockRejectedValueOnce(new Error("no settings"));
+    await expect(getWriter()).rejects.toThrow("no settings");
   });
 });

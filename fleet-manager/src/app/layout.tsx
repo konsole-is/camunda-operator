@@ -8,6 +8,7 @@ import "@fontsource/sora/600.css";
 import "@fontsource/sora/700.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { QueryProvider } from "@/components/fleet/query-provider";
 import "./globals.css";
 
@@ -17,7 +18,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="dark">
       <body>
-        <QueryProvider>{children}</QueryProvider>
+        <QueryProvider>
+          <GitPushesProvider>{children}</GitPushesProvider>
+        </QueryProvider>
       </body>
     </html>
   );

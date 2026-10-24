@@ -1,0 +1,76 @@
+# The Git server of the harness. It serves the bare repository fleet.git
+# over HTTPS at https://git.fleet-harness.svc:8443/fleet.git. up.sh replaces
+# __GITSERVER_IMAGE__.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git
+  namespace: fleet-harness
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: git
+  template:
+    metadata:
+      labels:
+        app: git
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: git
+          image: __GITSERVER_IMAGE__
+          imagePullPolicy: IfNotPresent
+          args:
+            - --root=/srv/git
+            - --repository=fleet.git
+            - --branch=main
+            - --listen=:8443
+            - --tls-cert=/tls/tls.crt
+            - --tls-key=/tls/tls.key
+          ports:
+            - name: https
+              containerPort: 8443
+          readinessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: repositories
+              mountPath: /srv/git
+            - name: tmp
+              mountPath: /tmp
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: repositories
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: tls
+          secret:
+            secretName: git-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git
+  namespace: fleet-harness
+spec:
+  selector:
+    app: git
+  ports:
+    - name: https
+      port: 8443
+      targetPort: https

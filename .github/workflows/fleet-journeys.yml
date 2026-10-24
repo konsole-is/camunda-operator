@@ -1,0 +1,118 @@
+name: Fleet manager journeys
+
+# The journeys run only when a path that they test changes, and on each push
+# to main. They have their own workflow because a paths filter works only on a
+# whole workflow, and the Camunda matrix of test-e2e.yml runs on every pull
+# request.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "fleet-manager/**"
+      - "test/e2e/fakeplugin/**"
+      - "test/e2e/gitserver/**"
+      - "test/e2e/testdata/rustfs.yaml"
+      - "conformance/echo/**"
+      - "hack/helmfleet/**"
+      - "hack/helmcrds/**"
+      - "hack/helmcli/**"
+      - "hack/helmschema/**"
+      - "config/**"
+      - "dist/chart/Chart.yaml"
+      - "Makefile"
+      - ".github/workflows/fleet-journeys.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fleet-journeys:
+    name: Journeys
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # pnpm refuses any Node.js version other than the one of this file.
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: fleet-manager/.node-version
+
+      # kubebuilder and kind install the versions of .tool-versions, so a
+      # Renovate update of that file moves this job too.
+      - name: Install kind and kubebuilder
+        run: |
+          KIND_VERSION=$(awk '$1 == "kind" { print $2 }' .tool-versions)
+          curl -fsSLo ./kind --retry 5 --retry-delay 10 --retry-all-errors \
+            "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-$(go env GOARCH)"
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          KUBEBUILDER_VERSION=$(awk '$1 == "kubebuilder" { print $2 }' .tool-versions)
+          curl -fsSL -o kubebuilder --retry 5 --retry-delay 10 --retry-all-errors \
+            "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_$(go env GOOS)_$(go env GOARCH)"
+          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+          kind version
+          kubebuilder version
+
+      - name: Install Helm
+        uses: azure/setup-helm@v5.0.1
+        with:
+          version: v4.3.0
+
+      # The Go module proxy sometimes drops a connection. The retry keeps
+      # one dropped download from failing the job.
+      - name: Download the Go modules
+        run: hack/ci-retry.sh go mod download
+
+      - name: Create the harness cluster
+        run: make fleet-harness-up
+
+      # A process that a step starts in the background lives on in the later
+      # steps of the job.
+      - name: Start the Git apply loop
+        run: setsid fleet-manager/e2e/harness/apply-loop.sh > "${RUNNER_TEMP}/apply-loop.log" 2>&1 &
+
+      - name: Check the harness
+        run: make fleet-harness-check
+
+      - name: Run the journeys
+        run: make fleet-journeys FLEET_PLAYWRIGHT_FLAGS=--with-deps
+
+      - name: Upload the UI journeys
+        id: journeys
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-journeys
+          path: fleet-manager/ui-journeys/
+          if-no-files-found: warn
+      - name: Link the UI journeys in the job summary
+        if: ${{ !cancelled() && steps.journeys.outputs.artifact-url != '' }}
+        env:
+          JOURNEYS_URL: ${{ steps.journeys.outputs.artifact-url }}
+        run: |
+          echo "UI journeys: [ui-journeys](${JOURNEYS_URL}). Open index.html in the archive." >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Read the harness cluster
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl get pluginrequests,pluginregistrations -A -o yaml || true
+          for target in \
+            "camunda-operator-system deployment/camunda-operator-fleet-manager" \
+            "camunda-operator-system deployment/camunda-operator-controller-manager" \
+            "fleet-harness deployment/fakeplugin" \
+            "fleet-harness deployment/git"; do
+            read -r namespace workload <<< "${target}"
+            echo "=== logs of ${workload} in ${namespace}"
+            kubectl logs -n "${namespace}" "${workload}" --all-containers --tail=300 || true
+          done
+          echo "=== apply loop"
+          cat "${RUNNER_TEMP}/apply-loop.log" || true

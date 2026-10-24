@@ -49,6 +49,8 @@ The defaults are the values of a released chart.
 | `fleetManager.image.tag` | the chart version | Fleet manager image tag. |
 | `fleetManager.image.pullPolicy` | `IfNotPresent` | Image pull policy of the fleet manager. |
 | `fleetManager.resources` | requests `50m`/`256Mi`, limit memory `512Mi` | Resource requests and limits of the fleet manager. |
+| `fleetManager.extraCACerts.configMapName` | `""` | A ConfigMap in the release namespace with a CA bundle that the fleet manager trusts, for a Git or Prometheus server with a private CA. Empty adds no CA. See [Trust a private CA](https://github.com/konsole-is/camunda-operator/blob/main/docs/fleet-manager/install.md#trust-a-private-ca). |
+| `fleetManager.extraCACerts.key` | `ca.crt` | The key of the PEM CA bundle in that ConfigMap. |
 | `fleetManager.settings.*` | `""` | Settings of the fleet manager for its first start. See [Fleet manager settings](https://github.com/konsole-is/camunda-operator/blob/main/docs/fleet-manager/settings.md). |
 | `nameOverride` | unset | Replace the chart name in the resource names and in the `app.kubernetes.io/name` label. |
 | `fullnameOverride` | unset | Replace the release and chart name at the start of each resource name. |

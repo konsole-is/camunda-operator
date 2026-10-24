@@ -2,6 +2,9 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import { checkAllowed, claimEditable, resolve } from "@/lib/policy";
 import type { OptionView, SectionView } from "@/lib/policy/types";
 import { SectionCards } from "./section-cards";
 
@@ -79,19 +82,16 @@ describe("SectionCards", () => {
     );
     const group = screen.getByRole("group", { name: "Policies" });
     const boxes = within(group).getAllByRole("checkbox");
-    expect(
-      boxes.map((b) => b.getAttribute("aria-label") ?? b.textContent),
-    ).toEqual(["SQS access", "S3 read", "SNS publish"]);
+    const names = boxes.map(
+      (b) => b.getAttribute("aria-label") ?? b.textContent,
+    );
+    expect(names).toEqual(["SQS access", "S3 read", "SNS publish"]);
     expect(boxes.every((b) => b.getAttribute("aria-checked") === "false")).toBe(
       true,
     );
 
-    await userEvent.click(
-      within(group).getByRole("checkbox", { name: "S3 read" }),
-    );
-    await userEvent.click(
-      within(group).getByRole("checkbox", { name: "SQS access" }),
-    );
+    await userEvent.click(boxes[names.indexOf("S3 read")]);
+    await userEvent.click(boxes[names.indexOf("SQS access")]);
     expect(onChange).toHaveBeenLastCalledWith(
       [
         {
@@ -1062,6 +1062,295 @@ describe("SectionCards", () => {
       const inA = screen.getByRole("spinbutton", { name: "Days of a" });
       const inAB = screen.getByRole("spinbutton", { name: "Days of a-b" });
       expect(inA).not.toBe(inAB);
+    });
+  });
+
+  describe("rules of the schema", () => {
+    const ruled: OptionView = {
+      registration: "team-bucket",
+      label: "Team bucket",
+      isDefault: false,
+      schema: {
+        type: "object",
+        "x-kubernetes-validations": [
+          {
+            rule: "self.min <= self.max",
+            message: "min must not be above max",
+          },
+        ],
+      },
+      parameters: [
+        {
+          name: "name",
+          label: "Bucket name",
+          schema: {
+            type: "string",
+            "x-kubernetes-validations": [
+              {
+                rule: "self.startsWith('team-')",
+                message: "name must start with team-",
+              },
+            ],
+          },
+          claimEditable: true,
+          value: "team-a",
+        },
+        {
+          name: "limits",
+          label: "Limits",
+          schema: {
+            type: "object",
+            properties: {
+              cpu: {
+                type: "integer",
+                "x-kubernetes-validations": [{ rule: "self > 0" }],
+              },
+            },
+          },
+          claimEditable: true,
+        },
+        {
+          name: "bucket",
+          label: "Shared bucket",
+          schema: {
+            type: "string",
+            "x-kubernetes-validations": [
+              { rule: "self != ''", message: "bucket must not be empty" },
+            ],
+          },
+          claimEditable: false,
+          summary: "shared",
+        },
+      ],
+    };
+
+    // The text of each element that describes the field.
+    const descriptionOf = (field: HTMLElement) =>
+      (field.getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join("\n");
+
+    it("shows the rule of a parameter under its field, checked after the save", () => {
+      render(<SectionCards section={section({}, ruled)} />);
+
+      const description = descriptionOf(
+        screen.getByRole("textbox", { name: "Bucket name" }),
+      );
+
+      expect(description).toContain("name must start with team-");
+      expect(description).toContain("Checked after you save");
+    });
+
+    it("shows the rule text when a rule has no message, with its path inside the parameter", () => {
+      render(<SectionCards section={section({}, ruled)} />);
+
+      const description = descriptionOf(
+        screen.getByRole("textbox", { name: "Limits" }),
+      );
+
+      expect(description).toContain("cpu");
+      expect(description).toContain("self > 0");
+    });
+
+    it("shows the rules of the registration that span parameters under the option", async () => {
+      render(
+        <SectionCards
+          section={section({ options: [{ ...ruled, isDefault: false }] })}
+        />,
+      );
+      expect(screen.queryByText(/min must not be above max/)).toBeNull();
+
+      await userEvent.click(screen.getByRole("radio", { name: /Team bucket/ }));
+
+      expect(screen.getByText(/min must not be above max/)).toBeTruthy();
+    });
+
+    it("shows the rule of a parameter that the choice cards set under the cards", () => {
+      const withCards: OptionView = {
+        registration: "elasticsearch",
+        label: "New Elasticsearch",
+        isDefault: true,
+        parameters: [
+          {
+            name: "preset",
+            label: "Preset",
+            schema: {
+              type: "string",
+              "x-kubernetes-validations": [
+                { rule: "self != 'large'", message: "large is retired" },
+              ],
+            },
+            claimEditable: true,
+            value: "small",
+          },
+        ],
+        choices: {
+          parameter: "preset",
+          items: [{ name: "small" }, { name: "large" }],
+        },
+      };
+      render(<SectionCards section={section({}, withCards)} />);
+
+      const description = descriptionOf(
+        screen.getByRole("group", { name: "Preset" }),
+      );
+
+      expect(description).toContain("large is retired");
+      expect(description).toContain("Checked after you save");
+    });
+
+    it("shows no rule for a locked parameter", () => {
+      render(<SectionCards section={section({}, ruled)} />);
+
+      const locked = screen.getByRole("group", { name: "Shared bucket" });
+
+      expect(locked.textContent).not.toContain("Checked after you save");
+      expect(screen.queryByText(/bucket must not be empty/)).toBeNull();
+    });
+
+    it("shows no rule of the option when every parameter is locked", () => {
+      render(
+        <SectionCards
+          section={section(
+            {},
+            {
+              ...ruled,
+              parameters: ruled.parameters.filter((r) => !r.claimEditable),
+            },
+          )}
+        />,
+      );
+
+      expect(screen.queryByText(/min must not be above max/)).toBeNull();
+      expect(screen.queryByText("Checked after you save")).toBeNull();
+    });
+
+    it("reports no error for a rule, because the app does not check it", async () => {
+      const onChange = vi.fn();
+      render(<SectionCards section={section({}, ruled)} onChange={onChange} />);
+      const input = screen.getByRole("textbox", { name: "Bucket name" });
+
+      await userEvent.clear(input);
+      await userEvent.type(input, "a");
+
+      expect(onChange.mock.lastCall![1]).toEqual([]);
+      expect(input.getAttribute("aria-invalid")).toBeNull();
+    });
+  });
+
+  describe("an array parameter whose allowed values are whole lists", () => {
+    const messaging = [
+      "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+      "arn:aws:iam::aws:policy/AmazonSNSFullAccess",
+    ];
+    const environment: Environment = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "dev" },
+      spec: {
+        sections: {
+          "connectors-permissions": { allowed: ["aws-connectors-role"] },
+        },
+        parameters: {
+          "aws-connectors-role": {
+            policies: {
+              claimEditable: true,
+              allowed: [
+                { name: "messaging", label: "Messaging", value: messaging },
+                {
+                  name: "storage",
+                  label: "Storage",
+                  value: ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"],
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const registration = (
+      parameterValues?: Record<string, unknown>,
+    ): PluginRegistration => ({
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginRegistration",
+      metadata: { name: "aws-connectors-role" },
+      spec: {
+        sections: ["connectors-permissions"],
+        mode: "Optional",
+        label: "Role for each cluster",
+        deletionPolicies: ["Delete"],
+        serviceAccount: { name: "aws", namespace: "plugins" },
+        parameters: {
+          type: "object",
+          properties: {
+            policies: {
+              type: "array",
+              title: "Policies",
+              items: { type: "string" },
+            },
+          },
+        },
+        ...(parameterValues && { parameterValues }),
+      },
+    });
+    const listSection = (r: PluginRegistration): SectionView =>
+      section(
+        {},
+        {
+          registration: "aws-connectors-role",
+          label: "Role for each cluster",
+          isDefault: true,
+          parameters: claimEditable(r, environment),
+        },
+      );
+
+    it("offers one choice of a named list and submits the name that the policy turns into that list", async () => {
+      const onChange = vi.fn();
+      const r = registration();
+      render(<SectionCards section={listSection(r)} onChange={onChange} />);
+
+      expect(screen.queryByRole("group", { name: "Policies" })).toBeNull();
+      await userEvent.selectOptions(
+        screen.getByRole("combobox", { name: "Policies" }),
+        "Messaging",
+      );
+
+      const [selections, errors] = onChange.mock.lastCall!;
+      expect(errors).toEqual([]);
+      expect(selections).toEqual([
+        {
+          section: "connectors-permissions",
+          registration: "aws-connectors-role",
+          parameters: { policies: "messaging" },
+        },
+      ]);
+      const resolved = resolve({
+        environment,
+        registrations: [r],
+        selections,
+      });
+      expect(resolved).toHaveProperty("value");
+      if (!("value" in resolved)) return;
+      expect(
+        checkAllowed({ policy: resolved.value.policy, selections }),
+      ).toEqual({ value: {} });
+      expect(
+        JSON.stringify(resolved.value.requests?.[0].parameters?.policies),
+      ).toBe(JSON.stringify(messaging));
+    });
+
+    it("preselects the choice whose list the registration value is", () => {
+      render(
+        <SectionCards
+          section={listSection(registration({ policies: messaging }))}
+        />,
+      );
+
+      const select = screen.getByRole("combobox", {
+        name: "Policies",
+      }) as HTMLSelectElement;
+      expect(select.selectedOptions[0].textContent).toBe("Messaging");
     });
   });
 });

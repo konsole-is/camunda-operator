@@ -84,15 +84,8 @@ The kinds below are an alpha API in the group `fleet.camunda.io/v1alpha1`. Their
 | Kind | Scope | What it is |
 | --- | --- | --- |
 | [Environment](environment.md) | Cluster | The policy for the claims in the namespaces whose label `fleet.camunda.io/environment` names it. |
-
-## Planned kinds
-
-The kinds below are an alpha API in the group `fleet.camunda.io/v1alpha1`. No controller acts on them yet, and their fields can change in a later release. The install includes their CRDs, so the API server accepts and checks them.
-
-| Kind | Scope | What it is |
-| --- | --- | --- |
-| `CamundaClusterClaim` | Namespaced | A request for one Camunda cluster under the policy of the environment of its namespace. |
-| `CamundaManagementClusterClaim` | Namespaced | A request for one management plane that serves the clusters of one or more environments. |
+| [CamundaClusterClaim](camundaclusterclaim.md) | Namespaced | A request for one Camunda cluster under the policy of the environment of its namespace. The operator creates the cluster and a `PluginRequest` for each option. |
+| [CamundaManagementClusterClaim](camundamanagementclusterclaim.md) | Namespaced | A request for one management plane that serves the clusters of one or more environments. The operator creates the `CamundaManagementCluster` and a `PluginRequest` for each option. |
 
 ## How the kinds relate
 

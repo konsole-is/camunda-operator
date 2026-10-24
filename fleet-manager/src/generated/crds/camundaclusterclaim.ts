@@ -8013,9 +8013,12 @@ export interface CamundaClusterClaimSpec {
   /**
    * DeletionPolicy says what happens to the resources of the plugin
    * requests when the claim is deleted. Delete deletes them. Orphan keeps
-   * them. Empty means spec.deletionPolicy of the Environment. The
-   * CamundaCluster and the attachments are always deleted with the claim,
-   * under their own retention rules.
+   * them. Empty means the deletion default that the claim recorded from its
+   * Environment at creation, or Delete when it recorded none. The claim
+   * controller refuses Orphan with the reason NotAllowed when a selected
+   * registration does not support it. The CamundaCluster and the
+   * attachments are always deleted with the claim, under their own
+   * retention rules.
    */
   deletionPolicy?: "Delete" | "Orphan";
   /**
@@ -8093,7 +8096,9 @@ export interface CamundaClusterClaimStatus {
    * Failing, Degraded, or Down, its message holds the Ready reason and
    * message of the CamundaCluster. If the CamundaCluster has no Ready
    * condition yet, the message says so. With other reasons, such as
-   * Error or PrerequisiteNotMet, the message gives that cause.
+   * Error or PrerequisiteNotMet, the message gives that cause. While the
+   * claim is deleted and waits for objects, Ready is False with the reason
+   * Deleting, and the message names those objects.
    *
    * Items: Condition contains details for one aspect of the current state of this API Resource.
    */

@@ -117,13 +117,8 @@ rules:
   - core.camunda.io
   resources:
   - backupschedules
-  - camundaclusterpresets
-  - camundaplatformconfigs
-  - camundareleases
-  - databaseserverpresets
-  - elasticsearchclusterpresets
-  - objectstorageconfigs
   verbs:
+  - delete
   - get
   - list
   - watch
@@ -152,6 +147,19 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - core.camunda.io
+  resources:
+  - camundaclusterpresets
+  - camundaplatformconfigs
+  - camundareleases
+  - databaseserverpresets
+  - elasticsearchclusterpresets
+  - objectstorageconfigs
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - core.camunda.io
   resources:
@@ -209,19 +217,39 @@ rules:
 - apiGroups:
   - fleet.camunda.io
   resources:
-  - environments
+  - camundaclusterclaims
+  - camundamanagementclusterclaims
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - fleet.camunda.io
   resources:
+  - camundaclusterclaims/finalizers
+  - camundamanagementclusterclaims/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - fleet.camunda.io
+  resources:
+  - camundaclusterclaims/status
+  - camundamanagementclusterclaims/status
   - environments/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - fleet.camunda.io
+  resources:
+  - environments
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - k8s.keycloak.org
   resources:
@@ -288,6 +316,8 @@ rules:
   resources:
   - pluginrequests
   verbs:
+  - create
+  - delete
   - get
   - list
   - patch

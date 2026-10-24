@@ -1,4 +1,4 @@
-/** The two parts of the app in the top navigation (contract CL36). */
+/** The two parts of the app in the top navigation. */
 export type Section = "fleet" | "setup";
 
 export type SetupItem = { slug: string; label: string; href: string };

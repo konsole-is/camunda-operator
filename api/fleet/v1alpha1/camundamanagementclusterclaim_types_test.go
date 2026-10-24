@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 )
@@ -29,4 +30,15 @@ import (
 func TestPlaneClaimConditionTypesKeepTheirStoredStrings(t *testing.T) {
 	assert.Equal(t, "RequestsReady", v1alpha1.ConditionPlaneRequestsReady)
 	assert.Equal(t, "ManagementClusterReady", v1alpha1.ConditionManagementClusterReady)
+}
+
+func TestCamundaManagementClusterClaimStagesItsStatus(t *testing.T) {
+	var claim v1alpha1.CamundaManagementClusterClaim
+
+	*claim.GetStatusConditions() = append(*claim.GetStatusConditions(), metav1.Condition{Type: "Ready"})
+	claim.SetObservedGeneration(4)
+
+	assert.Equal(t, []metav1.Condition{{Type: "Ready"}}, claim.Status.Conditions)
+	assert.Equal(t, int64(4), claim.Status.ObservedGeneration)
+	assert.Equal(t, "CamundaManagementClusterClaim", claim.GetKind())
 }

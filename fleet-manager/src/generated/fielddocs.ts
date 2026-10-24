@@ -5209,7 +5209,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#zeebespec"
       },
       "spec.deletionPolicy": {
-        "description": "DeletionPolicy says what happens to the resources of the plugin\nrequests when the claim is deleted. Delete deletes them. Orphan keeps\nthem. Empty means spec.deletionPolicy of the Environment. The\nCamundaCluster and the attachments are always deleted with the claim,\nunder their own retention rules.",
+        "description": "DeletionPolicy says what happens to the resources of the plugin\nrequests when the claim is deleted. Delete deletes them. Orphan keeps\nthem. Empty means the deletion default that the claim recorded from its\nEnvironment at creation, or Delete when it recorded none. The claim\ncontroller refuses Orphan with the reason NotAllowed when a selected\nregistration does not support it. The CamundaCluster and the\nattachments are always deleted with the claim, under their own\nretention rules.",
         "anchor": "#camundaclusterclaimspec"
       },
       "spec.platformConfigRef": {
@@ -5257,7 +5257,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#clusterref"
       },
       "status.conditions": {
-        "description": "Conditions report the state of the claim. Ready is False with reason\nNoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when a check of the\nclaim fails. Otherwise Ready follows RequestsReady, ClusterReady, and\nAttachmentsReady. When ClusterReady has the reason Creating, Updating,\nFailing, Degraded, or Down, its message holds the Ready reason and\nmessage of the CamundaCluster. If the CamundaCluster has no Ready\ncondition yet, the message says so. With other reasons, such as\nError or PrerequisiteNotMet, the message gives that cause.",
+        "description": "Conditions report the state of the claim. Ready is False with reason\nNoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when a check of the\nclaim fails. Otherwise Ready follows RequestsReady, ClusterReady, and\nAttachmentsReady. When ClusterReady has the reason Creating, Updating,\nFailing, Degraded, or Down, its message holds the Ready reason and\nmessage of the CamundaCluster. If the CamundaCluster has no Ready\ncondition yet, the message says so. With other reasons, such as\nError or PrerequisiteNotMet, the message gives that cause. While the\nclaim is deleted and waits for objects, Ready is False with the reason\nDeleting, and the message names those objects.",
         "anchor": "#camundaclusterclaimstatus"
       },
       "status.environment": {
@@ -5319,7 +5319,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#camundamanagementclusterclaimspec"
       },
       "spec.deletionPolicy": {
-        "description": "DeletionPolicy says what happens to the resources of the\nPluginRequests of the claim when the claim is deleted. Delete deletes\nthem. Orphan keeps them. Empty means the deletion policy of the\nEnvironment. The CamundaManagementCluster is always deleted with the\nclaim.",
+        "description": "DeletionPolicy says what happens to the resources of the\nPluginRequests of the claim when the claim is deleted. Delete deletes\nthem. Orphan keeps them. Empty means the deletion default that the\nclaim recorded from its Environment at creation, or Delete when it\nrecorded none. The claim controller refuses Orphan with the reason\nNotAllowed when a selected registration does not support it. The\nCamundaManagementCluster is always deleted with the claim.",
         "anchor": "#camundamanagementclusterclaimspec"
       },
       "spec.environments": {
@@ -5731,7 +5731,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#camundamanagementclusterclaim"
       },
       "status.conditions": {
-        "description": "Conditions report the state of the claim. Ready is False with the\nreason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when the plane claim\ncontroller refuses the claim. The message names the cause. Otherwise\nReady follows RequestsReady and ManagementClusterReady. When\nManagementClusterReady has the reason Creating, Updating, Failing,\nDegraded, or Down, its message holds the Ready reason and message of\nthe CamundaManagementCluster. If the CamundaManagementCluster has no\nReady condition yet, the message says so. With other reasons, such as\nError or PrerequisiteNotMet, the message gives that cause.",
+        "description": "Conditions report the state of the claim. Ready is False with the\nreason NoEnvironment, UnknownEnvironment, NotAllowed, MissingInput,\nInvalidReference, SlotConflict, or WiringCycle when the plane claim\ncontroller refuses the claim. The message names the cause. Otherwise\nReady follows RequestsReady and ManagementClusterReady. When\nManagementClusterReady has the reason Creating, Updating, Failing,\nDegraded, or Down, its message holds the Ready reason and message of\nthe CamundaManagementCluster. If the CamundaManagementCluster has no\nReady condition yet, the message says so. With other reasons, such as\nError or PrerequisiteNotMet, the message gives that cause. While the\nclaim is deleted and waits for objects, Ready is False with the reason\nDeleting, and the message names those objects.",
         "anchor": "#camundamanagementclusterclaimstatus"
       },
       "status.environment": {
@@ -6255,7 +6255,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pluginsection"
       },
       "spec.appliesTo": {
-        "description": "AppliesTo lists the claim kinds whose create flow shows the section.",
+        "description": "AppliesTo lists the claim kinds that can select an option of the\nsection. A claim of another kind that selects one is refused with\nNotAllowed. For that kind, the section is never required, also when the\nEnvironment marks it required.",
         "anchor": "#pluginsectionspec"
       },
       "spec.description": {

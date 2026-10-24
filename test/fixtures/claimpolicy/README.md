@@ -1,6 +1,6 @@
 # Claim policy fixtures
 
-The cases in this directory show the policy rules that both claim controllers apply. The functions of `pkg/claimpolicy` hold these rules, and their table tests run each case. The fleet manager runs its own policy code against the same cases.
+The cases in this directory show the policy rules that both claim controllers apply. The functions of `pkg/claimpolicy` hold these rules, and their table tests run each case. The fleet manager runs its own policy code against the cases of `environment-of`, `resolve`, `check-allowed`, `inputs`, `slot-fields`, `check-slot-conflicts`, and `check-deletion-policy`. The rules of `order` and `target-service-account` have no page in the fleet manager, so it does not run their cases. The create flow of the fleet manager offers only a registration that serves its section, so it does not run the cases of `check-served` either.
 
 ## Layout
 
@@ -16,6 +16,8 @@ There is one directory for each function of `pkg/claimpolicy`:
 | `target-service-account/` | `TargetServiceAccount` |
 | `slot-fields/` | `SlotFields` |
 | `check-slot-conflicts/` | `CheckSlotConflicts` |
+| `check-served/` | `CheckServed` |
+| `check-deletion-policy/` | `CheckDeletionPolicy` |
 
 ## Format
 
@@ -48,6 +50,8 @@ A reader in another language compares `value` and the `reason` of a `refusal`. T
 2. Run `make claimpolicy-fixtures`. It writes `result` into every case and formats each file.
 3. Read `result`. If it is not what the rule says, the case or the code is wrong. Do not commit it.
 4. Commit the case.
+
+A new directory also needs a place in `APP_RULES` or in `EXCLUDED` of `fleet-manager/test/claimpolicy/fixtures.ts`. Otherwise the fleet manager tests fail.
 
 ## Change a rule
 

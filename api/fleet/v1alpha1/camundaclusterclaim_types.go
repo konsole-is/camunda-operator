@@ -25,10 +25,10 @@ import (
 
 // The component conditions of a CamundaClusterClaim. Ready comes from api/v1.
 const (
-	// ConditionRequestsReady reports the PluginRequests of the claim. While
-	// the claim waits for the outputs of a request, its reason is
-	// PrerequisiteNotMet or OperationPending, and the message names the
-	// sections.
+	// ConditionRequestsReady reports the PluginRequests of the claim. While a
+	// request waits for its own outputs, the reason is OperationPending.
+	// While a request waits for the outputs of another section, the reason
+	// is Blocked. The message names the sections.
 	ConditionRequestsReady = "RequestsReady"
 	// ConditionClusterReady reports the CamundaCluster of the claim. ocf sets
 	// its reason, such as Creating, Healthy, or Down. While the reason is
@@ -109,9 +109,12 @@ type CamundaClusterClaimSpec struct {
 	Attachments *ClusterAttachments `json:"attachments,omitempty"`
 	// DeletionPolicy says what happens to the resources of the plugin
 	// requests when the claim is deleted. Delete deletes them. Orphan keeps
-	// them. Empty means spec.deletionPolicy of the Environment. The
-	// CamundaCluster and the attachments are always deleted with the claim,
-	// under their own retention rules.
+	// them. Empty means the deletion default that the claim recorded from its
+	// Environment at creation, or Delete when it recorded none. The claim
+	// controller refuses Orphan with the reason NotAllowed when a selected
+	// registration does not support it. The CamundaCluster and the
+	// attachments are always deleted with the claim, under their own
+	// retention rules.
 	// +optional
 	DeletionPolicy pluginsv1alpha1.DeletionPolicy `json:"deletionPolicy,omitempty"`
 	// AllowVersionDowngrade is the target version of a confirmed downgrade,
@@ -215,7 +218,9 @@ type CamundaClusterClaimStatus struct {
 	// Failing, Degraded, or Down, its message holds the Ready reason and
 	// message of the CamundaCluster. If the CamundaCluster has no Ready
 	// condition yet, the message says so. With other reasons, such as
-	// Error or PrerequisiteNotMet, the message gives that cause.
+	// Error or PrerequisiteNotMet, the message gives that cause. While the
+	// claim is deleted and waits for objects, Ready is False with the reason
+	// Deleting, and the message names those objects.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -273,6 +278,21 @@ type CamundaClusterClaim struct {
 	// status is the state of the claim
 	// +optional
 	Status CamundaClusterClaimStatus `json:"status,omitzero"`
+}
+
+// GetStatusConditions returns a pointer to the status conditions. The
+// component framework stages conditions on the resource through it.
+func (in *CamundaClusterClaim) GetStatusConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
+}
+
+// GetKind returns the CRD kind. The component framework uses it for event and
+// metric recording.
+func (in *CamundaClusterClaim) GetKind() string { return "CamundaClusterClaim" }
+
+// SetObservedGeneration records the last reconciled generation in status.
+func (in *CamundaClusterClaim) SetObservedGeneration(generation int64) {
+	in.Status.ObservedGeneration = generation
 }
 
 // +kubebuilder:object:root=true

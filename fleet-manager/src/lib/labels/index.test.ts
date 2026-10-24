@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   ACCESS_SECTION,
+  BACKUP_SCHEDULE_LABEL,
   CLAIM_LABEL,
   CLUSTER_LABEL,
   COMPONENT_LABEL,
@@ -11,7 +12,9 @@ import {
   isLabelKey,
   isLabelValue,
   isManaged,
+  labelSelectorString,
 } from ".";
+import { parseSelector } from "@/lib/k8s/selector";
 
 // goConstant reads the value of a Go string constant from a file of the
 // repository. \b keeps ClusterKey from matching ManagementClusterKey.
@@ -83,6 +86,7 @@ it.each([
   [ACCESS_SECTION, "internal/pluginstartup/names.go", "SectionAccess"],
   [CLUSTER_LABEL, "pkg/labels/labels.go", "ClusterKey"],
   [COMPONENT_LABEL, "pkg/labels/labels.go", "ComponentKey"],
+  [BACKUP_SCHEDULE_LABEL, "pkg/labels/labels.go", "BackupScheduleKey"],
 ])("%s matches %s %s", (value, file, name) => {
   expect(value).toBe(goConstant(file, name));
 });
@@ -101,5 +105,58 @@ describe("isManaged", () => {
     ["an empty claim label", { metadata: { labels: { [CLAIM_LABEL]: "" } } }],
   ])("is false with %s", (_, object) => {
     expect(isManaged(object)).toBe(false);
+  });
+});
+
+describe("labelSelectorString", () => {
+  it("writes the labels sorted, then each expression", () => {
+    expect(
+      labelSelectorString({
+        matchLabels: { b: "2", a: "1" },
+        matchExpressions: [
+          { key: "t", operator: "In", values: ["x", "y"] },
+          { key: "o", operator: "NotIn", values: ["z"] },
+          { key: "e", operator: "Exists" },
+          { key: "d", operator: "DoesNotExist" },
+        ],
+      }),
+    ).toBe("a=1,b=2,t in (x,y),o notin (z),e,!d");
+  });
+
+  it.each([
+    ["no selector", undefined],
+    ["an empty selector", {}],
+  ])("is empty for %s", (_, selector) => {
+    expect(labelSelectorString(selector)).toBe("");
+  });
+
+  it.each<[Record<string, string>, boolean]>([
+    [{ a: "x" }, true],
+    [{ a: "" }, true],
+    [{}, false],
+  ])(
+    "gives a selector that parseSelector reads, for labels %j",
+    (labels, want) => {
+      const text = labelSelectorString({
+        matchExpressions: [{ key: "a", operator: "In", values: [""] }],
+      });
+      const not = labelSelectorString({
+        matchExpressions: [{ key: "a", operator: "NotIn", values: [""] }],
+      });
+      expect(parseSelector(text)(labels)).toBe(labels.a === "");
+      expect(parseSelector(not)(labels)).toBe(labels.a !== "");
+      const any = labelSelectorString({
+        matchExpressions: [{ key: "a", operator: "In", values: ["", "x"] }],
+      });
+      expect(parseSelector(any)(labels)).toBe(want);
+    },
+  );
+
+  it("names an operator that it does not know", () => {
+    expect(() =>
+      labelSelectorString({
+        matchExpressions: [{ key: "a", operator: "Gt", values: ["1"] }],
+      }),
+    ).toThrow(/Gt/);
   });
 });

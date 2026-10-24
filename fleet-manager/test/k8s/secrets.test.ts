@@ -16,6 +16,10 @@ const kc = new KubeConfig();
 kc.loadFromFile(inject("kubeconfig"));
 const api = KubernetesObjectApi.makeApiClient(kc);
 const namespace = `secrets-${randomUUID().slice(0, 8)}`;
+// writeSecretValue picks its writer from the settings in FLEET_NAMESPACE.
+// Without git.repository the settings give the direct writer.
+process.env.FLEET_NAMESPACE = namespace;
+delete process.env.FLEET_SETTINGS_GIT_REPOSITORY;
 const id = randomUUID().slice(0, 8);
 
 const secret = (

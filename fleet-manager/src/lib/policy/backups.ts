@@ -39,6 +39,40 @@ const RESTORE_KINDS: readonly string[] = [
 ] satisfies RestoreKind[];
 
 /**
+ * clusterBackups returns the backups of cluster, in their input order. A
+ * backup belongs to the cluster when it is in the namespace of the cluster
+ * and its spec.clusterRef names the cluster. An object of another kind is
+ * dropped.
+ */
+export function clusterBackups<T extends BackupLike>(
+  cluster: ClusterLike,
+  backups: readonly T[],
+): T[] {
+  return ofCluster(
+    cluster,
+    backups,
+    BACKUP_KINDS,
+    (b) => b.spec.clusterRef.name,
+  );
+}
+
+/**
+ * clusterRestores returns the restores of cluster by the rules of
+ * clusterBackups. A logical restore names the cluster in
+ * spec.targetClusterRef, a PointInTimeRestore in spec.clusterRef.
+ */
+export function clusterRestores<T extends RestoreLike>(
+  cluster: ClusterLike,
+  restores: readonly T[],
+): T[] {
+  return ofCluster(cluster, restores, RESTORE_KINDS, (r) =>
+    r.kind === "PointInTimeRestore"
+      ? r.spec.clusterRef?.name
+      : r.spec.targetClusterRef?.name,
+  );
+}
+
+/**
  * runningBackup returns the running backup of cluster in backups, or
  * undefined. A backup belongs to the cluster when it is in the namespace of
  * the cluster and its spec.clusterRef names the cluster. It runs until its
@@ -50,12 +84,8 @@ export function runningBackup(
   cluster: ClusterLike,
   backups: readonly BackupLike[],
 ): BackupRef | undefined {
-  return firstRunning(
-    cluster,
-    backups,
-    BACKUP_KINDS,
-    (b) => b.spec.clusterRef.name,
-  ) as BackupRef | undefined;
+  return firstRunning(cluster, clusterBackups(cluster, backups)) as
+    BackupRef | undefined;
 }
 
 /**
@@ -67,33 +97,41 @@ export function runningRestore(
   cluster: ClusterLike,
   restores: readonly RestoreLike[],
 ): RestoreRef | undefined {
-  return firstRunning(cluster, restores, RESTORE_KINDS, (r) =>
-    r.kind === "PointInTimeRestore"
-      ? r.spec.clusterRef?.name
-      : r.spec.targetClusterRef?.name,
-  ) as RestoreRef | undefined;
+  return firstRunning(cluster, clusterRestores(cluster, restores)) as
+    RestoreRef | undefined;
 }
 
-function firstRunning<T extends Meta & Phased>(
+function ofCluster<T extends Meta & Phased>(
   cluster: ClusterLike,
   objects: readonly T[],
   kinds: readonly string[],
   clusterName: (object: T) => string | undefined,
-): { kind: string; namespace: string; name: string } | undefined {
+): T[] {
   const { namespace = "", name = "" } = cluster.metadata ?? {};
+  return objects.filter(
+    (o) =>
+      kinds.includes(o.kind ?? "") &&
+      o.metadata?.namespace === namespace &&
+      clusterName(o) === name,
+  );
+}
+
+function firstRunning(
+  cluster: ClusterLike,
+  objects: readonly (Meta & Phased)[],
+): { kind: string; namespace: string; name: string } | undefined {
   const [first] = objects
     .filter(
-      (o) =>
-        kinds.includes(o.kind ?? "") &&
-        o.metadata?.namespace === namespace &&
-        clusterName(o) === name &&
-        o.status?.phase !== "Completed" &&
-        o.status?.phase !== "Failed",
+      (o) => o.status?.phase !== "Completed" && o.status?.phase !== "Failed",
     )
     .sort((a, b) =>
       (a.metadata?.name ?? "").localeCompare(b.metadata?.name ?? ""),
     );
   return first
-    ? { kind: first.kind!, namespace, name: first.metadata?.name ?? "" }
+    ? {
+        kind: first.kind!,
+        namespace: cluster.metadata?.namespace ?? "",
+        name: first.metadata?.name ?? "",
+      }
     : undefined;
 }

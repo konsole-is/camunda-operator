@@ -153,6 +153,12 @@ The operator applies the resources that it keeps in shape, such as the workloads
 
 The operator gives many objects a name that it derives from the resource, for example the ServiceAccount `my-cluster-camunda` or the Deployment `my-cluster-gateway`. When the resource no longer needs such an object, the operator deletes it only when the resource owns it. An object of that name that you created stays. When the resource needs an object of that name, the operator takes your object over, and from then on the resource owns it. An object that another resource controls is not taken over.
 
+## Claims
+
+Claims sit above the core kinds. A [CamundaClusterClaim](crds/camundaclusterclaim.md) asks for a cluster under the policy of an [Environment](crds/environment.md). The operator turns it into one [PluginRequest](crds/pluginrequest.md) for each option that the claim selects, and into a `CamundaCluster` with the name of the claim. The plugins answer the requests, and their outputs fill fields of the `CamundaCluster`, such as `spec.storageRef`. The core kinds never read a claim, so a `CamundaCluster` that you write yourself works the same way. A [CamundaManagementClusterClaim](crds/camundamanagementclusterclaim.md) does the same for a management plane. Its requests give the databases and the URLs of the `CamundaManagementCluster`.
+
+The fields that a claim writes have a field manager that starts with `CamundaClusterClaim/` or `CamundaManagementClusterClaim/`. A GitOps tool that writes the same field of a generated `CamundaCluster` reports a conflict with that manager. Set the field in `spec.cluster` or `spec.management` of the claim instead.
+
 ## The fleet manager
 
 The fleet manager is a web app that the chart installs when `fleetManager.enabled` is `true`, see [Install the fleet manager](fleet-manager/install.md). It runs in the release namespace under its own ServiceAccount. The ClusterRole of that ServiceAccount reads every kind of the operator. It also reads pods, Services, and volume claims. The workloads of a resource carry the labels in [How a feature finds its workloads](#how-a-feature-finds-its-workloads). It can also write the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets. It cannot write a `CamundaCluster` or a `CamundaManagementCluster`.

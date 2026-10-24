@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
 
 // AllowedInput holds what CheckAllowed reads.
@@ -32,6 +33,11 @@ type AllowedInput struct {
 	// Environment is the current Environment of the namespace. Nil when no
 	// Environment exists.
 	Environment *fleetv1alpha1.Environment `json:"environment,omitempty"`
+	// Kind is the kind of the claim.
+	Kind pluginsv1alpha1.ClaimKind `json:"kind,omitempty"`
+	// Sections are the PluginSections. A section of the policy that is not
+	// in Sections applies to every claim kind.
+	Sections []pluginsv1alpha1.PluginSection `json:"sections,omitempty"`
 	// Policy is the snapshot of the claim (Resolution.Policy).
 	Policy fleetv1alpha1.ResolvedPolicy `json:"policy"`
 	// PresetRef and ReleaseRef are empty for a plane claim.
@@ -47,11 +53,13 @@ type AllowedInput struct {
 //  2. A release that spec.releases.allowed of the current Environment does
 //     not list. An empty release passes, because the default of the
 //     Environment is one of allowed.
-//  3. A registration, in claim order, that the snapshot does not allow in
+//  3. A selection, in claim order, in a section whose spec.appliesTo does
+//     not list Kind.
+//  4. A registration, in claim order, that the snapshot does not allow in
 //     its section. A section without a policy allows no registration.
-//  4. A section, in name order, that the snapshot marks required and in
-//     which the claim selects nothing.
-//  5. A parameter, in claim order and then in key order. A key that is not
+//  5. A section, in name order, that the snapshot marks required, that
+//     applies to Kind, and in which the claim selects nothing.
+//  6. A parameter, in claim order and then in key order. A key that is not
 //     claim-editable passes only with a value equal as JSON to the value of
 //     the snapshot. A claim-editable key with choices takes only the name of
 //     a choice or a list of such names.
@@ -63,6 +71,12 @@ type AllowedInput struct {
 func CheckAllowed(in AllowedInput) error {
 	if err := checkRefs(in); err != nil {
 		return err
+	}
+
+	for _, s := range in.Selections {
+		if !appliesTo(s.Section, in.Kind, in.Sections) {
+			return refuse(fleetv1alpha1.ReasonNotAllowed, "section %q does not apply to a %s", s.Section, in.Kind)
+		}
 	}
 
 	selected := map[string]bool{}
@@ -79,7 +93,7 @@ func CheckAllowed(in AllowedInput) error {
 	}
 
 	for _, section := range slices.Sorted(maps.Keys(in.Policy.Sections)) {
-		if in.Policy.Sections[section].Required && !selected[section] {
+		if in.Policy.Sections[section].Required && !selected[section] && appliesTo(section, in.Kind, in.Sections) {
 			return refuse(
 				fleetv1alpha1.ReasonNotAllowed,
 				"section %q is required, and the claim selects nothing in it",
@@ -122,6 +136,11 @@ func checkRefs(in AllowedInput) error {
 	}
 
 	return nil
+}
+
+func appliesTo(section string, kind pluginsv1alpha1.ClaimKind, sections []pluginsv1alpha1.PluginSection) bool {
+	i := slices.IndexFunc(sections, func(s pluginsv1alpha1.PluginSection) bool { return s.Name == section })
+	return i < 0 || slices.Contains(sections[i].Spec.AppliesTo, kind)
 }
 
 func checkParameters(selection fleetv1alpha1.PluginSelection, policies fleetv1alpha1.ParameterPolicies) error {

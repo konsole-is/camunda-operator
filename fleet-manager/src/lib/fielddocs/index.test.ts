@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { fieldDocs } from "@/generated/fielddocs";
-import { apiReferenceUrl, fieldDocFor } from "./index";
+import type { ClusterField } from "@/lib/fields";
+import {
+  apiReferenceUrl,
+  fieldDocFor,
+  fieldDocsOf,
+  nearestFieldDoc,
+} from "./index";
 
 describe("fieldDocFor", () => {
   it("returns the doc of a known path", () => {
@@ -43,5 +49,60 @@ describe("apiReferenceUrl", () => {
     ],
   ])("links version %s to %s", (version, url) => {
     expect(apiReferenceUrl(version, "#zeebespec")).toBe(url);
+  });
+});
+
+describe("nearestFieldDoc", () => {
+  it("falls back to the map field for a map key", () => {
+    expect(
+      nearestFieldDoc("core.camunda.io", "CamundaCluster", [
+        "spec",
+        "podLabels",
+        "team",
+      ]),
+    ).toBe(fieldDocFor("core.camunda.io", "CamundaCluster", "spec.podLabels"));
+  });
+
+  it("returns nothing when no prefix has a doc", () => {
+    expect(
+      nearestFieldDoc("core.camunda.io", "Nope", ["spec", "zeebe"]),
+    ).toBeUndefined();
+  });
+});
+
+describe("fieldDocsOf", () => {
+  it("keys each doc by field key and skips a parameter", () => {
+    const field = (over: Partial<ClusterField>): ClusterField => ({
+      key: "",
+      target: { kind: "CamundaCluster" },
+      group: "zeebe",
+      path: "",
+      label: "",
+      value: undefined,
+      state: { kind: "preset" },
+      ...over,
+    });
+    const docs = fieldDocsOf([
+      field({
+        key: "CamundaCluster:spec.zeebe.partitions",
+        docNames: ["spec", "zeebe", "partitions"],
+      }),
+      field({
+        key: "secondary-storage/elasticsearch:spec.parameters.spec",
+        target: {
+          kind: "PluginRequest",
+          section: "secondary-storage",
+          registration: "elasticsearch",
+        },
+        group: "parameters",
+      }),
+    ]);
+    expect(docs).toEqual({
+      "CamundaCluster:spec.zeebe.partitions": fieldDocFor(
+        "core.camunda.io",
+        "CamundaCluster",
+        "spec.zeebe.partitions",
+      ),
+    });
   });
 });

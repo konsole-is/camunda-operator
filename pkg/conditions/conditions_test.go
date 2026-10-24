@@ -71,6 +71,18 @@ func TestBoundMessageKeepsAMessageWithinTheBound(t *testing.T) {
 	assert.Equal(t, "short", BoundMessage("short"))
 }
 
+// A claim component joins the messages of its requests, so four long plugin
+// messages can pass the cap of the claim schema.
+func TestBoundMessagesKeepsEachConditionUnderTheCap(t *testing.T) {
+	long := strings.Repeat("x", 4*MaxMessageLength)
+	conds := []metav1.Condition{{Type: "RequestsReady", Message: long}, {Type: "ClusterReady", Message: "short"}}
+
+	BoundMessages(conds)
+
+	assert.LessOrEqual(t, len(conds[0].Message), MaxMessageLength)
+	assert.Equal(t, "short", conds[1].Message)
+}
+
 func TestStageBoundsAConditionBuiltElsewhere(t *testing.T) {
 	owner := &v1.SecondaryStorageConfig{}
 	owner.Generation = 4

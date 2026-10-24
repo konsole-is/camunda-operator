@@ -127,3 +127,5 @@ function toError(error: ErrorObject): ValidationError {
       return { path: path(), message: error.message ?? "is not valid" };
   }
 }
+
+export { type SchemaRule, schemaRules } from "./rules";

@@ -27,6 +27,12 @@ export const CLUSTER_LABEL = "camunda.io/cluster";
 /** COMPONENT_LABEL on a pod names its component. It is ComponentKey of pkg/labels. */
 export const COMPONENT_LABEL = "camunda.io/component";
 
+/**
+ * BACKUP_SCHEDULE_LABEL on a backup holds labels.OwnerName of the
+ * BackupSchedule that made it. It is BackupScheduleKey of pkg/labels.
+ */
+export const BACKUP_SCHEDULE_LABEL = "camunda.io/backup-schedule";
+
 /** isManaged says whether a claim made the object: it carries CLAIM_LABEL with a value. */
 export function isManaged(object: {
   metadata?: { labels?: Record<string, string> };
@@ -55,4 +61,48 @@ export function isLabelKey(key: string): boolean {
 /** isLabelValue says whether value is a valid Kubernetes label value. The empty value is valid. */
 export function isLabelValue(value: string): boolean {
   return value === "" || NAME.test(value);
+}
+
+/** LabelSelector is a metav1.LabelSelector. */
+export type LabelSelector = {
+  matchLabels?: Record<string, string>;
+  matchExpressions?: { key: string; operator: string; values?: string[] }[];
+};
+
+/**
+ * labelSelectorString writes selector in the text form of a Kubernetes
+ * label selector, as in "app=web,tier in (a,b),!legacy". No selector and an
+ * empty one give "", which selects every object. It throws for an operator
+ * other than In, NotIn, Exists, and DoesNotExist.
+ */
+export function labelSelectorString(
+  selector: LabelSelector | undefined,
+): string {
+  const labels = Object.entries(selector?.matchLabels ?? {})
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([key, value]) => `${key}=${value}`);
+  const expressions = (selector?.matchExpressions ?? []).map(
+    ({ key, operator, values = [] }) => {
+      // A set with only the empty value reads as "key in ()", which a
+      // selector parser refuses, so it is written as key= or key!=.
+      const empty = values.length === 1 && values[0] === "";
+      switch (operator) {
+        case "In":
+          if (empty) return `${key}=`;
+          return `${key} in (${values.join(",")})`;
+        case "NotIn":
+          if (empty) return `${key}!=`;
+          return `${key} notin (${values.join(",")})`;
+        case "Exists":
+          return key;
+        case "DoesNotExist":
+          return `!${key}`;
+        default:
+          throw new Error(
+            `The label selector operator ${operator} of key ${key} is not valid`,
+          );
+      }
+    },
+  );
+  return [...labels, ...expressions].join(",");
 }

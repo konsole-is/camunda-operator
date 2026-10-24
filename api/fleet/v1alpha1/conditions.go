@@ -17,9 +17,9 @@ limitations under the License.
 package v1alpha1
 
 // The condition vocabulary of the fleet group. Ready and its reasons Healthy
-// and InvalidReference come from api/v1. While a claim waits, ocf reports
-// PrerequisiteNotMet or OperationPending, so this group has no reason of its
-// own for waiting.
+// and InvalidReference come from api/v1. While a live claim waits, ocf
+// reports PrerequisiteNotMet or OperationPending, so this group has no reason
+// of its own for that wait.
 const (
 	// ReasonNoEnvironment means that the namespace of a claim has no
 	// environment label while at least one Environment exists.
@@ -27,9 +27,9 @@ const (
 	// ReasonUnknownEnvironment means that the environment label of the
 	// namespace of a claim names an Environment that does not exist.
 	ReasonUnknownEnvironment = "UnknownEnvironment"
-	// ReasonNotAllowed means that the policy of the environment does not
-	// allow a value of the claim, such as a preset, a release, a
-	// registration, or a parameter. The message names each value.
+	// ReasonNotAllowed means that the claim asks for a value that is not
+	// allowed, such as a preset, a release, a registration, a parameter, or
+	// the deletion policy Orphan. The message names what is not allowed.
 	ReasonNotAllowed = "NotAllowed"
 	// ReasonMissingInput means that a registration of the claim needs an
 	// input that no selected section gives.
@@ -40,4 +40,7 @@ const (
 	// ReasonWiringCycle means that the inputs of the selected registrations
 	// form a cycle. The message names the sections on the cycle.
 	ReasonWiringCycle = "WiringCycle"
+	// ReasonDeleting means that the claim is deleted and waits for the
+	// objects that the message names.
+	ReasonDeleting = "Deleting"
 )
