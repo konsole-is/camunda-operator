@@ -5,7 +5,7 @@ go 1.26.0
 replace github.com/konsole-is/camunda-operator/api => ../api
 
 require (
-	github.com/konsole-is/camunda-operator/api v0.2.1-0.20261015084104-bb2edca2c2db
+	github.com/konsole-is/camunda-operator/api v0.2.1-0.20261024225545-5c9b1c4af551
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.44.0
 	github.com/stretchr/testify v1.12.1
