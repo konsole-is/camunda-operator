@@ -72,9 +72,8 @@ type resolver struct {
 // A failed check returns a *conditions.PreCheckFailure: UnsupportedVersion for
 // a version below its floor, InvalidReference for a dangling reference or a
 // platform config that cannot serve the mode, MissingSecret for a missing
-// Secret or key, and Conflict when another owner holds the contract name. A
-// missing ServiceAccount is a *conditions.UnwatchedPreCheckFailure that wraps
-// InvalidReference. Any other error is a transient API failure.
+// Secret or key, and Conflict when another owner holds the contract name. Any
+// other error is a transient API failure.
 func (r *Reconciler) preCheck(ctx context.Context, mc *v1.CamundaManagementCluster) (resolved, error) {
 	out := resolved{
 		Input:        components.Input{Cluster: mc, Suspended: mc.Spec.Suspend, KeycloakCRDServed: r.keycloakServed},
@@ -380,20 +379,19 @@ func (res *resolver) resolvePusher(ctx context.Context) (components.PusherCreden
 	return components.PusherCredentials{Key: appKey, Secret: appSecret}, nil
 }
 
-// checkServiceAccounts fails the pre-check, unwatched, when an account that
-// the spec names with create false does not exist. The operator never
-// creates nor owns such an account, so an absent one would otherwise surface
-// as pods that are never created. Nothing watches it, so the reconcile comes
-// back on a timer.
+// checkServiceAccounts fails the pre-check when an account that the spec
+// names with create false does not exist. The operator never creates nor
+// owns such an account, so an absent one would otherwise surface as pods that
+// are never created.
 func (res *resolver) checkServiceAccounts(ctx context.Context) error {
 	for _, ref := range components.ReferencedServiceAccounts(res.mc) {
 		key := client.ObjectKey{Namespace: res.mc.Namespace, Name: ref.Name}
 		if err := res.reader.Get(ctx, key, &corev1.ServiceAccount{}); err != nil {
 			if apierrors.IsNotFound(err) {
-				return conditions.NewUnwatchedFailure(
-					v1.ReasonInvalidReference,
-					fmt.Sprintf("ServiceAccount %s not found, and %s.create is false", key, ref.Field),
-				)
+				return &conditions.PreCheckFailure{
+					Reason:  v1.ReasonInvalidReference,
+					Message: fmt.Sprintf("ServiceAccount %s not found, and %s.create is false", key, ref.Field),
+				}
 			}
 
 			return fmt.Errorf("reading ServiceAccount %s: %w", key, err)

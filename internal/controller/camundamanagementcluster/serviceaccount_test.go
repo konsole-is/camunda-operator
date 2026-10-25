@@ -73,8 +73,6 @@ var _ = Describe("CamundaManagementCluster ServiceAccounts", func() {
 		Expect(conditionOf(Default, s.mc, v1.ConditionReady).Message).
 			To(ContainSubstring("spec.serviceAccount.create is false"))
 
-		// Nothing watches an account that the plane does not own, so the
-		// controller finds it on its retry.
 		existing := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: s.namespace, Name: "existing"}}
 		Expect(k8sClient.Create(ctx, existing)).To(Succeed())
 
@@ -86,6 +84,9 @@ var _ = Describe("CamundaManagementCluster ServiceAccounts", func() {
 		var account corev1.ServiceAccount
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(existing), &account)).To(Succeed())
 		Expect(account.OwnerReferences).To(BeEmpty())
+
+		Expect(k8sClient.Delete(ctx, existing)).To(Succeed())
+		expectReadyReason(s.mc, v1.ReasonInvalidReference)
 	})
 })
 

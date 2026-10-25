@@ -238,8 +238,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	res, err := r.preCheck(ctx, &mc)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		var unwatched *conditions.UnwatchedPreCheckFailure
-		return r.reconcileUnresolved(ctx, &mc, failure, errors.As(err, &unwatched))
+		return r.reconcileUnresolved(ctx, &mc, failure)
 	}
 	if err != nil {
 		return ctrl.Result{}, stepResolveReferences.stop(&mc, err)
@@ -357,9 +356,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 }
 
 // reconcileUnresolved is the pass of a management plane whose pre-check
-// failed. An unwatched failure comes back on the retry interval, because no
-// event announces that it is resolved. It reports the failure and runs the
-// three halves that need nothing
+// failed. It reports the failure and runs the three halves that need nothing
 // the pre-check resolves: the release of the realm claims that nothing of the
 // plane names any more, the withdrawal from a recorded realm that the spec no
 // longer names, and the release of the clusters that left the selector. The
@@ -370,7 +367,6 @@ func (r *Reconciler) reconcileUnresolved(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	failure *conditions.PreCheckFailure,
-	unwatched bool,
 ) (ctrl.Result, error) {
 	conditions.Stage(mc, conditions.Failed(mc, failure))
 
@@ -395,7 +391,7 @@ func (r *Reconciler) reconcileUnresolved(
 		// on its own.
 		return ctrl.Result{}, errors.Join(sweepErr, callbackErr, releaseErr)
 	}
-	if retry || heldRealm || removalRefused || unwatched {
+	if retry || heldRealm || removalRefused {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 

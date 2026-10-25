@@ -56,6 +56,9 @@ const (
 	// themselves. The Secrets they reach through a platform config or a
 	// DatabaseConfig are indexed by those resources instead.
 	SecretRefsField = "camundamanagementcluster.spec.secretRefs"
+	// ServiceAccountRefsField lists management clusters by every
+	// ServiceAccount they name with create false.
+	ServiceAccountRefsField = "camundamanagementcluster.spec.serviceAccountRefs"
 )
 
 // indexers are the index functions of the fields above.
@@ -82,16 +85,25 @@ var indexers = map[string]client.IndexerFunc{
 	SecretRefsField: func(o client.Object) []string {
 		return secretRefs(o.(*v1.CamundaManagementCluster))
 	},
+	ServiceAccountRefsField: func(o client.Object) []string {
+		mc := o.(*v1.CamundaManagementCluster)
+		refs := components.ReferencedServiceAccounts(mc)
+		keys := make([]string, 0, len(refs))
+		for _, ref := range refs {
+			keys = append(keys, refindex.NamespacedKey(mc.Namespace, ref.Name))
+		}
+		return keys
+	},
 }
 
 // setupWatches registers the controller, the reference indexes, and the
 // watches. It owns the Deployments, the Services, the ConfigMaps, the
 // ServiceAccounts, and the Secrets it applies (Secrets metadata only), and the
-// Keycloak custom resource where the Kubernetes cluster serves that kind. Every reference is watched: the
-// platform config, the DatabaseConfigs, and the contract through the indexes
-// above, the database servers through the DatabaseConfigs that name them, and
-// Secrets (metadata only) through the namespace and the contracts that reach
-// them. The orchestration clusters are watched too, because the claim follows
+// Keycloak custom resource where the Kubernetes cluster serves that kind.
+// Every reference is watched: the platform config, the DatabaseConfigs, and
+// the contract through the indexes above, the database servers through the
+// DatabaseConfigs that name them, and Secrets (metadata only) through the
+// namespace and the contracts that reach them. The orchestration clusters are watched too, because the claim follows
 // their labels, and the CamundaOptimizes, because the login callbacks of the
 // realm follow their URLs.
 func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
@@ -143,6 +155,10 @@ func (r *Reconciler) setupWatches(mgr ctrl.Manager) error {
 		Watches(
 			&v1.CamundaOptimize{},
 			refindex.Enqueue(cached, list, ContractNameField, optimizeContractName),
+		).
+		Watches(
+			&corev1.ServiceAccount{},
+			refindex.Enqueue(cached, list, ServiceAccountRefsField, refindex.ObjectNamespacedName),
 		).
 		Watches(&v1.DatabaseServerConfig{}, r.enqueueForDatabaseServer()).
 		Watches(&v1.CamundaCluster{}, r.enqueueForCluster()).
