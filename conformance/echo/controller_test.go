@@ -171,15 +171,15 @@ func TestObjectsLabelOnlyTheStorageClassWithTheRequestNamespace(t *testing.T) {
 	cmA, scA, _ := c.objects(a, false)
 	_, scB, _ := c.objects(b, false)
 
-	assert.Equal(t, "team-a", scA.Labels[labelRequestNamespace])
-	assert.Equal(t, "team-b", scB.Labels[labelRequestNamespace])
+	assert.Equal(t, "team-a", scA.Labels[pluginsv1alpha1.LabelRequestNamespace])
+	assert.Equal(t, "team-b", scB.Labels[pluginsv1alpha1.LabelRequestNamespace])
 	assert.Equal(
 		t,
 		scA.Labels[pluginsv1alpha1.LabelRequest],
 		scB.Labels[pluginsv1alpha1.LabelRequest],
 		"only the request namespace label tells the two apart",
 	)
-	assert.NotContains(t, cmA.Labels, labelRequestNamespace)
+	assert.NotContains(t, cmA.Labels, pluginsv1alpha1.LabelRequestNamespace)
 }
 
 // echoStorageClass is a StorageClass with the labels of the request
@@ -191,7 +191,7 @@ func echoStorageClass(name, namespace string) *storagev1.StorageClass {
 		pluginsv1alpha1.LabelRequest:      requestName,
 	}
 	if namespace != "" {
-		labels[labelRequestNamespace] = namespace
+		labels[pluginsv1alpha1.LabelRequestNamespace] = namespace
 	}
 
 	return &storagev1.StorageClass{
@@ -361,14 +361,14 @@ func TestReadyCondition(t *testing.T) {
 			name:    "a Grant without Ready",
 			grants:  []*pluginsv1alpha1.Grant{grantNamed("g", "")},
 			status:  metav1.ConditionFalse,
-			reason:  reasonWaitingForGrants,
+			reason:  pluginsv1alpha1.ReasonWaitingForGrants,
 			message: "Grant g",
 		},
 		{
 			name:    "a Grant with Ready=Unknown",
 			grants:  []*pluginsv1alpha1.Grant{grantNamed("g", metav1.ConditionUnknown)},
 			status:  metav1.ConditionFalse,
-			reason:  reasonWaitingForGrants,
+			reason:  pluginsv1alpha1.ReasonWaitingForGrants,
 			message: "Grant g",
 		},
 		{

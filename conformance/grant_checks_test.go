@@ -416,7 +416,7 @@ func TestWaitingVerdict(t *testing.T) {
 	}{
 		{
 			name:  "Ready=False",
-			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: reasonWaitingForGrants},
+			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: pluginsv1alpha1.ReasonWaitingForGrants},
 		},
 		{
 			name:  "Ready=False with another reason",
@@ -453,10 +453,10 @@ func TestGrantsReadyVerdict(t *testing.T) {
 		{name: "no Ready", messages: []string{"has no Ready condition"}},
 		{
 			name:  "Ready=False",
-			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: reasonWaitingForGrants},
+			ready: &metav1.Condition{Status: metav1.ConditionFalse, Reason: pluginsv1alpha1.ReasonWaitingForGrants},
 			messages: []string{
 				"not Ready=True after every Grant of it got Ready=True",
-				reasonWaitingForGrants,
+				pluginsv1alpha1.ReasonWaitingForGrants,
 			},
 		},
 	}

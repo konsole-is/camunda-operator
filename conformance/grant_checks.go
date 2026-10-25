@@ -834,7 +834,7 @@ func (s *suite) grantReadyRun(ctx context.Context, name string) error {
 	}
 
 	// REQ-READY judges each other state of Ready.
-	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != reasonWaitingForGrants {
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != pluginsv1alpha1.ReasonWaitingForGrants {
 		return nil
 	}
 

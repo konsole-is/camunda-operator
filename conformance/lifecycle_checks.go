@@ -67,12 +67,6 @@ const (
 // kindPluginRequest is the kind of an owner reference to a request.
 const kindPluginRequest = "PluginRequest"
 
-// TODO(#867): use pluginsv1alpha1.LabelRequestNamespace.
-const labelRequestNamespace = "plugins.camunda.io/request-namespace"
-
-// TODO(#867): use pluginsv1alpha1.ReasonWaitingForGrants.
-const reasonWaitingForGrants = "WaitingForGrants"
-
 // lifecycleChecks run for each request of the run, in this order.
 var lifecycleChecks = []Check{
 	{
@@ -727,7 +721,7 @@ func readyVerdict(ready *metav1.Condition, grants []pluginsv1alpha1.Grant) error
 		return errors.New(
 			"the Ready condition is False with the reason GrantRejected while no Grant of the request has Ready=False",
 		)
-	case ready.Status == metav1.ConditionFalse && ready.Reason == reasonWaitingForGrants:
+	case ready.Status == metav1.ConditionFalse && ready.Reason == pluginsv1alpha1.ReasonWaitingForGrants:
 		return waitingForGrantsVerdict(grants)
 	}
 
@@ -794,11 +788,11 @@ func labelProblems(obj *unstructured.Unstructured, request *pluginsv1alpha1.Plug
 
 	switch {
 	case obj.GetNamespace() == "":
-		if obj.GetLabels()[labelRequestNamespace] != request.Namespace {
+		if obj.GetLabels()[pluginsv1alpha1.LabelRequestNamespace] != request.Namespace {
 			problems = append(problems, fmt.Sprintf(
 				"%s has no label %s: %q",
 				ref,
-				labelRequestNamespace,
+				pluginsv1alpha1.LabelRequestNamespace,
 				request.Namespace,
 			))
 		}
