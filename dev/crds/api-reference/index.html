@@ -9200,6 +9200,12 @@ Identity, its identity provider, and, when set, Console and Web Modeler.</p>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
+<td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
+<td>ServiceAccount configures the ServiceAccount of every workload of this<br />management plane, except a component that sets a serviceAccount block of<br />its own. A PluginRequest of the plane targets this account, so the<br />access that a plugin grants goes to these workloads. When name is unset,<br />the account is &lt;name&gt;-management. No two accounts of one management<br />plane can have the same name, or Ready reports InvalidReference. The<br />name default needs create false.</td>
+<td></td>
+<td>Optional: {} <br /></td>
+</tr>
+<tr>
 <td><code>identityProvider</code> <em><a href="#identityproviderspec">IdentityProviderSpec</a></em></td>
 <td>IdentityProvider selects where users authenticate. Exactly one of<br />keycloak, externalKeycloak, or oidc is set.</td>
 <td></td>
@@ -9253,6 +9259,12 @@ CamundaManagementCluster.</p>
 <td>Optional: {} <br /></td>
 </tr>
 <tr>
+<td><code>serviceAccountName</code> <em>string</em></td>
+<td>ServiceAccountName is the ServiceAccount that the workloads of this<br />management plane run under, except a component that sets a<br />serviceAccount block of its own. A PluginRequest of the plane targets<br />it. An extension that runs a pod for this plane reads it and does not<br />derive the name itself.</td>
+<td></td>
+<td>Optional: {} <br /></td>
+</tr>
+<tr>
 <td><code>endpoints</code> <em><a href="#endpoint">Endpoint</a> array</em></td>
 <td>Endpoints lists the routes of this management plane, sorted by name.<br />Each entry is a path on an external URL, with the Service and the port<br />that serve it. An access extension reads it and does not derive a<br />Service from the mode fields. The path of an entry is the path of the<br />external URL of its app, or / for a URL without a path. The entry<br />belongs to the host of that URL. keycloak is present in the keycloak<br />mode, console while spec.console is set, and web-modeler and<br />web-modeler-websockets while spec.webModeler is set. The longest<br />matching path prefix wins. The entries stay while the management plane<br />is suspended, because the Services stay.</td>
 <td></td>
@@ -9278,7 +9290,7 @@ CamundaManagementCluster.</p>
 </tr>
 <tr>
 <td><code>conditions</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#condition-v1-meta">Condition</a> array</em></td>
-<td>Conditions represent the current state. Ready holds the reason of a<br />failed pre-check, or StepFailed for a failed step. When the write of<br />the ManagementAuthConfig is the first failed step, Ready holds<br />WriteFailed instead. In the oidc mode it holds ImmutableAfterStart when<br />spec.identity.admin changed after Management Identity first started.<br />Otherwise it follows the conditions of the deployed components. When<br />all of them are True, a failed OptimizeCallbacksReady makes Ready False<br />with its reason. The per-component conditions (KeycloakReady,<br />IdentityReady, ConsoleReady, WebModelerReady, ManagementAuthReady,<br />SecretsReady, MirroredSecretsReady) and OptimizeCallbacksReady also<br />appear here.</td>
+<td>Conditions represent the current state. Ready holds the reason of a<br />failed pre-check, or StepFailed for a failed step. When the write of<br />the ManagementAuthConfig is the first failed step, Ready holds<br />WriteFailed instead. In the oidc mode it holds ImmutableAfterStart when<br />spec.identity.admin changed after Management Identity first started.<br />Otherwise it follows the conditions of the deployed components. When<br />all of them are True, a failed OptimizeCallbacksReady makes Ready False<br />with its reason. The per-component conditions (KeycloakReady,<br />IdentityReady, ConsoleReady, WebModelerReady, ManagementAuthReady,<br />SecretsReady, MirroredSecretsReady, ServiceAccountsReady) and<br />OptimizeCallbacksReady also appear here.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -10029,6 +10041,12 @@ Deployment.</p>
 <td>ExternalURL is the URL where browsers reach Console. Console serves<br />under the path of this URL. Every selected CamundaCluster reports to<br />Console through its Kubernetes Service. Thus the clusters do not need<br />an Ingress in front of Console.</td>
 <td></td>
 <td></td>
+</tr>
+<tr>
+<td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
+<td>ServiceAccount gives the Console pods a ServiceAccount of their own.<br />When unset, they run under spec.serviceAccount. When set, they run<br />under &lt;name&gt;-console, or under name, and they do not get the access<br />that a plugin grants to the account of spec.serviceAccount. The name<br />default needs create false.</td>
+<td></td>
+<td>Optional: {} <br /></td>
 </tr>
 <tr>
 <td><code>replicas</code> <em>integer</em></td>
@@ -11950,6 +11968,12 @@ it.</p>
 <td>MinLength: 1 <br /></td>
 </tr>
 <tr>
+<td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
+<td>ServiceAccount gives the Management Identity pods a ServiceAccount of their own.<br />When unset, they run under spec.serviceAccount. When set, they run<br />under &lt;name&gt;-identity, or under name, and they do not get the access that a<br />plugin grants to the account of spec.serviceAccount. The name default<br />needs create false.</td>
+<td></td>
+<td>Optional: {} <br /></td>
+</tr>
+<tr>
 <td><code>admin</code> <em><a href="#identityadminspec">IdentityAdminSpec</a></em></td>
 <td>Admin names the first administrator of the management plane.</td>
 <td></td>
@@ -13337,6 +13361,12 @@ the Keycloak Operator.</p>
 <tr>
 <td><code>resources</code> <em><a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#resourcerequirements-v1-core">ResourceRequirements</a></em></td>
 <td>Resources are the CPU and memory of the Keycloak container.</td>
+<td></td>
+<td>Optional: {} <br /></td>
+</tr>
+<tr>
+<td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
+<td>ServiceAccount gives the Keycloak pods a ServiceAccount of their own.<br />When unset, they run under spec.serviceAccount. When set, they run<br />under &lt;name&gt;-keycloak, or under name, and they do not get the access that a<br />plugin grants to the account of spec.serviceAccount. The name default<br />needs create false.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -15695,8 +15725,13 @@ keystore, never from the settings of a snapshot repository.</p>
 <p>ServiceAccountSpec configures the ServiceAccount of the pods of a resource.</p>
 <p><em>Appears in:</em>
 - <a href="#camundaclusterspec">CamundaClusterSpec</a>
+- <a href="#camundamanagementclusterspec">CamundaManagementClusterSpec</a>
 - <a href="#connectorsspec">ConnectorsSpec</a>
-- <a href="#elasticsearchclusterspec">ElasticsearchClusterSpec</a></p>
+- <a href="#consolespec">ConsoleSpec</a>
+- <a href="#elasticsearchclusterspec">ElasticsearchClusterSpec</a>
+- <a href="#identityspec">IdentitySpec</a>
+- <a href="#managedkeycloakspec">ManagedKeycloakSpec</a>
+- <a href="#webmodelerspec">WebModelerSpec</a></p>
 <table>
 <thead>
 <tr>
@@ -15715,7 +15750,7 @@ keystore, never from the settings of a snapshot repository.</p>
 </tr>
 <tr>
 <td><code>create</code> <em>boolean</em></td>
-<td>Create makes the operator create and own the ServiceAccount. Defaults<br />to true. False names a ServiceAccount that already exists. The operator<br />then does not create, annotate, or own it. If it does not exist, Ready<br />reports InvalidReference. Ready does not report it on a suspended<br />ElasticsearchCluster or for connectors that are not enabled.<br />While create is false, the operator never takes ownership of the<br />ServiceAccount, because it deletes an owned one with the resource. A<br />switch to false removes the owner reference from the account that the<br />operator created. The account then stays when the resource is deleted.<br />With create true, the operator owns and annotates the account of that<br />name, also one that it did not create. An account that another<br />resource controls is not taken over, and the apply fails.</td>
+<td>Create makes the operator create and own the ServiceAccount. Defaults<br />to true. False names a ServiceAccount that already exists. The operator<br />then does not create, annotate, or own it. If it does not exist, Ready<br />reports InvalidReference. Ready does not report it on a suspended<br />ElasticsearchCluster or for connectors that are not enabled. It also<br />does not report it for a component of a CamundaManagementCluster that<br />does not run.<br />While create is false, the operator never takes ownership of the<br />ServiceAccount, because it deletes an owned one with the resource. A<br />switch to false removes the owner reference from the account that the<br />operator created. The account then stays when the resource is deleted.<br />With create true, the operator owns and annotates the account of that<br />name, also one that it did not create. An account that another<br />resource controls is not taken over, and the apply fails.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>
@@ -16005,6 +16040,12 @@ the restapi process and the websockets process.</p>
 <td>Mail configures the SMTP server that Web Modeler sends notifications<br />through. Web Modeler does not start without it.</td>
 <td></td>
 <td></td>
+</tr>
+<tr>
+<td><code>serviceAccount</code> <em><a href="#serviceaccountspec">ServiceAccountSpec</a></em></td>
+<td>ServiceAccount gives the Web Modeler pods a ServiceAccount of their own.<br />When unset, they run under spec.serviceAccount. When set, they run<br />under &lt;name&gt;-web-modeler, or under name, and they do not get the access that a<br />plugin grants to the account of spec.serviceAccount. The name default<br />needs create false.</td>
+<td></td>
+<td>Optional: {} <br /></td>
 </tr>
 <tr>
 <td><code>restapi</code> <em><a href="#workloadspec">WorkloadSpec</a></em></td>

@@ -2169,6 +2169,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Target
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#outputs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2571,6 +2582,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Target
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#outputs" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2806,6 +2828,30 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <p>To list the StorageClasses of one request:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>storageclasses<span class="w"> </span>-l<span class="w"> </span>plugins.camunda.io/request<span class="o">=</span>orders-backup-storage,plugins.camunda.io/request-namespace<span class="o">=</span>my-cluster-ns
 </span></code></pre></div>
+<h2 id="target">Target<a class="headerlink" href="#target" title="Permanent link">&para;</a></h2>
+<p><code>spec.target</code> names the resource that the request serves, and the ServiceAccount that gets the access of the plugin. A plugin grants its cloud access to <code>target.serviceAccountName</code>, and to each name in <code>target.additionalServiceAccounts</code>. The claim writes the target:</p>
+<table>
+<thead>
+<tr>
+<th>Claim</th>
+<th><code>target.kind</code></th>
+<th><code>target.serviceAccountName</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../camundaclusterclaim/">CamundaClusterClaim</a> <code>orders</code></td>
+<td><code>CamundaCluster</code></td>
+<td><code>orders-camunda</code>, the account of every pod of the cluster except the connectors. A section with the slot <code>connectorsIdentity</code> targets <code>orders-connectors</code>.</td>
+</tr>
+<tr>
+<td><a href="../camundamanagementclusterclaim/">CamundaManagementClusterClaim</a> <code>my-plane</code></td>
+<td><code>CamundaManagementCluster</code></td>
+<td><code>my-plane-management</code>, the account of every workload of the plane.</td>
+</tr>
+</tbody>
+</table>
+<p>A component of a management plane with a <code>serviceAccount</code> block of its own does not get this access. See <a href="../camundamanagementcluster/#serviceaccounts">ServiceAccounts</a>.</p>
 <h2 id="outputs">Outputs<a class="headerlink" href="#outputs" title="Permanent link">&para;</a></h2>
 <p><code>status.outputs</code> holds the values that the plugin publishes for the request, by output key. Read them only when the condition <code>OutputsReady</code> is <code>True</code> and its <code>observedGeneration</code> equals <code>metadata.generation</code>. Before that, the outputs can belong to an older spec.</p>
 <h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Permanent link">&para;</a></h2>
