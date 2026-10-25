@@ -126,28 +126,28 @@ func TestReadyVerdict(t *testing.T) {
 		},
 		{
 			name:   "WaitingForGrants with a Grant without Ready",
-			ready:  ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			ready:  ready(metav1.ConditionFalse, pluginsv1alpha1.ReasonWaitingForGrants),
 			grants: []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue), {}},
 		},
 		{
 			name:   "WaitingForGrants with an Unknown Grant",
-			ready:  ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			ready:  ready(metav1.ConditionFalse, pluginsv1alpha1.ReasonWaitingForGrants),
 			grants: []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionUnknown)},
 		},
 		{
 			name:    "WaitingForGrants while every Grant is Ready",
-			ready:   ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			ready:   ready(metav1.ConditionFalse, pluginsv1alpha1.ReasonWaitingForGrants),
 			grants:  []pluginsv1alpha1.Grant{grantWithReady(metav1.ConditionTrue)},
 			message: "while every Grant of the request has Ready=True",
 		},
 		{
 			name:    "WaitingForGrants without a Grant",
-			ready:   ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			ready:   ready(metav1.ConditionFalse, pluginsv1alpha1.ReasonWaitingForGrants),
 			message: "while every Grant of the request has Ready=True",
 		},
 		{
 			name:    "WaitingForGrants while a Grant has Ready=False",
-			ready:   ready(metav1.ConditionFalse, reasonWaitingForGrants),
+			ready:   ready(metav1.ConditionFalse, pluginsv1alpha1.ReasonWaitingForGrants),
 			grants:  []pluginsv1alpha1.Grant{{}, grantWithReady(metav1.ConditionFalse)},
 			message: "the reason is GrantRejected",
 		},
@@ -202,7 +202,7 @@ func writerLabels() map[string]string {
 // clusterLabels are the labels of a cluster-scoped object of testRequest.
 func clusterLabels() map[string]string {
 	labels := writerLabels()
-	labels[labelRequestNamespace] = "ns"
+	labels[pluginsv1alpha1.LabelRequestNamespace] = "ns"
 	return labels
 }
 
@@ -243,7 +243,7 @@ func TestLabelProblems(t *testing.T) {
 			name: "a cluster-scoped object with the request namespace of another request",
 			obj: written("StorageClass", "", "x", func() map[string]string {
 				labels := clusterLabels()
-				labels[labelRequestNamespace] = "team-b"
+				labels[pluginsv1alpha1.LabelRequestNamespace] = "team-b"
 				return labels
 			}()),
 			contains: []string{`StorageClass x has no label plugins.camunda.io/request-namespace: "ns"`},

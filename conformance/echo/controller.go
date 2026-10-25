@@ -58,12 +58,6 @@ const (
 	docsURL            = "https://example.com/echo"
 )
 
-// TODO(#867): use pluginsv1alpha1.LabelRequestNamespace.
-const labelRequestNamespace = "plugins.camunda.io/request-namespace"
-
-// TODO(#867): use pluginsv1alpha1.ReasonWaitingForGrants.
-const reasonWaitingForGrants = "WaitingForGrants"
-
 // Controller is one echo controller. It writes its registration when it
 // starts and sets Ready=True on it. It serves each request of the
 // registration: the cleanup finalizer first, then a ConfigMap
@@ -412,7 +406,7 @@ func (c *Controller) objects(
 
 	clusterLabels := maps.Clone(labels)
 	if c.opts.Defect != DefectNoRequestNamespace {
-		clusterLabels[labelRequestNamespace] = req.Namespace
+		clusterLabels[pluginsv1alpha1.LabelRequestNamespace] = req.Namespace
 	}
 
 	sc := &storagev1.StorageClass{
@@ -610,7 +604,7 @@ func readyCondition(grants []*pluginsv1alpha1.Grant, defect Defect, generation i
 		ready.Message = fmt.Sprintf("Grant %s has Ready=False", grants[rejected].Name)
 	case waiting >= 0:
 		ready.Status = metav1.ConditionFalse
-		ready.Reason = reasonWaitingForGrants
+		ready.Reason = pluginsv1alpha1.ReasonWaitingForGrants
 		ready.Message = fmt.Sprintf("Grant %s does not have Ready=True yet", grants[waiting].Name)
 	}
 
@@ -765,6 +759,6 @@ func ofRequest(obj client.Object, req *pluginsv1alpha1.PluginRequest) bool {
 		return false
 	}
 
-	namespace, labeled := labels[labelRequestNamespace]
+	namespace, labeled := labels[pluginsv1alpha1.LabelRequestNamespace]
 	return obj.GetNamespace() != "" || !labeled || namespace == req.Namespace
 }
