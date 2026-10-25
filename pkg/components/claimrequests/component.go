@@ -142,7 +142,7 @@ func desiredRequest(
 			Target: pluginsv1alpha1.TargetRef{
 				Kind:                      in.TargetKind,
 				Name:                      claim.GetName(),
-				ServiceAccountName:        claimpolicy.TargetServiceAccount(claim.GetName(), section),
+				ServiceAccountName:        claimpolicy.TargetServiceAccount(in.ClaimKind, claim.GetName(), section),
 				AdditionalServiceAccounts: slices.Clone(in.AdditionalServiceAccounts[s.Section]),
 			},
 			Inputs:         inputs,

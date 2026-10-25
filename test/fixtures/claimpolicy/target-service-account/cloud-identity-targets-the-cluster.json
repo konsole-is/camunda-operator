@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "name": "A section with another slot targets the cluster",
   "input": {
+    "kind": "CamundaClusterClaim",
     "claim": "team-a",
     "section": {
       "metadata": {

@@ -58,6 +58,17 @@ To list the StorageClasses of one request:
 kubectl get storageclasses -l plugins.camunda.io/request=orders-backup-storage,plugins.camunda.io/request-namespace=my-cluster-ns
 ```
 
+## Target
+
+`spec.target` names the resource that the request serves, and the ServiceAccount that gets the access of the plugin. A plugin grants its cloud access to `target.serviceAccountName`, and to each name in `target.additionalServiceAccounts`. The claim writes the target:
+
+| Claim | `target.kind` | `target.serviceAccountName` |
+| --- | --- | --- |
+| [CamundaClusterClaim](camundaclusterclaim.md) `orders` | `CamundaCluster` | `orders-camunda`, the account of every pod of the cluster except the connectors. A section with the slot `connectorsIdentity` targets `orders-connectors`. |
+| [CamundaManagementClusterClaim](camundamanagementclusterclaim.md) `my-plane` | `CamundaManagementCluster` | `my-plane-management`, the account of every workload of the plane. |
+
+A component of a management plane with a `serviceAccount` block of its own does not get this access. See [ServiceAccounts](camundamanagementcluster.md#serviceaccounts).
+
 ## Outputs
 
 `status.outputs` holds the values that the plugin publishes for the request, by output key. Read them only when the condition `OutputsReady` is `True` and its `observedGeneration` equals `metadata.generation`. Before that, the outputs can belong to an older spec.

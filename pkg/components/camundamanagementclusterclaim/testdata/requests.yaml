@@ -22,7 +22,7 @@ spec:
   target:
     kind: CamundaManagementCluster
     name: my-plane
-    serviceAccountName: my-plane-camunda
+    serviceAccountName: my-plane-management
 ---
 apiVersion: plugins.camunda.io/v1alpha1
 kind: PluginRequest
@@ -43,4 +43,4 @@ spec:
   target:
     kind: CamundaManagementCluster
     name: my-plane
-    serviceAccountName: my-plane-camunda
+    serviceAccountName: my-plane-management

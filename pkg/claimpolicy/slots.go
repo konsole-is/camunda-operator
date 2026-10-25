@@ -246,11 +246,16 @@ func sectionOf(name string, sections []pluginsv1alpha1.PluginSection) (*pluginsv
 	return nil, refuse(v1.ReasonInvalidReference, "PluginSection %q does not exist", name)
 }
 
-// TargetServiceAccount returns the ServiceAccount that a request of claim in
-// section targets: <claim>-connectors for a section with the slot
+// TargetServiceAccount returns the ServiceAccount that a request of claim of
+// kind in section targets. A request of a CamundaManagementClusterClaim
+// targets <claim>-management, the account of the plane. A request of a
+// CamundaClusterClaim targets <claim>-connectors for a section with the slot
 // connectorsIdentity, and <claim>-camunda for every other section, also one
 // without a slot.
-func TargetServiceAccount(claim string, section *pluginsv1alpha1.PluginSection) string {
+func TargetServiceAccount(kind pluginsv1alpha1.ClaimKind, claim string, section *pluginsv1alpha1.PluginSection) string {
+	if kind == pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim {
+		return claim + "-management"
+	}
 	if section != nil && section.Spec.Slot == pluginsv1alpha1.SlotConnectorsIdentity {
 		return claim + "-connectors"
 	}

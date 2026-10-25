@@ -33,9 +33,17 @@ func TestServiceAccountNamesMatchTheTargetOfTheRequests(t *testing.T) {
 	}
 
 	assert.Equal(t, "orders-camunda", ServiceAccountName("orders"))
-	assert.Equal(t, claimpolicy.TargetServiceAccount("orders", nil), ServiceAccountName("orders"))
+	assert.Equal(
+		t,
+		claimpolicy.TargetServiceAccount(pluginsv1alpha1.ClaimKindCamundaClusterClaim, "orders", nil),
+		ServiceAccountName("orders"),
+	)
 	assert.Equal(t, "orders-connectors", ConnectorsServiceAccountName("orders"))
-	assert.Equal(t, claimpolicy.TargetServiceAccount("orders", connectors), ConnectorsServiceAccountName("orders"))
+	assert.Equal(
+		t,
+		claimpolicy.TargetServiceAccount(pluginsv1alpha1.ClaimKindCamundaClusterClaim, "orders", connectors),
+		ConnectorsServiceAccountName("orders"),
+	)
 }
 
 func TestAdditionalServiceAccounts(t *testing.T) {
