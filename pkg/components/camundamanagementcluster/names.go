@@ -51,6 +51,9 @@ const (
 	// ComponentMirroredSecrets is the copies of the referenced Secrets that
 	// live outside the management namespace.
 	ComponentMirroredSecrets = "management-mirrored-secrets"
+	// ComponentServiceAccounts is the ServiceAccounts that the workloads run
+	// under, and labels the account of spec.serviceAccount.
+	ComponentServiceAccounts = "management-service-accounts"
 	// ComponentManagementAuth is the ManagementAuthConfig that the management
 	// cluster writes. The contract is not a workload, so a selector on the
 	// owner and this value reaches the contract alone.

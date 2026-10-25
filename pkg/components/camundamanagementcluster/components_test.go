@@ -71,7 +71,7 @@ func TestCamundaManagementClusterGoldens(t *testing.T) {
 	}
 }
 
-// The oidc mode renders Management Identity alone. The copies of referenced
+// The oidc mode renders the ServiceAccounts and Management Identity alone. The copies of referenced
 // Secrets, the generated Secrets, the Keycloak, Console, and Web Modeler are
 // built either way, so a reference that moved into the management namespace,
 // a credential that a Keycloak mode published, a Keycloak the spec moved off,
@@ -88,6 +88,7 @@ func TestBuildRendersIdentityAndTheCopiesOfReferencedSecrets(t *testing.T) {
 		[]string{
 			ComponentMirroredSecrets,
 			ComponentSecrets,
+			ComponentServiceAccounts,
 			ComponentKeycloak,
 			ComponentIdentity,
 			ComponentConsole,
@@ -95,12 +96,14 @@ func TestBuildRendersIdentityAndTheCopiesOfReferencedSecrets(t *testing.T) {
 		},
 		componentNames(minimal.Components),
 	)
-	assert.Equal(t, []string{ComponentIdentity}, componentNames(minimal.Ready))
+	assert.Equal(t, []string{ComponentServiceAccounts, ComponentIdentity}, componentNames(minimal.Ready))
 
 	realistic, err := Build(fixtureRealistic(t))
 	require.NoError(t, err)
 	assert.Equal(
-		t, []string{ComponentMirroredSecrets, ComponentIdentity}, componentNames(realistic.Ready),
+		t,
+		[]string{ComponentMirroredSecrets, ComponentServiceAccounts, ComponentIdentity},
+		componentNames(realistic.Ready),
 	)
 }
 

@@ -162,3 +162,45 @@ func webModeler(databaseConfigRef string) *v1.WebModelerSpec {
 		DatabaseConfigRef: databaseConfigRef,
 	}
 }
+
+// Two accounts of one management plane with one name would have two owners,
+// and the component with its own account would get the access of the plane.
+func TestValidateSpecRefusesTwoAccountsWithOneName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		mutate func(mc *v1.CamundaManagementCluster)
+		want   []string
+	}{
+		{
+			name: "a component account with the derived name of the plane account",
+			mutate: func(mc *v1.CamundaManagementCluster) {
+				mc.Spec.Identity.ServiceAccount = &v1.ServiceAccountSpec{Name: fixtureName + "-management"}
+			},
+			want: []string{"spec.serviceAccount", "spec.identity.serviceAccount", fixtureName + "-management"},
+		},
+		{
+			name: "two component accounts with one name",
+			mutate: func(mc *v1.CamundaManagementCluster) {
+				mc.Spec.Identity.ServiceAccount = &v1.ServiceAccountSpec{Name: "shared", Create: new(false)}
+				mc.Spec.WebModeler = webModeler("web-modeler-db")
+				mc.Spec.WebModeler.ServiceAccount = &v1.ServiceAccountSpec{Name: "shared", Create: new(false)}
+			},
+			want: []string{"spec.identity.serviceAccount", "spec.webModeler.serviceAccount", `"shared"`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			failure := ValidateSpec(newCluster(tt.mutate))
+
+			require.NotNil(t, failure)
+			assert.Equal(t, v1.ReasonInvalidReference, failure.Reason)
+			for _, want := range tt.want {
+				assert.Contains(t, failure.Message, want)
+			}
+		})
+	}
+}

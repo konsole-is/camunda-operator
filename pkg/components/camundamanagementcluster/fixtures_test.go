@@ -162,8 +162,8 @@ func fixtureMinimal(t *testing.T) Input {
 
 // fixtureRealistic exercises every override surface: a Microsoft Entra ID
 // provider with a username claim, a platform registry and license, copies of
-// referenced Secrets, replicas, resources, scheduling, pod metadata, and extra
-// environment.
+// referenced Secrets, an annotated plane account, replicas, resources,
+// scheduling, pod metadata, and extra environment.
 func fixtureRealistic(t *testing.T) Input {
 	t.Helper()
 
@@ -199,6 +199,9 @@ func withEveryOverride(in *Input) {
 		MirrorPurposeIdentityClient: {"identity-client-secret": []byte("golden-client-secret")},
 	}
 	in.HashInputs = []string{"Secret/platform/oidc-credentials=42"}
+	in.Cluster.Spec.ServiceAccount = &v1.ServiceAccountSpec{
+		Annotations: map[string]string{"eks.amazonaws.com/role-arn": "arn:aws:iam::123456789012:role/management"},
+	}
 	in.Cluster.Spec.Identity.WorkloadSpec = v1.WorkloadSpec{
 		Replicas: new(int32(2)),
 		Resources: &corev1.ResourceRequirements{
@@ -357,9 +360,9 @@ func newKeycloakInput(t *testing.T, managed bool, mutate func(in *Input)) Input 
 
 // fixtureKeycloakRealistic exercises the override surfaces of a Keycloak
 // mode: a platform registry and license, an administrator with an address and
-// a password of their own, more Keycloak instances, Keycloak resources, and
-// the two components that Management Identity has to create a Keycloak client
-// for.
+// a password of their own, more Keycloak instances, Keycloak resources, the
+// two components that Management Identity has to create a Keycloak client
+// for, and a Web Modeler account of its own.
 func fixtureKeycloakRealistic(t *testing.T, managed bool) Input {
 	t.Helper()
 
@@ -386,6 +389,9 @@ func fixtureKeycloakRealistic(t *testing.T, managed bool) Input {
 			}
 		})
 		in.HashInputs = []string{"Secret/platform/oidc-credentials=42"}
+		in.Cluster.Spec.WebModeler.ServiceAccount = &v1.ServiceAccountSpec{
+			Annotations: map[string]string{"iam.gke.io/gcp-service-account": "modeler@example.iam.gserviceaccount.com"},
+		}
 		if keycloak := in.Cluster.Spec.IdentityProvider.Keycloak; keycloak != nil {
 			keycloak.Replicas = new(int32(2))
 			keycloak.Resources = &corev1.ResourceRequirements{

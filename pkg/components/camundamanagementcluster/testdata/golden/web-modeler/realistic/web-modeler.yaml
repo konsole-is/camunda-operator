@@ -173,6 +173,7 @@ spec:
             path: /health/readiness
             port: management
           periodSeconds: 5
+      serviceAccountName: my-management-management
 ---
 apiVersion: v1
 kind: Service
@@ -258,6 +259,7 @@ spec:
             path: /up
             port: http
           periodSeconds: 5
+      serviceAccountName: my-management-management
 ---
 apiVersion: v1
 kind: Service

@@ -138,13 +138,7 @@ func consoleDeployment(in Input) *appsv1.Deployment {
 		Spec: appsv1.DeploymentSpec{
 			Replicas: new(in.replicas(ComponentConsole)),
 			Selector: &metav1.LabelSelector{MatchLabels: discoveryLabels(in, ComponentConsole)},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels:      discoveryLabels(in, ComponentConsole),
-					Annotations: map[string]string{ConfigHashAnnotation: ConfigHash(in, ComponentConsole)},
-				},
-				Spec: corev1.PodSpec{Containers: []corev1.Container{consoleContainerSpec(in)}},
-			},
+			Template: podTemplate(in, ComponentConsole, consoleContainerSpec(in)),
 		},
 	}
 }

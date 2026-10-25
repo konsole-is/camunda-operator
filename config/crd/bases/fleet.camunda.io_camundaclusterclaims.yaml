@@ -5162,7 +5162,9 @@ spec:
                               to true. False names a ServiceAccount that already exists. The operator
                               then does not create, annotate, or own it. If it does not exist, Ready
                               reports InvalidReference. Ready does not report it on a suspended
-                              ElasticsearchCluster or for connectors that are not enabled.
+                              ElasticsearchCluster or for connectors that are not enabled. It also
+                              does not report it for a component of a CamundaManagementCluster that
+                              does not run.
                               While create is false, the operator never takes ownership of the
                               ServiceAccount, because it deletes an owned one with the resource. A
                               switch to false removes the owner reference from the account that the
@@ -8031,7 +8033,9 @@ spec:
                           to true. False names a ServiceAccount that already exists. The operator
                           then does not create, annotate, or own it. If it does not exist, Ready
                           reports InvalidReference. Ready does not report it on a suspended
-                          ElasticsearchCluster or for connectors that are not enabled.
+                          ElasticsearchCluster or for connectors that are not enabled. It also
+                          does not report it for a component of a CamundaManagementCluster that
+                          does not run.
                           While create is false, the operator never takes ownership of the
                           ServiceAccount, because it deletes an owned one with the resource. A
                           switch to false removes the owner reference from the account that the

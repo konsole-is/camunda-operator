@@ -45,6 +45,11 @@ const (
 	// Disabled in the oidc mode. In that mode, the platform config names every
 	// client secret, and the first administrator is a token claim.
 	ConditionSecretsReady = "SecretsReady"
+	// ConditionServiceAccountsReady is the condition of the ServiceAccounts
+	// that the workloads of the management plane run under: the account of
+	// spec.serviceAccount, and the account of each component block that sets
+	// serviceAccount.
+	ConditionServiceAccountsReady = "ServiceAccountsReady"
 	// ConditionOptimizeCallbacksReady reports the state of the login callback
 	// of every Optimize in status.optimize. It reads Healthy when the Optimize
 	// client of the realm has all of the callbacks and the first
@@ -195,6 +200,16 @@ type CamundaManagementClusterSpec struct {
 	// name of this resource.
 	// +optional
 	ManagementAuthConfigName string `json:"managementAuthConfigName,omitempty"`
+	// ServiceAccount configures the ServiceAccount of every workload of this
+	// management plane, except a component that sets a serviceAccount block of
+	// its own. A PluginRequest of the plane targets this account, so the
+	// access that a plugin grants goes to these workloads. When name is unset,
+	// the account is <name>-management. No two accounts of one management
+	// plane can have the same name, or Ready reports InvalidReference. The
+	// name default needs create false.
+	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="serviceAccount.name default requires create: false"
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// IdentityProvider selects where users authenticate. Exactly one of
 	// keycloak, externalKeycloak, or oidc is set.
 	// +kubebuilder:validation:XValidation:rule="[has(self.keycloak), has(self.externalKeycloak), has(self.oidc)].filter(x, x).size() == 1",message="exactly one identity provider: keycloak, externalKeycloak, or oidc"
@@ -262,6 +277,14 @@ type ManagedKeycloakSpec struct {
 	// Resources are the CPU and memory of the Keycloak container.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	// ServiceAccount gives the Keycloak pods a ServiceAccount of their own.
+	// When unset, they run under spec.serviceAccount. When set, they run
+	// under <name>-keycloak, or under name, and they do not get the access that a
+	// plugin grants to the account of spec.serviceAccount. The name default
+	// needs create false.
+	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="identityProvider.keycloak.serviceAccount.name default requires create: false"
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// Scheduling constraints of the Keycloak pods.
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
@@ -348,6 +371,14 @@ type IdentitySpec struct {
 	// PostgreSQL database.
 	// +kubebuilder:validation:MinLength=1
 	DatabaseConfigRef string `json:"databaseConfigRef"`
+	// ServiceAccount gives the Management Identity pods a ServiceAccount of their own.
+	// When unset, they run under spec.serviceAccount. When set, they run
+	// under <name>-identity, or under name, and they do not get the access that a
+	// plugin grants to the account of spec.serviceAccount. The name default
+	// needs create false.
+	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="identity.serviceAccount.name default requires create: false"
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// Admin names the first administrator of the management plane.
 	Admin        IdentityAdminSpec `json:"admin"`
 	WorkloadSpec `json:",inline"`
@@ -412,8 +443,16 @@ type ConsoleSpec struct {
 	// +kubebuilder:validation:XValidation:rule="!self.contains('%')",message="externalUrl must carry no percent-encoded character: the operator passes the decoded path to Console"
 	// +kubebuilder:validation:XValidation:rule="!self.contains('\\\\')",message="externalUrl must carry no backslash: browsers read one in the path as a slash, and the operator does not"
 	// +kubebuilder:validation:XValidation:rule="!self.matches('^[^?#]*/[.][.]?([/?#]|$)')",message="externalUrl must carry no . or .. path segment: browsers remove them, and the operator does not"
-	ExternalURL  string `json:"externalUrl"`
-	WorkloadSpec `json:",inline"`
+	ExternalURL string `json:"externalUrl"`
+	// ServiceAccount gives the Console pods a ServiceAccount of their own.
+	// When unset, they run under spec.serviceAccount. When set, they run
+	// under <name>-console, or under name, and they do not get the access
+	// that a plugin grants to the account of spec.serviceAccount. The name
+	// default needs create false.
+	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="console.serviceAccount.name default requires create: false"
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
+	WorkloadSpec   `                    json:",inline"`
 }
 
 // WebModelerSpec configures Web Modeler. Web Modeler runs as two workloads:
@@ -444,6 +483,14 @@ type WebModelerSpec struct {
 	// Mail configures the SMTP server that Web Modeler sends notifications
 	// through. Web Modeler does not start without it.
 	Mail WebModelerMailSpec `json:"mail"`
+	// ServiceAccount gives the Web Modeler pods a ServiceAccount of their own.
+	// When unset, they run under spec.serviceAccount. When set, they run
+	// under <name>-web-modeler, or under name, and they do not get the access that a
+	// plugin grants to the account of spec.serviceAccount. The name default
+	// needs create false.
+	// +kubebuilder:validation:XValidation:rule="!has(self.name) || self.name != 'default' || (has(self.create) && !self.create)",message="webModeler.serviceAccount.name default requires create: false"
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 	// Restapi configures the workload of the restapi process.
 	// +optional
 	Restapi *WorkloadSpec `json:"restapi,omitempty"`
@@ -489,6 +536,13 @@ type CamundaManagementClusterStatus struct {
 	// managementAuthRef.
 	// +optional
 	ManagementAuthConfig string `json:"managementAuthConfig,omitempty"`
+	// ServiceAccountName is the ServiceAccount that the workloads of this
+	// management plane run under, except a component that sets a
+	// serviceAccount block of its own. A PluginRequest of the plane targets
+	// it. An extension that runs a pod for this plane reads it and does not
+	// derive the name itself.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 	// Endpoints lists the routes of this management plane, sorted by name.
 	// Each entry is a path on an external URL, with the Service and the port
 	// that serve it. An access extension reads it and does not derive a
@@ -558,8 +612,8 @@ type CamundaManagementClusterStatus struct {
 	// all of them are True, a failed OptimizeCallbacksReady makes Ready False
 	// with its reason. The per-component conditions (KeycloakReady,
 	// IdentityReady, ConsoleReady, WebModelerReady, ManagementAuthReady,
-	// SecretsReady, MirroredSecretsReady) and OptimizeCallbacksReady also
-	// appear here.
+	// SecretsReady, MirroredSecretsReady, ServiceAccountsReady) and
+	// OptimizeCallbacksReady also appear here.
 	// +listType=map
 	// +listMapKey=type
 	// +optional

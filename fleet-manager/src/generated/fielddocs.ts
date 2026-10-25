@@ -337,7 +337,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.connectors.serviceAccount.create": {
-        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
         "anchor": "#serviceaccountspec"
       },
       "spec.connectors.serviceAccount.name": {
@@ -533,7 +533,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.serviceAccount.create": {
-        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
         "anchor": "#serviceaccountspec"
       },
       "spec.serviceAccount.name": {
@@ -1063,7 +1063,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.connectors.serviceAccount.create": {
-        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.connectors.serviceAccount.name": {
@@ -1259,7 +1259,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.serviceAccount.create": {
-        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.serviceAccount.name": {
@@ -1452,6 +1452,22 @@ export const fieldDocs: FieldDocs = {
         "description": "Tolerations for the pods.",
         "anchor": "#schedulingspec"
       },
+      "spec.console.serviceAccount": {
+        "description": "ServiceAccount gives the Console pods a ServiceAccount of their own.\nWhen unset, they run under spec.serviceAccount. When set, they run\nunder <name>-console, or under name, and they do not get the access\nthat a plugin grants to the account of spec.serviceAccount. The name\ndefault needs create false.",
+        "anchor": "#consolespec"
+      },
+      "spec.console.serviceAccount.annotations": {
+        "description": "Annotations to set on the ServiceAccount that the operator creates.\nUsually these are workload-identity annotations (IRSA, GCP Workload\nIdentity, and more) that give the pods access to cloud resources, such\nas the snapshot bucket for backups. Except on connectors.serviceAccount\nof a CamundaCluster, the operator also adds the identity annotation of\neach referenced bucket that names an identity. An annotation set here\nwins over it. With create false, the operator sets no annotation. Add them\nto the existing ServiceAccount yourself.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.console.serviceAccount.create": {
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.console.serviceAccount.name": {
+        "description": "Name is the name of the ServiceAccount. When empty, the operator\nderives the name from the name of the resource, as the doc of each kind\nstates. The cloud provider uses this name. A workload identity that\nneeds no annotation, such as EKS Pod Identity, binds the principal\nsystem:serviceaccount:<namespace>:<name>.",
+        "anchor": "#serviceaccountspec"
+      },
       "spec.console.version": {
         "description": "Version is the Console version, as a full semantic version. The\noperator supports 8.9.0 and later.",
         "anchor": "#consolespec"
@@ -1540,6 +1556,22 @@ export const fieldDocs: FieldDocs = {
         "description": "Tolerations for the pods.",
         "anchor": "#schedulingspec"
       },
+      "spec.identity.serviceAccount": {
+        "description": "ServiceAccount gives the Management Identity pods a ServiceAccount of their own.\nWhen unset, they run under spec.serviceAccount. When set, they run\nunder <name>-identity, or under name, and they do not get the access that a\nplugin grants to the account of spec.serviceAccount. The name default\nneeds create false.",
+        "anchor": "#identityspec"
+      },
+      "spec.identity.serviceAccount.annotations": {
+        "description": "Annotations to set on the ServiceAccount that the operator creates.\nUsually these are workload-identity annotations (IRSA, GCP Workload\nIdentity, and more) that give the pods access to cloud resources, such\nas the snapshot bucket for backups. Except on connectors.serviceAccount\nof a CamundaCluster, the operator also adds the identity annotation of\neach referenced bucket that names an identity. An annotation set here\nwins over it. With create false, the operator sets no annotation. Add them\nto the existing ServiceAccount yourself.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.identity.serviceAccount.create": {
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.identity.serviceAccount.name": {
+        "description": "Name is the name of the ServiceAccount. When empty, the operator\nderives the name from the name of the resource, as the doc of each kind\nstates. The cloud provider uses this name. A workload identity that\nneeds no annotation, such as EKS Pod Identity, binds the principal\nsystem:serviceaccount:<namespace>:<name>.",
+        "anchor": "#serviceaccountspec"
+      },
       "spec.identity.version": {
         "description": "Version is the Management Identity version, as a full semantic version.\nThe operator supports 8.9.0 and later.",
         "anchor": "#identityspec"
@@ -1624,6 +1656,22 @@ export const fieldDocs: FieldDocs = {
         "description": "Tolerations for the pods.",
         "anchor": "#schedulingspec"
       },
+      "spec.identityProvider.keycloak.serviceAccount": {
+        "description": "ServiceAccount gives the Keycloak pods a ServiceAccount of their own.\nWhen unset, they run under spec.serviceAccount. When set, they run\nunder <name>-keycloak, or under name, and they do not get the access that a\nplugin grants to the account of spec.serviceAccount. The name default\nneeds create false.",
+        "anchor": "#managedkeycloakspec"
+      },
+      "spec.identityProvider.keycloak.serviceAccount.annotations": {
+        "description": "Annotations to set on the ServiceAccount that the operator creates.\nUsually these are workload-identity annotations (IRSA, GCP Workload\nIdentity, and more) that give the pods access to cloud resources, such\nas the snapshot bucket for backups. Except on connectors.serviceAccount\nof a CamundaCluster, the operator also adds the identity annotation of\neach referenced bucket that names an identity. An annotation set here\nwins over it. With create false, the operator sets no annotation. Add them\nto the existing ServiceAccount yourself.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.identityProvider.keycloak.serviceAccount.create": {
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.identityProvider.keycloak.serviceAccount.name": {
+        "description": "Name is the name of the ServiceAccount. When empty, the operator\nderives the name from the name of the resource, as the doc of each kind\nstates. The cloud provider uses this name. A workload identity that\nneeds no annotation, such as EKS Pod Identity, binds the principal\nsystem:serviceaccount:<namespace>:<name>.",
+        "anchor": "#serviceaccountspec"
+      },
       "spec.identityProvider.keycloak.version": {
         "description": "Version is the Keycloak version, as a full semantic version. Camunda\n8.9 supports only Keycloak 26. The image is\ncamunda/keycloak:quay-optimized-<version>, unless the platform config\nsets another repository.",
         "anchor": "#managedkeycloakspec"
@@ -1643,6 +1691,22 @@ export const fieldDocs: FieldDocs = {
       "spec.platformConfigRef": {
         "description": "PlatformConfigRef names the cluster-scoped CamundaPlatformConfig that\nholds the license and the image settings. In the oidc mode, it also\nholds the identity provider and every client of the management plane.",
         "anchor": "#camundamanagementclusterspec"
+      },
+      "spec.serviceAccount": {
+        "description": "ServiceAccount configures the ServiceAccount of every workload of this\nmanagement plane, except a component that sets a serviceAccount block of\nits own. A PluginRequest of the plane targets this account, so the\naccess that a plugin grants goes to these workloads. When name is unset,\nthe account is <name>-management. No two accounts of one management\nplane can have the same name, or Ready reports InvalidReference. The\nname default needs create false.",
+        "anchor": "#camundamanagementclusterspec"
+      },
+      "spec.serviceAccount.annotations": {
+        "description": "Annotations to set on the ServiceAccount that the operator creates.\nUsually these are workload-identity annotations (IRSA, GCP Workload\nIdentity, and more) that give the pods access to cloud resources, such\nas the snapshot bucket for backups. Except on connectors.serviceAccount\nof a CamundaCluster, the operator also adds the identity annotation of\neach referenced bucket that names an identity. An annotation set here\nwins over it. With create false, the operator sets no annotation. Add them\nto the existing ServiceAccount yourself.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.serviceAccount.create": {
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.serviceAccount.name": {
+        "description": "Name is the name of the ServiceAccount. When empty, the operator\nderives the name from the name of the resource, as the doc of each kind\nstates. The cloud provider uses this name. A workload identity that\nneeds no annotation, such as EKS Pod Identity, binds the principal\nsystem:serviceaccount:<namespace>:<name>.",
+        "anchor": "#serviceaccountspec"
       },
       "spec.suspend": {
         "description": "Suspend scales every workload of this management cluster to zero. The\nManagementAuthConfig, the claims on the orchestration clusters, and the\nConsole ping settings stay. Thus nothing else must change while the\nmanagement plane is down.",
@@ -1743,6 +1807,22 @@ export const fieldDocs: FieldDocs = {
       "spec.webModeler.restapi.scheduling.tolerations": {
         "description": "Tolerations for the pods.",
         "anchor": "#schedulingspec"
+      },
+      "spec.webModeler.serviceAccount": {
+        "description": "ServiceAccount gives the Web Modeler pods a ServiceAccount of their own.\nWhen unset, they run under spec.serviceAccount. When set, they run\nunder <name>-web-modeler, or under name, and they do not get the access that a\nplugin grants to the account of spec.serviceAccount. The name default\nneeds create false.",
+        "anchor": "#webmodelerspec"
+      },
+      "spec.webModeler.serviceAccount.annotations": {
+        "description": "Annotations to set on the ServiceAccount that the operator creates.\nUsually these are workload-identity annotations (IRSA, GCP Workload\nIdentity, and more) that give the pods access to cloud resources, such\nas the snapshot bucket for backups. Except on connectors.serviceAccount\nof a CamundaCluster, the operator also adds the identity annotation of\neach referenced bucket that names an identity. An annotation set here\nwins over it. With create false, the operator sets no annotation. Add them\nto the existing ServiceAccount yourself.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.webModeler.serviceAccount.create": {
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "anchor": "#serviceaccountspec"
+      },
+      "spec.webModeler.serviceAccount.name": {
+        "description": "Name is the name of the ServiceAccount. When empty, the operator\nderives the name from the name of the resource, as the doc of each kind\nstates. The cloud provider uses this name. A workload identity that\nneeds no annotation, such as EKS Pod Identity, binds the principal\nsystem:serviceaccount:<namespace>:<name>.",
+        "anchor": "#serviceaccountspec"
       },
       "spec.webModeler.version": {
         "description": "Version is the Web Modeler version, as a full semantic version. The\noperator supports 8.9.0 and later.",
@@ -1865,7 +1945,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#attachedclusterstatus"
       },
       "status.conditions": {
-        "description": "Conditions represent the current state. Ready holds the reason of a\nfailed pre-check, or StepFailed for a failed step. When the write of\nthe ManagementAuthConfig is the first failed step, Ready holds\nWriteFailed instead. In the oidc mode it holds ImmutableAfterStart when\nspec.identity.admin changed after Management Identity first started.\nOtherwise it follows the conditions of the deployed components. When\nall of them are True, a failed OptimizeCallbacksReady makes Ready False\nwith its reason. The per-component conditions (KeycloakReady,\nIdentityReady, ConsoleReady, WebModelerReady, ManagementAuthReady,\nSecretsReady, MirroredSecretsReady) and OptimizeCallbacksReady also\nappear here.",
+        "description": "Conditions represent the current state. Ready holds the reason of a\nfailed pre-check, or StepFailed for a failed step. When the write of\nthe ManagementAuthConfig is the first failed step, Ready holds\nWriteFailed instead. In the oidc mode it holds ImmutableAfterStart when\nspec.identity.admin changed after Management Identity first started.\nOtherwise it follows the conditions of the deployed components. When\nall of them are True, a failed OptimizeCallbacksReady makes Ready False\nwith its reason. The per-component conditions (KeycloakReady,\nIdentityReady, ConsoleReady, WebModelerReady, ManagementAuthReady,\nSecretsReady, MirroredSecretsReady, ServiceAccountsReady) and\nOptimizeCallbacksReady also appear here.",
         "anchor": "#camundamanagementclusterstatus"
       },
       "status.endpoints": {
@@ -1915,6 +1995,10 @@ export const fieldDocs: FieldDocs = {
       "status.optimize.namespace": {
         "description": "Namespace is the namespace of the CamundaOptimize.",
         "anchor": "#attachedoptimizestatus"
+      },
+      "status.serviceAccountName": {
+        "description": "ServiceAccountName is the ServiceAccount that the workloads of this\nmanagement plane run under, except a component that sets a\nserviceAccount block of its own. A PluginRequest of the plane targets\nit. An extension that runs a pod for this plane reads it and does not\nderive the name itself.",
+        "anchor": "#camundamanagementclusterstatus"
       }
     },
     "CamundaOptimize": {
@@ -3263,7 +3347,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.serviceAccount.create": {
-        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
         "anchor": "#serviceaccountspec"
       },
       "spec.serviceAccount.name": {
@@ -3453,7 +3537,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.serviceAccount.create": {
-        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.serviceAccount.name": {
@@ -4877,7 +4961,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.connectors.serviceAccount.create": {
-        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.connectors.serviceAccount.name": {
@@ -5073,7 +5157,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.serviceAccount.create": {
-        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
+        "description": "Create makes the operator create and own the ServiceAccount. Defaults\nto true. False names a ServiceAccount that already exists. The operator\nthen does not create, annotate, or own it. If it does not exist, Ready\nreports InvalidReference. Ready does not report it on a suspended\nElasticsearchCluster or for connectors that are not enabled. It also\ndoes not report it for a component of a CamundaManagementCluster that\ndoes not run.\nWhile create is false, the operator never takes ownership of the\nServiceAccount, because it deletes an owned one with the resource. A\nswitch to false removes the owner reference from the account that the\noperator created. The account then stays when the resource is deleted.\nWith create true, the operator owns and annotates the account of that\nname, also one that it did not create. An account that another\nresource controls is not taken over, and the apply fails.",
         "anchor": "#serviceaccountspec"
       },
       "spec.cluster.serviceAccount.name": {

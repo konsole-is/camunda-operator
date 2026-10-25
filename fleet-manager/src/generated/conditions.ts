@@ -44,6 +44,7 @@ export const coreCamundaManagementClusterConditionTypes = [
   "OptimizeCallbacksReady",
   "Ready",
   "SecretsReady",
+  "ServiceAccountsReady",
   "WebModelerReady",
 ] as const;
 export type CoreCamundaManagementClusterConditionType = (typeof coreCamundaManagementClusterConditionTypes)[number];

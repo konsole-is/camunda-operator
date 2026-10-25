@@ -18,6 +18,7 @@ spec:
     metadata:
       annotations:
         camunda.io/config-hash: 94257d46eeacfb84
+        camunda.io/service-account-hash: 361293f7fd21c622
         prometheus.io/scrape: "true"
       labels:
         camunda.io/component: management-identity
@@ -111,6 +112,7 @@ spec:
             path: /actuator/health
             port: management
           periodSeconds: 5
+      serviceAccountName: my-management-management
       tolerations:
       - key: camunda
         operator: Exists

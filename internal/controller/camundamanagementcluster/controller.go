@@ -152,6 +152,7 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -237,7 +238,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	res, err := r.preCheck(ctx, &mc)
 	var failure *conditions.PreCheckFailure
 	if errors.As(err, &failure) {
-		return r.reconcileUnresolved(ctx, &mc, failure)
+		var unwatched *conditions.UnwatchedPreCheckFailure
+		return r.reconcileUnresolved(ctx, &mc, failure, errors.As(err, &unwatched))
 	}
 	if err != nil {
 		return ctrl.Result{}, stepResolveReferences.stop(&mc, err)
@@ -297,6 +299,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	// The routes describe Services, which outlive a suspension. A pass that
 	// stops before the build keeps the routes of the last one.
 	mc.Status.Endpoints = components.Endpoints(&mc)
+	mc.Status.ServiceAccountName = components.ServiceAccountName(&mc)
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
 	claimRefusal, claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)
@@ -354,7 +357,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 }
 
 // reconcileUnresolved is the pass of a management plane whose pre-check
-// failed. It reports the failure and runs the three halves that need nothing
+// failed. An unwatched failure comes back on the retry interval, because no
+// event announces that it is resolved. It reports the failure and runs the
+// three halves that need nothing
 // the pre-check resolves: the release of the realm claims that nothing of the
 // plane names any more, the withdrawal from a recorded realm that the spec no
 // longer names, and the release of the clusters that left the selector. The
@@ -365,6 +370,7 @@ func (r *Reconciler) reconcileUnresolved(
 	ctx context.Context,
 	mc *v1.CamundaManagementCluster,
 	failure *conditions.PreCheckFailure,
+	unwatched bool,
 ) (ctrl.Result, error) {
 	conditions.Stage(mc, conditions.Failed(mc, failure))
 
@@ -389,7 +395,7 @@ func (r *Reconciler) reconcileUnresolved(
 		// on its own.
 		return ctrl.Result{}, errors.Join(sweepErr, callbackErr, releaseErr)
 	}
-	if retry || heldRealm || removalRefused {
+	if retry || heldRealm || removalRefused || unwatched {
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 	}
 

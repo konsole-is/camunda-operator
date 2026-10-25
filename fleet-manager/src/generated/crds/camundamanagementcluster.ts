@@ -813,6 +813,53 @@ export interface CamundaManagementClusterSpec {
       }[];
     };
     /**
+     * ServiceAccount gives the Console pods a ServiceAccount of their own.
+     * When unset, they run under spec.serviceAccount. When set, they run
+     * under <name>-console, or under name, and they do not get the access
+     * that a plugin grants to the account of spec.serviceAccount. The name
+     * default needs create false.
+     */
+    serviceAccount?: {
+      /**
+       * Annotations to set on the ServiceAccount that the operator creates.
+       * Usually these are workload-identity annotations (IRSA, GCP Workload
+       * Identity, and more) that give the pods access to cloud resources, such
+       * as the snapshot bucket for backups. Except on connectors.serviceAccount
+       * of a CamundaCluster, the operator also adds the identity annotation of
+       * each referenced bucket that names an identity. An annotation set here
+       * wins over it. With create false, the operator sets no annotation. Add them
+       * to the existing ServiceAccount yourself.
+       */
+      annotations?: {
+        [k: string]: string;
+      };
+      /**
+       * Create makes the operator create and own the ServiceAccount. Defaults
+       * to true. False names a ServiceAccount that already exists. The operator
+       * then does not create, annotate, or own it. If it does not exist, Ready
+       * reports InvalidReference. Ready does not report it on a suspended
+       * ElasticsearchCluster or for connectors that are not enabled. It also
+       * does not report it for a component of a CamundaManagementCluster that
+       * does not run.
+       * While create is false, the operator never takes ownership of the
+       * ServiceAccount, because it deletes an owned one with the resource. A
+       * switch to false removes the owner reference from the account that the
+       * operator created. The account then stays when the resource is deleted.
+       * With create true, the operator owns and annotates the account of that
+       * name, also one that it did not create. An account that another
+       * resource controls is not taken over, and the apply fails.
+       */
+      create?: boolean;
+      /**
+       * Name is the name of the ServiceAccount. When empty, the operator
+       * derives the name from the name of the resource, as the doc of each kind
+       * states. The cloud provider uses this name. A workload identity that
+       * needs no annotation, such as EKS Pod Identity, binds the principal
+       * system:serviceaccount:<namespace>:<name>.
+       */
+      name?: string;
+    };
+    /**
      * Version is the Console version, as a full semantic version. The
      * operator supports 8.9.0 and later.
      */
@@ -1619,6 +1666,53 @@ export interface CamundaManagementClusterSpec {
       }[];
     };
     /**
+     * ServiceAccount gives the Management Identity pods a ServiceAccount of their own.
+     * When unset, they run under spec.serviceAccount. When set, they run
+     * under <name>-identity, or under name, and they do not get the access that a
+     * plugin grants to the account of spec.serviceAccount. The name default
+     * needs create false.
+     */
+    serviceAccount?: {
+      /**
+       * Annotations to set on the ServiceAccount that the operator creates.
+       * Usually these are workload-identity annotations (IRSA, GCP Workload
+       * Identity, and more) that give the pods access to cloud resources, such
+       * as the snapshot bucket for backups. Except on connectors.serviceAccount
+       * of a CamundaCluster, the operator also adds the identity annotation of
+       * each referenced bucket that names an identity. An annotation set here
+       * wins over it. With create false, the operator sets no annotation. Add them
+       * to the existing ServiceAccount yourself.
+       */
+      annotations?: {
+        [k: string]: string;
+      };
+      /**
+       * Create makes the operator create and own the ServiceAccount. Defaults
+       * to true. False names a ServiceAccount that already exists. The operator
+       * then does not create, annotate, or own it. If it does not exist, Ready
+       * reports InvalidReference. Ready does not report it on a suspended
+       * ElasticsearchCluster or for connectors that are not enabled. It also
+       * does not report it for a component of a CamundaManagementCluster that
+       * does not run.
+       * While create is false, the operator never takes ownership of the
+       * ServiceAccount, because it deletes an owned one with the resource. A
+       * switch to false removes the owner reference from the account that the
+       * operator created. The account then stays when the resource is deleted.
+       * With create true, the operator owns and annotates the account of that
+       * name, also one that it did not create. An account that another
+       * resource controls is not taken over, and the apply fails.
+       */
+      create?: boolean;
+      /**
+       * Name is the name of the ServiceAccount. When empty, the operator
+       * derives the name from the name of the resource, as the doc of each kind
+       * states. The cloud provider uses this name. A workload identity that
+       * needs no annotation, such as EKS Pod Identity, binds the principal
+       * system:serviceaccount:<namespace>:<name>.
+       */
+      name?: string;
+    };
+    /**
      * Version is the Management Identity version, as a full semantic version.
      * The operator supports 8.9.0 and later.
      */
@@ -2238,6 +2332,53 @@ export interface CamundaManagementClusterSpec {
         }[];
       };
       /**
+       * ServiceAccount gives the Keycloak pods a ServiceAccount of their own.
+       * When unset, they run under spec.serviceAccount. When set, they run
+       * under <name>-keycloak, or under name, and they do not get the access that a
+       * plugin grants to the account of spec.serviceAccount. The name default
+       * needs create false.
+       */
+      serviceAccount?: {
+        /**
+         * Annotations to set on the ServiceAccount that the operator creates.
+         * Usually these are workload-identity annotations (IRSA, GCP Workload
+         * Identity, and more) that give the pods access to cloud resources, such
+         * as the snapshot bucket for backups. Except on connectors.serviceAccount
+         * of a CamundaCluster, the operator also adds the identity annotation of
+         * each referenced bucket that names an identity. An annotation set here
+         * wins over it. With create false, the operator sets no annotation. Add them
+         * to the existing ServiceAccount yourself.
+         */
+        annotations?: {
+          [k: string]: string;
+        };
+        /**
+         * Create makes the operator create and own the ServiceAccount. Defaults
+         * to true. False names a ServiceAccount that already exists. The operator
+         * then does not create, annotate, or own it. If it does not exist, Ready
+         * reports InvalidReference. Ready does not report it on a suspended
+         * ElasticsearchCluster or for connectors that are not enabled. It also
+         * does not report it for a component of a CamundaManagementCluster that
+         * does not run.
+         * While create is false, the operator never takes ownership of the
+         * ServiceAccount, because it deletes an owned one with the resource. A
+         * switch to false removes the owner reference from the account that the
+         * operator created. The account then stays when the resource is deleted.
+         * With create true, the operator owns and annotates the account of that
+         * name, also one that it did not create. An account that another
+         * resource controls is not taken over, and the apply fails.
+         */
+        create?: boolean;
+        /**
+         * Name is the name of the ServiceAccount. When empty, the operator
+         * derives the name from the name of the resource, as the doc of each kind
+         * states. The cloud provider uses this name. A workload identity that
+         * needs no annotation, such as EKS Pod Identity, binds the principal
+         * system:serviceaccount:<namespace>:<name>.
+         */
+        name?: string;
+      };
+      /**
        * Version is the Keycloak version, as a full semantic version. Camunda
        * 8.9 supports only Keycloak 26. The image is
        * camunda/keycloak:quay-optimized-<version>, unless the platform config
@@ -2304,6 +2445,55 @@ export interface CamundaManagementClusterSpec {
    * holds the identity provider and every client of the management plane.
    */
   platformConfigRef: string;
+  /**
+   * ServiceAccount configures the ServiceAccount of every workload of this
+   * management plane, except a component that sets a serviceAccount block of
+   * its own. A PluginRequest of the plane targets this account, so the
+   * access that a plugin grants goes to these workloads. When name is unset,
+   * the account is <name>-management. No two accounts of one management
+   * plane can have the same name, or Ready reports InvalidReference. The
+   * name default needs create false.
+   */
+  serviceAccount?: {
+    /**
+     * Annotations to set on the ServiceAccount that the operator creates.
+     * Usually these are workload-identity annotations (IRSA, GCP Workload
+     * Identity, and more) that give the pods access to cloud resources, such
+     * as the snapshot bucket for backups. Except on connectors.serviceAccount
+     * of a CamundaCluster, the operator also adds the identity annotation of
+     * each referenced bucket that names an identity. An annotation set here
+     * wins over it. With create false, the operator sets no annotation. Add them
+     * to the existing ServiceAccount yourself.
+     */
+    annotations?: {
+      [k: string]: string;
+    };
+    /**
+     * Create makes the operator create and own the ServiceAccount. Defaults
+     * to true. False names a ServiceAccount that already exists. The operator
+     * then does not create, annotate, or own it. If it does not exist, Ready
+     * reports InvalidReference. Ready does not report it on a suspended
+     * ElasticsearchCluster or for connectors that are not enabled. It also
+     * does not report it for a component of a CamundaManagementCluster that
+     * does not run.
+     * While create is false, the operator never takes ownership of the
+     * ServiceAccount, because it deletes an owned one with the resource. A
+     * switch to false removes the owner reference from the account that the
+     * operator created. The account then stays when the resource is deleted.
+     * With create true, the operator owns and annotates the account of that
+     * name, also one that it did not create. An account that another
+     * resource controls is not taken over, and the apply fails.
+     */
+    create?: boolean;
+    /**
+     * Name is the name of the ServiceAccount. When empty, the operator
+     * derives the name from the name of the resource, as the doc of each kind
+     * states. The cloud provider uses this name. A workload identity that
+     * needs no annotation, such as EKS Pod Identity, binds the principal
+     * system:serviceaccount:<namespace>:<name>.
+     */
+    name?: string;
+  };
   /**
    * Suspend scales every workload of this management cluster to zero. The
    * ManagementAuthConfig, the claims on the orchestration clusters, and the
@@ -3109,6 +3299,53 @@ export interface CamundaManagementClusterSpec {
           value?: string;
         }[];
       };
+    };
+    /**
+     * ServiceAccount gives the Web Modeler pods a ServiceAccount of their own.
+     * When unset, they run under spec.serviceAccount. When set, they run
+     * under <name>-web-modeler, or under name, and they do not get the access that a
+     * plugin grants to the account of spec.serviceAccount. The name default
+     * needs create false.
+     */
+    serviceAccount?: {
+      /**
+       * Annotations to set on the ServiceAccount that the operator creates.
+       * Usually these are workload-identity annotations (IRSA, GCP Workload
+       * Identity, and more) that give the pods access to cloud resources, such
+       * as the snapshot bucket for backups. Except on connectors.serviceAccount
+       * of a CamundaCluster, the operator also adds the identity annotation of
+       * each referenced bucket that names an identity. An annotation set here
+       * wins over it. With create false, the operator sets no annotation. Add them
+       * to the existing ServiceAccount yourself.
+       */
+      annotations?: {
+        [k: string]: string;
+      };
+      /**
+       * Create makes the operator create and own the ServiceAccount. Defaults
+       * to true. False names a ServiceAccount that already exists. The operator
+       * then does not create, annotate, or own it. If it does not exist, Ready
+       * reports InvalidReference. Ready does not report it on a suspended
+       * ElasticsearchCluster or for connectors that are not enabled. It also
+       * does not report it for a component of a CamundaManagementCluster that
+       * does not run.
+       * While create is false, the operator never takes ownership of the
+       * ServiceAccount, because it deletes an owned one with the resource. A
+       * switch to false removes the owner reference from the account that the
+       * operator created. The account then stays when the resource is deleted.
+       * With create true, the operator owns and annotates the account of that
+       * name, also one that it did not create. An account that another
+       * resource controls is not taken over, and the apply fails.
+       */
+      create?: boolean;
+      /**
+       * Name is the name of the ServiceAccount. When empty, the operator
+       * derives the name from the name of the resource, as the doc of each kind
+       * states. The cloud provider uses this name. A workload identity that
+       * needs no annotation, such as EKS Pod Identity, binds the principal
+       * system:serviceaccount:<namespace>:<name>.
+       */
+      name?: string;
     };
     /**
      * Version is the Web Modeler version, as a full semantic version. The
@@ -3989,8 +4226,8 @@ export interface CamundaManagementClusterStatus {
    * all of them are True, a failed OptimizeCallbacksReady makes Ready False
    * with its reason. The per-component conditions (KeycloakReady,
    * IdentityReady, ConsoleReady, WebModelerReady, ManagementAuthReady,
-   * SecretsReady, MirroredSecretsReady) and OptimizeCallbacksReady also
-   * appear here.
+   * SecretsReady, MirroredSecretsReady, ServiceAccountsReady) and
+   * OptimizeCallbacksReady also appear here.
    *
    * Items: Condition contains details for one aspect of the current state of this API Resource.
    */
@@ -4102,4 +4339,12 @@ export interface CamundaManagementClusterStatus {
      */
     namespace: string;
   }[];
+  /**
+   * ServiceAccountName is the ServiceAccount that the workloads of this
+   * management plane run under, except a component that sets a
+   * serviceAccount block of its own. A PluginRequest of the plane targets
+   * it. An extension that runs a pod for this plane reads it and does not
+   * derive the name itself.
+   */
+  serviceAccountName?: string;
 }
