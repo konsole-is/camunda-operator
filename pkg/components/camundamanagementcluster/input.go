@@ -19,12 +19,14 @@ package camundamanagementcluster
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
+	"github.com/konsole-is/camunda-operator/pkg/accounthash"
 	"github.com/konsole-is/camunda-operator/pkg/conditions"
 	"github.com/konsole-is/camunda-operator/pkg/credentials"
 )
@@ -591,8 +593,23 @@ func (in Input) console() v1.ConsoleSpec {
 }
 
 // workload returns the WorkloadSpec of a component, or the zero value when the
-// spec sets no block for it.
+// spec sets no block for it. Its pod annotations never hold
+// accounthash.Annotation: a user value would stay on the pods once the
+// operator renders no hash, and a later change of the account would not roll
+// them.
 func (in Input) workload(comp string) v1.WorkloadSpec {
+	spec := in.componentWorkload(comp)
+	if _, ok := spec.PodAnnotations[accounthash.Annotation]; ok {
+		spec.PodAnnotations = maps.Clone(spec.PodAnnotations)
+		delete(spec.PodAnnotations, accounthash.Annotation)
+	}
+
+	return spec
+}
+
+// componentWorkload returns the WorkloadSpec block of a component as the spec
+// sets it.
+func (in Input) componentWorkload(comp string) v1.WorkloadSpec {
 	webModeler := in.Cluster.Spec.WebModeler
 
 	switch comp {

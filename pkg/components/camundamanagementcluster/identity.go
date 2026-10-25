@@ -215,13 +215,7 @@ func identityDeployment(in Input) *appsv1.Deployment {
 		Spec: appsv1.DeploymentSpec{
 			Replicas: new(in.replicas(ComponentIdentity)),
 			Selector: &metav1.LabelSelector{MatchLabels: discoveryLabels(in, ComponentIdentity)},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels:      discoveryLabels(in, ComponentIdentity),
-					Annotations: map[string]string{ConfigHashAnnotation: ConfigHash(in, ComponentIdentity)},
-				},
-				Spec: corev1.PodSpec{Containers: []corev1.Container{identityContainerSpec(in)}},
-			},
+			Template: podTemplate(in, ComponentIdentity, identityContainerSpec(in)),
 		},
 	}
 }

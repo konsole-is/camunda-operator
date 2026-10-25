@@ -64,7 +64,8 @@ type resolver struct {
 // preCheck resolves every reference of mc, in the documented order: the rules
 // that the API server cannot check, the platform config and its license, the
 // identity provider and its client secrets, the database of Management
-// Identity, and what Web Modeler needs. A Secret outside the management
+// Identity, what Web Modeler needs, and the ServiceAccounts that the spec names
+// with create false. A Secret outside the management
 // namespace is copied into the returned mirrors, and the input references the
 // copy, so the renderer only ever names Secrets of that namespace.
 //
@@ -109,6 +110,9 @@ func (r *Reconciler) preCheck(ctx context.Context, mc *v1.CamundaManagementClust
 		return out, err
 	}
 	if err := res.resolveWebModeler(ctx, &out); err != nil {
+		return out, err
+	}
+	if err := res.checkServiceAccounts(ctx); err != nil {
 		return out, err
 	}
 	if err := r.checkContractOwner(ctx, mc, out.ContractName); err != nil {
@@ -373,6 +377,28 @@ func (res *resolver) resolvePusher(ctx context.Context) (components.PusherCreden
 	}
 
 	return components.PusherCredentials{Key: appKey, Secret: appSecret}, nil
+}
+
+// checkServiceAccounts fails the pre-check when an account that the spec
+// names with create false does not exist. The operator never creates nor
+// owns such an account, so an absent one would otherwise surface as pods that
+// are never created.
+func (res *resolver) checkServiceAccounts(ctx context.Context) error {
+	for _, ref := range components.ReferencedServiceAccounts(res.mc) {
+		key := client.ObjectKey{Namespace: res.mc.Namespace, Name: ref.Name}
+		if err := res.reader.Get(ctx, key, &corev1.ServiceAccount{}); err != nil {
+			if apierrors.IsNotFound(err) {
+				return &conditions.PreCheckFailure{
+					Reason:  v1.ReasonInvalidReference,
+					Message: fmt.Sprintf("ServiceAccount %s not found, and %s.create is false", key, ref.Field),
+				}
+			}
+
+			return fmt.Errorf("reading ServiceAccount %s: %w", key, err)
+		}
+	}
+
+	return nil
 }
 
 // forComponent runs read and records every hash input it produces under comp

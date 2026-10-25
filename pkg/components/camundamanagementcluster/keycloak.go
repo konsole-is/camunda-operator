@@ -26,6 +26,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/images"
+	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/keycloak"
 )
 
@@ -132,6 +133,7 @@ func keycloakCR(in Input) *keycloak.Keycloak {
 	}
 
 	spec := in.Cluster.Spec.IdentityProvider.Keycloak
+	accountLabels, accountAnnotations := podAccountMetadata(in.Cluster, ComponentKeycloak)
 
 	cr := &keycloak.Keycloak{
 		ObjectMeta: meta,
@@ -155,8 +157,10 @@ func keycloakCR(in Input) *keycloak.Keycloak {
 			Unsupported: &keycloak.KeycloakUnsupportedSpec{
 				PodTemplate: &corev1.PodTemplateSpec{
 					ObjectMeta: metav1.ObjectMeta{
-						Labels: discoveryLabels(in, ComponentKeycloak),
+						Labels:      labels.Merge(accountLabels, discoveryLabels(in, ComponentKeycloak)),
+						Annotations: accountAnnotations,
 					},
+					Spec: corev1.PodSpec{ServiceAccountName: PodServiceAccountName(in.Cluster, ComponentKeycloak)},
 				},
 			},
 			Resources: spec.Resources.DeepCopy(),

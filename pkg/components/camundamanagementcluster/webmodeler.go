@@ -260,13 +260,7 @@ func webModelerDeploymentResource(
 		Spec: appsv1.DeploymentSpec{
 			Replicas: new(in.replicas(comp)),
 			Selector: &metav1.LabelSelector{MatchLabels: discoveryLabels(in, comp)},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels:      discoveryLabels(in, comp),
-					Annotations: map[string]string{ConfigHashAnnotation: ConfigHash(in, comp)},
-				},
-				Spec: corev1.PodSpec{Containers: []corev1.Container{spec}},
-			},
+			Template: podTemplate(in, comp, spec),
 		},
 	}).
 		WithMutation(workloadmutations.Mutations(in.workload(comp), container)...).

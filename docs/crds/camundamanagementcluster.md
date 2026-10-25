@@ -599,13 +599,78 @@ If you change `spec.managementAuthConfigName`, the operator writes the contract 
 
 Every image of the management plane comes from the default Camunda repository, unless `spec.images` of the referenced [CamundaPlatformConfig](camundaplatformconfig.md#images) renames it. The tag is the `version` of the component. The Keycloak tag is `quay-optimized-<version>`, which is the tag of the Camunda build of Keycloak.
 
+## ServiceAccounts
+
+Every workload of the management plane runs under the ServiceAccount `my-management-management`, or under `spec.serviceAccount.name`. The operator creates and owns this account. To give the pods access to cloud resources, put the workload-identity annotations on it:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaManagementCluster
+metadata:
+  name: my-management
+  namespace: my-management-ns
+spec:
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::111122223333:role/my-management"
+  # ... the rest of your management plane
+```
+
+`status.serviceAccountName` shows the account. Every [PluginRequest](pluginrequest.md#target) of the plane targets it, so the access that a plugin grants goes to these pods. For an identity without an annotation, bind the principal `system:serviceaccount:my-management-ns:my-management-management` on the cloud side.
+
+The cloud reads the annotations of the account when a pod starts. So when `spec.serviceAccount.annotations` change, every pod that runs under the account restarts. On Azure, a pod needs the label `azure.workload.identity/use: "true"` as well as the annotation `azure.workload.identity/client-id` on its account. When the annotations carry the client ID, the operator adds the label to the pods that run under the account.
+
+### An account for one component
+
+The blocks `spec.identityProvider.keycloak`, `spec.identity`, `spec.console`, and `spec.webModeler` each take a `serviceAccount` block. A component with this block runs under an account of its own, for example to reach a database of its own with IAM authentication:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaManagementCluster
+metadata:
+  name: my-management
+  namespace: my-management-ns
+spec:
+  webModeler:
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::111122223333:role/my-web-modeler"
+    # ... the rest of your Web Modeler block
+  # ... the rest of your management plane
+```
+
+Both Web Modeler processes then run under `my-management-web-modeler`, or under `spec.webModeler.serviceAccount.name`. The other derived names are `my-management-keycloak`, `my-management-identity`, and `my-management-console`. A component with an account of its own does not get the access that a plugin grants to the account of the plane. A change of the annotations of the block restarts the pods of that component only.
+
+When you remove the block, or the component itself, the pods of the component go back to the account of the plane. The operator then deletes the account with the derived name, for example `my-management-web-modeler`, when it created that account. An account that the operator created under a name of your own stays. The operator deletes it with the management plane.
+
+### An account that you manage
+
+Set `create: false` to name a ServiceAccount that already exists, in `spec.serviceAccount` or in the block of a component:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaManagementCluster
+metadata:
+  name: my-management
+  namespace: my-management-ns
+spec:
+  serviceAccount:
+    name: "my-platform-account"
+    create: false
+  # ... the rest of your management plane
+```
+
+The operator then does not create, change, or own the account. `Ready` is `False` with reason `InvalidReference` while the account does not exist. When you create the account, the operator finds it by itself, without an edit to the management plane. A change to the annotations of that account restarts no pod, so restart the pods yourself. When you switch `create` to `false`, the operator removes its owner reference from the account that it created. The account then stays when you delete the management plane.
+
+The name `default` requires `create: false`. No two accounts of one management plane can have the same name, given or derived. Two components cannot share one account, and a component cannot name the account of the plane. Such a spec reports `InvalidReference`.
+
 ## Suspension
 
 `spec.suspend: true` scales every workload of the management plane to zero, Keycloak included. The databases keep everything, so a resume brings back the same realm, users, and projects.
 
 The `ManagementAuthConfig`, the annotations on the orchestration clusters, the claim on the Keycloak realm, and the Console settings stay. `Ready` reads `True` with reason `Suspended`.
 
-`status.endpoints` stays, and so do the Services. A route answers again when the management plane resumes. See [Routes](#routes).
+`status.endpoints` stays, and so do the Services and the ServiceAccounts. A route answers again when the management plane resumes. See [Routes](#routes).
 
 Nobody can sign in to Console, Web Modeler, or Optimize while the management plane is suspended, because all three authenticate through Management Identity. The orchestration clusters continue to run.
 
@@ -614,6 +679,7 @@ Nobody can sign in to Console, Web Modeler, or Optimize while the management pla
 Deleting the `CamundaManagementCluster` removes:
 
 - Every Deployment, Service, and generated Secret.
+- Every ServiceAccount that the operator created. An account with `create: false` stays.
 - The `Keycloak` resource in the `keycloak` mode, and its pods.
 - The `ManagementAuthConfig`. A `CamundaOptimize` that reads it then reports `InvalidReference`.
 - The Console settings and the `camunda.io/management-cluster` annotation on every orchestration cluster it served. Those clusters roll their pods once.
@@ -655,6 +721,7 @@ status:
 | --- | --- | --- | --- |
 | `MirroredSecretsReady` | `Healthy` / `Disabled` | The copies of the Secrets that the [CamundaPlatformConfig](camundaplatformconfig.md) names are in place, or there is no such Secret. | Nothing. |
 | `SecretsReady` | `Healthy` / `Disabled` | The generated Secrets are in place, or the mode generates none (`oidc`). | Nothing. |
+| `ServiceAccountsReady` | `Healthy` | The ServiceAccounts that the operator creates are in place. | Nothing. |
 | `KeycloakReady` | `Healthy` | The Keycloak Operator reports the Keycloak ready. | Nothing. |
 | `KeycloakReady` | absent | The Kubernetes cluster does not serve the `Keycloak` kind. | In the `keycloak` mode, install the Keycloak Operator. Otherwise, nothing. |
 | `KeycloakReady` | `Creating` / `Updating` | The Keycloak Operator rolls the Keycloak pods. | Wait. |
@@ -691,7 +758,7 @@ status:
 | `Ready` | `OptimizeClientMissing` / `ConnectionFailed` / `AdminRoleGrantFailed` / `InvalidCABundle` | The realm is not in the state the management plane needs. | Read the `OptimizeCallbacksReady` row. |
 | `Ready` | `KeycloakOperatorNotInstalled` | `spec.identityProvider.keycloak` is set and the Kubernetes cluster does not serve the `Keycloak` kind. | Install the Keycloak Operator and restart the operator, or select another mode. See [Installation](../installation.md#requirements). |
 | `Ready` | `UnsupportedVersion` | A version field is outside the supported range. The message names the field and the limit. | Set a supported version. |
-| `Ready` | `InvalidReference` | A referenced resource does not exist, two components name one `DatabaseConfig`, or the platform config cannot serve the `oidc` mode. The message names the field. | Create the missing resource, or correct the field. |
+| `Ready` | `InvalidReference` | A referenced resource does not exist, two components name one `DatabaseConfig`, or the platform config cannot serve the `oidc` mode. Two ServiceAccounts have one name, or a ServiceAccount with `create: false` does not exist. The message names the field. | Create the missing resource, or correct the field. |
 | `Ready` | `MissingSecret` | A referenced Secret does not exist or lacks a key. The message names both. | Create the Secret with the named key. |
 | `Ready` | `Conflict` | A `ManagementAuthConfig` of that name belongs to another owner. The message names it. | Set `spec.managementAuthConfigName` to a free name, or remove the object. |
 | `Ready` | `RealmClaimedElsewhere` | Another management plane, or a Lease that the operator did not write, holds the Keycloak realm. The message names it. | Give this plane a realm of its own, or delete the holder. See [One realm answers to one management plane](#one-realm-answers-to-one-management-plane). |
@@ -699,6 +766,24 @@ status:
 | `Ready` | `StepFailed` | The operator failed to complete an action, usually because the Kubernetes API refused a call. The message names the action. | Read the message. The operator tries again. |
 
 `status.observedGeneration` is the generation of the spec that the status describes.
+
+`status.serviceAccountName` is the ServiceAccount that the workloads run under, except a component with an account of its own. See [ServiceAccounts](#serviceaccounts).
+
+```yaml
+status:
+  serviceAccountName: my-management-management
+```
+
+A missing account of your own reports:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: InvalidReference
+      message: ServiceAccount my-management-ns/my-platform-account not found, and spec.serviceAccount.create is false
+```
 
 A message of the `oidc` mode names the field to correct:
 
@@ -781,12 +866,14 @@ The API server refuses an apply that breaks one of these:
 - Every `version` is three numbers separated by dots, for example `8.9.0`.
 - An `extraEnv` entry sets `value` or `valueFrom`, never both.
 - `spec.identity.extraEnv` sets no `KEYCLOAK_URL` and no `KEYCLOAK_REALM`. Both follow from `spec.identityProvider`.
+- A `serviceAccount.name` of `default` requires `create: false`, in `spec.serviceAccount` and in each component block.
 
 The operator checks these after you apply the resource and reports them on `Ready`:
 
 - `spec.identity.version`, `spec.console.version`, and `spec.webModeler.version` are `8.9.0` or later. `spec.identityProvider.keycloak.version` is `26.0.0` or later and below `27.0.0`. A version outside its range reports `UnsupportedVersion`.
 - Management Identity, Keycloak, and Web Modeler name three different `DatabaseConfig` resources. Otherwise the resource reports `InvalidReference`.
-- Every referenced resource and Secret exists. A missing one reports `InvalidReference` or `MissingSecret`.
+- No two ServiceAccounts of the management plane have the same name. Otherwise the resource reports `InvalidReference`.
+- Every referenced resource and Secret exists, and every ServiceAccount with `create: false`. A missing one reports `InvalidReference` or `MissingSecret`.
 
 No field is immutable. A change to `spec.identity.admin` has no effect after the first start of Management Identity. See [The first administrator](#the-first-administrator).
 

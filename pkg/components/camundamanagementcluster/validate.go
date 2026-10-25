@@ -51,8 +51,9 @@ type referencedDatabase struct {
 }
 
 // ValidateSpec checks the rules that the API server cannot: the supported
-// version range of each component of the management plane, and that no two
-// components name one DatabaseConfig. A broken rule comes back as a
+// version range of each component of the management plane, that no two
+// components name one DatabaseConfig, and that no two accounts of the plane
+// have one name. A broken rule comes back as a
 // *conditions.PreCheckFailure, with the reason UnsupportedVersion or
 // InvalidReference, naming the field. A valid spec returns nil.
 func ValidateSpec(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
@@ -98,7 +99,11 @@ func ValidateSpec(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
 		}
 	}
 
-	return checkDistinctDatabases(mc)
+	if failure := checkDistinctDatabases(mc); failure != nil {
+		return failure
+	}
+
+	return checkDistinctServiceAccounts(mc)
 }
 
 // atLeast reports whether version is floor or later. Both carry three numeric
@@ -170,6 +175,30 @@ func checkDistinctDatabases(mc *v1.CamundaManagementCluster) *conditions.PreChec
 			}
 		}
 		seen[r.ref] = r.field
+	}
+
+	return nil
+}
+
+// checkDistinctServiceAccounts refuses two used accounts of one name. The
+// operator would apply one account twice, and a component with an account of
+// its own would get the access of the other.
+func checkDistinctServiceAccounts(mc *v1.CamundaManagementCluster) *conditions.PreCheckFailure {
+	seen := map[string]string{}
+	for _, a := range accounts(mc) {
+		if !a.used {
+			continue
+		}
+		if first, taken := seen[a.name]; taken {
+			return &conditions.PreCheckFailure{
+				Reason: v1.ReasonInvalidReference,
+				Message: fmt.Sprintf(
+					"%s and %s both name ServiceAccount %q; each needs an account of its own",
+					first, a.field, a.name,
+				),
+			}
+		}
+		seen[a.name] = a.field
 	}
 
 	return nil

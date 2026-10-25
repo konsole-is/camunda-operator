@@ -57,6 +57,7 @@ spec:
             port: management
           periodSeconds: 10
         resources: {}
+      serviceAccountName: my-management-management
 ---
 apiVersion: v1
 kind: Service

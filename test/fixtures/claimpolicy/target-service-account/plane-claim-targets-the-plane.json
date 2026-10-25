@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "name": "A request of a plane claim targets the account of the plane",
+  "input": {
+    "kind": "CamundaManagementClusterClaim",
+    "claim": "team-a",
+    "section": {
+      "metadata": {
+        "name": "management-databases"
+      },
+      "spec": {
+        "label": "management-databases",
+        "selection": "One",
+        "appliesTo": [
+          "CamundaManagementClusterClaim"
+        ],
+        "slot": "managementDatabases"
+      }
+    }
+  },
+  "result": {
+    "value": {
+      "serviceAccountName": "team-a-management"
+    }
+  }
+}

@@ -41,3 +41,4 @@ spec:
           camunda.io/management-cluster: my-management
       spec:
         containers: null
+        serviceAccountName: my-management-management

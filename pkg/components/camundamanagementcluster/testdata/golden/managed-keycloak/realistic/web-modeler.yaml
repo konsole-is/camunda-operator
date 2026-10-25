@@ -32,6 +32,7 @@ spec:
     metadata:
       annotations:
         camunda.io/config-hash: 3fb945c766048581
+        camunda.io/service-account-hash: 287f7dcf55c7cc0c
       labels:
         camunda.io/component: web-modeler-restapi
         camunda.io/management-cluster: my-management
@@ -158,6 +159,7 @@ spec:
             path: /health/readiness
             port: management
           periodSeconds: 5
+      serviceAccountName: my-management-web-modeler
 ---
 apiVersion: v1
 kind: Service
@@ -204,6 +206,7 @@ spec:
     metadata:
       annotations:
         camunda.io/config-hash: d88074970c5cadc1
+        camunda.io/service-account-hash: 287f7dcf55c7cc0c
       labels:
         camunda.io/component: web-modeler-websockets
         camunda.io/management-cluster: my-management
@@ -242,6 +245,7 @@ spec:
             path: /up
             port: http
           periodSeconds: 5
+      serviceAccountName: my-management-web-modeler
 ---
 apiVersion: v1
 kind: Service

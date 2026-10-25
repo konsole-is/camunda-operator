@@ -152,6 +152,7 @@ func New(c client.Client, apiReader client.Reader, scheme *runtime.Scheme) *Reco
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
@@ -297,6 +298,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	// The routes describe Services, which outlive a suspension. A pass that
 	// stops before the build keeps the routes of the last one.
 	mc.Status.Endpoints = components.Endpoints(&mc)
+	mc.Status.ServiceAccountName = components.ServiceAccountName(&mc)
 
 	reconcileErr := reconcileComponents(ctx, rec, built.Components)
 	claimRefusal, claimErr := r.recordInitialClaim(ctx, &mc, res.Input.Provider.Mode)

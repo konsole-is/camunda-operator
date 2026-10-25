@@ -19,6 +19,7 @@ package camundamanagementcluster
 import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/konsole-is/camunda-operator/pkg/labels"
@@ -44,8 +45,9 @@ const (
 
 // builders render the components of the management plane, in reconcile order:
 // the copied and the generated Secrets first, because the workloads mount
-// them, then Keycloak, whose operator writes the Secret that Management
-// Identity signs in with, then one entry per remaining workload. A builder
+// them, and the ServiceAccounts that the workloads run under, then Keycloak,
+// whose operator writes the Secret that Management Identity signs in with,
+// then one entry per remaining workload. A builder
 // reports which of its components take part in Ready, so that a component the
 // spec turned off still reconciles and deletes what it left behind without
 // its Disabled reason becoming the reason of the whole management plane. This
@@ -53,6 +55,7 @@ const (
 var builders = []func(Input) (Built, error){
 	mirroredSecretComponent,
 	secretsComponents,
+	serviceAccountsComponents,
 	keycloakComponents,
 	identityComponents,
 	consoleComponents,
@@ -85,6 +88,26 @@ func managedLabels(in Input, comp string) map[string]string {
 // component.
 func discoveryLabels(in Input, comp string) map[string]string {
 	return labels.Discovery(labels.ManagementCluster(in.Cluster.Name), comp)
+}
+
+// podTemplate returns the base pod template of the workload comp: the
+// discovery labels, the config hash, what the ServiceAccount of the pods asks
+// for, and the container.
+func podTemplate(in Input, comp string, container corev1.Container) corev1.PodTemplateSpec {
+	accountLabels, accountAnnotations := podAccountMetadata(in.Cluster, comp)
+
+	return corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: labels.Merge(accountLabels, discoveryLabels(in, comp)),
+			Annotations: labels.Merge(
+				accountAnnotations, map[string]string{ConfigHashAnnotation: ConfigHash(in, comp)},
+			),
+		},
+		Spec: corev1.PodSpec{
+			ServiceAccountName: PodServiceAccountName(in.Cluster, comp),
+			Containers:         []corev1.Container{container},
+		},
+	}
 }
 
 // probe builds an HTTP probe on a health endpoint of a named port. A zero

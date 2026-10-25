@@ -478,6 +478,7 @@ func TestBuildRendersTheGeneratedSecretsOfTheKeycloakModesOnly(t *testing.T) {
 		[]string{
 			ComponentMirroredSecrets,
 			ComponentSecrets,
+			ComponentServiceAccounts,
 			ComponentKeycloak,
 			ComponentIdentity,
 			ComponentConsole,
@@ -487,7 +488,7 @@ func TestBuildRendersTheGeneratedSecretsOfTheKeycloakModesOnly(t *testing.T) {
 	)
 	assert.Equal(
 		t,
-		[]string{ComponentSecrets, ComponentKeycloak, ComponentIdentity},
+		[]string{ComponentSecrets, ComponentServiceAccounts, ComponentKeycloak, ComponentIdentity},
 		componentNames(keycloak.Ready),
 	)
 }

@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "name": "A section with the slot connectorsIdentity targets the Connectors",
   "input": {
+    "kind": "CamundaClusterClaim",
     "claim": "team-a",
     "section": {
       "metadata": {

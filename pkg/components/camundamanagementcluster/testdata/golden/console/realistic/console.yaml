@@ -18,6 +18,7 @@ spec:
     metadata:
       annotations:
         camunda.io/config-hash: d445abb25a0cdc8c
+        camunda.io/service-account-hash: 361293f7fd21c622
         prometheus.io/scrape: "true"
       labels:
         camunda.io/component: console
@@ -69,6 +70,7 @@ spec:
         resources:
           requests:
             memory: 512Mi
+      serviceAccountName: my-management-management
 ---
 apiVersion: v1
 kind: Service

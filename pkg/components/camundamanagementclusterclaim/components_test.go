@@ -28,6 +28,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
+	plane "github.com/konsole-is/camunda-operator/pkg/components/camundamanagementcluster"
 )
 
 // updateGolden refreshes the golden manifests with the rendered output:
@@ -64,6 +65,25 @@ func TestComponentsGolden(t *testing.T) {
 		golden.WithScheme(scheme),
 		golden.Update(*updateGolden),
 	)
+}
+
+// A grant to the target of a plane request reaches the workloads of the
+// plane, not an account that no pod of the plane runs under.
+func TestRequestsTargetTheAccountOfThePlane(t *testing.T) {
+	in := fullInput(t)
+	comps, err := Build(in)
+	require.NoError(t, err)
+	desired, _, err := managementCluster(in)
+	require.NoError(t, err)
+
+	objects, err := comps.Requests.Preview()
+	require.NoError(t, err)
+	require.NotEmpty(t, objects)
+	for _, obj := range objects {
+		request, ok := obj.(*pluginsv1alpha1.PluginRequest)
+		require.True(t, ok)
+		assert.Equal(t, plane.ServiceAccountName(desired), request.Spec.Target.ServiceAccountName, request.Name)
+	}
 }
 
 func TestEverySlotPathOfThePlaneHasAField(t *testing.T) {

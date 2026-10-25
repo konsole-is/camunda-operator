@@ -30,6 +30,7 @@ func TestTargetServiceAccountFixtures(t *testing.T) {
 	t.Parallel()
 
 	type input struct {
+		Kind    pluginsv1alpha1.ClaimKind      `json:"kind"`
 		Claim   string                         `json:"claim"`
 		Section *pluginsv1alpha1.PluginSection `json:"section"`
 	}
@@ -38,7 +39,7 @@ func TestTargetServiceAccountFixtures(t *testing.T) {
 	}
 
 	runFixtures(t, "target-service-account", func(in input) (any, error) {
-		return value{ServiceAccountName: TargetServiceAccount(in.Claim, in.Section)}, nil
+		return value{ServiceAccountName: TargetServiceAccount(in.Kind, in.Claim, in.Section)}, nil
 	})
 }
 
