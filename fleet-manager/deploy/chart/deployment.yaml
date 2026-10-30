@@ -41,6 +41,9 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # The settings page shows the kubectl port-forward command for this Service.
+            - name: FLEET_SERVICE_NAME
+              value: {{ include "fleet-manager.name" . }}
             - name: FLEET_SETTINGS_KUBERNETES_CLUSTER_NAME
               value: {{ .Values.fleetManager.settings.kubernetesClusterName | quote }}
             - name: FLEET_SETTINGS_GIT_REPOSITORY

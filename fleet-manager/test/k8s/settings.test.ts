@@ -5,7 +5,12 @@ import {
   type V1ConfigMap,
 } from "@kubernetes/client-node";
 import { beforeAll, describe, expect, inject, it } from "vitest";
-import { getSettings, readSettings, updateSettings } from "@/lib/settings";
+import {
+  appPermissions,
+  getSettings,
+  readSettings,
+  updateSettings,
+} from "@/lib/settings";
 
 // The settings read KUBECONFIG through kubeConfig, on their first call.
 process.env.KUBECONFIG = inject("kubeconfig");
@@ -215,5 +220,22 @@ describe("settings against envtest", () => {
     expect((await readConfigMap()).data?.kubernetesClusterName).toBe(
       "from-page",
     );
+  });
+
+  it("appPermissions lists the rules of the app user without the discovery rows", async () => {
+    await useNewNamespace();
+
+    const { rules } = await appPermissions();
+
+    // The envtest user is in system:masters.
+    expect(rules).toContainEqual({
+      apiGroups: ["*"],
+      resources: ["*"],
+      resourceNames: [],
+      verbs: ["*"],
+    });
+    expect(
+      rules.flatMap((r) => r.resources).filter((r) => r.startsWith("selfsubject")),
+    ).toEqual([]);
   });
 });

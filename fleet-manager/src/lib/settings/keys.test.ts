@@ -5,6 +5,7 @@ import {
   SEED_VARIABLES,
   SETTING_KEYS,
   appNamespace,
+  appServiceName,
   checkPatch,
   seedFromEnv,
   settingsFromData,
@@ -25,6 +26,20 @@ describe("seed variables", () => {
     }
     expect(Object.keys(SEED_VARIABLES).sort()).toEqual(
       [...SETTING_KEYS].sort(),
+    );
+  });
+
+  it("the chart sets FLEET_SERVICE_NAME to the name of the Service", () => {
+    const chart = (file: string) =>
+      readFileSync(
+        fileURLToPath(new URL(`../../../deploy/chart/${file}`, import.meta.url)),
+        "utf8",
+      );
+    expect(chart("deployment.yaml")).toContain(
+      '- name: FLEET_SERVICE_NAME\n              value: {{ include "fleet-manager.name" . }}\n',
+    );
+    expect(chart("service.yaml")).toContain(
+      '  name: {{ include "fleet-manager.name" . }}\n',
     );
   });
 
@@ -174,4 +189,26 @@ describe("appNamespace", () => {
     delete process.env.FLEET_NAMESPACE;
     expect(() => appNamespace()).toThrow(/FLEET_NAMESPACE/);
   });
+});
+
+describe("appServiceName", () => {
+  const saved = process.env.FLEET_SERVICE_NAME;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.FLEET_SERVICE_NAME;
+    else process.env.FLEET_SERVICE_NAME = saved;
+  });
+
+  it("returns FLEET_SERVICE_NAME", () => {
+    process.env.FLEET_SERVICE_NAME = "camunda-operator-fleet-manager";
+    expect(appServiceName()).toBe("camunda-operator-fleet-manager");
+  });
+
+  it.each([undefined, ""])(
+    "is undefined when FLEET_SERVICE_NAME is %j",
+    (value) => {
+      if (value === undefined) delete process.env.FLEET_SERVICE_NAME;
+      else process.env.FLEET_SERVICE_NAME = value;
+      expect(appServiceName()).toBeUndefined();
+    },
+  );
 });

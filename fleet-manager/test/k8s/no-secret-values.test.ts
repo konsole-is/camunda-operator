@@ -150,6 +150,7 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/dev/watch-probe/actions.ts#ping": () => ping(),
 };
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
+  "settings#appPermissions": () => settings.appPermissions(),
   "settings#getSettings": () => settings.getSettings(),
   "settings#readSettings": () => settings.readSettings(),
   "settings#updateSettings": () => settings.updateSettings({ "git.path": "x" }),
