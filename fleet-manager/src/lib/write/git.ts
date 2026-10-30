@@ -16,9 +16,8 @@ import gitHttp from "isomorphic-git/http/node";
 import { parse } from "yaml";
 import { REVISION_ANNOTATION } from "@/lib/labels";
 import { inOrder } from "@/lib/serial";
-import { readSecretValues } from "@/lib/secrets/values";
-import { appNamespace } from "@/lib/settings/keys";
 import { apiErrorsOf, reasonOf, staleError } from "./errors";
+import { type GitAuthor, gitCredentials } from "./git-auth";
 import { gitBase, gitOpsManager, gitPath, renderObject } from "./git-files";
 import type {
   ApiError,
@@ -61,12 +60,6 @@ export type GitWriterOptions = {
   http?: HttpClient;
 };
 
-/** GIT_AUTHOR is the author of each commit of the Git writer. */
-export const GIT_AUTHOR = {
-  name: "fleet-manager",
-  email: "fleet-manager@noreply.invalid",
-};
-
 const REQUEST_TIMEOUT_MS = 30_000;
 
 // The transport keeps the credentials on a redirect, also to http://, so
@@ -92,10 +85,10 @@ type Remote = {
 /**
  * gitWriter returns the writer of Git mode. A directOnly change goes to
  * direct. Any other change becomes one commit on the branch of target,
- * with the intent as its subject and GIT_AUTHOR as its author, and the
- * result carries the commit, the revision and the file of each applied
- * object, and the file of each deleted object. A change whose files are
- * already in the repository makes no commit and returns the head commit.
+ * with the intent as its subject, and the result carries the commit, the
+ * revision and the file of each applied object, and the file of each
+ * deleted object. A change whose files are already in the repository makes
+ * no commit and returns the head commit.
  *
  * apply makes no commit when the fleet manager does not write a ref, a
  * Secret is in the change (Invalid), an object with a precondition changed
@@ -112,8 +105,13 @@ type Remote = {
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
  * change, or when the branch moved again. The credentials of
- * target.credentialsSecretRef go only to an https:// address. No error
- * holds a credential or the text of a Git server answer. Changes to one
+ * target.credentialsSecretRef are a username and token, or GitHub App
+ * keys, as gitCredentials reads them. They go only to an https://
+ * address, and App keys only to github.com or to a host whose
+ * /api/v3/meta answers as GitHub Enterprise Server. With App keys, the
+ * author of a commit is the bot of the App, or GIT_AUTHOR when GitHub
+ * does not give the bot. Otherwise it is GIT_AUTHOR. No error holds a
+ * credential or the text of a Git server answer. Changes to one
  * repository and branch run one after the other in this server process.
  */
 export function gitWriter(options: GitWriterOptions): Writer {
@@ -265,88 +263,30 @@ export function gitWriter(options: GitWriterOptions): Writer {
         message: "git.path must be a folder inside the repository.",
       });
     }
-    const auth = await credentials();
+    const auth = await gitCredentials(target.url, target.credentialsSecretRef);
     if (!auth.ok) return failure(auth.error);
 
     const dir = await mkdtemp(path.join(os.tmpdir(), "fleet-git-"));
     try {
+      const credentials = auth.auth;
       const remote: Remote = {
         fs,
         http,
         dir,
         url: target.url,
-        ...(auth.values
-          ? {
-              onAuth: () => ({
-                username: auth.values!.username,
-                password: auth.values!.token,
-              }),
-            }
-          : {}),
+        ...(credentials ? { onAuth: () => credentials } : {}),
         // Without cancel, a refused token makes isomorphic-git ask again.
         onAuthFailure: () => ({ cancel: true }),
       };
-      return await pushChange(remote, base, change);
+      return await pushChange(remote, base, change, auth.author);
     } catch (error) {
-      return failure(gitErrorOf(error, target));
+      const refusal = gitErrorOf(error, target);
+      // A revoked App token stays cached until it expires otherwise.
+      if (refusal.code === "Forbidden") auth.forget();
+      return failure(refusal);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  };
-
-  const credentials = async (): Promise<
-    | { ok: true; values?: { username: string; token: string } }
-    | { ok: false; error: ApiError }
-  > => {
-    const secret = target.credentialsSecretRef;
-    if (!secret) return { ok: true };
-    if (URL.parse(target.url)?.protocol !== "https:") {
-      return {
-        ok: false,
-        error: {
-          code: "Invalid",
-          path: "git.repository",
-          message: `${target.url} must start with https:// to use the credentials of the Secret ${secret}.`,
-        },
-      };
-    }
-    const namespace = appNamespace();
-    let values: Record<string, string> | undefined;
-    try {
-      values = await readSecretValues(namespace, secret);
-    } catch (error) {
-      return {
-        ok: false,
-        error: {
-          code: "Unavailable",
-          message: `Could not read the Secret ${secret} in namespace ${namespace}: ${reasonOf(error)}`,
-        },
-      };
-    }
-    if (!values) {
-      return {
-        ok: false,
-        error: {
-          code: "Unavailable",
-          message: `The Secret ${secret} does not exist in namespace ${namespace}.`,
-        },
-      };
-    }
-    for (const key of ["username", "token"]) {
-      if (!values[key]) {
-        return {
-          ok: false,
-          error: {
-            code: "Unavailable",
-            message: `The Secret ${secret} has no key ${key}.`,
-          },
-        };
-      }
-    }
-    return {
-      ok: true,
-      values: { username: values.username, token: values.token },
-    };
   };
 
   // The live object of a ref with a precondition passes the stale check
@@ -390,6 +330,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
     remote: Remote,
     base: string,
     change: Change,
+    author: GitAuthor,
   ): Promise<WriteResult> => {
     const { dir } = remote;
     await git.clone({
@@ -429,7 +370,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
         fs,
         dir,
         message: change.intent,
-        author: GIT_AUTHOR,
+        author,
       });
       await git.push({ ...remote, ref: branch });
       return commit;

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -1065,6 +1066,147 @@ describe("the credentials of the Git writer", slow, () => {
           message: "The Secret git-token has no key token.",
         },
       ],
+    });
+  });
+
+  describe("with GitHub App keys", () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    const appKeys = (installationId: string) => ({
+      appId: "123",
+      installationId,
+      privateKey,
+    });
+    let tokenRequests: { authorization: string }[];
+
+    // githubFor answers as GitHub Enterprise Server on the host of the
+    // bare repository. Each token request gets the next of tokens. app
+    // answers GET /app.
+    const githubFor = (tokens: string[], app: () => Response) => {
+      const api = `${new URL(repo.url).origin.replace(/^http:/, "https:")}/api/v3`;
+      tokenRequests = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (method === "GET" && url === `${api}/meta`) {
+          return Response.json({ installed_version: "3.17.0" });
+        }
+        if (method === "POST" && url.endsWith("/access_tokens")) {
+          tokenRequests.push({
+            authorization: new Headers(init?.headers).get("authorization")!,
+          });
+          return Response.json(
+            {
+              token: tokens.shift(),
+              expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+            },
+            { status: 201 },
+          );
+        }
+        if (method === "GET" && url === `${api}/app`) return app();
+        if (method === "GET" && url === `${api}/users/fleet-bot%5Bbot%5D`) {
+          return Response.json({ id: 4242 });
+        }
+        throw new Error(`unexpected request ${method} ${url}`);
+      });
+    };
+    const bot = () => Response.json({ slug: "fleet-bot" });
+    const authorOf = async () =>
+      (
+        await promisify(execFile)(
+          "git",
+          ["log", "-1", "--format=%an <%ae>", "main"],
+          { cwd: repo.dir },
+        )
+      ).stdout.trim();
+    const save = (name: string) =>
+      writerFor(
+        {
+          url: repo.url.replace(/^http:/, "https:"),
+          credentialsSecretRef: "git",
+        },
+        overHttp,
+      ).apply({ intent: `Create ${name}`, apply: [claim("team-a", name)] });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("pushes with GitHub App keys and the commit shows the App bot as the author", async () => {
+      repo = await serveBareRepository({
+        auth: { username: "x-access-token", token: "ghs_test" },
+      });
+      githubFor(["ghs_test"], bot);
+      vi.mocked(readSecretValues).mockResolvedValue(appKeys("901"));
+
+      ok(await save("orders"));
+
+      expect(await authorOf()).toBe(
+        "fleet-bot[bot] <4242+fleet-bot[bot]@users.noreply.127.0.0.1>",
+      );
+    });
+
+    it("a failed author lookup commits as fleet-manager and the save does not fail", async () => {
+      repo = await serveBareRepository({
+        auth: { username: "x-access-token", token: "ghs_test" },
+      });
+      githubFor(["ghs_test"], () => new Response(null, { status: 500 }));
+      vi.mocked(readSecretValues).mockResolvedValue(appKeys("902"));
+
+      ok(await save("orders"));
+
+      expect(await authorOf()).toBe(
+        "fleet-manager <fleet-manager@noreply.invalid>",
+      );
+    });
+
+    it("a Secret with token keys and App keys gives Unavailable and commits nothing", async () => {
+      repo = await serveBareRepository();
+      const before = await repo.log();
+      vi.mocked(readSecretValues).mockResolvedValue({
+        username: "fleet",
+        token: "t",
+        ...appKeys("903"),
+      });
+
+      expect(await save("orders")).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Unavailable",
+            message:
+              "The Secret git has keys for a token and keys for a GitHub App. Keep username and token, or appId, installationId, and privateKey.",
+          },
+        ],
+      });
+      expect(await repo.log()).toEqual(before);
+    });
+
+    it("a refused push with an App token drops the cached token", async () => {
+      repo = await serveBareRepository({
+        auth: { username: "x-access-token", token: "ghs_new" },
+      });
+      githubFor(["ghs_old", "ghs_new"], bot);
+      vi.mocked(readSecretValues).mockResolvedValue(appKeys("904"));
+      const url = repo.url.replace(/^http:/, "https:");
+
+      const refused = await save("orders");
+
+      expect(refused).toEqual({
+        ok: false,
+        errors: [
+          { code: "Forbidden", message: `${url} refused the credentials.` },
+        ],
+      });
+      const jwt = tokenRequests[0].authorization.slice("Bearer ".length);
+      expect(JSON.stringify(refused)).not.toContain("ghs_old");
+      expect(JSON.stringify(refused)).not.toContain(jwt);
+
+      ok(await save("billing"));
+      expect(tokenRequests).toHaveLength(2);
     });
   });
 });
