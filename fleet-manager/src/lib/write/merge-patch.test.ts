@@ -159,6 +159,20 @@ describe("clientSideApplyPatch", () => {
     ).toEqual({ items: [{ name: "a" }, null] });
   });
 
+  it("sends a change and a removal of the same map together", () => {
+    const live = applied(
+      env({ displayName: "One", releases: { allowed: ["r1"] } }),
+    );
+    expect(
+      clientSideApplyPatch(live, env({ displayName: "Two" }))?.spec,
+    ).toEqual({ displayName: "Two", releases: null });
+    const other = applied(env({ é: 1 }));
+    expect(clientSideApplyPatch(other, env({ ü: 2 }))?.spec).toEqual({
+      é: null,
+      ü: 2,
+    });
+  });
+
   it("sends a shorter list whole, with no null for a removed item", () => {
     const live = applied(env({ releases: { allowed: ["r1", "r2"] } }));
     expect(

@@ -53,7 +53,8 @@ export function clientSideApplyPatch(
     }),
   ) as JsonMap;
   // The steps of CreateThreeWayJSONMergePatch of
-  // k8s.io/apimachinery/pkg/util/jsonmergepatch, which kubectl calls.
+  // k8s.io/apimachinery/pkg/util/jsonmergepatch, which kubectl calls,
+  // without its conflict and precondition checks.
   const changes = keepOrDeleteNull(diff(live as JsonMap, next), false);
   const removals = keepOrDeleteNull(diff(last, next), true);
   const patch = merged(removals, changes);
