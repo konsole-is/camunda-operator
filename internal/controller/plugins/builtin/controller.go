@@ -143,8 +143,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		return ctrl.Result{}, nil
 	}
 
-	log := logf.FromContext(ctx)
-
 	rec := component.ReconcileContext{
 		Client:        r.Client,
 		Scheme:        r.Scheme,
@@ -185,8 +183,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		before = *ready
 	}
 	defer func() {
-		logReadyChange(log, before, meta.FindStatusCondition(request.Status.Conditions, v1.ConditionReady))
-		result, err = ownerstatus.Flush(ctx, rec, result, err)
+		result, err = flush(ctx, rec, before, result, err)
 	}()
 
 	s, err := r.build(ctx, &request, h)
@@ -240,6 +237,25 @@ func (r *Reconciler) registrationReady(ctx context.Context, name string) (bool, 
 
 	ready := meta.FindStatusCondition(reg.Status.Conditions, v1.ConditionReady)
 	return ready != nil && ready.Status == metav1.ConditionTrue && ready.ObservedGeneration == reg.Generation, nil
+}
+
+// flush writes the status of rec.Owner, and logs a change of its Ready
+// condition since before only when the write landed. It returns the result
+// and the error as ownerstatus.Settle decides them.
+func flush(
+	ctx context.Context,
+	rec component.ReconcileContext,
+	before metav1.Condition,
+	res ctrl.Result,
+	err error,
+) (ctrl.Result, error) {
+	flushErr := component.FlushStatus(ctx, rec)
+	if flushErr == nil {
+		after := meta.FindStatusCondition(*rec.Owner.GetStatusConditions(), v1.ConditionReady)
+		logReadyChange(logf.FromContext(ctx), before, after)
+	}
+
+	return ownerstatus.Settle(res, err, flushErr)
 }
 
 // logReadyChange writes one line when the status or the reason of Ready

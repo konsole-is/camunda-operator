@@ -213,11 +213,31 @@ func TestManagerLogFormat(t *testing.T) {
 
 			var out bytes.Buffer
 			s.zapOptions.DestWriter = &out
-			zap.New(zap.UseFlagOptions(&s.zapOptions)).Info("Started manager")
+			newLogger(&s.zapOptions).Info("Started manager")
 
 			assert.Equal(t, tc.json, json.Valid(bytes.TrimSpace(out.Bytes())), out.String())
 		})
 	}
+}
+
+// TestManagerLogKeepsEveryLine checks that the manager writes each info line
+// of a burst, at the default flags, and still drops a debug line. The fleet
+// manager reads a transition line once, so a sampled-out line is lost.
+func TestManagerLogKeepsEveryLine(t *testing.T) {
+	fs := flag.NewFlagSet("manager", flag.ContinueOnError)
+	s := bindFlags(fs, func(string) string { return "" })
+	require.NoError(t, fs.Parse(nil))
+
+	var out bytes.Buffer
+	s.zapOptions.DestWriter = &out
+	logger := newLogger(&s.zapOptions)
+	for range 250 {
+		logger.Info("Set Ready of PluginRequest")
+	}
+	logger.V(1).Info("Debug line")
+
+	assert.Equal(t, 250, strings.Count(out.String(), `"msg":"Set Ready of PluginRequest"`))
+	assert.NotContains(t, out.String(), "Debug line")
 }
 
 // TestSetLoggers checks that a line of klog and of the standard log package,

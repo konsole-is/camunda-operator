@@ -21,6 +21,7 @@ import (
 	"flag"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -28,6 +29,9 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	uberzap "go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/klog/v2"
@@ -102,7 +106,7 @@ func main() {
 	s := bindFlags(flag.CommandLine, os.Getenv)
 	flag.Parse()
 
-	setLoggers(zap.New(zap.UseFlagOptions(&s.zapOptions)))
+	setLoggers(newLogger(&s.zapOptions))
 
 	if err := s.checkGracePeriods(); err != nil {
 		setupLog.Error(err, "Failed to read the grace periods")
@@ -343,6 +347,24 @@ func bindFlags(fs *flag.FlagSet, getenv func(string) string) *settings {
 	s.zapOptions.BindFlags(fs)
 
 	return s
+}
+
+// newLogger returns the logger that the zap flags in o configure, with no
+// sampling. The production defaults of controller-runtime drop a message
+// after 100 lines of it in a second, and the fleet manager reads a Ready
+// transition line only once.
+func newLogger(o *zap.Options) logr.Logger {
+	// controller-runtime wraps the core in its sampler after the ZapOpts of
+	// o, so the first wrap sees the core without it, and the last puts it back.
+	var unsampled zapcore.Core
+	opts := *o
+	opts.ZapOpts = append(slices.Clone(o.ZapOpts), uberzap.WrapCore(func(c zapcore.Core) zapcore.Core {
+		unsampled = c
+		return c
+	}))
+	raw := zap.NewRaw(zap.UseFlagOptions(&opts))
+
+	return zapr.NewLogger(raw.WithOptions(uberzap.WrapCore(func(zapcore.Core) zapcore.Core { return unsampled })))
 }
 
 // setLoggers makes logger the logger of controller-runtime, klog, slog, and
