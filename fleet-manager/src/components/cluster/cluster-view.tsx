@@ -429,8 +429,6 @@ export function ClusterView({
   );
 }
 
-// NoClaim stands in for the read view when the claim object is not in the
-// namespace, as while GitOps has not applied it yet.
 function NoClaim({ managed, name }: { managed: boolean; name?: string }) {
   return (
     <p className="text-sm text-muted">
