@@ -197,7 +197,11 @@ describe("ServedStep", () => {
       />,
     );
     expect(onSelectorErrors).toHaveBeenLastCalledWith([
-      expect.objectContaining({ path: "0.value" }),
+      {
+        path: "0.value",
+        message:
+          "Use at most 63 letters, digits, '-', '_', or '.', starting and ending with a letter or digit",
+      },
     ]);
   });
 

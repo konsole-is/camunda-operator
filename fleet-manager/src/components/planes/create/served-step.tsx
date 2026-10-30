@@ -6,10 +6,12 @@ import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import { EnvironmentCards } from "@/components/create/environment-cards";
 import type { DraftPath } from "@/components/create/use-create-flow";
 import { DataTable } from "@/components/fleet/data-table";
-import { KeyValueEditor } from "@/components/fleet/key-value-editor";
+import {
+  KeyValueEditor,
+  keyValueErrors,
+} from "@/components/fleet/key-value-editor";
 import { type StatusTone, TEXT_TONE } from "@/components/fleet/status";
 import { type Plane, servesEnvironment } from "@/components/planes/plane";
-import { isLabelKey, isLabelValue } from "@/lib/labels";
 import {
   type PlaneContext,
   type PlaneDraft,
@@ -63,7 +65,15 @@ export function ServedStep({
   const restored = useRef(draft.clusterLabels);
   const report = useRef(onSelectorErrors);
   useEffect(() => {
-    report.current(labelErrors(restored.current));
+    report.current(
+      keyValueErrors(
+        Object.entries(restored.current).map(([key, value]) => ({
+          key,
+          value,
+        })),
+        "label",
+      ),
+    );
   }, []);
 
   const served = servedOf(draft);
@@ -166,15 +176,4 @@ export function PreviewTable({ rows }: { rows: PreviewRow[] }) {
       />
     </section>
   );
-}
-
-function labelErrors(labels: Record<string, string>): ValidationError[] {
-  return Object.entries(labels).flatMap(([key, value], row) => [
-    ...(isLabelKey(key)
-      ? []
-      : [{ path: `${row}.key`, message: "Use a valid label key" }]),
-    ...(isLabelValue(value)
-      ? []
-      : [{ path: `${row}.value`, message: "Use a valid label value" }]),
-  ]);
 }
