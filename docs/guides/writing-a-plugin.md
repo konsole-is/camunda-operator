@@ -221,6 +221,20 @@ spec:
 
 The identity extension of the cluster applies the grant and writes its status. The controller reads the `Ready` condition of its grants to set `GrantRejected` or `WaitingForGrants` on the request.
 
+## Log JSON lines with the request key
+
+The controller writes each log line as one JSON object. A line about a request carries the key `request`. Its value is an object with the `name` and the `namespace` of the request.
+
+The controller also logs the message `Set Ready of PluginRequest` each time the `Ready` condition of a request changes its status or its reason. The line has the keys `status` and `reason` with the new values. A request has one such line from its first reconcile on.
+
+```json
+{"level":"info","ts":"2026-10-15T09:00:04Z","msg":"Set Ready of PluginRequest","request":{"name":"orders-backup-storage","namespace":"my-cluster-ns"},"status":"True","reason":"Healthy"}
+```
+
+The fleet manager shows the logs of a request from these lines. The conformance check `REQ-LOGS` reads the log of the controller pods. It fails when a line is not JSON. It also fails when no line carries the `request` key for a request.
+
+A controller built with pluginkit writes these lines for you.
+
 ## Related
 
 - [PluginSection](../crds/pluginsection.md): the sections and their outputs.
