@@ -173,6 +173,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	in := components.Input{
 		Claim:             &claim,
 		ReleaseRef:        res.release,
+		ReleaseVersion:    res.releaseVersion,
 		PlatformConfigRef: res.platformConfig,
 		Order:             res.order,
 		Parameters:        res.resolution.Requests,

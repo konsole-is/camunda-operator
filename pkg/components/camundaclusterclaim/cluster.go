@@ -31,6 +31,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/camundacluster"
 )
 
@@ -96,9 +97,10 @@ func waitFor(waiting string) func(v1.CamundaCluster) (concepts.GuardStatusWithRe
 	}
 }
 
-// cluster returns the CamundaCluster of the claim: spec.cluster of the
-// claim, the references and ServiceAccount names that the claim controller
-// sets, and the slot fields from the outputs. waiting is empty, or, while
+// cluster returns the CamundaCluster of the claim: spec.cluster and
+// spec.suspend of the claim, the references and ServiceAccount names that
+// the claim controller sets, the slot fields from the outputs, and the
+// downgrade annotation of downgradeAnnotations. waiting is empty, or, while
 // the CamundaCluster does not exist, it names the sections whose output of a
 // CamundaCluster slot field is missing.
 func cluster(in Input) (desired *v1.CamundaCluster, waiting string, err error) {
@@ -108,6 +110,7 @@ func cluster(in Input) (desired *v1.CamundaCluster, waiting string, err error) {
 	}
 	spec.PresetRef = in.Claim.Spec.PresetRef
 	spec.ReleaseRef = in.ReleaseRef
+	spec.Suspend = in.Claim.Spec.Suspend
 	spec.PlatformConfigRef = in.PlatformConfigRef
 	serviceAccount(&spec.ServiceAccount).Name = ServiceAccountName(in.Claim.Name)
 	connectorsServiceAccount(&spec).Name = ConnectorsServiceAccountName(in.Claim.Name)
@@ -122,9 +125,11 @@ func cluster(in Input) (desired *v1.CamundaCluster, waiting string, err error) {
 	// The setters fill the intermediate structs of the copy, never of the
 	// live object of the precheck.
 	var live *v1.CamundaClusterSpec
+	var owned map[string]any
 	if in.Live != nil {
+		owned = ownedFields(in.Live.ManagedFields, clusterFieldManager(in.Claim))
 		live = in.Live.Spec.DeepCopy()
-		keepOwnAnnotations(live, in.Live.ManagedFields, clusterFieldManager(in.Claim))
+		keepOwnAnnotations(live, owned)
 	}
 
 	var missing []string
@@ -158,9 +163,10 @@ func cluster(in Input) (desired *v1.CamundaCluster, waiting string, err error) {
 	return &v1.CamundaCluster{
 		TypeMeta: metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaCluster"},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      in.Claim.Name,
-			Namespace: in.Claim.Namespace,
-			Labels:    map[string]string{fleetv1alpha1.LabelClaim: in.Claim.Name},
+			Name:        in.Claim.Name,
+			Namespace:   in.Claim.Namespace,
+			Labels:      map[string]string{fleetv1alpha1.LabelClaim: in.Claim.Name},
+			Annotations: downgradeAnnotations(in, owned),
 		},
 		Spec: spec,
 	}, waiting, nil
@@ -172,11 +178,9 @@ func clusterFieldManager(claim *fleetv1alpha1.CamundaClusterClaim) string {
 	return fleetv1alpha1.FieldManagerPrefixClusterClaim + clusterComponentName + "/" + string(claim.UID)
 }
 
-// keepOwnAnnotations removes from the two ServiceAccount annotation maps of
-// spec each key that manager does not own in managed. A missing output then
-// keeps only the keys that the claim wrote, and the apply does not take over
-// the keys of another writer.
-func keepOwnAnnotations(spec *v1.CamundaClusterSpec, managed []metav1.ManagedFieldsEntry, manager string) {
+// ownedFields returns the fields that manager owns in managed through its
+// last apply, decoded. It is nil when manager has no apply entry.
+func ownedFields(managed []metav1.ManagedFieldsEntry, manager string) map[string]any {
 	var owned map[string]any
 	for _, entry := range managed {
 		if entry.Manager == manager && entry.Operation == metav1.ManagedFieldsOperationApply && entry.FieldsV1 != nil {
@@ -184,6 +188,14 @@ func keepOwnAnnotations(spec *v1.CamundaClusterSpec, managed []metav1.ManagedFie
 		}
 	}
 
+	return owned
+}
+
+// keepOwnAnnotations removes from the two ServiceAccount annotation maps of
+// spec each key that the claim does not own in owned. A missing output then
+// keeps only the keys that the claim wrote, and the apply does not take over
+// the keys of another writer.
+func keepOwnAnnotations(spec *v1.CamundaClusterSpec, owned map[string]any) {
 	if spec.ServiceAccount != nil {
 		keepKeys(spec.ServiceAccount.Annotations, owned, "f:spec", "f:serviceAccount", "f:annotations")
 	}
@@ -212,6 +224,40 @@ func keepKeys(values map[string]string, owned map[string]any, path ...string) {
 			delete(values, key)
 		}
 	}
+}
+
+// downgradeAnnotations returns the downgrade annotation of the cluster, or
+// nil without a live cluster. The value is spec.allowVersionDowngrade while
+// that field equals the release version and differs from the management
+// version of the cluster. A cluster without status.management, such as a
+// suspended one, keeps the annotation that the claim owns in owned: it has
+// no effective version, so the operator would remove a new annotation on
+// each pass.
+func downgradeAnnotations(in Input, owned map[string]any) map[string]string {
+	const key = clustercomponents.AllowVersionDowngradeAnnotation
+	if in.Live == nil {
+		return nil
+	}
+
+	if in.Live.Status.Management == nil {
+		value, ok := in.Live.Annotations[key]
+		if !ok {
+			return nil
+		}
+		kept := map[string]string{key: value}
+		keepKeys(kept, owned, "f:metadata", "f:annotations")
+		if len(kept) == 0 {
+			return nil
+		}
+		return kept
+	}
+
+	target := in.Claim.Spec.AllowVersionDowngrade
+	if target == "" || target != in.ReleaseVersion || target == in.Live.Status.Management.Version {
+		return nil
+	}
+
+	return map[string]string{key: target}
 }
 
 // serviceAccount returns *account, and sets it to an empty ServiceAccountSpec
