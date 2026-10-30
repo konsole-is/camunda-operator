@@ -18,7 +18,9 @@ export function presetUsage(
     const preset = cluster.spec.presetRef;
     if (!preset) continue;
     const ref = `${cluster.metadata.namespace ?? ""}/${cluster.metadata.name ?? ""}`;
-    usage.set(preset, [...(usage.get(preset) ?? []), ref]);
+    const refs = usage.get(preset);
+    if (refs) refs.push(ref);
+    else usage.set(preset, [ref]);
   }
   for (const refs of usage.values()) refs.sort(byCodeUnit);
   return usage;
