@@ -28,6 +28,8 @@ import { BackupsTab } from "./backups-tab";
 import { componentCards } from "./cards";
 import { ClusterHeader } from "./cluster-header";
 import { ComponentCards } from "./component-card";
+import { endpointRows } from "./endpoints";
+import { EndpointsTab } from "./endpoints-tab";
 import { launchLinks } from "./launch";
 import { clusterOptimize } from "./optimize";
 import { OverviewConditions } from "./overview-conditions";
@@ -386,7 +388,16 @@ export function ClusterView({
             actions={slot("cluster.backups.actions")}
           />
         </TabsContent>
-        <TabsContent value="endpoints" />
+        <TabsContent value="endpoints">
+          <EndpointsTab
+            rows={endpointRows({
+              cluster: live,
+              spec: merged.spec,
+              optimizes: optimizes.items,
+              accessOutputs: access?.status?.outputs,
+            })}
+          />
+        </TabsContent>
         <TabsContent value="claim">{slot("cluster.claim.editor")}</TabsContent>
       </Tabs>
     </div>

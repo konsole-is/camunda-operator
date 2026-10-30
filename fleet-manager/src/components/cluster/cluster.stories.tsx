@@ -4,6 +4,8 @@ import type { Resource } from "@/lib/k8s/kinds";
 import { COMPONENT_LABEL } from "@/lib/labels";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
 import { ClusterHeader } from "./cluster-header";
+import { endpointRows } from "./endpoints";
+import { EndpointsTab } from "./endpoints-tab";
 import { launchLinks } from "./launch";
 import { topologyOf } from "./topology";
 import { TopologyView } from "./topology-view";
@@ -42,6 +44,52 @@ const waiting = (reason: string) => ({
     },
   ],
 });
+
+const route = (
+  name: string,
+  pathPrefix: string,
+  service = "orders-gateway",
+) => ({
+  name,
+  pathPrefix,
+  port: 8080,
+  protocol: "HTTP" as const,
+  service,
+});
+
+const storyCluster = {
+  kind: "CamundaCluster",
+  metadata: { namespace: "team-a", name: "orders" },
+  spec: { presetRef: "medium", externalUrl: "https://orders.example.com" },
+  status: {
+    endpoints: [
+      route("admin", "/admin"),
+      route("connectors", "/inbound", "orders-connectors"),
+      route("default", "/"),
+      {
+        name: "grpc",
+        port: 26500,
+        protocol: "GRPC",
+        service: "orders-gateway",
+      },
+      route("operate", "/operate"),
+      route("rest", "/v2"),
+      route("tasklist", "/tasklist"),
+    ],
+  },
+} as Resource<"CamundaCluster">;
+
+const storyOptimize = {
+  kind: "CamundaOptimize",
+  metadata: { namespace: "team-a", name: "orders-optimize" },
+  spec: {
+    clusterRef: { name: "orders" },
+    externalUrl: "https://orders.example.com/optimize",
+  },
+  status: {
+    endpoints: [route("optimize", "/optimize", "orders-optimize-webapp")],
+  },
+} as unknown as Resource<"CamundaOptimize">;
 
 export const clusterStories: Story[] = [
   {
@@ -159,5 +207,24 @@ export const clusterStories: Story[] = [
         )}
       />
     ),
+  },
+  {
+    component: "EndpointsTab",
+    name: "Embedded apps and an Optimize",
+    render: () => (
+      <EndpointsTab
+        rows={endpointRows({
+          cluster: storyCluster,
+          spec: { connectors: { enabled: true } } as CamundaClusterSpec,
+          optimizes: [storyOptimize],
+          accessOutputs: { grpcHost: "grpc.orders.example.com:443" },
+        })}
+      />
+    ),
+  },
+  {
+    component: "EndpointsTab",
+    name: "No endpoints yet",
+    render: () => <EndpointsTab rows={[]} />,
   },
 ];
