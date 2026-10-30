@@ -29,36 +29,54 @@ export function environmentReady(environment: Environment): {
 }
 
 /**
+ * EnvironmentCardsProps are the props of EnvironmentCards. Without multiple,
+ * the cards pick one environment. With multiple, they pick any number, and
+ * onChange gets the picked names in the order of the cards.
+ */
+export type EnvironmentCardsProps = {
+  environments: readonly Environment[];
+  counts: Readonly<Record<string, EnvironmentCount>>;
+  extra?: (environment: Environment) => ReactNode;
+} & (
+  | { multiple?: false; value?: string; onChange?: (name: string) => void }
+  | { multiple: true; value: string[]; onChange?: (names: string[]) => void }
+);
+
+/**
  * EnvironmentCards is the environment choice of a create flow: one card for
  * each environment, by name, with its display name, its color, its counts,
  * and extra under the counts. An environment that is not ready cannot be
  * picked and shows its message. counts can lack an environment: it then
- * shows zeros.
+ * shows zeros. In multiple mode each card names the environment by its
+ * object name, with the display name next to it.
  */
-export function EnvironmentCards({
-  environments,
-  counts,
-  value,
-  onChange,
-  extra,
-}: {
-  environments: readonly Environment[];
-  counts: Readonly<Record<string, EnvironmentCount>>;
-  value?: string;
-  onChange?: (name: string) => void;
-  extra?: (environment: Environment) => ReactNode;
-}) {
+export function EnvironmentCards(props: EnvironmentCardsProps) {
+  const { environments, counts, extra } = props;
   const id = useId();
   const sorted = [...environments].sort((a, b) =>
     byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""),
   );
+  const isChecked = (name: string) =>
+    props.multiple ? props.value.includes(name) : props.value === name;
+  const pick = (name: string) => {
+    if (!props.multiple) {
+      props.onChange?.(name);
+      return;
+    }
+    const picked = new Set(props.value);
+    if (picked.has(name)) picked.delete(name);
+    else picked.add(name);
+    props.onChange?.(
+      sorted.map((e) => e.metadata.name ?? "").filter((n) => picked.has(n)),
+    );
+  };
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <h2 id={`${id}-label`} className="font-heading text-base font-semibold">
-        Environment
+        {props.multiple ? "Environments" : "Environment"}
       </h2>
       <div
-        role="radiogroup"
+        role={props.multiple ? "group" : "radiogroup"}
         aria-labelledby={`${id}-label`}
         className="grid gap-3 sm:grid-cols-2"
       >
@@ -67,7 +85,8 @@ export function EnvironmentCards({
           const { ready, message } = environmentReady(environment);
           const count = counts[name] ?? { namespaces: 0, clusters: 0 };
           const color = environment.spec.color;
-          const checked = value === name;
+          const displayName = environment.spec.displayName;
+          const checked = isChecked(name);
           return (
             <label
               key={name}
@@ -78,13 +97,13 @@ export function EnvironmentCards({
               )}
             >
               <input
-                type="radio"
+                type={props.multiple ? "checkbox" : "radio"}
                 name={`${id}-environment`}
                 value={name}
                 checked={checked}
                 disabled={!ready}
                 aria-disabled={!ready || undefined}
-                onChange={() => onChange?.(name)}
+                onChange={() => pick(name)}
                 className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
               />
               <span className="flex min-w-0 flex-col gap-1">
@@ -102,7 +121,12 @@ export function EnvironmentCards({
                       style={{ backgroundColor: color }}
                     />
                   )}
-                  {environment.spec.displayName || name}
+                  {props.multiple ? name : displayName || name}
+                  {props.multiple && displayName && displayName !== name && (
+                    <span className="font-normal text-muted">
+                      {displayName}
+                    </span>
+                  )}
                 </span>
                 <span className="text-sm text-muted">
                   {`${plural(count.namespaces, "namespace")} · ${plural(count.clusters, "cluster")}`}
