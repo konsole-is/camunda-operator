@@ -380,6 +380,22 @@ describe("locks above a field", () => {
     ).toEqual({ refused: admin });
   });
 
+  it("refuses an index step to an appended item that the lock names by the keys of the value", () => {
+    const locks: LockProvider = (p) =>
+      p ===
+      "spec.plugins[section=backup,registration=s3-backup].parameters.bucket"
+        ? admin
+        : undefined;
+    const s = open(claim(), locks);
+    expect(
+      setValue(s, [f("spec"), f("plugins"), { index: 1 }], {
+        section: "backup",
+        registration: "s3-backup",
+        parameters: { bucket: "b" },
+      }),
+    ).toEqual({ refused: admin });
+  });
+
   it("refuses a change below a pending parent that changes a locked field", () => {
     const locks: LockProvider = (p) =>
       p === "spec.cluster.zeebe.replicas" ? admin : undefined;
@@ -486,6 +502,22 @@ describe("indexed items", () => {
     expect(
       list(discard(s, "spec.cluster.extraEnvFrom[1].configMapRef")),
     ).toEqual([{ a: 1 }, { secretRef: "x" }]);
+  });
+
+  it("a reset in a nested appended list leaves no hole", () => {
+    const term = (i: number): Step[] => [
+      ...cluster("affinity", "terms"),
+      { index: 0 },
+      f("expressions"),
+      { index: i },
+    ];
+    let s = ok(setValue(open(), term(0), { key: "a" }));
+    s = ok(setValue(s, term(1), { key: "b" }));
+    s = ok(resetValue(s, term(0)));
+    expect(
+      (claimAfter(s).spec as { cluster: { affinity: unknown } }).cluster
+        .affinity,
+    ).toEqual({ terms: [{ expressions: [{ key: "b" }] }] });
   });
 
   it("rebase drops a locked appended item without a hole, and checks the moved items", () => {

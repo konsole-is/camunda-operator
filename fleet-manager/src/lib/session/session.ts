@@ -233,9 +233,10 @@ function lockAt(
   steps: readonly Step[],
   after: unknown,
 ): FieldLock | undefined {
+  const target = after === undefined ? claim : withValue(claim, steps, after);
   const keyed = steps.map((step, i) =>
     "index" in step
-      ? itemStep(valueAt(claim, steps.slice(0, i + 1)), step.index)
+      ? itemStep(valueAt(target, steps.slice(0, i + 1)), step.index)
       : step,
   );
   return (
@@ -347,39 +348,46 @@ function withEntry<C extends ClaimObject>(
 // the end of the list in the claim, to the indexes right after it, so that
 // a dropped item leaves no hole.
 function compactAppended<C extends ClaimObject>(s: Session<C>): Session<C> {
-  const lists = new Map<string, Set<number>>();
-  const appendedAt = (steps: readonly Step[]) =>
-    steps.findIndex(
-      (step, j) =>
-        "index" in step &&
-        valueAt(s.claim, steps.slice(0, j + 1)) === undefined,
-    );
-  for (const entry of s.pending.values()) {
-    const j = appendedAt(entry.steps);
-    if (j < 0) continue;
-    const key = JSON.stringify(entry.steps.slice(0, j));
-    const indexes = lists.get(key) ?? new Set<number>();
-    indexes.add((entry.steps[j] as { index: number }).index);
-    lists.set(key, indexes);
-  }
-  const pending = new Map<FieldPath, PendingChange>();
-  for (const [key, entry] of s.pending) {
-    const j = appendedAt(entry.steps);
-    if (j < 0) {
-      pending.set(key, entry);
-      continue;
+  let pending = new Map(s.pending);
+  for (let level = 0; ; level++) {
+    const at = (steps: readonly Step[]) =>
+      appendedIndexes(s.claim, steps)[level];
+    const lists = new Map<string, number[]>();
+    for (const entry of pending.values()) {
+      const j = at(entry.steps);
+      if (j === undefined) continue;
+      const key = JSON.stringify(entry.steps.slice(0, j));
+      const index = (entry.steps[j] as { index: number }).index;
+      lists.set(key, [...new Set([...(lists.get(key) ?? []), index])]);
     }
-    const list = entry.steps.slice(0, j);
-    const length = valueAt(s.claim, list);
-    const start = Array.isArray(length) ? length.length : 0;
-    const order = [...lists.get(JSON.stringify(list))!].sort((a, b) => a - b);
-    const index =
-      start + order.indexOf((entry.steps[j] as { index: number }).index);
-    const moved = [...list, { index }, ...entry.steps.slice(j + 1)];
-    const path = pathFrom("", moved);
-    pending.set(path, { ...entry, path, steps: moved });
+    if (lists.size === 0) return { ...s, pending };
+    const next = new Map<FieldPath, PendingChange>();
+    for (const [key, entry] of pending) {
+      const j = at(entry.steps);
+      if (j === undefined) {
+        next.set(key, entry);
+        continue;
+      }
+      const list = entry.steps.slice(0, j);
+      const items = valueAt(s.claim, list);
+      const start = Array.isArray(items) ? items.length : 0;
+      const order = lists.get(JSON.stringify(list))!.sort((a, b) => a - b);
+      const index =
+        start + order.indexOf((entry.steps[j] as { index: number }).index);
+      const moved = [...list, { index }, ...entry.steps.slice(j + 1)];
+      const path = pathFrom("", moved);
+      next.set(path, { ...entry, path, steps: moved });
+    }
+    pending = next;
   }
-  return { ...s, pending };
+}
+
+function appendedIndexes(claim: ClaimObject, steps: readonly Step[]): number[] {
+  return steps.flatMap((step, j) =>
+    "index" in step && valueAt(claim, steps.slice(0, j + 1)) === undefined
+      ? [j]
+      : [],
+  );
 }
 
 // pendingParent returns the pending change above steps, and the steps from
