@@ -2368,6 +2368,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#suspend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suspend
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#downgrade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Downgrade
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attachments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attachments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#deletion" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2573,6 +2606,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#suspend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Suspend
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#downgrade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Downgrade
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attachments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attachments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#deletion" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2659,10 +2725,10 @@
 
 
 <h1 id="camundaclusterclaim">CamundaClusterClaim<a class="headerlink" href="#camundaclusterclaim" title="Permanent link">&para;</a></h1>
-<p>A <code>CamundaClusterClaim</code> asks for one Camunda cluster. It names a preset, a release, and one option for each section of the create flow, for example the secondary storage or the backup storage. The <a href="../../fleet-manager/install/">fleet manager</a> writes claims, and you can also apply one with <code>kubectl</code>. The operator creates a <a href="../pluginrequest/">PluginRequest</a> for each option and a <a href="../camundacluster/">CamundaCluster</a> with the name of the claim. The <a href="../environment/">Environment</a> of the namespace sets what the claim can use.</p>
+<p>A <code>CamundaClusterClaim</code> asks for one Camunda cluster. It names a preset, a release, and one option for each section of the create flow, for example the secondary storage or the backup storage. The <a href="../../fleet-manager/install/">fleet manager</a> writes claims, and you can also apply one with <code>kubectl</code>. The operator creates a <a href="../pluginrequest/">PluginRequest</a> for each option and a <a href="../camundacluster/">CamundaCluster</a> with the name of the claim. A claim can also add a <a href="../camundaoptimize/">CamundaOptimize</a> and a <a href="../backupschedule/">BackupSchedule</a> to its cluster. The <a href="../environment/">Environment</a> of the namespace sets what the claim can use.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p><code>fleet.camunda.io/v1alpha1</code> is an alpha API. Its fields can change in a later release. In this release, the operator creates the requests and the cluster of a claim. It does not act on <code>spec.attachments</code>, <code>spec.suspend</code>, or <code>spec.allowVersionDowngrade</code> yet.</p>
+<p><code>fleet.camunda.io/v1alpha1</code> is an alpha API. Its fields can change in a later release.</p>
 </div>
 <p>The smallest claim:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
@@ -2701,6 +2767,8 @@
     NS[Namespace] -.-&gt;|"label fleet.camunda.io/environment"| ENV[Environment]
     CL[CamundaClusterClaim] --&gt;|creates| PQ["PluginRequest my-cluster-secondary-storage"]
     CL --&gt;|creates| CC["CamundaCluster my-cluster"]
+    CL --&gt;|creates| OPT["CamundaOptimize my-cluster-optimize"]
+    CL --&gt;|creates| BS["BackupSchedule my-cluster-backups"]
     CL -.-&gt;|presetRef| CCP[CamundaClusterPreset]
     CL -.-&gt;|releaseRef| CR[CamundaRelease]
     CL -.-&gt;|platformConfigRef| PFC[CamundaPlatformConfig]
@@ -2719,7 +2787,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">fleet.camunda.io/environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
 </span></code></pre></div>
 <p>When no <code>Environment</code> exists in the Kubernetes cluster, a namespace without the label is valid too. The registrations then give the policy. A claim can select each registration of a section. It can change only the parameters in <code>claimEditable</code> of the registration. When at least one <code>Environment</code> exists, a claim in a namespace without the label is refused with <code>NoEnvironment</code>.</p>
-<p>On its first check, the claim records the policy of its <code>Environment</code> in <code>status.resolvedPolicy</code>, and the name of the <code>Environment</code> in <code>status.environment</code>. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of <code>spec.sections</code>, <code>spec.parameters</code>, or <code>spec.deletionPolicy</code> of the <code>Environment</code> does not change the claim. The preset and the release are different. The claim checks them against the current <code>spec.presets.camundaCluster</code> and <code>spec.releases.allowed</code>. When the <code>Environment</code> no longer lists them, <code>Ready</code> is <code>False</code> with reason <code>NotAllowed</code>, and the requests and the cluster stay as they are.</p>
+<p>On its first check, the claim records the policy of its <code>Environment</code> in <code>status.resolvedPolicy</code>, and the name of the <code>Environment</code> in <code>status.environment</code>. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of <code>spec.sections</code>, <code>spec.parameters</code>, or <code>spec.deletionPolicy</code> of the <code>Environment</code> does not change the claim. The claim checks a new preset or release against the current <code>spec.presets.camundaCluster</code> and <code>spec.releases.allowed</code> of the <code>Environment</code>. A preset or release that the cluster already uses stays allowed when the <code>Environment</code> drops it. Other changes of such a claim, such as a suspend or a parameter, still apply. A change to a value that the <code>Environment</code> does not list gives <code>Ready</code> <code>False</code> with reason <code>NotAllowed</code>. The requests and the cluster then stay as they are.</p>
 <p>A section of the policy that does not apply to a cluster claim, such as <code>management-database</code>, is never required for a cluster. A claim that selects an option in such a section is refused with <code>NotAllowed</code>. The <a href="../pluginsection/#claim-kinds">PluginSection</a> page says what <code>appliesTo</code> does.</p>
 <p><code>spec.releaseRef</code> and <code>spec.platformConfigRef</code> are optional. Without them, the cluster gets <code>spec.releases.default</code> and <code>spec.platformConfigRef</code> of the <code>Environment</code>. A later change of that default moves the cluster to the new release.</p>
 <h2 id="plugin-requests">Plugin requests<a class="headerlink" href="#plugin-requests" title="Permanent link">&para;</a></h2>
@@ -2774,6 +2842,10 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <tr>
 <td><code>spec.platformConfigRef</code></td>
 <td><code>spec.platformConfigRef</code> of the claim, or that of the <code>Environment</code></td>
+</tr>
+<tr>
+<td><code>spec.suspend</code></td>
+<td><code>spec.suspend</code> of the claim</td>
 </tr>
 <tr>
 <td><code>spec.serviceAccount.name</code></td>
@@ -2831,26 +2903,96 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 </tbody>
 </table>
+<p>The <code>optimizeUrl</code> output of <code>access</code> goes to the <code>CamundaOptimize</code> of the claim. See <a href="#attachments">Attachments</a>.</p>
 <p>When a request loses an output after the cluster exists, the cluster keeps the last value of that field. The cluster carries the label <code>fleet.camunda.io/claim</code> and an owner reference to the claim. The claim sets only the fields above. A field that it does not set stays free for another writer.</p>
 <p>A <code>CamundaCluster</code> needs <code>spec.storageRef</code>, so a claim without an option of <code>secondary-storage</code> gets no cluster. <code>ClusterReady</code> is then <code>False</code> with reason <code>Error</code>, and the message holds <code>spec.storageRef is required</code>.</p>
 <p>A <code>CamundaCluster</code> of the same name that another owner controls stays as it is. <code>ClusterReady</code> is then <code>False</code> with reason <code>Blocked</code>, and the message names the owner.</p>
-<h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Permanent link">&para;</a></h2>
-<p><code>spec.deletionPolicy</code> says what the plugins do with the resources that they created for the claim, such as buckets, keys, roles, and routes. <code>Delete</code> deletes them. <code>Orphan</code> keeps them. The <a href="../pluginrequest/#deletion">PluginRequest</a> page says what each policy keeps.</p>
+<h2 id="suspend">Suspend<a class="headerlink" href="#suspend" title="Permanent link">&para;</a></h2>
+<p>Set <code>spec.suspend: true</code> to stop the cluster:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
 </span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Orphan</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">suspend</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
+</span></code></pre></div>
+<p>The <code>CamundaCluster</code> <code>my-cluster</code> gets <code>spec.suspend: true</code>. It scales to zero and keeps its data, as <a href="../camundacluster/#suspend-and-pause">Suspend and pause</a> describes. The plugin requests do not change. Remove <code>spec.suspend</code>, or set it to <code>false</code>, to start the cluster again.</p>
+<h2 id="downgrade">Downgrade<a class="headerlink" href="#downgrade" title="Permanent link">&para;</a></h2>
+<p>The operator refuses a move of a cluster to a lower version, as <a href="../camundacluster/#a-lower-version-is-refused">A lower version is refused</a> describes. To downgrade on purpose, set <code>spec.releaseRef</code> to the older release and <code>spec.allowVersionDowngrade</code> to its version, in the same edit. The <code>Environment</code> must allow the older release:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">releaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-3</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">allowVersionDowngrade</span><span class="p">:</span><span class="w"> </span><span class="s">"8.9.3"</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
+</span></code></pre></div>
+<p>The <code>CamundaCluster</code> then gets the annotation <code>camunda.io/allow-version-downgrade: "8.9.3"</code>, see <a href="../camundacluster/#downgrade-on-purpose">Downgrade on purpose</a>. The cluster carries the annotation until it runs that version. Clear <code>spec.allowVersionDowngrade</code> after that.</p>
+<p>The annotation names only the version of the release of the claim. When <code>spec.allowVersionDowngrade</code> names another version, the cluster gets no annotation until <code>spec.releaseRef</code> names a release of that version. The cluster stays on the version of its release. A <code>CamundaCluster</code> whose <code>spec.version</code> you set yourself runs that version, and it gets no annotation from the claim. While the claim is suspended, the annotation does not change, and a downgrade waits until the claim starts the cluster again.</p>
+<h2 id="attachments">Attachments<a class="headerlink" href="#attachments" title="Permanent link">&para;</a></h2>
+<p><code>spec.attachments</code> adds an Optimize and a backup schedule to the cluster of the claim:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">attachments</span><span class="p">:</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">optimize</span><span class="p">:</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">managementAuthConfigRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-management-auth</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">backupSchedule</span><span class="p">:</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">      </span><span class="nt">schedule</span><span class="p">:</span><span class="w"> </span><span class="s">"0</span><span class="nv"> </span><span class="s">2</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*</span><span class="nv"> </span><span class="s">*"</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
+</span></code></pre></div>
+<p>The claim creates the attachments when <code>ClusterReady</code> is <code>True</code> for the first time. After that, the claim applies each change of an attachment at once, also while the cluster is not ready. Each attachment gets these fields:</p>
+<table>
+<thead>
+<tr>
+<th>Attachment</th>
+<th>Name</th>
+<th>Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="../camundaoptimize/">CamundaOptimize</a></td>
+<td><code>&lt;claim&gt;-optimize</code></td>
+<td><code>spec.clusterRef.name</code> is <code>&lt;claim&gt;</code>. <code>spec.managementAuthRef</code> is <code>managementAuthConfigRef</code> of the claim. <code>spec.version</code> is <code>spec.version</code> of the release of the claim. <code>spec.externalUrl</code> is the <code>optimizeUrl</code> output of <code>access</code>, or <code>spec.attachments.optimize.externalUrl</code> without an option of <code>access</code>. <code>spec.webapp</code>, <code>spec.importer</code>, <code>spec.indexReplicas</code>, and <code>spec.monitoring</code> are the fields of the same name in <code>spec.attachments.optimize</code>.</td>
+</tr>
+<tr>
+<td><a href="../backupschedule/">BackupSchedule</a></td>
+<td><code>&lt;claim&gt;-backups</code></td>
+<td><code>spec.clusterRef.name</code> is <code>&lt;claim&gt;</code>. <code>spec.schedule</code> and <code>spec.retained</code> are the fields of the same name in <code>spec.attachments.backupSchedule</code>. The schedule is a five-field cron expression in UTC.</td>
+</tr>
+</tbody>
+</table>
+<p>Each attachment carries the label <code>fleet.camunda.io/claim</code> and an owner reference to the claim. When the release of the claim changes, the <code>CamundaOptimize</code> gets the new version too. When the <code>optimizeUrl</code> output is missing, a new <code>CamundaOptimize</code> waits for it, and one that exists keeps its URL. The claim sets only the fields above that have a value. A field that the claim leaves empty stays free for another writer.</p>
+<p>Remove an attachment from the claim to delete it. The claim deletes only an object that has an owner reference to the claim. An object of that name that you created yourself stays, unless the claim took it over as the next paragraph says.</p>
+<p>An object of the name of an attachment that another owner controls stays as it is. <code>AttachmentsReady</code> is then <code>False</code> with reason <code>Blocked</code>, and the message names the owner. When the claim sets the attachment and an object of that name has no controller, the claim takes over the object.</p>
+<p>A <code>BackupSchedule</code> needs a cluster with <code>spec.backupStorageRef</code>, see <a href="../backupschedule/">BackupSchedule</a>. So a claim with a backup schedule must select an option of <code>backup-storage</code>, and the selections are fixed at creation.</p>
+<p>The cluster needs a version from the release of the claim. When the claim names no release and the <code>Environment</code> has no default release, <code>ClusterReady</code> is <code>False</code>, and its message holds <code>missing required fields: version</code>. The claim then creates no attachments.</p>
+<p>A suspended claim keeps its attachments. Optimize stops with its cluster, as <a href="../camundaoptimize/#suspension">Suspension</a> describes. <code>AttachmentsReady</code> stays <code>True</code> while Optimize is suspended.</p>
+<h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Permanent link">&para;</a></h2>
+<p><code>spec.deletionPolicy</code> says what the plugins do with the resources that they created for the claim, such as buckets, keys, roles, and routes. <code>Delete</code> deletes them. <code>Orphan</code> keeps them. The <a href="../pluginrequest/#deletion">PluginRequest</a> page says what each policy keeps.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">  </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Orphan</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
 </span></code></pre></div>
 <p>Without <code>spec.deletionPolicy</code>, the claim uses <code>status.resolvedPolicy.deletionPolicy</code>. This is the default of the <code>Environment</code> at the time that the claim was created, as <a href="#environment-and-policy">Environment and policy</a> describes. A later change of the <code>Environment</code> does not change it. A claim without this value uses <code>Delete</code>.</p>
 <p>The policy applies to the plugin requests only. The claim always deletes the <code>CamundaCluster</code> <code>&lt;claim&gt;</code>. It also deletes the <code>CamundaOptimize</code> <code>&lt;claim&gt;-optimize</code> and the <code>BackupSchedule</code> <code>&lt;claim&gt;-backups</code>. The <code>CamundaCluster</code> keeps or deletes its broker volumes by its own retention policy, as <a href="../camundacluster/#storage">Storage</a> describes. The claim deletes an object only when the object has an owner reference with <code>controller: true</code> to the claim. An object of one of these names that you created yourself stays.</p>
 <p>When the policy is <code>Orphan</code> and a selected registration does not list <code>Orphan</code> in <code>spec.deletionPolicies</code>, the claim deletes nothing. <code>Ready</code> is <code>False</code> with reason <code>NotAllowed</code>, and the message names each such registration. The selections of a claim do not change after creation. To continue the deletion, set <code>spec.deletionPolicy: Delete</code>. The plugins then delete the resources of the claim.</p>
 <p>The claim stays until each plugin deleted or kept the resources of its request, by the policy. While the claim waits, <code>Ready</code> is <code>False</code> with reason <code>Deleting</code>, and the message names each object that is still there. See <a href="#status">Status</a>.</p>
 <p>To change the policy of a claim that you delete, change <code>spec.deletionPolicy</code> first. Delete the claim after that. When a GitOps tool applies your claims, commit the change of the policy first. Before you remove the claim in a later commit, make sure that the claim shows the new policy:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.deletionPolicy}'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.deletionPolicy}'</span>
 </span></code></pre></div>
 <h2 id="status">Status<a class="headerlink" href="#status" title="Permanent link">&para;</a></h2>
 <p><code>Ready</code> is <code>False</code> with a reason of the check of the claim when that check fails. The claim then creates and changes nothing:</p>
@@ -2885,8 +3027,8 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 <tr>
 <td><code>SlotConflict</code></td>
-<td><code>spec.cluster</code> sets a field that a selected section fills, for example <code>externalUrl</code> with an option of <code>access</code>.</td>
-<td>Remove the field from <code>spec.cluster</code>.</td>
+<td><code>spec.cluster</code> or <code>spec.attachments.optimize</code> sets a field that a selected section fills, for example <code>externalUrl</code> with an option of <code>access</code>.</td>
+<td>Remove the field from the claim.</td>
 </tr>
 <tr>
 <td><code>MissingInput</code></td>
@@ -2901,7 +3043,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tbody>
 </table>
 <p>You do not need to edit the claim after you correct the cause. The claim checks itself again when the namespace, the <code>Environment</code>, the preset, the release, the platform config, a section, or a registration changes.</p>
-<p>When the check passes, <code>Ready</code> follows two conditions:</p>
+<p>When the check passes, <code>Ready</code> follows three conditions:</p>
 <table>
 <thead>
 <tr>
@@ -2960,46 +3102,81 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <td>The <code>CamundaCluster</code> is ready.</td>
 <td>Nothing.</td>
 </tr>
+<tr>
+<td><code>AttachmentsReady</code></td>
+<td><code>PrerequisiteNotMet</code></td>
+<td>The attachments wait for the first <code>ClusterReady</code> <code>True</code>. The message holds the message of <code>ClusterReady</code>.</td>
+<td>See <code>ClusterReady</code>.</td>
+</tr>
+<tr>
+<td><code>AttachmentsReady</code></td>
+<td><code>Creating</code>, <code>Updating</code>, <code>Failing</code>, <code>Degraded</code>, <code>Down</code></td>
+<td>The <code>CamundaOptimize</code> or the <code>BackupSchedule</code> is not ready. The message holds its <code>Ready</code> reason and message.</td>
+<td>See <a href="../camundaoptimize/#status">CamundaOptimize</a> or <a href="../backupschedule/#status">BackupSchedule</a>.</td>
+</tr>
+<tr>
+<td><code>AttachmentsReady</code></td>
+<td><code>Blocked</code></td>
+<td>Another owner controls an object of the name of an attachment. Or the <code>CamundaOptimize</code> does not exist yet, and the <code>optimizeUrl</code> output is missing. The message says which.</td>
+<td>For another owner, delete that object, or rename the claim. For the output, wait.</td>
+</tr>
+<tr>
+<td><code>AttachmentsReady</code></td>
+<td><code>Error</code></td>
+<td>The API server refused an attachment. The message holds its answer.</td>
+<td>Correct the claim.</td>
+</tr>
+<tr>
+<td><code>AttachmentsReady</code></td>
+<td><code>Healthy</code></td>
+<td>Each attachment that the claim sets is ready. A claim without attachments is <code>Healthy</code> too.</td>
+<td>Nothing.</td>
+</tr>
 </tbody>
 </table>
-<p><code>Ready</code> is <code>True</code> only when both are <code>True</code>. Otherwise, it takes the reason of the condition that blocks it, and its message starts with <code>requests:</code> or <code>cluster:</code>. A claim that waits for an output reports <code>PrerequisiteNotMet</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">status</span><span class="p">:</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequestsReady</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Blocked</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">waiting for the outputs of encryption-key</span>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterReady</span>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
-</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PrerequisiteNotMet</span>
-</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'Prerequisite</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">met:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">condition</span><span class="nv"> </span><span class="s">"RequestsReady"</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">become</span><span class="nv"> </span><span class="s">True</span><span class="nv"> </span><span class="s">(currently</span><span class="nv"> </span><span class="s">False:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">outputs</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">encryption-key)'</span>
-</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
-</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
-</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PrerequisiteNotMet</span>
-</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'cluster:</span><span class="nv"> </span><span class="s">Prerequisite</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">met:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">condition</span><span class="nv"> </span><span class="s">"RequestsReady"</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">become</span><span class="nv"> </span><span class="s">True</span><span class="nv"> </span><span class="s">(currently</span><span class="nv"> </span><span class="s">False:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">outputs</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">encryption-key)'</span>
-</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">  </span><span class="nt">requests</span><span class="p">:</span>
-</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-secondary-storage</span>
-</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">      </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secondary-storage</span>
-</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-secondary-storage</span>
-</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">      </span><span class="nt">outputsReady</span><span class="p">:</span><span class="w"> </span><span class="s">"True"</span>
-</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">      </span><span class="nt">ready</span><span class="p">:</span><span class="w"> </span><span class="s">"True"</span>
-</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-encryption-key</span>
-</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">      </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">encryption-key</span>
-</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-kms-key</span>
-</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-volume-encryption</span>
-</span><span id="__span-5-30"><a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="w">      </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">volume-encryption</span>
-</span><span id="__span-5-31"><a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-encrypted-volumes</span>
-</span><span id="__span-5-32"><a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">  </span><span class="nt">resolvedPolicy</span><span class="p">:</span>
-</span><span id="__span-5-33"><a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a><span class="w">    </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Delete</span>
-</span><span id="__span-5-34"><a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a><span class="w">    </span><span class="nt">sections</span><span class="p">:</span>
-</span><span id="__span-5-35"><a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="w">      </span><span class="nt">secondary-storage</span><span class="p">:</span>
-</span><span id="__span-5-36"><a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a><span class="w">        </span><span class="nt">allowed</span><span class="p">:</span>
-</span><span id="__span-5-37"><a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-secondary-storage</span>
+<p><code>Ready</code> is <code>True</code> only when all three are <code>True</code>. Otherwise, it takes the reason of the condition that blocks it, and its message starts with <code>requests:</code>, <code>cluster:</code>, or <code>attachments:</code>. Before the cluster is ready for the first time, the message of <code>Ready</code> can start with <code>attachments:</code>. Then read <code>ClusterReady</code>, because the attachments wait for it. A claim that waits for an output reports <code>PrerequisiteNotMet</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RequestsReady</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Blocked</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">waiting for the outputs of encryption-key</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ClusterReady</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PrerequisiteNotMet</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'Prerequisite</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">met:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">condition</span><span class="nv"> </span><span class="s">"RequestsReady"</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">become</span><span class="nv"> </span><span class="s">True</span><span class="nv"> </span><span class="s">(currently</span><span class="nv"> </span><span class="s">False:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">outputs</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">encryption-key)'</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AttachmentsReady</span>
+</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
+</span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PrerequisiteNotMet</span>
+</span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'Prerequisite</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">met:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">condition</span><span class="nv"> </span><span class="s">"ClusterReady"</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">become</span><span class="nv"> </span><span class="s">True</span><span class="nv"> </span><span class="s">(currently</span><span class="nv"> </span><span class="s">False:</span><span class="nv"> </span><span class="s">Prerequisite</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">met:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">condition</span><span class="nv"> </span><span class="s">"RequestsReady"</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">become</span><span class="nv"> </span><span class="s">True</span><span class="nv"> </span><span class="s">(currently</span><span class="nv"> </span><span class="s">False:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">outputs</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">encryption-key))'</span>
+</span><span id="__span-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-8-20"><a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
+</span><span id="__span-8-21"><a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
+</span><span id="__span-8-22"><a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PrerequisiteNotMet</span>
+</span><span id="__span-8-23"><a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'cluster:</span><span class="nv"> </span><span class="s">Prerequisite</span><span class="nv"> </span><span class="s">not</span><span class="nv"> </span><span class="s">met:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">condition</span><span class="nv"> </span><span class="s">"RequestsReady"</span><span class="nv"> </span><span class="s">to</span><span class="nv"> </span><span class="s">become</span><span class="nv"> </span><span class="s">True</span><span class="nv"> </span><span class="s">(currently</span><span class="nv"> </span><span class="s">False:</span><span class="nv"> </span><span class="s">waiting</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">the</span><span class="nv"> </span><span class="s">outputs</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">encryption-key)'</span>
+</span><span id="__span-8-24"><a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-8-25"><a id="__codelineno-8-25" name="__codelineno-8-25" href="#__codelineno-8-25"></a><span class="w">  </span><span class="nt">requests</span><span class="p">:</span>
+</span><span id="__span-8-26"><a id="__codelineno-8-26" name="__codelineno-8-26" href="#__codelineno-8-26"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-secondary-storage</span>
+</span><span id="__span-8-27"><a id="__codelineno-8-27" name="__codelineno-8-27" href="#__codelineno-8-27"></a><span class="w">      </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secondary-storage</span>
+</span><span id="__span-8-28"><a id="__codelineno-8-28" name="__codelineno-8-28" href="#__codelineno-8-28"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-secondary-storage</span>
+</span><span id="__span-8-29"><a id="__codelineno-8-29" name="__codelineno-8-29" href="#__codelineno-8-29"></a><span class="w">      </span><span class="nt">outputsReady</span><span class="p">:</span><span class="w"> </span><span class="s">"True"</span>
+</span><span id="__span-8-30"><a id="__codelineno-8-30" name="__codelineno-8-30" href="#__codelineno-8-30"></a><span class="w">      </span><span class="nt">ready</span><span class="p">:</span><span class="w"> </span><span class="s">"True"</span>
+</span><span id="__span-8-31"><a id="__codelineno-8-31" name="__codelineno-8-31" href="#__codelineno-8-31"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-encryption-key</span>
+</span><span id="__span-8-32"><a id="__codelineno-8-32" name="__codelineno-8-32" href="#__codelineno-8-32"></a><span class="w">      </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">encryption-key</span>
+</span><span id="__span-8-33"><a id="__codelineno-8-33" name="__codelineno-8-33" href="#__codelineno-8-33"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-kms-key</span>
+</span><span id="__span-8-34"><a id="__codelineno-8-34" name="__codelineno-8-34" href="#__codelineno-8-34"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-volume-encryption</span>
+</span><span id="__span-8-35"><a id="__codelineno-8-35" name="__codelineno-8-35" href="#__codelineno-8-35"></a><span class="w">      </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">volume-encryption</span>
+</span><span id="__span-8-36"><a id="__codelineno-8-36" name="__codelineno-8-36" href="#__codelineno-8-36"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-encrypted-volumes</span>
+</span><span id="__span-8-37"><a id="__codelineno-8-37" name="__codelineno-8-37" href="#__codelineno-8-37"></a><span class="w">  </span><span class="nt">resolvedPolicy</span><span class="p">:</span>
+</span><span id="__span-8-38"><a id="__codelineno-8-38" name="__codelineno-8-38" href="#__codelineno-8-38"></a><span class="w">    </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Delete</span>
+</span><span id="__span-8-39"><a id="__codelineno-8-39" name="__codelineno-8-39" href="#__codelineno-8-39"></a><span class="w">    </span><span class="nt">sections</span><span class="p">:</span>
+</span><span id="__span-8-40"><a id="__codelineno-8-40" name="__codelineno-8-40" href="#__codelineno-8-40"></a><span class="w">      </span><span class="nt">secondary-storage</span><span class="p">:</span>
+</span><span id="__span-8-41"><a id="__codelineno-8-41" name="__codelineno-8-41" href="#__codelineno-8-41"></a><span class="w">        </span><span class="nt">allowed</span><span class="p">:</span>
+</span><span id="__span-8-42"><a id="__codelineno-8-42" name="__codelineno-8-42" href="#__codelineno-8-42"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-secondary-storage</span>
 </span></code></pre></div>
 <p>While the claim is deleted, <code>Ready</code> reports the deletion. The other conditions keep their last value:</p>
 <table>
@@ -3026,13 +3203,13 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 </tbody>
 </table>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">status</span><span class="p">:</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deleting</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'The</span><span class="nv"> </span><span class="s">claim</span><span class="nv"> </span><span class="s">is</span><span class="nv"> </span><span class="s">deleted</span><span class="nv"> </span><span class="s">after</span><span class="nv"> </span><span class="s">these</span><span class="nv"> </span><span class="s">objects</span><span class="nv"> </span><span class="s">are</span><span class="nv"> </span><span class="s">gone:</span><span class="nv"> </span><span class="s">PluginRequest</span><span class="nv"> </span><span class="s">my-cluster-backup-storage'</span>
-</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deleting</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'The</span><span class="nv"> </span><span class="s">claim</span><span class="nv"> </span><span class="s">is</span><span class="nv"> </span><span class="s">deleted</span><span class="nv"> </span><span class="s">after</span><span class="nv"> </span><span class="s">these</span><span class="nv"> </span><span class="s">objects</span><span class="nv"> </span><span class="s">are</span><span class="nv"> </span><span class="s">gone:</span><span class="nv"> </span><span class="s">PluginRequest</span><span class="nv"> </span><span class="s">my-cluster-backup-storage'</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
 </span></code></pre></div>
 <p><code>status.requests</code> lists one item for each option, in the order of <code>spec.plugins</code>, with the status of the <code>OutputsReady</code> and <code>Ready</code> conditions of its request. <code>status.cluster.name</code> names the <code>CamundaCluster</code> once the claim controls it. A cluster of the same name that another owner controls is not named there.</p>
 <p><code>kubectl get camundaclusterclaims</code> shows <code>Ready</code>, the reason, the cluster, and the age. <code>kubectl get camundaclusterclaims -o wide</code> adds the preset, the release, and the environment.</p>
@@ -3048,30 +3225,30 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <li><code>spec.attachments.optimize.externalUrl</code> is not a valid URL for Optimize. The messages are the same as for <code>externalUrl</code> of a <a href="../camundaoptimize/">CamundaOptimize</a>.</li>
 </ul>
 <h2 id="a-production-shaped-example">A production-shaped example<a class="headerlink" href="#a-production-shaped-example" title="Permanent link">&para;</a></h2>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">presetRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">small</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">releaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-0</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Orphan</span>
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">  </span><span class="nt">plugins</span><span class="p">:</span>
-</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secondary-storage</span>
-</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-secondary-storage</span>
-</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">      </span><span class="nt">parameters</span><span class="p">:</span>
-</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-storage-config</span>
-</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup-storage</span>
-</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-object-storage</span>
-</span><span id="__span-7-17"><a id="__codelineno-7-17" name="__codelineno-7-17" href="#__codelineno-7-17"></a><span class="w">      </span><span class="nt">parameters</span><span class="p">:</span>
-</span><span id="__span-7-18"><a id="__codelineno-7-18" name="__codelineno-7-18" href="#__codelineno-7-18"></a><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-backup-bucket</span>
-</span><span id="__span-7-19"><a id="__codelineno-7-19" name="__codelineno-7-19" href="#__codelineno-7-19"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cloud-identity</span>
-</span><span id="__span-7-20"><a id="__codelineno-7-20" name="__codelineno-7-20" href="#__codelineno-7-20"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-pod-identity</span>
-</span><span id="__span-7-21"><a id="__codelineno-7-21" name="__codelineno-7-21" href="#__codelineno-7-21"></a><span class="w">  </span><span class="nt">cluster</span><span class="p">:</span>
-</span><span id="__span-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">    </span><span class="nt">zeebe</span><span class="p">:</span>
-</span><span id="__span-7-23"><a id="__codelineno-7-23" name="__codelineno-7-23" href="#__codelineno-7-23"></a><span class="w">      </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-7-24"><a id="__codelineno-7-24" name="__codelineno-7-24" href="#__codelineno-7-24"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span><span class="nt">presetRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">small</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">  </span><span class="nt">releaseRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-8-9-0</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">  </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Orphan</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">  </span><span class="nt">plugins</span><span class="p">:</span>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">secondary-storage</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-secondary-storage</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">      </span><span class="nt">parameters</span><span class="p">:</span>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-storage-config</span>
+</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup-storage</span>
+</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">existing-object-storage</span>
+</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">      </span><span class="nt">parameters</span><span class="p">:</span>
+</span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-backup-bucket</span>
+</span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">section</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cloud-identity</span>
+</span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">      </span><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws-pod-identity</span>
+</span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a><span class="w">  </span><span class="nt">cluster</span><span class="p">:</span>
+</span><span id="__span-10-22"><a id="__codelineno-10-22" name="__codelineno-10-22" href="#__codelineno-10-22"></a><span class="w">    </span><span class="nt">zeebe</span><span class="p">:</span>
+</span><span id="__span-10-23"><a id="__codelineno-10-23" name="__codelineno-10-23" href="#__codelineno-10-23"></a><span class="w">      </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-10-24"><a id="__codelineno-10-24" name="__codelineno-10-24" href="#__codelineno-10-24"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
 </span></code></pre></div>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>
@@ -3079,6 +3256,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <li><a href="../pluginrequest/">PluginRequest</a>: the request that the claim creates for each option.</li>
 <li><a href="../pluginsection/">PluginSection</a> and <a href="../pluginregistration/">PluginRegistration</a>: the sections and the options that a claim selects.</li>
 <li><a href="../camundacluster/">CamundaCluster</a>: the cluster that the claim creates.</li>
+<li><a href="../camundaoptimize/">CamundaOptimize</a> and <a href="../backupschedule/">BackupSchedule</a>: the attachments of the claim.</li>
 <li><a href="../../guides/claims/">Claims guide</a>: create a cluster from a claim, step by step.</li>
 </ul>
 

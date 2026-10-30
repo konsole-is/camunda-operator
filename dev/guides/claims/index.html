@@ -891,6 +891,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#change-a-cluster-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Change a cluster claim
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#delete-a-claim" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2494,6 +2505,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#change-a-cluster-claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Change a cluster claim
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#delete-a-claim" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2687,48 +2709,91 @@
 </li>
 </ul>
 <p>The claim created the <a href="../../crds/camundamanagementcluster/">CamundaManagementCluster</a> <code>my-plane</code>. It serves the clusters in the namespaces with the label <code>fleet.camunda.io/environment=production</code>, and its Management Identity uses <code>my-identity-db</code>. If <code>Ready</code> stays <code>False</code>, the <a href="../../crds/camundamanagementclusterclaim/#status">CamundaManagementClusterClaim</a> page lists each reason and what to do.</p>
+<h2 id="change-a-cluster-claim">Change a cluster claim<a class="headerlink" href="#change-a-cluster-claim" title="Permanent link">&para;</a></h2>
+<p>This part changes the claim <code>my-cluster</code> of <a href="#create-a-cluster-from-a-claim">Create a cluster from a claim</a>. The claim sends each change to its <code>CamundaCluster</code> and its attachments.</p>
+<ol>
+<li>
+<p>To move the cluster to a new release, add the release to <code>spec.releases.allowed</code> of the environment first. Then set the release on the claim:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>--type<span class="w"> </span>merge<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"spec":{"releaseRef":"camunda-8-9-1"}}'</span>
+</span></code></pre></div>
+</li>
+<li>
+<p>Make sure that the cluster got the release:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>camundacluster<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.releaseRef}'</span>
+</span></code></pre></div>
+<p>If the environment does not allow the release, <code>Ready</code> of the claim is <code>False</code> with reason <code>NotAllowed</code>, and the cluster keeps its release.</p>
+</li>
+<li>
+<p>To stop the cluster and keep its data, suspend the claim:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>--type<span class="w"> </span>merge<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"spec":{"suspend":true}}'</span>
+</span></code></pre></div>
+</li>
+<li>
+<p>Make sure that the cluster is suspended. The command prints <code>true</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>camundacluster<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.suspend}'</span>
+</span></code></pre></div>
+</li>
+<li>
+<p>To start the cluster again, resume the claim:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>--type<span class="w"> </span>merge<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"spec":{"suspend":false}}'</span>
+</span></code></pre></div>
+</li>
+<li>
+<p>To add Optimize, set the Optimize attachment of the claim. Use the name of your <code>ManagementAuthConfig</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>kubectl<span class="w"> </span>patch<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>--type<span class="w"> </span>merge<span class="w"> </span>-p<span class="w"> </span><span class="s1">'{"spec":{"attachments":{"optimize":{"managementAuthConfigRef":"my-management-auth"}}}}'</span>
+</span></code></pre></div>
+</li>
+<li>
+<p>Make sure that the claim created it. The command lists <code>my-cluster-optimize</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>camundaoptimize<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns
+</span></code></pre></div>
+<p>The cluster of this claim is already ready, so the claim creates the Optimize at once.</p>
+</li>
+</ol>
+<p>This claim selects no option of <code>backup-storage</code>, so it cannot get a backup schedule. A claim that selects one at creation can set <code>spec.attachments.backupSchedule</code> in the same way.</p>
+<p>The <a href="../../crds/camundaclusterclaim/">CamundaClusterClaim</a> page describes <a href="../../crds/camundaclusterclaim/#suspend">Suspend</a>, a move to an older release in <a href="../../crds/camundaclusterclaim/#downgrade">Downgrade</a>, and the fields of each attachment in <a href="../../crds/camundaclusterclaim/#attachments">Attachments</a>.</p>
 <h2 id="delete-a-claim">Delete a claim<a class="headerlink" href="#delete-a-claim" title="Permanent link">&para;</a></h2>
 <p>The deletion policy of the claim decides what the plugins do with the resources that they created, such as buckets and keys. <code>Delete</code> deletes them. <code>Orphan</code> keeps them. The <a href="../../crds/camundaclusterclaim/#deletion">CamundaClusterClaim</a> and <a href="../../crds/camundamanagementclusterclaim/#deletion">CamundaManagementClusterClaim</a> pages say what each claim always deletes. The steps below delete a cluster claim. For a plane claim, use <code>camundamanagementclusterclaim</code> and its names.</p>
 <ol>
 <li>
 <p>If you want to keep the resources of the plugins, set the policy <code>Orphan</code> before you delete the claim:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
-</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">  </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Orphan</span>
-</span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet.camunda.io/v1alpha1</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterClaim</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster-ns</span>
+</span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-18-7"><a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">  </span><span class="nt">deletionPolicy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Orphan</span>
+</span><span id="__span-18-8"><a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">  </span><span class="c1"># ... the rest of your claim</span>
 </span></code></pre></div>
 </li>
 <li>
 <p>Delete the claim:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>--wait<span class="o">=</span><span class="nb">false</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>kubectl<span class="w"> </span>delete<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>--wait<span class="o">=</span><span class="nb">false</span>
 </span></code></pre></div>
 </li>
 <li>
 <p>Read the status of the claim while it waits for the plugins:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-o<span class="w"> </span>yaml
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>camundaclusterclaim<span class="w"> </span>my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-o<span class="w"> </span>yaml
 </span></code></pre></div>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">status</span><span class="p">:</span>
-</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span>
-</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
-</span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
-</span><span id="__span-14-5"><a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deleting</span>
-</span><span id="__span-14-6"><a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'The</span><span class="nv"> </span><span class="s">claim</span><span class="nv"> </span><span class="s">is</span><span class="nv"> </span><span class="s">deleted</span><span class="nv"> </span><span class="s">after</span><span class="nv"> </span><span class="s">these</span><span class="nv"> </span><span class="s">objects</span><span class="nv"> </span><span class="s">are</span><span class="nv"> </span><span class="s">gone:</span><span class="nv"> </span><span class="s">PluginRequest</span><span class="nv"> </span><span class="s">my-cluster-secondary-storage'</span>
-</span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nt">status</span><span class="p">:</span>
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span>
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ready</span>
+</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s">"False"</span>
+</span><span id="__span-21-5"><a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Deleting</span>
+</span><span id="__span-21-6"><a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="w">      </span><span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="s">'The</span><span class="nv"> </span><span class="s">claim</span><span class="nv"> </span><span class="s">is</span><span class="nv"> </span><span class="s">deleted</span><span class="nv"> </span><span class="s">after</span><span class="nv"> </span><span class="s">these</span><span class="nv"> </span><span class="s">objects</span><span class="nv"> </span><span class="s">are</span><span class="nv"> </span><span class="s">gone:</span><span class="nv"> </span><span class="s">PluginRequest</span><span class="nv"> </span><span class="s">my-cluster-secondary-storage'</span>
+</span><span id="__span-21-7"><a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="w">      </span><span class="nt">observedGeneration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
 </span></code></pre></div>
 <p>The message names each object that the claim waits for. When the reason is <code>NotAllowed</code>, the claim deletes nothing. A selected registration does not support <code>Orphan</code>. To continue, set <code>spec.deletionPolicy: Delete</code>. The plugins then delete their resources.</p>
 </li>
 <li>
 <p>Wait until the claim is gone:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>kubectl<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span>delete<span class="w"> </span>camundaclusterclaim/my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>--timeout<span class="o">=</span>30m
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>kubectl<span class="w"> </span><span class="nb">wait</span><span class="w"> </span>--for<span class="o">=</span>delete<span class="w"> </span>camundaclusterclaim/my-cluster<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>--timeout<span class="o">=</span>30m
 </span></code></pre></div>
 </li>
 </ol>
 <p>The claim deletes the <code>CamundaCluster</code> <code>my-cluster</code> with both policies. If the claim stays, read the status of the request that the message names:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pluginrequest<span class="w"> </span>my-cluster-secondary-storage<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-o<span class="w"> </span>yaml
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pluginrequest<span class="w"> </span>my-cluster-secondary-storage<span class="w"> </span>-n<span class="w"> </span>my-cluster-ns<span class="w"> </span>-o<span class="w"> </span>yaml
 </span></code></pre></div>
 
 

@@ -16404,7 +16404,7 @@ selection, and the attachments.</p>
 </tr>
 <tr>
 <td><code>allowVersionDowngrade</code> <em>string</em></td>
-<td>AllowVersionDowngrade is the target version of a confirmed downgrade,<br />as a full version such as 8.9.3. The claim controller sets the<br />annotation camunda.io/allow-version-downgrade on the CamundaCluster to<br />this version until the cluster reports it. The fleet manager clears<br />the field after the cluster reports the target version.</td>
+<td>AllowVersionDowngrade is the target version of a confirmed downgrade,<br />as a full version such as 8.9.3. Set it to the version of the release<br />of the claim. The claim controller sets the annotation<br />camunda.io/allow-version-downgrade on the CamundaCluster to this<br />version, and keeps it until the operator removes it. A version that<br />the release does not have sets no annotation, and neither does a<br />CamundaCluster whose spec.version another writer set. While the<br />cluster is suspended, the claim controller neither adds nor removes<br />the annotation, so a downgrade set during a suspension waits for the<br />resume. The fleet manager clears the field after the cluster reports<br />the target version.</td>
 <td></td>
 <td>Pattern: <code>^(\d+\.\d+\.\d+)?$</code> <br />Optional: {} <br /></td>
 </tr>

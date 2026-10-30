@@ -623,6 +623,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#change-a-setting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -641,6 +652,34 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Git credentials">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A token
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-github-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A GitHub App
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2588,6 +2627,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#settings-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#change-a-setting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2606,6 +2656,34 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Git credentials">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A token
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-github-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A GitHub App
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2714,7 +2792,7 @@
 
 <h1 id="fleet-manager-settings">Fleet manager settings<a class="headerlink" href="#fleet-manager-settings" title="Permanent link">&para;</a></h1>
 <p>The settings of the fleet manager name this Kubernetes cluster, the Git repository and the Secret store for Git mode, and the Prometheus address. The fleet manager keeps them in the ConfigMap <code>fleet-manager-settings</code> in the release namespace. The release namespace is the namespace of the Helm release, <code>camunda-operator-system</code> in the examples on this page.</p>
-<p>In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. Git mode is on when <code>git.repository</code> is set. In this version, no page of the fleet manager shows the settings or saves a change yet.</p>
+<p>In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. Git mode is on when <code>git.repository</code> is set. The page <strong>Setup &gt; Settings</strong> of the fleet manager shows the settings and saves a change, as <a href="#settings-page">Settings page</a> shows.</p>
 <h2 id="set-the-settings-at-install">Set the settings at install<a class="headerlink" href="#set-the-settings-at-install" title="Permanent link">&para;</a></h2>
 <p>The chart values <code>fleetManager.settings.*</code> give the first value of each setting:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>helm<span class="w"> </span>upgrade<span class="w"> </span>--install<span class="w"> </span>camunda-operator<span class="w"> </span><span class="se">\</span>
@@ -2726,7 +2804,7 @@
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.settings.kubernetesClusterName<span class="o">=</span>prod-eu<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span>--set<span class="w"> </span>fleetManager.settings.prometheus.url<span class="o">=</span>http://prometheus.monitoring:9090
 </span></code></pre></div>
-<p>The fleet manager creates the ConfigMap <code>fleet-manager-settings</code> from these values the first time that it reads its settings. After that, the ConfigMap is the only source of the settings. A later <code>helm upgrade</code> with other <code>fleetManager.settings.*</code> values does not change the ConfigMap. To change a setting, edit the ConfigMap, as <a href="#change-a-setting">Change a setting</a> shows.</p>
+<p>The fleet manager creates the ConfigMap <code>fleet-manager-settings</code> from these values the first time that it reads its settings. After that, the ConfigMap is the only source of the settings. A later <code>helm upgrade</code> with other <code>fleetManager.settings.*</code> values does not change the ConfigMap. To change a setting, use the Settings page or edit the ConfigMap, as <a href="#change-a-setting">Change a setting</a> shows.</p>
 <h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2785,41 +2863,72 @@
 </tbody>
 </table>
 <p>An empty value means that the setting is not set. An address in <code>git.repository</code> or <code>prometheus.url</code> starts with <code>http://</code> or <code>https://</code>, and it must not hold a user name or a password, as in <code>https://user:token@git.example.com</code>. The fleet manager treats another address as not set. The pages show the settings, so put the credentials in a Secret. The fleet manager drops a user name and a password from an address when it reads the settings.</p>
+<h2 id="settings-page">Settings page<a class="headerlink" href="#settings-page" title="Permanent link">&para;</a></h2>
+<p>Open <strong>Setup &gt; Settings</strong> in the fleet manager. The page has a field for each setting. The text under each field names its key in the ConfigMap, so you can match the field to the <a href="#settings">Settings</a> table. The page shows only the names of Secrets, never a value.</p>
+<p>Select <strong>Git mode</strong> to show the Git settings. Git mode is on when the repository is set, so the page refuses to save Git mode without a repository. Clear <strong>Git mode</strong> to turn Git mode off. The save then clears <code>git.repository</code> and keeps the other Git settings for the next time.</p>
+<p>In Git mode, the page shows the files that a save writes, for a claim and for an environment under the current <strong>Path</strong>. If the path names no folder in the repository, as <code>a/../b</code> does, the page shows <code>git.path must name a folder in the repository.</code> and refuses to save.</p>
+<p>The settings stay in the cluster also in Git mode. A save on the page writes the ConfigMap <code>fleet-manager-settings</code> and the fleet manager never pushes it to Git.</p>
+<p>The credentials fields list the Secrets of the release namespace by name. A setting can name a Secret that does not exist. The field then keeps the name and marks it <code>(not found)</code>. It also shows <code>The Secret &lt;name&gt; does not exist in namespace &lt;namespace&gt;.</code> A save keeps that name until you pick another Secret or <strong>None</strong>. To correct it, create the Secret, as <a href="#git-credentials">Git credentials</a> and <a href="#prometheus-credentials">Prometheus credentials</a> show. If the page cannot list the Secrets, it shows <code>Could not list the Secrets of namespace &lt;namespace&gt;: &lt;message&gt;</code>. The fields then keep each name and do not mark it <code>(not found)</code>.</p>
+<p><strong>Test the connection</strong> connects to the Git repository with the saved settings. <strong>Test the query</strong> sends a query to Prometheus with the saved settings. Both buttons show the result, or the error and its cause. The tests use the saved settings, not the values in the fields. So while the page has a change that you did not save, both buttons are off. Save the change to turn the buttons on again.</p>
+<p><strong>Save</strong> writes only the settings that you changed. If someone changed the ConfigMap after you opened the page, the save writes nothing. It shows <code>The ConfigMap fleet-manager-settings changed since you opened it.</code> Select <strong>Reload</strong> to get the current settings, then make your change again.</p>
+<p>When <code>prometheus.url</code> is not set, the page shows <code>Charts do not show. Everything else works.</code> The pages then show no charts of metrics. Set <strong>Prometheus URL</strong> to show the charts.</p>
+<p>Below the settings, the page shows if metrics-server serves the live CPU and memory of the pods. With <code>metrics-server found</code>, the pages show the live CPU and memory. With <code>metrics-server not found</code>, the pages hide them.</p>
+<p>The page shows the <code>kubectl port-forward</code> command that opens the fleet manager, as <a href="../install/#open-it">Open it</a> shows.</p>
+<p>The permissions table lists what the fleet manager can do in the release namespace. The page cannot change these permissions. The chart sets them.</p>
 <h2 id="change-a-setting">Change a setting<a class="headerlink" href="#change-a-setting" title="Permanent link">&para;</a></h2>
-<p>In this version, no page reads the settings, so the ConfigMap does not exist after the install. Create it before you change a setting. Each key that you leave out is not set:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>configmap<span class="w"> </span>fleet-manager-settings<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">kubernetesClusterName</span><span class="o">=</span>prod-eu
+<p>Use the <a href="#settings-page">Settings page</a> to change a setting. You can also edit the ConfigMap. The fleet manager creates the ConfigMap the first time that it reads its settings. The ConfigMap exists at the latest after you open the Settings page once. A ConfigMap that the fleet manager created holds one key for each setting:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>get<span class="w"> </span>configmap<span class="w"> </span>fleet-manager-settings<span class="w"> </span>-o<span class="w"> </span>yaml
 </span></code></pre></div>
-<p>When the ConfigMap exists, the fleet manager uses it and does not read the <code>fleetManager.settings.*</code> values. A ConfigMap that the fleet manager created holds one key for each setting:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>get<span class="w"> </span>configmap<span class="w"> </span>fleet-manager-settings<span class="w"> </span>-o<span class="w"> </span>yaml
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet-manager-settings</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-operator-system</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">git.branch</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">git.credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">git.path</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">  </span><span class="nt">git.repository</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="nt">kubernetesClusterName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-eu</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">prometheus.credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">  </span><span class="nt">prometheus.url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://prometheus.monitoring:9090</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="nt">secretStore.kind</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">secretStore.name</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
 </span></code></pre></div>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ConfigMap</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleet-manager-settings</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">camunda-operator-system</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">git.branch</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">git.credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">git.path</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="nt">git.repository</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="nt">kubernetesClusterName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prod-eu</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">  </span><span class="nt">prometheus.credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
-</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">  </span><span class="nt">prometheus.url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">http://prometheus.monitoring:9090</span>
-</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">  </span><span class="nt">secretStore.kind</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
-</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">  </span><span class="nt">secretStore.name</span><span class="p">:</span><span class="w"> </span><span class="s">""</span>
+<p>To change a setting with <code>kubectl</code>, edit the ConfigMap:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>edit<span class="w"> </span>configmap<span class="w"> </span>fleet-manager-settings
 </span></code></pre></div>
-<p>To change a setting, edit the ConfigMap:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>edit<span class="w"> </span>configmap<span class="w"> </span>fleet-manager-settings
-</span></code></pre></div>
-<p>The fleet manager reads the ConfigMap each time that it needs a setting, so an edit takes effect without a restart. Git mode does not apply to the settings. The fleet manager never commits them to the repository.</p>
+<p>The fleet manager reads the ConfigMap each time that it needs a setting, so a change takes effect without a restart. Git mode does not apply to the settings. The fleet manager never commits them to the repository.</p>
 <h2 id="git-credentials">Git credentials<a class="headerlink" href="#git-credentials" title="Permanent link">&para;</a></h2>
-<p>The fleet manager connects to the Git repository over HTTPS. It does not send the credentials to an address that starts with <code>http://</code>. The Secret of <code>git.credentialsSecretRef</code> holds the keys <code>username</code> and <code>token</code>. Create it in the release namespace:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>fleet-git<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">username</span><span class="o">=</span>&lt;user&gt;<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span>&lt;token&gt;
+<p>The fleet manager connects to the Git repository over HTTPS. It does not send the credentials to an address that starts with <code>http://</code>. The Secret of <code>git.credentialsSecretRef</code> holds a token or the keys of a GitHub App. When the Secret holds keys of both sets, each save fails. Create the Secret <code>fleet-git</code> in the release namespace, as one of the two sections below shows. Then set <code>git.credentialsSecretRef</code> to <code>fleet-git</code>. Without the setting, the fleet manager connects to the repository without credentials.</p>
+<p>The fleet manager reads the Secret at each save and at each connection test, so a change to the Secret takes effect without a restart.</p>
+<h3 id="a-token">A token<a class="headerlink" href="#a-token" title="Permanent link">&para;</a></h3>
+<p>The Secret holds the keys <code>username</code> and <code>token</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>fleet-git<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">username</span><span class="o">=</span>&lt;user&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span>&lt;token&gt;
 </span></code></pre></div>
-<p>Then set <code>git.credentialsSecretRef</code> to <code>fleet-git</code>. Without the setting, the fleet manager connects to the repository without credentials.</p>
+<h3 id="a-github-app">A GitHub App<a class="headerlink" href="#a-github-app" title="Permanent link">&para;</a></h3>
+<p>A GitHub App works for repositories on <code>github.com</code> and on GitHub Enterprise Server. For a repository on another Git server, use a token.</p>
+<ol>
+<li>Create a GitHub App with the repository permission "Contents: Read and write", as <a href="https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app">Registering a GitHub App</a> shows.</li>
+<li>Install the App on the repository of <code>git.repository</code>, as <a href="https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app">Installing your own GitHub App</a> shows.</li>
+<li>Write down the App ID from the settings page of the App.</li>
+<li>Write down the installation ID. It is the number at the end of the address of the installation settings page.</li>
+<li>Generate a private key for the App, and download the <code>.pem</code> file.</li>
+<li>
+<p>Create the Secret. If the App is on GitHub Enterprise Server, set <code>enterpriseHost</code> to the host of the server, for example <code>ghe.example.com</code>. Otherwise, remove the line of <code>enterpriseHost</code>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>fleet-git<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">appId</span><span class="o">=</span>&lt;app<span class="w"> </span>id&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">installationId</span><span class="o">=</span>&lt;installation<span class="w"> </span>id&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">enterpriseHost</span><span class="o">=</span>&lt;host&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span>--from-file<span class="o">=</span><span class="nv">privateKey</span><span class="o">=</span>&lt;app&gt;.private-key.pem
+</span></code></pre></div>
+</li>
+</ol>
+<p>Without <code>enterpriseHost</code>, the fleet manager uses the App keys only for a repository on <code>github.com</code>. With <code>enterpriseHost</code>, it uses them only for a repository on that host.</p>
+<p>The fleet manager must reach the GitHub API: <code>https://api.github.com</code> for <code>github.com</code>, or <code>https://&lt;enterpriseHost&gt;/api/v3</code> for GitHub Enterprise Server. It gets a token from GitHub that expires after one hour, and gets a new token before the old one expires.</p>
+<p>Commits show the bot of the App, <code>&lt;app slug&gt;[bot]</code>, as the author. The slug is the name of the App in its GitHub address, <code>https://github.com/apps/&lt;app slug&gt;</code>. If the fleet manager cannot find the bot, commits show <code>fleet-manager</code>, and the save still works.</p>
 <h2 id="git-mode">Git mode<a class="headerlink" href="#git-mode" title="Permanent link">&para;</a></h2>
 <p>Set <code>git.repository</code> to turn on Git mode. Set the branch, the folder, and the Secret with the credentials in the same ConfigMap:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
@@ -2835,7 +2944,7 @@
 </span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="w">  </span><span class="c1"># ... the rest of your settings</span>
 </span></code></pre></div>
 <p>An empty <code>git.branch</code> uses the default branch of the repository. The branch must exist before the first save. An empty <code>git.path</code> puts the files at the root of the repository. <code>git.path</code> must be a folder inside the repository, so a save fails when the path holds <code>..</code>.</p>
-<p>Each save in the fleet manager becomes one commit on the branch. The subject of the commit names the change, and the author is <code>fleet-manager</code>. When the repository already holds the same content, the save makes no commit. The fleet manager writes each object to one file under <code>git.path</code>:</p>
+<p>Each save in the fleet manager becomes one commit on the branch. The subject of the commit names the change. The author is <code>fleet-manager</code>, or the bot of the GitHub App when the Secret holds the keys of an App. When the repository already holds the same content, the save makes no commit. The fleet manager writes each object to one file under <code>git.path</code>:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>clusters/prod/
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>├── _cluster/
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>│   └── namespaces/
@@ -2846,11 +2955,12 @@
 </span></code></pre></div>
 <p>A namespaced object goes to <code>&lt;git.path&gt;/&lt;namespace&gt;/&lt;plural&gt;/&lt;name&gt;.yaml</code>. A cluster-scoped object goes to <code>&lt;git.path&gt;/_cluster/&lt;plural&gt;/&lt;name&gt;.yaml</code>. <code>&lt;plural&gt;</code> is the plural resource name of the kind, as <code>kubectl api-resources</code> shows it. A file holds the object without <code>status</code> and without the fields that the API server sets. Each object carries the annotation <code>fleet.camunda.io/revision</code> with the SHA-256 of its content. A delete in the fleet manager removes the file of the object. Point your GitOps tool at the folder of <code>git.path</code>.</p>
 <h3 id="waiting-for-gitops">Waiting for GitOps<a class="headerlink" href="#waiting-for-gitops" title="Permanent link">&para;</a></h3>
-<p>After a save in Git mode, each page shows "Waiting for GitOps to apply" at the top, with one line for each pushed file. A line goes away when the object in the cluster carries the <code>fleet.camunda.io/revision</code> of the push. The list belongs to the browser tab, so a reload of the page clears it. If a line stays, make sure that your GitOps tool syncs the folder of <code>git.path</code>.</p>
+<p>After a save in Git mode, each page shows "Waiting for GitOps to apply" at the top, with one line for each pushed file. The line of a changed file goes away when the object in the cluster carries the <code>fleet.camunda.io/revision</code> of the push. The line of a deleted file goes away when the object is gone from the cluster, or when the cluster starts to delete it. The list belongs to the browser tab, so a reload of the page clears it. If a line stays, make sure that your GitOps tool syncs the folder of <code>git.path</code>.</p>
+<p>Your GitOps tool must prune. When the fleet manager removes a file, the GitOps tool must delete the object from the cluster. Flux prunes when the Kustomization sets <code>prune: true</code>. Argo CD prunes when <code>syncPolicy.automated</code> of the Application sets <code>prune: true</code>. If your GitOps tool does not prune, the line of a delete stays, because the fleet manager waits without a time limit.</p>
 <h3 id="changes-that-go-to-the-api-in-git-mode">Changes that go to the API in Git mode<a class="headerlink" href="#changes-that-go-to-the-api-in-git-mode" title="Permanent link">&para;</a></h3>
 <p>One-off backups, restores, and backup deletions go to the Kubernetes API also in Git mode. The settings go to the API too, and the fleet manager never commits them. For Secrets, see <a href="#secrets-in-git-mode">Secrets in Git mode</a>.</p>
 <h3 id="when-a-save-fails">When a save fails<a class="headerlink" href="#when-a-save-fails" title="Permanent link">&para;</a></h3>
-<p>Before the commit, the fleet manager sends each object to the cluster as a dry run. A save that the cluster refuses makes no commit. When your GitOps tool applies a file, it removes each field that it set before and that the file now leaves out. The dry run removes these fields too when your GitOps tool uses server-side apply. Flux uses server-side apply. Argo CD uses client-side apply, unless you set the sync option <code>ServerSideApply=true</code>. With client-side apply, the dry run keeps these fields. When a validation rule depends on such a field, the save can commit a file that GitOps then cannot apply. The cluster cannot check an <code>ExternalSecret</code>, or an object in a namespace that the same save creates. The cluster checks these objects only when GitOps applies them.</p>
+<p>Before the commit, the fleet manager sends each object to the cluster as a dry run. A save that the cluster refuses makes no commit. When your GitOps tool applies a file, it removes each field that it set before and that the file now leaves out. The dry run removes these fields too. So when a validation rule needs such a field, the save fails before the commit. This is true for Flux, which uses server-side apply. Argo CD uses client-side apply by default. With it, this is true for a custom resource such as an <code>Environment</code>, but not for a <code>Namespace</code> or a <code>ConfigMap</code>. The cluster cannot check an <code>ExternalSecret</code>, or an object in a namespace that the same save creates. The cluster checks these objects only when GitOps applies them.</p>
 <p>When someone pushed to the branch after the fleet manager read it, the save commits on top of that push. The save fails only when that push changed a file of the save.</p>
 <table>
 <thead>
@@ -2888,8 +2998,8 @@
 </tr>
 <tr>
 <td><code>&lt;repository&gt; refused the credentials.</code></td>
-<td>The username or the token of the Secret is wrong, or the token cannot push.</td>
-<td>Correct the Secret of <code>git.credentialsSecretRef</code>.</td>
+<td>The username or the token of the Secret is wrong, or the token cannot push. With a GitHub App, the App does not have the permission "Contents: Read and write" on the repository.</td>
+<td>Correct the Secret of <code>git.credentialsSecretRef</code>, or give the App the permission.</td>
 </tr>
 <tr>
 <td><code>&lt;repository&gt; refused the push to the branch &lt;branch&gt;.</code></td>
@@ -2910,6 +3020,46 @@
 <td><code>The Secret &lt;secret&gt; has no key &lt;key&gt;.</code></td>
 <td>The Secret has no key <code>username</code> or no key <code>token</code>, or the value is empty.</td>
 <td>Add the key to the Secret.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has keys for a token and keys for a GitHub App. Keep username and token, or appId, installationId, and privateKey.</code></td>
+<td>The Secret holds keys of both sets.</td>
+<td>Remove the keys of the set that you do not use.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; needs the keys appId, installationId, and privateKey for a GitHub App. It has no key &lt;keys&gt;.</code></td>
+<td>The Secret holds some keys of a GitHub App, or a key has an empty value.</td>
+<td>Add the keys to the Secret, as <a href="#a-github-app">A GitHub App</a> shows.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has a key &lt;key&gt; that is not a number.</code></td>
+<td>The value of <code>appId</code> or <code>installationId</code> is not the ID that GitHub shows.</td>
+<td>Correct the value in the Secret.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has a key privateKey that is not a PEM private key.</code></td>
+<td>The value of <code>privateKey</code> is not the content of the <code>.pem</code> file of the App.</td>
+<td>Create the Secret again with <code>--from-file=privateKey=&lt;app&gt;.private-key.pem</code>.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; is not on github.com. To use the GitHub App keys of the Secret &lt;secret&gt; with GitHub Enterprise Server, set its key enterpriseHost to the host of the server.</code></td>
+<td>The Secret holds the keys of a GitHub App without <code>enterpriseHost</code>, and the repository is not on <code>github.com</code>.</td>
+<td>If the repository is on GitHub Enterprise Server, add <code>enterpriseHost</code>, as <a href="#a-github-app">A GitHub App</a> shows. For another Git server, use a token, as <a href="#a-token">A token</a> shows.</td>
+</tr>
+<tr>
+<td><code>&lt;repository&gt; is not on the host of the key enterpriseHost of the Secret &lt;secret&gt;. The GitHub App keys of the Secret work only there.</code></td>
+<td>The repository is on another host than <code>enterpriseHost</code>.</td>
+<td>Correct <code>git.repository</code> or <code>enterpriseHost</code>.</td>
+</tr>
+<tr>
+<td><code>The Secret &lt;secret&gt; has a key enterpriseHost that is not a host name.</code></td>
+<td>The value of <code>enterpriseHost</code> holds more than a host, for example <code>https://</code> or a path.</td>
+<td>Set <code>enterpriseHost</code> to the host only, for example <code>ghe.example.com</code>.</td>
+</tr>
+<tr>
+<td><code>GitHub refused the token request of the App &lt;app id&gt; for the installation &lt;installation id&gt; (HTTP &lt;status&gt;).</code></td>
+<td>The App ID, the installation ID, or the private key is wrong, or the App is not installed on the repository.</td>
+<td>Correct the keys of the Secret, or install the App on the repository.</td>
 </tr>
 <tr>
 <td><code>&lt;repository&gt; has no branch &lt;branch&gt;.</code></td>
