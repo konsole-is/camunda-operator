@@ -543,6 +543,8 @@ async function writeFiles(
     }
     await rm(path.join(dir, file));
     await git.remove({ fs, dir, filepath: file });
+    delete revisions[refKey(ref)];
+    delete paths[refKey(ref)];
     deleted[refKey(ref)] = file;
     files.push(file);
   }

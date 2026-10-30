@@ -550,6 +550,29 @@ describe("the Git writer", () => {
     });
   });
 
+  it("an object that the change applies and deletes is only in deleted", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const result = ok(
+      await writerFor().apply({
+        intent: "Apply and delete orders",
+        apply: [claim("team-a", "orders")],
+        delete: [claimRef("team-a", "orders")],
+      }),
+    );
+
+    expect(result.revisions).toEqual({});
+    expect(result.paths).toEqual({});
+    expect(result.deleted).toEqual({
+      "CamundaClusterClaim/team-a/orders":
+        "team-a/camundaclusterclaims/orders.yaml",
+    });
+  });
+
   it("a delete of an object without a file fails and commits nothing", async () => {
     repo = await serveBareRepository();
 
