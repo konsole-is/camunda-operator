@@ -13,7 +13,12 @@ import { type KubeObject, readObjects } from "../scenarios/objects";
 import { bindChartRBAC } from "../scenarios/rbac";
 
 const USER = "fleet-manager-scenarios";
-const OTHER_USER = "other-scenario-user";
+// No test binds a role to PLAIN_USER.
+const PLAIN_USER = "plain-scenario-user";
+const FIRST_USER = "first-scenario-user";
+const SECOND_USER = "second-scenario-user";
+// The RBAC tests bind in a namespace that no scenario holds.
+const RBAC_NAMESPACE = "rbac-scenarios";
 
 // This file loads whole scenarios, whose objects would collide with the
 // objects of the other files, so it starts an envtest of its own.
@@ -21,7 +26,9 @@ let envtest: Envtest;
 
 beforeAll(async () => {
   envtest = await startEnvtest({
-    users: [{ name: USER }, { name: OTHER_USER }],
+    users: [USER, PLAIN_USER, FIRST_USER, SECOND_USER].map((name) => ({
+      name,
+    })),
   });
 }, 120_000);
 
@@ -31,7 +38,7 @@ afterAll(async () => {
 
 describe("the users option of startEnvtest", () => {
   it("authenticates a user that is not an admin", async () => {
-    const user = envtest.users[USER];
+    const user = envtest.users[PLAIN_USER];
     const review = await kubeRequest<{
       status: { userInfo: { username: string; groups: string[] } };
     }>(
@@ -40,7 +47,7 @@ describe("the users option of startEnvtest", () => {
       "/apis/authentication.k8s.io/v1/selfsubjectreviews",
       { apiVersion: "authentication.k8s.io/v1", kind: "SelfSubjectReview" },
     );
-    expect(review.status.userInfo.username).toBe(USER);
+    expect(review.status.userInfo.username).toBe(PLAIN_USER);
     expect(review.status.userInfo.groups).not.toContain("system:masters");
     await expect(
       kubeRequest(user.kubeConfig, "GET", "/api/v1/namespaces/default/secrets"),
@@ -59,19 +66,23 @@ describe("the users option of startEnvtest", () => {
     ).rejects.toThrow(/a.*twice/);
   });
 
-  it("writes a kubeconfig for a user name with a slash", async () => {
-    const slashed = await startEnvtest({ users: [{ name: "team/alice" }] });
+  it("writes a kubeconfig for a user name with a slash or a colon", async () => {
+    const names = ["team/alice", "a: b"];
+    const odd = await startEnvtest({ users: names.map((name) => ({ name })) });
     try {
-      const kc = slashed.users["team/alice"].kubeConfig;
-      const review = await kubeRequest<{
-        status: { userInfo: { username: string } };
-      }>(kc, "POST", "/apis/authentication.k8s.io/v1/selfsubjectreviews", {
-        apiVersion: "authentication.k8s.io/v1",
-        kind: "SelfSubjectReview",
-      });
-      expect(review.status.userInfo.username).toBe("team/alice");
+      for (const name of names) {
+        const review = await kubeRequest<{
+          status: { userInfo: { username: string } };
+        }>(
+          odd.users[name].kubeConfig,
+          "POST",
+          "/apis/authentication.k8s.io/v1/selfsubjectreviews",
+          { apiVersion: "authentication.k8s.io/v1", kind: "SelfSubjectReview" },
+        );
+        expect(review.status.userInfo.username).toBe(name);
+      }
     } finally {
-      await slashed.stop();
+      await odd.stop();
     }
   }, 120_000);
 
@@ -185,29 +196,33 @@ describe("the scenario loader", () => {
   describe("on the cluster-ready scenario", () => {
     const dir = path.resolve("e2e/scenarios/cluster-ready");
     let recorded: KubeObject[];
-    let scenario: Scenario;
+    let loaded: KubeObject[];
+    let state: KubeObject[];
+    let advanced: KubeObject[];
 
     beforeAll(async () => {
+      const kc = envtest.kubeConfig;
       recorded = await readObjects(path.join(dir, "objects.yaml"));
-      scenario = await openScenario(envtest.kubeConfig, dir);
+      const scenario = await openScenario(kc, dir);
+      loaded = await Promise.all(recorded.map((o) => getLive(kc, o)));
+      state = await readObjects(path.join(dir, "three-brokers-ready.yaml"));
+      await scenario.advance("three-brokers-ready");
+      advanced = await Promise.all(state.map((o) => getLive(kc, o)));
     }, 120_000);
 
-    it("load leaves no scenario UID in any object of cluster-ready", async () => {
+    it("load leaves no scenario UID in any object of cluster-ready", () => {
       const scenarioUIDs = recorded.map((o) => o.metadata.uid!);
-      const live = await Promise.all(
-        recorded.map((o) => getLive(envtest.kubeConfig, o)),
-      );
-
-      const text = JSON.stringify(live);
+      const text = JSON.stringify(loaded);
       expect(scenarioUIDs.filter((uid) => text.includes(uid))).toEqual([]);
-      for (const o of live) {
+      for (const o of loaded) {
         expect(managers(o).map(([m]) => m)).not.toContain(LOADER_MANAGER);
       }
     });
 
-    it("load keeps the field managers of the reconcilers", async () => {
-      const cluster = recorded.find((o) => o.kind === "CamundaCluster")!;
-      const live = await getLive(envtest.kubeConfig, cluster);
+    it("load keeps the field managers of the reconcilers", () => {
+      const index = recorded.findIndex((o) => o.kind === "CamundaCluster");
+      const cluster = recorded[index];
+      const live = loaded[index];
 
       const recordedManagers = managers(cluster).map(([m, op, sub]) => [
         m.replace(cluster.metadata.uid!, live.metadata.uid!),
@@ -218,22 +233,14 @@ describe("the scenario loader", () => {
       expect(managers(live).map(([m]) => m)).toContain("kubectl");
     });
 
-    it("advance to three-brokers-ready leaves no scenario UID and no entry of the loader", async () => {
-      const state = await readObjects(
-        path.join(dir, "three-brokers-ready.yaml"),
-      );
-      await scenario.advance("three-brokers-ready");
-
-      const live = await Promise.all(
-        state.map((o) => getLive(envtest.kubeConfig, o)),
-      );
-      const text = JSON.stringify(live);
+    it("advance to three-brokers-ready leaves no scenario UID and no entry of the loader", () => {
+      const text = JSON.stringify(advanced);
       const scenarioUIDs = state.map((o) => o.metadata.uid!);
       expect(scenarioUIDs.filter((uid) => text.includes(uid))).toEqual([]);
-      for (const o of live) {
+      for (const o of advanced) {
         expect(managers(o).map(([m]) => m)).not.toContain(LOADER_MANAGER);
       }
-      const zeebe = live.find(
+      const zeebe = advanced.find(
         (o) =>
           o.metadata.name === "camundacluster-sample-zeebe" &&
           o.kind === "StatefulSet",
@@ -244,113 +251,93 @@ describe("the scenario loader", () => {
 
   describe("advance", () => {
     const dir = path.resolve("test/fixtures/scenarios/advance");
+    const inAdvance = (apiVersion: string, kind: string, name: string) => ({
+      apiVersion,
+      kind,
+      metadata: { name, namespace: "advance" },
+    });
     let scenario: Scenario;
-    const deployment = {
-      apiVersion: "apps/v1",
-      kind: "Deployment",
-      metadata: { name: "app", namespace: "advance" },
-    };
+    // What the API server holds after advance to moved, and then to back.
+    let moved: Record<string, KubeObject>;
+    let removedGone: boolean[];
+    let back: Record<string, KubeObject>;
 
     beforeAll(async () => {
-      scenario = await openScenario(envtest.kubeConfig, dir);
+      const kc = envtest.kubeConfig;
+      const read = async (objs: Record<string, KubeObject>) =>
+        Object.fromEntries(
+          await Promise.all(
+            Object.entries(objs).map(
+              async ([key, o]) => [key, await getLive(kc, o)] as const,
+            ),
+          ),
+        );
+      scenario = await openScenario(kc, dir);
+
       await scenario.advance("moved");
-    }, 60_000);
-
-    it("advance updates a spec and keeps the status observed", async () => {
-      const app = await getLive(envtest.kubeConfig, deployment);
-      expect(app.spec).toMatchObject({ replicas: 2 });
-      expect(app.metadata.generation).toBe(2);
-      expect(app.status).toMatchObject({ observedGeneration: 2 });
-
-      await getLive(envtest.kubeConfig, {
-        apiVersion: "v1",
-        kind: "ConfigMap",
-        metadata: { name: "new", namespace: "advance" },
+      moved = await read({
+        app: inAdvance("apps/v1", "Deployment", "app"),
+        rs: inAdvance("apps/v1", "ReplicaSet", "app-1"),
+        created: inAdvance("v1", "ConfigMap", "new"),
+        namesNew: inAdvance("v1", "ConfigMap", "names-new"),
       });
-      const rs = await getLive(envtest.kubeConfig, {
-        apiVersion: "apps/v1",
-        kind: "ReplicaSet",
-        metadata: { name: "app-1", namespace: "advance" },
-      });
-      expect(rs.metadata.ownerReferences?.map((r) => r.uid)).toEqual([
-        app.metadata.uid,
-      ]);
-    });
-
-    it("advance clears a status that the state does not have", async () => {
-      const rs = await getLive(envtest.kubeConfig, {
-        apiVersion: "apps/v1",
-        kind: "ReplicaSet",
-        metadata: { name: "app-1", namespace: "advance" },
-      });
-      expect(rs.status).not.toHaveProperty("readyReplicas");
-    });
-
-    it("advance writes the UID of a new object into an object that did not change", async () => {
-      const created = await getLive(envtest.kubeConfig, {
-        apiVersion: "v1",
-        kind: "ConfigMap",
-        metadata: { name: "new", namespace: "advance" },
-      });
-      const names = await getLive(envtest.kubeConfig, {
-        apiVersion: "v1",
-        kind: "ConfigMap",
-        metadata: { name: "names-new", namespace: "advance" },
-      });
-      expect(names.metadata.annotations).toEqual({
-        "scenario.test/new-uid": created.metadata.uid,
-      });
-    });
-
-    it("advance deletes an object with a finalizer, a Pod, and a Namespace", async () => {
       const removed = [
-        {
-          apiVersion: "v1",
-          kind: "ConfigMap",
-          metadata: { name: "gone", namespace: "advance" },
-        },
-        {
-          apiVersion: "v1",
-          kind: "Pod",
-          metadata: { name: "gone-pod", namespace: "advance" },
-        },
+        inAdvance("v1", "ConfigMap", "gone"),
+        inAdvance("v1", "Pod", "gone-pod"),
         {
           apiVersion: "v1",
           kind: "Namespace",
           metadata: { name: "advance-gone" },
         },
       ];
-      await expect
-        .poll(
-          async () =>
-            Promise.all(removed.map((o) => gone(envtest.kubeConfig, o))),
-          { timeout: 10_000 },
-        )
-        .toEqual([true, true, true]);
+      const deadline = Date.now() + 10_000;
+      do {
+        removedGone = await Promise.all(removed.map((o) => gone(kc, o)));
+        if (removedGone.every(Boolean)) break;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      } while (Date.now() < deadline);
+
+      await scenario.advance("back");
+      back = await read({
+        recreated: inAdvance("v1", "ConfigMap", "gone"),
+        namesGone: inAdvance("v1", "ConfigMap", "names-gone"),
+      });
+    }, 60_000);
+
+    it("advance updates a spec and keeps the status observed", () => {
+      const { app, rs } = moved;
+      expect(app.spec).toMatchObject({ replicas: 2 });
+      expect(app.metadata.generation).toBe(2);
+      expect(app.status).toMatchObject({ observedGeneration: 2 });
+      expect(rs.metadata.ownerReferences?.map((r) => r.uid)).toEqual([
+        app.metadata.uid,
+      ]);
+    });
+
+    it("advance clears a status that the state does not have", () => {
+      expect(moved.rs.status).not.toHaveProperty("readyReplicas");
+    });
+
+    it("advance writes the UID of a new object into an object that did not change", () => {
+      expect(moved.namesNew.metadata.annotations).toEqual({
+        "scenario.test/new-uid": moved.created.metadata.uid,
+      });
+    });
+
+    it("advance deletes an object with a finalizer, a Pod, and a Namespace", () => {
+      expect(removedGone).toEqual([true, true, true]);
+    });
+
+    it("advance writes the new UID of a recreated object into an object that did not change", () => {
+      expect(back.namesGone.metadata.annotations).toEqual({
+        "scenario.test/gone-uid": back.recreated.metadata.uid,
+      });
     });
 
     it("advance to an unknown state names the states", async () => {
       await expect(scenario.advance("nope")).rejects.toThrow(
         "The scenario advance has no state nope. Its states are: moved, back",
       );
-    });
-
-    it("advance writes the new UID of a recreated object into an object that did not change", async () => {
-      await scenario.advance("back");
-
-      const recreated = await getLive(envtest.kubeConfig, {
-        apiVersion: "v1",
-        kind: "ConfigMap",
-        metadata: { name: "gone", namespace: "advance" },
-      });
-      const names = await getLive(envtest.kubeConfig, {
-        apiVersion: "v1",
-        kind: "ConfigMap",
-        metadata: { name: "names-gone", namespace: "advance" },
-      });
-      expect(names.metadata.annotations).toEqual({
-        "scenario.test/gone-uid": recreated.metadata.uid,
-      });
     });
   });
 });
@@ -373,16 +360,15 @@ async function allowed(
 }
 
 describe("bindChartRBAC", () => {
+  beforeAll(async () => {
+    await kubeRequest(envtest.kubeConfig, "POST", "/api/v1/namespaces", {
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: RBAC_NAMESPACE },
+    });
+  });
+
   it("binds the chart rules to the user", async () => {
-    try {
-      await kubeRequest(envtest.kubeConfig, "POST", "/api/v1/namespaces", {
-        apiVersion: "v1",
-        kind: "Namespace",
-        metadata: { name: "camunda-system" },
-      });
-    } catch (error) {
-      if (!(error instanceof KubeError && error.status === 409)) throw error;
-    }
     const user = envtest.users[USER].kubeConfig;
     const listClusters = {
       group: "core.camunda.io",
@@ -391,9 +377,9 @@ describe("bindChartRBAC", () => {
     };
     expect(await allowed(user, listClusters)).toBe(false);
 
-    await bindChartRBAC(envtest.kubeConfig, USER, "camunda-system");
+    await bindChartRBAC(envtest.kubeConfig, USER, RBAC_NAMESPACE);
     // A second binding finds the objects of the first and does not fail.
-    await bindChartRBAC(envtest.kubeConfig, USER, "camunda-system");
+    await bindChartRBAC(envtest.kubeConfig, USER, RBAC_NAMESPACE);
 
     expect(await allowed(user, listClusters)).toBe(true);
     expect(await allowed(user, { ...listClusters, verb: "delete" })).toBe(
@@ -401,7 +387,7 @@ describe("bindChartRBAC", () => {
     );
     expect(
       await allowed(user, {
-        namespace: "camunda-system",
+        namespace: RBAC_NAMESPACE,
         resource: "configmaps",
         name: "fleet-manager-settings",
         verb: "update",
@@ -436,9 +422,9 @@ describe("bindChartRBAC", () => {
   }, 120_000);
 
   it("binds the chart rules to a second user too", async () => {
-    const other = envtest.users[OTHER_USER].kubeConfig;
-    await bindChartRBAC(envtest.kubeConfig, USER, "camunda-system");
-    await bindChartRBAC(envtest.kubeConfig, OTHER_USER, "camunda-system");
+    const other = envtest.users[SECOND_USER].kubeConfig;
+    await bindChartRBAC(envtest.kubeConfig, FIRST_USER, RBAC_NAMESPACE);
+    await bindChartRBAC(envtest.kubeConfig, SECOND_USER, RBAC_NAMESPACE);
 
     expect(
       await allowed(other, {
@@ -449,7 +435,7 @@ describe("bindChartRBAC", () => {
     ).toBe(true);
     expect(
       await allowed(other, {
-        namespace: "camunda-system",
+        namespace: RBAC_NAMESPACE,
         resource: "configmaps",
         name: "fleet-manager-settings",
         verb: "update",
