@@ -402,6 +402,8 @@ func consumeSanction(claim *fleetv1alpha1.CamundaClusterClaim) {
 		g.Eventually(func() int {
 			return len(witness.recorded(client.ObjectKeyFromObject(claim)))
 		}, timeout, interval).Should(BeNumerically(">", applies))
-		g.Expect(downgradeAnnotation(g, claim)).To(BeEmpty())
+		g.Consistently(func(g Gomega) {
+			g.Expect(downgradeAnnotation(g, claim)).To(BeEmpty())
+		}, consistently, interval).Should(Succeed())
 	}, timeout, interval).Should(Succeed())
 }

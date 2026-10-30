@@ -208,9 +208,6 @@ var _ = Describe("Changing a cluster claim", func() {
 			downgrade()
 			setManagement(claim, olderVersion)
 			consumeSanction(claim)
-			Eventually(func(g Gomega) {
-				g.Expect(downgradeAnnotation(g, claim)).To(BeEmpty())
-			}, timeout, interval).Should(Succeed())
 
 			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.Suspend = true })
 			setManagement(claim, "")
