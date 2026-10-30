@@ -1,5 +1,5 @@
 import "server-only";
-import { createPrivateKey, createSign } from "node:crypto";
+import { createHash, createPrivateKey, createSign } from "node:crypto";
 import { reasonOf } from "./errors";
 import type { ApiError } from "./types";
 
@@ -68,11 +68,11 @@ export function appJWT(
  * request that GitHub refuses gives Forbidden. No error holds a key, the
  * JWT, the token, or the text of a GitHub answer.
  *
- * The session is cached in this server process for each host, App, and
- * installation, and renewed 5 minutes before the token expires. Concurrent
- * calls share one token request, and a failed request is not cached.
- * forget drops the cached session, for a token that the Git server
- * refused.
+ * The session is cached in this server process for each host, App,
+ * installation, and private key, and renewed 5 minutes before the token
+ * expires. Concurrent calls share one token request, and a failed request
+ * is not cached. forget drops the cached session, for a token that the Git
+ * server refused.
  */
 export async function appSession(input: {
   url: string;
@@ -101,7 +101,10 @@ export async function appSession(input: {
     );
   }
 
-  const cacheKey = `${new URL(url).host} ${keys.appId} ${keys.installationId}`;
+  const fingerprint = createHash("sha256")
+    .update(keys.privateKey)
+    .digest("hex");
+  const cacheKey = `${new URL(url).host} ${keys.appId} ${keys.installationId} ${fingerprint}`;
   for (;;) {
     let entry = sessions.get(cacheKey);
     const fresh = entry === undefined;

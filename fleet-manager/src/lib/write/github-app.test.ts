@@ -159,6 +159,20 @@ describe("appSession", () => {
     expect((await session("459")).ok).toBe(true);
   });
 
+  it("a new private key gets a new token", async () => {
+    route({ [tokenURL("474")]: token("ghs_one") });
+    const other = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    }).privateKey;
+
+    await session("474");
+    await session("474", GITHUB, { ...keys("474"), privateKey: other });
+
+    expect(tokenRequests()).toHaveLength(2);
+  });
+
   it("forget drops the cached token", async () => {
     route({ [tokenURL("460")]: token("ghs_one") });
 
