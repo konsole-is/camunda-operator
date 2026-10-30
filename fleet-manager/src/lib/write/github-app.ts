@@ -3,11 +3,16 @@ import { createHash, createPrivateKey, createSign } from "node:crypto";
 import { reasonOf } from "./errors";
 import type { ApiError } from "./types";
 
-/** AppKeys are the GitHub App keys of the credentials Secret, already checked for presence. */
+/**
+ * AppKeys are the GitHub App keys of the credentials Secret, already
+ * checked for presence. enterpriseHost is the host of the GitHub
+ * Enterprise Server of the App, and unset for an App on github.com.
+ */
 export type AppKeys = {
   appId: string;
   installationId: string;
   privateKey: string;
+  enterpriseHost?: string;
 };
 
 /** AppSession is an installation token and the author of its commits. */
@@ -23,7 +28,6 @@ type Fill =
 type Entry = { promise: Promise<Fill> };
 
 const RENEW_BEFORE_MS = 5 * 60_000;
-const META_TIMEOUT_MS = 10_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 const NUMBER = /^[1-9][0-9]*$/;
 
@@ -61,12 +65,13 @@ export function appJWT(
  * commits. The author is the bot of the App, or fallbackAuthor when the
  * bot cannot be looked up.
  *
- * App keys work only for github.com and for a host whose /api/v3/meta
- * answers as GitHub Enterprise Server. For any other host, or for an appId
+ * Without enterpriseHost, App keys work only for a repository on
+ * github.com. With it, they work only for a repository on enterpriseHost.
+ * For any other repository, an enterpriseHost that is not a host, an appId
  * or installationId that is not a number, or a privateKey that is not a
- * PEM RSA private key, it fails with Unavailable and sends no JWT. A token
- * request that GitHub refuses gives Forbidden. No error holds a key, the
- * JWT, the token, or the text of a GitHub answer.
+ * PEM RSA private key, it fails with Unavailable and sends nothing. A
+ * token request that GitHub refuses gives Forbidden. No error holds a key,
+ * the JWT, the token, or the text of a GitHub answer.
  *
  * The session is cached in this server process for each host, App,
  * installation, and private key, and renewed 5 minutes before the token
@@ -100,6 +105,8 @@ export async function appSession(input: {
       `The Secret ${secret} has a key privateKey that is not a PEM private key.`,
     );
   }
+  const api = apiOf(url, secret, keys.enterpriseHost);
+  if (!api.ok) return api;
 
   const fingerprint = createHash("sha256")
     .update(keys.privateKey)
@@ -110,7 +117,7 @@ export async function appSession(input: {
     const fresh = entry === undefined;
     if (entry === undefined) {
       const started: Entry = {
-        promise: fill(input).catch((error: unknown) =>
+        promise: fill(input, api).catch((error: unknown) =>
           unavailable(`Could not get a token from GitHub: ${reasonOf(error)}`),
         ),
       };
@@ -140,15 +147,11 @@ export async function appSession(input: {
   }
 }
 
-async function fill(input: {
-  url: string;
-  secret: string;
-  keys: AppKeys;
-  fallbackAuthor: { name: string; email: string };
-}): Promise<Fill> {
-  const { url, secret, keys, fallbackAuthor } = input;
-  const api = await apiOf(url, secret);
-  if (!api.ok) return api;
+async function fill(
+  input: { keys: AppKeys; fallbackAuthor: { name: string; email: string } },
+  api: Api,
+): Promise<Fill> {
+  const { keys, fallbackAuthor } = input;
 
   const jwt = appJWT(
     keys.appId,
@@ -200,42 +203,42 @@ async function fill(input: {
 
 type Api = { base: string; noreplyHost: string };
 
-// apiOf returns the GitHub API of the host of url. Only a host that answers
-// as GitHub Enterprise Server gets the JWT, so meta is asked without it.
-async function apiOf(
+// apiOf returns the GitHub API that gets the JWT. It comes from the keys, not
+// from git.repository, because whoever can change git.repository must not
+// get a JWT that can make tokens for every installation of the App.
+function apiOf(
   url: string,
   secret: string,
-): Promise<({ ok: true } & Api) | { ok: false; error: ApiError }> {
-  const { host, hostname, port } = new URL(url);
-  if (hostname === "github.com" && port === "") {
+  enterpriseHost: string | undefined,
+): ({ ok: true } & Api) | { ok: false; error: ApiError } {
+  const { host, hostname } = new URL(url);
+  if (enterpriseHost === undefined) {
+    if (host !== "github.com") {
+      return unavailable(
+        `${url} is not on github.com. To use the GitHub App keys of the Secret ${secret} with GitHub Enterprise Server, set its key enterpriseHost to the host of the server.`,
+      );
+    }
     return {
       ok: true,
       base: "https://api.github.com",
       noreplyHost: "github.com",
     };
   }
-  const base = `https://${host}/api/v3`;
-  let response: Response;
-  try {
-    response = await githubFetch(
-      `${base}/meta`,
-      { headers: { Accept: "application/json" } },
-      META_TIMEOUT_MS,
-    );
-  } catch (error) {
-    return unavailable(`Could not reach ${base}: ${reasonOf(error)}`);
-  }
-  const meta =
-    response.status === 200
-      ? ((await response.json().catch(() => undefined)) as
-          { installed_version?: unknown } | undefined)
-      : undefined;
-  if (typeof meta?.installed_version !== "string") {
+  const enterprise = URL.parse(`https://${enterpriseHost}`);
+  if (
+    enterprise === null ||
+    enterprise.href !== `https://${enterprise.host}/`
+  ) {
     return unavailable(
-      `${url} is not on GitHub or GitHub Enterprise Server. The keys appId, installationId, and privateKey of the Secret ${secret} work only there.`,
+      `The Secret ${secret} has a key enterpriseHost that is not a host name.`,
     );
   }
-  return { ok: true, base, noreplyHost: hostname };
+  if (host !== enterprise.host) {
+    return unavailable(
+      `${url} is not on the host of the key enterpriseHost of the Secret ${secret}. The GitHub App keys of the Secret work only there.`,
+    );
+  }
+  return { ok: true, base: `https://${host}/api/v3`, noreplyHost: hostname };
 }
 
 // botOf returns the bot user of the App, or undefined when GitHub does not

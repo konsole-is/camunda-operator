@@ -223,10 +223,8 @@ describe("appSession", () => {
     });
   });
 
-  it("GitHub Enterprise Server: uses /api/v3 when meta answers with installed_version", async () => {
+  it("GitHub Enterprise Server: sends the JWT to /api/v3 of enterpriseHost when the repository is there", async () => {
     route({
-      "GET https://ghe.example.com/api/v3/meta": () =>
-        json(200, { installed_version: "3.17.0" }),
       "POST https://ghe.example.com/api/v3/app/installations/463/access_tokens":
         token("ghs_ghe"),
       "GET https://ghe.example.com/api/v3/app": () =>
@@ -238,6 +236,7 @@ describe("appSession", () => {
     const result = await session(
       "463",
       "https://ghe.example.com/acme/fleet.git",
+      { ...keys("463"), enterpriseHost: "ghe.example.com" },
     );
 
     expect(result.ok && result.session).toEqual({
@@ -247,51 +246,71 @@ describe("appSession", () => {
         email: "7+fleet-bot[bot]@users.noreply.ghe.example.com",
       },
     });
-    const meta = calls.find((c) => c.url.endsWith("/meta"));
-    expect(meta?.headers.authorization).toBeUndefined();
+    expect(calls.some((c) => c.url.includes("/meta"))).toBe(false);
   });
 
   it.each([
-    ["meta 404", () => json(404, {})],
-    ["meta without installed_version", () => json(200, {})],
-    ["meta that is not JSON", () => new Response("<html>", { status: 200 })],
-  ])(
-    "sends no JWT to a host that does not answer as GitHub Enterprise Server: %s",
-    async (_, meta) => {
-      const url = "https://git.example.com/acme/fleet.git";
-      route({ "GET https://git.example.com/api/v3/meta": meta });
+    [
+      "another host without enterpriseHost",
+      "https://git.example.com/acme/fleet.git",
+      undefined,
+    ],
+    [
+      "another host than enterpriseHost",
+      "https://evil.example/acme/fleet.git",
+      "ghe.example.com",
+    ],
+    ["github.com with enterpriseHost", GITHUB, "ghe.example.com"],
+  ])("refuses and sends nothing for %s", async (_, url, enterpriseHost) => {
+    route({});
 
-      const result = await session("464", url);
+    const result = await session("464", url, {
+      ...keys("464"),
+      enterpriseHost,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "Unavailable",
+        message: enterpriseHost
+          ? `${url} is not on the host of the key enterpriseHost of the Secret git. The GitHub App keys of the Secret work only there.`
+          : `${url} is not on github.com. To use the GitHub App keys of the Secret git with GitHub Enterprise Server, set its key enterpriseHost to the host of the server.`,
+      },
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each([
+    "https://ghe.example.com",
+    "ghe.example.com/api",
+    "user@ghe.example.com",
+    "ghe.example.com?x",
+  ])(
+    "an enterpriseHost %s that is not a host is refused before any request",
+    async (enterpriseHost) => {
+      route({});
+
+      const result = await session(
+        "476",
+        "https://ghe.example.com/acme/fleet.git",
+        {
+          ...keys("476"),
+          enterpriseHost,
+        },
+      );
 
       expect(result).toEqual({
         ok: false,
         error: {
           code: "Unavailable",
-          message: `${url} is not on GitHub or GitHub Enterprise Server. The keys appId, installationId, and privateKey of the Secret git work only there.`,
+          message:
+            "The Secret git has a key enterpriseHost that is not a host name.",
         },
       });
-      expect(calls.some((c) => c.headers.authorization)).toBe(false);
-      expect(tokenRequests()).toHaveLength(0);
+      expect(calls).toHaveLength(0);
     },
   );
-
-  it("a redirect from meta is not GitHub Enterprise", async () => {
-    route({
-      "GET https://ghe.example.com/api/v3/meta": () =>
-        new Response(null, {
-          status: 302,
-          headers: { Location: "https://evil.example/api/v3/meta" },
-        }),
-    });
-
-    const result = await session(
-      "465",
-      "https://ghe.example.com/acme/fleet.git",
-    );
-
-    expect(!result.ok && result.error.code).toBe("Unavailable");
-    expect(calls.some((c) => c.url.includes("evil.example"))).toBe(false);
-  });
 
   it("a redirect from the token endpoint is Unavailable and is not followed", async () => {
     route({
