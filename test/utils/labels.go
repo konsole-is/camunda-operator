@@ -25,17 +25,19 @@ import (
 // The Ginkgo label of each top-level container of the e2e suite. A label
 // filter selects flows by these names, and every container carries one.
 const (
-	LabelManager              = "manager"
-	LabelCamundaCluster       = "camundacluster"
-	LabelCamundaClusterRDBMS  = "camundacluster-rdbms"
-	LabelCamundaClusterOIDC   = "camundacluster-oidc"
-	LabelCamundaOptimize      = "camundaoptimize"
-	LabelElasticsearchCluster = "elasticsearchcluster"
-	LabelDatabase             = "database"
-	LabelDatabaseServer       = "databaseserver"
-	LabelManagementKeycloak   = "management-keycloak"
-	LabelManagementOIDC       = "management-oidc"
-	LabelExample              = "example"
+	LabelManager                   = "manager"
+	LabelCamundaCluster            = "camundacluster"
+	LabelCamundaClusterRDBMS       = "camundacluster-rdbms"
+	LabelCamundaClusterOIDC        = "camundacluster-oidc"
+	LabelCamundaOptimize           = "camundaoptimize"
+	LabelElasticsearchCluster      = "elasticsearchcluster"
+	LabelDatabase                  = "database"
+	LabelDatabaseServer            = "databaseserver"
+	LabelManagementKeycloak        = "management-keycloak"
+	LabelManagementOIDC            = "management-oidc"
+	LabelExample                   = "example"
+	LabelBuiltinRegistrations      = "builtin-registrations"
+	LabelBuiltinRegistrationsOrder = "builtin-registrations-order"
 )
 
 // AllLabels is every label above. A name outside it names no flow, and both
@@ -52,6 +54,8 @@ var AllLabels = []string{
 	LabelManagementKeycloak,
 	LabelManagementOIDC,
 	LabelExample,
+	LabelBuiltinRegistrations,
+	LabelBuiltinRegistrationsOrder,
 }
 
 // LabelFilter turns a comma-separated list of Ginkgo labels into a label

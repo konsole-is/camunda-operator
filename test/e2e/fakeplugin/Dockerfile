@@ -1,5 +1,6 @@
 # Build the fake plugin of the kind harness of the fleet manager. The CI job
-# of the fleet manager journeys loads this image into its kind cluster.
+# of the fleet manager journeys and the e2e flow builtin-registrations load
+# this image into their kind cluster.
 FROM golang:1.27 AS builder
 ARG TARGETOS
 ARG TARGETARCH

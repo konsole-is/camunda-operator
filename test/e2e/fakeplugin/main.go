@@ -15,8 +15,9 @@ limitations under the License.
 */
 
 // Command fakeplugin is the plugin controller of the kind harness of the
-// fleet manager. It runs the echo controller of the conformance module for
-// one registration that serves the sections access and backup-storage, with
+// fleet manager and of the e2e flow builtin-registrations. It runs the echo
+// controller of the conformance module for one registration that serves the
+// section backup-storage, and access when --access-external-url is set, with
 // fixed outputs from flags.
 package main
 

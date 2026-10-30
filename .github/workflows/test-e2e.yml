@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # Four jobs per supported Camunda minor: one for each storage backend
-      # of the orchestration cluster, one for the management plane, and one
-      # for the example inventories. All four name the same file
-      # test/e2e/matrix/<minor>.env, which holds the image versions of the
-      # minor, and each holds the Ginkgo label filter that selects its flows.
-      # Adopting a new minor adds the file and four entries.
+      # Five jobs per supported Camunda minor: one for each storage backend
+      # of the orchestration cluster, one for the management plane, one for
+      # the example inventories, and one for the plugin order check. All five
+      # name the same file test/e2e/matrix/<minor>.env, which holds the image
+      # versions of the minor, and each holds the Ginkgo label filter that
+      # selects its flows. Adopting a new minor adds the file and five entries.
       #
       # The split keeps one storage operator off each of the first three jobs.
       # One kind node carries a whole job. eckInstallSkip and cnpgInstallSkip
@@ -35,6 +35,10 @@ jobs:
       # applies, so one backend runs at a time. The inventories carry fixed
       # resource names, which is the second reason the job stands alone.
       #
+      # The plugin order job runs one flow. Its check scales the operator
+      # manager to zero, so no other flow of the suite may run in its cluster.
+      # It needs neither storage operator.
+      #
       # Every label of the suite belongs to exactly one entry. The test
       # TestWorkflowJobsClaimEveryLabel in test/utils reads this file and
       # fails when a label has no job, or more than one.
@@ -42,7 +46,7 @@ jobs:
         include:
           - minor: "8.9"
             suffix: " elasticsearch"
-            labels: "manager || camundacluster || camundacluster-oidc || elasticsearchcluster || camundaoptimize"
+            labels: "manager || camundacluster || camundacluster-oidc || elasticsearchcluster || camundaoptimize || builtin-registrations"
             eckInstallSkip: "false"
             cnpgInstallSkip: "true"
           - minor: "8.9"
@@ -60,6 +64,11 @@ jobs:
             labels: "example"
             eckInstallSkip: "false"
             cnpgInstallSkip: "false"
+          - minor: "8.9"
+            suffix: " plugin order"
+            labels: "builtin-registrations-order"
+            eckInstallSkip: "true"
+            cnpgInstallSkip: "true"
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
