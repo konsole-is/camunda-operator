@@ -127,7 +127,11 @@ afterEach(async () => {
   await repo?.close();
 });
 
-describe("the Git writer", () => {
+// These tests start git child processes and a local Git server. On a busy
+// machine they need more than the default 5 s.
+const slow = { timeout: 30_000 };
+
+describe("the Git writer", slow, () => {
   it("one change is one commit with the intent as subject", async () => {
     repo = await serveBareRepository();
 
@@ -971,7 +975,7 @@ describe("the Git writer", () => {
   });
 });
 
-describe("the credentials of the Git writer", () => {
+describe("the credentials of the Git writer", slow, () => {
   // The bare repository speaks plain HTTP. This transport sends an
   // https:// address to it over HTTP, so the writer sees an HTTPS
   // repository.
