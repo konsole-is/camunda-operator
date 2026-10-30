@@ -183,7 +183,7 @@ The claim created the [CamundaManagementCluster](../crds/camundamanagementcluste
 
 ## Change a cluster claim
 
-This part changes the claim `my-cluster` of [Create a cluster from a claim](#create-a-cluster-from-a-claim). The claim sends each change to its `CamundaCluster`.
+This part changes the claim `my-cluster` of [Create a cluster from a claim](#create-a-cluster-from-a-claim). The claim sends each change to its `CamundaCluster` and its attachments.
 
 1. To move the cluster to a new release, add the release to `spec.releases.allowed` of the environment first. Then set the release on the claim:
 
@@ -217,7 +217,21 @@ This part changes the claim `my-cluster` of [Create a cluster from a claim](#cre
     kubectl patch camundaclusterclaim my-cluster -n my-cluster-ns --type merge -p '{"spec":{"suspend":false}}'
     ```
 
-The [CamundaClusterClaim](../crds/camundaclusterclaim.md) page describes [Suspend](../crds/camundaclusterclaim.md#suspend) and a move to an older release in [Downgrade](../crds/camundaclusterclaim.md#downgrade).
+6. To add Optimize and a backup schedule, set the attachments of the claim. Use the name of your `ManagementAuthConfig`:
+
+    ```bash
+    kubectl patch camundaclusterclaim my-cluster -n my-cluster-ns --type merge -p '{"spec":{"attachments":{"optimize":{"managementAuthConfigRef":"my-management-auth"},"backupSchedule":{"schedule":"0 2 * * *"}}}}'
+    ```
+
+7. Make sure that the claim created both. The command lists `my-cluster-optimize` and `my-cluster-backups`:
+
+    ```bash
+    kubectl get camundaoptimize,backupschedule -n my-cluster-ns
+    ```
+
+    The claim creates them after the cluster is ready. Until then, `AttachmentsReady` of the claim is `False` with reason `PrerequisiteNotMet`.
+
+The [CamundaClusterClaim](../crds/camundaclusterclaim.md) page describes [Suspend](../crds/camundaclusterclaim.md#suspend), a move to an older release in [Downgrade](../crds/camundaclusterclaim.md#downgrade), and the fields of each attachment in [Attachments](../crds/camundaclusterclaim.md#attachments).
 
 ## Delete a claim
 
