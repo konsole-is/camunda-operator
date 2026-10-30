@@ -1182,6 +1182,29 @@ describe("Claim tab", () => {
     ).toBeNull();
   });
 
+  it("counts the ages of the claim conditions on with the clock", () => {
+    vi.useFakeTimers({ now: Date.parse(now) });
+    try {
+      window.history.replaceState(null, "", "?tab=claim");
+      const waiting = claim();
+      (waiting as { status?: object }).status = {
+        conditions: [condition("Ready", "False", "PrerequisiteNotMet")],
+      };
+      render(view({ initial: data({ claims: [waiting] }) }));
+      const row = () =>
+        within(screen.getByRole("region", { name: "Claim conditions" }))
+          .getByRole("rowheader", { name: "Ready" })
+          .closest("tr")!;
+      expect(row().textContent).toContain("0s");
+      act(() => {
+        vi.advanceTimersByTime(65_000);
+      });
+      expect(row().textContent).toContain("1m");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("labels the sections of the claim with the PluginSections of the page", () => {
     window.history.replaceState(null, "", "?tab=claim");
     const withSection = claim();
