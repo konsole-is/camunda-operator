@@ -1136,3 +1136,81 @@ describe("Endpoints tab", () => {
     expect(within(table).getByText("grpc.orders.example.com:443")).toBeTruthy();
   });
 });
+
+describe("Claim tab", () => {
+  const editor: ActionSlots = { "cluster.claim.editor": <p>editor</p> };
+
+  it("renders the read view beside the claim editor slot", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const { container } = render(view({ slots: editor }));
+    expect(screen.getAllByText("Set at creation").length).toBeGreaterThan(0);
+    const slot = container.querySelector(
+      '[data-action-slot="cluster.claim.editor"]',
+    );
+    expect(slot?.textContent).toBe("editor");
+    expect(screen.getByRole("region", { name: "Basics" }).contains(slot)).toBe(
+      false,
+    );
+  });
+
+  it("says that the claim is missing and keeps the editor slot", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const { container } = render(
+      view({ initial: data({ claims: [] }), slots: editor }),
+    );
+    expect(
+      screen.getByText("The claim orders is not in this namespace."),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-action-slot="cluster.claim.editor"]'),
+    ).not.toBeNull();
+  });
+
+  it("says that an unmanaged cluster has no claim", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const { container } = render(
+      view({
+        initial: data({ cluster: cluster({ labels: {} }) }),
+        slots: editor,
+      }),
+    );
+    expect(
+      screen.getByText("This cluster was not made from a claim."),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-action-slot="cluster.claim.editor"]'),
+    ).toBeNull();
+  });
+
+  it("labels the sections of the claim with the PluginSections of the page", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const withSection = claim();
+    withSection.spec = {
+      presetRef: "medium",
+      plugins: [{ section: "access", registration: "gateway-access" }],
+    };
+    render(
+      view({
+        initial: data({
+          claims: [withSection],
+          sections: [
+            {
+              kind: "PluginSection",
+              metadata: { name: "access" },
+              spec: { label: "Access", appliesTo: ["CamundaClusterClaim"] },
+            } as unknown as Resource<"PluginSection">,
+          ],
+          registrations: [
+            {
+              kind: "PluginRegistration",
+              metadata: { name: "gateway-access" },
+              spec: { label: "Gateway", deletionPolicies: ["Delete"] },
+            } as unknown as Resource<"PluginRegistration">,
+          ],
+        }),
+      }),
+    );
+    const access = screen.getByRole("region", { name: "Access" });
+    expect(within(access).getByText("Gateway")).toBeTruthy();
+  });
+});

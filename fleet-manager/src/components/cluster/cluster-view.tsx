@@ -25,6 +25,8 @@ import { ActionSlot } from "./action-slot";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
 import { backupRowsOf, backupStorageOf, restoreRowsOf } from "./backups";
 import { BackupsTab } from "./backups-tab";
+import { claimView } from "./claim";
+import { ClaimTab } from "./claim-tab";
 import { componentCards } from "./cards";
 import { ClusterHeader } from "./cluster-header";
 import { ComponentCards } from "./component-card";
@@ -398,9 +400,41 @@ export function ClusterView({
             })}
           />
         </TabsContent>
-        <TabsContent value="claim">{slot("cluster.claim.editor")}</TabsContent>
+        <TabsContent value="claim">
+          <div className="flex flex-col gap-6">
+            {claim ? (
+              <ClaimTab
+                view={claimView({
+                  claim,
+                  cluster: live,
+                  merged,
+                  environments: environments.items,
+                  sections: sections.items,
+                  registrations: registrations.items,
+                })}
+                stored={claim}
+                now={clock}
+              />
+            ) : (
+              <NoClaim managed={managed} name={claimName} />
+            )}
+            {slot("cluster.claim.editor")}
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+// NoClaim stands in for the read view when the claim object is not in the
+// namespace, as while GitOps has not applied it yet.
+function NoClaim({ managed, name }: { managed: boolean; name?: string }) {
+  return (
+    <p className="text-sm text-muted">
+      {managed
+        ? `The claim ${name} is not in this namespace.`
+        : "This cluster was not made from a claim."}
+    </p>
   );
 }
 
