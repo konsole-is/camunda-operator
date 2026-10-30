@@ -82,3 +82,80 @@ function statusMessage(text: string): string | undefined {
     return undefined;
   }
 }
+
+interface APIResource {
+  name: string;
+  kind: string;
+  namespaced: boolean;
+}
+
+/**
+ * Discovery finds the paths of the API server of one KubeConfig. It reads
+ * each API version once and keeps the answer.
+ */
+export class Discovery {
+  private readonly lists = new Map<string, Promise<APIResource[]>>();
+
+  constructor(private readonly kc: KubeConfig) {}
+
+  /**
+   * path returns the path of o, of its collection when collection is set,
+   * or of its subresource. It rejects when the API server does not serve
+   * the kind.
+   */
+  async path(
+    o: {
+      apiVersion: string;
+      kind: string;
+      metadata: { name?: string; namespace?: string };
+    },
+    opts: { collection?: boolean; subresource?: "status" } = {},
+  ): Promise<string> {
+    const resource = (await this.resources(o.apiVersion)).find(
+      (r) => r.kind === o.kind && !r.name.includes("/"),
+    );
+    if (!resource) {
+      throw new Error(
+        `The API server does not serve the kind ${o.kind} of ${o.apiVersion}`,
+      );
+    }
+    const parts = [groupPath(o.apiVersion)];
+    if (resource.namespaced) {
+      parts.push("namespaces", o.metadata.namespace ?? "default");
+    }
+    parts.push(resource.name);
+    if (!opts.collection) parts.push(o.metadata.name ?? "");
+    if (opts.subresource) parts.push(opts.subresource);
+    return parts.join("/");
+  }
+
+  /** hasStatus tells if the kind has a status subresource. */
+  async hasStatus(apiVersion: string, kind: string): Promise<boolean> {
+    const resources = await this.resources(apiVersion);
+    const plural = resources.find(
+      (r) => r.kind === kind && !r.name.includes("/"),
+    )?.name;
+    return resources.some((r) => r.name === `${plural}/status`);
+  }
+
+  private resources(apiVersion: string): Promise<APIResource[]> {
+    let list = this.lists.get(apiVersion);
+    if (!list) {
+      list = kubeRequest<{ resources: APIResource[] }>(
+        this.kc,
+        "GET",
+        groupPath(apiVersion),
+      ).then((answer) => answer.resources);
+      // A failed read is not kept, so the next call asks again.
+      list.catch(() => this.lists.delete(apiVersion));
+      this.lists.set(apiVersion, list);
+    }
+    return list;
+  }
+}
+
+function groupPath(apiVersion: string): string {
+  return apiVersion.includes("/")
+    ? `/apis/${apiVersion}`
+    : `/api/${apiVersion}`;
+}

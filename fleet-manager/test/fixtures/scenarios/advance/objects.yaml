@@ -1,0 +1,156 @@
+# Written by hand in the format of make fleet-scenarios.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: advance
+  uid: 00000000-0000-5000-8000-000000000001
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata: {}
+    manager: kubectl
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  generation: 1
+  name: app
+  namespace: advance
+  uid: 00000000-0000-5000-8000-000000000002
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:template:
+          f:metadata:
+            f:labels:
+              .: {}
+              f:app: {}
+          f:spec:
+            f:containers:
+              k:{"name":"app"}:
+                .: {}
+                f:image: {}
+                f:name: {}
+    manager: kubectl
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:observedGeneration: {}
+        f:replicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-01-01T00:00:00Z"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+      - name: app
+        image: registry.example.com/app:1
+status:
+  observedGeneration: 1
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  generation: 1
+  name: app-1
+  namespace: advance
+  uid: 00000000-0000-5000-8000-000000000003
+  ownerReferences:
+  - apiVersion: apps/v1
+    kind: Deployment
+    name: app
+    uid: 00000000-0000-5000-8000-000000000002
+    controller: true
+    blockOwnerDeletion: true
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:ownerReferences:
+          k:{"uid":"00000000-0000-5000-8000-000000000002"}: {}
+      f:spec:
+        f:replicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+      - name: app
+        image: registry.example.com/app:1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  finalizers:
+  - scenario.test/keep
+  name: gone
+  namespace: advance
+  uid: 00000000-0000-5000-8000-000000000004
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        f:key: {}
+    manager: kubectl
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+data:
+  key: gone
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  generation: 1
+  name: gone-pod
+  namespace: advance
+  uid: 00000000-0000-5000-8000-000000000005
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:containers:
+          k:{"name":"app"}:
+            .: {}
+            f:image: {}
+            f:name: {}
+    manager: kubectl
+    operation: Update
+    time: "2026-01-01T00:00:00Z"
+spec:
+  nodeName: scenario-node
+  containers:
+  - name: app
+    image: registry.example.com/app:1

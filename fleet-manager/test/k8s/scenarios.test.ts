@@ -1,6 +1,15 @@
+import path from "node:path";
+import type { KubeConfig } from "@kubernetes/client-node";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type Envtest, startEnvtest } from "../envtest/envtest";
-import { kubeRequest } from "../scenarios/kube";
+import { Discovery, KubeError, kubeRequest } from "../scenarios/kube";
+import {
+  LOADER_MANAGER,
+  type Scenario,
+  ScenarioLoader,
+  openScenario,
+} from "../scenarios/loader";
+import { type KubeObject, readObjects } from "../scenarios/objects";
 
 const USER = "fleet-manager-scenarios";
 
@@ -46,3 +55,218 @@ describe("the users option of startEnvtest", () => {
     ).rejects.toThrow(/a.*twice/);
   });
 });
+
+type ManagedField = {
+  manager: string;
+  operation: string;
+  subresource?: string;
+};
+
+function managers(o: KubeObject): string[][] {
+  return ((o.metadata.managedFields ?? []) as ManagedField[])
+    .map((f) => [f.manager, f.operation, f.subresource ?? ""])
+    .sort((a, b) => a.join("/").localeCompare(b.join("/")));
+}
+
+async function getLive(kc: KubeConfig, o: KubeObject): Promise<KubeObject> {
+  return kubeRequest<KubeObject>(kc, "GET", await new Discovery(kc).path(o));
+}
+
+async function gone(kc: KubeConfig, o: KubeObject): Promise<boolean> {
+  try {
+    await getLive(kc, o);
+    return false;
+  } catch (error) {
+    if (error instanceof KubeError && error.status === 404) return true;
+    throw error;
+  }
+}
+
+describe("the scenario loader", () => {
+  it("one update with the recorded managedFields leaves no entry of the loader", async () => {
+    const pod: KubeObject = {
+      apiVersion: "v1",
+      kind: "Pod",
+      metadata: {
+        name: "fields",
+        namespace: "managed-fields",
+        uid: "00000000-0000-5000-8000-0000000000f1",
+        managedFields: [
+          {
+            apiVersion: "v1",
+            fieldsType: "FieldsV1",
+            fieldsV1: { "f:spec": { "f:containers": {} } },
+            manager: "kubectl",
+            operation: "Update",
+            time: "2026-01-01T00:00:00Z",
+          },
+          {
+            apiVersion: "v1",
+            fieldsType: "FieldsV1",
+            fieldsV1: { "f:status": { "f:phase": {} } },
+            manager: "kubelet",
+            operation: "Update",
+            subresource: "status",
+            time: "2026-01-01T00:00:00Z",
+          },
+        ],
+      },
+      spec: {
+        nodeName: "scenario-node",
+        containers: [{ name: "app", image: "registry.example.com/app:1" }],
+      },
+      status: { phase: "Running" },
+    };
+    const namespace: KubeObject = {
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: "managed-fields" },
+    };
+
+    await new ScenarioLoader(envtest.kubeConfig).load([namespace, pod]);
+
+    const live = await getLive(envtest.kubeConfig, pod);
+    expect(managers(live)).toEqual([
+      ["kubectl", "Update", ""],
+      ["kubelet", "Update", "status"],
+    ]);
+    expect(live.status).toMatchObject({ phase: "Running" });
+  });
+
+  it("refuses a field that the CRD does not have and names it", async () => {
+    const release: KubeObject = {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaRelease",
+      metadata: { name: "strict-check" },
+      spec: { version: "8.9.0", notAField: "x" },
+    };
+    const load = new ScenarioLoader(envtest.kubeConfig).load([release]);
+    await expect(load).rejects.toThrow(/notAField/);
+    await expect(load).rejects.toThrow(/CamundaRelease strict-check/);
+  });
+
+  describe("on the cluster-ready scenario", () => {
+    const dir = path.resolve("e2e/scenarios/cluster-ready");
+    let recorded: KubeObject[];
+    let scenario: Scenario;
+
+    beforeAll(async () => {
+      recorded = await readObjects(path.join(dir, "objects.yaml"));
+      scenario = await openScenario(envtest.kubeConfig, dir);
+    }, 120_000);
+
+    it("load leaves no scenario UID in any object of cluster-ready", async () => {
+      const scenarioUIDs = recorded.map((o) => o.metadata.uid!);
+      const live = await Promise.all(
+        recorded.map((o) => getLive(envtest.kubeConfig, o)),
+      );
+
+      const text = JSON.stringify(live);
+      expect(scenarioUIDs.filter((uid) => text.includes(uid))).toEqual([]);
+      for (const o of live) {
+        expect(managers(o).map(([m]) => m)).not.toContain(LOADER_MANAGER);
+      }
+    });
+
+    it("load keeps the field managers of the reconcilers", async () => {
+      const cluster = recorded.find((o) => o.kind === "CamundaCluster")!;
+      const live = await getLive(envtest.kubeConfig, cluster);
+
+      const recordedManagers = managers(cluster).map(([m, op, sub]) => [
+        m.replace(cluster.metadata.uid!, live.metadata.uid!),
+        op,
+        sub,
+      ]);
+      expect(managers(live)).toEqual(recordedManagers);
+      expect(managers(live).map(([m]) => m)).toContain("kubectl");
+    });
+
+    it("advance to three-brokers-ready leaves no scenario UID and no entry of the loader", async () => {
+      const state = await readObjects(
+        path.join(dir, "three-brokers-ready.yaml"),
+      );
+      await scenario.advance("three-brokers-ready");
+
+      const live = await Promise.all(
+        state.map((o) => getLive(envtest.kubeConfig, o)),
+      );
+      const text = JSON.stringify(live);
+      const scenarioUIDs = state.map((o) => o.metadata.uid!);
+      expect(scenarioUIDs.filter((uid) => text.includes(uid))).toEqual([]);
+      for (const o of live) {
+        expect(managers(o).map(([m]) => m)).not.toContain(LOADER_MANAGER);
+      }
+      const zeebe = live.find(
+        (o) =>
+          o.metadata.name === "camundacluster-sample-zeebe" &&
+          o.kind === "StatefulSet",
+      )!;
+      expect(zeebe.status).toMatchObject({ readyReplicas: 3 });
+    });
+  });
+
+  describe("advance", () => {
+    const dir = path.resolve("test/fixtures/scenarios/advance");
+    let scenario: Scenario;
+    const deployment = {
+      apiVersion: "apps/v1",
+      kind: "Deployment",
+      metadata: { name: "app", namespace: "advance" },
+    };
+
+    beforeAll(async () => {
+      scenario = await openScenario(envtest.kubeConfig, dir);
+      await scenario.advance("moved");
+    }, 60_000);
+
+    it("advance updates a spec and keeps the status observed", async () => {
+      const app = await getLive(envtest.kubeConfig, deployment);
+      expect(app.spec).toMatchObject({ replicas: 2 });
+      expect(app.metadata.generation).toBe(2);
+      expect(app.status).toMatchObject({ observedGeneration: 2 });
+
+      await getLive(envtest.kubeConfig, {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        metadata: { name: "new", namespace: "advance" },
+      });
+      const rs = await getLive(envtest.kubeConfig, {
+        apiVersion: "apps/v1",
+        kind: "ReplicaSet",
+        metadata: { name: "app-1", namespace: "advance" },
+      });
+      expect(rs.metadata.ownerReferences?.map((r) => r.uid)).toEqual([
+        app.metadata.uid,
+      ]);
+    });
+
+    it("advance deletes an object with a finalizer and a Pod", async () => {
+      const removed = [
+        {
+          apiVersion: "v1",
+          kind: "ConfigMap",
+          metadata: { name: "gone", namespace: "advance" },
+        },
+        {
+          apiVersion: "v1",
+          kind: "Pod",
+          metadata: { name: "gone-pod", namespace: "advance" },
+        },
+      ];
+      await expect
+        .poll(
+          async () =>
+            Promise.all(removed.map((o) => gone(envtest.kubeConfig, o))),
+          { timeout: 10_000 },
+        )
+        .toEqual([true, true]);
+    });
+
+    it("advance to an unknown state names the states", async () => {
+      await expect(scenario.advance("nope")).rejects.toThrow(
+        "The scenario advance has no state nope. Its states are: moved",
+      );
+    });
+  });
+});
+
