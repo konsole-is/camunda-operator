@@ -37,11 +37,11 @@ export function chartRules(text: string, file: string): PolicyRule[] {
   const lines = text.split("\n");
   const start = lines.findIndex((line) => line.startsWith("rules:"));
   if (start < 0) throw new Error(`The template ${file} has no rules block`);
-  if (
-    lines
-      .slice(0, start)
-      .some((line) => CONDITION.test(line) && line.trim() !== WRAPPER)
-  ) {
+  const head = lines
+    .slice(0, start)
+    .filter((line) => line.trim() !== WRAPPER)
+    .join("\n");
+  if (CONDITION.test(head)) {
     throw new Error(
       `The rules of ${file} hold a template. Read them with helm template instead`,
     );
