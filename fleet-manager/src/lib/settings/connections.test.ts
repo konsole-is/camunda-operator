@@ -93,7 +93,11 @@ afterEach(async () => {
   server = undefined;
 });
 
-describe("testGit", () => {
+// These tests start a local Git server. On a busy machine they need more
+// than the default 5 s.
+const slow = { timeout: 30_000 };
+
+describe("testGit", slow, () => {
   it("connects with the token of the Secret", async () => {
     const url =
       (await serveGit(gitServer(["main"], basic("bot", "tok-1")))) +

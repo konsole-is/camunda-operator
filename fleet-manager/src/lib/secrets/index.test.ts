@@ -35,6 +35,7 @@ const gitWriter: Writer = {
       commit: "abc123",
       revisions: {},
       paths: {},
+      deleted: {},
     };
   }),
 };
@@ -65,6 +66,7 @@ describe("writeSecretValue in Git mode", () => {
       commit: "abc123",
       revisions: {},
       paths: {},
+      deleted: {},
     });
     expect(changes).toHaveLength(1);
     expect(changes[0].apply).toEqual([

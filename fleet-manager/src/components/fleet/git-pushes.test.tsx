@@ -1,9 +1,19 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useGitGone, useGitSync } from "@/lib/k8s/hooks";
 import type { WriteResult } from "@/lib/write/types";
 import { GitPushesProvider, useGitPushes } from "./git-pushes";
 
+vi.mock("@/lib/k8s/hooks", async (importOriginal) => {
+  const hooks = await importOriginal<typeof import("@/lib/k8s/hooks")>();
+  return { ...hooks, useGitSync: vi.fn(), useGitGone: vi.fn() };
+});
+
+beforeEach(() => {
+  vi.mocked(useGitSync).mockReturnValue("waiting");
+  vi.mocked(useGitGone).mockReturnValue("waiting");
+});
 afterEach(cleanup);
 
 const pushedAt = "2026-10-21T12:00:00Z";
@@ -20,7 +30,19 @@ const gitResult = (revision: string): WriteResult => ({
       "fleet/team-a/camundaclusterclaims/orders.yaml",
     "Namespace//team-a": "fleet/_cluster/namespaces/team-a.yaml",
   },
+  deleted: {},
 });
+const deleteResult: WriteResult = {
+  ok: true,
+  mode: "git",
+  commit: "d00d",
+  revisions: {},
+  paths: {},
+  deleted: {
+    "CamundaClusterClaim/team-a/orders":
+      "fleet/team-a/camundaclusterclaims/orders.yaml",
+  },
+};
 
 const render = () =>
   renderHook(() => useGitPushes(), { wrapper: GitPushesProvider });
@@ -94,6 +116,77 @@ describe("useGitPushes", () => {
         pushedAt: "2026-10-21T12:05:00Z",
       }),
     );
+  });
+
+  it("record adds one pending push for each deleted object, with its path and ref", () => {
+    const { result } = render();
+
+    act(() => result.current.record(deleteResult, pushedAt));
+
+    expect(result.current.pushes).toEqual([
+      {
+        key: "CamundaClusterClaim/team-a/orders",
+        ref: {
+          kind: "CamundaClusterClaim",
+          namespace: "team-a",
+          name: "orders",
+        },
+        path: "fleet/team-a/camundaclusterclaims/orders.yaml",
+        pushedAt,
+        deleted: true,
+      },
+    ]);
+  });
+
+  it("a delete of an object replaces its pending write", () => {
+    const { result } = render();
+    act(() => result.current.record(gitResult("abc"), pushedAt));
+
+    act(() => result.current.record(deleteResult, "2026-10-21T12:05:00Z"));
+
+    expect(result.current.pushes).toEqual([
+      expect.objectContaining({ key: "Namespace//team-a", revision: "ns-rev" }),
+      {
+        key: "CamundaClusterClaim/team-a/orders",
+        ref: {
+          kind: "CamundaClusterClaim",
+          namespace: "team-a",
+          name: "orders",
+        },
+        path: "fleet/team-a/camundaclusterclaims/orders.yaml",
+        pushedAt: "2026-10-21T12:05:00Z",
+        deleted: true,
+      },
+    ]);
+  });
+
+  it("the provider settles a write when the object carries its revision", async () => {
+    const { result, rerender } = render();
+    act(() => result.current.record(gitResult("abc"), pushedAt));
+
+    vi.mocked(useGitSync).mockImplementation((ref) =>
+      ref.kind === "Namespace" ? "applied" : "waiting",
+    );
+    await act(async () => rerender());
+
+    expect(result.current.pushes.map((p) => p.key)).toEqual([
+      "CamundaClusterClaim/team-a/orders",
+    ]);
+  });
+
+  it("the provider settles a delete when the object is gone", async () => {
+    const { result, rerender } = render();
+    act(() => result.current.record(deleteResult, pushedAt));
+    expect(useGitGone).toHaveBeenCalledWith({
+      kind: "CamundaClusterClaim",
+      namespace: "team-a",
+      name: "orders",
+    });
+
+    vi.mocked(useGitGone).mockReturnValue("applied");
+    await act(async () => rerender());
+
+    expect(result.current.pushes).toEqual([]);
   });
 
   it("throws without a GitPushesProvider", () => {

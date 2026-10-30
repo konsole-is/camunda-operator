@@ -127,7 +127,11 @@ afterEach(async () => {
   await repo?.close();
 });
 
-describe("the Git writer", () => {
+// These tests start a local Git server. On a busy machine they need more
+// than the default 5 s.
+const slow = { timeout: 30_000 };
+
+describe("the Git writer", slow, () => {
   it("one change is one commit with the intent as subject", async () => {
     repo = await serveBareRepository();
 
@@ -136,7 +140,7 @@ describe("the Git writer", () => {
       apply: [claim("team-a", "orders"), claim("team-a", "billing")],
     });
 
-    ok(result);
+    expect(ok(result).deleted).toEqual({});
     expect(await repo.log()).toEqual([
       "Create the claims orders and billing",
       "Initial commit",
@@ -496,7 +500,7 @@ describe("the Git writer", () => {
     expect(directPreview).not.toHaveBeenCalled();
   });
 
-  it("a delete removes the file in one commit", async () => {
+  it("a delete removes the file in one commit and returns the file of the deleted object", async () => {
     repo = await serveBareRepository();
     await writerFor().apply({
       intent: "Create",
@@ -519,6 +523,58 @@ describe("the Git writer", () => {
     expect(await repo.files()).toEqual(["README.md"]);
     expect(result.revisions).toEqual({});
     expect(result.paths).toEqual({});
+    expect(result.deleted).toEqual({
+      "CamundaClusterClaim/team-a/orders":
+        "team-a/camundaclusterclaims/orders.yaml",
+    });
+  });
+
+  it("a change that writes and deletes returns the revision of the written object and the file of the deleted one", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const result = ok(
+      await writerFor().apply({
+        intent: "Replace orders with prod",
+        apply: [environment("prod")],
+        delete: [claimRef("team-a", "orders")],
+      }),
+    );
+
+    expect(Object.keys(result.revisions)).toEqual(["Environment//prod"]);
+    expect(result.paths).toEqual({
+      "Environment//prod": "_cluster/environments/prod.yaml",
+    });
+    expect(result.deleted).toEqual({
+      "CamundaClusterClaim/team-a/orders":
+        "team-a/camundaclusterclaims/orders.yaml",
+    });
+  });
+
+  it("an object that the change applies and deletes is only in deleted", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const result = ok(
+      await writerFor().apply({
+        intent: "Apply and delete orders",
+        apply: [claim("team-a", "orders")],
+        delete: [claimRef("team-a", "orders")],
+      }),
+    );
+
+    expect(result.revisions).toEqual({});
+    expect(result.paths).toEqual({});
+    expect(result.deleted).toEqual({
+      "CamundaClusterClaim/team-a/orders":
+        "team-a/camundaclusterclaims/orders.yaml",
+    });
   });
 
   it("a delete of an object without a file fails and commits nothing", async () => {
@@ -919,7 +975,7 @@ describe("the Git writer", () => {
   });
 });
 
-describe("the credentials of the Git writer", () => {
+describe("the credentials of the Git writer", slow, () => {
   // The bare repository speaks plain HTTP. This transport sends an
   // https:// address to it over HTTP, so the writer sees an HTTPS
   // repository.

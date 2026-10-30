@@ -10,7 +10,7 @@ import {
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEventSource } from "../../../test/fakes/event-source";
-import { useGitSync, useResource, useResources } from "./hooks";
+import { useGitGone, useGitSync, useResource, useResources } from "./hooks";
 import { watchId } from "./shared-watch";
 
 // TanStack Query sends cache updates to the hooks on a later tick, so the
@@ -368,25 +368,25 @@ describe("useResource", () => {
   });
 });
 
-describe("useGitSync", () => {
-  const ref = {
-    kind: "CamundaClusterClaim" as const,
-    namespace: "team-a",
-    name: "orders",
-  };
-  const claim = (revision?: string) =>
-    ({
-      apiVersion: "fleet.camunda.io/v1alpha1",
-      kind: "CamundaClusterClaim",
-      metadata: {
-        namespace: "team-a",
-        name: "orders",
-        ...(revision
-          ? { annotations: { "fleet.camunda.io/revision": revision } }
-          : {}),
-      },
-    }) as never;
+const ref = {
+  kind: "CamundaClusterClaim" as const,
+  namespace: "team-a",
+  name: "orders",
+};
+const claim = (revision?: string) =>
+  ({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    metadata: {
+      namespace: "team-a",
+      name: "orders",
+      ...(revision
+        ? { annotations: { "fleet.camunda.io/revision": revision } }
+        : {}),
+    },
+  }) as never;
 
+describe("useGitSync", () => {
   it("is waiting while the live object has no revision", async () => {
     const { result } = renderHook(() => useGitSync(ref, "abc"), { wrapper });
     const s = await source();
@@ -490,5 +490,90 @@ describe("useGitSync", () => {
       objects: [claim("abc")],
     });
     await waitFor(() => expect(result.current).toBe("applied"));
+  });
+});
+
+describe("useGitGone", () => {
+  const deleting = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    metadata: {
+      namespace: "team-a",
+      name: "orders",
+      deletionTimestamp: "2026-10-30T12:00:00Z",
+    },
+  } as never;
+
+  it("is waiting while the object exists", async () => {
+    const { result } = renderHook(() => useGitGone(ref), { wrapper });
+    const s = await source();
+    s.emit("snapshot", {
+      watch: s.ids()[0],
+      kind: "CamundaClusterClaim",
+      objects: [claim()],
+    });
+    await flush();
+    expect(result.current).toBe("waiting");
+  });
+
+  it("turns applied when the object is gone", async () => {
+    const { result } = renderHook(() => useGitGone(ref), { wrapper });
+    const s = await source();
+    const watch = s.ids()[0];
+    s.emit("snapshot", {
+      watch,
+      kind: "CamundaClusterClaim",
+      objects: [claim()],
+    });
+    await flush();
+    expect(result.current).toBe("waiting");
+
+    s.emit("delta", {
+      watch,
+      type: "DELETED",
+      kind: "CamundaClusterClaim",
+      object: claim(),
+    });
+    await waitFor(() => expect(result.current).toBe("applied"));
+  });
+
+  it("turns applied when the object has a deletionTimestamp", async () => {
+    const { result } = renderHook(() => useGitGone(ref), { wrapper });
+    const s = await source();
+    const watch = s.ids()[0];
+    s.emit("snapshot", {
+      watch,
+      kind: "CamundaClusterClaim",
+      objects: [claim()],
+    });
+    await flush();
+    expect(result.current).toBe("waiting");
+
+    s.emit("delta", {
+      watch,
+      type: "MODIFIED",
+      kind: "CamundaClusterClaim",
+      object: deleting,
+    });
+    await waitFor(() => expect(result.current).toBe("applied"));
+  });
+
+  it("is waiting before the first snapshot, although nothing is cached", async () => {
+    const { result } = renderHook(() => useGitGone(ref), { wrapper });
+    await source();
+    await flush();
+    expect(result.current).toBe("waiting");
+  });
+
+  it("is waiting while the watch fails", async () => {
+    const { result } = renderHook(() => useGitGone(ref), { wrapper });
+    const s = await source();
+    const watch = s.ids()[0];
+    s.emit("snapshot", { watch, kind: "CamundaClusterClaim", objects: [] });
+    await waitFor(() => expect(result.current).toBe("applied"));
+
+    s.emit("failure", { watch, kind: "CamundaClusterClaim", message: "lost" });
+
+    await waitFor(() => expect(result.current).toBe("waiting"));
   });
 });

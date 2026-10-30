@@ -126,7 +126,9 @@ A namespaced object goes to `<git.path>/<namespace>/<plural>/<name>.yaml`. A clu
 
 ### Waiting for GitOps
 
-After a save in Git mode, each page shows "Waiting for GitOps to apply" at the top, with one line for each pushed file. A line goes away when the object in the cluster carries the `fleet.camunda.io/revision` of the push. The list belongs to the browser tab, so a reload of the page clears it. If a line stays, make sure that your GitOps tool syncs the folder of `git.path`.
+After a save in Git mode, each page shows "Waiting for GitOps to apply" at the top, with one line for each pushed file. The line of a changed file goes away when the object in the cluster carries the `fleet.camunda.io/revision` of the push. The line of a deleted file goes away when the object is gone from the cluster, or when the cluster starts to delete it. The list belongs to the browser tab, so a reload of the page clears it. If a line stays, make sure that your GitOps tool syncs the folder of `git.path`.
+
+Your GitOps tool must prune. When the fleet manager removes a file, the GitOps tool must delete the object from the cluster. Flux prunes when the Kustomization sets `prune: true`. Argo CD prunes when `syncPolicy.automated` of the Application sets `prune: true`. If your GitOps tool does not prune, the line of a delete stays, because the fleet manager waits without a time limit.
 
 ### Changes that go to the API in Git mode
 

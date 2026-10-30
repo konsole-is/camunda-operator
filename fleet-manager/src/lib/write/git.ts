@@ -93,9 +93,9 @@ type Remote = {
  * gitWriter returns the writer of Git mode. A directOnly change goes to
  * direct. Any other change becomes one commit on the branch of target,
  * with the intent as its subject and GIT_AUTHOR as its author, and the
- * result carries the commit, the revision, and the file of each applied
- * object. A change whose files are already in the repository makes no
- * commit and returns the head commit.
+ * result carries the commit, the revision and the file of each applied
+ * object, and the file of each deleted object. A change whose files are
+ * already in the repository makes no commit and returns the head commit.
  *
  * apply makes no commit when the fleet manager does not write a ref, a
  * Secret is in the change (Invalid), an object with a precondition changed
@@ -413,9 +413,16 @@ export function gitWriter(options: GitWriterOptions): Writer {
 
     const written = await writeFiles(dir, base, change);
     if (!written.ok) return failure(...written.errors);
-    const { revisions, paths, files } = written;
+    const { revisions, paths, deleted, files } = written;
     if (!(await changed(dir, files))) {
-      return { ok: true, mode: "git", commit: cloned, revisions, paths };
+      return {
+        ok: true,
+        mode: "git",
+        commit: cloned,
+        revisions,
+        paths,
+        deleted,
+      };
     }
     const commitAndPush = async () => {
       const commit = await git.commit({
@@ -430,7 +437,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
 
     try {
       const commit = await commitAndPush();
-      return { ok: true, mode: "git", commit, revisions, paths };
+      return { ok: true, mode: "git", commit, revisions, paths, deleted };
     } catch (error) {
       if (!isRejected(error)) throw error;
     }
@@ -471,7 +478,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
     if (!again.ok) return failure(...again.errors);
     try {
       const commit = await commitAndPush();
-      return { ok: true, mode: "git", commit, revisions, paths };
+      return { ok: true, mode: "git", commit, revisions, paths, deleted };
     } catch (error) {
       if (!isRejected(error)) throw error;
       return failure({
@@ -489,6 +496,7 @@ type Written =
       ok: true;
       revisions: Record<RefKey, string>;
       paths: Record<RefKey, string>;
+      deleted: Record<RefKey, string>;
       files: string[];
     }
   | { ok: false; errors: ApiError[] };
@@ -501,6 +509,7 @@ async function writeFiles(
 ): Promise<Written> {
   const revisions: Record<RefKey, string> = {};
   const paths: Record<RefKey, string> = {};
+  const deleted: Record<RefKey, string> = {};
   const files: string[] = [];
   const errors: ApiError[] = [];
   for (const object of change.apply) {
@@ -534,10 +543,13 @@ async function writeFiles(
     }
     await rm(path.join(dir, file));
     await git.remove({ fs, dir, filepath: file });
+    delete revisions[refKey(ref)];
+    delete paths[refKey(ref)];
+    deleted[refKey(ref)] = file;
     files.push(file);
   }
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, revisions, paths, files };
+  return { ok: true, revisions, paths, deleted, files };
 }
 
 // revisionOf returns the revision annotation of the file in the clone at
