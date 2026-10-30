@@ -38,6 +38,17 @@ func DefaultConvergingStatusHandler(
 	return readycondition.Converging(op, observed(optimize)), nil
 }
 
+// VerbatimConvergingStatusHandler is a converge handler for a consumer that
+// shows the state of the CamundaOptimize as it is, as the default of the
+// CamundaCluster wrapper does. Ready=True of the current generation is
+// Healthy whatever its reason, also Suspended. The reason holds the Ready
+// reason and message unchanged. Pass it to WithCustomConvergeStatus.
+func VerbatimConvergingStatusHandler(
+	op concepts.ConvergingOperation, optimize *apiv1.CamundaOptimize,
+) (concepts.AliveStatusWithReason, error) {
+	return readycondition.VerbatimConverging(op, observed(optimize)), nil
+}
+
 // observed is the part of the CamundaOptimize that the handlers read.
 func observed(optimize *apiv1.CamundaOptimize) readycondition.Object {
 	return readycondition.Object{

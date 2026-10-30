@@ -56,12 +56,16 @@ type Input struct {
 	Requests []pluginsv1alpha1.PluginRequest
 	// Live is the CamundaCluster of the claim. Nil before it exists. A slot
 	// field whose output is missing keeps its value.
-	Live    *v1.CamundaCluster
-	Storage BuiltinStorage
+	Live *v1.CamundaCluster
+	// LiveOptimize is the CamundaOptimize of the claim. Nil before it
+	// exists. Its externalUrl stays while the optimizeUrl output is missing.
+	LiveOptimize *v1.CamundaOptimize
+	Storage      BuiltinStorage
 }
 
 // Components are the components of a cluster claim, in reconcile order.
 type Components struct {
-	Requests *component.Component
-	Cluster  *component.Component
+	Requests    *component.Component
+	Cluster     *component.Component
+	Attachments *component.Component
 }

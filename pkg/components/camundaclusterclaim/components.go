@@ -39,7 +39,12 @@ func Build(in Input) (Components, error) {
 		return Components{}, fmt.Errorf("building the cluster component: %w", err)
 	}
 
-	return Components{Requests: requests, Cluster: cluster}, nil
+	attachments, err := attachmentsComponent(in)
+	if err != nil {
+		return Components{}, fmt.Errorf("building the attachments component: %w", err)
+	}
+
+	return Components{Requests: requests, Cluster: cluster, Attachments: attachments}, nil
 }
 
 // RequestsInput returns the input of the requests component of the claim of

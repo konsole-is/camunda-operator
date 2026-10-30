@@ -117,10 +117,28 @@ rules:
   - core.camunda.io
   resources:
   - backupschedules
+  - camundaclusters
+  - camundamanagementclusters
+  - camundaoptimizes
+  - databaseconfigs
+  - databases
+  - databaseserverconfigs
+  - databaseservers
+  - elasticsearchclusters
+  - logicalbackupelasticsearches
+  - logicalbackuprdbmses
+  - logicalrestoreelasticsearches
+  - logicalrestorerdbmses
+  - managementauthconfigs
+  - pointintimerestores
+  - secondarystorageconfigs
   verbs:
+  - create
   - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - core.camunda.io
@@ -159,32 +177,6 @@ rules:
   verbs:
   - get
   - list
-  - watch
-- apiGroups:
-  - core.camunda.io
-  resources:
-  - camundaclusters
-  - camundamanagementclusters
-  - camundaoptimizes
-  - databaseconfigs
-  - databases
-  - databaseserverconfigs
-  - databaseservers
-  - elasticsearchclusters
-  - logicalbackupelasticsearches
-  - logicalbackuprdbmses
-  - logicalrestoreelasticsearches
-  - logicalrestorerdbmses
-  - managementauthconfigs
-  - pointintimerestores
-  - secondarystorageconfigs
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - core.camunda.io

@@ -61,7 +61,7 @@ func TestClusterCarriesTheSlotFieldsFromTheOutputs(t *testing.T) {
 func TestClusterKeepsTheLiveValueOfASlotFieldWhoseOutputIsMissing(t *testing.T) {
 	in := fullInput(t)
 	access := slices.IndexFunc(in.Requests, func(r pluginsv1alpha1.PluginRequest) bool {
-		return r.Spec.Section == "access"
+		return r.Spec.Section == accessSection
 	})
 	in.Requests[access].Status.Conditions = nil
 
@@ -101,14 +101,14 @@ func TestClusterWaitsForTheSlotOutputsOfTheRenderBeforeTheFirstApply(t *testing.
 			in.Live = tt.live
 			if tt.missing {
 				access := slices.IndexFunc(in.Requests, func(r pluginsv1alpha1.PluginRequest) bool {
-					return r.Spec.Section == "access"
+					return r.Spec.Section == accessSection
 				})
 				in.Requests[access].Status.Conditions = nil
 			}
 
 			_, waiting, err := cluster(in)
 			require.NoError(t, err)
-			status, err := waitFor(waiting)(v1.CamundaCluster{})
+			status, err := waitFor[v1.CamundaCluster](waiting)(v1.CamundaCluster{})
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantStatus, status.Status)

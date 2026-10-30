@@ -30,6 +30,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaclusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/components/claimrequests"
 )
 
@@ -144,15 +145,20 @@ var _ = Describe("Deleting a cluster claim", func() {
 	})
 
 	It("deletes the attachments, then the cluster, then the requests", func() {
-		claim := readyClaim(newNamespace(nil))
-		optimize := ownedOptimize(claim)
-		schedule := &v1.BackupSchedule{
-			ObjectMeta: metav1.ObjectMeta{Name: claim.Name + "-backups", Namespace: claim.Namespace},
-			Spec:       v1.BackupScheduleSpec{ClusterRef: v1.ClusterRef{Name: claim.Name}, Schedule: "0 2 * * *"},
-		}
-		Expect(controllerutil.SetControllerReference(claim, schedule, k8sClient.Scheme())).To(Succeed())
-		schedule.Finalizers = []string{testHold}
-		create(schedule)
+		claim := readyClaim(newNamespace(nil), withAttachments)
+		setClusterReady(claim, metav1.ConditionTrue, v1.ReasonHealthy, "")
+		optimize := &v1.CamundaOptimize{ObjectMeta: metav1.ObjectMeta{
+			Name: components.OptimizeName(claim.Name), Namespace: claim.Namespace,
+		}}
+		schedule := &v1.BackupSchedule{ObjectMeta: metav1.ObjectMeta{
+			Name: components.BackupScheduleName(claim.Name), Namespace: claim.Namespace,
+		}}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(optimize), optimize)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(schedule), schedule)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		setTestHold(optimize, true)
+		setTestHold(schedule, true)
 		cluster := &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Name: claim.Name, Namespace: claim.Namespace}}
 		setTestHold(cluster, true)
 
@@ -302,28 +308,6 @@ var _ = Describe("A cluster claim with a registration that cannot orphan", func(
 		expectGone(cluster)
 	})
 })
-
-// ownedOptimize creates <claim>-optimize with a controller reference to
-// claim and the finalizer testHold.
-func ownedOptimize(claim *fleetv1alpha1.CamundaClusterClaim) *v1.CamundaOptimize {
-	GinkgoHelper()
-	optimize := &v1.CamundaOptimize{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:       claim.Name + "-optimize",
-			Namespace:  claim.Namespace,
-			Finalizers: []string{testHold},
-		},
-		Spec: v1.CamundaOptimizeSpec{
-			Version:           "8.9.9",
-			ManagementAuthRef: "management",
-			ClusterRef:        v1.ClusterRef{Name: claim.Name},
-		},
-	}
-	Expect(controllerutil.SetControllerReference(claim, optimize, k8sClient.Scheme())).To(Succeed())
-	create(optimize)
-
-	return optimize
-}
 
 func requestKey(claim *fleetv1alpha1.CamundaClusterClaim, section string) types.NamespacedName {
 	return types.NamespacedName{Namespace: claim.Namespace, Name: claim.Name + "-" + section}

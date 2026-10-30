@@ -33,6 +33,7 @@ import (
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaclusterclaim"
 )
 
 // The cluster-scoped objects that every claim of the suite names.
@@ -66,6 +67,7 @@ const (
 	keyARN              = "arn:aws:kms:key"
 	encryptedClass      = "encrypted-gp3"
 	accessURL           = "https://orders.example.com"
+	optimizeURL         = "https://orders.example.com/optimize"
 	existingStorageName = "existing-es"
 )
 
@@ -133,7 +135,10 @@ func createFixtures() {
 	plugin.serve(registrationConnectors, map[string]string{
 		pluginstartup.OutputServiceAccountAnnotations: connectorsRoleARN,
 	})
-	plugin.serve(registrationAccess, map[string]string{pluginstartup.OutputExternalURL: accessURL})
+	plugin.serve(registrationAccess, map[string]string{
+		pluginstartup.OutputExternalURL: accessURL,
+		pluginstartup.OutputOptimizeURL: optimizeURL,
+	})
 	plugin.serve(pluginstartup.RegistrationExistingSecondaryStorage, map[string]string{
 		pluginstartup.OutputSecondaryStorageConfig: existingStorageName,
 	})
@@ -240,11 +245,17 @@ func selection(section, registration string) fleetv1alpha1.PluginSelection {
 }
 
 // readyClaim creates a claim in namespace with the requests
-// secondary-storage and encryption-key, and waits until its cluster exists
-// and the fake plugin holds both requests.
-func readyClaim(namespace string) *fleetv1alpha1.CamundaClusterClaim {
+// secondary-storage and encryption-key, changed by each of changes, and
+// waits until its cluster exists and the fake plugin holds both requests.
+func readyClaim(
+	namespace string,
+	changes ...func(*fleetv1alpha1.CamundaClusterClaim) *fleetv1alpha1.CamundaClusterClaim,
+) *fleetv1alpha1.CamundaClusterClaim {
 	GinkgoHelper()
 	claim := newClaim(namespace, selection(pluginstartup.SectionEncryptionKey, registrationKey))
+	for _, change := range changes {
+		claim = change(claim)
+	}
 	create(claim)
 
 	eventuallyCluster(claim)
@@ -298,6 +309,33 @@ func clusterOf(claim *fleetv1alpha1.CamundaClusterClaim) (*v1.CamundaCluster, er
 	var cluster v1.CamundaCluster
 	err := k8sClient.Get(ctx, client.ObjectKeyFromObject(claim), &cluster)
 	return &cluster, err
+}
+
+// withAttachments sets an Optimize and a backup schedule on claim and
+// returns it.
+func withAttachments(claim *fleetv1alpha1.CamundaClusterClaim) *fleetv1alpha1.CamundaClusterClaim {
+	claim.Spec.Attachments = &fleetv1alpha1.ClusterAttachments{
+		Optimize:       &fleetv1alpha1.OptimizeAttachment{ManagementAuthConfigRef: "management"},
+		BackupSchedule: &fleetv1alpha1.BackupScheduleAttachment{Schedule: "0 2 * * *"},
+	}
+
+	return claim
+}
+
+// optimizeOf reads the CamundaOptimize of claim.
+func optimizeOf(claim *fleetv1alpha1.CamundaClusterClaim) (*v1.CamundaOptimize, error) {
+	key := client.ObjectKey{Namespace: claim.Namespace, Name: components.OptimizeName(claim.Name)}
+	var optimize v1.CamundaOptimize
+	err := k8sClient.Get(ctx, key, &optimize)
+	return &optimize, err
+}
+
+// scheduleOf reads the BackupSchedule of claim.
+func scheduleOf(claim *fleetv1alpha1.CamundaClusterClaim) (*v1.BackupSchedule, error) {
+	key := client.ObjectKey{Namespace: claim.Namespace, Name: components.BackupScheduleName(claim.Name)}
+	var schedule v1.BackupSchedule
+	err := k8sClient.Get(ctx, key, &schedule)
+	return &schedule, err
 }
 
 // latest reads claim again.
@@ -357,6 +395,48 @@ func setClusterReady(claim *fleetv1alpha1.CamundaClusterClaim, status metav1.Con
 			ObservedGeneration: cluster.Generation,
 		})
 		return k8sClient.Status().Update(ctx, cluster)
+	}, timeout, interval).Should(Succeed())
+}
+
+// setOptimizeReady writes the Ready condition of the CamundaOptimize of
+// claim for its current generation. No controller of the suite reconciles a
+// CamundaOptimize, so the spec plays its part.
+func setOptimizeReady(claim *fleetv1alpha1.CamundaClusterClaim, status metav1.ConditionStatus, reason string) {
+	GinkgoHelper()
+	Eventually(func() error {
+		optimize, err := optimizeOf(claim)
+		if err != nil {
+			return err
+		}
+		optimize.Status.ObservedGeneration = optimize.Generation
+		meta.SetStatusCondition(&optimize.Status.Conditions, metav1.Condition{
+			Type:               v1.ConditionReady,
+			Status:             status,
+			Reason:             reason,
+			ObservedGeneration: optimize.Generation,
+		})
+		return k8sClient.Status().Update(ctx, optimize)
+	}, timeout, interval).Should(Succeed())
+}
+
+// setScheduleReady writes Ready=True with the reason Healthy on the
+// BackupSchedule of claim for its current generation. No controller of the
+// suite reconciles a BackupSchedule, so the spec plays its part.
+func setScheduleReady(claim *fleetv1alpha1.CamundaClusterClaim) {
+	GinkgoHelper()
+	Eventually(func() error {
+		schedule, err := scheduleOf(claim)
+		if err != nil {
+			return err
+		}
+		schedule.Status.ObservedGeneration = schedule.Generation
+		meta.SetStatusCondition(&schedule.Status.Conditions, metav1.Condition{
+			Type:               v1.ConditionReady,
+			Status:             metav1.ConditionTrue,
+			Reason:             v1.ReasonHealthy,
+			ObservedGeneration: schedule.Generation,
+		})
+		return k8sClient.Status().Update(ctx, schedule)
 	}, timeout, interval).Should(Succeed())
 }
 
