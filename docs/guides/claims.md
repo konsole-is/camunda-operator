@@ -181,6 +181,44 @@ You need:
 
 The claim created the [CamundaManagementCluster](../crds/camundamanagementcluster.md) `my-plane`. It serves the clusters in the namespaces with the label `fleet.camunda.io/environment=production`, and its Management Identity uses `my-identity-db`. If `Ready` stays `False`, the [CamundaManagementClusterClaim](../crds/camundamanagementclusterclaim.md#status) page lists each reason and what to do.
 
+## Change a cluster claim
+
+This part changes the claim `my-cluster` of [Create a cluster from a claim](#create-a-cluster-from-a-claim). The claim sends each change to its `CamundaCluster`.
+
+1. To move the cluster to a new release, add the release to `spec.releases.allowed` of the environment first. Then set the release on the claim:
+
+    ```bash
+    kubectl patch camundaclusterclaim my-cluster -n my-cluster-ns --type merge -p '{"spec":{"releaseRef":"camunda-8-9-1"}}'
+    ```
+
+2. Make sure that the cluster got the release:
+
+    ```bash
+    kubectl get camundacluster my-cluster -n my-cluster-ns -o jsonpath='{.spec.releaseRef}'
+    ```
+
+    If the environment does not allow the release, `Ready` of the claim is `False` with reason `NotAllowed`, and the cluster keeps its release.
+
+3. To stop the cluster and keep its data, suspend the claim:
+
+    ```bash
+    kubectl patch camundaclusterclaim my-cluster -n my-cluster-ns --type merge -p '{"spec":{"suspend":true}}'
+    ```
+
+4. Make sure that the cluster is suspended. The command prints `true`:
+
+    ```bash
+    kubectl get camundacluster my-cluster -n my-cluster-ns -o jsonpath='{.spec.suspend}'
+    ```
+
+5. To start the cluster again, resume the claim:
+
+    ```bash
+    kubectl patch camundaclusterclaim my-cluster -n my-cluster-ns --type merge -p '{"spec":{"suspend":false}}'
+    ```
+
+The [CamundaClusterClaim](../crds/camundaclusterclaim.md) page describes [Suspend](../crds/camundaclusterclaim.md#suspend) and a move to an older release in [Downgrade](../crds/camundaclusterclaim.md#downgrade).
+
 ## Delete a claim
 
 The deletion policy of the claim decides what the plugins do with the resources that they created, such as buckets and keys. `Delete` deletes them. `Orphan` keeps them. The [CamundaClusterClaim](../crds/camundaclusterclaim.md#deletion) and [CamundaManagementClusterClaim](../crds/camundamanagementclusterclaim.md#deletion) pages say what each claim always deletes. The steps below delete a cluster claim. For a plane claim, use `camundamanagementclusterclaim` and its names.

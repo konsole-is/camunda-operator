@@ -3,7 +3,7 @@
 A `CamundaClusterClaim` asks for one Camunda cluster. It names a preset, a release, and one option for each section of the create flow, for example the secondary storage or the backup storage. The [fleet manager](../fleet-manager/install.md) writes claims, and you can also apply one with `kubectl`. The operator creates a [PluginRequest](pluginrequest.md) for each option and a [CamundaCluster](camundacluster.md) with the name of the claim. The [Environment](environment.md) of the namespace sets what the claim can use.
 
 !!! note
-    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release. In this release, the operator creates the requests and the cluster of a claim. It does not act on `spec.attachments`, `spec.suspend`, or `spec.allowVersionDowngrade` yet.
+    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release. In this release, the operator does not act on `spec.attachments` of a claim yet.
 
 The smallest claim:
 
@@ -51,7 +51,7 @@ metadata:
 
 When no `Environment` exists in the Kubernetes cluster, a namespace without the label is valid too. The registrations then give the policy. A claim can select each registration of a section. It can change only the parameters in `claimEditable` of the registration. When at least one `Environment` exists, a claim in a namespace without the label is refused with `NoEnvironment`.
 
-On its first check, the claim records the policy of its `Environment` in `status.resolvedPolicy`, and the name of the `Environment` in `status.environment`. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of `spec.sections`, `spec.parameters`, or `spec.deletionPolicy` of the `Environment` does not change the claim. The preset and the release are different. The claim checks them against the current `spec.presets.camundaCluster` and `spec.releases.allowed`. When the `Environment` no longer lists them, `Ready` is `False` with reason `NotAllowed`, and the requests and the cluster stay as they are.
+On its first check, the claim records the policy of its `Environment` in `status.resolvedPolicy`, and the name of the `Environment` in `status.environment`. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of `spec.sections`, `spec.parameters`, or `spec.deletionPolicy` of the `Environment` does not change the claim. The claim checks a new preset or release against the current `spec.presets.camundaCluster` and `spec.releases.allowed` of the `Environment`. A preset or release that the cluster already uses stays allowed when the `Environment` drops it. A change to a value that the `Environment` does not list gives `Ready` `False` with reason `NotAllowed`. The requests and the cluster then stay as they are.
 
 A section of the policy that does not apply to a cluster claim, such as `management-database`, is never required for a cluster. A claim that selects an option in such a section is refused with `NotAllowed`. The [PluginSection](pluginsection.md#claim-kinds) page says what `appliesTo` does.
 
@@ -90,6 +90,7 @@ The cluster gets these fields from the claim:
 | `spec.presetRef` | `spec.presetRef` of the claim |
 | `spec.releaseRef` | `spec.releaseRef` of the claim, or the default release of the `Environment` |
 | `spec.platformConfigRef` | `spec.platformConfigRef` of the claim, or that of the `Environment` |
+| `spec.suspend` | `spec.suspend` of the claim |
 | `spec.serviceAccount.name` | `<claim>-camunda` |
 | `spec.connectors.serviceAccount.name` | `<claim>-connectors` |
 | every other field | `spec.cluster` of the claim |
@@ -110,6 +111,43 @@ When a request loses an output after the cluster exists, the cluster keeps the l
 A `CamundaCluster` needs `spec.storageRef`, so a claim without an option of `secondary-storage` gets no cluster. `ClusterReady` is then `False` with reason `Error`, and the message holds `spec.storageRef is required`.
 
 A `CamundaCluster` of the same name that another owner controls stays as it is. `ClusterReady` is then `False` with reason `Blocked`, and the message names the owner.
+
+## Suspend
+
+Set `spec.suspend: true` to stop the cluster:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  suspend: true
+  # ... the rest of your claim
+```
+
+The `CamundaCluster` `my-cluster` gets `spec.suspend: true`. It scales to zero and keeps its data, as [Suspend and pause](camundacluster.md#suspend-and-pause) describes. The plugin requests do not change. Remove `spec.suspend`, or set it to `false`, to start the cluster again.
+
+## Downgrade
+
+The operator refuses a move of a cluster to a lower version, as [A lower version is refused](camundacluster.md#a-lower-version-is-refused) describes. To downgrade on purpose, set `spec.releaseRef` to the older release and `spec.allowVersionDowngrade` to its version, in the same edit:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  releaseRef: camunda-8-9-3
+  allowVersionDowngrade: "8.9.3"
+  # ... the rest of your claim
+```
+
+The `CamundaCluster` then gets the annotation `camunda.io/allow-version-downgrade: "8.9.3"`, see [Downgrade on purpose](camundacluster.md#downgrade-on-purpose). The cluster carries the annotation until it runs that version. Clear `spec.allowVersionDowngrade` after that.
+
+The annotation names only the version of the release of the claim. When `spec.allowVersionDowngrade` names another version, the cluster gets no annotation until `spec.releaseRef` names a release of that version. While the claim is suspended, the annotation does not change, and a downgrade waits until the claim starts the cluster again.
 
 ## Deletion
 
