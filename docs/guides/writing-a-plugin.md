@@ -68,14 +68,15 @@ subjects:
   name: s3-backup-bucket-controller
 ```
 
-The controller also needs access to its registration, to the requests, and to events. Add these rules to the same ClusterRole. Also add the rules for the objects that the controller writes, for example ConfigMaps:
+The controller also needs access to its registration, to the requests, and to events. `resourceNames` keeps the controller away from the registrations of other plugins. The verb `create` cannot have `resourceNames`, so it stays in a rule of its own. Add these rules to the same ClusterRole. Also add the rules for the objects that the controller writes, for example ConfigMaps:
 
 ```yaml
 - apiGroups: ["plugins.camunda.io"]
   resources: ["pluginregistrations"]
-  verbs: ["get", "list", "watch", "create", "update", "patch"]
+  verbs: ["list", "watch", "create"]
 - apiGroups: ["plugins.camunda.io"]
-  resources: ["pluginregistrations/status"]
+  resources: ["pluginregistrations", "pluginregistrations/status"]
+  resourceNames: ["s3-backup-bucket"]
   verbs: ["get", "update", "patch"]
 - apiGroups: ["plugins.camunda.io"]
   resources: ["pluginrequests"]
