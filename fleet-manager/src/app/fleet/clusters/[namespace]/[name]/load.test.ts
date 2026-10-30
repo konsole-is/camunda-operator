@@ -68,6 +68,7 @@ describe("loadClusterPage", () => {
       "DatabaseServerConfig",
       "DatabaseServer",
       "BackupSchedule",
+      "CamundaOptimize",
     ]) {
       expect(listOf(kind)).toEqual({ namespace: "team-a" });
     }
@@ -76,6 +77,8 @@ describe("loadClusterPage", () => {
       "CamundaClusterPreset",
       "CamundaRelease",
       "DatabaseServerPreset",
+      "PluginSection",
+      "PluginRegistration",
     ]) {
       expect(listOf(kind)).toEqual({});
     }
@@ -114,5 +117,12 @@ describe("loadClusterPage", () => {
     const data = await loadClusterPage("team-a", "orders");
     expect(data?.cluster.metadata?.name).toBe("orders");
     expect(data?.backupStorage.schedules).toEqual([]);
+  });
+
+  it("gives no Optimize objects when their list fails", async () => {
+    named("orders");
+    k8s.failing = "CamundaOptimize";
+    const data = await loadClusterPage("team-a", "orders");
+    expect(data?.optimizes).toEqual([]);
   });
 });

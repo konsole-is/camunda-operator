@@ -6,6 +6,7 @@ import {
   GitWaitingLine,
   type PushedObject,
 } from "@/components/fleet/git-waiting-line";
+import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { ConditionLike } from "@/components/fleet/status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResource, useResources } from "@/lib/k8s/hooks";
@@ -24,11 +25,15 @@ import { ActionSlot } from "./action-slot";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
 import { backupRowsOf, backupStorageOf, restoreRowsOf } from "./backups";
 import { BackupsTab } from "./backups-tab";
+import { componentCards } from "./cards";
 import { ClusterHeader } from "./cluster-header";
+import { ComponentCards } from "./component-card";
 import { launchLinks } from "./launch";
+import { clusterOptimize } from "./optimize";
+import { OverviewConditions } from "./overview-conditions";
 import type { ActionSlots } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
-import { topologyOf } from "./topology";
+import { type Process, topologyOf } from "./topology";
 import { TopologyView } from "./topology-view";
 
 /**
@@ -38,6 +43,8 @@ import { TopologyView } from "./topology-view";
  * the cluster by its owner label, and pods holds them. backupStorage holds
  * the objects that the Backups tab follows from the cluster to its backup
  * storage and its schedules. Its databaseServerPresets are cluster-scoped.
+ * optimizes holds every CamundaOptimize of the namespace, and sections and
+ * registrations every PluginSection and PluginRegistration.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -67,6 +74,9 @@ export type ClusterPageData = {
     databaseServerPresets: Resource<"DatabaseServerPreset">[];
     schedules: Resource<"BackupSchedule">[];
   };
+  optimizes: Resource<"CamundaOptimize">[];
+  sections: Resource<"PluginSection">[];
+  registrations: Resource<"PluginRegistration">[];
 };
 
 /**
@@ -186,8 +196,19 @@ export function ClusterView({
     { namespace: ns },
     initial.backupStorage.schedules,
   );
+  const optimizes = useResources(
+    "CamundaOptimize",
+    { namespace: ns },
+    initial.optimizes,
+  );
+  const sections = useResources("PluginSection", {}, initial.sections);
+  const registrations = useResources(
+    "PluginRegistration",
+    {},
+    initial.registrations,
+  );
   const backups = [...backupsES.items, ...backupsRDBMS.items];
-  const clock = useClock(now, tab === "backups");
+  const clock = useClock(now, tab === "backups" || tab === "overview");
 
   const live = cluster.item;
   if (!live) {
@@ -216,6 +237,9 @@ export function ClusterView({
       ["DatabaseServer", databaseServers],
       ["DatabaseServerPreset", databaseServerPresets],
       ["BackupSchedule", schedules],
+      ["CamundaOptimize", optimizes],
+      ["PluginSection", sections],
+      ["PluginRegistration", registrations],
     ] as const
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
@@ -249,6 +273,20 @@ export function ClusterView({
   )?.spec.type;
   const ready = live.status?.conditions?.find((c) => c.type === "Ready") as
     ConditionLike | undefined;
+  const clusterConditions = conditionRows(live.status?.conditions);
+  const optimize = clusterOptimize(name ?? "", optimizes.items);
+  const cards = componentCards({
+    spec: merged.spec,
+    pods: pods.items,
+    conditions: clusterConditions,
+    optimize,
+  });
+  const processConditions: Partial<Record<Process, ConditionLike>> =
+    Object.fromEntries(
+      cards.flatMap((c) =>
+        c.id !== "optimize" && c.condition ? [[c.id, c.condition]] : [],
+      ),
+    );
 
   const restores = [
     ...restoresES.items,
@@ -308,10 +346,26 @@ export function ClusterView({
           ))}
         </TabsList>
         <TabsContent value="overview">
-          <TopologyView
-            boxes={topologyOf(merged.spec, pods.items)}
-            actions={slot("cluster.topology.actions")}
-          />
+          <div className="flex flex-col gap-4">
+            <TopologyView
+              boxes={topologyOf(merged.spec, pods.items)}
+              actions={slot("cluster.topology.actions")}
+              conditions={processConditions}
+            />
+            <ComponentCards cards={cards} />
+            <OverviewConditions
+              cluster={clusterConditions}
+              optimize={
+                optimize
+                  ? conditionRows(optimize.status?.conditions)
+                  : undefined
+              }
+              claim={
+                claim ? conditionRows(claim.status?.conditions) : undefined
+              }
+              now={clock}
+            />
+          </div>
         </TabsContent>
         <TabsContent value="backups">
           <BackupsTab
@@ -337,6 +391,15 @@ export function ClusterView({
       </Tabs>
     </div>
   );
+}
+
+// conditionRows gives the conditions of a status as the table rows. The
+// API server sends metav1.Condition, whose status is one of the three values
+// of ConditionRow.
+function conditionRows(
+  conditions: readonly { type: string; status: string }[] | undefined,
+): ConditionRow[] | undefined {
+  return conditions as ConditionRow[] | undefined;
 }
 
 // useClock starts at the time of the server, so that the first render in
