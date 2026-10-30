@@ -250,6 +250,66 @@ describe("outcomeOf", () => {
     });
   });
 
+  it("an item that a reset empties and a change fills keeps its index", () => {
+    const claim: ClaimObject = {
+      apiVersion: ref.apiVersion,
+      kind: ref.kind,
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "41" },
+      spec: { cluster: { extraEnvFrom: [{ a: "1" }, { b: "2" }] } },
+    };
+    const at = (...steps: Step[]): Step[] => [
+      { field: "spec" },
+      { field: "cluster" },
+      { field: "extraEnvFrom" },
+      ...steps,
+    ];
+    let s = openSession({
+      claim,
+      resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+      locks: () => undefined,
+    })!;
+    for (const [steps, value] of [
+      [at({ index: 1 }), { b: "" }],
+      [at({ index: 0 }, { field: "a" }), undefined],
+      [at({ index: 0 }, { field: "c" }), "3"],
+    ] as const) {
+      const result =
+        value === undefined
+          ? resetValue(s, [...steps])
+          : setValue(s, [...steps], value);
+      if (!("session" in result)) throw new Error("refused");
+      s = result.session;
+    }
+    expect(
+      outcomeOf(
+        {
+          objects: [],
+          errors: [
+            {
+              code: "Invalid",
+              message: "must not be empty",
+              path: "spec.cluster.extraEnvFrom[1].b",
+            },
+            {
+              code: "Invalid",
+              message: "too short",
+              path: "spec.cluster.extraEnvFrom[0].c",
+            },
+          ],
+        },
+        s,
+      ),
+    ).toEqual({
+      ok: false,
+      stale: false,
+      fields: [
+        { path: "spec.cluster.extraEnvFrom[1]", message: "must not be empty" },
+        { path: "spec.cluster.extraEnvFrom[0].c", message: "too short" },
+      ],
+      messages: [],
+    });
+  });
+
   it("any other error is a message", () => {
     expect(
       outcomeOf(

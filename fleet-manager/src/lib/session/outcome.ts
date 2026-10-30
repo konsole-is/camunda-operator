@@ -56,7 +56,10 @@ function targetsOf(s: Session): Map<FieldPath, FieldPath> {
   const after = claimAfter(s);
   const targets = new Map<FieldPath, FieldPath>();
   for (const [path, entry] of s.pending) {
-    targets.set(path, path);
+    // The path of an index names an item of the claim, which a reset can
+    // move.
+    const indexed = entry.steps.some((step) => "index" in step);
+    if (!indexed) targets.set(path, path);
     if ("reset" in entry) continue;
     const steps = indexSteps(after, shifted(s, entry.steps));
     if (steps) targets.set(pathFrom("", steps), path);
@@ -65,7 +68,7 @@ function targetsOf(s: Session): Map<FieldPath, FieldPath> {
 }
 
 // shifted moves each index of steps, which names an item of the claim, to
-// the place of that item after the resets of the session removed earlier
+// the place of that item after the changes of the session removed earlier
 // items.
 function shifted(s: Session, steps: readonly Step[]): Step[] {
   return steps.map((step, j) => {
@@ -75,7 +78,6 @@ function shifted(s: Session, steps: readonly Step[]): Step[] {
     for (const entry of s.pending.values()) {
       const at = entry.steps[j];
       if (
-        !("reset" in entry) ||
         !at ||
         !("index" in at) ||
         at.index >= step.index ||
@@ -87,9 +89,9 @@ function shifted(s: Session, steps: readonly Step[]): Step[] {
     const length = (items: unknown) =>
       Array.isArray(items) ? items.length : 0;
     let removed = 0;
-    for (const resets of below.values())
+    for (const changes of below.values())
       if (
-        length(valueAt(withChanges(s.claim, resets), list)) <
+        length(valueAt(withChanges(s.claim, changes), list)) <
         length(valueAt(s.claim, list))
       )
         removed++;
@@ -101,13 +103,15 @@ function pendingPath(
   path: FieldPath,
   targets: Map<FieldPath, FieldPath>,
 ): FieldPath | undefined {
+  let best: [FieldPath, FieldPath] | undefined;
   for (const p of [path, child("spec", path)])
     for (const [target, pending] of targets)
       if (
-        p === target ||
-        p.startsWith(`${target}.`) ||
-        p.startsWith(`${target}[`)
+        (p === target ||
+          p.startsWith(`${target}.`) ||
+          p.startsWith(`${target}[`)) &&
+        (!best || target.length > best[0].length)
       )
-        return pending;
-  return undefined;
+        best = [target, pending];
+  return best?.[1];
 }
