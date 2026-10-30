@@ -1,5 +1,6 @@
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import { itemStep, walk, type Step } from "@/lib/fields";
+import { SLOT_FIELDS } from "@/lib/fields/slots";
 import type { Resource } from "@/lib/k8s/kinds";
 import { mergeCluster, type Merged } from "@/lib/merge";
 import { parseQuantity } from "@/lib/observe/quantity";
@@ -186,36 +187,60 @@ function merged(
 }
 
 function releaseAfter(input: ClusterChangeInput): string | undefined {
-  const was = input.session.claim.spec.releaseRef;
-  const is = claimAfter(input.session).spec.releaseRef;
-  if (was === is) return input.live.spec.releaseRef;
-  return is || input.environment?.spec.releases?.default;
+  return refAfter(
+    input,
+    "releaseRef",
+    input.environment?.spec.releases?.default,
+  );
 }
 
-// CONTROLLER_FIELDS are the fields of a CamundaCluster that the claim
-// controller fills from outside the claim: the ServiceAccount names, the
-// platform config, and the slot fields (cluster in
-// pkg/components/camundaclusterclaim/cluster.go).
-const CONTROLLER_FIELDS: Step[][] = [
-  ["serviceAccount", "name"],
-  ["serviceAccount", "annotations"],
-  ["connectors", "serviceAccount", "name"],
-  ["connectors", "serviceAccount", "annotations"],
-  ["zeebe", "storageClassName"],
-  ["externalUrl"],
-  ["storageRef"],
-  ["backupStorageRef"],
-  ["platformConfigRef"],
-].map((names) => names.map((field) => ({ field })));
+function refAfter(
+  input: ClusterChangeInput,
+  name: "releaseRef" | "platformConfigRef",
+  fallback: string | undefined,
+): string | undefined {
+  const was = input.session.claim.spec[name];
+  const is = claimAfter(input.session).spec[name];
+  if (was === is) return input.live.spec[name];
+  return is || fallback;
+}
 
+// clusterAfter returns the spec that cluster in
+// pkg/components/camundaclusterclaim/cluster.go makes from the claim after
+// the change. A slot field keeps its live value, as it does while the
+// output of its section is not ready.
 function clusterAfter(input: ClusterChangeInput): CamundaClusterSpec {
   const claim = claimAfter(input.session).spec;
   let spec: CamundaClusterSpec = structuredClone(claim.cluster ?? {});
+  const slots = new Set(
+    (claim.plugins ?? []).map(
+      (p) =>
+        input.sections.find((s) => s.metadata?.name === p.section)?.spec.slot,
+    ),
+  );
+  const fromLive = [
+    ["serviceAccount", "name"],
+    ["connectors", "serviceAccount", "name"],
+    ...SLOT_FIELDS.filter(
+      (row) =>
+        row.claimKind === "CamundaClusterClaim" &&
+        row.kind === "CamundaCluster" &&
+        slots.has(row.slot),
+    ).map((row) => row.names.slice(1)),
+  ].map((names) => names.map((field): Step => ({ field })));
   const fields: [Step[], unknown][] = [
     [[{ field: "presetRef" }], claim.presetRef],
     [[{ field: "releaseRef" }], releaseAfter(input)],
+    [
+      [{ field: "platformConfigRef" }],
+      refAfter(
+        input,
+        "platformConfigRef",
+        input.environment?.spec.platformConfigRef,
+      ),
+    ],
     [[{ field: "suspend" }], claim.suspend],
-    ...CONTROLLER_FIELDS.map((steps): [Step[], unknown] => [
+    ...fromLive.map((steps): [Step[], unknown] => [
       steps,
       valueAt(input.live.spec, steps),
     ]),

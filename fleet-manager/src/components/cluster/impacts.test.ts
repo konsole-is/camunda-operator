@@ -113,8 +113,31 @@ function input(
           selection: "One",
         },
       } as unknown as Resource<"PluginSection">,
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginSection",
+        metadata: { name: "encryption" },
+        spec: {
+          label: "Encryption",
+          slot: "volumeEncryption",
+          appliesTo: ["CamundaClusterClaim"],
+          selection: "One",
+        },
+      } as unknown as Resource<"PluginSection">,
     ],
   };
+}
+
+// encrypted is claim with a selection of the encryption section, whose
+// slot fills zeebe.storageClassName.
+function encrypted(clusterSpec: Record<string, unknown> = {}): Claim {
+  const c = claim(clusterSpec);
+  const spec = c.spec as { plugins: unknown[] };
+  spec.plugins = [
+    ...spec.plugins,
+    { section: "encryption", registration: "kms" },
+  ];
+  return c;
 }
 
 const environment = (release: string) =>
@@ -461,6 +484,7 @@ describe("mergedSpecs", () => {
   it("a reset of the last claim field of a process keeps the fields that the controller fills", () => {
     const { after } = mergedSpecs(
       input(reset(cluster("zeebe", "replicas")), {
+        claim: encrypted(),
         live: live({
           zeebe: { replicas: 3, storageSize: "32Gi", storageClassName: "fast" },
         }),
@@ -511,6 +535,7 @@ describe("mergedSpecs", () => {
   it("an empty process block keeps the fields that the controller fills", () => {
     const { after } = mergedSpecs(
       input(set(cluster("zeebe"), {}), {
+        claim: encrypted(),
         live: live({
           zeebe: { replicas: 3, storageSize: "32Gi", storageClassName: "fast" },
         }),
@@ -534,6 +559,39 @@ describe("mergedSpecs", () => {
     expect(clusterImpacts(i)).toEqual([
       "Every process restarts, except the processes that set the field themselves.",
     ]);
+  });
+
+  it("a field that no selected slot fills follows the claim", () => {
+    const fast = { replicas: 3, storageSize: "32Gi", storageClassName: "fast" };
+    const { after } = mergedSpecs(
+      input(set(cluster("zeebe", "storageClassName"), "slow"), {
+        claim: claim({ zeebe: fast }),
+        live: live({ zeebe: fast }),
+      }),
+    );
+    expect(after.spec.zeebe?.storageClassName).toBe("slow");
+  });
+
+  it("a new platform config of the claim shows after", () => {
+    const { after } = mergedSpecs(
+      input(set([f("spec"), f("platformConfigRef")], "b"), {
+        live: live({ platformConfigRef: "a" }),
+      }),
+    );
+    expect(after.spec.platformConfigRef).toBe("b");
+  });
+
+  it("a reset of the platform config takes the default of the environment", () => {
+    const withConfig = claim();
+    (withConfig.spec as { platformConfigRef?: string }).platformConfigRef = "b";
+    const i = input(reset([f("spec"), f("platformConfigRef")]), {
+      claim: withConfig,
+      live: live({ platformConfigRef: "b" }),
+    });
+    i.environment = environment("camunda-8-9-5");
+    (i.environment.spec as { platformConfigRef?: string }).platformConfigRef =
+      "default";
+    expect(mergedSpecs(i).after.spec.platformConfigRef).toBe("default");
   });
 
   it("keeps the live release when the claim does not change it", () => {
