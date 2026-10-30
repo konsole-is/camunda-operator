@@ -59,12 +59,6 @@ const (
 	esPresetResource           = "elasticsearchclusterpresets.core.camunda.io"
 )
 
-// reqLogsSkip is the skip of REQ-LOGS on a built-in registration.
-var reqLogsSkip = conformance.Skip{
-	ID:     conformance.ReqLogs,
-	Reason: "the manager logs no JSON with a request key (#933)",
-}
-
 // builtinSkips are the config skips of a built-in run in the elasticsearch job.
 var builtinSkips = []conformance.Skip{
 	{
@@ -72,7 +66,6 @@ var builtinSkips = []conformance.Skip{
 		Reason: "it scales the operator manager to zero, so it runs in the flow builtin-registrations-order, " +
 			"in a job of its own",
 	},
-	reqLogsSkip,
 }
 
 // builtinSelfSkips are the checks that skip themselves on a built-in
@@ -260,13 +253,12 @@ var _ = Describe("Built-in registration order", Ordered, Label(utils.LabelBuilti
 				Registration: pluginstartup.RegistrationExistingObjectStorage,
 				Namespace:    orderRunNamespace,
 				Cases:        []conformance.Case{existingObjectStorageCase()},
-				Skip:         []conformance.Skip{reqLogsSkip},
 			}
 
 			results, err := conformance.Execute(ctx, cfg)
 			reportResults(cfg.Registration, results)
 			Expect(err).NotTo(HaveOccurred())
-			expectConformant(results, slices.Concat([]conformance.CheckID{reqLogsSkip.ID}, builtinSelfSkips)...)
+			expectConformant(results, builtinSelfSkips...)
 			Expect(outcomeOf(results, conformance.OrderRegistrationFirst)).To(Equal(conformance.OutcomePassed))
 
 			// The check scales the manager back. A broken scale back fails here,
