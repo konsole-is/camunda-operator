@@ -4,6 +4,7 @@ import { CLAIM_LABEL } from "@/lib/labels";
 import { outcomeOf, STALE_CLAIM_MESSAGE } from "./outcome";
 import {
   openSession,
+  resetValue,
   setValue,
   type ClaimObject,
   type Session,
@@ -200,6 +201,52 @@ describe("outcomeOf", () => {
         { path: "spec.cluster.zeebe", message: "must be >= 1" },
       ],
       messages: ["other item"],
+    });
+  });
+
+  it("an error at an index after a reset of an earlier item goes to the edited item", () => {
+    const claim: ClaimObject = {
+      apiVersion: ref.apiVersion,
+      kind: ref.kind,
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "41" },
+      spec: { cluster: { extraEnvFrom: [{ a: "1" }, { b: "2" }] } },
+    };
+    const item = (index: number): Step[] => [
+      { field: "spec" },
+      { field: "cluster" },
+      { field: "extraEnvFrom" },
+      { index },
+    ];
+    const s0 = openSession({
+      claim,
+      resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+      locks: () => undefined,
+    })!;
+    const reset = resetValue(s0, item(0));
+    if (!("session" in reset)) throw new Error("refused");
+    const set = setValue(reset.session, item(1), { b: "" });
+    if (!("session" in set)) throw new Error("refused");
+    expect(
+      outcomeOf(
+        {
+          objects: [],
+          errors: [
+            {
+              code: "Invalid",
+              message: "must not be empty",
+              path: "spec.cluster.extraEnvFrom[0].b",
+            },
+          ],
+        },
+        set.session,
+      ),
+    ).toEqual({
+      ok: false,
+      stale: false,
+      fields: [
+        { path: "spec.cluster.extraEnvFrom[1]", message: "must not be empty" },
+      ],
+      messages: [],
     });
   });
 

@@ -1,9 +1,10 @@
-import { pathFrom } from "@/lib/fields";
+import { pathFrom, type Step } from "@/lib/fields";
 import { child, type FieldPath } from "@/lib/merge";
 import type { Preview, WriteResult } from "@/lib/write/types";
 import type { FieldError } from "./cluster";
-import { claimAfter, type Session } from "./session";
-import { indexSteps } from "./steps";
+import { claimAfter, type PendingChange, type Session } from "./session";
+import { equalJSON } from "@/lib/policy";
+import { indexSteps, valueAt, withChanges } from "./steps";
 
 /** STALE_CLAIM_MESSAGE is what a session shows when its claim changed since the form read it. */
 export const STALE_CLAIM_MESSAGE =
@@ -56,10 +57,44 @@ function targetsOf(s: Session): Map<FieldPath, FieldPath> {
   const targets = new Map<FieldPath, FieldPath>();
   for (const [path, entry] of s.pending) {
     targets.set(path, path);
-    const steps = indexSteps(after, entry.steps);
+    if ("reset" in entry) continue;
+    const steps = indexSteps(after, shifted(s, entry.steps));
     if (steps) targets.set(pathFrom("", steps), path);
   }
   return targets;
+}
+
+// shifted moves each index of steps, which names an item of the claim, to
+// the place of that item after the resets of the session removed earlier
+// items.
+function shifted(s: Session, steps: readonly Step[]): Step[] {
+  return steps.map((step, j) => {
+    if (!("index" in step)) return step;
+    const list = steps.slice(0, j);
+    const below = new Map<number, PendingChange[]>();
+    for (const entry of s.pending.values()) {
+      const at = entry.steps[j];
+      if (
+        !("reset" in entry) ||
+        !at ||
+        !("index" in at) ||
+        at.index >= step.index ||
+        !equalJSON(entry.steps.slice(0, j), list)
+      )
+        continue;
+      below.set(at.index, [...(below.get(at.index) ?? []), entry]);
+    }
+    const length = (items: unknown) =>
+      Array.isArray(items) ? items.length : 0;
+    let removed = 0;
+    for (const resets of below.values())
+      if (
+        length(valueAt(withChanges(s.claim, resets), list)) <
+        length(valueAt(s.claim, list))
+      )
+        removed++;
+    return { index: step.index - removed };
+  });
 }
 
 function pendingPath(
