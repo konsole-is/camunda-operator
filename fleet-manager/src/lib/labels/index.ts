@@ -49,6 +49,13 @@ export const OPTIMIZE_COMPONENTS = [
  */
 export const BACKUP_SCHEDULE_LABEL = "camunda.io/backup-schedule";
 
+/**
+ * MANAGEMENT_CLUSTER_ANNOTATION on a CamundaCluster names the plane that
+ * serves it, as "<namespace>/<name>". It is ManagementClusterKey of
+ * pkg/labels.
+ */
+export const MANAGEMENT_CLUSTER_ANNOTATION = "camunda.io/management-cluster";
+
 /** isManaged says whether a claim made the object: it carries CLAIM_LABEL with a value. */
 export function isManaged(object: {
   metadata?: { labels?: Record<string, string> };
@@ -121,4 +128,40 @@ export function labelSelectorString(
     },
   );
   return [...labels, ...expressions].join(",");
+}
+
+/**
+ * matchesSelector says whether labels match selector, as Kubernetes
+ * decides it. An unset or empty selector matches every object. NotIn and
+ * DoesNotExist match an object without the key. An unknown operator
+ * matches nothing.
+ */
+export function matchesSelector(
+  selector: LabelSelector | undefined,
+  labels: Record<string, string> | undefined,
+): boolean {
+  const have = labels ?? {};
+  const matchLabels = Object.entries(selector?.matchLabels ?? {}).every(
+    ([k, v]) => Object.hasOwn(have, k) && have[k] === v,
+  );
+  return (
+    matchLabels &&
+    (selector?.matchExpressions ?? []).every(
+      ({ key, operator, values = [] }) => {
+        const present = Object.hasOwn(have, key);
+        switch (operator) {
+          case "In":
+            return present && values.includes(have[key]);
+          case "NotIn":
+            return !present || !values.includes(have[key]);
+          case "Exists":
+            return present;
+          case "DoesNotExist":
+            return !present;
+          default:
+            return false;
+        }
+      },
+    )
+  );
 }

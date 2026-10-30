@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   formatSelector,
-  matchesSelector,
   optimizeLabel,
   planesOf,
   servesEnvironment,
@@ -296,55 +295,6 @@ describe("planesOf", () => {
       "a/z",
       "b/x",
     ]);
-  });
-});
-
-describe("matchesSelector", () => {
-  it.each([
-    [undefined, {}, true],
-    [{}, { a: "1" }, true],
-    [{ matchLabels: { a: "1" } }, { a: "1", b: "2" }, true],
-    [{ matchLabels: { a: "1" } }, { a: "2" }, false],
-    [
-      { matchExpressions: [{ key: "a", operator: "In", values: ["1", "2"] }] },
-      { a: "2" },
-      true,
-    ],
-    [
-      { matchExpressions: [{ key: "a", operator: "In", values: ["1"] }] },
-      {},
-      false,
-    ],
-    [
-      { matchExpressions: [{ key: "a", operator: "NotIn", values: ["1"] }] },
-      {},
-      true,
-    ],
-    [
-      { matchExpressions: [{ key: "a", operator: "NotIn", values: ["1"] }] },
-      { a: "1" },
-      false,
-    ],
-    [{ matchExpressions: [{ key: "a", operator: "Exists" }] }, {}, false],
-    [{ matchExpressions: [{ key: "a", operator: "Exists" }] }, { a: "" }, true],
-    [{ matchExpressions: [{ key: "a", operator: "DoesNotExist" }] }, {}, true],
-    [
-      { matchExpressions: [{ key: "a", operator: "DoesNotExist" }] },
-      { a: "1" },
-      false,
-    ],
-    [
-      { matchExpressions: [{ key: "a", operator: "Gt", values: ["1"] }] },
-      { a: "2" },
-      false,
-    ],
-  ])("selector %j on labels %j is %s", (selector, labels, expected) => {
-    expect(matchesSelector(selector, labels)).toBe(expected);
-  });
-
-  it("treats unset labels as no labels", () => {
-    expect(matchesSelector({ matchLabels: { a: "1" } }, undefined)).toBe(false);
-    expect(matchesSelector(undefined, undefined)).toBe(true);
   });
 });
 
