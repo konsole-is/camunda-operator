@@ -26,8 +26,9 @@ export interface EnvtestOptions {
   /** startTimeoutMs bounds each wait of the start. The default is two minutes, as in test/envtest. */
   startTimeoutMs?: number;
   /**
-   * users are users outside system:masters, which hold no permission until
-   * a test binds a role to them. Each name is unique and not envtest-admin.
+   * users are users outside the system: groups, which hold no permission
+   * until a test binds a role to them. Each name is unique, is not
+   * envtest-admin, and does not start with system:.
    */
   users?: EnvtestUser[];
 }
@@ -361,9 +362,15 @@ function checkUsers(users: EnvtestUser[]): void {
         `The envtest user name ${JSON.stringify(name)} has a comma, a quote, or a line break, which tokens.csv cannot hold.`,
       );
     }
-    if (groups.includes("system:masters")) {
+    if (name.startsWith("system:")) {
       throw new Error(
-        `The envtest user ${name} has the group system:masters. Use the admin kubeconfig of envtest instead.`,
+        `The envtest user name ${name} starts with system:, which names an identity of the API server.`,
+      );
+    }
+    const system = groups.find((g) => g.startsWith("system:"));
+    if (system) {
+      throw new Error(
+        `The envtest user ${name} has the group ${system}, a group of the API server. Use the admin kubeconfig of envtest instead.`,
       );
     }
     if (groups.some((g) => /[,"\r\n]/.test(g))) {

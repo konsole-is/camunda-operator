@@ -47,8 +47,10 @@ export class ScenarioLoader {
   }
 
   /**
-   * load creates objects. It rejects on the first write that the API server
-   * refuses, such as a field that a CRD does not have, and names the object.
+   * load creates objects, and takes over a Namespace that the API server
+   * already has, such as default. It rejects on the first write that the
+   * API server refuses, such as a field that a CRD does not have, and names
+   * the object.
    */
   async load(objects: readonly KubeObject[]): Promise<void> {
     await this.apply(createOrder(objects), []);
@@ -103,10 +105,18 @@ export class ScenarioLoader {
 
   private async create(o: KubeObject): Promise<KubeObject> {
     const body = await this.desired(o);
-    const live = await this.send(o, "create", "POST", {
-      collection: true,
-      body,
-    });
+    let live: KubeObject;
+    try {
+      live = await this.send(o, "create", "POST", { collection: true, body });
+    } catch (error) {
+      const namespaceExists =
+        error instanceof KubeError &&
+        error.status === 409 &&
+        o.apiVersion === "v1" &&
+        o.kind === "Namespace";
+      if (!namespaceExists) throw error;
+      live = await this.send(o, "read", "GET");
+    }
     if (o.metadata.uid && live.metadata.uid) {
       this.uids.set(o.metadata.uid, live.metadata.uid);
     }

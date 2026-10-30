@@ -94,6 +94,12 @@ describe("the users option of startEnvtest", () => {
     }
   });
 
+  it("refuses a user name that names an identity of the API server", async () => {
+    await expect(
+      startEnvtest({ users: [{ name: "system:kube-scheduler" }] }),
+    ).rejects.toThrow(/system:kube-scheduler/);
+  });
+
   it("refuses a user in system:masters, also in a group list", async () => {
     await expect(
       startEnvtest({ users: [{ name: "b", groups: ["system:masters"] }] }),
@@ -181,6 +187,33 @@ describe("the scenario loader", () => {
       ["kubelet", "Update", "status"],
     ]);
     expect(live.status).toMatchObject({ phase: "Running" });
+  });
+
+  it("load takes over a Namespace that the API server already has", async () => {
+    const recordedUID = "00000000-0000-5000-8000-0000000000d1";
+    const namespace: KubeObject = {
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: "default", uid: recordedUID },
+    };
+    const cm: KubeObject = {
+      apiVersion: "v1",
+      kind: "ConfigMap",
+      metadata: {
+        name: "takes-over-default",
+        namespace: "default",
+        annotations: { "scenario.test/namespace-uid": recordedUID },
+      },
+    };
+
+    const loader = new ScenarioLoader(envtest.kubeConfig);
+    await loader.load([namespace, cm]);
+
+    const live = await getLive(envtest.kubeConfig, namespace);
+    expect(loader.realUID(recordedUID)).toBe(live.metadata.uid);
+    expect(
+      (await getLive(envtest.kubeConfig, cm)).metadata.annotations,
+    ).toEqual({ "scenario.test/namespace-uid": live.metadata.uid });
   });
 
   it("refuses a field that the CRD does not have and names it", async () => {
