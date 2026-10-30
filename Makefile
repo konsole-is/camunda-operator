@@ -717,10 +717,17 @@ FLEET_PLAYWRIGHT_FLAGS ?=
 fleet-playwright: fleet-install ## Install the Chromium browser that the fleet manager Playwright tests use.
 	$(FLEET_PNPM) exec playwright install chromium $(FLEET_PLAYWRIGHT_FLAGS)
 
-.PHONY: fleet-gallery
-fleet-gallery: fleet-build fleet-playwright setup-envtest ## Screenshot each fleet manager gallery story at 1440 px and 390 px into fleet-manager/ui-gallery, fail on a serious or critical axe violation, and check that a page of 8 data hooks opens one watch connection.
+.PHONY: fleet-build-gallery
+fleet-build-gallery: fleet-install ## Build the fleet manager with FLEET_DEV_GALLERY=1 into fleet-manager/.next-gallery, with the gallery stories and the test readers of the page scenarios.
 	$(FLEET_PNPM) run build:gallery
+
+.PHONY: fleet-gallery
+fleet-gallery: fleet-build fleet-build-gallery fleet-playwright setup-envtest ## Screenshot each fleet manager gallery story at 1440 px and 390 px into fleet-manager/ui-gallery, fail on a serious or critical axe violation, and check that a page of 8 data hooks opens one watch connection.
 	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run gallery
+
+.PHONY: fleet-scenarios-test
+fleet-scenarios-test: fleet-build-gallery fleet-playwright setup-envtest ## Run the fleet manager pages in Playwright against the page scenarios on envtest, with screenshots in fleet-manager/ui-pages. Fails on a serious or critical axe violation.
+	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run scenarios
 
 # The kind cluster of the fleet manager journeys. The harness targets run in
 # CI only: they create and fill a kind cluster.

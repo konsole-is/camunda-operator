@@ -2,8 +2,8 @@ import {
   PodLogNotFound,
   type PodLogRequest,
   PodLogUnavailable,
-  followPodLog,
 } from "@/lib/observe/pod-log";
+import { followPodLog } from "@/lib/observe/readers";
 
 // A page reads the log of one container with EventSource. Each line is a
 // line event with the line as a JSON string. The end event says that the
