@@ -17,6 +17,7 @@ limitations under the License.
 package builtin
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -258,6 +259,34 @@ var _ = Describe("Built-in requests", func() {
 		Entry("another registration", "s3-backup-bucket", "s3-backup-bucket"),
 		Entry("label and spec disagree", pluginstartup.RegistrationExistingObjectStorage, "s3-backup-bucket"),
 	)
+
+	It("logs JSON lines that carry the request key", func() {
+		contract := newObjectStorageConfig()
+		createContract(contract)
+		request := newRequest(
+			pluginstartup.RegistrationExistingObjectStorage,
+			`{"name":"`+contract.Name+`"}`,
+			pluginsv1alpha1.DeletionPolicyDelete,
+		)
+		expectCondition(request, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
+
+		Eventually(func(g Gomega) {
+			var ready []map[string]any
+			for line := range strings.SplitSeq(logs.String(), "\n") {
+				if !strings.Contains(line, `"msg":"Set Ready of PluginRequest"`) {
+					continue
+				}
+				var entry map[string]any
+				g.Expect(json.Unmarshal([]byte(line), &entry)).To(Succeed(), "the line %q is not JSON", line)
+				ready = append(ready, entry)
+			}
+			g.Expect(ready).To(ContainElement(And(
+				HaveKeyWithValue("request", map[string]any{"name": request.Name, "namespace": request.Namespace}),
+				HaveKeyWithValue("status", "True"),
+				HaveKeyWithValue("reason", v1.ReasonHealthy),
+			)))
+		}, timeout, interval).Should(Succeed())
+	})
 
 	It("refuses to start without the registration of a handler", func() {
 		mgr, err := ctrl.NewManager(env.Cfg, ctrl.Options{Metrics: metricsserver.Options{BindAddress: "0"}})

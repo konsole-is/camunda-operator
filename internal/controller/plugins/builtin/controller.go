@@ -26,6 +26,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,10 +34,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -139,6 +142,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		return ctrl.Result{}, nil
 	}
 
+	log := logf.FromContext(ctx).WithValues("request", klog.KObj(&request))
+	ctx = logf.IntoContext(ctx, log)
+
 	rec := component.ReconcileContext{
 		Client:        r.Client,
 		Scheme:        r.Scheme,
@@ -173,7 +179,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		}
 	}
 
+	// The staging below changes the conditions in place, so before is a copy.
+	var before metav1.Condition
+	if ready := meta.FindStatusCondition(request.Status.Conditions, v1.ConditionReady); ready != nil {
+		before = *ready
+	}
 	defer func() {
+		logReadyChange(log, before, meta.FindStatusCondition(request.Status.Conditions, v1.ConditionReady))
 		result, err = ownerstatus.Flush(ctx, rec, result, err)
 	}()
 
@@ -228,6 +240,15 @@ func (r *Reconciler) registrationReady(ctx context.Context, name string) (bool, 
 
 	ready := meta.FindStatusCondition(reg.Status.Conditions, v1.ConditionReady)
 	return ready != nil && ready.Status == metav1.ConditionTrue && ready.ObservedGeneration == reg.Generation, nil
+}
+
+// logReadyChange writes one line when the status or the reason of Ready
+// changed, so that each request has a line from its first reconcile on.
+func logReadyChange(log logr.Logger, before metav1.Condition, after *metav1.Condition) {
+	if after == nil || before.Status == after.Status && before.Reason == after.Reason {
+		return
+	}
+	log.Info("Set Ready of PluginRequest", "status", after.Status, "reason", after.Reason)
 }
 
 // build checks the parameters of request and returns the components of h.
