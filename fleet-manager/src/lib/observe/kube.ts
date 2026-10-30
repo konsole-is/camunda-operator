@@ -16,7 +16,8 @@ export type EventRef = {
   uid?: string;
 };
 
-type PodMetrics = {
+/** PodMetrics is a list of metrics.k8s.io PodMetrics, with the fields that podUsageFrom reads. */
+export type PodMetrics = {
   items?: {
     metadata?: { name?: string };
     containers?: { usage?: { cpu?: string; memory?: string } }[];
@@ -84,6 +85,19 @@ export async function podUsage(
     if (metricsUnavailable(error)) return "unavailable";
     throw error;
   }
+  return podUsageFrom(namespace, selector, metrics);
+}
+
+/**
+ * podUsageFrom returns the usage of each pod of metrics, with the requests
+ * and limits of the spec of the pod of that name in namespace that selector
+ * selects, by the rules of podUsage.
+ */
+export async function podUsageFrom(
+  namespace: string,
+  selector: string,
+  metrics: PodMetrics,
+): Promise<PodUsage[]> {
   const pods = await list("Pod", {
     namespace,
     ...(selector && { labelSelector: selector }),

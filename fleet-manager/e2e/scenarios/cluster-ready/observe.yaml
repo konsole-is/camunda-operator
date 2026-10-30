@@ -1,0 +1,14 @@
+# Written by hand. The page scenarios read it in place of the kubelet and
+# metrics.k8s.io, which envtest does not have.
+schemaVersion: 1
+logs:
+  - namespace: team-a
+    pod: camundacluster-sample-zeebe-0
+    lines:
+      - "Broker 0 is ready"
+      - "Partition 1 is healthy"
+usage:
+  - namespace: team-a
+    pod: camundacluster-sample-zeebe-0
+    cpu: 250m
+    memory: 1Gi

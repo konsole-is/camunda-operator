@@ -38,6 +38,7 @@ export default defineConfig([
     "src/generated/**",
     ".next-gallery/**",
     "ui-gallery/**",
+    "ui-pages/**",
     "ui-journeys/**",
     "test-results/**",
     "playwright-report/**",

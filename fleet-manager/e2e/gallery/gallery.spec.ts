@@ -1,12 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { blockingViolations } from "../axe";
 import type { Shot } from "./gallery-index";
 
 const OUT = path.resolve("ui-gallery");
 const WIDTHS = [1440, 390];
-const BLOCKING = new Set(["serious", "critical"]);
 
 for (const width of WIDTHS) {
   test(`every story at ${width} px`, async ({ page, baseURL }) => {
@@ -53,15 +52,11 @@ for (const width of WIDTHS) {
           .soft(overflow, `story ${story.id} scrolls sideways at ${width} px`)
           .toBeLessThanOrEqual(0);
 
-        const { violations } = await new AxeBuilder({ page }).analyze();
-        const blocking = violations
-          .filter((v) => BLOCKING.has(v.impact ?? ""))
-          .map(
-            (v) =>
-              `rule ${v.id} (${v.impact}) at ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`,
-          );
         expect
-          .soft(blocking, `axe violations in story ${story.id} at ${width} px`)
+          .soft(
+            await blockingViolations(page),
+            `axe violations in story ${story.id} at ${width} px`,
+          )
           .toEqual([]);
 
         const file = `${story.id}-${width}.png`;

@@ -1,5 +1,5 @@
 import { isDNSLabel } from "@/lib/labels";
-import { podUsage } from "@/lib/observe/kube";
+import { podUsage } from "@/lib/observe/readers";
 
 // A page polls the live CPU and memory of the pods that a label selector
 // selects. The answer is { usage }, where usage is "unavailable" when the
