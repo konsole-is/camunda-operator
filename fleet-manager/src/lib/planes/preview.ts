@@ -38,15 +38,56 @@ export function normalizeIssuer(issuer: string): string {
   const m = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/([^/?#]*)([^?#]*)(.*)$/.exec(
     issuer,
   );
-  if (!m) return issuer.replace(/\/+$/, "");
-  const [, scheme, authority, path, rest] = m;
+  if (!m) {
+    // Go parses a string without a scheme as a path.
+    const [, rawPath, rest] = /^([^?#]*)(.*)$/s.exec(issuer) as RegExpExecArray;
+    const path = normalizePath(rawPath);
+    return path === undefined ? issuer.replace(/\/+$/, "") : path + rest;
+  }
+  const [, scheme, authority, rawPath, rest] = m;
+  const path = normalizePath(rawPath);
+  if (path === undefined) return issuer.replace(/\/+$/, "");
   const at = authority.lastIndexOf("@");
   const host =
     at < 0
       ? authority.toLowerCase()
       : authority.slice(0, at + 1) + authority.slice(at + 1).toLowerCase();
-  return `${scheme.toLowerCase()}://${host}${path.replace(/\/+$/, "")}${rest}`;
+  return `${scheme.toLowerCase()}://${host}${path}${rest}`;
 }
+
+// normalizePath is the path that url.URL.String of Go writes after the
+// trailing slashes are trimmed. It is undefined for a path with an invalid
+// escape, which url.Parse refuses.
+function normalizePath(raw: string): string | undefined {
+  const decoded = decodePath(raw);
+  if (decoded === undefined) return undefined;
+  const trimmed = decoded.replace(/\/+$/, "");
+  return trimmed === decoded && RAW_PATH.test(raw) ? raw : escapePath(trimmed);
+}
+
+// The bytes of a path as a string of char codes 0 to 255, as Go keeps them.
+function decodePath(raw: string): string | undefined {
+  const bytes = String.fromCharCode(...new TextEncoder().encode(raw));
+  if (/%(?![0-9a-fA-F]{2})/.test(bytes)) return undefined;
+  return bytes.replace(/%([0-9a-fA-F]{2})/g, (_, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
+}
+
+function escapePath(bytes: string): string {
+  return [...bytes]
+    .map((c) =>
+      PATH_SAFE.test(c)
+        ? c
+        : `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`,
+    )
+    .join("");
+}
+
+// PATH_SAFE are the characters that Go does not escape in a path, and
+// RAW_PATH a raw path that Go writes back as it is (validEncoded).
+const PATH_SAFE = /^[A-Za-z0-9\-_.~$&+,/:;=@]$/;
+const RAW_PATH = /^(?:[A-Za-z0-9\-_.~$&+,/:;=@!'()*[\]]|%[0-9a-fA-F]{2})*$/;
 
 /**
  * servedPreview predicts the row that the operator reports for each

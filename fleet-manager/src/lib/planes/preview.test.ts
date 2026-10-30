@@ -239,4 +239,31 @@ describe("normalizeIssuer", () => {
   ])("%s is %s", (input, want) => {
     expect(normalizeIssuer(input)).toBe(want);
   });
+
+  // Each expected value is the output of the Go function for the input.
+  it.each([
+    ["https://idp.example.com/a%2Fb/", "https://idp.example.com/a/b"],
+    ["https://idp.example.com/a%2Fb", "https://idp.example.com/a%2Fb"],
+    ["https://idp.example.com/café", "https://idp.example.com/caf%C3%A9"],
+    ["https://idp.example.com/caf%C3%A9", "https://idp.example.com/caf%C3%A9"],
+    ["https://idp.example.com/caf%c3%a9/", "https://idp.example.com/caf%C3%A9"],
+    ["https://idp.example.com/a%20b/", "https://idp.example.com/a%20b"],
+    ["https://idp.example.com/a b", "https://idp.example.com/a%20b"],
+    ["https://idp.example.com/(x)!*'", "https://idp.example.com/(x)!*'"],
+    ["https://idp.example.com/a%zz", "https://idp.example.com/a%zz"],
+    ["https://idp.example.com/%7Euser/", "https://idp.example.com/~user"],
+    ["https://idp.example.com/a%3Bb", "https://idp.example.com/a%3Bb"],
+    ["not a url/", "not%20a%20url"],
+  ])("escapes the path of %s as Go does: %s", (input, want) => {
+    expect(normalizeIssuer(input)).toBe(want);
+  });
+
+  it("matches an escaped issuer to its plain form, as Go does", () => {
+    expect(normalizeIssuer("https://idp.example.com/a%2Fb/")).toBe(
+      normalizeIssuer("https://idp.example.com/a/b"),
+    );
+    expect(normalizeIssuer("https://idp.example.com/café/")).toBe(
+      normalizeIssuer("https://idp.example.com/caf%C3%A9"),
+    );
+  });
 });
