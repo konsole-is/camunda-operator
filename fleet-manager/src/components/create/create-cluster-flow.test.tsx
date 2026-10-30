@@ -11,15 +11,18 @@ import {
 
 const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
+  errors: {} as Record<string, string>,
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
     items: live.objects[kind] ?? initial,
+    error: live.errors[kind],
   }),
 }));
 
 beforeEach(() => {
   live.objects = {};
+  live.errors = {};
 });
 afterEach(cleanup);
 
@@ -208,6 +211,33 @@ describe("CreateClusterFlow", () => {
     expect(
       screen.getByText("The environment Production is not ready: gone"),
     ).toBeTruthy();
+    expect(next().disabled).toBe(true);
+  });
+
+  it("blocks step 1 while a list cannot be read", async () => {
+    live.errors.CamundaClusterClaim = "forbidden";
+    render(<CreateClusterFlow initial={data({ sections: [] })} />);
+    await fillBasics("orders");
+    expect(
+      screen.getByText(
+        "The fleet manager could not read the CamundaClusterClaim objects: forbidden",
+      ),
+    ).toBeTruthy();
+    expect(next().disabled).toBe(true);
+  });
+
+  it("refuses a namespace that went away while step 1 was not shown", async () => {
+    const { rerender } = render(
+      <CreateClusterFlow initial={data({ sections: [] })} />,
+    );
+    await fillBasics("orders");
+    await userEvent.click(next());
+    live.objects.Namespace = [];
+    rerender(<CreateClusterFlow initial={data({ sections: [] })} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: /Environment and name/ }),
+    );
+    expect(screen.getAllByText("Choose a namespace").length).toBeGreaterThan(0);
     expect(next().disabled).toBe(true);
   });
 

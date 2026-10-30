@@ -53,6 +53,7 @@ const complete: ClusterDraft = {
 };
 const context: BasicsContext = {
   environments: [prod],
+  namespaces: [{ name: "team-a", environment: "prod" }],
   takenNames: [],
   conflicts: [],
   presets: ["small"],
@@ -66,12 +67,13 @@ describe("basicsErrors", () => {
   it("asks for an environment while one exists", () => {
     expect(
       basicsErrors({ ...complete, environment: undefined }, context),
-    ).toEqual(["Choose an environment"]);
+    ).toEqual(["Choose an environment", "Choose a namespace"]);
   });
 
   it("asks for an environment when the picked one is gone", () => {
     expect(basicsErrors({ ...complete, environment: "old" }, context)).toEqual([
       "Choose an environment",
+      "Choose a namespace",
     ]);
   });
 
@@ -122,6 +124,76 @@ describe("basicsErrors", () => {
     expect(
       basicsErrors({ ...complete, namespace: undefined }, context),
     ).toEqual(["Choose a namespace"]);
+  });
+
+  it("asks for a namespace when the picked one is gone", () => {
+    expect(basicsErrors(complete, { ...context, namespaces: [] })).toEqual([
+      "Choose a namespace",
+    ]);
+  });
+
+  it("asks for a namespace when the picked one moved to another environment", () => {
+    expect(
+      basicsErrors(complete, {
+        ...context,
+        namespaces: [{ name: "team-a", environment: "dev" }],
+      }),
+    ).toEqual(["Choose a namespace"]);
+  });
+
+  it("takes any existing namespace without an Environment", () => {
+    expect(
+      basicsErrors(
+        { ...complete, environment: undefined },
+        {
+          ...context,
+          environments: [],
+          namespaces: [{ name: "team-a" }],
+        },
+      ),
+    ).toEqual([]);
+  });
+
+  it("refuses a new namespace whose name now exists", () => {
+    const creating = environment("prod", {
+      namespaceCreation: { allowed: true },
+    });
+    expect(
+      basicsErrors(
+        {
+          ...complete,
+          namespace: { kind: "new", name: "team-a", labels: {} },
+        },
+        { ...context, environments: [creating] },
+      ),
+    ).toEqual(["The namespace team-a already exists"]);
+  });
+
+  it("asks for a namespace when the environment no longer allows creation", () => {
+    expect(
+      basicsErrors(
+        {
+          ...complete,
+          namespace: { kind: "new", name: "team-new", labels: {} },
+        },
+        context,
+      ),
+    ).toEqual(["Choose a namespace"]);
+  });
+
+  it("takes a new namespace that the environment allows", () => {
+    const creating = environment("prod", {
+      namespaceCreation: { allowed: true },
+    });
+    expect(
+      basicsErrors(
+        {
+          ...complete,
+          namespace: { kind: "new", name: "team-new", labels: {} },
+        },
+        { ...context, environments: [creating] },
+      ),
+    ).toEqual([]);
   });
 
   it("asks for a preset when none is picked", () => {

@@ -6,6 +6,7 @@ import type { Environment } from "@/generated/crds/environment";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import type { RenderedHost } from "@/lib/claims/hosts";
 import { claimNameErrors } from "@/lib/claims/names";
+import { environmentOf } from "@/lib/policy";
 import { environmentCounts } from "@/lib/usage";
 import {
   CLUSTER_STEPS,
@@ -51,6 +52,11 @@ export function BasicsStory({
             check: (draft: ClusterDraft) =>
               basicsErrors(draft, {
                 environments,
+                namespaces: namespaces.map((ns) => ({
+                  name: ns.metadata?.name ?? "",
+                  environment: environmentOf(ns, environments).environment
+                    ?.metadata.name,
+                })),
                 takenNames: [],
                 conflicts,
                 presets: offered(draft).map((p) => p.metadata.name ?? ""),

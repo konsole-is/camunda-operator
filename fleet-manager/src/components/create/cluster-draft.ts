@@ -26,12 +26,15 @@ export const CLUSTER_STEPS: readonly { id: string; label: string }[] = [
 
 /**
  * BasicsContext is the live data that step 1 checks a draft against.
- * takenNames are the names of the claims and clusters in the namespace of
- * the draft. conflicts are the messages of the hosts that another claim
- * holds. presets are the names of the presets that the step offers.
+ * namespaces are the live namespaces, each with the name of its
+ * Environment. takenNames are the names of the claims and clusters in the
+ * namespace of the draft. conflicts are the messages of the hosts that
+ * another claim holds. presets are the names of the presets that the step
+ * offers.
  */
 export type BasicsContext = {
   environments: readonly Environment[];
+  namespaces: readonly { name: string; environment?: string }[];
   takenNames: readonly string[];
   conflicts: readonly string[];
   presets: readonly string[];
@@ -42,6 +45,7 @@ export type BasicsContext = {
  * environment (only while an Environment exists), the name, the hosts, the
  * namespace, and the preset. A picked environment that is gone counts as
  * none, and one that turned Ready=False refuses the step with its message.
+ * A picked namespace that the live data no longer allows counts as none.
  */
 export function basicsErrors(
   draft: ClusterDraft,
@@ -67,12 +71,34 @@ export function basicsErrors(
     ...claimNameErrors(draft.claim.metadata.name, context.takenNames),
     ...context.conflicts,
   );
-  if (!draft.namespace) errors.push("Choose a namespace");
+  errors.push(...namespaceErrors(draft, context));
   const preset = draft.claim.spec.presetRef;
   if (!preset || !context.presets.includes(preset)) {
     errors.push("Choose a preset");
   }
   return errors;
+}
+
+function namespaceErrors(
+  draft: ClusterDraft,
+  context: BasicsContext,
+): string[] {
+  const choice = draft.namespace;
+  if (!choice) return ["Choose a namespace"];
+  const live = context.namespaces.find((ns) => ns.name === choice.name);
+  if (choice.kind === "new") {
+    const environment = context.environments.find(
+      (e) => e.metadata.name === draft.environment,
+    );
+    if (!environment?.spec.namespaceCreation?.allowed) {
+      return ["Choose a namespace"];
+    }
+    return live ? [`The namespace ${choice.name} already exists`] : [];
+  }
+  const inEnvironment =
+    context.environments.length === 0 ||
+    live?.environment === draft.environment;
+  return live && inEnvironment ? [] : ["Choose a namespace"];
 }
 
 /**
