@@ -21,17 +21,16 @@ import type {
 } from "@/lib/write/types";
 import { DiffView } from "./diff-view";
 import { ReviewPanel } from "./review-panel";
-import { Toast, useWriteToast } from "./toast";
 
 /**
  * ClaimReview is the review of the pending changes of a session: the diff
  * of the claim, the merged diff of the cluster when mergedLines is given,
  * the impacts, and the confirm. It previews the change of the session once
  * for each session and intent, and the confirm stays disabled until that
- * preview is clean. A confirm sends one write. After an ok write it calls
- * onWritten, and the parent closes the session. A refused write shows its
- * errors and gives the errors of pending fields to onRefused. It never
- * changes the session. It needs the providers of useWriteToast above it.
+ * preview is clean. A confirm sends one write. An ok write goes to show.
+ * Then it calls onWritten, and the parent closes the session. A refused
+ * preview or write shows its errors and gives the errors of pending fields
+ * to onRefused. It never changes the session.
  */
 export function ClaimReview<C extends ClaimObject>({
   session,
@@ -41,6 +40,7 @@ export function ClaimReview<C extends ClaimObject>({
   mergedLines,
   preview,
   apply,
+  show,
   onWritten,
   onRefused,
   onCancel,
@@ -53,11 +53,11 @@ export function ClaimReview<C extends ClaimObject>({
   mergedLines?: DiffLine[];
   preview: (change: Change) => Promise<Preview>;
   apply: (change: Change) => Promise<WriteResult>;
+  show: (result: WriteResult, message: string) => void;
   onWritten?: () => void;
   onRefused?: (fields: FieldError[]) => void;
   onCancel?: () => void;
 }) {
-  const { toast, show, dismiss } = useWriteToast();
   const [previewed, setPreviewed] = useState<{
     session: Session<C>;
     intent: string;
@@ -71,8 +71,10 @@ export function ClaimReview<C extends ClaimObject>({
   // A second click arrives before React disables the button.
   const writingNow = useRef(false);
   const previewRef = useRef(preview);
+  const onRefusedRef = useRef(onRefused);
   useEffect(() => {
     previewRef.current = preview;
+    onRefusedRef.current = onRefused;
   });
 
   useEffect(() => {
@@ -84,7 +86,11 @@ export function ClaimReview<C extends ClaimObject>({
         errors: [{ code: "Unavailable", message: String(error) }],
       }))
       .then((result) => {
-        if (current) setPreviewed({ session, intent, result });
+        if (!current) return;
+        setPreviewed({ session, intent, result });
+        const outcome = outcomeOf(result, session);
+        if (!outcome.ok && outcome.fields.length > 0)
+          onRefusedRef.current?.(outcome.fields);
       });
     return () => {
       current = false;
@@ -134,41 +140,38 @@ export function ClaimReview<C extends ClaimObject>({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <ReviewPanel
-        lines={objectDiff(session.claim, claimAfter(session))}
-        details={
-          mergedLines && (
-            <DiffView label="Changes to the cluster" lines={mergedLines} />
-          )
-        }
-        effects={impacts}
-        notices={
-          alerts.length > 0 && (
-            <div
-              role="alert"
-              className="flex gap-3 rounded-md border border-bad/40 bg-bad/10 p-3 text-sm text-text"
-            >
-              <CircleAlert
-                aria-hidden
-                className="mt-0.5 size-4 shrink-0 text-bad"
-              />
-              <ul className="flex flex-col gap-1">
-                {alerts.map((text, i) => (
-                  <li key={i}>{text}</li>
-                ))}
-              </ul>
-            </div>
-          )
-        }
-        mode={mode}
-        confirmLabel="Save"
-        pending={writing || blocked}
-        onConfirm={confirm}
-        onCancel={onCancel}
-      />
-      {toast && <Toast result={toast} onDismiss={dismiss} />}
-    </div>
+    <ReviewPanel
+      lines={objectDiff(session.claim, claimAfter(session))}
+      details={
+        mergedLines && (
+          <DiffView label="Changes to the cluster" lines={mergedLines} />
+        )
+      }
+      effects={impacts}
+      notices={
+        alerts.length > 0 && (
+          <div
+            role="alert"
+            className="flex gap-3 rounded-md border border-bad/40 bg-bad/10 p-3 text-sm text-text"
+          >
+            <CircleAlert
+              aria-hidden
+              className="mt-0.5 size-4 shrink-0 text-bad"
+            />
+            <ul className="flex flex-col gap-1">
+              {alerts.map((text, i) => (
+                <li key={i}>{text}</li>
+              ))}
+            </ul>
+          </div>
+        )
+      }
+      mode={mode}
+      confirmLabel="Save"
+      pending={writing || blocked}
+      onConfirm={confirm}
+      onCancel={onCancel}
+    />
   );
 }
 

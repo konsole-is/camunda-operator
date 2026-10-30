@@ -112,6 +112,14 @@ function input(
   };
 }
 
+const environment = (release: string) =>
+  ({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "Environment",
+    metadata: { name: "prod" },
+    spec: { releases: { default: release } },
+  }) as unknown as Resource<"Environment">;
+
 const set =
   (steps: Step[], value: unknown) =>
   (s: Session<Claim>): Session<Claim> => {
@@ -207,12 +215,83 @@ describe("clusterImpacts", () => {
     ]);
   });
 
+  it("the environment of an embedded process restarts its host", () => {
+    expect(
+      clusterImpacts(
+        input(
+          set([...cluster("tasklist", "extraEnv"), { item: { name: "TZ" } }], {
+            name: "TZ",
+            value: "UTC",
+          }),
+        ),
+      ),
+    ).toEqual(["Gateway pods restart."]);
+    expect(
+      clusterImpacts(
+        input(
+          set(cluster("tasklist", "extraEnvFrom"), [
+            { secretRef: { name: "s" } },
+          ]),
+        ),
+      ),
+    ).toEqual(["Gateway pods restart."]);
+  });
+
+  it("pod annotations of the cluster restart every process", () => {
+    expect(
+      clusterImpacts(input(set(cluster("podAnnotations", "team"), "a"))),
+    ).toEqual([
+      "Every process restarts, except the processes that set the field themselves.",
+    ]);
+  });
+
+  it("a reset of spec.cluster restarts the processes that it changes", () => {
+    expect(
+      clusterImpacts(
+        input(reset([f("spec"), f("cluster")]), {
+          claim: claim({ gateway: { replicas: 2 } }),
+          live: live({ gateway: { replicas: 2 } }),
+        }),
+      ),
+    ).toEqual(["Broker pods restart.", "Gateway pods restart."]);
+  });
+
+  it("a reset to a smaller preset size cannot shrink the volumes", () => {
+    const i = input(reset(cluster("zeebe", "storageSize")), {
+      claim: claim({ zeebe: { replicas: 3, storageSize: "64Gi" } }),
+      live: live({ zeebe: { replicas: 3, storageSize: "64Gi" } }),
+    });
+    i.presets = i.presets.map((p) =>
+      p.metadata?.name === "medium"
+        ? preset("medium", {
+            zeebe: { storageSize: "32Gi" },
+            tasklist: { replicas: 1 },
+          })
+        : p,
+    );
+    expect(clusterImpacts(i)).toEqual([
+      "Volumes cannot shrink. The operator keeps the current size.",
+    ]);
+  });
+
+  it("a reset of the release to the default of the environment restarts the brokers", () => {
+    const i = input(reset([f("spec"), f("releaseRef")]), {
+      claim: claim(),
+      live: live({ releaseRef: "camunda-8-9-5" }),
+    });
+    i.environment = environment("camunda-8-10-1");
+    expect(clusterImpacts(i)).toEqual([
+      "The brokers restart one at a time. The other processes restart.",
+    ]);
+  });
+
   it("an app that becomes standalone creates its Deployment and starts from the preset", () => {
     expect(
       clusterImpacts(input(set(cluster("tasklist", "mode"), "Standalone"))),
     ).toEqual([
       "Creates Deployment orders-tasklist and Service orders-tasklist.",
       "Tasklist starts from the workload settings of the preset: replicas, CPU, and memory.",
+      "Gateway pods restart.",
     ]);
   });
 
@@ -228,6 +307,7 @@ describe("clusterImpacts", () => {
     ).toEqual([
       "Creates Deployment orders-tasklist and Service orders-tasklist.",
       "Tasklist starts with the settings prepared in the claim (2 fields).",
+      "Gateway pods restart.",
     ]);
   });
 
@@ -335,6 +415,48 @@ describe("mergedSpecs", () => {
     );
     expect(before.spec.gateway?.replicas).toBe(2);
     expect(after.spec.gateway?.replicas).toBe(1);
+  });
+
+  it("resets of list items by index remove the items that they name", () => {
+    const env = [
+      { configMapRef: { name: "a" } },
+      { configMapRef: { name: "b" } },
+      { configMapRef: { name: "c" } },
+    ];
+    const { after } = mergedSpecs(
+      input(
+        both(
+          reset([...cluster("extraEnvFrom"), { index: 0 }]),
+          reset([...cluster("extraEnvFrom"), { index: 1 }]),
+        ),
+        {
+          claim: claim({ extraEnvFrom: env }),
+          live: live({ extraEnvFrom: env }),
+        },
+      ),
+    );
+    expect(after.spec.extraEnvFrom).toEqual([{ configMapRef: { name: "c" } }]);
+  });
+
+  it("a reset of a keyed list item removes the item", () => {
+    const env = [{ name: "TZ", value: "UTC" }];
+    const { after } = mergedSpecs(
+      input(reset([...cluster("extraEnv"), { item: { name: "TZ" } }]), {
+        claim: claim({ extraEnv: env }),
+        live: live({ extraEnv: env }),
+      }),
+    );
+    expect(after.spec.extraEnv ?? []).toEqual([]);
+  });
+
+  it("keeps the live release when the claim does not change it", () => {
+    const inherits = claim({ gateway: { replicas: 2 } });
+    delete (inherits.spec as { releaseRef?: string }).releaseRef;
+    const { before, after } = mergedSpecs(
+      input(reset(cluster("gateway", "replicas")), { claim: inherits }),
+    );
+    expect(before.spec.version).toBe("8.9.5");
+    expect(after.spec.version).toBe("8.9.5");
   });
 
   it("uses the preset of the claim after the change", () => {

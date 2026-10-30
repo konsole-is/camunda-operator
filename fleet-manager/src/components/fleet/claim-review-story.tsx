@@ -13,6 +13,7 @@ import {
 } from "@/lib/session";
 import type { Preview, WriteMode, WriteResult } from "@/lib/write/types";
 import { ClaimReview } from "./claim-review";
+import { Toast, useWriteToast } from "./toast";
 
 /**
  * ClaimReviewStory shows ClaimReview in the gallery. A story passes no
@@ -53,15 +54,20 @@ export function ClaimReviewStory({
     }
     return s;
   }, [claim, changes]);
+  const { toast, show, dismiss } = useWriteToast();
   return (
-    <ClaimReview
-      session={session}
-      mode={mode}
-      intent={`Change the claim ${claim.metadata.name}`}
-      impacts={impacts}
-      mergedLines={mergedLines}
-      preview={async () => preview}
-      apply={async () => result}
-    />
+    <div className="flex flex-col gap-4">
+      <ClaimReview
+        session={session}
+        mode={mode}
+        intent={`Change the claim ${claim.metadata.name}`}
+        impacts={impacts}
+        mergedLines={mergedLines}
+        preview={async () => preview}
+        apply={async () => result}
+        show={show}
+      />
+      {toast && <Toast result={toast} onDismiss={dismiss} />}
+    </div>
   );
 }

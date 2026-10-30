@@ -1,5 +1,5 @@
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
-import { walk, type Step } from "@/lib/fields";
+import { itemStep, walk, type Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { mergeCluster, type Merged } from "@/lib/merge";
 import { parseQuantity } from "@/lib/observe/quantity";
@@ -16,7 +16,8 @@ import { topologyOf, type Process } from "./topology";
 /**
  * ClusterChangeInput is a session over the claim of a cluster, with the
  * live cluster and the presets, releases, and sections that the change can
- * name.
+ * name. Without environment, a change that removes the release of the
+ * claim has no release after it.
  */
 export type ClusterChangeInput = {
   session: Session<Resource<"CamundaClusterClaim">>;
@@ -24,6 +25,7 @@ export type ClusterChangeInput = {
   presets: readonly Resource<"CamundaClusterPreset">[];
   releases: readonly Resource<"CamundaRelease">[];
   sections: readonly Resource<"PluginSection">[];
+  environment?: Resource<"Environment">;
 };
 
 const PROCESS_NAME: Record<Process, string> = {
@@ -40,34 +42,35 @@ const CLUSTER_WIDE = new Set([
   "extraEnvFrom",
   "scheduling",
   "podLabels",
+  "podAnnotations",
 ]);
+
+// The operator applies these fields of an embedded process to its host.
+const HOST_FIELDS = new Set(["extraEnv", "extraEnvFrom"]);
 
 /**
  * mergedSpecs returns the merged spec of the cluster before the change and
- * after it. after applies each pending change under spec.cluster to the
+ * after it. after applies the change of spec.cluster of the claim to the
  * live spec, with the preset and the release of the claim after the change.
  */
 export function mergedSpecs(input: ClusterChangeInput): {
   before: Merged<CamundaClusterSpec>;
   after: Merged<CamundaClusterSpec>;
 } {
-  const { live, session } = input;
-  const claim = claimAfter(session);
+  const { live } = input;
+  const claim = claimAfter(input.session).spec;
   let overrides = live.spec;
-  for (const entry of session.pending.values()) {
-    const rest = clusterSteps(entry);
-    if (rest === undefined) continue;
+  for (const change of clusterChanges(input))
     overrides =
-      "reset" in entry
-        ? without(overrides, rest)
-        : withValue(overrides, rest, entry.value);
-  }
+      change.value === undefined
+        ? without(overrides, change.steps)
+        : withValue(overrides, change.steps, change.value);
   return {
     before: merged(input, live.spec.presetRef, live.spec.releaseRef, live.spec),
     after: merged(
       input,
-      claim.spec.presetRef,
-      claim.spec.releaseRef,
+      claim.presetRef ?? live.spec.presetRef,
+      releaseAfter(input),
       overrides,
     ),
   };
@@ -80,50 +83,48 @@ export function mergedSpecs(input: ClusterChangeInput): {
 export function clusterImpacts(input: ClusterChangeInput): string[] {
   const { session, live } = input;
   const { before, after } = mergedSpecs(input);
-  const entries = [...session.pending.values()];
-  const claim = claimAfter(session);
+  const was = session.claim.spec;
+  const is = claimAfter(session).spec;
+  const changed = (name: keyof typeof was) => !equalJSON(was[name], is[name]);
+  const cluster = clusterChanges(input);
   const lines = new Set<string>();
 
-  const release = top(entries, "releaseRef");
-  if (release && !("reset" in release)) {
+  if (changed("releaseRef")) {
     const version = (name: string | undefined) =>
       input.releases.find((r) => r.metadata?.name === name)?.spec.version;
-    if (version(live.spec.releaseRef) !== version(claim.spec.releaseRef))
+    if (version(live.spec.releaseRef) !== version(releaseAfter(input)))
       lines.add(
         "The brokers restart one at a time. The other processes restart.",
       );
   }
 
-  if (top(entries, "presetRef"))
+  if (changed("presetRef"))
     for (const line of leafChanges(before.spec, after.spec)) lines.add(line);
 
-  const standaloneAfter = new Set(
-    topologyOf(after.spec, []).map((b) => b.process),
-  );
-  let shrinks = false;
-  for (const entry of entries) {
-    const rest = clusterSteps(entry);
-    const [first, second] = rest ?? [];
-    if (!first || !("field" in first)) continue;
-    const process = first.field as Process;
-    if (!Object.hasOwn(PROCESS_NAME, process)) continue;
-    if (second && "field" in second && second.field === "mode") continue;
-    if (shrinksStorage(entry, rest!, before.spec)) {
-      shrinks = true;
+  const boxes = topologyOf(after.spec, []);
+  const shrinks = shrinksStorage(before.spec, after.spec);
+  for (const { steps } of cluster) {
+    const [first, second] = steps;
+    if (!("field" in first) || !Object.hasOwn(PROCESS_NAME, first.field))
       continue;
-    }
-    lines.add(
-      standaloneAfter.has(process)
-        ? `${PROCESS_NAME[process]} pods restart.`
-        : `Applies when ${PROCESS_NAME[process]} runs standalone.`,
+    const process = first.field as Process;
+    const field = second && "field" in second ? second.field : undefined;
+    if (field === "mode") continue;
+    if (shrinks && process === "zeebe" && field === "storageSize") continue;
+    const host = boxes.find((b) =>
+      b.embedded.some((e) => e.process === process),
     );
+    if (boxes.some((b) => b.process === process))
+      lines.add(`${PROCESS_NAME[process]} pods restart.`);
+    else if (host && field !== undefined && HOST_FIELDS.has(field))
+      lines.add(`${PROCESS_NAME[host.process]} pods restart.`);
+    else lines.add(`Applies when ${PROCESS_NAME[process]} runs standalone.`);
   }
 
   if (
-    entries.some((e) => {
-      const [first] = clusterSteps(e) ?? [];
-      return first && "field" in first && CLUSTER_WIDE.has(first.field);
-    })
+    cluster.some(
+      ({ steps: [first] }) => "field" in first && CLUSTER_WIDE.has(first.field),
+    )
   )
     lines.add(
       "Every process restarts, except the processes that set the field themselves.",
@@ -134,28 +135,33 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
   if (shrinks)
     lines.add("Volumes cannot shrink. The operator keeps the current size.");
 
-  for (const entry of entries) {
-    const section = parameterSection(entry);
-    if (section === undefined) continue;
+  for (const { steps } of diff(was.plugins ?? [], is.plugins ?? [])) {
+    const [selection, parameters] = steps;
+    if (
+      !selection ||
+      !("item" in selection) ||
+      !parameters ||
+      !("field" in parameters) ||
+      parameters.field !== "parameters"
+    )
+      continue;
+    const section = String(selection.item.section);
     const label =
       input.sections.find((s) => s.metadata?.name === section)?.spec.label ??
       section;
     lines.add(`The ${label} option applies the new value.`);
   }
 
-  if (top(entries, "deletionPolicy"))
+  if (changed("deletionPolicy"))
     lines.add(
       "Nothing restarts. The policy applies when the cluster is deleted.",
     );
 
-  const suspend = top(entries, "suspend");
-  if (suspend && !("reset" in suspend) && suspend.value === true)
+  if (is.suspend === true && was.suspend !== true)
     lines.add("Every workload goes to zero. The volumes stay.");
 
   if (
-    entries.some((e) =>
-      startsWith(e.steps, ["spec", "attachments", "backupSchedule"]),
-    )
+    !equalJSON(was.attachments?.backupSchedule, is.attachments?.backupSchedule)
   )
     lines.add("Nothing restarts.");
 
@@ -185,14 +191,6 @@ function merged(
   );
 }
 
-// clusterSteps returns the steps of entry below spec.cluster, or undefined
-// for an entry outside it.
-function clusterSteps(entry: PendingChange): Step[] | undefined {
-  return startsWith(entry.steps, ["spec", "cluster"]) && entry.steps.length > 2
-    ? entry.steps.slice(2)
-    : undefined;
-}
-
 // top returns the pending change of the top-level claim field name.
 function top(
   entries: readonly PendingChange[],
@@ -201,6 +199,70 @@ function top(
   return entries.find(
     (e) => e.steps.length === 2 && startsWith(e.steps, ["spec", name]),
   );
+}
+
+function releaseAfter(input: ClusterChangeInput): string | undefined {
+  const was = input.session.claim.spec.releaseRef;
+  const is = claimAfter(input.session).spec.releaseRef;
+  if (was === is) return input.live.spec.releaseRef;
+  return is || input.environment?.spec.releases?.default;
+}
+
+// StepChange is a value that a change sets at steps, or a removal when value
+// is undefined.
+type StepChange = { steps: Step[]; value: unknown };
+
+// clusterChanges returns the changes of spec.cluster of the claim, with
+// steps below spec.cluster. A list item is named by its keys, or the list
+// changes as a whole, so that the steps name the same item in the live
+// spec.
+function clusterChanges(input: ClusterChangeInput): StepChange[] {
+  return diff(
+    input.session.claim.spec.cluster ?? {},
+    claimAfter(input.session).spec.cluster ?? {},
+  );
+}
+
+function diff(was: unknown, is: unknown, steps: Step[] = []): StepChange[] {
+  if (equalJSON(was, is)) return [];
+  // A new field names its leaves. A removed one goes as a whole, because a
+  // list item without its keys cannot be found again.
+  const children = childrenOf(was ?? (Array.isArray(is) ? [] : {}), is);
+  if (!children) return [{ steps, value: is }];
+  return children.flatMap(([step, w, i]) => diff(w, i, [...steps, step]));
+}
+
+// childrenOf pairs the children of two objects by field, or of two lists
+// whose items all have keys by those keys. It returns undefined for other
+// values.
+function childrenOf(
+  was: unknown,
+  is: unknown,
+): [Step, unknown, unknown][] | undefined {
+  const pairs = new Map<string, [Step, unknown, unknown]>();
+  const add = (step: Step, value: unknown, side: 1 | 2) => {
+    const key = JSON.stringify(step);
+    const pair = pairs.get(key) ?? [step, undefined, undefined];
+    pair[side] = value;
+    pairs.set(key, pair);
+  };
+  if (isObject(was) && isObject(is)) {
+    for (const [field, value] of Object.entries(was)) add({ field }, value, 1);
+    for (const [field, value] of Object.entries(is)) add({ field }, value, 2);
+    return [...pairs.values()];
+  }
+  if (!Array.isArray(was) || !Array.isArray(is)) return undefined;
+  const steps = [was, is].map((list) =>
+    list.map((item, index) => itemStep(item, index)),
+  );
+  if (steps.flat().some((step) => !("item" in step))) return undefined;
+  was.forEach((item, i) => add(steps[0][i], item, 1));
+  is.forEach((item, i) => add(steps[1][i], item, 2));
+  return [...pairs.values()];
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function startsWith(steps: readonly Step[], fields: readonly string[]) {
@@ -232,16 +294,14 @@ function leafChanges(
 }
 
 function shrinksStorage(
-  entry: PendingChange,
-  rest: readonly Step[],
   before: CamundaClusterSpec,
+  after: CamundaClusterSpec,
 ): boolean {
-  if ("reset" in entry || rest.length !== 2) return false;
-  if (!startsWith(rest, ["zeebe", "storageSize"])) return false;
-  const current = before.zeebe?.storageSize;
-  if (current === undefined) return false;
+  const was = before.zeebe?.storageSize;
+  const is = after.zeebe?.storageSize;
+  if (was === undefined || is === undefined) return false;
   try {
-    return parseQuantity(String(entry.value)) < parseQuantity(String(current));
+    return parseQuantity(String(is)) < parseQuantity(String(was));
   } catch {
     return false;
   }
@@ -263,6 +323,9 @@ function modeLines(
       `Creates Deployment ${name}-${p} and Service ${name}-${p}.`,
       startLine(input, p),
     );
+    const host = was.find((b) => b.embedded.some((e) => e.process === p));
+    if (host && is.some((b) => b.process === host.process))
+      lines.push(`${PROCESS_NAME[host.process]} pods restart.`);
   }
   for (const box of was) {
     const p = box.process;
@@ -289,19 +352,4 @@ function startLine(input: ClusterChangeInput, p: Process): string {
   return n > 0
     ? `${PROCESS_NAME[p]} starts with the settings prepared in the claim (${n} fields).`
     : `${PROCESS_NAME[p]} starts from the workload settings of the preset: replicas, CPU, and memory.`;
-}
-
-// parameterSection returns the section of a pending section parameter.
-function parameterSection(entry: PendingChange): string | undefined {
-  const [, , selection, parameters] = entry.steps;
-  if (
-    !startsWith(entry.steps, ["spec", "plugins"]) ||
-    !selection ||
-    !("item" in selection) ||
-    !parameters ||
-    !("field" in parameters && parameters.field === "parameters")
-  )
-    return undefined;
-  const section = selection.item.section;
-  return typeof section === "string" ? section : undefined;
 }

@@ -7,6 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyClaimChange,
@@ -28,6 +29,7 @@ import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
 import { ClaimReview } from "./claim-review";
 import { GitPushesProvider } from "./git-pushes";
+import { Toast, useWriteToast } from "./toast";
 
 vi.mock("@/lib/write/writer", () => import("../../../test/fakes/writer"));
 
@@ -73,14 +75,15 @@ function resetPartitions(s: Session): Session {
   return result.session;
 }
 
-function review(
-  props: Partial<Parameters<typeof ClaimReview>[0]> & { mode?: WriteMode } = {},
-) {
-  FakeEventSource.instances = [];
-  vi.stubGlobal("EventSource", FakeEventSource);
-  return render(
-    <QueryClientProvider client={new QueryClient()}>
-      <GitPushesProvider>
+type Props = Partial<Parameters<typeof ClaimReview>[0]> & { mode?: WriteMode };
+
+// Page owns the toast, as a page does, and closes the review after a write.
+function Page(props: Props) {
+  const { toast, show, dismiss } = useWriteToast();
+  const [open, setOpen] = useState(true);
+  return (
+    <>
+      {open && (
         <ClaimReview
           session={session()}
           mode={fakeWriter.mode}
@@ -88,8 +91,26 @@ function review(
           impacts={[]}
           preview={previewClaimChange}
           apply={applyClaimChange}
+          show={show}
           {...props}
+          onWritten={() => {
+            props.onWritten?.();
+            setOpen(false);
+          }}
         />
+      )}
+      {toast && <Toast result={toast} onDismiss={dismiss} />}
+    </>
+  );
+}
+
+function review(props: Props = {}) {
+  FakeEventSource.instances = [];
+  vi.stubGlobal("EventSource", FakeEventSource);
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <GitPushesProvider>
+        <Page {...props} />
       </GitPushesProvider>
     </QueryClientProvider>,
   );
@@ -209,6 +230,33 @@ describe("ClaimReview", () => {
     expect(button.disabled).toBe(true);
     fireEvent.click(button);
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("a dry-run refusal with a field path goes to onRefused", async () => {
+    fakeWriter.previews = [
+      {
+        objects: [],
+        errors: [
+          {
+            code: "Invalid",
+            message: "Invalid value: 0: must be at least 1",
+            path: "spec.cluster.zeebe.replicas",
+          },
+        ],
+      },
+    ];
+    const onRefused = vi.fn();
+    review({ onRefused });
+
+    await waitFor(() =>
+      expect(onRefused).toHaveBeenCalledWith([
+        {
+          path: "spec.cluster.zeebe.replicas",
+          message: "Invalid value: 0: must be at least 1",
+        },
+      ]),
+    );
+    expect(onRefused).toHaveBeenCalledOnce();
   });
 
   it("an API refusal with a field path goes to onRefused", async () => {
