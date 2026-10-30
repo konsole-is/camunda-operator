@@ -33,10 +33,15 @@ export type RefKey = `${string}/${string}/${string}`;
  * an object. A write of that object fails with Stale when the object
  * changed since. force sends each apply of the change with the force
  * option of server-side apply. A change with directOnly goes to the API
- * in Git mode too. The preview of the direct writer applies an object of
- * previewManagers as the field manager that it maps to, and apply ignores
- * previewManagers. For a change without directOnly, the Git writer sets
- * previewManagers itself.
+ * in Git mode too.
+ *
+ * The preview of the direct writer applies an object of previewManagers as
+ * the field manager that it maps to. It sends an object of
+ * previewMergePatches as the JSON merge patch of a client-side apply: the
+ * object, plus null at each field of the last applied file of the live
+ * object that the object leaves out. An object whose live copy has no last
+ * applied file gets the server-side-apply dry run. apply ignores both. For
+ * a change without directOnly, the Git writer sets both.
  */
 export type Change = {
   intent: string;
@@ -46,6 +51,7 @@ export type Change = {
   force?: boolean;
   directOnly?: boolean;
   previewManagers?: Record<RefKey, string>;
+  previewMergePatches?: RefKey[];
 };
 
 /**

@@ -17,6 +17,7 @@ import {
 import { APP_FIELD_MANAGER } from "@/lib/merge";
 import { apiErrorsOf, staleError } from "./errors";
 import { gitWriter } from "./git";
+import { clientSideApplyPatch } from "./merge-patch";
 import type {
   ApiError,
   Change,
@@ -129,6 +130,8 @@ export function diffView(
  *
  * A preview of a Secret shows "(hidden)" for each value, and "(changed)"
  * for a value that the change sets to a new one. It holds no annotation.
+ * A preview sends an object of previewMergePatches as the merge patch of a
+ * client-side apply (see Change).
  */
 export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   const send = <T>(
@@ -190,7 +193,10 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   // uids holds the uid of each object of the apply list that exists.
   const dryRun = async (
     change: Change,
-    managers: Record<RefKey, string> = {},
+    options: {
+      managers?: Record<RefKey, string>;
+      mergePatches?: RefKey[];
+    } = {},
   ): Promise<Preview & { uids: Map<RefKey, string> }> => {
     const uids = new Map<RefKey, string>();
     const refusals = refsOf(change).flatMap(refusalOf);
@@ -212,13 +218,24 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         if (typeof before?.metadata.uid === "string") {
           uids.set(refKey(ref), before.metadata.uid);
         }
-        const after = await applyObject(
-          object,
-          resourceVersion,
-          change.force ?? false,
-          true,
-          managers[refKey(ref)],
-        );
+        const patch = options.mergePatches?.includes(refKey(ref))
+          ? clientSideApplyPatch(before, applyBody(object, resourceVersion))
+          : undefined;
+        const after =
+          patch === undefined
+            ? await applyObject(
+                object,
+                resourceVersion,
+                change.force ?? false,
+                true,
+                options.managers?.[refKey(ref)],
+              )
+            : await send<KubeObject>(
+                "PATCH",
+                `${pathOf(ref)}?fieldManager=${encodeURIComponent(APP_FIELD_MANAGER)}&dryRun=All`,
+                patch,
+                "application/merge-patch+json",
+              );
         objects.push(previewObject(ref, before, after));
       } catch (error) {
         errors.push(...apiErrorsOf(error, ref, resourceVersion !== undefined));
@@ -240,7 +257,10 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   };
 
   const preview = async (change: Change): Promise<Preview> => {
-    const { objects, errors } = await dryRun(change, change.previewManagers);
+    const { objects, errors } = await dryRun(change, {
+      managers: change.previewManagers,
+      mergePatches: change.previewMergePatches,
+    });
     return { objects, errors };
   };
 
