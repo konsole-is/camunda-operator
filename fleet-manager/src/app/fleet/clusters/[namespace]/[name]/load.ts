@@ -1,9 +1,19 @@
 import "server-only";
 import type { ClusterPageData } from "@/components/cluster/cluster-view";
+import { clusterOptimize } from "@/components/cluster/optimize";
+import { clusterFieldsInputOf } from "@/components/cluster/settings";
+import { fieldDocsOf } from "@/lib/fielddocs";
+import { clusterFields } from "@/lib/fields";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { get, list, type ListOptions } from "@/lib/k8s/read";
-import { ACCESS_SECTION, CLUSTER_LABEL, SECTION_LABEL } from "@/lib/labels";
+import {
+  ACCESS_SECTION,
+  CLAIM_LABEL,
+  CLUSTER_LABEL,
+  SECTION_LABEL,
+} from "@/lib/labels";
 import { ownerName } from "@/lib/labels/server";
+import { mergeCluster } from "@/lib/merge";
 
 /**
  * loadClusterPage reads the first snapshot of the cluster page from the
@@ -69,6 +79,23 @@ export async function loadClusterPage(
     listOrEmpty("PluginSection", {}),
     listOrEmpty("PluginRegistration", {}),
   ]);
+  const claimName = cluster.metadata?.labels?.[CLAIM_LABEL];
+  const fields = clusterFields(
+    clusterFieldsInputOf({
+      cluster,
+      merged: mergeCluster(
+        presets.find((p) => p.metadata?.name === cluster.spec?.presetRef)?.spec,
+        releases.find((r) => r.metadata?.name === cluster.spec?.releaseRef)
+          ?.spec,
+        cluster.spec,
+      ),
+      claim: claims.find((c) => c.metadata?.name === claimName),
+      sections,
+      registrations,
+      optimize: clusterOptimize(name, optimizes),
+      schedules,
+    }),
+  );
   return {
     cluster,
     namespace: namespaceObject,
@@ -97,6 +124,7 @@ export async function loadClusterPage(
     optimizes,
     sections,
     registrations,
+    fieldDocs: fieldDocsOf(fields),
   };
 }
 

@@ -1,6 +1,6 @@
 import "server-only";
 import { KubernetesRequestError, getJSON, kubeConfig } from "@/lib/k8s/client";
-import type { Resource } from "@/lib/k8s/kinds";
+import { type Resource, pathSegment } from "@/lib/k8s/kinds";
 import { list } from "@/lib/k8s/read";
 import { labelSelectorString } from "@/lib/labels";
 import { parseQuantity } from "./quantity";
@@ -77,7 +77,7 @@ export async function podUsage(
   try {
     metrics = await getJSON<PodMetrics>(
       kubeConfig(),
-      `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods${query}`,
+      `/apis/metrics.k8s.io/v1beta1/namespaces/${pathSegment(namespace)}/pods${query}`,
       TIMEOUT_MS,
     );
   } catch (error) {

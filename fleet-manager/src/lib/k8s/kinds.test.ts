@@ -7,6 +7,7 @@ import {
   KindMap,
   collectionPath,
   objectPath,
+  pathSegment,
   type KindName,
   type Resource,
 } from "./kinds";
@@ -114,4 +115,18 @@ describe("Resource", () => {
       Resource<"Environment">["metadata"]["creationTimestamp"]
     >().toEqualTypeOf<string | undefined>();
   });
+});
+
+describe("pathSegment", () => {
+  it("encodes a value as one segment", () =>
+    expect(pathSegment("../../api/v1/secrets?x")).toBe(
+      "..%2F..%2Fapi%2Fv1%2Fsecrets%3Fx",
+    ));
+
+  it.each(["", ".", ".."])("refuses the segment %j", (v) =>
+    expect(() => pathSegment(v)).toThrow(),
+  );
+
+  it("a .. namespace never leaves its segment of an object path", () =>
+    expect(() => objectPath(KindMap.Secret, "..", "git")).toThrow());
 });

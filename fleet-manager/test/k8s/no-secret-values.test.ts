@@ -18,6 +18,8 @@ import {
 } from "@/app/setup/settings/actions";
 import { GET as healthz } from "@/app/api/healthz/route";
 import { GET as logsRoute } from "@/app/api/logs/route";
+import { GET as partitionsRoute } from "@/app/api/partitions/route";
+import { GET as usageRoute } from "@/app/api/usage/route";
 import { GET as watchRoute } from "@/app/api/watch/route";
 import { defaultCache } from "@/lib/k8s/cache";
 import * as secrets from "@/lib/secrets";
@@ -145,6 +147,23 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
       await logsRoute(
         new Request(
           `http://localhost/api/logs?namespace=${namespace}&pod=missing`,
+        ),
+      )
+    ).text(),
+  // envtest serves no metrics.k8s.io, so the usage is unavailable.
+  "api/usage": async () =>
+    (
+      await usageRoute(
+        new Request(
+          `http://localhost/api/usage?namespace=${namespace}&selector=app%3Dx`,
+        ),
+      )
+    ).text(),
+  "api/partitions": async () =>
+    (
+      await partitionsRoute(
+        new Request(
+          `http://localhost/api/partitions?namespace=${namespace}&name=missing`,
         ),
       )
     ).text(),

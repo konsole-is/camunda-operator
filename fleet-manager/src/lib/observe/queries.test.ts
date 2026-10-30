@@ -1,8 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import type { Process } from "@/components/cluster/topology";
-import { parseTemplate } from "@/lib/gotemplate";
+import { parseTemplate, render } from "@/lib/gotemplate";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
+  PARTITION_HEALTH,
   coreMetricDefs,
   coreQueries,
   podsPattern,
@@ -181,4 +182,27 @@ describe("coreMetricDefs", () => {
 
   it("gives nothing for a component without pods", () =>
     expect(coreMetricDefs("operate", "team-a", [])).toEqual([]));
+});
+
+describe("PARTITION_HEALTH", () => {
+  it("renders a query of zeebe_health for the namespace and the pods", () => {
+    const rendered = render(
+      PARTITION_HEALTH.query,
+      {
+        namespace: "team-a",
+        pods: "orders-zeebe-0",
+        claim: "",
+        request: "",
+        serviceAccount: "",
+        parameters: {},
+        outputs: {},
+      },
+      "metric",
+    );
+
+    expect(PARTITION_HEALTH.metric).toBe("zeebe_health");
+    expect(rendered).toEqual({
+      text: 'min by (partition) (zeebe_health{namespace="team-a", pod=~"orders-zeebe-0"})',
+    });
+  });
 });

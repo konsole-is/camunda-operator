@@ -26,6 +26,12 @@ export const SECTION_LABEL = "plugins.camunda.io/section";
 export const ACCESS_SECTION = "access";
 
 /**
+ * BUILTIN_CONTROLLER is the controller name of the built-in registrations.
+ * It is ControllerName of internal/pluginstartup.
+ */
+export const BUILTIN_CONTROLLER = "camunda-operator";
+
+/**
  * CLUSTER_LABEL on a pod holds labels.OwnerName of its CamundaCluster. It is
  * ClusterKey of pkg/labels.
  */
@@ -91,6 +97,20 @@ export function isLabelKey(key: string): boolean {
 /** isLabelValue says whether value is a valid Kubernetes label value. The empty value is valid. */
 export function isLabelValue(value: string): boolean {
   return value === "" || NAME.test(value);
+}
+
+const DNS_LABEL = "[a-z0-9]([-a-z0-9]*[a-z0-9])?";
+const DNS_LABEL_RE = new RegExp(`^${DNS_LABEL}$`);
+const DNS_SUBDOMAIN_RE = new RegExp(`^${DNS_LABEL}(\\.${DNS_LABEL})*$`);
+
+/** isDNSLabel says whether value is a DNS-1123 label, such as a namespace name. */
+export function isDNSLabel(value: string): boolean {
+  return value.length <= 63 && DNS_LABEL_RE.test(value);
+}
+
+/** isDNSSubdomain says whether value is a DNS-1123 subdomain, such as the name of most objects. */
+export function isDNSSubdomain(value: string): boolean {
+  return value.length <= 253 && DNS_SUBDOMAIN_RE.test(value);
 }
 
 /** LabelSelector is a metav1.LabelSelector. */

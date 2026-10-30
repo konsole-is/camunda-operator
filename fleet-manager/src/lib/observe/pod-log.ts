@@ -2,6 +2,7 @@ import "server-only";
 import http from "node:http";
 import https from "node:https";
 import { kubeConfig } from "@/lib/k8s/client";
+import { pathSegment } from "@/lib/k8s/kinds";
 import { get } from "@/lib/k8s/read";
 
 /** PodLogRequest names the log to follow. sinceSeconds and tailLines are positive integers. */
@@ -74,7 +75,7 @@ export async function followPodLog(
     );
   }
   const url = new URL(
-    `${cluster.server}/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(name)}/log`,
+    `${cluster.server}/api/v1/namespaces/${pathSegment(namespace)}/pods/${pathSegment(name)}/log`,
   );
   url.searchParams.set("container", container);
   url.searchParams.set("follow", "true");

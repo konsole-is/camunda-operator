@@ -3,11 +3,18 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import { list } from "@/lib/k8s/read";
+import { promRange } from "@/lib/observe/prometheus";
 import { readSecretValues } from "@/lib/secrets/values";
-import { mergePartitions, partitionHealth } from "./partitions";
+import {
+  brokerPartitions,
+  mergePartitions,
+  partitionHealth,
+  withHealth,
+} from "./partitions";
 
 vi.mock("@/lib/k8s/read", () => ({ list: vi.fn() }));
 vi.mock("@/lib/secrets/values", () => ({ readSecretValues: vi.fn() }));
+vi.mock("@/lib/observe/prometheus", () => ({ promRange: vi.fn() }));
 
 describe("mergePartitions", () => {
   it("merges the leader and followers of each partition", () =>
@@ -77,6 +84,63 @@ describe("mergePartitions", () => {
         1,
       ),
     ).toEqual([{ partition: 1, followers: [], health: "unknown" }]));
+});
+
+describe("withHealth", () => {
+  const partitions = mergePartitions([], 3);
+
+  it.each([
+    [1, "healthy"],
+    [0, "unhealthy"],
+    [-1, "dead"],
+    [7, "unknown"],
+  ] as const)("reads %i as %s", (value, state) =>
+    expect(
+      withHealth(
+        partitions,
+        [
+          {
+            name: 'partition="2"',
+            points: [
+              [1, 1],
+              [2, value],
+            ],
+          },
+        ],
+        2,
+      )[1].health,
+    ).toBe(state),
+  );
+
+  it("keeps unknown for a partition without a series", () =>
+    expect(withHealth(partitions, [], 0).map((p) => p.health)).toEqual([
+      "unknown",
+      "unknown",
+      "unknown",
+    ]));
+
+  it("keeps unknown for a series without points", () =>
+    expect(
+      withHealth(partitions, [{ name: 'partition="1"', points: [] }], 0)[0]
+        .health,
+    ).toBe("unknown"));
+
+  it("reads a series whose last point is before since as unknown", () =>
+    expect(
+      withHealth(
+        partitions,
+        [
+          {
+            name: 'partition="1"',
+            points: [
+              [1, 1],
+              [2, 1],
+            ],
+          },
+        ],
+        3,
+      )[0].health,
+    ).toBe("unknown"));
 });
 
 type Handler = (req: http.IncomingMessage, res: http.ServerResponse) => void;
@@ -303,5 +367,104 @@ describe("partitionHealth", () => {
       "http://[::1]:9600/base/actuator/partitions",
     );
     fetchSpy.mockRestore();
+  });
+});
+
+describe("brokerPartitions", () => {
+  const NOW = 1_700_000_000_000;
+
+  it("gives the health of zeebe_health when Prometheus answers", async () => {
+    const port = await serve(broker());
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
+    vi.mocked(promRange).mockResolvedValue([
+      { name: 'partition="1"', points: [[NOW, 1]] },
+      { name: 'partition="2"', points: [[NOW, -1]] },
+    ]);
+
+    const result = await brokerPartitions(cluster(port), NOW);
+
+    expect(result).toEqual([
+      expect.objectContaining({ partition: 1, health: "healthy" }),
+      expect.objectContaining({ partition: 2, health: "dead" }),
+    ]);
+    expect(promRange).toHaveBeenCalledWith(
+      'min by (partition) (zeebe_health{namespace="team-a", pod=~"orders-zeebe-0"})',
+      { start: NOW - 300_000, end: NOW, stepSeconds: 30 },
+    );
+  });
+
+  it("keeps the health unknown for a series that ended before the last step", async () => {
+    const port = await serve(broker());
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
+    vi.mocked(promRange).mockResolvedValue([
+      { name: 'partition="1"', points: [[NOW - 120_000, 1]] },
+    ]);
+
+    expect((await brokerPartitions(cluster(port), NOW))[0]).toEqual(
+      expect.objectContaining({ partition: 1, health: "unknown" }),
+    );
+  });
+
+  it("keeps the health unknown when Prometheus is not set", async () => {
+    const port = await serve(broker());
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
+    vi.mocked(promRange).mockResolvedValue("unavailable");
+
+    expect(await brokerPartitions(cluster(port), NOW)).toEqual([
+      expect.objectContaining({
+        partition: 1,
+        leader: "orders-zeebe-0",
+        health: "unknown",
+      }),
+      expect.objectContaining({ partition: 2, health: "unknown" }),
+    ]);
+  });
+
+  it("reads the health of every broker pod, also one that does not answer", async () => {
+    const port = await serve(broker());
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+      // Nothing listens on 127.0.0.2, so the connection is refused.
+      pod("orders-zeebe-1", "127.0.0.2"),
+      pod("orders-zeebe-2"),
+    ] as never);
+    vi.mocked(promRange).mockResolvedValue([]);
+
+    await brokerPartitions(cluster(port), NOW);
+
+    expect(vi.mocked(promRange).mock.calls[0][0]).toContain(
+      'pod=~"orders-zeebe-0|orders-zeebe-1|orders-zeebe-2"',
+    );
+  });
+
+  it("keeps the partitions with unknown health when the Prometheus read rejects", async () => {
+    const port = await serve(broker());
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
+    vi.mocked(promRange).mockRejectedValue(
+      new Error("settings are unreadable"),
+    );
+
+    expect(await brokerPartitions(cluster(port), NOW)).toEqual([
+      expect.objectContaining({ partition: 1, health: "unknown" }),
+      expect.objectContaining({ partition: 2, health: "unknown" }),
+    ]);
+  });
+
+  it("is unavailable when the management API is", async () => {
+    const noManagement = {
+      ...cluster(1),
+      status: {},
+    } as Resource<"CamundaCluster">;
+
+    expect(await brokerPartitions(noManagement, NOW)).toBe("unavailable");
+    expect(promRange).not.toHaveBeenCalled();
   });
 });

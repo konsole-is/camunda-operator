@@ -189,3 +189,20 @@ function notUsed(id: CardId, label: string): ComponentCardModel {
 function names(pods: readonly Resource<"Pod">[]): string[] {
   return pods.map((p) => p.metadata?.name ?? "");
 }
+
+/**
+ * componentOf returns the component that value names when it is a used card
+ * or an app embedded in a used card, else undefined.
+ */
+export function componentOf(
+  value: string | null,
+  cards: readonly ComponentCardModel[],
+): CardId | undefined {
+  for (const card of cards) {
+    if (!card.used) continue;
+    if (card.id === value) return card.id;
+    const app = card.embedded.find((e) => e.process === value);
+    if (app) return app.process;
+  }
+  return undefined;
+}

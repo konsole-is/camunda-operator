@@ -390,9 +390,8 @@ export function refusalOf(ref: ObjectRef): ApiError[] {
       },
     ];
   }
-  // objectPath does not encode "." and "..", and new URL resolves them as
-  // path segments, so such a name would address the namespace or the
-  // collection.
+  // objectPath throws for "." and "..". This check gives an Invalid error
+  // in place of the throw.
   if ([ref.name, ref.namespace].some((part) => notAName.has(part))) {
     return [
       {

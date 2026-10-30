@@ -18,11 +18,24 @@ const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
   calls: [] as { kind: string; opts: unknown }[],
   errors: {} as Record<string, string>,
+  usage: undefined as unknown,
+  partitions: undefined as unknown,
+  observed: [] as { hook: string; args: string[] }[],
 }));
 // The App Router keeps useSearchParams in step with history.replaceState, so
 // the fake reads the URL of the window.
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
+}));
+vi.mock("@/lib/observe/use-observe", () => ({
+  usePodUsage: (...args: string[]) => {
+    live.observed.push({ hook: "usePodUsage", args });
+    return live.usage;
+  },
+  usePartitions: (...args: string[]) => {
+    live.observed.push({ hook: "usePartitions", args });
+    return live.partitions;
+  },
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, opts: unknown, initial: unknown[]) => {
@@ -43,6 +56,9 @@ beforeEach(() => {
   live.objects = {};
   live.calls = [];
   live.errors = {};
+  live.usage = undefined;
+  live.partitions = undefined;
+  live.observed = [];
   window.history.replaceState(null, "", "/fleet/clusters/team-a/orders");
 });
 afterEach(cleanup);
@@ -151,6 +167,7 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     optimizes: [],
     sections: [],
     registrations: [],
+    fieldDocs: {},
     ...over,
   };
 }
@@ -344,7 +361,7 @@ describe("ClusterView", () => {
       }),
     );
     expect(
-      screen
+      within(screen.getByRole("banner"))
         .getAllByRole("link", { name: /Operate|Tasklist|Admin/ })
         .map((l) => [l.textContent, l.getAttribute("href")]),
     ).toEqual([["Operate", "https://o.example.com"]]);
@@ -1003,7 +1020,7 @@ describe("Overview components and conditions", () => {
     ).toBeTruthy();
   });
 
-  it("counts the ages of the conditions on with the clock on the Overview", () => {
+  it("counts the condition ages with the clock on the Overview", () => {
     vi.useFakeTimers({ now: Date.parse(now) });
     try {
       render(
@@ -1027,6 +1044,46 @@ describe("Overview components and conditions", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("the Brokers card shows the partitions with a leader and the Gateway its highest use", () => {
+    live.partitions = [
+      {
+        partition: 1,
+        leader: "orders-zeebe-0",
+        followers: [],
+        health: "unknown",
+      },
+      { partition: 2, followers: [], health: "unknown" },
+    ];
+    live.usage = [
+      {
+        pod: "orders-gateway-0",
+        cpu: { usedCores: 0.25, limitCores: 1 },
+        memory: { usedBytes: 600, limitBytes: 1000 },
+      },
+    ];
+    render(
+      view({
+        initial: data({
+          pods: [brokerPod(0), podOf("orders-gateway-0", "gateway")],
+        }),
+      }),
+    );
+    const number = (card: string, label: string) =>
+      within(
+        within(components()).getByRole("article", { name: card }),
+      ).getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
+    expect(number("Brokers", "Partitions with a leader")).toBe("1/2");
+    expect(number("Gateway", "Highest use")).toBe("60 % memory");
+    expect(live.observed).toContainEqual({
+      hook: "usePodUsage",
+      args: ["team-a", "camunda.io/cluster=orders"],
+    });
+    expect(live.observed).toContainEqual({
+      hook: "usePartitions",
+      args: ["team-a", "orders"],
+    });
   });
 
   it("the claim conditions show in the Claim group", () => {
@@ -1235,5 +1292,273 @@ describe("Claim tab", () => {
     );
     const access = screen.getByRole("region", { name: "Access: Gateway" });
     expect(within(access).getByText("Gateway")).toBeTruthy();
+  });
+});
+
+describe("Component detail", () => {
+  const components = () => screen.getByRole("region", { name: "Components" });
+  const open = async (card: string) =>
+    userEvent.click(
+      within(
+        within(components()).getByRole("article", { name: card }),
+      ).getByRole("link", { name: card }),
+    );
+  const detail = (title: string) => screen.getByRole("region", { name: title });
+  const podWatches = () =>
+    live.calls
+      .filter((c) => c.kind === "Pod")
+      .map((c) => (c.opts as { labelSelector: string }).labelSelector);
+  const notReady = (i: number) => {
+    const pod = brokerPod(i);
+    pod.status!.conditions = [{ type: "Ready", status: "False" }];
+    return pod;
+  };
+
+  it("a degraded broker shows the right card, conditions, and partitions", async () => {
+    live.objects.Pod = [brokerPod(0), brokerPod(1), notReady(2)];
+    live.partitions = [
+      {
+        partition: 1,
+        leader: "orders-zeebe-0",
+        followers: ["orders-zeebe-1", "orders-zeebe-2"],
+        health: "healthy",
+      },
+      {
+        partition: 2,
+        leader: "orders-zeebe-1",
+        followers: ["orders-zeebe-0"],
+        processorPhase: "PROCESSING",
+        health: "unhealthy",
+      },
+      {
+        partition: 3,
+        leader: "orders-zeebe-2",
+        followers: ["orders-zeebe-0", "orders-zeebe-1"],
+        health: "healthy",
+      },
+    ];
+    render(
+      view({
+        initial: data({
+          cluster: withConditions(condition("ZeebeReady", "False", "Degraded")),
+        }),
+      }),
+    );
+    const card = within(components()).getByRole("article", { name: "Brokers" });
+    const value = (label: string) =>
+      within(card).getByText(label, { selector: "dt" }).nextElementSibling
+        ?.textContent;
+    expect(value("Pods ready")).toBe("2/3");
+    expect(value("Partitions with a leader")).toBe("3/3");
+
+    await open("Brokers");
+
+    const brokers = detail("Brokers");
+    expect(
+      within(brokers).getByRole("rowheader", { name: "ZeebeReady" }),
+    ).toBeTruthy();
+    for (const i of [0, 1, 2]) {
+      expect(
+        within(brokers).getByRole("rowheader", { name: `orders-zeebe-${i}` }),
+      ).toBeTruthy();
+    }
+    const partition2 = within(
+      within(brokers).getByRole("region", { name: "Partitions" }),
+    )
+      .getByRole("rowheader", { name: "2" })
+      .closest("tr")!;
+    expect(partition2.textContent).toContain("orders-zeebe-0");
+    expect(partition2.textContent).not.toContain("orders-zeebe-2");
+    expect(window.location.search).toBe("?tab=overview&component=zeebe");
+    expect(screen.queryByRole("region", { name: "Components" })).toBeNull();
+  });
+
+  it("opening a card moves the focus to the detail heading, and All components moves it back to the card", async () => {
+    render(view());
+    await open("Brokers");
+    expect(document.activeElement).toBe(
+      within(detail("Brokers")).getByRole("heading", { name: "Brokers" }),
+    );
+    await userEvent.click(screen.getByRole("link", { name: "All components" }));
+    expect(document.activeElement).toBe(
+      within(components()).getByRole("link", { name: "Brokers" }),
+    );
+  });
+
+  it("closing the detail of an embedded app moves the focus back to its chip", async () => {
+    render(view());
+    await userEvent.click(
+      within(components()).getByRole("link", { name: "Embedded: Operate" }),
+    );
+    await userEvent.click(screen.getByRole("link", { name: "All components" }));
+    expect(document.activeElement).toBe(
+      within(components()).getByRole("link", { name: "Embedded: Operate" }),
+    );
+  });
+
+  it("ZeebeReady=False shows in the Brokers detail only", async () => {
+    const optimize = nsObject(
+      "CamundaOptimize",
+      "orders-optimize",
+      { clusterRef: { name: "orders" } },
+      { conditions: [condition("Ready", "True", "Healthy")] },
+      { creationTimestamp: now, uid: "uid-optimize" },
+    );
+    render(
+      view({
+        initial: data({
+          cluster: withConditions(condition("ZeebeReady", "False", "Degraded")),
+          optimizes: [optimize],
+        }),
+      }),
+    );
+    for (const name of ["Gateway", "Optimize"]) {
+      await open(name);
+      expect(
+        within(detail(name)).queryByRole("rowheader", { name: "ZeebeReady" }),
+      ).toBeNull();
+      await userEvent.click(
+        screen.getByRole("link", { name: "All components" }),
+      );
+    }
+  });
+
+  it("AdminSecretReady=False shows in no component detail", async () => {
+    render(
+      view({
+        initial: data({
+          cluster: withConditions(
+            condition("AdminSecretReady", "False", "MissingSecret"),
+          ),
+        }),
+      }),
+    );
+    const links = within(components())
+      .getAllByRole("link")
+      .map((l) => l.textContent ?? "");
+    expect(links).toEqual([
+      "Brokers",
+      "Gateway",
+      "Embedded: Operate",
+      "Embedded: Tasklist",
+      "Embedded: Admin",
+    ]);
+    for (const link of links) {
+      await userEvent.click(
+        within(components()).getByRole("link", { name: link }),
+      );
+      const name = link.replace("Embedded: ", "");
+      expect(
+        within(detail(name)).queryByRole("rowheader", {
+          name: "AdminSecretReady",
+        }),
+      ).toBeNull();
+      await userEvent.click(
+        screen.getByRole("link", { name: "All components" }),
+      );
+    }
+    expect(window.location.search).toBe("?tab=overview");
+  });
+
+  it("an embedded Operate opens with the gateway pods", async () => {
+    render(
+      view({
+        initial: data({
+          cluster: withConditions(
+            condition("OperateReady", "True", "Disabled"),
+          ),
+        }),
+      }),
+    );
+    await userEvent.click(
+      within(components()).getByRole("link", { name: "Embedded: Operate" }),
+    );
+    const operate = detail("Operate");
+    expect(within(operate).getByText("Embedded in Gateway")).toBeTruthy();
+    expect(
+      within(operate).getByRole("rowheader", { name: "OperateReady" }),
+    ).toBeTruthy();
+    expect(podWatches()).toContain(
+      "camunda.io/cluster=orders,camunda.io/component=gateway",
+    );
+  });
+
+  it("the Optimize detail watches the pods of the Optimize that holds the cluster", async () => {
+    const optimize = nsObject(
+      "CamundaOptimize",
+      "orders-optimize",
+      { clusterRef: { name: "orders" } },
+      { conditions: [condition("WebappReady", "False", "Degraded")] },
+      { creationTimestamp: now, uid: "uid-optimize" },
+    );
+    render(view({ initial: data({ optimizes: [optimize] }) }));
+    await open("Optimize");
+    expect(podWatches()).toContain(
+      "camunda.io/cluster=orders,camunda.io/component in (optimize-webapp,optimize-importer),camunda.io/optimize-uid=uid-optimize",
+    );
+    expect(
+      within(detail("Optimize")).getByRole("rowheader", {
+        name: "WebappReady",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("the detail selector starts with the selector of the page", async () => {
+    render(
+      view({
+        initial: data({ podSelector: "camunda.io/cluster=orders-3f9a1c2b" }),
+      }),
+    );
+    await open("Brokers");
+    expect(podWatches()).toContain(
+      "camunda.io/cluster=orders-3f9a1c2b,camunda.io/component=zeebe",
+    );
+    expect(podWatches().some((s) => s.includes("=orders,"))).toBe(false);
+  });
+
+  it("the Settings tab mounts the settings of the component and the editor slot", async () => {
+    render(
+      view({
+        initial: data({
+          cluster: cluster({
+            labels: { [CLAIM_LABEL]: "orders" },
+            spec: { zeebe: { replicas: 3 } },
+          }),
+        }),
+        slots: { "component.settings.editor": <p>Editor</p> },
+      }),
+    );
+    await open("Brokers");
+    await userEvent.click(
+      within(detail("Brokers")).getByRole("tab", { name: "Settings" }),
+    );
+    expect(
+      screen.getByRole("table", { name: "Brokers settings" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Editor")).toBeTruthy();
+  });
+
+  it.each([
+    ["a used card", "zeebe", "Brokers"],
+    ["an embedded Operate", "operate", "Operate"],
+  ])("the URL opens %s", (_, component, title) => {
+    window.history.replaceState(
+      null,
+      "",
+      `/fleet/clusters/team-a/orders?tab=overview&component=${component}`,
+    );
+    render(view());
+    expect(detail(title)).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Components" })).toBeNull();
+  });
+
+  it("an unknown component in the URL shows the cards", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/fleet/clusters/team-a/orders?tab=overview&component=keycloak",
+    );
+    render(view());
+    expect(components()).toBeTruthy();
   });
 });
