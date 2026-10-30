@@ -72,15 +72,15 @@ export function gitOpsManager(
 /**
  * appliedClientSide reports whether the GitOps tool applied live with
  * client-side apply in a way that a JSON merge patch repeats: live is a
- * custom resource and lastAppliedOf(live) is not undefined. A kind of the
- * core group or of a *.k8s.io group counts as built in, because kubectl
- * sends a built-in kind a strategic merge patch, which merges some lists
- * by key.
+ * custom resource and lastAppliedOf(live) is not undefined. A kind of a
+ * group without a dot, such as the core group or apps, or of a *.k8s.io
+ * group counts as built in, because kubectl sends a built-in kind a
+ * strategic merge patch, which merges some lists by key.
  */
 export function appliedClientSide(live: KubeObject | undefined): boolean {
   if (live === undefined) return false;
   const slash = live.apiVersion.indexOf("/");
   const group = slash === -1 ? "" : live.apiVersion.slice(0, slash);
-  if (group === "" || group.endsWith(".k8s.io")) return false;
+  if (!group.includes(".") || group.endsWith(".k8s.io")) return false;
   return lastAppliedOf(live) !== undefined;
 }

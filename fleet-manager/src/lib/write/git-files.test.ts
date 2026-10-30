@@ -196,6 +196,19 @@ describe("appliedClientSide", () => {
     ).toBe(false);
   });
 
+  it("is false for a kind of a built-in group without a dot", () => {
+    for (const [apiVersion, kind] of [
+      ["apps/v1", "Deployment"],
+      ["batch/v1", "Job"],
+      ["policy/v1", "PodDisruptionBudget"],
+      ["autoscaling/v2", "HorizontalPodAutoscaler"],
+    ]) {
+      expect(appliedClientSide(withLastApplied(apiVersion, kind, file))).toBe(
+        false,
+      );
+    }
+  });
+
   it("is false when the last applied file is not a JSON object", () => {
     expect(
       appliedClientSide(
