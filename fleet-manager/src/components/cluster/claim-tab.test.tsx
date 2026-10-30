@@ -296,6 +296,7 @@ describe("ClaimTab", () => {
     const row = within(table).getByRole("row", { name: /^hostname/ });
     expect(within(row).getByText("orders.example.com")).toBeTruthy();
     expect(within(row).getAllByText("Set by your admin")).toHaveLength(2);
+    expect(within(row).queryByRole("link")).toBeNull();
   });
 
   it("lets a keyboard user scroll a wide parameter table", () => {

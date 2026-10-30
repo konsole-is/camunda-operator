@@ -1,8 +1,8 @@
 "use client";
 
-import { Lock } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ConditionsTable } from "@/components/fleet/conditions-table";
+import { FieldState, FieldValue } from "@/components/fleet/field-state";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -12,12 +12,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  type ClusterField,
-  lockLabel,
-  stateLabel,
-  stateNote,
-} from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
   type ClaimRef,
@@ -218,10 +212,10 @@ function SectionPanel({ section }: { section: ClaimSection }) {
                   <code className="text-text">{field.label}</code>
                 </th>
                 <TableCell className="max-w-80 align-top break-words whitespace-normal">
-                  <Value value={field.value} />
+                  <FieldValue value={field.value} />
                 </TableCell>
                 <TableCell className="align-top whitespace-normal">
-                  <State field={field} />
+                  <FieldState field={field} />
                 </TableCell>
               </TableRow>
             ))}
@@ -229,34 +223,6 @@ function SectionPanel({ section }: { section: ClaimSection }) {
         </Table>
       )}
     </Panel>
-  );
-}
-
-function Value({ value }: { value: unknown }) {
-  if (value === undefined) return <span className="text-muted">Not set</span>;
-  if (typeof value === "string") return <>{value}</>;
-  if (typeof value === "number" || typeof value === "boolean")
-    return <>{String(value)}</>;
-  return (
-    <code className="text-xs text-text-2 [overflow-wrap:anywhere]">
-      {JSON.stringify(value)}
-    </code>
-  );
-}
-
-function State({ field }: { field: ClusterField }) {
-  const note = stateNote(field.state);
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-text-2">{stateLabel(field.state)}</span>
-      {note && <span className="text-xs text-muted">{note}</span>}
-      {field.lock && (
-        <span className="flex items-center gap-1.5 text-xs text-muted">
-          <Lock aria-hidden className="size-3.5 shrink-0" />
-          {lockLabel(field.lock)}
-        </span>
-      )}
-    </div>
   );
 }
 

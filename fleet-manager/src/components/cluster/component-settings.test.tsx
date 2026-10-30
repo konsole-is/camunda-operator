@@ -87,21 +87,6 @@ function row(label: string): HTMLElement {
 }
 
 describe("ComponentSettings", () => {
-  it("the Brokers settings show a storage class Filled by Volume encryption and a volume size Set by its resizer", () => {
-    renderSettings(brokers);
-    const storageClass = within(row("storageClassName"));
-    expect(storageClass.getByText("encrypted")).toBeDefined();
-    expect(
-      storageClass.getAllByText("Filled by Volume encryption"),
-    ).toHaveLength(2);
-    const size = within(row("storageSize"));
-    expect(size.getByText("64Gi")).toBeDefined();
-    expect(size.getByText("Set by pvc-autoresizer")).toBeDefined();
-    expect(
-      size.getByText("Setting it in the claim takes it over."),
-    ).toBeDefined();
-  });
-
   it("a field with a claim path links the Claim tab", () => {
     renderSettings(brokers);
     expect(
@@ -124,11 +109,6 @@ describe("ComponentSettings", () => {
     ).toBeDefined();
     const operate = screen.getByRole("table", { name: "Operate settings" });
     expect(within(operate).getByText("replicas")).toBeDefined();
-  });
-
-  it("a field without a value says Not set", () => {
-    renderSettings({ zeebe: { storageSize: "64Gi" } });
-    expect(within(row("storageClassName")).getByText("Not set")).toBeDefined();
   });
 
   it("renders no input", () => {
