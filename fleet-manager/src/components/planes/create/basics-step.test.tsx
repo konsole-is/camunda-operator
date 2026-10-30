@@ -47,6 +47,11 @@ const ctx: PlaneContext = {
     },
   ] as unknown as CamundaPlatformConfig[],
   takenNames: [],
+  namespaces: [
+    { name: "platform", environment: "production" },
+    { name: "team-a", environment: "production" },
+    { name: "team-b", environment: "staging" },
+  ],
 };
 
 const namespaces = [

@@ -1,5 +1,6 @@
 // This module runs in the browser and on the server.
 import type { NamespaceChoice } from "@/components/fleet/namespace-picker";
+import type { FleetEnvironmentConditionType } from "@/generated/conditions";
 import type { CamundaManagementClusterClaimSpec } from "@/generated/crds/camundamanagementclusterclaim";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import type { Environment } from "@/generated/crds/environment";
@@ -30,6 +31,8 @@ export type PlaneDraft = {
   clusterLabels: Record<string, string>;
 };
 
+const READY: FleetEnvironmentConditionType = "Ready";
+
 /** EMPTY_PLANE_DRAFT is the draft that the flow starts from. */
 export const EMPTY_PLANE_DRAFT: PlaneDraft = {
   name: "",
@@ -40,12 +43,14 @@ export const EMPTY_PLANE_DRAFT: PlaneDraft = {
 /**
  * PlaneContext is the live data that the steps check a draft against.
  * takenNames are the names of the plane claims and CamundaManagementClusters
- * in the namespace of the draft.
+ * in the namespace of the draft. namespaces are the live namespaces, each
+ * with the name of its Environment.
  */
 export type PlaneContext = {
   environments: readonly Environment[];
   platformConfigs: readonly CamundaPlatformConfig[];
   takenNames: readonly string[];
+  namespaces: readonly { name: string; environment?: string }[];
 };
 
 /** PlaneClaimBasics is the part of a CamundaManagementClusterClaim that steps 1 and 2 decide. */
@@ -89,15 +94,28 @@ export function servedOf(draft: PlaneDraft): string[] {
 /**
  * basicsErrors returns the errors of step 1 in screen order. Without any
  * Environment it returns only NO_ENVIRONMENT. A picked environment that is
- * gone counts as none.
+ * gone counts as none, and one that turned Ready=False refuses the step
+ * with its message. A namespace that the live data no longer allows is
+ * refused.
  */
 export function basicsErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
   if (ctx.environments.length === 0) return [NO_ENVIRONMENT];
   const errors: string[] = [];
   const environment = environmentOf(draft, ctx);
-  if (!environment) errors.push("Pick an environment.");
+  if (!environment) {
+    errors.push("Pick an environment.");
+  } else {
+    const notReady = environment.status?.conditions?.find(
+      (c) => c.type === READY && c.status === "False",
+    );
+    if (notReady) {
+      errors.push(
+        `The environment ${environment.spec.displayName || draft.environment} is not ready${notReady.message ? `: ${notReady.message}` : ""}`,
+      );
+    }
+  }
   errors.push(...claimNameErrors(draft.name, ctx.takenNames));
-  if (!draft.namespace) errors.push("Pick or create a namespace.");
+  errors.push(...namespaceErrors(draft, environment, ctx));
   const configName = platformConfigOf(draft, ctx);
   const config = ctx.platformConfigs.find(
     (c) => c.metadata.name === configName,
@@ -199,6 +217,29 @@ function identityProviderOf(
     default:
       return {};
   }
+}
+
+function namespaceErrors(
+  draft: PlaneDraft,
+  environment: Environment | undefined,
+  ctx: PlaneContext,
+): string[] {
+  const choice = draft.namespace;
+  const pick = "Pick or create a namespace.";
+  if (!choice) return [pick];
+  const live = ctx.namespaces.find((ns) => ns.name === choice.name);
+  if (choice.kind === "existing") {
+    return live && live.environment === draft.environment ? [] : [pick];
+  }
+  const creation = environment?.spec.namespaceCreation;
+  if (!creation?.allowed) return [pick];
+  const missing = (creation.requiredLabelKeys ?? []).filter(
+    (key) => !Object.hasOwn(creation.labels ?? {}, key) && !choice.labels[key],
+  );
+  return [
+    ...(live ? [`The namespace ${choice.name} already exists.`] : []),
+    ...missing.map((key) => `Enter a value for ${key}.`),
+  ];
 }
 
 function environmentOf(

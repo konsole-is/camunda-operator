@@ -15,6 +15,7 @@ import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import type { Plane, PlaneSources } from "@/components/planes/plane";
 import { type ReadError, usePlanes } from "@/components/planes/planes-table";
 import { namesIn } from "@/lib/claims/names";
+import { environmentOf } from "@/lib/policy";
 import { useResources } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
@@ -73,20 +74,38 @@ export function planeContextOf(
             models.sources.clusters,
           )
         : [],
+    namespaces: models.namespaces.map((ns) => ({
+      name: ns.metadata?.name ?? "",
+      environment: environmentOf(ns, models.environments).environment?.metadata
+        .name,
+    })),
   };
 }
 
-/** planeSteps returns PLANE_STEPS with the check of each step. selectorErrors are the errors of the cluster labels. */
+/**
+ * planeSteps returns PLANE_STEPS with the check of each step.
+ * selectorErrors are the errors of the cluster labels. failures are the
+ * lists that cannot be read, and each blocks step 1.
+ */
 export function planeSteps(
   models: PlaneModels,
   selectorErrors: readonly ValidationError[],
+  failures: readonly ReadError[] = [],
 ): CreateStep<PlaneDraft>[] {
   return PLANE_STEPS.map((step) => ({
     ...step,
     check: (draft: PlaneDraft) => {
       const ctx = planeContextOf(models, draft);
+      // A list that cannot be read would let a taken name, or a rule of an
+      // Environment, pass unseen.
       return step.id === "basics"
-        ? basicsErrors(draft, ctx)
+        ? [
+            ...failures.map(
+              (f) =>
+                `The fleet manager could not read the ${f.kind} objects: ${f.message}`,
+            ),
+            ...basicsErrors(draft, ctx),
+          ]
         : servedErrors(draft, ctx, selectorErrors);
     },
   }));
@@ -185,7 +204,7 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
     },
   };
   const [selectorErrors, setSelectorErrors] = useState<ValidationError[]>([]);
-  const steps = planeSteps(models, selectorErrors);
+  const steps = planeSteps(models, selectorErrors, readErrors);
   const flow = useCreateFlow({ steps, initial: EMPTY_PLANE_DRAFT });
   const namespace = flow.draft.namespace;
 

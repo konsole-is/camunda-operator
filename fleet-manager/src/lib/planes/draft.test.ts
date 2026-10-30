@@ -12,10 +12,15 @@ import {
   servedOf,
 } from "./draft";
 
-const environment = (name: string, platformConfigRef?: string): Environment =>
+const environment = (
+  name: string,
+  platformConfigRef?: string,
+  extra: object = {},
+): Environment =>
   ({
     metadata: { name },
     spec: platformConfigRef ? { platformConfigRef } : {},
+    ...extra,
   }) as Environment;
 
 const ctx: PlaneContext = {
@@ -24,6 +29,37 @@ const ctx: PlaneContext = {
     environment("staging", "default-platform"),
     environment("bare"),
     environment("dangling", "gone"),
+    environment("open", "default-platform", {
+      spec: {
+        platformConfigRef: "default-platform",
+        namespaceCreation: {
+          allowed: true,
+          labels: { tier: "gold" },
+          requiredLabelKeys: ["tier", "team"],
+        },
+      },
+    }),
+    environment("broken", "default-platform", {
+      status: {
+        conditions: [
+          {
+            type: "Ready",
+            status: "False",
+            reason: "InvalidReference",
+            message: "CamundaRelease 8.9 does not exist",
+            lastTransitionTime: "2026-10-30T00:00:00Z",
+          },
+        ],
+      },
+    }),
+  ],
+  namespaces: [
+    { name: "platform", environment: "production" },
+    { name: "ops", environment: "staging" },
+    { name: "team-a", environment: "open" },
+    { name: "team-b", environment: "broken" },
+    { name: "bare-ns", environment: "bare" },
+    { name: "dangling-ns", environment: "dangling" },
   ],
   platformConfigs: [
     { metadata: { name: "default-platform" }, spec: {} },
@@ -95,13 +131,21 @@ describe("basicsErrors", () => {
   });
 
   it("blocks step 1 when the environment names no platform config and none is picked", () => {
-    expect(basicsErrors({ ...ready(), environment: "bare" }, ctx)).toEqual([
-      "Pick a platform config.",
-    ]);
+    const d: PlaneDraft = {
+      ...ready(),
+      environment: "bare",
+      namespace: { kind: "existing", name: "bare-ns" },
+    };
+    expect(basicsErrors(d, ctx)).toEqual(["Pick a platform config."]);
   });
 
   it("blocks step 1 when the platform config of the environment does not exist", () => {
-    expect(basicsErrors({ ...ready(), environment: "dangling" }, ctx)).toEqual([
+    const d: PlaneDraft = {
+      ...ready(),
+      environment: "dangling",
+      namespace: { kind: "existing", name: "dangling-ns" },
+    };
+    expect(basicsErrors(d, ctx)).toEqual([
       "Platform config gone of the environment does not exist. Pick another one.",
     ]);
   });
@@ -140,6 +184,76 @@ describe("basicsErrors", () => {
     ]);
     expect(
       basicsErrors({ ...ready(), externalKeycloak: external }, ctx),
+    ).toEqual([]);
+  });
+});
+
+describe("basicsErrors and the live data", () => {
+  it("refuses an environment that turned Ready=False, with its message", () => {
+    expect(
+      basicsErrors(
+        {
+          ...ready(),
+          environment: "broken",
+          namespace: { kind: "existing", name: "team-b" },
+        },
+        ctx,
+      ),
+    ).toEqual([
+      "The environment broken is not ready: CamundaRelease 8.9 does not exist",
+    ]);
+  });
+
+  it("refuses an existing namespace that is gone", () => {
+    expect(
+      basicsErrors(
+        { ...ready(), namespace: { kind: "existing", name: "gone" } },
+        ctx,
+      ),
+    ).toEqual(["Pick or create a namespace."]);
+  });
+
+  it("refuses an existing namespace of another environment", () => {
+    expect(
+      basicsErrors(
+        { ...ready(), namespace: { kind: "existing", name: "ops" } },
+        ctx,
+      ),
+    ).toEqual(["Pick or create a namespace."]);
+  });
+
+  it("refuses a new namespace in an environment that allows none", () => {
+    expect(
+      basicsErrors(
+        { ...ready(), namespace: { kind: "new", name: "fresh", labels: {} } },
+        ctx,
+      ),
+    ).toEqual(["Pick or create a namespace."]);
+  });
+
+  it("refuses a new namespace whose name exists, and asks for each missing required label", () => {
+    expect(
+      basicsErrors(
+        {
+          ...ready(),
+          environment: "open",
+          namespace: { kind: "new", name: "ops", labels: {} },
+        },
+        ctx,
+      ),
+    ).toEqual(["The namespace ops already exists.", "Enter a value for team."]);
+  });
+
+  it("passes a new namespace with the required labels", () => {
+    expect(
+      basicsErrors(
+        {
+          ...ready(),
+          environment: "open",
+          namespace: { kind: "new", name: "fresh", labels: { team: "a" } },
+        },
+        ctx,
+      ),
     ).toEqual([]);
   });
 });

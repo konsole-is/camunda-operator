@@ -5,13 +5,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { type PlaneCreateData, PlaneCreateFlow } from "./plane-create-flow";
 
+const watch = vi.hoisted(() => ({ failing: "" }));
 vi.mock("@/lib/k8s/hooks", () => ({
-  useResources: (_kind: string, _opts: unknown, initial: unknown[]) => ({
+  useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
     items: initial,
+    ...(kind === watch.failing && { error: `${kind} is forbidden` }),
   }),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  watch.failing = "";
+});
 
 const environment = (name: string, platformConfigRef?: string) => ({
   apiVersion: "fleet.camunda.io/v1alpha1",
@@ -126,4 +131,22 @@ describe("PlaneCreateFlow", () => {
     ).toBeTruthy();
     expect(next().disabled).toBe(true);
   });
+
+  it.each(["CamundaManagementClusterClaim", "Environment"])(
+    "shows a failed read of %s above the steps and blocks step 1",
+    async (kind) => {
+      watch.failing = kind;
+      render(<PlaneCreateFlow initial={data} />);
+      expect(screen.getByRole("alert").textContent).toBe(
+        `Could not read ${kind}: ${kind} is forbidden`,
+      );
+      await fillBasics();
+      expect(next().disabled).toBe(true);
+      expect(
+        screen.getByText(
+          `The fleet manager could not read the ${kind} objects: ${kind} is forbidden`,
+        ),
+      ).toBeTruthy();
+    },
+  );
 });
