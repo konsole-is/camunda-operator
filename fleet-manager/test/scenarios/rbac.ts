@@ -1,0 +1,109 @@
+// The page scenarios run the app as a user that holds only the RBAC of the
+// chart. CI has no Helm, so this module reads the rules from the templates.
+import fs from "node:fs/promises";
+import path from "node:path";
+import type { KubeConfig } from "@kubernetes/client-node";
+import { parse } from "yaml";
+import { KubeError, kubeRequest } from "./kube";
+
+/**
+ * CHART_DIR holds the chart templates of the fleet manager. It resolves
+ * from the working directory, which is fleet-manager for Vitest and
+ * Playwright.
+ */
+export const CHART_DIR = path.resolve("deploy/chart");
+
+/** PolicyRule is one rule of a Role or a ClusterRole. */
+export interface PolicyRule {
+  apiGroups?: string[];
+  resources?: string[];
+  resourceNames?: string[];
+  verbs: string[];
+}
+
+/**
+ * chartRules returns the rules of the Role or ClusterRole template text,
+ * without the template lines around them. It throws when the rules block
+ * holds a template, so that a test never binds fewer rules than the chart,
+ * and when the text has no rules block. file names the template in the
+ * error.
+ */
+export function chartRules(text: string, file: string): PolicyRule[] {
+  const lines = text
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("{{"));
+  const start = lines.findIndex((line) => line.startsWith("rules:"));
+  if (start < 0) throw new Error(`The template ${file} has no rules block`);
+  const block = lines.slice(start).join("\n");
+  if (block.includes("{{")) {
+    throw new Error(
+      `The rules of ${file} hold a template. Read them with helm template instead`,
+    );
+  }
+  return (parse(block) as { rules: PolicyRule[] }).rules;
+}
+
+const NAME = "fleet-manager-scenarios";
+const RBAC = "/apis/rbac.authorization.k8s.io/v1";
+
+/**
+ * bindChartRBAC gives user the rules of clusterrole.yaml in every namespace
+ * and the rules of role.yaml in namespace, through roles and bindings named
+ * fleet-manager-scenarios. admin is a kubeconfig that may create them. A
+ * second call keeps the objects of the first.
+ */
+export async function bindChartRBAC(
+  admin: KubeConfig,
+  user: string,
+  namespace: string,
+  chartDir: string = CHART_DIR,
+): Promise<void> {
+  const read = async (file: string) => {
+    const full = path.join(chartDir, file);
+    return chartRules(await fs.readFile(full, "utf8"), full);
+  };
+  const subjects = [
+    { apiGroup: "rbac.authorization.k8s.io", kind: "User", name: user },
+  ];
+  const binding = (kind: "ClusterRole" | "Role") => ({
+    metadata: { name: NAME },
+    roleRef: { apiGroup: "rbac.authorization.k8s.io", kind, name: NAME },
+    subjects,
+  });
+  const scoped = `${RBAC}/namespaces/${namespace}`;
+
+  await create(admin, `${RBAC}/clusterroles`, {
+    kind: "ClusterRole",
+    metadata: { name: NAME },
+    rules: await read("clusterrole.yaml"),
+  });
+  await create(admin, `${RBAC}/clusterrolebindings`, {
+    kind: "ClusterRoleBinding",
+    ...binding("ClusterRole"),
+  });
+  await create(admin, `${scoped}/roles`, {
+    kind: "Role",
+    metadata: { name: NAME },
+    rules: await read("role.yaml"),
+  });
+  await create(admin, `${scoped}/rolebindings`, {
+    kind: "RoleBinding",
+    ...binding("Role"),
+  });
+}
+
+async function create(
+  kc: KubeConfig,
+  collection: string,
+  body: { kind: string; [key: string]: unknown },
+): Promise<void> {
+  try {
+    await kubeRequest(kc, "POST", collection, {
+      apiVersion: "rbac.authorization.k8s.io/v1",
+      ...body,
+    });
+  } catch (error) {
+    if (error instanceof KubeError && error.status === 409) return;
+    throw error;
+  }
+}

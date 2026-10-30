@@ -10,6 +10,7 @@ import {
   openScenario,
 } from "../scenarios/loader";
 import { type KubeObject, readObjects } from "../scenarios/objects";
+import { bindChartRBAC } from "../scenarios/rbac";
 
 const USER = "fleet-manager-scenarios";
 
@@ -270,3 +271,57 @@ describe("the scenario loader", () => {
   });
 });
 
+async function allowed(
+  kc: KubeConfig,
+  attributes: Record<string, string>,
+): Promise<boolean> {
+  const review = await kubeRequest<{ status: { allowed: boolean } }>(
+    kc,
+    "POST",
+    "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
+    {
+      apiVersion: "authorization.k8s.io/v1",
+      kind: "SelfSubjectAccessReview",
+      spec: { resourceAttributes: attributes },
+    },
+  );
+  return review.status.allowed;
+}
+
+describe("bindChartRBAC", () => {
+  it("binds the chart rules to the user", async () => {
+    try {
+      await kubeRequest(envtest.kubeConfig, "POST", "/api/v1/namespaces", {
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: { name: "camunda-system" },
+      });
+    } catch (error) {
+      if (!(error instanceof KubeError && error.status === 409)) throw error;
+    }
+    const user = envtest.users[USER].kubeConfig;
+    const listClusters = {
+      group: "core.camunda.io",
+      resource: "camundaclusters",
+      verb: "list",
+    };
+    expect(await allowed(user, listClusters)).toBe(false);
+
+    await bindChartRBAC(envtest.kubeConfig, USER, "camunda-system");
+    // A second binding finds the objects of the first and does not fail.
+    await bindChartRBAC(envtest.kubeConfig, USER, "camunda-system");
+
+    expect(await allowed(user, listClusters)).toBe(true);
+    expect(await allowed(user, { ...listClusters, verb: "delete" })).toBe(
+      false,
+    );
+    expect(
+      await allowed(user, {
+        namespace: "camunda-system",
+        resource: "configmaps",
+        name: "fleet-manager-settings",
+        verb: "update",
+      }),
+    ).toBe(true);
+  });
+});

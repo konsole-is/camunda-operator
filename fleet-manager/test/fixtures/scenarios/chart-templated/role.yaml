@@ -1,0 +1,11 @@
+{{- if .Values.fleetManager.enabled }}
+# A rules block with a template, which chartRules must refuse.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fleet-manager.name" . }}
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [{{ .Values.verbs }}]
+{{- end }}
