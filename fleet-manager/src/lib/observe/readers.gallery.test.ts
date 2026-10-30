@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { list } from "@/lib/k8s/read";
+import { get, list } from "@/lib/k8s/read";
 import { podUsage as realPodUsage, podUsageFrom } from "./kube";
 import { followPodLog as realFollowPodLog } from "./pod-log";
 import {
@@ -14,7 +14,7 @@ import {
 
 vi.mock("./kube", () => ({ podUsage: vi.fn(), podUsageFrom: vi.fn() }));
 vi.mock("./pod-log", () => ({ followPodLog: vi.fn() }));
-vi.mock("@/lib/k8s/read", () => ({ list: vi.fn() }));
+vi.mock("@/lib/k8s/read", () => ({ get: vi.fn(), list: vi.fn() }));
 
 let dir = "";
 
@@ -68,6 +68,23 @@ logs:
       signal,
     );
     expect(await readAll(stream)).toEqual(["side"]);
+  });
+
+  it("reads the lines of the first container of the pod when the request names none", async () => {
+    await observe(`schemaVersion: 1
+logs:
+  - { namespace: team-a, pod: p-0, container: side, lines: [side] }
+  - { namespace: team-a, pod: p-0, container: main, lines: [main] }
+`);
+    vi.mocked(get).mockResolvedValue({
+      spec: { containers: [{ name: "main" }, { name: "side" }] },
+    } as never);
+    const stream = await followPodLog(
+      { namespace: "team-a", pod: "p-0" },
+      signal,
+    );
+    expect(await readAll(stream)).toEqual(["main"]);
+    expect(get).toHaveBeenCalledWith("Pod", "team-a", "p-0");
   });
 
   it("follows the real log of a pod that observe.yaml does not name", async () => {

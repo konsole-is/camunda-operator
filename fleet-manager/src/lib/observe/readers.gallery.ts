@@ -1,7 +1,7 @@
 import "server-only";
 import fs from "node:fs/promises";
 import { parse } from "yaml";
-import { list } from "@/lib/k8s/read";
+import { get, list } from "@/lib/k8s/read";
 import {
   type PodMetrics,
   podUsage as realPodUsage,
@@ -95,11 +95,18 @@ export async function followPodLog(
   req: PodLogRequest,
   signal: AbortSignal,
 ): Promise<ReadableStream<string>> {
-  const log = (await readObserveFile())?.logs.find(
-    (l) =>
-      l.namespace === req.namespace &&
-      l.pod === req.pod &&
-      (!req.container || !l.container || l.container === req.container),
+  const logs = (await readObserveFile())?.logs.filter(
+    (l) => l.namespace === req.namespace && l.pod === req.pod,
+  );
+  if (!logs?.length) return realFollowPodLog(req, signal);
+  // As in the real reader, no container means the first container of the pod.
+  const container =
+    req.container ??
+    (logs.some((l) => l.container)
+      ? (await get("Pod", req.namespace, req.pod))?.spec?.containers?.[0]?.name
+      : undefined);
+  const log = logs.find(
+    (l) => !l.container || !container || l.container === container,
   );
   if (!log) return realFollowPodLog(req, signal);
   const lines = req.tailLines ? log.lines.slice(-req.tailLines) : log.lines;

@@ -96,9 +96,12 @@ async function waitForApp(url: string, stderr: string[]): Promise<void> {
   const deadline = Date.now() + READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     try {
-      if ((await fetch(url)).status === 200) return;
+      const answer = await fetch(url, {
+        signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+      });
+      if (answer.status === 200) return;
     } catch {
-      // The server does not listen yet.
+      // The server does not listen yet, or the deadline passed.
     }
     await new Promise((wake) => setTimeout(wake, 250));
   }
