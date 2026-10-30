@@ -14,8 +14,8 @@ export type PodContext = {
 
 /**
  * podInputs returns the settings of a merged cluster spec that the
- * operator renders into the environment of process p, as render in
- * pkg/components/camundacluster/render.go does. When the results for the
+ * operator renders into the pod template of process p, through its
+ * environment or its config hash. When the results for the
  * spec before and after a change differ, the pods of p restart.
  */
 export function podInputs(
@@ -28,9 +28,14 @@ export function podInputs(
     : undefined;
   const oidc = method === "basic" ? undefined : oidcOf(spec, ctx.platform);
 
+  // The config hash of every process takes the digest of this Secret, under
+  // either method.
+  const secret = spec.auth?.clientSecretRef;
+
   if (p === "connectors")
     return {
       gatewayEmbedded: spec.gateway?.mode === "Embedded",
+      secret,
       client: oidc && [oidc.clientId, oidc.audience, oidc.secret],
       // A new passwordRotation gives a new admin password, and the config
       // hash of the connectors takes the hash of that password.
@@ -51,6 +56,8 @@ export function podInputs(
       connectorsClient:
         oidc.connectorsClaim && spec.connectors?.enabled === true,
     },
+    secret,
+    buckets: [spec.backupStorageRef, spec.documentStorageRef],
     backup: backupOf(spec, ctx.storage, p),
   };
 }

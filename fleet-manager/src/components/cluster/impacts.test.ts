@@ -605,6 +605,22 @@ describe("clusterImpacts", () => {
       ).toEqual([]);
     });
 
+    it("the client secret restarts every process under either method", () => {
+      const change = set(cluster("auth", "clientSecretRef"), {
+        name: "orders-idp",
+        key: "secret",
+      });
+      const every = [...EVERY_UNIFIED, "Connectors pods restart."];
+      expect(impacts(change, { platform: BASIC })).toEqual(every);
+      expect(impacts(change, { platform: OIDC })).toEqual(every);
+    });
+
+    it("documentStorageRef restarts every process except the connectors", () => {
+      expect(impacts(set(cluster("documentStorageRef"), "docs"))).toEqual(
+        EVERY_UNIFIED,
+      );
+    });
+
     it("externalUrl restarts them under OIDC only", () => {
       const change = set(cluster("externalUrl"), "https://orders.example");
       const own = selecting(claim(running));
