@@ -259,6 +259,65 @@ describe("validateClusterClaim", () => {
     });
   });
 
+  it("checks a changed release against the Environment without a resolved policy", () => {
+    const environment = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "prod" },
+      spec: { releases: { allowed: ["camunda-8-9-5"] } },
+    } as unknown as Resource<"Environment">;
+    const s = set(open(), [f("spec"), f("releaseRef")], "camunda-8-10-1");
+    expect(validateClusterClaim(s, ctx({ environment }))).toEqual([
+      {
+        message:
+          'CamundaRelease "camunda-8-10-1" is not in spec.releases.allowed of Environment "prod"',
+      },
+    ]);
+  });
+
+  it("checks the default release of the Environment after a release reset", () => {
+    const environment = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "prod" },
+      spec: {
+        releases: {
+          allowed: ["camunda-8-9-5", "camunda-8-11-0"],
+          default: "camunda-8-11-0",
+        },
+      },
+    } as unknown as Resource<"Environment">;
+    const result = resetValue(open(), [f("spec"), f("releaseRef")]);
+    if (!("session" in result)) throw new Error("refused");
+    expect(validateClusterClaim(result.session, ctx({ environment }))).toEqual([
+      {
+        path: "spec.releaseRef",
+        message: "Skips 8.10. Move to an 8.10 release first.",
+      },
+    ]);
+  });
+
+  it("does not check a parameter with choices against the schema", () => {
+    const policy = {
+      sections: { access: { allowed: ["gateway-access"] } },
+      parameters: {
+        "gateway-access": {
+          hostnamePattern: { claimEditable: true, value: "x" },
+          replicas: {
+            claimEditable: true,
+            allowed: [{ name: "small", label: "Small", value: 1 }],
+          },
+        },
+      },
+    } as unknown as ResolvedPolicy;
+    const s = set(
+      open(claim({}, policy)),
+      [...ACCESS, f("parameters"), f("replicas")],
+      "small",
+    );
+    expect(validateClusterClaim(s, ctx())).toEqual([]);
+  });
+
   it("checks the values that a reset leaves", () => {
     const s = open(claim({ cluster: { externalUrl: "https://x" } }));
     const result = resetValue(s, [f("spec"), f("cluster"), f("externalUrl")]);

@@ -18,6 +18,7 @@ import {
   type MovingCluster,
   type PluginSelection,
   type PolicyResult,
+  type ResolvedPolicy,
 } from "@/lib/policy";
 import { validate, type OpenAPISchema } from "@/lib/schema";
 import { claimAfter, type PendingChange, type Session } from "./session";
@@ -43,14 +44,16 @@ export type ClusterClaimContext = {
 type Claim = Resource<"CamundaClusterClaim">;
 
 /**
- * validateClusterClaim returns every error of the claim after the change of
- * s, before review: a refused field in spec.cluster, a value that the
- * resolved policy does not allow, a field that a selected slot fills, a
- * section parameter that fails the schema of its registration, and a
- * release move that skips a minor, downgrades without allowVersionDowngrade
- * set to its version, or names no release. It checks the preset and the
- * release against the Environment only when s changes them. Types and
- * ranges of the CRD are left to the dry run.
+ * validateClusterClaim returns the errors of the claim after the change of
+ * s, before review: each refused field in spec.cluster, the first value that
+ * the resolved policy does not allow, the first field that a selected slot
+ * fills, each section parameter that fails the schema of its registration,
+ * and a release move that skips a minor, downgrades without
+ * allowVersionDowngrade set to its version, or names no release. It checks
+ * a preset and a release that s sets against the Environment, also without
+ * a resolved policy. After a reset of the release, the move goes to the
+ * default release of the Environment. Types and ranges of the CRD are left
+ * to the dry run.
  */
 export function validateClusterClaim(
   s: Session<Claim>,
@@ -67,21 +70,22 @@ export function validateClusterClaim(
       errors.push({ path: pathFrom("", steps), message: refusedMessage(row) });
   }
 
+  // Without the snapshot of the claim, only the Environment can be
+  // checked: the selections need the snapshot.
   const policy = after.status?.resolvedPolicy;
-  if (policy)
-    errors.push(
-      ...messagesOf(
-        checkAllowed({
-          kind: "CamundaClusterClaim",
-          sections: generated<PluginSection[]>(ctx.sections),
-          environment: generated<Environment | undefined>(ctx.environment),
-          policy,
-          selections,
-          ...(changed(s, "presetRef") && { presetRef: spec.presetRef }),
-          ...(changed(s, "releaseRef") && { releaseRef: spec.releaseRef }),
-        }),
-      ),
-    );
+  errors.push(
+    ...messagesOf(
+      checkAllowed({
+        kind: "CamundaClusterClaim",
+        sections: generated<PluginSection[]>(ctx.sections),
+        environment: generated<Environment | undefined>(ctx.environment),
+        policy: policy ?? {},
+        selections: policy ? selections : [],
+        ...(changed(s, "presetRef") && { presetRef: spec.presetRef }),
+        ...(changed(s, "releaseRef") && { releaseRef: spec.releaseRef }),
+      }),
+    ),
+  );
 
   errors.push(
     ...messagesOf(
@@ -93,10 +97,12 @@ export function validateClusterClaim(
   );
 
   for (const entry of s.pending.values())
-    errors.push(...parameterErrors(entry, ctx));
+    errors.push(...parameterErrors(entry, ctx, policy));
 
-  if (changed(s, "releaseRef") && spec.releaseRef)
-    errors.push(...releaseErrors(spec.releaseRef, spec, ctx));
+  const release =
+    spec.releaseRef || ctx.environment?.spec.releases?.default || undefined;
+  if (topEntry(s, "releaseRef") && release)
+    errors.push(...releaseErrors(release, spec, ctx));
 
   return errors;
 }
@@ -121,13 +127,17 @@ function isSet(value: unknown): boolean {
   );
 }
 
-function changed(s: Session<Claim>, field: string): boolean {
-  const entry = [...s.pending.values()].find(
+function topEntry(s: Session<Claim>, field: string): PendingChange | undefined {
+  return [...s.pending.values()].find(
     (e) =>
       e.steps.length === 2 &&
       "field" in e.steps[1] &&
       e.steps[1].field === field,
   );
+}
+
+function changed(s: Session<Claim>, field: string): boolean {
+  const entry = topEntry(s, field);
   return entry !== undefined && !("reset" in entry);
 }
 
@@ -142,6 +152,7 @@ function messagesOf(result: PolicyResult<unknown>): FieldError[] {
 function parameterErrors(
   entry: PendingChange,
   ctx: ClusterClaimContext,
+  policy: ResolvedPolicy | undefined,
 ): FieldError[] {
   if ("reset" in entry || entry.steps.length !== 5) return [];
   const [, plugins, selection, parameters, name] = entry.steps as [
@@ -158,6 +169,12 @@ function parameterErrors(
     !("field" in name)
   )
     return [];
+  // A parameter with choices holds the name of a choice, which the policy
+  // check covers. The schema describes the value of the choice.
+  const choices =
+    policy?.parameters?.[selection.item.registration as string]?.[name.field]
+      ?.allowed;
+  if (choices?.length) return [];
   const registration = ctx.registrations.find(
     (r) => r.metadata?.name === selection.item.registration,
   );

@@ -148,3 +148,17 @@ describe("without", () => {
     );
   });
 });
+
+describe("__proto__", () => {
+  const steps = [f("parameters"), f("__proto__")];
+
+  it("withValue sets __proto__ as an own field", () => {
+    const after = withValue({ parameters: {} }, steps, { a: 1 });
+    expect(Object.hasOwn(after.parameters, "__proto__")).toBe(true);
+    expect(valueAt(after, steps)).toEqual({ a: 1 });
+  });
+
+  it("valueAt does not read an inherited field", () => {
+    expect(valueAt({ parameters: {} }, steps)).toBeUndefined();
+  });
+});

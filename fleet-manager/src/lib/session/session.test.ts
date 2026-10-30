@@ -261,6 +261,63 @@ describe("locks", () => {
   });
 });
 
+describe("locks below a field", () => {
+  it("refuses a change below a locked field", () => {
+    const s = open(claim(), (p) =>
+      p === "spec.cluster.serviceAccount.annotations"
+        ? {
+            reason: "filled",
+            section: "cloud-identity",
+            sectionLabel: "Cloud identity",
+          }
+        : undefined,
+    );
+    const steps = cluster("serviceAccount", "annotations", "team");
+    expect(setValue(s, steps, "a")).toEqual({
+      refused: {
+        reason: "filled",
+        section: "cloud-identity",
+        sectionLabel: "Cloud identity",
+      },
+    });
+    expect("refused" in resetValue(s, steps)).toBe(true);
+  });
+});
+
+describe("indexed items", () => {
+  const listClaim = () =>
+    withSpec({ cluster: { extraEnvFrom: [{ a: 1 }, { b: 2 }, { c: 3 }] } });
+  const item = (i: number): Step[] => [
+    ...cluster("extraEnvFrom"),
+    { index: i },
+  ];
+
+  it("resets of two indexed items remove both", () => {
+    let s = ok(resetValue(open(listClaim()), item(0)));
+    s = ok(resetValue(s, item(1)));
+    expect(
+      (claimAfter(s).spec as { cluster: { extraEnvFrom: unknown } }).cluster
+        .extraEnvFrom,
+    ).toEqual([{ c: 3 }]);
+  });
+
+  it("a reset before a change of a later item keeps the change on that item", () => {
+    let s = ok(resetValue(open(listClaim()), item(0)));
+    s = ok(setValue(s, item(2), { c: 4 }));
+    expect(
+      (claimAfter(s).spec as { cluster: { extraEnvFrom: unknown } }).cluster
+        .extraEnvFrom,
+    ).toEqual([{ b: 2 }, { c: 4 }]);
+  });
+
+  it("rebase drops an indexed change when its list changed", () => {
+    const s = ok(setValue(open(listClaim()), item(1), { b: 5 }));
+    const next = withSpec({ cluster: { extraEnvFrom: [{ b: 2 }, { c: 3 }] } });
+    next.metadata = { ...next.metadata, resourceVersion: "42" };
+    expect(rebase(s, next).pending.size).toBe(0);
+  });
+});
+
 describe("discard", () => {
   it("drops one pending change and keeps the others", () => {
     let s = ok(setValue(open(), cluster("zeebe", "replicas"), 5));

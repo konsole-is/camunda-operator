@@ -5,7 +5,7 @@ import { equalJSON } from "@/lib/policy";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import type { LockProvider } from "./locks";
-import { valueAt, without, withValue } from "./steps";
+import { valueAt, withChanges } from "./steps";
 
 /** ClaimObject is a claim of any kind, as the form read it. */
 export type ClaimObject = {
@@ -63,7 +63,8 @@ export function openSession<C extends ClaimObject>(input: {
 
 /**
  * setValue sets value at steps. A value equal to the claim value removes
- * the change, and undefined is resetValue. A locked path refuses.
+ * the change, and undefined is resetValue. A locked path, or a path below a
+ * locked one, refuses.
  */
 export function setValue<C extends ClaimObject>(
   s: Session<C>,
@@ -72,7 +73,7 @@ export function setValue<C extends ClaimObject>(
 ): SetResult<C> {
   if (value === undefined) return resetValue(s, steps);
   const path = pathFrom("", steps);
-  const lock = s.locks(path);
+  const lock = lockOf(s.locks, steps);
   if (lock) return { refused: lock };
   return {
     session: withEntry(
@@ -88,14 +89,15 @@ export function setValue<C extends ClaimObject>(
 /**
  * resetValue removes the claim value at steps, as "Reset to preset" and
  * "Reset to environment" do. When the claim holds no value there, it only
- * drops a pending change. A locked path refuses.
+ * drops a pending change. A locked path, or a path below a locked one,
+ * refuses.
  */
 export function resetValue<C extends ClaimObject>(
   s: Session<C>,
   steps: Step[],
 ): SetResult<C> {
   const path = pathFrom("", steps);
-  const lock = s.locks(path);
+  const lock = lockOf(s.locks, steps);
   if (lock) return { refused: lock };
   return {
     session: withEntry(
@@ -118,13 +120,7 @@ export function discard<C extends ClaimObject>(
 
 /** claimAfter returns a copy of the claim with each pending change applied. */
 export function claimAfter<C extends ClaimObject>(s: Session<C>): C {
-  let claim = structuredClone(s.claim);
-  for (const entry of s.pending.values())
-    claim =
-      "reset" in entry
-        ? without(claim, entry.steps)
-        : withValue(claim, entry.steps, entry.value);
-  return claim;
+  return withChanges(s.claim, [...s.pending.values()]);
 }
 
 /**
@@ -149,7 +145,8 @@ export function changeOf<C extends ClaimObject>(
 /**
  * rebase moves the session to a newer copy of its claim. It keeps each
  * pending change that locks, by default the lock provider of s, do not
- * lock and that still changes claim, and drops the others.
+ * lock and that still changes claim, and drops the others. It also drops a
+ * change at an index of a list that claim changed.
  */
 export function rebase<C extends ClaimObject>(
   s: Session<C>,
@@ -158,7 +155,8 @@ export function rebase<C extends ClaimObject>(
 ): Session<C> {
   const pending = new Map<FieldPath, PendingChange>();
   for (const [path, entry] of s.pending) {
-    if (locks(path)) continue;
+    if (lockOf(locks, entry.steps)) continue;
+    if (movedIndex(s.claim, claim, entry.steps)) continue;
     const current = valueAt(claim, entry.steps);
     const changes =
       "reset" in entry
@@ -167,6 +165,34 @@ export function rebase<C extends ClaimObject>(
     if (changes) pending.set(path, entry);
   }
   return { claim, pending, locks };
+}
+
+function lockOf(
+  locks: LockProvider,
+  steps: readonly Step[],
+): FieldLock | undefined {
+  for (let i = 1; i <= steps.length; i++) {
+    const lock = locks(pathFrom("", steps.slice(0, i)));
+    if (lock) return lock;
+  }
+  return undefined;
+}
+
+// movedIndex says whether a list that steps names an item of by index
+// differs between before and after, so that the index can name another item.
+function movedIndex(
+  before: unknown,
+  after: unknown,
+  steps: readonly Step[],
+): boolean {
+  return steps.some(
+    (step, i) =>
+      "index" in step &&
+      !equalJSON(
+        valueAt(before, steps.slice(0, i)),
+        valueAt(after, steps.slice(0, i)),
+      ),
+  );
 }
 
 function withEntry<C extends ClaimObject>(

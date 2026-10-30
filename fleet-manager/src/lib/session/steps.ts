@@ -36,8 +36,37 @@ export function without<T>(object: T, steps: readonly Step[]): T {
   return (drop(object, steps) ?? {}) as T;
 }
 
+/** StepChange is a value to set at steps, or a reset that removes the value at steps. */
+export type StepChange =
+  | { steps: readonly Step[]; value: unknown }
+  | { steps: readonly Step[]; reset: true };
+
+/**
+ * withChanges returns a copy of object with each change applied in order,
+ * as withValue and without do. An index of a step names the item of the
+ * list in object, also after a change before it removed an item of that
+ * list. It does not change object.
+ */
+export function withChanges<T>(object: T, changes: readonly StepChange[]): T {
+  let at: unknown = structuredClone(object);
+  for (const change of changes) {
+    if (!("reset" in change)) at = put(at, change.steps, change.value);
+    else if (valueAt(at, change.steps) !== undefined)
+      at = drop(at, change.steps, true) ?? {};
+  }
+  const compacted = compact(at);
+  return (compacted === REMOVED ? {} : compacted) as T;
+}
+
+// REMOVED holds the place of a list item that withChanges removes, so that
+// the indexes of the later changes still name the items of the input.
+const REMOVED = Symbol("removed");
+
 function childOf(at: unknown, step: Step): unknown {
-  if ("field" in step) return isObject(at) ? at[step.field] : undefined;
+  if ("field" in step)
+    return isObject(at) && Object.hasOwn(at, step.field)
+      ? at[step.field]
+      : undefined;
   if (!Array.isArray(at)) return undefined;
   if ("index" in step) return at[step.index];
   return at.find((item) => matches(item, step.item));
@@ -48,7 +77,7 @@ function put(at: unknown, steps: readonly Step[], value: unknown): unknown {
   const [step, ...rest] = steps;
   if ("field" in step) {
     const copy: Json = isObject(at) ? { ...at } : {};
-    copy[step.field] = put(copy[step.field], rest, value);
+    setOwn(copy, step.field, put(childOf(copy, step), rest, value));
     return copy;
   }
   const list = Array.isArray(at) ? [...at] : [];
@@ -63,14 +92,15 @@ function put(at: unknown, steps: readonly Step[], value: unknown): unknown {
 }
 
 // drop returns undefined for a value that becomes empty, so that its parent
-// removes it too.
-function drop(at: unknown, steps: readonly Step[]): unknown {
+// removes it too. With hold, a removed list item stays as REMOVED.
+function drop(at: unknown, steps: readonly Step[], hold = false): unknown {
   const [step, ...rest] = steps;
   if ("field" in step) {
     const copy: Json = { ...(at as Json) };
-    const next = rest.length === 0 ? undefined : drop(copy[step.field], rest);
+    const next =
+      rest.length === 0 ? undefined : drop(childOf(copy, step), rest, hold);
     if (next === undefined) delete copy[step.field];
-    else copy[step.field] = next;
+    else setOwn(copy, step.field, next);
     return Object.keys(copy).length === 0 ? undefined : copy;
   }
   const list = [...(at as unknown[])];
@@ -78,10 +108,45 @@ function drop(at: unknown, steps: readonly Step[]): unknown {
     "item" in step
       ? list.findIndex((item) => matches(item, step.item))
       : step.index;
-  const next = rest.length === 0 ? undefined : drop(list[index], rest);
-  if (next === undefined) list.splice(index, 1);
-  else list[index] = next;
-  return list.length === 0 ? undefined : list;
+  const next = rest.length === 0 ? undefined : drop(list[index], rest, hold);
+  if (next !== undefined) list[index] = next;
+  else if (hold) list[index] = REMOVED;
+  else list.splice(index, 1);
+  return list.every((item) => item === REMOVED) ? undefined : list;
+}
+
+// compact takes each REMOVED item out of its list. It returns REMOVED for a
+// list or an object that holds nothing else.
+function compact(at: unknown): unknown {
+  if (Array.isArray(at)) {
+    if (!at.some(holds)) return at;
+    const items = at.map(compact).filter((item) => item !== REMOVED);
+    return items.length === 0 ? REMOVED : items;
+  }
+  if (!isObject(at) || !holds(at)) return at;
+  const copy: Json = {};
+  for (const [key, value] of Object.entries(at)) {
+    const next = compact(value);
+    if (next !== REMOVED) setOwn(copy, key, next);
+  }
+  return Object.keys(copy).length === 0 ? REMOVED : copy;
+}
+
+function holds(at: unknown): boolean {
+  if (at === REMOVED) return true;
+  if (Array.isArray(at)) return at.some(holds);
+  return isObject(at) && Object.values(at).some(holds);
+}
+
+// setOwn creates an own field, also for the name __proto__, which an
+// assignment would take as the prototype.
+function setOwn(object: Json, name: string, value: unknown): void {
+  Object.defineProperty(object, name, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }
 
 function matches(item: unknown, keys: Record<string, unknown>): boolean {
