@@ -310,6 +310,53 @@ describe("outcomeOf", () => {
     });
   });
 
+  it("an error at an index after a keyed reset of an earlier item goes to the edited item", () => {
+    const claim: ClaimObject = {
+      apiVersion: ref.apiVersion,
+      kind: ref.kind,
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "41" },
+      spec: { cluster: { mixed: [{ name: "a" }, { v: "x" }] } },
+    };
+    const mixed: Step[] = [
+      { field: "spec" },
+      { field: "cluster" },
+      { field: "mixed" },
+    ];
+    const s0 = openSession({
+      claim,
+      resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+      locks: () => undefined,
+    })!;
+    const reset = resetValue(s0, [...mixed, { item: { name: "a" } }]);
+    if (!("session" in reset)) throw new Error("refused");
+    const set = setValue(
+      reset.session,
+      [...mixed, { index: 1 }, { field: "v" }],
+      "",
+    );
+    if (!("session" in set)) throw new Error("refused");
+    expect(
+      outcomeOf(
+        {
+          objects: [],
+          errors: [
+            {
+              code: "Invalid",
+              message: "empty",
+              path: "spec.cluster.mixed[0].v",
+            },
+          ],
+        },
+        set.session,
+      ),
+    ).toEqual({
+      ok: false,
+      stale: false,
+      fields: [{ path: "spec.cluster.mixed[1].v", message: "empty" }],
+      messages: [],
+    });
+  });
+
   it("any other error is a message", () => {
     expect(
       outcomeOf(

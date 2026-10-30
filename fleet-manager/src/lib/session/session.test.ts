@@ -406,6 +406,32 @@ describe("locks above a field", () => {
     ).toEqual({ refused: admin });
   });
 
+  it.each([
+    [
+      "the keys in another order",
+      { registration: "gateway-access", section: "access" },
+    ],
+    ["a part of the keys", { section: "access" }],
+  ])(
+    "refuses a keyed step with %s to an item with a locked field",
+    (_, keys) => {
+      const s = open(claim(), hostLocked);
+      expect(
+        setValue(
+          s,
+          [
+            f("spec"),
+            f("plugins"),
+            { item: keys },
+            f("parameters"),
+            f("hostnamePattern"),
+          ],
+          "z",
+        ),
+      ).toEqual({ refused: admin });
+    },
+  );
+
   it("refuses a change below a pending parent that changes a locked field", () => {
     const locks: LockProvider = (p) =>
       p === "spec.cluster.zeebe.replicas" ? admin : undefined;

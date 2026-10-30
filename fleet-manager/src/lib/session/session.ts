@@ -1,4 +1,4 @@
-import { pathFrom, type FieldLock, type Step } from "@/lib/fields";
+import { itemStep, pathFrom, type FieldLock, type Step } from "@/lib/fields";
 import { isManaged } from "@/lib/labels";
 import type { FieldPath } from "@/lib/merge";
 import { equalJSON } from "@/lib/policy";
@@ -225,6 +225,25 @@ function valueOf(entry: PendingChange): unknown {
   return "reset" in entry ? undefined : entry.value;
 }
 
+// rekeyed gives each list step of steps the itemStep of the item that it
+// names in object, and keeps a step that names no item.
+function rekeyed(object: unknown, steps: readonly Step[]): Step[] {
+  let at = object;
+  return steps.map((step) => {
+    if ("field" in step || !Array.isArray(at)) {
+      at = valueAt(at, [step]);
+      return step;
+    }
+    const list: unknown[] = at;
+    const index =
+      "index" in step
+        ? step.index
+        : list.findIndex((item) => valueAt(list, [step]) === item);
+    at = list[index];
+    return at === undefined ? step : itemStep(at, index);
+  });
+}
+
 // lockAt returns the lock that refuses a change at steps to after. A lock
 // can name a list item by its keys while steps name it by its index.
 function lockAt(
@@ -233,12 +252,7 @@ function lockAt(
   steps: readonly Step[],
   after: unknown,
 ): FieldLock | undefined {
-  const keyedIn = (object: unknown) =>
-    steps.map((step, i) =>
-      "index" in step
-        ? itemStep(valueAt(object, steps.slice(0, i + 1)), step.index)
-        : step,
-    );
+  const keyedIn = (object: unknown) => rekeyed(object, steps);
   const before = valueAt(claim, steps);
   const target = after === undefined ? claim : withValue(claim, steps, after);
   return (
@@ -306,14 +320,6 @@ function childrenOf(
         add({ field }, child, side);
   }
   return [...pairs.values()];
-}
-
-function itemStep(item: unknown, index: number): Step {
-  if (!isObject(item)) return { index };
-  if (typeof item.section === "string" && typeof item.registration === "string")
-    return { item: { section: item.section, registration: item.registration } };
-  if (typeof item.name === "string") return { item: { name: item.name } };
-  return { index };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

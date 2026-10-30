@@ -76,14 +76,10 @@ function shifted(s: Session, steps: readonly Step[]): Step[] {
     const list = steps.slice(0, j);
     const below = new Map<number, PendingChange[]>();
     for (const entry of s.pending.values()) {
-      const at = entry.steps[j];
-      if (
-        !at ||
-        !("index" in at) ||
-        at.index >= step.index ||
-        !equalJSON(entry.steps.slice(0, j), list)
-      )
+      if (entry.steps.length <= j || !equalJSON(entry.steps.slice(0, j), list))
         continue;
+      const at = indexSteps(s.claim, entry.steps.slice(0, j + 1))?.[j];
+      if (!at || !("index" in at) || at.index >= step.index) continue;
       below.set(at.index, [...(below.get(at.index) ?? []), entry]);
     }
     const length = (items: unknown) =>
