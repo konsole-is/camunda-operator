@@ -207,6 +207,7 @@ describe("ClaimTab", () => {
       ["RequestsReady", "OperationPending"],
     ]) {
       const row = conditionRow(type);
+      expect(within(row).getByText("False")).toBeTruthy();
       expect(within(row).getByText(reason)).toBeTruthy();
       expect(
         within(row).getByText("waiting for the outputs of cloud-identity"),

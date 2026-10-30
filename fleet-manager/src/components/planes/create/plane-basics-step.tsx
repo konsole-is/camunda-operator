@@ -4,10 +4,6 @@ import type { V1Namespace } from "@kubernetes/client-node";
 import { useEffect, useId } from "react";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import { ClaimNameField } from "@/components/create/claim-name-field";
-import {
-  pickerEnvironment,
-  syncedNamespace,
-} from "@/components/create/cluster-draft";
 import { EnvironmentCards } from "@/components/create/environment-cards";
 import type { DraftPath } from "@/components/create/use-create-flow";
 import { NamespacePicker } from "@/components/fleet/namespace-picker";
@@ -17,6 +13,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { claimNameErrors } from "@/lib/claims/names";
+import { pickerEnvironment, syncedNamespace } from "@/lib/clusters/draft";
 import {
   NO_ENVIRONMENT,
   type PlaneContext,
@@ -28,13 +25,13 @@ import { environmentCounts } from "@/lib/usage";
 import { ExternalKeycloakFields, IdentityCards } from "./identity-cards";
 
 /**
- * BasicsStep is step 1 of the plane create flow: the environment, the name,
- * the namespace, the platform config, and where users sign in. Without any
- * Environment it shows only that a plane needs one. A new environment
- * clears the namespace. secrets are the Secrets of the chosen namespace,
- * none for a new one.
+ * PlaneBasicsStep is step 1 of the plane create flow: the environment, the
+ * name, the namespace, the platform config, and where users sign in.
+ * Without any Environment it shows only that a plane needs one. A new
+ * environment clears the namespace. secrets are the Secrets of the chosen
+ * namespace, none for a new one.
  */
-export function BasicsStep({
+export function PlaneBasicsStep({
   draft,
   set,
   ctx,

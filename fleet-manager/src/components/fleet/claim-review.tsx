@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleAlert } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { objectDiff, type DiffLine } from "@/lib/diff";
 import { equalJSON } from "@/lib/policy";
 import { itemStep, type Step } from "@/lib/fields";
@@ -27,7 +27,7 @@ import { ReviewPanel } from "./review-panel";
 /**
  * ClaimReview is the review of the pending changes of a session: the diff
  * of the claim, the merged diff of the cluster when mergedLines is given,
- * the impacts, and the confirm. It previews the change of the session once
+ * the impacts, the caution, and the confirm. It previews the change of the session once
  * for each session and intent, and the confirm stays disabled until that
  * preview is clean. A confirm sends one write. An ok write goes to show.
  * Then it calls onWritten, and the parent closes the session. A refused
@@ -39,6 +39,7 @@ export function ClaimReview<C extends ClaimObject>({
   mode,
   intent,
   impacts,
+  caution,
   mergedLines,
   preview,
   apply,
@@ -52,6 +53,8 @@ export function ClaimReview<C extends ClaimObject>({
   /** intent is the commit subject in Git mode. */
   intent: string;
   impacts: string[];
+  /** caution is a warning about the change, such as a backup that it makes fail. */
+  caution?: ReactNode;
   mergedLines?: DiffLine[];
   preview: (change: Change) => Promise<Preview>;
   apply: (change: Change) => Promise<WriteResult>;
@@ -150,6 +153,7 @@ export function ClaimReview<C extends ClaimObject>({
         )
       }
       effects={impacts}
+      caution={caution}
       notices={
         alerts.length > 0 && (
           <div

@@ -56,7 +56,7 @@ export type GitTarget = {
 /**
  * GitWriterOptions are the parts of the Git writer. direct runs the dry
  * runs and the directOnly changes. read returns the live object of a ref,
- * or undefined when it does not exist. http is the Git transport; the
+ * or undefined when it does not exist. http is the Git transport. The
  * default follows no redirect and gives up on a request after 30 s.
  */
 export type GitWriterOptions = {
@@ -100,12 +100,11 @@ type Remote = {
  * Secret is in the change (Invalid), an object with a precondition changed
  * or was deleted in the cluster (Stale) or has a file that GitOps has not
  * applied yet (Conflict), or the dry run against the cluster fails. The
- * dry run skips an ExternalSecret and an object in a
- * namespace that the same change creates; the preview shows them as
- * rendered. The dry run of an object that GitOps applied with server-side
- * apply, or of a custom resource that GitOps applied with client-side
- * apply, drops each field of GitOps that the change leaves out, except the
- * revision annotation. Any other object is dry-run as the app. A delete of
+ * dry run skips an ExternalSecret and an object in a namespace that the
+ * same change creates. The preview shows them as rendered. The dry run of
+ * an object that GitOps applied with server-side apply, or of a custom
+ * resource that GitOps applied with client-side apply, drops each field of
+ * GitOps that the change leaves out, except the revision annotation. Any other object is dry-run as the app. A delete of
  * an object without a file, and a file behind a symbolic link of the
  * repository, are Invalid.
  *
@@ -114,7 +113,8 @@ type Remote = {
  * change, or when the branch moved again. The credentials of
  * target.credentialsSecretRef are a username and token, or GitHub App
  * keys, as gitCredentials reads them. They go only to an https://
- * address, and App keys only to github.com or to a host whose
+ * address. The JWT of App keys goes only to api.github.com for a
+ * github.com repository, or to the host of the repository when its
  * /api/v3/meta answers as GitHub Enterprise Server. With App keys, the
  * author of a commit is the bot of the App, or GIT_AUTHOR when GitHub
  * does not give the bot. Otherwise it is GIT_AUTHOR. No error holds a

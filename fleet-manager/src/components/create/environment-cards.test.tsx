@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Environment } from "@/generated/crds/environment";
-import { EnvironmentCards, environmentReady } from "./environment-cards";
+import { EnvironmentCards } from "./environment-cards";
 
 afterEach(cleanup);
 
@@ -229,27 +229,5 @@ describe("EnvironmentCards in multiple mode", () => {
     expect(screen.getByText("Not ready: x")).toBeTruthy();
     await userEvent.click(box);
     expect(onChange).toHaveBeenCalledWith(["old"]);
-  });
-});
-
-describe("environmentReady", () => {
-  it("is ready without a status", () => {
-    expect(environmentReady(dev)).toEqual({ ready: true });
-  });
-
-  it("is ready with Ready=Unknown", () => {
-    expect(
-      environmentReady(
-        environment("x", { ready: { status: "Unknown", message: "wait" } }),
-      ),
-    ).toEqual({ ready: true });
-  });
-
-  it("is not ready with Ready=False, with its message", () => {
-    expect(
-      environmentReady(
-        environment("x", { ready: { status: "False", message: "gone" } }),
-      ),
-    ).toEqual({ ready: false, message: "gone" });
   });
 });

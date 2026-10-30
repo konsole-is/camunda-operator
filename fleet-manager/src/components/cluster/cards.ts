@@ -1,4 +1,5 @@
 import type { ConditionLike } from "@/components/fleet/status";
+import type { CoreCamundaOptimizeConditionType } from "@/generated/conditions";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import {
   CAMUNDA_CLUSTER_PLACEMENT,
@@ -55,6 +56,7 @@ export type CardInput = {
 };
 
 const OPTIMIZE_LABEL = "Optimize";
+const OPTIMIZE_READY: CoreCamundaOptimizeConditionType = "Ready";
 
 /**
  * componentCards returns the card of each Camunda process of a cluster: the
@@ -119,7 +121,7 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
         CAMUNDA_OPTIMIZE_PLACEMENT,
         input.optimize.status?.conditions as Condition[] | undefined,
         "optimize",
-      ).find((c) => c.type === "Ready"),
+      ).find((c) => c.type === OPTIMIZE_READY),
       embedded: [],
       pods: names(pods),
       numbers: numbersOf("optimize", pods),

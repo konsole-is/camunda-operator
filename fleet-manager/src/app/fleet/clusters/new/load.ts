@@ -1,5 +1,5 @@
 import "server-only";
-import type { CreateClusterData } from "@/components/create/create-cluster-flow";
+import type { ClusterCreateData } from "@/components/create/cluster-create-flow";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { list, type ListOptions } from "@/lib/k8s/read";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
@@ -9,7 +9,7 @@ import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
  * from the cache of the server, in every namespace. A failed read of a kind
  * gives no objects of that kind.
  */
-export async function loadCreateCluster(): Promise<CreateClusterData> {
+export async function loadCreateCluster(): Promise<ClusterCreateData> {
   const [
     environments,
     namespaces,
@@ -50,4 +50,4 @@ function listOrEmpty<K extends KindName>(
   return list(kind, opts).catch(() => []);
 }
 
-export type { CreateClusterData };
+export type { ClusterCreateData };

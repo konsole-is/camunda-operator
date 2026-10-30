@@ -26,7 +26,7 @@ import {
   servedErrors,
 } from "@/lib/planes/draft";
 import type { ValidationError } from "@/lib/schema";
-import { BasicsStep } from "./basics-step";
+import { PlaneBasicsStep } from "./plane-basics-step";
 import { ServedStep } from "./served-step";
 
 /** PlaneCreateData is the first snapshot of the new plane page, from every namespace. planes are the lists of planesOf. */
@@ -142,7 +142,7 @@ export function PlaneStepBody({
       onSelectorErrors={onSelectorErrors}
     />
   ) : (
-    <BasicsStep
+    <PlaneBasicsStep
       draft={draft}
       set={set}
       ctx={ctx}

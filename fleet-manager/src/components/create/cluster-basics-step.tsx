@@ -6,20 +6,20 @@ import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset
 import type { Environment } from "@/generated/crds/environment";
 import { NamespacePicker } from "@/components/fleet/namespace-picker";
 import type { RenderedHost } from "@/lib/claims/hosts";
-import { environmentOf } from "@/lib/policy";
-import type { EnvironmentCount } from "@/lib/usage";
-import { ClaimNameField } from "./claim-name-field";
 import {
   type ClusterDraft,
   pickerEnvironment,
   syncedNamespace,
-} from "./cluster-draft";
+} from "@/lib/clusters/draft";
+import { environmentOf } from "@/lib/policy";
+import type { EnvironmentCount } from "@/lib/usage";
+import { ClaimNameField } from "./claim-name-field";
 import { EnvironmentCards } from "./environment-cards";
 import { PresetCards } from "./preset-cards";
 import type { DraftPath } from "./use-create-flow";
 
 /**
- * ClusterStepBasics is step 1 of the cluster create flow: the environment
+ * ClusterBasicsStep is step 1 of the cluster create flow: the environment
  * (only while an Environment exists), the name, the namespace, and the
  * preset. presets are the presets that the picked environment offers.
  * nameErrors are the errors of the name and of its hosts. A new environment
@@ -27,7 +27,7 @@ import type { DraftPath } from "./use-create-flow";
  * offer it. Each part restores its value from draft when the step mounts
  * again.
  */
-export function ClusterStepBasics({
+export function ClusterBasicsStep({
   draft,
   set,
   environments,

@@ -223,7 +223,7 @@ export const createFlowStories: Story[] = [
     ),
   },
   {
-    component: "ClusterStepBasics",
+    component: "ClusterBasicsStep",
     name: "Production picked",
     render: () => (
       <BasicsStory
@@ -253,7 +253,7 @@ export const createFlowStories: Story[] = [
     ),
   },
   {
-    component: "ClusterStepBasics",
+    component: "ClusterBasicsStep",
     name: "Taken host",
     render: () => (
       <BasicsStory
@@ -282,7 +282,7 @@ export const createFlowStories: Story[] = [
     ),
   },
   {
-    component: "ClusterStepBasics",
+    component: "ClusterBasicsStep",
     name: "No environment",
     render: () => (
       <BasicsStory

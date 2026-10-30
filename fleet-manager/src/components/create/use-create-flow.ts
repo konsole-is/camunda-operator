@@ -13,10 +13,9 @@ export type CreateStep<T> = {
 };
 
 /**
- * useCreateFlow holds the draft and the current step of a create flow: the
- * cluster flow, the plane flow (#655), and the later create steps. The
- * draft is not the edit session of #633. It starts at initial and the first
- * step.
+ * useCreateFlow holds the draft and the current step of a create flow. The
+ * draft is not an edit session of src/lib/session. It starts at initial and
+ * the first step.
  *
  * set returns a new draft with value at path, and leaves the parts off the
  * path shared. undefined deletes the key. errors holds the errors of the

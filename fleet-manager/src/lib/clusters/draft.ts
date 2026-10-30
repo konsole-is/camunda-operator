@@ -1,3 +1,4 @@
+// This module runs in the browser and on the server.
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
 import type {
@@ -5,9 +6,9 @@ import type {
   PickerEnvironment,
 } from "@/components/fleet/namespace-picker";
 import { claimNameErrors } from "@/lib/claims/names";
+import { environmentReady } from "@/lib/environments";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { byCodeUnit } from "@/lib/policy";
-import { environmentReady } from "./environment-cards";
 
 /** ClusterDraft is the draft of the cluster create flow. environment stays unset while no Environment exists. */
 export type ClusterDraft = {

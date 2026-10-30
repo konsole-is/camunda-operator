@@ -26,6 +26,7 @@ export function ClaimReviewStory({
   changes,
   mode,
   impacts = [],
+  caution,
   mergedLines,
   preview = { objects: [], errors: [] },
   result = { ok: true, mode: "direct" },
@@ -34,6 +35,7 @@ export function ClaimReviewStory({
   changes: { steps: Step[]; value?: unknown }[];
   mode: WriteMode;
   impacts?: string[];
+  caution?: string;
   mergedLines?: DiffLine[];
   preview?: Preview;
   result?: WriteResult;
@@ -62,6 +64,7 @@ export function ClaimReviewStory({
         mode={mode}
         intent={`Change the claim ${claim.metadata.name}`}
         impacts={impacts}
+        caution={caution}
         mergedLines={mergedLines}
         preview={async () => preview}
         apply={async () => result}

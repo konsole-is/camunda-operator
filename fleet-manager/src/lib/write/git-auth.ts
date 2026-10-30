@@ -17,7 +17,7 @@ export const GIT_AUTHOR: GitAuthor = {
 /**
  * GitCredentials are the credentials of a push and the author of its
  * commit. auth is unset when no Secret is set. forget drops a cached
- * GitHub App token; call it when the Git server refuses auth.
+ * GitHub App token. Call it when the Git server refuses auth.
  */
 export type GitCredentials =
   | {

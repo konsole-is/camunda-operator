@@ -8,7 +8,7 @@ import {
   offeredPresets,
   pickerEnvironment,
   syncedNamespace,
-} from "./cluster-draft";
+} from "./draft";
 
 function environment(
   name: string,

@@ -13,8 +13,8 @@ import {
   type ClusterDraft,
   basicsErrors,
   offeredPresets,
-} from "./cluster-draft";
-import { ClusterStepBasics } from "./cluster-step-basics";
+} from "@/lib/clusters/draft";
+import { ClusterBasicsStep } from "./cluster-basics-step";
 import { useCreateFlow } from "./use-create-flow";
 
 /**
@@ -71,7 +71,7 @@ export function BasicsStory({
       steps={CLUSTER_STEPS.map((s) => ({ ...s, errors: flow.errors[s.id] }))}
       current={flow.current}
     >
-      <ClusterStepBasics
+      <ClusterBasicsStep
         draft={flow.draft}
         set={flow.set}
         environments={environments}
