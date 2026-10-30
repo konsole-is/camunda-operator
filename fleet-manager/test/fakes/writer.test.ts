@@ -80,6 +80,58 @@ describe("FakeWriter", () => {
     });
   });
 
+  it("in Git mode writes a directOnly change directly, as the Git writer does", async () => {
+    const git = new FakeWriter("git");
+    expect(await git.apply({ ...change(), directOnly: true })).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+  });
+
+  it("gives each save its own commit and each changed object a new revision", async () => {
+    const git = new FakeWriter("git");
+    const key = "CamundaClusterClaim/team-a/orders";
+    const first = await git.apply(change());
+    const again = await git.apply(change());
+    const edited = change();
+    (edited.apply[0].spec as { cluster: unknown }).cluster = {};
+    const third = await git.apply(edited);
+    if (!first.ok || !again.ok || !third.ok) throw new Error("not ok");
+    if (first.mode !== "git" || again.mode !== "git" || third.mode !== "git")
+      throw new Error("not git");
+
+    expect(new Set([first.commit, again.commit, third.commit]).size).toBe(3);
+    expect(again.revisions[key]).toBe(first.revisions[key]);
+    expect(third.revisions[key]).not.toBe(first.revisions[key]);
+  });
+
+  it("in Git mode maps each deleted object to its file", async () => {
+    const git = new FakeWriter("git");
+    expect(
+      await git.apply({
+        intent: "Delete b",
+        apply: [],
+        delete: [
+          {
+            apiVersion: "fleet.camunda.io/v1alpha1",
+            kind: "CamundaClusterClaim",
+            namespace: "team-a",
+            name: "b",
+          },
+        ],
+      }),
+    ).toEqual({
+      ok: true,
+      mode: "git",
+      commit: expect.any(String),
+      revisions: {},
+      paths: {},
+      deleted: {
+        "CamundaClusterClaim/team-a/b": "team-a/camundaclusterclaim/b.yaml",
+      },
+    });
+  });
+
   it("records a deep copy, so a later edit of the change does not change the record", async () => {
     const writer = new FakeWriter();
     const sent = change();

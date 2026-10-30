@@ -7,6 +7,7 @@
 // The module then serves only the path of runChange and runPreview. A test
 // that needs refKey imports it from @/lib/write/refs. A test resets
 // fakeWriter before each test.
+import { createHash } from "node:crypto";
 import { refKey } from "@/lib/write/refs";
 import type {
   Change,
@@ -17,14 +18,15 @@ import type {
   Writer,
 } from "@/lib/write/types";
 
-const FAKE_COMMIT = "0000000000000000000000000000000000000001";
-
 /**
  * FakeWriter is a Writer that records each Change and returns scripted
  * results. Without a script, apply succeeds in its mode, and in Git mode it
- * gives each applied object a revision and the path
- * <namespace>/<kind in lower case>/<name>.yaml. Without a script, preview
- * returns no objects and no errors.
+ * makes a new commit, gives each applied object a revision that changes
+ * with its content, gives each applied object a path in paths and each
+ * deleted object a path in deleted, both
+ * <namespace>/<kind in lower case>/<name>.yaml. A directOnly change gets
+ * the direct result in Git mode too. Without a script, preview returns no
+ * objects and no errors.
  */
 export class FakeWriter implements Writer {
   mode: WriteMode;
@@ -36,6 +38,7 @@ export class FakeWriter implements Writer {
   results: WriteResult[] = [];
   /** previews are the results of the next previews, first one first. */
   previews: Preview[] = [];
+  private commits = 0;
 
   constructor(mode: WriteMode = "direct") {
     this.mode = mode;
@@ -48,6 +51,7 @@ export class FakeWriter implements Writer {
     this.previewed.length = 0;
     this.results = [];
     this.previews = [];
+    this.commits = 0;
   }
 
   async preview(change: Change): Promise<Preview> {
@@ -59,24 +63,37 @@ export class FakeWriter implements Writer {
     this.applied.push(structuredClone(change));
     const scripted = this.results.shift();
     if (scripted !== undefined) return scripted;
-    if (this.mode === "direct") return { ok: true, mode: "direct" };
+    if (this.mode === "direct" || change.directOnly)
+      return { ok: true, mode: "direct" };
     const revisions: Record<RefKey, string> = {};
     const paths: Record<RefKey, string> = {};
+    const deleted: Record<RefKey, string> = {};
     for (const object of change.apply) {
       const key = refKey({ ...object.metadata, kind: object.kind });
-      revisions[key] = FAKE_COMMIT;
-      paths[key] =
-        `${object.metadata.namespace ?? ""}/${object.kind.toLowerCase()}/${object.metadata.name}.yaml`;
+      revisions[key] = createHash("sha1")
+        .update(JSON.stringify(object))
+        .digest("hex");
+      paths[key] = fileOf({ ...object.metadata, kind: object.kind });
     }
+    for (const ref of change.delete ?? []) deleted[refKey(ref)] = fileOf(ref);
+    this.commits++;
     return {
       ok: true,
       mode: "git",
-      commit: FAKE_COMMIT,
+      commit: this.commits.toString(16).padStart(40, "0"),
       revisions,
       paths,
-      deleted: {},
+      deleted,
     };
   }
+}
+
+function fileOf(ref: {
+  kind: string;
+  namespace?: string;
+  name?: string;
+}): string {
+  return `${ref.namespace ?? ""}/${ref.kind.toLowerCase()}/${ref.name}.yaml`;
 }
 
 /** fakeWriter is the writer that getWriter of this module returns. */

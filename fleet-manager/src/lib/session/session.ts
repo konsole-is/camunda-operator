@@ -128,14 +128,14 @@ export function resetValue<C extends ClaimObject>(
       ? resetValue(s, parent.entry.steps)
       : setValue(s, parent.entry.steps, rest);
   }
+  if (valueAt(s.claim, steps) === undefined)
+    return { session: closeGap(withEntry(s, steps, undefined), steps) };
   return {
-    session: withEntry(
-      s,
-      steps,
-      valueAt(s.claim, steps) === undefined
-        ? undefined
-        : { path, steps: structuredClone(steps), reset: true },
-    ),
+    session: withEntry(s, steps, {
+      path,
+      steps: structuredClone(steps),
+      reset: true,
+    }),
   };
 }
 
@@ -144,9 +144,13 @@ export function discard<C extends ClaimObject>(
   s: Session<C>,
   path: FieldPath,
 ): Session<C> {
+  const entry = s.pending.get(path);
+  if (!entry) return s;
   const pending = new Map(s.pending);
   pending.delete(path);
-  return { ...s, pending };
+  return valueAt(s.claim, entry.steps) === undefined
+    ? closeGap({ ...s, pending }, entry.steps)
+    : { ...s, pending };
 }
 
 /** claimAfter returns a copy of the claim with each pending change applied. */
@@ -232,10 +236,42 @@ function withEntry<C extends ClaimObject>(
   entry: PendingChange | undefined,
 ): Session<C> {
   const pending = new Map(s.pending);
-  pending.delete(pathFrom("", steps));
   for (const [key, other] of pending)
     if (isBelow(other.steps, steps)) pending.delete(key);
-  if (entry !== undefined) pending.set(entry.path, entry);
+  if (entry === undefined) pending.delete(pathFrom("", steps));
+  else pending.set(entry.path, entry);
+  return { ...s, pending };
+}
+
+// closeGap moves each pending change at a later index of the list of steps
+// one index down, after the drop of an appended item at steps, so that the
+// list after the change has no hole.
+function closeGap<C extends ClaimObject>(
+  s: Session<C>,
+  steps: readonly Step[],
+): Session<C> {
+  const last = steps.at(-1);
+  if (!last || !("index" in last)) return s;
+  const list = steps.slice(0, -1);
+  const pending = new Map<FieldPath, PendingChange>();
+  for (const [key, entry] of s.pending) {
+    const step = entry.steps[list.length];
+    if (
+      !isBelow(entry.steps, list) ||
+      !("index" in step) ||
+      step.index <= last.index
+    ) {
+      pending.set(key, entry);
+      continue;
+    }
+    const moved = [
+      ...list,
+      { index: step.index - 1 },
+      ...entry.steps.slice(list.length + 1),
+    ];
+    const path = pathFrom("", moved);
+    pending.set(path, { ...entry, path, steps: moved });
+  }
   return { ...s, pending };
 }
 

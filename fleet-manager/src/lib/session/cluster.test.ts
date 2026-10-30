@@ -425,6 +425,109 @@ describe("validateClusterClaim", () => {
     expect(validateClusterClaim(set(open(), steps, 2), c)).toEqual([]);
   });
 
+  describe("checks a parameter beside the resolved values of the others", () => {
+    // replicas may be at most 3 only while tier is 1.
+    const tiered = (): ClusterClaimContext => {
+      const c = ctx();
+      c.registrations = [
+        {
+          apiVersion: "plugins.camunda.io/v1alpha1",
+          kind: "PluginRegistration",
+          metadata: { name: "gateway-access" },
+          spec: {
+            parameters: {
+              type: "object",
+              if: { required: ["tier"], properties: { tier: { const: 1 } } },
+              then: { properties: { replicas: { maximum: 3 } } },
+              else: { properties: { replicas: { minimum: 5 } } },
+            },
+          },
+        } as unknown as Resource<"PluginRegistration">,
+      ];
+      return c;
+    };
+    const steps = [...ACCESS, f("parameters"), f("replicas")];
+
+    it("the value of a sibling choice", () => {
+      const policy = {
+        sections: { access: { allowed: ["gateway-access"] } },
+        parameters: {
+          "gateway-access": {
+            tier: {
+              claimEditable: true,
+              allowed: [{ name: "small", label: "Small", value: 1 }],
+            },
+            replicas: { claimEditable: true },
+          },
+        },
+      } as unknown as ResolvedPolicy;
+      const c = claim(
+        {
+          plugins: [
+            {
+              section: "access",
+              registration: "gateway-access",
+              parameters: { tier: "small" },
+            },
+          ],
+        },
+        policy,
+      );
+      expect(validateClusterClaim(set(open(c), steps, 2), tiered())).toEqual(
+        [],
+      );
+    });
+
+    it("a value that the policy sets", () => {
+      const policy = {
+        sections: { access: { allowed: ["gateway-access"] } },
+        parameters: {
+          "gateway-access": {
+            tier: { value: 1 },
+            replicas: { claimEditable: true },
+          },
+        },
+      } as unknown as ResolvedPolicy;
+      const c = claim(
+        {
+          plugins: [{ section: "access", registration: "gateway-access" }],
+        },
+        policy,
+      );
+      expect(validateClusterClaim(set(open(c), steps, 2), tiered())).toEqual(
+        [],
+      );
+      expect(validateClusterClaim(set(open(c), steps, 4), tiered())).toEqual([
+        { path: pathFrom("", steps), message: expect.any(String) },
+      ]);
+    });
+  });
+
+  it("refuses a parameter of a registration whose schema does not compile", () => {
+    const c = ctx();
+    c.registrations = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRegistration",
+        metadata: { name: "gateway-access" },
+        spec: {
+          parameters: {
+            type: "object",
+            properties: { replicas: { $ref: "#/definitions/Missing" } },
+          },
+        },
+      } as unknown as Resource<"PluginRegistration">,
+    ];
+    const steps = [...ACCESS, f("parameters"), f("replicas")];
+    const errors = validateClusterClaim(set(open(), steps, 2), c);
+    expect(errors).toEqual([
+      {
+        path: pathFrom("", steps),
+        message: expect.stringMatching(/^The schema is not valid: /),
+      },
+    ]);
+  });
+
   it("checks the values that a reset leaves", () => {
     const s = open(claim({ cluster: { externalUrl: "https://x" } }));
     const result = resetValue(s, [f("spec"), f("cluster"), f("externalUrl")]);

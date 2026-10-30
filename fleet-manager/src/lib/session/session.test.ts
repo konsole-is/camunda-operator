@@ -391,11 +391,51 @@ describe("indexed items", () => {
     ).toEqual([{ d: 4 }]);
   });
 
+  it("a reset of an appended item leaves no hole in the list", () => {
+    const one = withSpec({ cluster: { extraEnvFrom: [{ a: 1 }] } });
+    let s = ok(setValue(open(one), item(1), { d: 4 }));
+    s = ok(setValue(s, item(2), { e: 5 }));
+    s = ok(resetValue(s, item(1)));
+    expect(
+      (claimAfter(s).spec as { cluster: { extraEnvFrom: unknown } }).cluster
+        .extraEnvFrom,
+    ).toEqual([{ a: 1 }, { e: 5 }]);
+    expect([...s.pending.keys()]).toEqual(["spec.cluster.extraEnvFrom[1]"]);
+  });
+
+  it("a discard of an appended item leaves no hole in the list", () => {
+    const one = withSpec({ cluster: { extraEnvFrom: [{ a: 1 }] } });
+    let s = ok(setValue(open(one), item(1), { d: 4 }));
+    s = ok(setValue(s, item(2), { e: 5 }));
+    s = discard(s, "spec.cluster.extraEnvFrom[1]");
+    expect(
+      (claimAfter(s).spec as { cluster: { extraEnvFrom: unknown } }).cluster
+        .extraEnvFrom,
+    ).toEqual([{ a: 1 }, { e: 5 }]);
+  });
+
   it("rebase drops an indexed change when its list changed", () => {
     const s = ok(setValue(open(listClaim()), item(1), { b: 5 }));
     const next = withSpec({ cluster: { extraEnvFrom: [{ b: 2 }, { c: 3 }] } });
     next.metadata = { ...next.metadata, resourceVersion: "42" };
     expect(rebase(s, next).pending.size).toBe(0);
+  });
+});
+
+describe("order", () => {
+  it("a second change of an entry keeps the place of its first change", () => {
+    const env = (name: string): Step[] => [
+      ...cluster("extraEnv"),
+      { item: { name } },
+    ];
+    let s = ok(setValue(open(), env("A"), { name: "A", value: "1" }));
+    s = ok(setValue(s, env("B"), { name: "B", value: "$(A)" }));
+    s = ok(setValue(s, env("A"), { name: "A", value: "2" }));
+    expect(
+      (
+        claimAfter(s).spec as { cluster: { extraEnv: { name: string }[] } }
+      ).cluster.extraEnv.map((e) => e.name),
+    ).toEqual(["LOG", "A", "B"]);
   });
 });
 

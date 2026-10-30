@@ -1,5 +1,6 @@
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
   pathFrom,
@@ -14,13 +15,14 @@ import {
   checkAllowed,
   checkSlotConflicts,
   releaseMove,
+  resolve,
   type BackupLike,
   type MovingCluster,
   type PluginSelection,
   type PolicyResult,
   type ResolvedPolicy,
 } from "@/lib/policy";
-import { validate, type OpenAPISchema } from "@/lib/schema";
+import { schemaError, validate, type OpenAPISchema } from "@/lib/schema";
 import { claimAfter, type PendingChange, type Session } from "./session";
 import { valueAt } from "./steps";
 
@@ -169,18 +171,49 @@ function parameterErrors(
   const registration = ctx.registrations.find(
     (r) => r.metadata?.name === selection.item.registration,
   );
-  const root = asObject(registration?.spec.parameters);
+  const root = asObject(registration?.spec.parameters) as OpenAPISchema;
   if (Object.keys(root).length === 0) return [];
-  // The whole parameters of the selection are checked, so that references
-  // and root rules see the real object.
-  const result = validate(
-    root as OpenAPISchema,
-    valueAt(after, entry.steps.slice(0, 4)) ?? {},
-  );
+  const broken = schemaError(root);
+  if (broken !== undefined)
+    return [
+      { path: entry.path, message: `The schema is not valid: ${broken}` },
+    ];
+  // The parameters of the request are checked, so that references and root
+  // rules see the values that the plugin gets.
+  const result = validate(root, {
+    ...requestOf(after, selection.item, ctx, policy),
+    [name.field]: valueAt(after, entry.steps),
+  });
   if (result.ok) return [];
   return result.errors
     .filter((e) => e.path === name.field || e.path.startsWith(`${name.field}.`))
     .map((e) => ({ path: entry.path, message: e.message }));
+}
+
+// requestOf returns the parameters of the request of the selection with
+// keys, as resolve gives them. Without the snapshot of the claim, it returns
+// the parameters of the claim.
+function requestOf(
+  after: Claim,
+  keys: Record<string, unknown>,
+  ctx: ClusterClaimContext,
+  policy: ResolvedPolicy | undefined,
+): Record<string, unknown> {
+  const selections = (after.spec?.plugins ?? []) as PluginSelection[];
+  const i = selections.findIndex((s) =>
+    Object.entries(keys).every(([k, v]) => s[k as keyof PluginSelection] === v),
+  );
+  const resolution =
+    policy &&
+    resolve({
+      recorded: policy,
+      environment: generated<Environment | undefined>(ctx.environment),
+      registrations: generated<PluginRegistration[]>(ctx.registrations),
+      selections,
+    });
+  if (resolution && "value" in resolution)
+    return resolution.value.requests?.[i]?.parameters ?? {};
+  return asObject(selections[i]?.parameters);
 }
 
 function releaseErrors(
