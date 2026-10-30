@@ -32,7 +32,10 @@ export const COMPONENT_LABEL = "camunda.io/component";
  * CamundaOptimize. They are ComponentWebapp and ComponentImporter of
  * pkg/components/camundaoptimize.
  */
-export const OPTIMIZE_COMPONENTS = ["optimize-webapp", "optimize-importer"] as const;
+export const OPTIMIZE_COMPONENTS = [
+  "optimize-webapp",
+  "optimize-importer",
+] as const;
 
 /**
  * BACKUP_SCHEDULE_LABEL on a backup holds labels.OwnerName of the

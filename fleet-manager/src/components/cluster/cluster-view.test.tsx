@@ -847,3 +847,170 @@ describe("Backups tab", () => {
     expect(live.calls).toContainEqual({ kind: "PluginRegistration", opts: {} });
   });
 });
+
+// condition is a status condition of the API server, with its time.
+const condition = (
+  type: string,
+  status: "True" | "False" | "Unknown",
+  reason: string,
+) => ({
+  type,
+  status,
+  reason,
+  message: "",
+  lastTransitionTime: now,
+});
+
+// withConditions gives the cluster of data() with more conditions after Ready.
+function withConditions(
+  ...conditions: ReturnType<typeof condition>[]
+): Resource<"CamundaCluster"> {
+  const c = cluster();
+  c.status!.conditions = [...c.status!.conditions!, ...conditions];
+  return c;
+}
+
+function podOf(name: string, component: string): Resource<"Pod"> {
+  return {
+    kind: "Pod",
+    metadata: {
+      name,
+      namespace: "team-a",
+      labels: { [COMPONENT_LABEL]: component },
+    },
+    status: {
+      phase: "Running",
+      conditions: [{ type: "Ready", status: "True" }],
+    },
+  } as Resource<"Pod">;
+}
+
+describe("Overview components and conditions", () => {
+  const components = () => screen.getByRole("region", { name: "Components" });
+
+  it("an AdminSecretReady=False shows in the Conditions section of the Overview and in no card", () => {
+    render(
+      view({
+        initial: data({
+          cluster: withConditions(
+            condition("AdminSecretReady", "False", "MissingSecret"),
+          ),
+        }),
+      }),
+    );
+    expect(
+      within(screen.getByRole("region", { name: "Conditions" })).getByRole(
+        "rowheader",
+        { name: "AdminSecretReady" },
+      ),
+    ).toBeTruthy();
+    expect(within(components()).queryByText("AdminSecretReady")).toBeNull();
+    expect(
+      within(components()).queryByRole("img", { name: /MissingSecret/ }),
+    ).toBeNull();
+  });
+
+  it("a ZeebeReady=False turns the Brokers dot red", () => {
+    render(
+      view({
+        initial: data({
+          cluster: withConditions(condition("ZeebeReady", "False", "Degraded")),
+        }),
+      }),
+    );
+    const name = "Brokers: Not ready (Degraded)";
+    const topologyDot = within(
+      screen.getByRole("region", { name: "Topology" }),
+    ).getByRole("img", { name });
+    const cardDot = within(
+      within(components()).getByRole("article", { name: "Brokers" }),
+    ).getByRole("img", { name });
+    expect(topologyDot.className).toContain("bg-bad");
+    expect(cardDot.className).toContain("bg-bad");
+    expect(
+      within(screen.getByRole("region", { name: "Conditions" })).queryByRole(
+        "rowheader",
+        { name: "ZeebeReady" },
+      ),
+    ).toBeNull();
+  });
+
+  it("an embedded Operate with a Disabled OperateReady shows inside the gateway", () => {
+    render(
+      view({
+        initial: data({
+          cluster: withConditions(
+            condition("OperateReady", "True", "Disabled"),
+          ),
+        }),
+      }),
+    );
+    expect(
+      within(
+        within(components()).getByRole("article", { name: "Gateway" }),
+      ).getByText("Embedded: Operate"),
+    ).toBeTruthy();
+    expect(
+      within(components()).queryByRole("article", { name: "Operate" }),
+    ).toBeNull();
+    expect(
+      within(components()).queryByRole("img", { name: "Operate: Not used" }),
+    ).toBeNull();
+  });
+
+  it("a cluster without Optimize shows the Optimize card as not used", () => {
+    render(view());
+    expect(
+      within(components()).getByRole("img", { name: "Optimize: Not used" }),
+    ).toBeTruthy();
+  });
+
+  it("a cluster with Optimize shows its pods on the Optimize card", () => {
+    const optimize = nsObject(
+      "CamundaOptimize",
+      "orders-optimize",
+      { clusterRef: { name: "orders" } },
+      { conditions: [condition("Ready", "True", "Healthy")] },
+      { creationTimestamp: now },
+    );
+    render(
+      view({
+        initial: data({
+          optimizes: [optimize],
+          pods: [
+            brokerPod(0),
+            podOf("orders-optimize-web", "optimize-webapp"),
+            podOf("orders-optimize-imp", "optimize-importer"),
+          ],
+        }),
+      }),
+    );
+    const card = within(components()).getByRole("article", {
+      name: "Optimize",
+    });
+    expect(
+      within(card).getByText("Pods ready", { selector: "dt" })
+        .nextElementSibling?.textContent,
+    ).toBe("2/2");
+    expect(
+      within(card).getByRole("img", { name: "Optimize: Ready" }),
+    ).toBeTruthy();
+  });
+
+  it("the claim conditions show in the Claim group", () => {
+    const blocked = claim();
+    (blocked as { status?: object }).status = {
+      conditions: [
+        condition("Ready", "False", "Blocked"),
+        condition("RequestsReady", "False", "Blocked"),
+      ],
+    };
+    render(view({ initial: data({ claims: [blocked] }) }));
+    const conditions = screen.getByRole("region", { name: "Conditions" });
+    expect(
+      within(conditions)
+        .getAllByRole("rowheader")
+        .map((h) => h.textContent),
+    ).toEqual(["Claim", "RequestsReady"]);
+  });
+});
