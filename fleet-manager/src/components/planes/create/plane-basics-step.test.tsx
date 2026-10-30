@@ -12,7 +12,7 @@ import {
   type PlaneDraft,
 } from "@/lib/planes/draft";
 import { useCreateFlow } from "@/components/create/use-create-flow";
-import { BasicsStep } from "./basics-step";
+import { PlaneBasicsStep } from "./plane-basics-step";
 
 afterEach(cleanup);
 
@@ -73,7 +73,7 @@ function Harness({
   });
   return (
     <>
-      <BasicsStep
+      <PlaneBasicsStep
         draft={flow.draft}
         set={flow.set}
         ctx={context}
@@ -100,7 +100,7 @@ const platformConfig = () =>
     name: "Platform config",
   }) as HTMLSelectElement;
 
-describe("BasicsStep", () => {
+describe("PlaneBasicsStep", () => {
   it("names the chosen environment in the policy line", () => {
     render(<Harness initial={inProduction} />);
     expect(

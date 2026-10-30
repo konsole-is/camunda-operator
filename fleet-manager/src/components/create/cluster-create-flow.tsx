@@ -26,12 +26,12 @@ import {
   type ClusterDraft,
   basicsErrors,
   offeredPresets,
-} from "./cluster-draft";
-import { ClusterStepBasics } from "./cluster-step-basics";
+} from "@/lib/clusters/draft";
+import { ClusterBasicsStep } from "./cluster-basics-step";
 import { type CreateStep, useCreateFlow } from "./use-create-flow";
 
-/** CreateClusterData is the first snapshot of the create cluster page, from every namespace. accessRequests are the requests of the access section. */
-export type CreateClusterData = {
+/** ClusterCreateData is the first snapshot of the create cluster page, from every namespace. accessRequests are the requests of the access section. */
+export type ClusterCreateData = {
   environments: Resource<"Environment">[];
   namespaces: Resource<"Namespace">[];
   claims: Resource<"CamundaClusterClaim">[];
@@ -48,11 +48,11 @@ const ACCESS_REQUESTS = { labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}` };
 const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
 
 /**
- * CreateClusterFlow is the create cluster wizard. It follows initial live
+ * ClusterCreateFlow is the create cluster wizard. It follows initial live
  * and checks step 1 against the newest data. Steps 2 to 5 hold no fields
  * yet, and the flow writes nothing.
  */
-export function CreateClusterFlow({ initial }: { initial: CreateClusterData }) {
+export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
   const live = {
     environments: useLive("Environment", EVERYWHERE, initial.environments),
     namespaces: useLive("Namespace", EVERYWHERE, initial.namespaces),
@@ -152,7 +152,7 @@ export function CreateClusterFlow({ initial }: { initial: CreateClusterData }) {
       onBack={flow.back}
     >
       {flow.current === "basics" ? (
-        <ClusterStepBasics
+        <ClusterBasicsStep
           draft={flow.draft}
           set={flow.set}
           environments={environments}

@@ -1,10 +1,10 @@
 // This module runs in the browser and on the server.
 import type { NamespaceChoice } from "@/components/fleet/namespace-picker";
-import type { FleetEnvironmentConditionType } from "@/generated/conditions";
 import type { CamundaManagementClusterClaimSpec } from "@/generated/crds/camundamanagementclusterclaim";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import type { Environment } from "@/generated/crds/environment";
 import { claimNameErrors } from "@/lib/claims/names";
+import { environmentReady } from "@/lib/environments";
 import type { LabelSelector } from "@/lib/labels";
 import type { ValidationError } from "@/lib/schema";
 import {
@@ -30,8 +30,6 @@ export type PlaneDraft = {
   served?: string[];
   clusterLabels: Record<string, string>;
 };
-
-const READY: FleetEnvironmentConditionType = "Ready";
 
 /** EMPTY_PLANE_DRAFT is the draft that the flow starts from. */
 export const EMPTY_PLANE_DRAFT: PlaneDraft = {
@@ -105,12 +103,10 @@ export function basicsErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
   if (!environment) {
     errors.push("Pick an environment.");
   } else {
-    const notReady = environment.status?.conditions?.find(
-      (c) => c.type === READY && c.status === "False",
-    );
-    if (notReady) {
+    const { ready, message } = environmentReady(environment);
+    if (!ready) {
       errors.push(
-        `The environment ${environment.spec.displayName || draft.environment} is not ready${notReady.message ? `: ${notReady.message}` : ""}`,
+        `The environment ${environment.spec.displayName || draft.environment} is not ready${message ? `: ${message}` : ""}`,
       );
     }
   }

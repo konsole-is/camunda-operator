@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Resource } from "@/lib/k8s/kinds";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
-  type CreateClusterData,
-  CreateClusterFlow,
-} from "./create-cluster-flow";
+  type ClusterCreateData,
+  ClusterCreateFlow,
+} from "./cluster-create-flow";
 
 const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
@@ -101,7 +101,7 @@ const billingAccess = {
   status: { outputs: { externalUrl: "https://orders.team-a.example.com" } },
 } as unknown as Resource<"PluginRequest">;
 
-function data(over: Partial<CreateClusterData> = {}): CreateClusterData {
+function data(over: Partial<ClusterCreateData> = {}): ClusterCreateData {
   return {
     environments: [prod()],
     namespaces: [
@@ -134,9 +134,9 @@ async function fillBasics(name: string) {
   await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
 }
 
-describe("CreateClusterFlow", () => {
+describe("ClusterCreateFlow", () => {
   it("shows five steps", () => {
-    render(<CreateClusterFlow initial={data()} />);
+    render(<ClusterCreateFlow initial={data()} />);
     const nav = screen.getByRole("navigation", { name: "Steps" });
     expect(
       within(nav)
@@ -154,14 +154,14 @@ describe("CreateClusterFlow", () => {
   });
 
   it("shows the hosts of the default access option under the name", async () => {
-    render(<CreateClusterFlow initial={data({ accessRequests: [] })} />);
+    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
     await fillBasics("search");
     expect(screen.getByText("search.team-a.example.com")).toBeTruthy();
     expect(next().disabled).toBe(false);
   });
 
   it("blocks step 1 on a taken host", async () => {
-    render(<CreateClusterFlow initial={data()} />);
+    render(<ClusterCreateFlow initial={data()} />);
     await fillBasics("orders");
     expect(
       screen.getAllByText(
@@ -172,7 +172,7 @@ describe("CreateClusterFlow", () => {
   });
 
   it("shows no host line without an access section", async () => {
-    render(<CreateClusterFlow initial={data({ sections: [] })} />);
+    render(<ClusterCreateFlow initial={data({ sections: [] })} />);
     await fillBasics("orders");
     expect(screen.queryByText(/example\.com/)).toBeNull();
     expect(next().disabled).toBe(false);
@@ -180,7 +180,7 @@ describe("CreateClusterFlow", () => {
 
   it("refuses a name that a claim has in the namespace", async () => {
     render(
-      <CreateClusterFlow
+      <ClusterCreateFlow
         initial={data({
           sections: [],
           claims: [
@@ -202,10 +202,10 @@ describe("CreateClusterFlow", () => {
   });
 
   it("refuses an environment that turns not ready after the pick", async () => {
-    const { rerender } = render(<CreateClusterFlow initial={data()} />);
+    const { rerender } = render(<ClusterCreateFlow initial={data()} />);
     await fillBasics("search");
     live.objects.Environment = [{ ...prod(), status: READY("False", "gone") }];
-    rerender(<CreateClusterFlow initial={data()} />);
+    rerender(<ClusterCreateFlow initial={data()} />);
     expect(
       screen.getByText("The environment Production is not ready: gone"),
     ).toBeTruthy();
@@ -214,7 +214,7 @@ describe("CreateClusterFlow", () => {
 
   it("blocks step 1 while a list cannot be read", async () => {
     live.errors.CamundaClusterClaim = "forbidden";
-    render(<CreateClusterFlow initial={data({ sections: [] })} />);
+    render(<ClusterCreateFlow initial={data({ sections: [] })} />);
     await fillBasics("orders");
     expect(
       screen.getByText(
@@ -226,12 +226,12 @@ describe("CreateClusterFlow", () => {
 
   it("refuses a namespace that went away while step 1 was not shown", async () => {
     const { rerender } = render(
-      <CreateClusterFlow initial={data({ sections: [] })} />,
+      <ClusterCreateFlow initial={data({ sections: [] })} />,
     );
     await fillBasics("orders");
     await userEvent.click(next());
     live.objects.Namespace = [];
-    rerender(<CreateClusterFlow initial={data({ sections: [] })} />);
+    rerender(<ClusterCreateFlow initial={data({ sections: [] })} />);
     await userEvent.click(
       screen.getByRole("button", { name: /Environment and name/ }),
     );
@@ -241,7 +241,7 @@ describe("CreateClusterFlow", () => {
 
   it("keeps the step 1 choices after Next and Back", async () => {
     render(
-      <CreateClusterFlow
+      <ClusterCreateFlow
         initial={data({
           sections: [],
           environments: [prod({ allowed: true, requiredLabelKeys: ["team"] })],

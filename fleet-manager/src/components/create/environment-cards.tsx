@@ -1,32 +1,14 @@
 "use client";
 
 import { type ReactNode, useId } from "react";
-import type { FleetEnvironmentConditionType } from "@/generated/conditions";
 import type { Environment } from "@/generated/crds/environment";
 import { TEXT_TONE } from "@/components/fleet/status";
+import { environmentReady } from "@/lib/environments";
 import type { EnvironmentCount } from "@/lib/usage";
 import { byCodeUnit } from "@/lib/policy";
 import { cn } from "@/lib/utils";
 
-const READY: FleetEnvironmentConditionType = "Ready";
 const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
-
-/**
- * environmentReady says whether a claim can pick environment. Only
- * Ready=False makes it not ready, with the message of the condition. A new
- * Environment has no status yet and is ready.
- */
-export function environmentReady(environment: Environment): {
-  ready: boolean;
-  message?: string;
-} {
-  const condition = environment.status?.conditions?.find(
-    (c) => c.type === READY,
-  );
-  return condition?.status === "False"
-    ? { ready: false, message: condition.message }
-    : { ready: true };
-}
 
 /**
  * EnvironmentCardsProps are the props of EnvironmentCards. Without multiple,

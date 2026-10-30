@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
-import { type ClusterDraft, offeredPresets } from "./cluster-draft";
-import { ClusterStepBasics } from "./cluster-step-basics";
+import { type ClusterDraft, offeredPresets } from "@/lib/clusters/draft";
+import { ClusterBasicsStep } from "./cluster-basics-step";
 import { type DraftPath, useCreateFlow } from "./use-create-flow";
 
 afterEach(cleanup);
@@ -76,7 +76,7 @@ function Harness({
     (e) => e.metadata.name === flow.draft.environment,
   );
   return (
-    <ClusterStepBasics
+    <ClusterBasicsStep
       draft={flow.draft}
       set={(path, value) => {
         spy(path, value);
@@ -93,7 +93,7 @@ function Harness({
   );
 }
 
-describe("ClusterStepBasics", () => {
+describe("ClusterBasicsStep", () => {
   it("offers to create a namespace with two required label keys", async () => {
     const prod = environment("prod", {
       namespaceCreation: {
