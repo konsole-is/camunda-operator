@@ -181,7 +181,7 @@ The claim creates the attachments when `ClusterReady` is `True` for the first ti
 
 Each attachment carries the label `fleet.camunda.io/claim` and an owner reference to the claim. When the release of the claim changes, the `CamundaOptimize` gets the new version too. When the `optimizeUrl` output is missing, a new `CamundaOptimize` waits for it, and one that exists keeps its URL. The claim sets only the fields above that have a value. A field that the claim leaves empty stays free for another writer.
 
-Remove an attachment from the claim to delete it. The claim deletes only an object that has an owner reference to the claim. An object of that name that you created yourself stays.
+Remove an attachment from the claim to delete it. The claim deletes only an object that has an owner reference to the claim. An object of that name that you created yourself stays, unless the claim took it over as the next paragraph says.
 
 An object of the name of an attachment that another owner controls stays as it is. `AttachmentsReady` is then `False` with reason `Blocked`, and the message names the owner. When the claim sets the attachment and an object of that name has no controller, the claim takes over the object.
 

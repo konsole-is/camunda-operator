@@ -229,7 +229,7 @@ This part changes the claim `my-cluster` of [Create a cluster from a claim](#cre
     kubectl get camundaoptimize -n my-cluster-ns
     ```
 
-    The claim creates it after the cluster is ready. Until then, `AttachmentsReady` of the claim is `False` with reason `PrerequisiteNotMet`.
+    The cluster of this claim is already ready, so the claim creates the Optimize at once.
 
 This claim selects no option of `backup-storage`, so it cannot get a backup schedule. A claim that selects one at creation can set `spec.attachments.backupSchedule` in the same way.
 
