@@ -1046,3 +1046,194 @@ describe("Overview components and conditions", () => {
     ).toEqual(["Claim", "RequestsReady"]);
   });
 });
+
+type ClusterEndpoints = NonNullable<
+  Resource<"CamundaCluster">["status"]
+>["endpoints"];
+
+describe("Endpoints tab", () => {
+  const httpRoute = (name: string, pathPrefix: string) => ({
+    name,
+    pathPrefix,
+    port: 8080,
+    protocol: "HTTP",
+    service: "orders-gateway",
+  });
+  const optimizeOf = (clusterRef: string, externalUrl: string) =>
+    nsObject(
+      "CamundaOptimize",
+      `${clusterRef}-optimize`,
+      { clusterRef: { name: clusterRef }, externalUrl },
+      {
+        endpoints: [
+          {
+            name: "optimize",
+            pathPrefix: "/",
+            port: 8090,
+            protocol: "HTTP",
+            service: `${clusterRef}-optimize`,
+          },
+        ],
+      },
+    );
+
+  it("lists the routes of a cluster with an embedded Operate and an Optimize attachment", () => {
+    window.history.replaceState(null, "", "?tab=endpoints");
+    const c = cluster();
+    c.status!.endpoints = [
+      httpRoute("default", "/"),
+      httpRoute("operate", "/operate"),
+    ] as ClusterEndpoints;
+    render(
+      view({
+        initial: data({
+          cluster: c,
+          optimizes: [
+            optimizeOf("orders", "https://optimize.example.com"),
+            optimizeOf("payments", "https://payments-optimize.example.com"),
+          ],
+        }),
+      }),
+    );
+    const table = screen.getByRole("table", { name: "Endpoints" });
+    const operate = within(table).getByRole("row", { name: /^operate/ });
+    expect(within(operate).getByText("Gateway")).toBeTruthy();
+    expect(within(operate).getByText("(embedded)")).toBeTruthy();
+    expect(
+      within(operate).getByRole("link", {
+        name: "https://orders.example.com/operate",
+      }),
+    ).toBeTruthy();
+    expect(
+      within(table).getByRole("link", {
+        name: "https://optimize.example.com/",
+      }),
+    ).toBeTruthy();
+    expect(
+      within(table).getAllByRole("row", { name: /^optimize/ }),
+    ).toHaveLength(1);
+  });
+
+  it("gives the gRPC route the host of the access request of the claim", () => {
+    window.history.replaceState(null, "", "?tab=endpoints");
+    const c = cluster();
+    c.status!.endpoints = [
+      {
+        name: "grpc",
+        port: 26500,
+        protocol: "GRPC",
+        service: "orders-gateway",
+      },
+    ] as ClusterEndpoints;
+    const access = nsObject(
+      "PluginRequest",
+      "orders-access",
+      { claimRef: { kind: "CamundaClusterClaim", name: "orders" } },
+      { outputs: { grpcHost: "grpc.orders.example.com:443" } },
+    );
+    render(view({ initial: data({ cluster: c, accessRequests: [access] }) }));
+    const table = screen.getByRole("table", { name: "Endpoints" });
+    expect(within(table).getByText("grpc.orders.example.com:443")).toBeTruthy();
+  });
+});
+
+describe("Claim tab", () => {
+  const editor: ActionSlots = { "cluster.claim.editor": <p>editor</p> };
+
+  it("renders the read view beside the claim editor slot", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const { container } = render(view({ slots: editor }));
+    expect(screen.getAllByText("Set at creation").length).toBeGreaterThan(0);
+    const slot = container.querySelector(
+      '[data-action-slot="cluster.claim.editor"]',
+    );
+    expect(slot?.textContent).toBe("editor");
+    expect(screen.getByRole("region", { name: "Basics" }).contains(slot)).toBe(
+      false,
+    );
+  });
+
+  it("says that the claim is missing and keeps the editor slot", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const { container } = render(
+      view({ initial: data({ claims: [] }), slots: editor }),
+    );
+    expect(
+      screen.getByText("The claim orders is not in this namespace."),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-action-slot="cluster.claim.editor"]'),
+    ).not.toBeNull();
+  });
+
+  it("says that an unmanaged cluster has no claim", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const { container } = render(
+      view({
+        initial: data({ cluster: cluster({ labels: {} }) }),
+        slots: editor,
+      }),
+    );
+    expect(
+      screen.getByText("This cluster was not made from a claim."),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[data-action-slot="cluster.claim.editor"]'),
+    ).toBeNull();
+  });
+
+  it("counts the ages of the claim conditions on with the clock", () => {
+    vi.useFakeTimers({ now: Date.parse(now) });
+    try {
+      window.history.replaceState(null, "", "?tab=claim");
+      const waiting = claim();
+      (waiting as { status?: object }).status = {
+        conditions: [condition("Ready", "False", "PrerequisiteNotMet")],
+      };
+      render(view({ initial: data({ claims: [waiting] }) }));
+      const row = () =>
+        within(screen.getByRole("region", { name: "Claim conditions" }))
+          .getByRole("rowheader", { name: "Ready" })
+          .closest("tr")!;
+      expect(row().textContent).toContain("0s");
+      act(() => {
+        vi.advanceTimersByTime(65_000);
+      });
+      expect(row().textContent).toContain("1m");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("labels the sections of the claim with the PluginSections of the page", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    const withSection = claim();
+    withSection.spec = {
+      presetRef: "medium",
+      plugins: [{ section: "access", registration: "gateway-access" }],
+    };
+    render(
+      view({
+        initial: data({
+          claims: [withSection],
+          sections: [
+            {
+              kind: "PluginSection",
+              metadata: { name: "access" },
+              spec: { label: "Access", appliesTo: ["CamundaClusterClaim"] },
+            } as unknown as Resource<"PluginSection">,
+          ],
+          registrations: [
+            {
+              kind: "PluginRegistration",
+              metadata: { name: "gateway-access" },
+              spec: { label: "Gateway", deletionPolicies: ["Delete"] },
+            } as unknown as Resource<"PluginRegistration">,
+          ],
+        }),
+      }),
+    );
+    const access = screen.getByRole("region", { name: "Access: Gateway" });
+    expect(within(access).getByText("Gateway")).toBeTruthy();
+  });
+});
