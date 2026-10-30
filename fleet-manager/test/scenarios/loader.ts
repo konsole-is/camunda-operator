@@ -85,10 +85,13 @@ export class ScenarioLoader {
     update: readonly KubeObject[],
     unchanged: readonly KubeObject[] = [],
   ): Promise<void> {
-    const known = new Set(this.uids.keys());
+    const known = new Map(this.uids);
     const posted = new Map<KubeObject, KubeObject>();
     for (const o of create) posted.set(o, await this.create(o));
-    const fresh = [...this.uids.keys()].filter((uid) => !known.has(uid));
+    // A recreated object keeps its scenario UID and gets a new real UID.
+    const fresh = [...this.uids]
+      .filter(([uid, real]) => known.get(uid) !== real)
+      .map(([uid]) => uid);
     const names = unchanged.filter((o) => {
       const text = JSON.stringify(o);
       return fresh.some((uid) => text.includes(uid));

@@ -59,6 +59,22 @@ describe("the users option of startEnvtest", () => {
     ).rejects.toThrow(/a.*twice/);
   });
 
+  it("writes a kubeconfig for a user name with a slash", async () => {
+    const slashed = await startEnvtest({ users: [{ name: "team/alice" }] });
+    try {
+      const kc = slashed.users["team/alice"].kubeConfig;
+      const review = await kubeRequest<{
+        status: { userInfo: { username: string } };
+      }>(kc, "POST", "/apis/authentication.k8s.io/v1/selfsubjectreviews", {
+        apiVersion: "authentication.k8s.io/v1",
+        kind: "SelfSubjectReview",
+      });
+      expect(review.status.userInfo.username).toBe("team/alice");
+    } finally {
+      await slashed.stop();
+    }
+  }, 120_000);
+
   it("refuses a user in system:masters, also in a group list", async () => {
     await expect(
       startEnvtest({ users: [{ name: "b", groups: ["system:masters"] }] }),
@@ -307,8 +323,26 @@ describe("the scenario loader", () => {
 
     it("advance to an unknown state names the states", async () => {
       await expect(scenario.advance("nope")).rejects.toThrow(
-        "The scenario advance has no state nope. Its states are: moved",
+        "The scenario advance has no state nope. Its states are: moved, back",
       );
+    });
+
+    it("advance writes the new UID of a recreated object into an object that did not change", async () => {
+      await scenario.advance("back");
+
+      const recreated = await getLive(envtest.kubeConfig, {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        metadata: { name: "gone", namespace: "advance" },
+      });
+      const names = await getLive(envtest.kubeConfig, {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        metadata: { name: "names-gone", namespace: "advance" },
+      });
+      expect(names.metadata.annotations).toEqual({
+        "scenario.test/gone-uid": recreated.metadata.uid,
+      });
     });
   });
 });

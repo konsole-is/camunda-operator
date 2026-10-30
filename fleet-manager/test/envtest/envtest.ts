@@ -165,7 +165,8 @@ export async function startEnvtest(
     for (const [i, u] of users.entries()) {
       userConfigs[u.name] = await writeKubeconfig(
         dir,
-        `kubeconfig-${u.name}`,
+        // A user name can hold a slash, so the file name has the index.
+        `kubeconfig-user-${i}`,
         server,
         u.name,
         userTokens[i],
