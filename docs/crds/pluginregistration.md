@@ -101,7 +101,7 @@ With `required: true`, a claim that selects this option must also select an opti
 
 A claim fills the parameter `releaseRef` with the name of its `CamundaRelease` when the schema has a top-level string property `releaseRef`. The built-ins `elasticsearch` and `database-server` use it.
 
-A parameter whose schema has `x-fleet-template: true` holds a template. The plugin fills it in with the placeholders of [Grant templates](#grant-templates), except `{{ .outputs.<key> }}`, because the outputs do not exist yet at that time.
+A parameter whose schema has `x-fleet-template: true` holds a template. The request gets the template from `parameterValues`, and the plugin fills it in. It can use the placeholders of [Grant templates](#grant-templates), except `{{ .outputs.<key> }}`, because the outputs do not exist yet at that time.
 
 ```yaml
 apiVersion: plugins.camunda.io/v1alpha1
@@ -115,7 +115,8 @@ spec:
       bucketPrefix:
         type: string
         x-fleet-template: true
-        default: "{{ .namespace }}-{{ .claim }}"
+  parameterValues:
+    bucketPrefix: "{{ .namespace }}-{{ .claim }}"
   # ... the rest of your registration
 ```
 
