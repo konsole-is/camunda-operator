@@ -1,0 +1,209 @@
+"use client";
+
+import { CircleAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { objectDiff, type DiffLine } from "@/lib/diff";
+import {
+  changeOf,
+  claimAfter,
+  outcomeOf,
+  valueAt,
+  type ClaimObject,
+  type FieldError,
+  type Session,
+  type WriteOutcome,
+} from "@/lib/session";
+import type {
+  Change,
+  Preview,
+  WriteMode,
+  WriteResult,
+} from "@/lib/write/types";
+import { DiffView } from "./diff-view";
+import { ReviewPanel } from "./review-panel";
+import { Toast, useWriteToast } from "./toast";
+
+/**
+ * ClaimReview is the review of the pending changes of a session: the diff
+ * of the claim, the merged diff of the cluster when mergedLines is given,
+ * the impacts, and the confirm. It previews the change of the session once
+ * for each session and intent, and the confirm stays disabled until that
+ * preview is clean. A confirm sends one write. After an ok write it calls
+ * onWritten, and the parent closes the session. A refused write shows its
+ * errors and gives the errors of pending fields to onRefused. It never
+ * changes the session. It needs the providers of useWriteToast above it.
+ */
+export function ClaimReview<C extends ClaimObject>({
+  session,
+  mode,
+  intent,
+  impacts,
+  mergedLines,
+  preview,
+  apply,
+  onWritten,
+  onRefused,
+  onCancel,
+}: {
+  session: Session<C>;
+  mode: WriteMode;
+  /** intent is the commit subject in Git mode. */
+  intent: string;
+  impacts: string[];
+  mergedLines?: DiffLine[];
+  preview: (change: Change) => Promise<Preview>;
+  apply: (change: Change) => Promise<WriteResult>;
+  onWritten?: () => void;
+  onRefused?: (fields: FieldError[]) => void;
+  onCancel?: () => void;
+}) {
+  const { toast, show, dismiss } = useWriteToast();
+  const [previewed, setPreviewed] = useState<{
+    session: Session<C>;
+    intent: string;
+    result: Preview;
+  }>();
+  const [refused, setRefused] = useState<{
+    session: Session<C>;
+    outcome: WriteOutcome;
+  }>();
+  const [writing, setWriting] = useState(false);
+  // A second click arrives before React disables the button.
+  const writingNow = useRef(false);
+  const previewRef = useRef(preview);
+  useEffect(() => {
+    previewRef.current = preview;
+  });
+
+  useEffect(() => {
+    let current = true;
+    previewRef
+      .current(changeOf(session, intent))
+      .catch((error: unknown): Preview => ({
+        objects: [],
+        errors: [{ code: "Unavailable", message: String(error) }],
+      }))
+      .then((result) => {
+        if (current) setPreviewed({ session, intent, result });
+      });
+    return () => {
+      current = false;
+    };
+  }, [session, intent]);
+
+  const checked =
+    previewed?.session === session && previewed.intent === intent
+      ? previewed.result
+      : undefined;
+  const previewOutcome = checked && outcomeOf(checked, session);
+  const writeOutcome =
+    refused?.session === session ? refused.outcome : undefined;
+  const blocked =
+    !previewOutcome ||
+    !previewOutcome.ok ||
+    (writeOutcome !== undefined && !writeOutcome.ok && writeOutcome.stale);
+  const alerts = [
+    ...messagesOf(previewOutcome),
+    ...messagesOf(writeOutcome),
+    ...(checked ? keptResets(session, checked) : []),
+  ];
+
+  async function confirm() {
+    if (writingNow.current || blocked) return;
+    writingNow.current = true;
+    setWriting(true);
+    try {
+      const result = await apply(changeOf(session, intent)).catch(
+        (error: unknown): WriteResult => ({
+          ok: false,
+          errors: [{ code: "Unavailable", message: String(error) }],
+        }),
+      );
+      if (result.ok) {
+        show(result, `The claim ${session.claim.metadata.name} is saved.`);
+        onWritten?.();
+        return;
+      }
+      const outcome = outcomeOf(result, session);
+      setRefused({ session, outcome });
+      if (!outcome.ok && outcome.fields.length > 0) onRefused?.(outcome.fields);
+    } finally {
+      writingNow.current = false;
+      setWriting(false);
+    }
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <ReviewPanel
+        lines={objectDiff(session.claim, claimAfter(session))}
+        details={
+          mergedLines && (
+            <DiffView label="Changes to the cluster" lines={mergedLines} />
+          )
+        }
+        effects={impacts}
+        notices={
+          alerts.length > 0 && (
+            <div
+              role="alert"
+              className="flex gap-3 rounded-md border border-bad/40 bg-bad/10 p-3 text-sm text-text"
+            >
+              <CircleAlert
+                aria-hidden
+                className="mt-0.5 size-4 shrink-0 text-bad"
+              />
+              <ul className="flex flex-col gap-1">
+                {alerts.map((text, i) => (
+                  <li key={i}>{text}</li>
+                ))}
+              </ul>
+            </div>
+          )
+        }
+        mode={mode}
+        confirmLabel="Save"
+        pending={writing || blocked}
+        onConfirm={confirm}
+        onCancel={onCancel}
+      />
+      {toast && <Toast result={toast} onDismiss={dismiss} />}
+    </div>
+  );
+}
+
+function messagesOf(outcome: WriteOutcome | undefined): string[] {
+  if (!outcome || outcome.ok) return [];
+  return [
+    ...outcome.messages,
+    ...outcome.fields.map((f) =>
+      f.path ? `${f.path}: ${f.message}` : f.message,
+    ),
+  ];
+}
+
+// keptResets returns a note for each reset field that the claim of the
+// preview still holds. Server-side apply keeps a field that another field
+// manager owns, so such a reset changes nothing.
+function keptResets(s: Session, preview: Preview): string[] {
+  const { kind, metadata } = s.claim;
+  const after = preview.objects.find(
+    (o) =>
+      o.ref.kind === kind &&
+      o.ref.namespace === metadata.namespace &&
+      o.ref.name === metadata.name,
+  )?.after;
+  if (!after) return [];
+  return [...s.pending.values()]
+    .filter(
+      (entry) =>
+        "reset" in entry &&
+        // After a reset the index of a list item names the next item.
+        !entry.steps.some((step) => "index" in step) &&
+        valueAt(after, entry.steps) !== undefined,
+    )
+    .map(
+      (entry) =>
+        `Another field manager keeps ${entry.path}, so the reset does not remove it.`,
+    );
+}
