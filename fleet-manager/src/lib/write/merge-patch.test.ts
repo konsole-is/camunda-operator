@@ -61,10 +61,7 @@ describe("clientSideApplyPatch", () => {
       live,
       env({ displayName: "One", releases: { default: "r1" } }),
     );
-    expect(patch?.spec).toEqual({
-      displayName: "One",
-      releases: { allowed: null, default: "r1" },
-    });
+    expect(patch?.spec).toEqual({ releases: { allowed: null } });
   });
 
   it("sets null at a whole map that the body leaves out", () => {
@@ -73,7 +70,7 @@ describe("clientSideApplyPatch", () => {
     );
     expect(
       clientSideApplyPatch(live, env({ displayName: "One" }))?.spec,
-    ).toEqual({ displayName: "One", releases: null });
+    ).toEqual({ releases: null });
   });
 
   it("sets null at a field that the body sets to undefined", () => {
@@ -83,7 +80,7 @@ describe("clientSideApplyPatch", () => {
         live,
         env({ releases: { allowed: undefined, default: "r1" } }),
       )?.spec,
-    ).toEqual({ releases: { allowed: null, default: "r1" } });
+    ).toEqual({ releases: { allowed: null } });
   });
 
   it("sets null at a __proto__ key that the body leaves out", () => {
@@ -126,7 +123,40 @@ describe("clientSideApplyPatch", () => {
     };
     expect(
       clientSideApplyPatch(live, env({ parameters: { keep: null } }))?.spec,
-    ).toEqual({ parameters: {} });
+    ).toBeUndefined();
+  });
+
+  it("leaves out a map that holds only unchanged nulls, also when live holds no map there", () => {
+    const live = {
+      ...applied(env({ parameters: { option: { keep: null } } })),
+      spec: { parameters: { option: "s" } },
+    };
+    expect(
+      clientSideApplyPatch(
+        live,
+        env({ parameters: { option: { keep: null } } }),
+      )?.spec,
+    ).toBeUndefined();
+  });
+
+  it("sends an empty map of the body that live does not hold", () => {
+    const live = {
+      ...applied(env({ parameters: { option: "s" } })),
+      spec: { parameters: { option: "s" } },
+    };
+    expect(
+      clientSideApplyPatch(live, env({ parameters: { option: {} } }))?.spec,
+    ).toEqual({ parameters: { option: {} } });
+  });
+
+  it("removes the null fields of an object in a new list, and keeps a null item", () => {
+    const live = applied(env({ displayName: "One" }));
+    expect(
+      clientSideApplyPatch(
+        live,
+        env({ displayName: "One", items: [{ name: "a", value: null }, null] }),
+      )?.spec,
+    ).toEqual({ items: [{ name: "a" }, null] });
   });
 
   it("sends a shorter list whole, with no null for a removed item", () => {
@@ -146,18 +176,10 @@ describe("clientSideApplyPatch", () => {
     ).toEqual({ displayName: "Two" });
   });
 
-  it("never removes the annotations, and keeps the last applied file at its live value", () => {
+  it("never removes the annotations, and leaves the last applied file at its live value", () => {
     const live = applied(env({ displayName: "One" }, { team: "a" }));
     const patch = clientSideApplyPatch(live, env({ displayName: "One" }));
-    expect(patch?.metadata).toEqual({
-      name: "prod",
-      annotations: {
-        team: null,
-        [LAST_APPLIED_ANNOTATION]: (
-          live.metadata.annotations as Record<string, string>
-        )[LAST_APPLIED_ANNOTATION],
-      },
-    });
+    expect(patch?.metadata).toEqual({ annotations: { team: null } });
   });
 
   it("keeps the resourceVersion of the body, so the dry run still checks the precondition", () => {
