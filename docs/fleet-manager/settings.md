@@ -131,7 +131,7 @@ A GitHub App works for repositories on `github.com` and on GitHub Enterprise Ser
 
 The fleet manager must reach the GitHub API: `https://api.github.com` for `github.com`, or `https://<host>/api/v3` for GitHub Enterprise Server. It gets a token from GitHub that expires after one hour, and gets a new token before the old one expires.
 
-Commits show the bot of the App, `<app name>[bot]`, as the author. If the fleet manager cannot find the bot, commits show `fleet-manager`, and the save still works.
+Commits show the bot of the App, `<app slug>[bot]`, as the author. The slug is the name of the App in its GitHub address, `https://github.com/apps/<app slug>`. If the fleet manager cannot find the bot, commits show `fleet-manager`, and the save still works.
 
 ## Git mode
 

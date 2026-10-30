@@ -15,7 +15,12 @@ const FALLBACK = {
   email: "fleet-manager@noreply.invalid",
 };
 
-type Call = { url: string; method: string; headers: Record<string, string> };
+type Call = {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  redirect?: RequestRedirect;
+};
 type Route = (call: Call) => Response | Promise<Response>;
 
 let calls: Call[];
@@ -28,6 +33,7 @@ function route(routes: Record<string, Route>) {
       url: String(input),
       method: init?.method ?? "GET",
       headers: Object.fromEntries(new Headers(init?.headers).entries()),
+      redirect: init?.redirect,
     };
     calls.push(call);
     const handler = routes[`${call.method} ${call.url}`];
@@ -76,6 +82,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  // A followed redirect would send the JWT or the token to the Location.
+  for (const call of calls) expect(call.redirect, call.url).toBe("manual");
 });
 
 describe("appJWT", () => {
@@ -283,6 +291,28 @@ describe("appSession", () => {
 
     expect(!result.ok && result.error.code).toBe("Unavailable");
     expect(calls.some((c) => c.url.includes("evil.example"))).toBe(false);
+  });
+
+  it("a redirect from the token endpoint is Unavailable and is not followed", async () => {
+    route({
+      [tokenURL("475")]: () =>
+        new Response(null, {
+          status: 307,
+          headers: { Location: "https://evil.example/access_tokens" },
+        }),
+    });
+
+    const result = await session("475");
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "Unavailable",
+        message:
+          "GitHub answered the token request of the App 123 for the installation 475 with HTTP 307.",
+      },
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it("a refused token request holds no JWT, token, or private key", async () => {

@@ -396,6 +396,54 @@ describe("testGit", slow, () => {
     });
   });
 
+  it("a refused App token is not used again", async () => {
+    const base = await serveGit(
+      gitServer(["main"], basic("x-access-token", "ghs_new")),
+    );
+    const url = base + "/fleet.git";
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({ "git.repository": url, "git.credentialsSecretRef": "git" }),
+    );
+    vi.mocked(readSecretValues).mockResolvedValue({
+      appId: "123",
+      installationId: "702",
+      privateKey: generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+        privateKeyEncoding: { type: "pkcs1", format: "pem" },
+        publicKeyEncoding: { type: "spki", format: "pem" },
+      }).privateKey,
+    });
+    const tokens = ["ghs_old", "ghs_new"];
+    let tokenRequests = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const key = `${init?.method ?? "GET"} ${String(input)}`;
+      if (key === `GET ${base}/api/v3/meta`) {
+        return Response.json({ installed_version: "3.17.0" });
+      }
+      if (key === `POST ${base}/api/v3/app/installations/702/access_tokens`) {
+        tokenRequests++;
+        return Response.json(
+          {
+            token: tokens.shift(),
+            expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+          { status: 201 },
+        );
+      }
+      throw new Error(`unexpected request ${key}`);
+    });
+
+    expect(await testGit()).toEqual({
+      ok: false,
+      message: `${url} refused the credentials.`,
+    });
+    expect(await testGit()).toEqual({
+      ok: true,
+      message: `Connected to ${url}.`,
+    });
+    expect(tokenRequests).toBe(2);
+  });
+
   it("a Secret with token keys and App keys gives the message that names both sets", async () => {
     vi.mocked(getSettings).mockResolvedValue(
       settings({
