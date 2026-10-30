@@ -284,7 +284,9 @@ describe("clusterImpacts", () => {
 
   it("a field of a standalone process restarts its pods", () => {
     expect(
-      clusterImpacts(input(set(cluster("gateway", "replicas"), 3))),
+      clusterImpacts(
+        input(set(cluster("gateway", "resources"), { limits: { cpu: "2" } })),
+      ),
     ).toEqual(["Gateway pods restart."]);
     expect(
       clusterImpacts(
@@ -691,9 +693,19 @@ describe("clusterImpacts", () => {
     expect(
       clusterImpacts(input(set(cluster("zeebe", "storageSize"), "16Gi"))),
     ).toEqual(["Volumes cannot shrink. The operator keeps the current size."]);
+  });
+
+  it("a field outside the pod template restarts nothing", () => {
+    // The operator grows the volume claims and scales the Deployment.
     expect(
       clusterImpacts(input(set(cluster("zeebe", "storageSize"), "64Gi"))),
-    ).toEqual(["Broker pods restart."]);
+    ).toEqual([]);
+    expect(
+      clusterImpacts(input(set(cluster("gateway", "replicas"), 3))),
+    ).toEqual([]);
+    expect(
+      clusterImpacts(input(set(cluster("zeebe", "storageClassName"), "slow"))),
+    ).toEqual([]);
   });
 
   it("a section parameter applies in its option", () => {
@@ -748,7 +760,7 @@ describe("clusterImpacts", () => {
         input(
           both(
             set([f("spec"), f("suspend")], true),
-            set(cluster("gateway", "replicas"), 3),
+            set(cluster("gateway", "resources"), { limits: { cpu: "2" } }),
             set([f("spec"), f("releaseRef")], "camunda-8-10-1"),
           ),
         ),

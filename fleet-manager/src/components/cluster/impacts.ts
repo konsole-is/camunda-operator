@@ -50,6 +50,16 @@ const CLUSTER_WIDE = new Set([
   "podAnnotations",
 ]);
 
+// These fields of a process change its workload but not its pod template.
+// The operator grows the volume claims for storageSize, and keeps the
+// storage class of the applied claim template.
+const OUTSIDE_POD = new Set([
+  "replicas",
+  "storageSize",
+  "storageClassName",
+  "persistentVolumeClaimRetentionPolicy",
+]);
+
 // The operator applies these fields of an embedded process to its host.
 const HOST_FIELDS = new Set(["extraEnv", "extraEnvFrom"]);
 
@@ -102,6 +112,7 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
   const boxes = topologyOf(after.spec, []);
   const had = new Set(topologyOf(before.spec, []).map((b) => b.process));
   const shrinks = shrinksStorage(before.spec, after.spec);
+  const applies: string[] = [];
   for (const steps of cluster) {
     const [first, second] = steps;
     if (!("field" in first) || !Object.hasOwn(PROCESS_NAME, first.field))
@@ -109,15 +120,15 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
     const process = first.field as Process;
     const field = second && "field" in second ? second.field : undefined;
     if (isSwitch(process, field)) continue;
-    if (shrinks && process === "zeebe" && field === "storageSize") continue;
     const host = boxes.find((b) =>
       b.embedded.some((e) => e.process === process),
     );
     if (boxes.some((b) => b.process === process)) {
-      if (had.has(process)) lines.add(`${PROCESS_NAME[process]} pods restart.`);
+      if (had.has(process) && !OUTSIDE_POD.has(field ?? ""))
+        lines.add(`${PROCESS_NAME[process]} pods restart.`);
     } else if (host && field !== undefined && HOST_FIELDS.has(field))
       lines.add(`${PROCESS_NAME[host.process]} pods restart.`);
-    else lines.add(`Applies when ${PROCESS_NAME[process]} runs standalone.`);
+    else applies.push(`Applies when ${PROCESS_NAME[process]} runs standalone.`);
   }
 
   if (!restartsAll)
@@ -130,6 +141,7 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
         )
       )
         lines.add(`${PROCESS_NAME[process]} pods restart.`);
+  for (const line of applies) lines.add(line);
 
   if (
     cluster.some(([first]) => "field" in first && CLUSTER_WIDE.has(first.field))
