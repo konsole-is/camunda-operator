@@ -48,7 +48,7 @@ export const test = base.extend<
     { scope: "worker", option: true },
   ],
   scenarioApp: [
-    async ({ scenarioName }, use) => {
+    async ({ scenarioName }, provide) => {
       if (!scenarioName) {
         throw new Error("Set test.use({ scenarioName }) in the test file");
       }
@@ -77,17 +77,17 @@ export const test = base.extend<
         await handle?.prometheus.close();
         throw error;
       });
-      await use({ ...app, scenario: handle! });
+      await provide({ ...app, scenario: handle! });
       await handle!.prometheus.close();
       await app.stop();
     },
     { scope: "worker", timeout: 180_000 },
   ],
-  scenario: async ({ scenarioApp }, use) => {
-    await use(scenarioApp.scenario);
+  scenario: async ({ scenarioApp }, provide) => {
+    await provide(scenarioApp.scenario);
   },
-  baseURL: async ({ scenarioApp }, use) => {
-    await use(scenarioApp.baseURL);
+  baseURL: async ({ scenarioApp }, provide) => {
+    await provide(scenarioApp.baseURL);
   },
 });
 
