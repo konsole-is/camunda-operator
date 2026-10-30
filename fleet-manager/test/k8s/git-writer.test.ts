@@ -10,6 +10,7 @@ import { gitWriter } from "@/lib/write/git";
 import type { KubeObject, Writer } from "@/lib/write/types";
 import { directWriter, readObject, refKey } from "@/lib/write/writer";
 import { type BareRepository, serveBareRepository } from "../git/server";
+import { createClientSideApplied } from "./client-side-apply";
 
 const kc = new KubeConfig();
 kc.loadFromFile(inject("kubeconfig"));
@@ -159,6 +160,67 @@ describe("the Git writer against envtest", () => {
       }),
     );
     expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it("a save that leaves out a field that a client-side-apply GitOps tool applied is refused before the commit", async () => {
+    // The GitOps tool applied a file with releases.allowed with client-side
+    // apply. The save leaves it out, so the apply of the commit removes it
+    // and the CEL rule fails.
+    await createClientSideApplied(api, {
+      ...environment(name, {
+        displayName: "One",
+        releases: { allowed: ["r1"], default: "r1" },
+      }),
+      metadata: { name, annotations: { [REVISION_ANNOTATION]: "one" } },
+    });
+
+    const result = await writer.apply({
+      intent: "Drop the allowed releases",
+      apply: [
+        environment(name, { displayName: "One", releases: { default: "r1" } }),
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.errors[0]).toEqual(
+      expect.objectContaining({
+        code: "Invalid",
+        message: expect.stringContaining(
+          "releases.default must be one of releases.allowed",
+        ),
+      }),
+    );
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it("a save of an object without a last applied file keeps the server-side-apply dry run and commits", async () => {
+    // Created by an Update without a last applied file: kubectl removes
+    // nothing, so the save keeps releases.allowed and passes.
+    await api.create(
+      {
+        ...environment(name, {
+          displayName: "One",
+          releases: { allowed: ["r1"], default: "r1" },
+        }),
+        metadata: { name, annotations: { [REVISION_ANNOTATION]: "one" } },
+      },
+      undefined,
+      undefined,
+      "someone-else",
+    );
+
+    const result = await writer.apply({
+      intent: "Keep the default release",
+      apply: [
+        environment(name, { displayName: "One", releases: { default: "r1" } }),
+      ],
+    });
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, mode: "git" }));
+    expect(await repo.log()).toEqual([
+      "Keep the default release",
+      "Initial commit",
+    ]);
   });
 
   it("a save keeps a field that another manager applied, as the GitOps apply does", async () => {

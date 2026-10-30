@@ -12,6 +12,13 @@ export const CLAIM_LABEL = "fleet.camunda.io/claim";
 /** REVISION_ANNOTATION is AnnotationRevision of api/fleet/v1alpha1. */
 export const REVISION_ANNOTATION = "fleet.camunda.io/revision";
 
+/**
+ * LAST_APPLIED_ANNOTATION holds the last applied file of kubectl apply
+ * without --server-side. It is LastAppliedConfigAnnotation of k8s.io/api/core/v1.
+ */
+export const LAST_APPLIED_ANNOTATION =
+  "kubectl.kubernetes.io/last-applied-configuration";
+
 /** SECTION_LABEL names the section of a PluginRequest. It is LabelSection of api/plugins/v1alpha1. */
 export const SECTION_LABEL = "plugins.camunda.io/section";
 
