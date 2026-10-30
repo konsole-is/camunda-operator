@@ -269,6 +269,7 @@ describe("the direct writer against envtest", () => {
       true,
       PatchStrategy.ServerSideApply,
     );
+    const before = await live(name);
 
     const preview = await writer.preview({
       intent: "Rename",
@@ -282,6 +283,9 @@ describe("the direct writer against envtest", () => {
       displayName: "Two",
       releases: { allowed: ["r1"] },
     });
+    expect((await live(name)).metadata?.resourceVersion).toBe(
+      before.metadata?.resourceVersion,
+    );
   });
 
   it("a preview of an object of previewMergePatches without a last applied file keeps the server-side-apply dry run", async () => {
