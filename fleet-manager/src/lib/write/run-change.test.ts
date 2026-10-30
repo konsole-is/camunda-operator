@@ -8,7 +8,8 @@ const fake = {
 };
 vi.mock("./writer", () => ({ getWriter: async () => fake }));
 
-const { changeSchema, runChange } = await import("./run-change");
+const { changeSchema, claimChangeSchema, runChange, runPreview } =
+  await import("./run-change");
 
 const validChange = {
   intent: "Create the environment prod",
@@ -24,6 +25,7 @@ const validChange = {
 
 beforeEach(() => {
   fake.apply.mockReset();
+  fake.preview.mockReset();
 });
 
 describe("runChange", () => {
@@ -95,5 +97,94 @@ describe("runChange", () => {
       ok: false,
       errors: [{ code: "Unavailable", message: "boom" }],
     });
+  });
+});
+
+describe("runPreview", () => {
+  it("previews a valid change with the writer and returns its preview", async () => {
+    const preview = { objects: [], errors: [] };
+    fake.preview.mockResolvedValue(preview);
+
+    expect(await runPreview(validChange)).toEqual(preview);
+    expect(fake.preview).toHaveBeenCalledWith(validChange);
+  });
+
+  it("refuses input that the schema refuses and previews nothing", async () => {
+    const result = await runPreview({ intent: "", apply: [] });
+
+    expect(result.objects).toEqual([]);
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.every((e) => e.code === "Invalid")).toBe(true);
+    expect(fake.preview).not.toHaveBeenCalled();
+  });
+
+  it("uses the schema of the action", async () => {
+    const result = await runPreview(validChange, claimChangeSchema);
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({ code: "Invalid" }),
+    ]);
+    expect(fake.preview).not.toHaveBeenCalled();
+  });
+
+  it("returns Unavailable when the writer throws", async () => {
+    fake.preview.mockRejectedValue(new Error("settings unreadable"));
+
+    expect(await runPreview(validChange)).toEqual({
+      objects: [],
+      errors: [{ code: "Unavailable", message: "settings unreadable" }],
+    });
+  });
+});
+
+describe("claimChangeSchema", () => {
+  const claim = {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    metadata: { name: "orders", namespace: "team-a" },
+    spec: {},
+  };
+
+  it("accepts one claim of either kind to apply, with a precondition", () => {
+    expect(
+      claimChangeSchema.safeParse({
+        intent: "x",
+        apply: [claim],
+        preconditions: { "CamundaClusterClaim/team-a/orders": "41" },
+      }).success,
+    ).toBe(true);
+    expect(
+      claimChangeSchema.safeParse({
+        intent: "x",
+        apply: [{ ...claim, kind: "CamundaManagementClusterClaim" }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    [
+      "another kind",
+      { intent: "x", apply: [{ ...claim, kind: "Environment" }] },
+    ],
+    ["two objects", { intent: "x", apply: [claim, claim] }],
+    ["no object", { intent: "x", apply: [] }],
+    [
+      "a delete",
+      {
+        intent: "x",
+        apply: [claim],
+        delete: [
+          { apiVersion: "v1", kind: "Secret", namespace: "a", name: "b" },
+        ],
+      },
+    ],
+    ["force", { intent: "x", apply: [claim], force: true }],
+    ["directOnly", { intent: "x", apply: [claim], directOnly: true }],
+    [
+      "no namespace",
+      { intent: "x", apply: [{ ...claim, metadata: { name: "orders" } }] },
+    ],
+  ])("refuses %s", (_, input) => {
+    expect(claimChangeSchema.safeParse(input).success).toBe(false);
   });
 });

@@ -15,9 +15,11 @@ import {
   type KindInfo,
 } from "@/lib/k8s/kinds";
 import { APP_FIELD_MANAGER } from "@/lib/merge";
+import type { Settings } from "@/lib/settings/keys";
 import { apiErrorsOf, staleError } from "./errors";
 import { gitWriter } from "./git";
 import { clientSideApplyPatch } from "./merge-patch";
+import { refKey, refOf } from "./refs";
 import type {
   ApiError,
   Change,
@@ -26,9 +28,12 @@ import type {
   Preview,
   PreviewObject,
   RefKey,
+  WriteMode,
   WriteResult,
   Writer,
 } from "./types";
+
+export { refKey, refOf } from "./refs";
 
 /** WRITE_TIMEOUT_MS bounds each request of a write. */
 export const WRITE_TIMEOUT_MS = 15_000;
@@ -50,26 +55,6 @@ const notAName = new Set<string | undefined>(["", ".", ".."]);
 
 const hiddenValue = "(hidden)";
 const changedValue = "(changed)";
-
-/** refKey returns the key of an object in Change.preconditions. */
-export function refKey(ref: {
-  kind: string;
-  namespace?: string;
-  name: string;
-}): RefKey {
-  return `${ref.kind}/${ref.namespace ?? ""}/${ref.name}`;
-}
-
-/** refOf returns the reference of an object. */
-export function refOf(object: KubeObject): ObjectRef {
-  const { namespace, name } = object.metadata;
-  return {
-    apiVersion: object.apiVersion,
-    kind: object.kind,
-    ...(namespace === undefined ? {} : { namespace }),
-    name,
-  };
-}
 
 /**
  * applyBody is the object to apply: no managedFields, uid,
@@ -319,16 +304,12 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
  * cannot be read.
  */
 export async function getWriter(): Promise<Writer> {
-  // The settings store writes through directWriter of this module, so a
-  // static import of the store would be a cycle.
-  const { getSettings } = await import("@/lib/settings/store");
-  const settings = await getSettings();
-  const url = settings["git.repository"];
+  const settings = await readSettings();
   const kc = kubeConfig();
-  if (!url) return directWriter(kc);
+  if (modeOf(settings) === "direct") return directWriter(kc);
   return gitWriter({
     target: {
-      url,
+      url: settings["git.repository"],
       branch: settings["git.branch"],
       path: settings["git.path"],
       credentialsSecretRef: settings["git.credentialsSecretRef"],
@@ -336,6 +317,22 @@ export async function getWriter(): Promise<Writer> {
     direct: directWriter(kc),
     read: (ref) => readObject(kc, ref),
   });
+}
+
+/** writeMode returns the mode of the writer that getWriter returns. It throws when the settings cannot be read. */
+export async function writeMode(): Promise<WriteMode> {
+  return modeOf(await readSettings());
+}
+
+async function readSettings(): Promise<Settings> {
+  // The settings store writes through directWriter of this module, so a
+  // static import of the store would be a cycle.
+  const { getSettings } = await import("@/lib/settings/store");
+  return getSettings();
+}
+
+function modeOf(settings: Settings): WriteMode {
+  return settings["git.repository"] ? "git" : "direct";
 }
 
 /**

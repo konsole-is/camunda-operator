@@ -1,6 +1,13 @@
 import "server-only";
 import { z } from "zod";
-import type { Change, KubeObject, ObjectRef, WriteResult } from "./types";
+import type {
+  ApiError,
+  Change,
+  KubeObject,
+  ObjectRef,
+  Preview,
+  WriteResult,
+} from "./types";
 import { getWriter } from "./writer";
 
 /** kubeObjectSchema accepts an object with apiVersion, kind, and metadata.name, and keeps every other field. */
@@ -41,6 +48,27 @@ export const changeSchema: z.ZodType<Change> = z
     message: "The change has no object to apply or delete.",
   });
 
+const CLAIM_KINDS: readonly string[] = [
+  "CamundaClusterClaim",
+  "CamundaManagementClusterClaim",
+];
+
+/**
+ * claimChangeSchema accepts a Change that applies exactly one claim of a
+ * cluster or a management plane, with a namespace, and that has no delete,
+ * no force, and no directOnly.
+ */
+export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
+  (c) =>
+    c.apply.length === 1 &&
+    CLAIM_KINDS.includes(c.apply[0].kind) &&
+    c.apply[0].metadata.namespace !== undefined &&
+    c.delete === undefined &&
+    c.force === undefined &&
+    c.directOnly === undefined,
+  { message: "The change must apply one claim and nothing else." },
+);
+
 /**
  * runChange is the one helper that a server action calls to write. It
  * checks input with schema, applies it with the writer of getWriter, and
@@ -52,27 +80,44 @@ export async function runChange(
   schema: z.ZodType<Change> = changeSchema,
 ): Promise<WriteResult> {
   const parsed = schema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      errors: parsed.error.issues.map((issue) => ({
-        code: "Invalid",
-        message: issue.message,
-        ...(issue.path.length === 0 ? {} : { path: issue.path.join(".") }),
-      })),
-    };
-  }
+  if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
   try {
     return await (await getWriter()).apply(parsed.data);
   } catch (error) {
-    return {
-      ok: false,
-      errors: [
-        {
-          code: "Unavailable",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      ],
-    };
+    return { ok: false, errors: [unavailable(error)] };
   }
+}
+
+/**
+ * runPreview is the one helper that a server action calls for a dry run.
+ * It checks input as runChange does and previews it with the writer of
+ * getWriter. It never throws: a refused input or a writer that throws gives
+ * no objects and the errors of runChange.
+ */
+export async function runPreview(
+  input: unknown,
+  schema: z.ZodType<Change> = changeSchema,
+): Promise<Preview> {
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) return { objects: [], errors: issuesOf(parsed.error) };
+  try {
+    return await (await getWriter()).preview(parsed.data);
+  } catch (error) {
+    return { objects: [], errors: [unavailable(error)] };
+  }
+}
+
+function issuesOf(error: z.ZodError): ApiError[] {
+  return error.issues.map((issue) => ({
+    code: "Invalid",
+    message: issue.message,
+    ...(issue.path.length === 0 ? {} : { path: issue.path.join(".") }),
+  }));
+}
+
+function unavailable(error: unknown): ApiError {
+  return {
+    code: "Unavailable",
+    message: error instanceof Error ? error.message : String(error),
+  };
 }
