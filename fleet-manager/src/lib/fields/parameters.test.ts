@@ -5,6 +5,7 @@ import { mergeCluster } from "@/lib/merge";
 import type { ResolvedPolicy } from "@/lib/policy";
 import { lockLabel, stateLabel } from "./labels";
 import { parameterFields } from "./parameters";
+import { pathFrom } from "./walk";
 
 const SECTION = "secondary-storage";
 const REGISTRATION = "elasticsearch";
@@ -160,5 +161,21 @@ describe("parameterFields", () => {
     expect(
       fieldsOf({ policy: { preset: { value: "medium" } }, labelled: false }),
     ).toEqual([]);
+  });
+});
+
+describe("parameterFields claimSteps", () => {
+  it("name the claim path of the parameter", () => {
+    const [field] = fieldsOf({
+      policy: { replicas: { claimEditable: true, value: 3 } },
+    });
+    expect(field.claimSteps).toEqual([
+      { field: "spec" },
+      { field: "plugins" },
+      { item: { section: SECTION, registration: REGISTRATION } },
+      { field: "parameters" },
+      { field: "replicas" },
+    ]);
+    expect(pathFrom("", field.claimSteps!)).toBe(field.claimPath);
   });
 });
