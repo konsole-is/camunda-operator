@@ -147,7 +147,7 @@ spec:
 
 The `CamundaCluster` then gets the annotation `camunda.io/allow-version-downgrade: "8.9.3"`, see [Downgrade on purpose](camundacluster.md#downgrade-on-purpose). The cluster carries the annotation until it runs that version. Clear `spec.allowVersionDowngrade` after that.
 
-The annotation names only the version of the release of the claim. When `spec.allowVersionDowngrade` names another version, the cluster gets no annotation until `spec.releaseRef` names a release of that version. The cluster stays on the version of its release. While the claim is suspended, the annotation does not change, and a downgrade waits until the claim starts the cluster again.
+The annotation names only the version of the release of the claim. When `spec.allowVersionDowngrade` names another version, the cluster gets no annotation until `spec.releaseRef` names a release of that version. The cluster stays on the version of its release. A `CamundaCluster` whose `spec.version` you set yourself runs that version, and it gets no annotation from the claim. While the claim is suspended, the annotation does not change, and a downgrade waits until the claim starts the cluster again.
 
 ## Deletion
 

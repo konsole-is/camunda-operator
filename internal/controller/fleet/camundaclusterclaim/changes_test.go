@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
@@ -165,10 +166,10 @@ var _ = Describe("Changing a cluster claim", func() {
 			GinkgoHelper()
 			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) {
 				c.Spec.ReleaseRef = olderReleaseName
-				c.Spec.AllowVersionDowngrade = "8.9.3"
+				c.Spec.AllowVersionDowngrade = olderVersion
 			})
 			Eventually(func(g Gomega) {
-				g.Expect(downgradeAnnotation(g, claim)).To(Equal("8.9.3"))
+				g.Expect(downgradeAnnotation(g, claim)).To(Equal(olderVersion))
 			}, timeout, interval).Should(Succeed())
 		}
 
@@ -185,7 +186,7 @@ var _ = Describe("Changing a cluster claim", func() {
 
 		It("does not add the annotation again once the cluster runs the target", func() {
 			downgrade()
-			setManagement(claim, "8.9.3")
+			setManagement(claim, olderVersion)
 			consumeSanction(claim)
 
 			expectNewPass(claim)
@@ -195,7 +196,7 @@ var _ = Describe("Changing a cluster claim", func() {
 
 		It("keeps the annotation off when the cluster is suspended after the sanction was spent", func() {
 			downgrade()
-			setManagement(claim, "8.9.3")
+			setManagement(claim, olderVersion)
 			consumeSanction(claim)
 			Eventually(func(g Gomega) {
 				g.Expect(downgradeAnnotation(g, claim)).To(BeEmpty())
@@ -209,6 +210,29 @@ var _ = Describe("Changing a cluster claim", func() {
 			expectNoAnnotation()
 		})
 
+		It("adds the annotation when the resumed cluster refuses a downgrade set during the suspension", func() {
+			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.Suspend = true })
+			setManagement(claim, "")
+			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) {
+				c.Spec.ReleaseRef = olderReleaseName
+				c.Spec.AllowVersionDowngrade = olderVersion
+			})
+			expectNewPass(claim)
+			expectNoAnnotation()
+
+			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.Suspend = false })
+			Eventually(func(g Gomega) {
+				cluster, err := clusterOf(claim)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cluster.Spec.Suspend).To(BeFalse())
+			}, timeout, interval).Should(Succeed())
+			setClusterReady(claim, metav1.ConditionFalse, v1.ReasonVersionDowngradeRefused, "")
+
+			Eventually(func(g Gomega) {
+				g.Expect(downgradeAnnotation(g, claim)).To(Equal(olderVersion))
+			}, timeout, interval).Should(Succeed())
+		})
+
 		It("removes the annotation when the field is cleared", func() {
 			downgrade()
 			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.AllowVersionDowngrade = "" })
@@ -219,7 +243,10 @@ var _ = Describe("Changing a cluster claim", func() {
 		})
 
 		It("waits for the release when the field is set first", func() {
-			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.AllowVersionDowngrade = "8.9.3" })
+			updateClaim(
+				claim,
+				func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.AllowVersionDowngrade = olderVersion },
+			)
 
 			expectNewPass(claim)
 			expectNewPass(claim)
@@ -228,7 +255,7 @@ var _ = Describe("Changing a cluster claim", func() {
 			By("moving to the release of the target")
 			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.ReleaseRef = olderReleaseName })
 			Eventually(func(g Gomega) {
-				g.Expect(downgradeAnnotation(g, claim)).To(Equal("8.9.3"))
+				g.Expect(downgradeAnnotation(g, claim)).To(Equal(olderVersion))
 			}, timeout, interval).Should(Succeed())
 		})
 	})

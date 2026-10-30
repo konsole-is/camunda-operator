@@ -78,10 +78,11 @@ spec:
                   of the claim. The claim controller sets the annotation
                   camunda.io/allow-version-downgrade on the CamundaCluster to this
                   version until the cluster reports it. A version that the release does
-                  not have sets no annotation. While the cluster is suspended, the claim
-                  controller neither adds nor removes the annotation, so a downgrade set
-                  during a suspension waits for the resume. The fleet manager clears the
-                  field after the cluster reports the target version.
+                  not have sets no annotation, and neither does a CamundaCluster whose
+                  spec.version another writer set. While the cluster is suspended, the
+                  claim controller neither adds nor removes the annotation, so a
+                  downgrade set during a suspension waits for the resume. The fleet
+                  manager clears the field after the cluster reports the target version.
                 pattern: ^(\d+\.\d+\.\d+)?$
                 type: string
               attachments:

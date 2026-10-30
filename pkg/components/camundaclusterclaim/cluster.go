@@ -25,6 +25,7 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
@@ -227,10 +228,8 @@ func keepKeys(values map[string]string, owned map[string]any, path ...string) {
 }
 
 // downgradeAnnotations returns the downgrade annotation of the cluster, or
-// nil without a live cluster. The value is spec.allowVersionDowngrade while
-// that field equals the release version and differs from the management
-// version of the cluster. A cluster without status.management, such as a
-// suspended one, keeps the annotation that the claim owns in owned: it has
+// nil without a live cluster. A cluster without status.management, such as
+// a suspended one, keeps the annotation that the claim owns in owned: it has
 // no effective version, so the operator would remove a new annotation on
 // each pass.
 func downgradeAnnotations(in Input, owned map[string]any) map[string]string {
@@ -239,25 +238,37 @@ func downgradeAnnotations(in Input, owned map[string]any) map[string]string {
 		return nil
 	}
 
-	if in.Live.Status.Management == nil {
-		value, ok := in.Live.Annotations[key]
-		if !ok {
-			return nil
-		}
-		kept := map[string]string{key: value}
-		keepKeys(kept, owned, "f:metadata", "f:annotations")
-		if len(kept) == 0 {
-			return nil
-		}
-		return kept
-	}
-
 	target := in.Claim.Spec.AllowVersionDowngrade
-	if target == "" || target != in.ReleaseVersion || target == in.Live.Status.Management.Version {
+	management := in.Live.Status.Management
+	// The operator removes an annotation that does not name the effective
+	// version, and a spec.version of another writer overrides the release.
+	if target != "" && target == in.ReleaseVersion && in.Live.Spec.Version == "" &&
+		(refusesDowngrade(in.Live) || management != nil && management.Version != target) {
+		return map[string]string{key: target}
+	}
+	if management != nil {
 		return nil
 	}
 
-	return map[string]string{key: target}
+	value, ok := in.Live.Annotations[key]
+	if !ok {
+		return nil
+	}
+	kept := map[string]string{key: value}
+	keepKeys(kept, owned, "f:metadata", "f:annotations")
+	if len(kept) == 0 {
+		return nil
+	}
+
+	return kept
+}
+
+// refusesDowngrade reports whether Ready of cluster, for its current
+// generation, has the reason VersionDowngradeRefused.
+func refusesDowngrade(cluster *v1.CamundaCluster) bool {
+	ready := meta.FindStatusCondition(cluster.Status.Conditions, v1.ConditionReady)
+	return ready != nil && ready.ObservedGeneration == cluster.Generation &&
+		ready.Reason == v1.ReasonVersionDowngradeRefused
 }
 
 // serviceAccount returns *account, and sets it to an empty ServiceAccountSpec

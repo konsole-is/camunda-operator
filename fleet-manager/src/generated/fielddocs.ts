@@ -4541,7 +4541,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#camundaclusterclaim"
       },
       "spec.allowVersionDowngrade": {
-        "description": "AllowVersionDowngrade is the target version of a confirmed downgrade,\nas a full version such as 8.9.3. Set it to the version of the release\nof the claim. The claim controller sets the annotation\ncamunda.io/allow-version-downgrade on the CamundaCluster to this\nversion until the cluster reports it. A version that the release does\nnot have sets no annotation. While the cluster is suspended, the claim\ncontroller neither adds nor removes the annotation, so a downgrade set\nduring a suspension waits for the resume. The fleet manager clears the\nfield after the cluster reports the target version.",
+        "description": "AllowVersionDowngrade is the target version of a confirmed downgrade,\nas a full version such as 8.9.3. Set it to the version of the release\nof the claim. The claim controller sets the annotation\ncamunda.io/allow-version-downgrade on the CamundaCluster to this\nversion until the cluster reports it. A version that the release does\nnot have sets no annotation, and neither does a CamundaCluster whose\nspec.version another writer set. While the cluster is suspended, the\nclaim controller neither adds nor removes the annotation, so a\ndowngrade set during a suspension waits for the resume. The fleet\nmanager clears the field after the cluster reports the target version.",
         "anchor": "#camundaclusterclaimspec"
       },
       "spec.attachments": {

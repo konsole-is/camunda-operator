@@ -171,6 +171,14 @@ func TestClusterCarriesSuspend(t *testing.T) {
 func TestClusterDowngradeAnnotation(t *testing.T) {
 	const key = clustercomponents.AllowVersionDowngradeAnnotation
 	managed := func(version string) *v1.ManagementBinding { return &v1.ManagementBinding{Version: version} }
+	refused := func(generation int64) []metav1.Condition {
+		return []metav1.Condition{{
+			Type:               v1.ConditionReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             v1.ReasonVersionDowngradeRefused,
+			ObservedGeneration: generation,
+		}}
+	}
 
 	tests := []struct {
 		name  string
@@ -182,7 +190,10 @@ func TestClusterDowngradeAnnotation(t *testing.T) {
 		// annotations are the annotations of the live cluster.
 		annotations map[string]string
 		claimOwns   bool
-		want        map[string]string
+		// version is spec.version of the live cluster, set by another writer.
+		version    string
+		conditions []metav1.Condition
+		want       map[string]string
 	}{
 		{name: "no live cluster", field: "8.9.3", release: "8.9.3"},
 		{
@@ -211,6 +222,22 @@ func TestClusterDowngradeAnnotation(t *testing.T) {
 			annotations: map[string]string{key: "8.9.3"},
 		},
 		{name: "suspended, sanction spent", field: "8.9.3", release: "8.9.3", live: true, claimOwns: true},
+		{
+			name: "resumed, the cluster refuses the downgrade", field: "8.9.3", release: "8.9.3", live: true,
+			conditions: refused(2), want: map[string]string{key: "8.9.3"},
+		},
+		{
+			name: "a refusal of an older generation", field: "8.9.3", release: "8.9.3", live: true,
+			conditions: refused(1),
+		},
+		{
+			name: "the management version moved, the cluster refuses the downgrade", field: "8.9.3", release: "8.9.3",
+			live: true, management: managed("8.9.3"), conditions: refused(2), want: map[string]string{key: "8.9.3"},
+		},
+		{
+			name: "another writer sets the version", field: "8.9.3", release: "8.9.3", live: true,
+			management: managed("8.9.9"), version: "8.9.9",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -219,8 +246,12 @@ func TestClusterDowngradeAnnotation(t *testing.T) {
 			in.Claim.Spec.AllowVersionDowngrade = tt.field
 			in.ReleaseVersion = tt.release
 			if tt.live {
-				in.Live = &v1.CamundaCluster{ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations}}
+				in.Live = &v1.CamundaCluster{
+					ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations, Generation: 2},
+					Spec:       v1.CamundaClusterSpec{Version: tt.version},
+				}
 				in.Live.Status.Management = tt.management
+				in.Live.Status.Conditions = tt.conditions
 				if tt.claimOwns {
 					in.Live.ManagedFields = []metav1.ManagedFieldsEntry{ownedDowngrade("claim-uid")}
 				}

@@ -44,6 +44,8 @@ const (
 	nextReleaseName = "suite-release-next"
 	// olderReleaseName is a release of an earlier patch than releaseName.
 	olderReleaseName = "suite-release-older"
+	// olderVersion is the version of olderReleaseName.
+	olderVersion = "8.9.3"
 )
 
 // The test registrations, and the outputs that the fake plugin writes for
@@ -109,7 +111,7 @@ func createFixtures() {
 	for name, version := range map[string]string{
 		releaseName:      "8.9.9",
 		nextReleaseName:  "8.9.10",
-		olderReleaseName: "8.9.3",
+		olderReleaseName: olderVersion,
 	} {
 		Expect(k8sClient.Create(ctx, &v1.CamundaRelease{
 			ObjectMeta: metav1.ObjectMeta{Name: name},
