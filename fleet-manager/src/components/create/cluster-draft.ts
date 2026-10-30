@@ -45,7 +45,7 @@ export type BasicsContext = {
  * environment (only while an Environment exists), the name, the hosts, the
  * namespace, and the preset. A picked environment that is gone counts as
  * none, and one that turned Ready=False refuses the step with its message.
- * A picked namespace that the live data no longer allows counts as none.
+ * A picked namespace that the live data no longer allows is refused.
  */
 export function basicsErrors(
   draft: ClusterDraft,
@@ -90,10 +90,16 @@ function namespaceErrors(
     const environment = context.environments.find(
       (e) => e.metadata.name === draft.environment,
     );
-    if (!environment?.spec.namespaceCreation?.allowed) {
-      return ["Choose a namespace"];
-    }
-    return live ? [`The namespace ${choice.name} already exists`] : [];
+    const creation = environment?.spec.namespaceCreation;
+    if (!creation?.allowed) return ["Choose a namespace"];
+    const missing = (creation.requiredLabelKeys ?? []).filter(
+      (key) =>
+        !Object.hasOwn(creation.labels ?? {}, key) && !choice.labels[key],
+    );
+    return [
+      ...(live ? [`The namespace ${choice.name} already exists`] : []),
+      ...missing.map((key) => `Enter a value for ${key}`),
+    ];
   }
   const inEnvironment =
     context.environments.length === 0 ||

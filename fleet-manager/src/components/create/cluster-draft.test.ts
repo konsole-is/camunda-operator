@@ -181,6 +181,40 @@ describe("basicsErrors", () => {
     ).toEqual(["Choose a namespace"]);
   });
 
+  it("asks for a value of a required label key that the environment added", () => {
+    const creating = environment("prod", {
+      namespaceCreation: { allowed: true, requiredLabelKeys: ["team"] },
+    });
+    expect(
+      basicsErrors(
+        {
+          ...complete,
+          namespace: { kind: "new", name: "team-new", labels: {} },
+        },
+        { ...context, environments: [creating] },
+      ),
+    ).toEqual(["Enter a value for team"]);
+  });
+
+  it("takes a required label key that a fixed label sets", () => {
+    const creating = environment("prod", {
+      namespaceCreation: {
+        allowed: true,
+        labels: { team: "core" },
+        requiredLabelKeys: ["team"],
+      },
+    });
+    expect(
+      basicsErrors(
+        {
+          ...complete,
+          namespace: { kind: "new", name: "team-new", labels: {} },
+        },
+        { ...context, environments: [creating] },
+      ),
+    ).toEqual([]);
+  });
+
   it("takes a new namespace that the environment allows", () => {
     const creating = environment("prod", {
       namespaceCreation: { allowed: true },
