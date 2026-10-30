@@ -117,7 +117,11 @@ export function resetValue<C extends ClaimObject>(
   if (lock) return { refused: lock };
   const parent = pendingParent(s, steps);
   if (parent) {
-    if ("reset" in parent.entry) return { session: s };
+    if (
+      "reset" in parent.entry ||
+      valueAt(parent.entry.value, parent.rest) === undefined
+    )
+      return { session: s };
     const rest = without(parent.entry.value, parent.rest);
     // An empty value would stay in the claim as an empty field.
     return isEmpty(rest)

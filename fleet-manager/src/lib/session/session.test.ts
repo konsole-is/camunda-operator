@@ -306,6 +306,18 @@ describe("overlapping changes", () => {
     ).not.toHaveProperty("extraEnv");
   });
 
+  it("a reset of a field that a pending value lacks keeps that value", () => {
+    let s = ok(setValue(open(), cluster("podLabels"), {}));
+    s = ok(resetValue(s, cluster("podLabels", "team")));
+    expect([...s.pending.values()]).toEqual([
+      {
+        path: "spec.cluster.podLabels",
+        steps: cluster("podLabels"),
+        value: {},
+      },
+    ]);
+  });
+
   it("a change of a parent drops the pending changes below it", () => {
     let s = ok(setValue(open(), cluster("zeebe", "replicas"), 5));
     s = ok(setValue(s, cluster("zeebe"), { replicas: 4 }));
