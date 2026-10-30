@@ -14,7 +14,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 );
 
 function stubFetch(answer: () => Promise<Response>) {
-  const fetchMock = vi.fn((_url: string) => answer());
+  const fetchMock = vi.fn<(url: string) => Promise<Response>>(answer);
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
