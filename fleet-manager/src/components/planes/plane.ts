@@ -2,7 +2,13 @@
 // isomorphic labels module and types.
 import type { ConditionLike } from "@/components/fleet/status";
 import type { Resource } from "@/lib/k8s/kinds";
-import { CLAIM_LABEL, ENVIRONMENT_LABEL, isManaged } from "@/lib/labels";
+import {
+  CLAIM_LABEL,
+  ENVIRONMENT_LABEL,
+  isManaged,
+  type LabelSelector,
+  matchesSelector,
+} from "@/lib/labels";
 
 export type IdentityMode = "Keycloak" | "External Keycloak" | "OIDC";
 
@@ -41,11 +47,6 @@ export type Plane = {
   optimize: number;
   contract?: string;
   ready?: ConditionLike;
-};
-
-type LabelSelector = {
-  matchLabels?: Record<string, string>;
-  matchExpressions?: { key: string; operator: string; values?: string[] }[];
 };
 
 type Settings = {
@@ -210,42 +211,6 @@ export function formatSelector(selector: LabelSelector | undefined): string {
   );
   const parts = [...labels, ...expressions];
   return parts.length === 0 ? "Every namespace" : parts.join(", ");
-}
-
-/**
- * matchesSelector says whether labels match selector, as Kubernetes
- * decides it. An unset or empty selector matches every object. NotIn and
- * DoesNotExist match an object without the key. An unknown operator
- * matches nothing.
- */
-export function matchesSelector(
-  selector: LabelSelector | undefined,
-  labels: Record<string, string> | undefined,
-): boolean {
-  const have = labels ?? {};
-  const matchLabels = Object.entries(selector?.matchLabels ?? {}).every(
-    ([k, v]) => Object.hasOwn(have, k) && have[k] === v,
-  );
-  return (
-    matchLabels &&
-    (selector?.matchExpressions ?? []).every(
-      ({ key, operator, values = [] }) => {
-        const present = Object.hasOwn(have, key);
-        switch (operator) {
-          case "In":
-            return present && values.includes(have[key]);
-          case "NotIn":
-            return !present || !values.includes(have[key]);
-          case "Exists":
-            return present;
-          case "DoesNotExist":
-            return !present;
-          default:
-            return false;
-        }
-      },
-    )
-  );
 }
 
 /** optimizeLabel is the Optimize count of plane as text, or "0 (OIDC)" in OIDC mode. */

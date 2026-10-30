@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validate } from "./index";
+import { schemaError, validate } from "./index";
 
 const retention = {
   type: "object",
@@ -128,5 +128,17 @@ describe("validate", () => {
     expect(result.ok ? [] : result.errors).toEqual([
       { path: "", message: expect.stringMatching(/^The schema is not valid/) },
     ]);
+  });
+});
+
+describe("schemaError", () => {
+  it("is undefined for a schema that compiles", () => {
+    expect(schemaError(retention)).toBeUndefined();
+  });
+
+  it("says why a schema does not compile", () => {
+    expect(
+      schemaError({ properties: { a: { $ref: "#/definitions/Missing" } } }),
+    ).toMatch(/Missing/);
   });
 });

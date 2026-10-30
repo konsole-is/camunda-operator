@@ -13,7 +13,7 @@ import { UsageBars } from "./usage-bars";
 /** PodLike is the part of a Pod that the table reads. V1Pod of @kubernetes/client-node fits it. */
 export type PodLike = {
   metadata?: { name?: string; creationTimestamp?: string | Date };
-  spec?: { containers?: unknown[] };
+  spec?: { containers?: unknown[]; nodeName?: string };
   status?: {
     phase?: string;
     containerStatuses?: { ready: boolean; restartCount: number }[];
@@ -21,9 +21,9 @@ export type PodLike = {
 };
 
 /**
- * PodTable lists pods with their ready containers, phase, restarts, and age,
- * and the CPU and memory of each pod. When usage is "unavailable", the usage
- * column is hidden and a note says why. A pod without usage data shows "-"
+ * PodTable lists pods with their ready containers, phase, node, restarts,
+ * and age, and the CPU and memory of each pod. When usage is "unavailable",
+ * the usage column is hidden and a note says why. A pod without usage data shows "-"
  * in that column.
  */
 export function PodTable({
@@ -44,6 +44,7 @@ export function PodTable({
             <TableHead>Name</TableHead>
             <TableHead>Ready</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Node</TableHead>
             <TableHead>Restarts</TableHead>
             <TableHead>Age</TableHead>
             {showUsage && <TableHead>Usage</TableHead>}
@@ -67,6 +68,9 @@ export function PodTable({
                 <TableCell>{`${containers.filter((c) => c.ready).length}/${pod.spec?.containers?.length ?? containers.length}`}</TableCell>
                 <TableCell className="text-text-2">
                   {pod.status?.phase ?? "-"}
+                </TableCell>
+                <TableCell className="text-text-2">
+                  {pod.spec?.nodeName ?? "-"}
                 </TableCell>
                 <TableCell>
                   {containers.reduce((n, c) => n + c.restartCount, 0)}

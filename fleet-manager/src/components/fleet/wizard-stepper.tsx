@@ -14,7 +14,8 @@ export type WizardStep = { id: string; label: string; errors?: string[] };
  * started. A step with errors shows "Has errors". It renders the current
  * step as children. "Next" stays blocked while the current step has errors,
  * and the errors show under it. The last step has no "Next": its review
- * holds the confirm. The first step has no "Back".
+ * holds the confirm. The first step has no "Back". With onStep, a step
+ * before the current one is a button that goes back to it.
  */
 export function WizardStepper({
   steps,
@@ -23,6 +24,7 @@ export function WizardStepper({
   nextLabel = "Next",
   onNext,
   onBack,
+  onStep,
 }: {
   steps: WizardStep[];
   current: string;
@@ -30,6 +32,7 @@ export function WizardStepper({
   nextLabel?: string;
   onNext?: () => void;
   onBack?: () => void;
+  onStep?: (id: string) => void;
 }) {
   const errorsId = useId();
   const index = Math.max(
@@ -58,23 +61,21 @@ export function WizardStepper({
                   i === index ? "text-text" : "text-muted",
                 )}
               >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "flex size-6 items-center justify-center rounded-full border text-xs",
-                    i === index ? "border-accent text-accent" : "border-border",
-                    state === "Has errors" && "border-bad text-bad",
-                  )}
-                >
-                  {state === "Done" ? (
-                    <Check className="size-3.5" />
-                  ) : state === "Has errors" ? (
-                    <CircleAlert className="size-3.5" />
-                  ) : (
-                    i + 1
-                  )}
-                </span>
-                <span>{step.label}</span>
+                {i < index && onStep ? (
+                  <button
+                    type="button"
+                    onClick={() => onStep(step.id)}
+                    className="-m-1 flex items-center gap-2 rounded-md p-1 hover:text-text focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                  >
+                    <StepMark index={i} state={state} current={i === index} />
+                    <span>{step.label}</span>
+                  </button>
+                ) : (
+                  <>
+                    <StepMark index={i} state={state} current={i === index} />
+                    <span>{step.label}</span>
+                  </>
+                )}
                 <span className="sr-only">{`, ${state}`}</span>
               </li>
             );
@@ -108,5 +109,34 @@ export function WizardStepper({
         </div>
       </div>
     </div>
+  );
+}
+
+function StepMark({
+  index,
+  state,
+  current,
+}: {
+  index: number;
+  state: string;
+  current: boolean;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "flex size-6 items-center justify-center rounded-full border text-xs",
+        current ? "border-accent text-accent" : "border-border",
+        state === "Has errors" && "border-bad text-bad",
+      )}
+    >
+      {state === "Done" ? (
+        <Check className="size-3.5" />
+      ) : state === "Has errors" ? (
+        <CircleAlert className="size-3.5" />
+      ) : (
+        index + 1
+      )}
+    </span>
   );
 }

@@ -59,4 +59,17 @@ describe("TopologyView", () => {
     render(<TopologyView boxes={boxes} actions={<button>Scale</button>} />);
     expect(screen.getByRole("button", { name: "Scale" })).toBeTruthy();
   });
+
+  it("a component condition drives the dot of its box", () => {
+    render(
+      <TopologyView
+        boxes={boxes}
+        conditions={{ zeebe: { status: "False", reason: "Degraded" } }}
+      />,
+    );
+    expect(
+      screen.getByRole("img", { name: "Brokers: Not ready (Degraded)" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("img", { name: /^Operate:/ })).toBeNull();
+  });
 });

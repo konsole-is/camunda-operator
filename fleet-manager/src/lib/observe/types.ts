@@ -64,15 +64,19 @@ export type CoreQuery = {
 };
 
 /**
+ * PartitionHealthState is the zeebe_health value of a partition. It is
+ * "unknown" when Prometheus gives no value for the partition.
+ */
+export type PartitionHealthState = "healthy" | "unhealthy" | "dead" | "unknown";
+
+/**
  * PartitionHealth is one partition of a cluster. leader and followers are
  * pod names. A partition that no answering broker leads has no leader.
- * health is "unknown", because the management port of a broker does not
- * give it.
  */
 export type PartitionHealth = {
   partition: number;
   leader?: string;
   followers: string[];
   processorPhase?: string;
-  health: "unknown";
+  health: PartitionHealthState;
 };

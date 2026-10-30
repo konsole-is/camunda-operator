@@ -14,12 +14,17 @@ import path from "node:path";
 import git, { type HttpClient } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
 import { parse } from "yaml";
-import { REVISION_ANNOTATION } from "@/lib/labels";
+import { REVISION_ANNOTATION, isDNSLabel, isDNSSubdomain } from "@/lib/labels";
 import { inOrder } from "@/lib/serial";
-import { readSecretValues } from "@/lib/secrets/values";
-import { appNamespace } from "@/lib/settings/keys";
 import { apiErrorsOf, reasonOf, staleError } from "./errors";
-import { gitBase, gitOpsManager, gitPath, renderObject } from "./git-files";
+import { type GitAuthor, gitCredentials } from "./git-auth";
+import {
+  appliedClientSide,
+  gitBase,
+  gitOpsManager,
+  gitPath,
+  renderObject,
+} from "./git-files";
 import type {
   ApiError,
   Change,
@@ -51,7 +56,7 @@ export type GitTarget = {
 /**
  * GitWriterOptions are the parts of the Git writer. direct runs the dry
  * runs and the directOnly changes. read returns the live object of a ref,
- * or undefined when it does not exist. http is the Git transport; the
+ * or undefined when it does not exist. http is the Git transport. The
  * default follows no redirect and gives up on a request after 30 s.
  */
 export type GitWriterOptions = {
@@ -59,12 +64,6 @@ export type GitWriterOptions = {
   direct: Writer;
   read: (ref: ObjectRef) => Promise<KubeObject | undefined>;
   http?: HttpClient;
-};
-
-/** GIT_AUTHOR is the author of each commit of the Git writer. */
-export const GIT_AUTHOR = {
-  name: "fleet-manager",
-  email: "fleet-manager@noreply.invalid",
 };
 
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -92,29 +91,35 @@ type Remote = {
 /**
  * gitWriter returns the writer of Git mode. A directOnly change goes to
  * direct. Any other change becomes one commit on the branch of target,
- * with the intent as its subject and GIT_AUTHOR as its author, and the
- * result carries the commit, the revision, and the file of each applied
- * object. A change whose files are already in the repository makes no
- * commit and returns the head commit.
+ * with the intent as its subject, and the result carries the commit, the
+ * revision and the file of each applied object, and the file of each
+ * deleted object. A change whose files are already in the repository makes
+ * no commit and returns the head commit.
  *
  * apply makes no commit when the fleet manager does not write a ref, a
  * Secret is in the change (Invalid), an object with a precondition changed
  * or was deleted in the cluster (Stale) or has a file that GitOps has not
  * applied yet (Conflict), or the dry run against the cluster fails. The
- * dry run skips an ExternalSecret and an object in a
- * namespace that the same change creates; the preview shows them as
- * rendered. The dry run of an object that GitOps applied with server-side
- * apply runs as the field manager of GitOps, so it drops each field of
- * GitOps that the change leaves out. After a client-side apply, the dry run
- * keeps these fields. A delete of an object without a file, and a file
- * behind a symbolic link of the repository, are Invalid.
+ * dry run skips an ExternalSecret and an object in a namespace that the
+ * same change creates. The preview shows them as rendered. The dry run of
+ * an object that GitOps applied with server-side apply, or of a custom
+ * resource that GitOps applied with client-side apply, drops each field of
+ * GitOps that the change leaves out, except the revision annotation. Any other object is dry-run as the app. A delete of
+ * an object without a file, and a file behind a symbolic link of the
+ * repository, are Invalid.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
  * change, or when the branch moved again. The credentials of
- * target.credentialsSecretRef go only to an https:// address. No error
- * holds a credential or the text of a Git server answer. Changes to one
- * repository and branch run one after the other in this server process.
+ * target.credentialsSecretRef are a username and token, or GitHub App
+ * keys, as gitCredentials reads them. They go only to an https://
+ * address. The JWT of App keys goes only to api.github.com for a
+ * github.com repository, or to the enterpriseHost of the keys for a
+ * repository on that host. With App keys, the author of a commit is the
+ * bot of the App, or GIT_AUTHOR when GitHub does not give the bot.
+ * Otherwise it is GIT_AUTHOR. No error holds a credential or the text of
+ * a Git server answer. Changes to one repository and branch run one after
+ * the other in this server process.
  */
 export function gitWriter(options: GitWriterOptions): Writer {
   const { target, direct, read } = options;
@@ -126,10 +131,11 @@ export function gitWriter(options: GitWriterOptions): Writer {
     if (refusals.length > 0) return { objects: [], errors: refusals };
     const skipped = await notDryRun(change);
     const deletes = change.delete ?? [];
-    const { apply, previewManagers, errors } = await asGitOps(
-      change,
-      change.apply.filter((o) => !skipped.has(o)),
-    );
+    const { apply, previewManagers, previewMergePatches, errors } =
+      await asGitOps(
+        change,
+        change.apply.filter((o) => !skipped.has(o)),
+      );
     // force: GitOps applies the objects under its own field manager, so a
     // dry run without force fails on each field that GitOps set.
     const checked: Change = {
@@ -137,6 +143,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
       force: true,
       apply,
       previewManagers,
+      previewMergePatches,
       delete: deletes.filter((r) => r.kind !== "ExternalSecret"),
     };
     const result =
@@ -176,18 +183,20 @@ export function gitWriter(options: GitWriterOptions): Writer {
     );
   };
 
-  // asGitOps maps each object that GitOps applied with server-side apply to
-  // the field manager of GitOps. Only a dry run as that manager removes the
-  // fields of GitOps that the file leaves out, as the GitOps apply does.
+  // asGitOps marks each object that GitOps applied with server-side apply,
+  // and each custom resource that GitOps applied with client-side apply, so
+  // that the dry run removes the fields of GitOps that the file leaves out.
   const asGitOps = async (
     change: Change,
     objects: KubeObject[],
   ): Promise<{
     apply: KubeObject[];
     previewManagers: Record<RefKey, string>;
+    previewMergePatches: RefKey[];
     errors: ApiError[];
   }> => {
     const previewManagers: Record<RefKey, string> = {};
+    const previewMergePatches: RefKey[] = [];
     const apply: KubeObject[] = [];
     const errors: ApiError[] = [];
     for (const object of objects) {
@@ -201,29 +210,17 @@ export function gitWriter(options: GitWriterOptions): Writer {
         continue;
       }
       const manager = gitOpsManager(live);
-      if (manager === undefined) {
+      if (manager !== undefined) {
+        previewManagers[refKey(ref)] = manager;
+      } else if (appliedClientSide(live)) {
+        previewMergePatches.push(refKey(ref));
+      } else {
         apply.push(object);
         continue;
       }
-      previewManagers[refKey(ref)] = manager;
-      // The file carries the annotation, so the dry run must not remove it.
-      const annotations = (object.metadata.annotations ?? {}) as Record<
-        string,
-        string
-      >;
-      const revision =
-        (live!.metadata.annotations as Record<string, string> | undefined)?.[
-          REVISION_ANNOTATION
-        ] ?? "";
-      apply.push({
-        ...object,
-        metadata: {
-          ...object.metadata,
-          annotations: { ...annotations, [REVISION_ANNOTATION]: revision },
-        },
-      });
+      apply.push(withLiveRevision(object, live!));
     }
-    return { apply, previewManagers, errors };
+    return { apply, previewManagers, previewMergePatches, errors };
   };
 
   const staleErrors = async (change: Change): Promise<ApiError[]> => {
@@ -265,88 +262,30 @@ export function gitWriter(options: GitWriterOptions): Writer {
         message: "git.path must be a folder inside the repository.",
       });
     }
-    const auth = await credentials();
+    const auth = await gitCredentials(target.url, target.credentialsSecretRef);
     if (!auth.ok) return failure(auth.error);
 
     const dir = await mkdtemp(path.join(os.tmpdir(), "fleet-git-"));
     try {
+      const credentials = auth.auth;
       const remote: Remote = {
         fs,
         http,
         dir,
         url: target.url,
-        ...(auth.values
-          ? {
-              onAuth: () => ({
-                username: auth.values!.username,
-                password: auth.values!.token,
-              }),
-            }
-          : {}),
+        ...(credentials ? { onAuth: () => credentials } : {}),
         // Without cancel, a refused token makes isomorphic-git ask again.
         onAuthFailure: () => ({ cancel: true }),
       };
-      return await pushChange(remote, base, change);
+      return await pushChange(remote, base, change, auth.author);
     } catch (error) {
-      return failure(gitErrorOf(error, target));
+      const refusal = gitErrorOf(error, target);
+      // A revoked App token stays cached until it expires otherwise.
+      if (refusal.code === "Forbidden") auth.forget();
+      return failure(refusal);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  };
-
-  const credentials = async (): Promise<
-    | { ok: true; values?: { username: string; token: string } }
-    | { ok: false; error: ApiError }
-  > => {
-    const secret = target.credentialsSecretRef;
-    if (!secret) return { ok: true };
-    if (URL.parse(target.url)?.protocol !== "https:") {
-      return {
-        ok: false,
-        error: {
-          code: "Invalid",
-          path: "git.repository",
-          message: `${target.url} must start with https:// to use the credentials of the Secret ${secret}.`,
-        },
-      };
-    }
-    const namespace = appNamespace();
-    let values: Record<string, string> | undefined;
-    try {
-      values = await readSecretValues(namespace, secret);
-    } catch (error) {
-      return {
-        ok: false,
-        error: {
-          code: "Unavailable",
-          message: `Could not read the Secret ${secret} in namespace ${namespace}: ${reasonOf(error)}`,
-        },
-      };
-    }
-    if (!values) {
-      return {
-        ok: false,
-        error: {
-          code: "Unavailable",
-          message: `The Secret ${secret} does not exist in namespace ${namespace}.`,
-        },
-      };
-    }
-    for (const key of ["username", "token"]) {
-      if (!values[key]) {
-        return {
-          ok: false,
-          error: {
-            code: "Unavailable",
-            message: `The Secret ${secret} has no key ${key}.`,
-          },
-        };
-      }
-    }
-    return {
-      ok: true,
-      values: { username: values.username, token: values.token },
-    };
   };
 
   // The live object of a ref with a precondition passes the stale check
@@ -390,6 +329,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
     remote: Remote,
     base: string,
     change: Change,
+    author: GitAuthor,
   ): Promise<WriteResult> => {
     const { dir } = remote;
     await git.clone({
@@ -413,16 +353,23 @@ export function gitWriter(options: GitWriterOptions): Writer {
 
     const written = await writeFiles(dir, base, change);
     if (!written.ok) return failure(...written.errors);
-    const { revisions, paths, files } = written;
+    const { revisions, paths, deleted, files } = written;
     if (!(await changed(dir, files))) {
-      return { ok: true, mode: "git", commit: cloned, revisions, paths };
+      return {
+        ok: true,
+        mode: "git",
+        commit: cloned,
+        revisions,
+        paths,
+        deleted,
+      };
     }
     const commitAndPush = async () => {
       const commit = await git.commit({
         fs,
         dir,
         message: change.intent,
-        author: GIT_AUTHOR,
+        author,
       });
       await git.push({ ...remote, ref: branch });
       return commit;
@@ -430,7 +377,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
 
     try {
       const commit = await commitAndPush();
-      return { ok: true, mode: "git", commit, revisions, paths };
+      return { ok: true, mode: "git", commit, revisions, paths, deleted };
     } catch (error) {
       if (!isRejected(error)) throw error;
     }
@@ -471,7 +418,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
     if (!again.ok) return failure(...again.errors);
     try {
       const commit = await commitAndPush();
-      return { ok: true, mode: "git", commit, revisions, paths };
+      return { ok: true, mode: "git", commit, revisions, paths, deleted };
     } catch (error) {
       if (!isRejected(error)) throw error;
       return failure({
@@ -489,6 +436,7 @@ type Written =
       ok: true;
       revisions: Record<RefKey, string>;
       paths: Record<RefKey, string>;
+      deleted: Record<RefKey, string>;
       files: string[];
     }
   | { ok: false; errors: ApiError[] };
@@ -501,6 +449,7 @@ async function writeFiles(
 ): Promise<Written> {
   const revisions: Record<RefKey, string> = {};
   const paths: Record<RefKey, string> = {};
+  const deleted: Record<RefKey, string> = {};
   const files: string[] = [];
   const errors: ApiError[] = [];
   for (const object of change.apply) {
@@ -534,10 +483,13 @@ async function writeFiles(
     }
     await rm(path.join(dir, file));
     await git.remove({ fs, dir, filepath: file });
+    delete revisions[refKey(ref)];
+    delete paths[refKey(ref)];
+    deleted[refKey(ref)] = file;
     files.push(file);
   }
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, revisions, paths, files };
+  return { ok: true, revisions, paths, deleted, files };
 }
 
 // revisionOf returns the revision annotation of the file in the clone at
@@ -619,8 +571,13 @@ function gitRefusalOf(ref: ObjectRef): ApiError[] {
   const refusals = refusalOf(ref);
   if (refusals.length > 0) return refusals;
   // The name and the namespace are segments of the file path, and the dry
-  // run that would refuse such a name skips some objects.
-  if ([ref.name, ref.namespace].some((part) => /[/\\]/.test(part ?? ""))) {
+  // run that would refuse such a name skips some objects. A namespace such
+  // as .git would put the file inside the Git folder.
+  const nameOK = ref.kind === "Namespace" ? isDNSLabel : isDNSSubdomain;
+  if (
+    !nameOK(ref.name) ||
+    (ref.namespace !== undefined && !isDNSLabel(ref.namespace))
+  ) {
     return [
       {
         code: "Invalid",
@@ -663,4 +620,24 @@ function gitErrorOf(error: unknown, target: GitTarget): ApiError {
 
 function failure(...errors: ApiError[]): WriteResult {
   return { ok: false, errors };
+}
+
+// The file carries the revision annotation, so the dry run must not remove
+// it.
+function withLiveRevision(object: KubeObject, live: KubeObject): KubeObject {
+  const revision = (
+    live.metadata.annotations as Record<string, string> | undefined
+  )?.[REVISION_ANNOTATION];
+  if (revision === undefined) return object;
+  const annotations = (object.metadata.annotations ?? {}) as Record<
+    string,
+    string
+  >;
+  return {
+    ...object,
+    metadata: {
+      ...object.metadata,
+      annotations: { ...annotations, [REVISION_ANNOTATION]: revision },
+    },
+  };
 }

@@ -77,4 +77,39 @@ describe("WizardStepper", () => {
     );
     expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
   });
+
+  it("goes back to a done step on a click", async () => {
+    const onStep = vi.fn();
+    render(
+      <WizardStepper steps={steps()} current="review" onStep={onStep}>
+        step
+      </WizardStepper>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Namespace/ }));
+    expect(onStep).toHaveBeenCalledWith("namespace");
+  });
+
+  it("offers no click on the current step or a later step", () => {
+    render(
+      <WizardStepper steps={steps()} current="storage" onStep={vi.fn()}>
+        step
+      </WizardStepper>,
+    );
+    const nav = screen.getByRole("navigation", { name: "Steps" });
+    expect(
+      within(nav)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual([expect.stringContaining("Namespace")]);
+  });
+
+  it("offers no click without onStep", () => {
+    render(
+      <WizardStepper steps={steps()} current="review">
+        step
+      </WizardStepper>,
+    );
+    const nav = screen.getByRole("navigation", { name: "Steps" });
+    expect(within(nav).queryAllByRole("button")).toEqual([]);
+  });
 });

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { chmod, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +8,7 @@ import type { HttpClient } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
-import { REVISION_ANNOTATION } from "@/lib/labels";
+import { LAST_APPLIED_ANNOTATION, REVISION_ANNOTATION } from "@/lib/labels";
 import { readSecretValues } from "@/lib/secrets/values";
 import {
   type BareRepository,
@@ -22,7 +23,7 @@ import type {
   WriteResult,
   Writer,
 } from "./types";
-import { refKey } from "./writer";
+import { refKey, refOf } from "./writer";
 
 vi.mock("@/lib/secrets/values", () => ({ readSecretValues: vi.fn() }));
 
@@ -127,7 +128,11 @@ afterEach(async () => {
   await repo?.close();
 });
 
-describe("the Git writer", () => {
+// These tests start a local Git server. On a busy machine they need more
+// than the default 5 s.
+const slow = { timeout: 30_000 };
+
+describe("the Git writer", slow, () => {
   it("one change is one commit with the intent as subject", async () => {
     repo = await serveBareRepository();
 
@@ -136,7 +141,7 @@ describe("the Git writer", () => {
       apply: [claim("team-a", "orders"), claim("team-a", "billing")],
     });
 
-    ok(result);
+    expect(ok(result).deleted).toEqual({});
     expect(await repo.log()).toEqual([
       "Create the claims orders and billing",
       "Initial commit",
@@ -496,7 +501,7 @@ describe("the Git writer", () => {
     expect(directPreview).not.toHaveBeenCalled();
   });
 
-  it("a delete removes the file in one commit", async () => {
+  it("a delete removes the file in one commit and returns the file of the deleted object", async () => {
     repo = await serveBareRepository();
     await writerFor().apply({
       intent: "Create",
@@ -519,6 +524,58 @@ describe("the Git writer", () => {
     expect(await repo.files()).toEqual(["README.md"]);
     expect(result.revisions).toEqual({});
     expect(result.paths).toEqual({});
+    expect(result.deleted).toEqual({
+      "CamundaClusterClaim/team-a/orders":
+        "team-a/camundaclusterclaims/orders.yaml",
+    });
+  });
+
+  it("a change that writes and deletes returns the revision of the written object and the file of the deleted one", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const result = ok(
+      await writerFor().apply({
+        intent: "Replace orders with prod",
+        apply: [environment("prod")],
+        delete: [claimRef("team-a", "orders")],
+      }),
+    );
+
+    expect(Object.keys(result.revisions)).toEqual(["Environment//prod"]);
+    expect(result.paths).toEqual({
+      "Environment//prod": "_cluster/environments/prod.yaml",
+    });
+    expect(result.deleted).toEqual({
+      "CamundaClusterClaim/team-a/orders":
+        "team-a/camundaclusterclaims/orders.yaml",
+    });
+  });
+
+  it("an object that the change applies and deletes is only in deleted", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const result = ok(
+      await writerFor().apply({
+        intent: "Apply and delete orders",
+        apply: [claim("team-a", "orders")],
+        delete: [claimRef("team-a", "orders")],
+      }),
+    );
+
+    expect(result.revisions).toEqual({});
+    expect(result.paths).toEqual({});
+    expect(result.deleted).toEqual({
+      "CamundaClusterClaim/team-a/orders":
+        "team-a/camundaclusterclaims/orders.yaml",
+    });
   });
 
   it("a delete of an object without a file fails and commits nothing", async () => {
@@ -605,6 +662,35 @@ describe("the Git writer", () => {
           code: "Conflict",
           message: expect.stringContaining("Open the page again"),
         }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["Other admin", "Initial commit"]);
+  });
+
+  it("a push that another clone beat with the same bytes fails with Conflict and makes no empty commit", async () => {
+    const file = "team-a/camundaclusterclaims/orders.yaml";
+    const change: Change = {
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    };
+    repo = await serveBareRepository();
+    ok(await writerFor().apply(change));
+    const same = (await repo.show(file))!;
+    await repo.close();
+    repo = await serveBareRepository({
+      beforeFirstPush: () =>
+        repo.commitFromOtherClone({ [file]: same }, "Other admin"),
+    });
+
+    const result = await writerFor().apply(change);
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Conflict",
+          message: `Someone changed ${file} in ${repo.url} since the fleet manager read it. Open the page again.`,
+        },
       ],
     });
     expect(await repo.log()).toEqual(["Other admin", "Initial commit"]);
@@ -706,6 +792,57 @@ describe("the Git writer", () => {
     expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
+  it.each([
+    [".git", "db"],
+    [".github", "db"],
+    ["Team-A", "db"],
+    ["team-a", "Orders DB"],
+    ["team-a", ".git"],
+  ])(
+    "refuses an ExternalSecret in namespace %s with the name %s and writes nothing",
+    async (ns, name) => {
+      repo = await serveBareRepository();
+      const object: KubeObject = {
+        apiVersion: "external-secrets.io/v1",
+        kind: "ExternalSecret",
+        metadata: { name, namespace: ns },
+      };
+
+      const result = await writerFor().apply({
+        intent: "Set the secret",
+        apply: [object],
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Invalid",
+            message:
+              "The name or the namespace of the ExternalSecret is not a valid name.",
+            ref: refOf(object),
+          },
+        ],
+      });
+      expect(await repo.log()).toEqual(["Initial commit"]);
+    },
+  );
+
+  it("refuses an object in a namespace that the change creates when the namespace is not a DNS-1123 label", async () => {
+    repo = await serveBareRepository();
+
+    const result = await writerFor().apply({
+      intent: "Create .git with the claim orders",
+      apply: [namespace(".git"), claim(".git", "orders")],
+    });
+
+    expect(!result.ok && result.errors.map((e) => e.code)).toEqual([
+      "Invalid",
+      "Invalid",
+    ]);
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
   it("refuses to write through a symbolic link of the repository", async () => {
     repo = await serveBareRepository();
     const outside = await mkdtemp(path.join(os.tmpdir(), "fleet-outside-"));
@@ -785,6 +922,111 @@ describe("the Git writer", () => {
           }),
         ],
         previewManagers: { [envRef]: "kustomize-controller" },
+      }),
+    );
+  });
+
+  it("dry-runs an object that GitOps applied with client-side apply as a merge patch, with the live revision", async () => {
+    repo = await serveBareRepository();
+    const envRef = refKey({ kind: "Environment", name: "prod" });
+    live.set(envRef, {
+      ...environment("prod"),
+      metadata: {
+        name: "prod",
+        annotations: {
+          [REVISION_ANNOTATION]: "applied",
+          [LAST_APPLIED_ANNOTATION]: JSON.stringify(environment("prod")),
+        },
+      },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [environment("prod")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apply: [
+          expect.objectContaining({
+            metadata: {
+              name: "prod",
+              annotations: { [REVISION_ANNOTATION]: "applied" },
+            },
+          }),
+        ],
+        previewManagers: {},
+        previewMergePatches: [envRef],
+      }),
+    );
+  });
+
+  it("dry-runs an object with a server-side-apply GitOps manager as that manager, also when it has a last applied file", async () => {
+    repo = await serveBareRepository();
+    const envRef = refKey({ kind: "Environment", name: "prod" });
+    live.set(envRef, {
+      ...environment("prod"),
+      metadata: {
+        name: "prod",
+        annotations: {
+          [REVISION_ANNOTATION]: "applied",
+          [LAST_APPLIED_ANNOTATION]: JSON.stringify(environment("prod")),
+        },
+        managedFields: [
+          {
+            manager: "kustomize-controller",
+            operation: "Apply",
+            fieldsV1: {
+              "f:metadata": {
+                "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [environment("prod")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previewManagers: { [envRef]: "kustomize-controller" },
+        previewMergePatches: [],
+      }),
+    );
+  });
+
+  it("dry-runs a Namespace with a last applied file with server-side apply", async () => {
+    repo = await serveBareRepository();
+    live.set(refKey({ kind: "Namespace", name: "team" }), {
+      ...namespace("team"),
+      metadata: {
+        name: "team",
+        annotations: {
+          [LAST_APPLIED_ANNOTATION]: JSON.stringify(namespace("team")),
+        },
+      },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [namespace("team")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apply: [namespace("team")],
+        previewManagers: {},
+        previewMergePatches: [],
       }),
     );
   });
@@ -919,7 +1161,7 @@ describe("the Git writer", () => {
   });
 });
 
-describe("the credentials of the Git writer", () => {
+describe("the credentials of the Git writer", slow, () => {
   // The bare repository speaks plain HTTP. This transport sends an
   // https:// address to it over HTTP, so the writer sees an HTTPS
   // repository.
@@ -1009,6 +1251,170 @@ describe("the credentials of the Git writer", () => {
           message: "The Secret git-token has no key token.",
         },
       ],
+    });
+  });
+
+  describe("with GitHub App keys", () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    // The bare repository runs on 127.0.0.1, so the App is on GitHub
+    // Enterprise Server at the host of the repository.
+    const appKeys = (installationId: string) => ({
+      appId: "123",
+      installationId,
+      privateKey,
+      enterpriseHost: new URL(repo.url).host,
+    });
+    let tokenRequests: { authorization: string }[];
+
+    // githubFor answers as the GitHub API of the host of the bare
+    // repository. Each token request gets the next of tokens. app answers
+    // GET /app.
+    const githubFor = (tokens: string[], app: () => Response) => {
+      const api = `${new URL(repo.url).origin.replace(/^http:/, "https:")}/api/v3`;
+      tokenRequests = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (method === "POST" && url.endsWith("/access_tokens")) {
+          tokenRequests.push({
+            authorization: new Headers(init?.headers).get("authorization")!,
+          });
+          return Response.json(
+            {
+              token: tokens.shift(),
+              expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+            },
+            { status: 201 },
+          );
+        }
+        if (method === "GET" && url === `${api}/app`) return app();
+        if (method === "GET" && url === `${api}/users/fleet-bot%5Bbot%5D`) {
+          return Response.json({ id: 4242 });
+        }
+        throw new Error(`unexpected request ${method} ${url}`);
+      });
+    };
+    const bot = () => Response.json({ slug: "fleet-bot" });
+    const authorOf = async () =>
+      (
+        await promisify(execFile)(
+          "git",
+          ["log", "-1", "--format=%an <%ae>", "main"],
+          { cwd: repo.dir },
+        )
+      ).stdout.trim();
+    const save = (name: string) =>
+      writerFor(
+        {
+          url: repo.url.replace(/^http:/, "https:"),
+          credentialsSecretRef: "git",
+        },
+        overHttp,
+      ).apply({ intent: `Create ${name}`, apply: [claim("team-a", name)] });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("pushes with GitHub App keys and the commit shows the App bot as the author", async () => {
+      repo = await serveBareRepository({
+        auth: { username: "x-access-token", token: "ghs_test" },
+      });
+      githubFor(["ghs_test"], bot);
+      vi.mocked(readSecretValues).mockResolvedValue(appKeys("901"));
+
+      ok(await save("orders"));
+
+      expect(await authorOf()).toBe(
+        "fleet-bot[bot] <4242+fleet-bot[bot]@users.noreply.127.0.0.1>",
+      );
+    });
+
+    it("a failed author lookup commits as fleet-manager and the save does not fail", async () => {
+      repo = await serveBareRepository({
+        auth: { username: "x-access-token", token: "ghs_test" },
+      });
+      githubFor(["ghs_test"], () => new Response(null, { status: 500 }));
+      vi.mocked(readSecretValues).mockResolvedValue(appKeys("902"));
+
+      ok(await save("orders"));
+
+      expect(await authorOf()).toBe(
+        "fleet-manager <fleet-manager@noreply.invalid>",
+      );
+    });
+
+    it("a Secret with token keys and App keys gives Unavailable and commits nothing", async () => {
+      repo = await serveBareRepository();
+      const before = await repo.log();
+      vi.mocked(readSecretValues).mockResolvedValue({
+        username: "fleet",
+        token: "t",
+        ...appKeys("903"),
+      });
+
+      expect(await save("orders")).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Unavailable",
+            message:
+              "The Secret git has keys for a token and keys for a GitHub App. Keep username and token, or appId, installationId, and privateKey.",
+          },
+        ],
+      });
+      expect(await repo.log()).toEqual(before);
+    });
+
+    it("a refused push with an App token drops the cached token", async () => {
+      repo = await serveBareRepository({
+        auth: { username: "x-access-token", token: "ghs_new" },
+      });
+      githubFor(["ghs_old", "ghs_new"], bot);
+      vi.mocked(readSecretValues).mockResolvedValue(appKeys("904"));
+      const url = repo.url.replace(/^http:/, "https:");
+
+      const refused = await save("orders");
+
+      expect(refused).toEqual({
+        ok: false,
+        errors: [
+          { code: "Forbidden", message: `${url} refused the credentials.` },
+        ],
+      });
+      const jwt = tokenRequests[0].authorization.slice("Bearer ".length);
+      expect(JSON.stringify(refused)).not.toContain("ghs_old");
+      expect(JSON.stringify(refused)).not.toContain(jwt);
+
+      ok(await save("billing"));
+      expect(tokenRequests).toHaveLength(2);
+    });
+
+    it("App keys for another host than enterpriseHost refuse the save before any request", async () => {
+      repo = await serveBareRepository();
+      const before = await repo.log();
+      const fetch = vi.spyOn(globalThis, "fetch");
+      vi.mocked(readSecretValues).mockResolvedValue({
+        ...appKeys("905"),
+        enterpriseHost: "ghe.example.com",
+      });
+      const url = repo.url.replace(/^http:/, "https:");
+
+      expect(await save("orders")).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Unavailable",
+            message: `${url} is not on the host of the key enterpriseHost of the Secret git. The GitHub App keys of the Secret work only there.`,
+          },
+        ],
+      });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(await repo.log()).toEqual(before);
     });
   });
 });

@@ -43,6 +43,9 @@ type Input struct {
 	// defaults of the Environment. Empty leaves the field unset.
 	ReleaseRef        string
 	PlatformConfigRef string
+	// ReleaseVersion is spec.version of the release. Empty without a
+	// release.
+	ReleaseVersion string
 	// Order holds spec.plugins of the claim in the order of
 	// claimpolicy.Order.
 	Order         []fleetv1alpha1.PluginSelection
@@ -53,12 +56,16 @@ type Input struct {
 	Requests []pluginsv1alpha1.PluginRequest
 	// Live is the CamundaCluster of the claim. Nil before it exists. A slot
 	// field whose output is missing keeps its value.
-	Live    *v1.CamundaCluster
-	Storage BuiltinStorage
+	Live *v1.CamundaCluster
+	// LiveOptimize is the CamundaOptimize of the claim. Nil before it
+	// exists. Its externalUrl stays while the optimizeUrl output is missing.
+	LiveOptimize *v1.CamundaOptimize
+	Storage      BuiltinStorage
 }
 
 // Components are the components of a cluster claim, in reconcile order.
 type Components struct {
-	Requests *component.Component
-	Cluster  *component.Component
+	Requests    *component.Component
+	Cluster     *component.Component
+	Attachments *component.Component
 }

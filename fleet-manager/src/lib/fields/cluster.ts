@@ -8,7 +8,6 @@ import {
   fieldManagers,
   isClaimManager,
   indexItem,
-  keyedItem,
   mergeCluster,
   type FieldPath,
   type Layer,
@@ -79,14 +78,14 @@ export function clusterFields(input: ClusterFieldsInput): ClusterField[] {
       group: "optimize",
       live: input.optimize,
       claimed: renameAuth(attachments?.optimize),
-      claimRoot: child(child("spec", "attachments"), "optimize"),
+      claimRoot: attachmentRoot("optimize"),
     }),
     ...attachmentFields(ctx, {
       kind: "BackupSchedule",
       group: "backupSchedule",
       live: input.backupSchedule,
       claimed: attachments?.backupSchedule,
-      claimRoot: child(child("spec", "attachments"), "backupSchedule"),
+      claimRoot: attachmentRoot("backupSchedule"),
     }),
     ...parameterFields(input),
   ];
@@ -307,8 +306,12 @@ function camundaClusterFields(
       ...(lock && { lock }),
       ...claimPathOf(ctx.managed, selected, lock, () =>
         name !== undefined
-          ? child("spec", name)
-          : pathFrom(child("spec", "cluster"), claimSteps(unit.steps).steps),
+          ? [{ field: "spec" }, { field: name }]
+          : [
+              { field: "spec" },
+              { field: "cluster" },
+              ...claimSteps(unit.steps).steps,
+            ],
       ),
       docNames: docNamesOf(unit.steps),
     };
@@ -320,7 +323,7 @@ type Attachment = {
   group: FieldGroup;
   live?: { spec: object; metadata?: ManagedObject["metadata"] };
   claimed?: object;
-  claimRoot: FieldPath;
+  claimRoot: Step[];
 };
 
 // attachmentFields gives each leaf and each list item of the live spec of an
@@ -393,9 +396,10 @@ function attachmentFields(ctx: Context, a: Attachment): ClusterField[] {
       value: unit.value,
       state,
       ...(lock && { lock }),
-      ...claimPathOf(ctx.managed, selected, lock, () =>
-        pathFrom(a.claimRoot, claimAuthSteps(unit.steps)),
-      ),
+      ...claimPathOf(ctx.managed, selected, lock, () => [
+        ...a.claimRoot,
+        ...claimAuthSteps(unit.steps),
+      ]),
       docNames: docNamesOf(unit.steps),
     };
   });
@@ -450,23 +454,31 @@ function lockOf(
 }
 
 // claimPathOf gives a filled field the path of its selection, and any other
-// field the path that path() builds unless it is locked. An unmanaged
-// cluster has no claim path.
+// field the path of the steps that steps() builds unless it is locked. An
+// unmanaged cluster has no claim path.
 function claimPathOf(
   managed: boolean,
   selected: Selected | undefined,
   lock: FieldLock | undefined,
-  path: () => FieldPath,
-): { claimPath?: FieldPath } {
+  steps: () => Step[],
+): { claimPath?: FieldPath; claimSteps?: Step[] } {
   if (!managed) return {};
+  const at = (claimSteps: Step[]) => ({
+    claimPath: pathFrom("", claimSteps),
+    claimSteps,
+  });
   if (selected)
-    return {
-      claimPath: keyedItem(child("spec", "plugins"), {
-        section: selected.section,
-        registration: selected.registration,
-      }),
-    };
-  return lock === undefined ? { claimPath: path() } : {};
+    return at([
+      { field: "spec" },
+      { field: "plugins" },
+      {
+        item: {
+          section: selected.section,
+          registration: selected.registration,
+        },
+      },
+    ]);
+  return lock === undefined ? at(steps()) : {};
 }
 
 // managersByField gives each field the managers that own it or a value
@@ -545,6 +557,10 @@ function isClusterSlot(row: (typeof SLOT_FIELDS)[number]): boolean {
   return (
     row.claimKind === "CamundaClusterClaim" && row.kind === "CamundaCluster"
   );
+}
+
+function attachmentRoot(name: "optimize" | "backupSchedule"): Step[] {
+  return [{ field: "spec" }, { field: "attachments" }, { field: name }];
 }
 
 function pathOf(names: readonly string[]): FieldPath {

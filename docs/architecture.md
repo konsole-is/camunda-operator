@@ -159,6 +159,41 @@ Claims sit above the core kinds. A [CamundaClusterClaim](crds/camundaclusterclai
 
 The fields that a claim writes have a field manager that starts with `CamundaClusterClaim/` or `CamundaManagementClusterClaim/`. A GitOps tool that writes the same field of a generated `CamundaCluster` reports a conflict with that manager. Set the field in `spec.cluster` or `spec.management` of the claim instead.
 
+## Plugins
+
+A plugin is a Helm chart that installs a plugin controller and one or more [PluginRegistrations](crds/pluginregistration.md). Each registration is an option of one or more [PluginSections](crds/pluginsection.md), for example "New S3 bucket" in the section `backup-storage`. The operator brings the core sections and six [built-in registrations](crds/pluginregistration.md#built-in-registrations), and it serves the built-in registrations itself.
+
+A claim selects at most one option in a section, or more than one in a section with `selection: Many`. For each option that it selects, the claim writes one [PluginRequest](crds/pluginrequest.md). The plugin controller of the registration answers the request with outputs in `status.outputs`. The claim fills fields of the `CamundaCluster` from these outputs, or of the `CamundaManagementCluster` for a management plane claim. It also gives the outputs of one section to the requests of other sections as inputs.
+
+```mermaid
+graph LR
+    claim[CamundaClusterClaim] -->|one per option| req[PluginRequest]
+    reg[PluginRegistration] -.->|option of| sec[PluginSection]
+    req -.->|names| reg
+    ctl[plugin controller] -->|outputs, status| req
+    ctl -->|resources| res[bucket, role, Elasticsearch]
+    ctl -->|Grant| grant[Grant]
+    policy[admission policy] -.->|guards| grant
+    claim -->|fields from outputs| cc[CamundaCluster]
+```
+
+Each object of the plugin kinds has its writers:
+
+| Object | Written by | What you see |
+| --- | --- | --- |
+| `PluginSection` | The operator, for the core sections. A plugin chart, for a section that it brings. | The steps of the create flow of a claim. |
+| `PluginRegistration` spec | The plugin controller, from its chart values. The operator, for the built-in registrations. | The options of each step. |
+| `PluginRegistration` condition `Accepted` | The operator. | `False` when a section is missing, the operator version is outside the range, or two options of a section are `Default`. |
+| `PluginRegistration` condition `Ready` | The plugin controller. The operator, for the built-in registrations. | The health of the plugin. The fleet manager offers the option only when `Accepted` and `Ready` are both `True`. |
+| `PluginRequest` spec | The claim. | One request for each option that the claim selects. |
+| `PluginRequest` status | The plugin controller of the registration. | The outputs, the health, and the resources of the request. |
+| `Grant` spec | The plugin controller. | One permission that the cluster needs, for example access to its backup bucket. |
+| `Grant` status | The identity extension of the cluster. | Whether the cloud identity of the cluster has the permission. |
+
+One admission policy guards the grants. The operator installs it. The API server refuses a grant from a requester that does not have the verb `serve` on the registration of the grant. Thus a plugin cannot ask for permissions in the name of another plugin. See [Who can write a grant](crds/grant.md#who-can-write-a-grant).
+
+The core kinds never read a plugin kind. A `CamundaCluster` that you write yourself needs no plugin.
+
 ## The fleet manager
 
 The fleet manager is a web app that the chart installs when `fleetManager.enabled` is `true`, see [Install the fleet manager](fleet-manager/install.md). It runs in the release namespace under its own ServiceAccount. The ClusterRole of that ServiceAccount reads every kind of the operator. It also reads pods, Services, and volume claims. The workloads of a resource carry the labels in [How a feature finds its workloads](#how-a-feature-finds-its-workloads). It can also write the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets. It cannot write a `CamundaCluster` or a `CamundaManagementCluster`.

@@ -81,9 +81,10 @@ jobs:
           name: fleet-test-reports
           path: fleet-manager/test-reports/
           if-no-files-found: error
-      # fleet-gallery runs fleet-build and fleet-playwright first.
-      - name: Build the fleet manager and check the UI gallery
-        run: make fleet-gallery FLEET_PLAYWRIGHT_FLAGS=--with-deps
+      # Both targets need the gallery build, and one make call builds it
+      # once. -k runs the page scenarios also when the gallery fails.
+      - name: Build the fleet manager, check the UI gallery, and run the page scenarios
+        run: make -k fleet-gallery fleet-scenarios-test FLEET_PLAYWRIGHT_FLAGS=--with-deps
       - name: Upload the UI gallery
         id: gallery
         if: ${{ !cancelled() }}
@@ -98,6 +99,20 @@ jobs:
           GALLERY_URL: ${{ steps.gallery.outputs.artifact-url }}
         run: |
           echo "UI gallery: [ui-gallery](${GALLERY_URL}). Open index.html in the archive." >> "${GITHUB_STEP_SUMMARY}"
+      - name: Upload the UI pages
+        id: pages
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-pages
+          path: fleet-manager/ui-pages/
+          if-no-files-found: warn
+      - name: Link the UI pages in the job summary
+        if: ${{ !cancelled() && steps.pages.outputs.artifact-url != '' }}
+        env:
+          PAGES_URL: ${{ steps.pages.outputs.artifact-url }}
+        run: |
+          echo "UI pages: [ui-pages](${PAGES_URL}). Open index.html in the archive." >> "${GITHUB_STEP_SUMMARY}"
 
   image:
     name: Build and test the image

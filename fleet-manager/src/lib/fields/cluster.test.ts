@@ -7,6 +7,7 @@ import { CLAIM_LABEL } from "@/lib/labels";
 import { mergeCluster, type ManagedFieldsEntry } from "@/lib/merge";
 import { loadMergeFixtures } from "../../../test/merge/fixtures";
 import { clusterFields, type ClusterFieldsInput } from "./cluster";
+import { pathFrom } from "./walk";
 import { lockLabel, stateLabel, stateNote } from "./labels";
 import type { ClusterField } from "./types";
 
@@ -716,5 +717,79 @@ describe("clusterFields", () => {
     expect(size.docNames).toEqual(["spec", "zeebe", "storageSize"]);
     const tz = at(fields, "spec.extraEnv[name=TZ]");
     expect([tz.group, tz.label]).toEqual(["cluster", "extraEnv[name=TZ]"]);
+  });
+});
+
+describe("claimSteps", () => {
+  it("every field with a claimPath has claimSteps that name the same path", () => {
+    for (const f of fixtures) {
+      const fields = fieldsOf({
+        spec: f.spec,
+        preset: f.preset,
+        release: f.release,
+        managedFields: [owns(CLAIM, { spec: f.spec })],
+        claim: claim({ cluster: f.spec }, [["access", "gateway-access"]]),
+      });
+      for (const field of fields) {
+        if (field.claimPath === undefined)
+          expect(field.claimSteps, `${f.file} ${field.key}`).toBeUndefined();
+        else
+          expect(
+            pathFrom("", field.claimSteps ?? []),
+            `${f.file} ${field.key}`,
+          ).toBe(field.claimPath);
+      }
+    }
+  });
+
+  it("gives an item of a concatenated list its index in the claim", () => {
+    const f = fixture("extra-env-from-concatenates-in-layer-order.json");
+    const own = at(
+      fieldsOf({
+        spec: f.spec,
+        preset: f.preset,
+        release: f.release,
+        managedFields: [owns(CLAIM, { spec: f.spec })],
+        claim: claim({ cluster: f.spec }),
+      }),
+      "spec.extraEnvFrom[2]",
+    );
+    expect(own.claimSteps).toEqual([
+      { field: "spec" },
+      { field: "cluster" },
+      { field: "extraEnvFrom" },
+      { index: 0 },
+    ]);
+  });
+
+  it("gives a top-level claim field its own steps", () => {
+    const f = fixture("instance-bound-fields-come-from-the-cluster.json");
+    const preset = at(
+      fieldsOf({
+        spec: f.spec,
+        preset: f.preset,
+        claim: claim({ presetRef: "standard" }),
+      }),
+      "spec.presetRef",
+    );
+    expect(preset.claimSteps).toEqual([
+      { field: "spec" },
+      { field: "presetRef" },
+    ]);
+  });
+
+  it("gives a filled field the steps of its selection", () => {
+    const field = at(
+      fieldsOf({
+        spec: { zeebe: { replicas: 3 } },
+        claim: claim({}, [["volume-encryption", "x"]]),
+      }),
+      "spec.zeebe.storageClassName",
+    );
+    expect(field.claimSteps).toEqual([
+      { field: "spec" },
+      { field: "plugins" },
+      { item: { section: "volume-encryption", registration: "x" } },
+    ]);
   });
 });

@@ -7,6 +7,7 @@ import {
 import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 import type { KubeObject } from "@/lib/write/types";
 import { directWriter, refKey } from "@/lib/write/writer";
+import { createClientSideApplied } from "./client-side-apply";
 
 const kc = new KubeConfig();
 kc.loadFromFile(inject("kubeconfig"));
@@ -220,6 +221,118 @@ describe("the direct writer against envtest", () => {
     expect(object.metadata?.managedFields).toContainEqual(
       expect.objectContaining({ manager: "fleet-manager", operation: "Apply" }),
     );
+  });
+
+  it("a preview of an object of previewMergePatches removes each field of the last applied file that the object leaves out, so a CEL rule refuses it", async () => {
+    await createClientSideApplied(
+      api,
+      environment(name, {
+        displayName: "One",
+        releases: { allowed: ["r1"], default: "r1" },
+      }),
+    );
+    const before = await live(name);
+
+    const preview = await writer.preview({
+      intent: "Drop the allowed releases",
+      apply: [
+        environment(name, { displayName: "One", releases: { default: "r1" } }),
+      ],
+      force: true,
+      previewMergePatches: [refKey(environmentRef(name))],
+    });
+
+    expect(preview.objects).toEqual([]);
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        code: "Invalid",
+        message: expect.stringContaining(
+          "releases.default must be one of releases.allowed",
+        ),
+      }),
+    ]);
+    expect((await live(name)).metadata?.resourceVersion).toBe(
+      before.metadata?.resourceVersion,
+    );
+  });
+
+  it("a preview of an object of previewMergePatches keeps a field that is not in the last applied file", async () => {
+    await createClientSideApplied(
+      api,
+      environment(name, { displayName: "One" }),
+    );
+    await api.patch(
+      environment(name, { releases: { allowed: ["r1"] } }),
+      undefined,
+      undefined,
+      "someone-else",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+    const before = await live(name);
+
+    const preview = await writer.preview({
+      intent: "Rename",
+      apply: [environment(name, { displayName: "Two" })],
+      force: true,
+      previewMergePatches: [refKey(environmentRef(name))],
+    });
+
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects[0].after?.spec).toMatchObject({
+      displayName: "Two",
+      releases: { allowed: ["r1"] },
+    });
+    expect((await live(name)).metadata?.resourceVersion).toBe(
+      before.metadata?.resourceVersion,
+    );
+  });
+
+  it("a preview of an object of previewMergePatches without a last applied file keeps the server-side-apply dry run", async () => {
+    await api.patch(
+      environment(name, {
+        displayName: "One",
+        releases: { allowed: ["r1"], default: "r1" },
+      }),
+      undefined,
+      undefined,
+      "gitops",
+      true,
+      PatchStrategy.ServerSideApply,
+    );
+
+    const preview = await writer.preview({
+      intent: "Drop the allowed releases",
+      apply: [
+        environment(name, { displayName: "One", releases: { default: "r1" } }),
+      ],
+      force: true,
+      previewMergePatches: [refKey(environmentRef(name))],
+    });
+
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects[0].after?.spec).toMatchObject({
+      releases: { allowed: ["r1"], default: "r1" },
+    });
+  });
+
+  it("an apply ignores previewMergePatches", async () => {
+    await createClientSideApplied(
+      api,
+      environment(name, { displayName: "One", releases: { allowed: ["r1"] } }),
+    );
+
+    const result = await writer.apply({
+      intent: "Rename",
+      apply: [environment(name, { displayName: "Two" })],
+      force: true,
+      previewMergePatches: [refKey(environmentRef(name))],
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    expect(await live(name)).toMatchObject({
+      spec: { displayName: "Two", releases: { allowed: ["r1"] } },
+    });
   });
 
   it("a forced apply with the resourceVersion of an older copy still fails with Stale", async () => {

@@ -1,0 +1,17 @@
+# Written by hand for test/k8s/scenarios.test.ts, in the format of the
+# generated page scenarios.
+schemaVersion: 1
+description: >-
+  A Deployment with a ReplicaSet, a ConfigMap with a finalizer, a Pod on a
+  node, two ConfigMaps that name the UIDs of other ConfigMaps, and a
+  second Namespace. The state moved scales the Deployment, drops the
+  status of the ReplicaSet, removes the ConfigMap, the Pod, and the
+  Namespace, and adds a ConfigMap.
+states:
+  - name: moved
+    description: >-
+      The Deployment has 2 replicas and the ReplicaSet has no status. The
+      ConfigMap gone, the Pod gone-pod, and the Namespace advance-gone are
+      deleted, and the ConfigMap new is added.
+  - name: back
+    description: The ConfigMap gone is back, as a new object.

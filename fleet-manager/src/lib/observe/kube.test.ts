@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KubernetesRequestError, getJSON } from "@/lib/k8s/client";
 import type { Resource } from "@/lib/k8s/kinds";
 import { list } from "@/lib/k8s/read";
-import { events, podUsage, requestPods } from "./kube";
+import { events, metricsServerFound, podUsage, requestPods } from "./kube";
 
 vi.mock("@/lib/k8s/client", async (real) => ({
   ...(await real<typeof import("@/lib/k8s/client")>()),
@@ -14,6 +14,29 @@ vi.mock("@/lib/k8s/read", () => ({ list: vi.fn() }));
 const MI = 2 ** 20;
 
 beforeEach(() => vi.resetAllMocks());
+
+describe("podUsage path", () => {
+  it("keeps a namespace with a slash in its own segment", async () => {
+    vi.mocked(getJSON).mockResolvedValue({ items: [] });
+    vi.mocked(list).mockResolvedValue([]);
+
+    await podUsage("../../../../api/v1/namespaces/kube-system/secrets?", "a=b");
+
+    const path = String(vi.mocked(getJSON).mock.calls[0][1]);
+    const url = new URL(`https://api.example${path}`);
+    expect(url.pathname).toBe(
+      "/apis/metrics.k8s.io/v1beta1/namespaces/..%2F..%2F..%2F..%2Fapi%2Fv1%2Fnamespaces%2Fkube-system%2Fsecrets%3F/pods",
+    );
+  });
+
+  it.each(["..", "."])(
+    "refuses the namespace %j and sends nothing",
+    async (ns) => {
+      await expect(podUsage(ns, "a=b")).rejects.toThrow();
+      expect(getJSON).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe("podUsage", () => {
   const usage = {
@@ -201,6 +224,39 @@ describe("podUsage", () => {
     vi.mocked(list).mockResolvedValue([]);
 
     await expect(podUsage("team-a", "")).rejects.toThrow("forbidden");
+  });
+});
+
+describe("metricsServerFound", () => {
+  it("is true when metrics.k8s.io answers", async () => {
+    vi.mocked(getJSON).mockResolvedValue({ items: [] });
+
+    expect(await metricsServerFound("fleet")).toBe(true);
+    expect(vi.mocked(getJSON).mock.calls[0][1]).toBe(
+      "/apis/metrics.k8s.io/v1beta1/namespaces/fleet/pods?limit=1",
+    );
+  });
+
+  it.each([404, 503])("is false on %i", async (status) => {
+    vi.mocked(getJSON).mockRejectedValue(
+      new KubernetesRequestError(status, "no metrics"),
+    );
+
+    expect(await metricsServerFound("fleet")).toBe(false);
+  });
+
+  it("is true on 403, because the API is served", async () => {
+    vi.mocked(getJSON).mockRejectedValue(
+      new KubernetesRequestError(403, "forbidden"),
+    );
+
+    expect(await metricsServerFound("fleet")).toBe(true);
+  });
+
+  it("rejects when the API server does not answer", async () => {
+    vi.mocked(getJSON).mockRejectedValue(new Error("connect ECONNREFUSED"));
+
+    await expect(metricsServerFound("fleet")).rejects.toThrow("ECONNREFUSED");
   });
 });
 

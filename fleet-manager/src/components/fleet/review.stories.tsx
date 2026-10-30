@@ -1,7 +1,11 @@
 import type { Story } from "@/gallery/registry";
 import { objectDiff } from "@/lib/diff";
+import type { Step } from "@/lib/fields";
+import { STALE_CLAIM_MESSAGE } from "@/lib/session";
+import { ClaimReviewStory } from "./claim-review-story";
 import { DiffView } from "./diff-view";
 import { GitWaitingLine } from "./git-waiting-line";
+import { PrecheckLine } from "./precheck-line";
 import { ReviewPanel } from "./review-panel";
 
 const before = {
@@ -15,6 +19,19 @@ const after = {
   spec: { cluster: { zeebe: { replicas: 5, partitions: 3 } } },
 };
 const lines = objectDiff(before, after);
+
+const claim = {
+  ...before,
+  metadata: { ...before.metadata, resourceVersion: "41" },
+};
+const replicas: Step[] = [
+  { field: "spec" },
+  { field: "cluster" },
+  { field: "zeebe" },
+  { field: "replicas" },
+];
+const scale = [{ steps: replicas, value: 5 }];
+const restart = ["Broker pods restart."];
 
 export const reviewStories: Story[] = [
   {
@@ -89,6 +106,115 @@ export const reviewStories: Story[] = [
         }}
         liveRevision="aaa"
         now="2026-10-18T12:00:00Z"
+      />
+    ),
+  },
+  {
+    component: "GitWaitingLine",
+    name: "Waiting for a delete",
+    render: () => (
+      <GitWaitingLine
+        pushed={{
+          path: "clusters/team-a/camundaclusterclaims/orders.yaml",
+          pushedAt: "2026-10-18T11:58:00Z",
+          deleted: true,
+        }}
+        now="2026-10-18T12:00:00Z"
+      />
+    ),
+  },
+  {
+    component: "ClaimReview",
+    name: "Direct",
+    render: () => (
+      <ClaimReviewStory
+        claim={claim}
+        changes={scale}
+        mode="direct"
+        impacts={restart}
+      />
+    ),
+  },
+  {
+    component: "ClaimReview",
+    name: "Git",
+    render: () => (
+      <ClaimReviewStory
+        claim={claim}
+        changes={scale}
+        mode="git"
+        impacts={restart}
+      />
+    ),
+  },
+  {
+    component: "ClaimReview",
+    name: "With caution",
+    render: () => (
+      <ClaimReviewStory
+        claim={claim}
+        changes={scale}
+        mode="direct"
+        impacts={restart}
+        caution="A backup of orders runs now. The rollout makes it fail."
+      />
+    ),
+  },
+  {
+    component: "ClaimReview",
+    name: "Preview refused",
+    render: () => (
+      <ClaimReviewStory
+        claim={claim}
+        changes={[{ steps: replicas, value: 0 }]}
+        mode="direct"
+        preview={{
+          objects: [],
+          errors: [
+            {
+              code: "Invalid",
+              message: "Invalid value: 0: must be greater than or equal to 1",
+              path: "spec.cluster.zeebe.replicas",
+            },
+          ],
+        }}
+      />
+    ),
+  },
+  {
+    component: "ClaimReview",
+    name: "Stale",
+    render: () => (
+      <ClaimReviewStory
+        claim={claim}
+        changes={scale}
+        mode="direct"
+        impacts={restart}
+        preview={{
+          objects: [],
+          errors: [{ code: "Stale", message: STALE_CLAIM_MESSAGE }],
+        }}
+      />
+    ),
+  },
+  {
+    component: "PrecheckLine",
+    name: "SlotConflict",
+    render: () => (
+      <PrecheckLine
+        claim={{
+          status: {
+            conditions: [
+              {
+                type: "Ready",
+                status: "False",
+                reason: "SlotConflict",
+                message:
+                  'spec.cluster.externalUrl is filled by section "access", so the claim cannot set it',
+              },
+            ],
+          },
+        }}
       />
     ),
   },

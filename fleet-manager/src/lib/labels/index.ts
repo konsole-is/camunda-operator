@@ -12,11 +12,24 @@ export const CLAIM_LABEL = "fleet.camunda.io/claim";
 /** REVISION_ANNOTATION is AnnotationRevision of api/fleet/v1alpha1. */
 export const REVISION_ANNOTATION = "fleet.camunda.io/revision";
 
+/**
+ * LAST_APPLIED_ANNOTATION holds the last applied file of kubectl apply
+ * without --server-side. It is LastAppliedConfigAnnotation of k8s.io/api/core/v1.
+ */
+export const LAST_APPLIED_ANNOTATION =
+  "kubectl.kubernetes.io/last-applied-configuration";
+
 /** SECTION_LABEL names the section of a PluginRequest. It is LabelSection of api/plugins/v1alpha1. */
 export const SECTION_LABEL = "plugins.camunda.io/section";
 
 /** ACCESS_SECTION is the section of the access request of a claim. It is SectionAccess of internal/pluginstartup. */
 export const ACCESS_SECTION = "access";
+
+/**
+ * BUILTIN_CONTROLLER is the controller name of the built-in registrations.
+ * It is ControllerName of internal/pluginstartup.
+ */
+export const BUILTIN_CONTROLLER = "camunda-operator";
 
 /**
  * CLUSTER_LABEL on a pod holds labels.OwnerName of its CamundaCluster. It is
@@ -28,10 +41,33 @@ export const CLUSTER_LABEL = "camunda.io/cluster";
 export const COMPONENT_LABEL = "camunda.io/component";
 
 /**
+ * OPTIMIZE_UID_LABEL on a pod of a CamundaOptimize holds the UID of that
+ * CamundaOptimize. It is OptimizeUIDKey of pkg/labels.
+ */
+export const OPTIMIZE_UID_LABEL = "camunda.io/optimize-uid";
+
+/**
+ * OPTIMIZE_COMPONENTS are the COMPONENT_LABEL values of the pods of a
+ * CamundaOptimize. They are ComponentWebapp and ComponentImporter of
+ * pkg/components/camundaoptimize.
+ */
+export const OPTIMIZE_COMPONENTS = [
+  "optimize-webapp",
+  "optimize-importer",
+] as const;
+
+/**
  * BACKUP_SCHEDULE_LABEL on a backup holds labels.OwnerName of the
  * BackupSchedule that made it. It is BackupScheduleKey of pkg/labels.
  */
 export const BACKUP_SCHEDULE_LABEL = "camunda.io/backup-schedule";
+
+/**
+ * MANAGEMENT_CLUSTER_ANNOTATION on a CamundaCluster names the plane that
+ * serves it, as "<namespace>/<name>". It is ManagementClusterKey of
+ * pkg/labels.
+ */
+export const MANAGEMENT_CLUSTER_ANNOTATION = "camunda.io/management-cluster";
 
 /** isManaged says whether a claim made the object: it carries CLAIM_LABEL with a value. */
 export function isManaged(object: {
@@ -61,6 +97,20 @@ export function isLabelKey(key: string): boolean {
 /** isLabelValue says whether value is a valid Kubernetes label value. The empty value is valid. */
 export function isLabelValue(value: string): boolean {
   return value === "" || NAME.test(value);
+}
+
+const DNS_LABEL = "[a-z0-9]([-a-z0-9]*[a-z0-9])?";
+const DNS_LABEL_RE = new RegExp(`^${DNS_LABEL}$`);
+const DNS_SUBDOMAIN_RE = new RegExp(`^${DNS_LABEL}(\\.${DNS_LABEL})*$`);
+
+/** isDNSLabel says whether value is a DNS-1123 label, such as a namespace name. */
+export function isDNSLabel(value: string): boolean {
+  return value.length <= 63 && DNS_LABEL_RE.test(value);
+}
+
+/** isDNSSubdomain says whether value is a DNS-1123 subdomain, such as the name of most objects. */
+export function isDNSSubdomain(value: string): boolean {
+  return value.length <= 253 && DNS_SUBDOMAIN_RE.test(value);
 }
 
 /** LabelSelector is a metav1.LabelSelector. */
@@ -105,4 +155,40 @@ export function labelSelectorString(
     },
   );
   return [...labels, ...expressions].join(",");
+}
+
+/**
+ * matchesSelector says whether labels match selector, as Kubernetes
+ * decides it. An unset or empty selector matches every object. NotIn and
+ * DoesNotExist match an object without the key. An unknown operator
+ * matches nothing.
+ */
+export function matchesSelector(
+  selector: LabelSelector | undefined,
+  labels: Record<string, string> | undefined,
+): boolean {
+  const have = labels ?? {};
+  const matchLabels = Object.entries(selector?.matchLabels ?? {}).every(
+    ([k, v]) => Object.hasOwn(have, k) && have[k] === v,
+  );
+  return (
+    matchLabels &&
+    (selector?.matchExpressions ?? []).every(
+      ({ key, operator, values = [] }) => {
+        const present = Object.hasOwn(have, key);
+        switch (operator) {
+          case "In":
+            return present && values.includes(have[key]);
+          case "NotIn":
+            return !present || !values.includes(have[key]);
+          case "Exists":
+            return present;
+          case "DoesNotExist":
+            return !present;
+          default:
+            return false;
+        }
+      },
+    )
+  );
 }

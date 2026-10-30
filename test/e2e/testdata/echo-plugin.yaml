@@ -1,0 +1,110 @@
+# The echo plugin of the flow builtin-registrations and its rights. It serves
+# the registration e2e-echo with the section backup-storage and one grant
+# template, so that GRANT-ADMISSION has a Grant to send through the installed
+# policy. The flow builds the image from test/e2e/fakeplugin before it applies
+# this file.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: builtin-registrations-echo
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: echo
+  namespace: builtin-registrations-echo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: builtin-registrations-echo
+rules:
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginregistrations]
+    verbs: [get, list, watch, create, patch, update]
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginregistrations/status]
+    verbs: [get, update, patch]
+  # The right to serve the registration. The Grant admission policy refuses
+  # a Grant of e2e-echo from a writer without it.
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginregistrations]
+    resourceNames: [e2e-echo]
+    verbs: [serve]
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginrequests]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [plugins.camunda.io]
+    resources: [pluginrequests/status, pluginrequests/finalizers]
+    verbs: [get, update, patch]
+  - apiGroups: [plugins.camunda.io]
+    resources: [grants]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: builtin-registrations-echo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: builtin-registrations-echo
+subjects:
+  - kind: ServiceAccount
+    name: echo
+    namespace: builtin-registrations-echo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo
+  namespace: builtin-registrations-echo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: echo
+  template:
+    metadata:
+      labels:
+        app: echo
+    spec:
+      serviceAccountName: echo
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: echo
+          image: example.com/camunda-operator-fakeplugin:v0.0.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - --registration=e2e-echo
+            - --service-account-namespace=builtin-registrations-echo
+            - --service-account-name=echo
+            - --backup-object-storage-config=echo-bucket
+            - '--grant-template={"Effect":"Allow","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::{{ .outputs.objectStorageConfig }}/{{ .namespace }}/{{ .claim }}/*"}'
+          ports:
+            - name: probes
+              containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: probes
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

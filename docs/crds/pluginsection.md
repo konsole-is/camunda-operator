@@ -29,13 +29,15 @@ A claim generates a `CamundaCluster` or a `CamundaManagementCluster`. A slot is 
 
 | Slot | Outputs | What the outputs fill |
 | --- | --- | --- |
-| `workloadIdentity` | `principal`, `serviceAccountAnnotations` | The ServiceAccount annotations of the `CamundaCluster`, from `serviceAccountAnnotations`. |
+| `workloadIdentity` | `principal`, `serviceAccountAnnotations` | `serviceAccountAnnotations` fills the ServiceAccount annotations of the `CamundaCluster`. `principal` fills no field. |
 | `volumeEncryption` | `storageClassName` | The StorageClass of the Zeebe volumes. |
 | `backupStorage` | `objectStorageConfig` | `spec.backupStorageRef` of the `CamundaCluster`. |
 | `secondaryStorage` | `secondaryStorageConfig` | `spec.storageRef` of the `CamundaCluster`. |
-| `externalAccess` | `externalUrl`, `grpcHost`, `optimizeUrl`, `managementHost` | The external URLs of the `CamundaCluster` and of its `CamundaOptimize`, or the host of the `CamundaManagementCluster`. |
+| `externalAccess` | `externalUrl`, `grpcHost`, `optimizeUrl`, `managementHost` | `externalUrl` fills the external URL of the `CamundaCluster`, and `optimizeUrl` the external URL of its `CamundaOptimize`. `managementHost` fills the five URLs of the `CamundaManagementCluster`: `https://<host>/auth`, `/identity`, `/console`, `/modeler`, and `/modeler-ws`. `grpcHost` fills no field. |
 | `managementDatabases` | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig` | The database references of Keycloak, Management Identity, and Web Modeler in the `CamundaManagementCluster`. |
-| `connectorsIdentity` | `principal`, `serviceAccountAnnotations` | The ServiceAccount annotations of the Connectors, from `serviceAccountAnnotations`. |
+| `connectorsIdentity` | `principal`, `serviceAccountAnnotations` | `serviceAccountAnnotations` fills the ServiceAccount annotations of the Connectors. `principal` fills no field. |
+
+An output that fills no field, such as `principal` or `grpcHost`, is still in `status.outputs` of the request. Another option can read it as an input, for example `cloud-identity/principal`.
 
 The set of slots is closed, and only core sections use them. A section that a plugin brings has no slot. Its outputs fill nothing in the generated resource. They are only inputs of other registrations, as in [A section that a plugin brings](#a-section-that-a-plugin-brings). The core section `encryption-key` has no slot either. Other sections read its key as an input.
 

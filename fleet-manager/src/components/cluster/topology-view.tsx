@@ -1,18 +1,26 @@
 import type { ReactNode } from "react";
-import { DOT_TONE, TEXT_TONE } from "@/components/fleet/status";
-import type { PodDot, TopologyBox } from "./topology";
+import {
+  type ConditionLike,
+  DOT_TONE,
+  TEXT_TONE,
+} from "@/components/fleet/status";
+import { StatusDot } from "@/components/fleet/status-dot";
+import type { PodDot, Process, TopologyBox } from "./topology";
 
 /**
  * TopologyView draws the boxes of a cluster with their embedded processes
  * and the name and state of each pod. actions is the content of the
- * cluster.topology.actions slot.
+ * cluster.topology.actions slot. conditions gives the condition of each
+ * process. A box with one shows its dot.
  */
 export function TopologyView({
   boxes,
   actions,
+  conditions,
 }: {
   boxes: TopologyBox[];
   actions?: ReactNode;
+  conditions?: Partial<Record<Process, ConditionLike>>;
 }) {
   return (
     <section
@@ -30,7 +38,15 @@ export function TopologyView({
             className="flex flex-col gap-3 rounded-md border border-border bg-panel-2 p-3"
           >
             <div className="flex items-baseline justify-between gap-2">
-              <span className="font-medium text-text">{box.label}</span>
+              <span className="flex items-center gap-2 font-medium text-text">
+                {conditions?.[box.process] && (
+                  <StatusDot
+                    label={box.label}
+                    condition={conditions[box.process]}
+                  />
+                )}
+                {box.label}
+              </span>
               <span className="text-xs text-muted">{box.workload}</span>
             </div>
             {box.embedded.length > 0 && (

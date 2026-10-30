@@ -83,15 +83,42 @@ The operator writes these fields with the field manager `camunda-operator-builti
 - `Default`: a new claim selects the option. A section has at most one `Default` option.
 - `Optional`: the fleet manager offers the option, and a new claim does not select it.
 
+`deletionPolicies` lists the deletion policies that a claim can ask for. A claim with the policy `Orphan` that selects a registration without `Orphan` is refused with `NotAllowed`. When you delete such a claim, it deletes nothing. See [Deletion](pluginrequest.md#deletion).
+
 ## Inputs and outputs
 
-An input reads one output of another section, in the form `<section>/<output>`, for example `encryption-key/keyRef`. The claim gives the value of the output to the request of this option. With `required: true`, a claim cannot select the option while the input has no value. `formats` lists the formats of the value that the option accepts, for example `aws-kms-arn`. An empty list accepts every format.
+An input reads one output of another section, in the form `<section>/<output>`, for example `encryption-key/keyRef`. The claim gives the value of the output to the request of this option. When the claim selects an option of that section, the request of this option waits for its outputs. When the claim selects nothing in that section, the request gets no value for the input.
+
+With `required: true`, a claim that selects this option must also select an option of the section of the input. Otherwise the `Ready` condition of the claim is `False` with reason `MissingInput`, and the message is `registration "<registration>" of section "<section>" needs the input "<input>" from <section>/<output>, and the claim selects nothing in section "<section>"`.
+
+`formats` lists the formats of the value that the option accepts, for example `aws-kms-arn`. An empty list accepts every format.
 
 `outputs` lists the values that the plugin writes to the status of a request. It includes the outputs of each section that the option serves.
 
 ## Parameters
 
 `parameters` is the OpenAPI v3 schema of the parameters of a request for the option. `parameterValues` are the values that the admin set in the plugin chart. `claimEditable` lists the parameters that a claim can change. An `Environment` can override `parameterValues` and `claimEditable`. Without one, these two fields apply.
+
+A claim fills the parameter `releaseRef` with the name of its `CamundaRelease` when the schema has a top-level string property `releaseRef`. The built-ins `elasticsearch` and `database-server` use it.
+
+A parameter whose schema has `x-fleet-template: true` holds a template. The request gets the template from `parameterValues`, and the plugin fills it in. It can use the placeholders of [Grant templates](#grant-templates), except `{{ .outputs.<key> }}`, because the outputs do not exist yet at that time.
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: PluginRegistration
+metadata:
+  name: s3-backup-bucket
+spec:
+  parameters:
+    type: object
+    properties:
+      bucketPrefix:
+        type: string
+        x-fleet-template: true
+  parameterValues:
+    bucketPrefix: "{{ .namespace }}-{{ .claim }}"
+  # ... the rest of your registration
+```
 
 `choices` are the presets or existing resources that a claim can pick for a parameter, with the facts that the fleet manager shows for each.
 
@@ -162,6 +189,19 @@ A plugin controller that writes the status of its registration must keep the `Ac
 | `Ready` | set by the plugin | The plugin controller reports its health and its credentials. | Read the message, and the logs of the plugin controller. |
 
 `status.observedGeneration` is the last generation that a controller of the registration processed.
+
+The messages of `Accepted=False` are:
+
+| Reason | Message |
+| --- | --- |
+| `SectionMissing` | `These sections do not exist: <names>` |
+| `OperatorVersionUnsupported` | `Operator version <version> is outside operatorVersions "<range>"` |
+| `OperatorVersionUnsupported` | `operatorVersions is not valid: <error>` |
+| `DefaultConflict` | `In section <section>, these registrations also have mode Default: <names>` |
+
+A development build of the operator has the version `0.0.0-dev`. It is inside every valid range.
+
+The plugin sets `Ready` for the current generation of the registration. The `observedGeneration` of the condition is then equal to `metadata.generation`. The plugin serves no request of the registration until `Ready` is `True` for that generation. When the plugin starts, it writes its registration again and sets `Ready` before it serves a request. Thus a registration that you delete comes back when the plugin starts again.
 
 ## Fields
 

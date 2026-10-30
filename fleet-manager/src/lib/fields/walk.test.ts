@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pathFrom, walk } from "./walk";
+import { itemStep, pathFrom, walk } from "./walk";
 
 describe("walk", () => {
   it("names a list item by its name and any other item by its index", () => {
@@ -71,5 +71,24 @@ describe("pathFrom", () => {
         { index: 2 },
       ]),
     ).toBe("x.env[name=TZ].from[2]");
+  });
+});
+
+describe("itemStep", () => {
+  it.each([
+    [
+      "a plugin selection by its section and registration",
+      { section: "access", registration: "gateway-access", name: "x" },
+      { item: { section: "access", registration: "gateway-access" } },
+    ],
+    [
+      "an item with a string name by its name",
+      { name: "LOG" },
+      { item: { name: "LOG" } },
+    ],
+    ["any other item by its index", { value: 1 }, { index: 2 }],
+    ["a scalar by its index", "a", { index: 2 }],
+  ])("names %s", (_, item, step) => {
+    expect(itemStep(item, 2)).toEqual(step);
   });
 });

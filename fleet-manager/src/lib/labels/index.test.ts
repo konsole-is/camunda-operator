@@ -3,16 +3,23 @@ import { describe, expect, it } from "vitest";
 import {
   ACCESS_SECTION,
   BACKUP_SCHEDULE_LABEL,
+  BUILTIN_CONTROLLER,
   CLAIM_LABEL,
   CLUSTER_LABEL,
   COMPONENT_LABEL,
   ENVIRONMENT_LABEL,
+  MANAGEMENT_CLUSTER_ANNOTATION,
+  OPTIMIZE_COMPONENTS,
+  OPTIMIZE_UID_LABEL,
   REVISION_ANNOTATION,
   SECTION_LABEL,
+  isDNSLabel,
+  isDNSSubdomain,
   isLabelKey,
   isLabelValue,
   isManaged,
   labelSelectorString,
+  matchesSelector,
 } from ".";
 import { parseSelector } from "@/lib/k8s/selector";
 
@@ -84,11 +91,26 @@ it.each([
   ],
   [SECTION_LABEL, "api/plugins/v1alpha1/shared_types.go", "LabelSection"],
   [ACCESS_SECTION, "internal/pluginstartup/names.go", "SectionAccess"],
+  [BUILTIN_CONTROLLER, "internal/pluginstartup/names.go", "ControllerName"],
   [CLUSTER_LABEL, "pkg/labels/labels.go", "ClusterKey"],
   [COMPONENT_LABEL, "pkg/labels/labels.go", "ComponentKey"],
   [BACKUP_SCHEDULE_LABEL, "pkg/labels/labels.go", "BackupScheduleKey"],
+  [OPTIMIZE_UID_LABEL, "pkg/labels/labels.go", "OptimizeUIDKey"],
+  [
+    MANAGEMENT_CLUSTER_ANNOTATION,
+    "pkg/labels/labels.go",
+    "ManagementClusterKey",
+  ],
 ])("%s matches %s %s", (value, file, name) => {
   expect(value).toBe(goConstant(file, name));
+});
+
+it("OPTIMIZE_COMPONENTS match ComponentWebapp and ComponentImporter of pkg/components/camundaoptimize", () => {
+  const names = "pkg/components/camundaoptimize/names.go";
+  expect(OPTIMIZE_COMPONENTS).toEqual([
+    goConstant(names, "ComponentWebapp"),
+    goConstant(names, "ComponentImporter"),
+  ]);
 });
 
 describe("isManaged", () => {
@@ -159,4 +181,74 @@ describe("labelSelectorString", () => {
       }),
     ).toThrow(/Gt/);
   });
+});
+
+describe("matchesSelector", () => {
+  it.each([
+    [undefined, {}, true],
+    [{}, { a: "1" }, true],
+    [{ matchLabels: { a: "1" } }, { a: "1", b: "2" }, true],
+    [{ matchLabels: { a: "1" } }, { a: "2" }, false],
+    [
+      { matchExpressions: [{ key: "a", operator: "In", values: ["1", "2"] }] },
+      { a: "2" },
+      true,
+    ],
+    [
+      { matchExpressions: [{ key: "a", operator: "In", values: ["1"] }] },
+      {},
+      false,
+    ],
+    [
+      { matchExpressions: [{ key: "a", operator: "NotIn", values: ["1"] }] },
+      {},
+      true,
+    ],
+    [
+      { matchExpressions: [{ key: "a", operator: "NotIn", values: ["1"] }] },
+      { a: "1" },
+      false,
+    ],
+    [{ matchExpressions: [{ key: "a", operator: "Exists" }] }, {}, false],
+    [{ matchExpressions: [{ key: "a", operator: "Exists" }] }, { a: "" }, true],
+    [{ matchExpressions: [{ key: "a", operator: "DoesNotExist" }] }, {}, true],
+    [
+      { matchExpressions: [{ key: "a", operator: "DoesNotExist" }] },
+      { a: "1" },
+      false,
+    ],
+    [
+      { matchExpressions: [{ key: "a", operator: "Gt", values: ["1"] }] },
+      { a: "2" },
+      false,
+    ],
+  ])("selector %j on labels %j is %s", (selector, labels, expected) => {
+    expect(matchesSelector(selector, labels)).toBe(expected);
+  });
+
+  it("treats unset labels as no labels", () => {
+    expect(matchesSelector({ matchLabels: { a: "1" } }, undefined)).toBe(false);
+    expect(matchesSelector(undefined, undefined)).toBe(true);
+  });
+});
+
+describe("isDNSLabel", () => {
+  it.each(["a", "team-a", "a1", "x".repeat(63)])("accepts %j", (v) =>
+    expect(isDNSLabel(v)).toBe(true),
+  );
+  it.each(["", "  ", "..", ".", "a.b", "A", "-a", "a-", "a/b", "x".repeat(64)])(
+    "refuses %j",
+    (v) => expect(isDNSLabel(v)).toBe(false),
+  );
+});
+
+describe("isDNSSubdomain", () => {
+  it.each(["orders", "orders.v2", "a-b.c-d", "x".repeat(253)])(
+    "accepts %j",
+    (v) => expect(isDNSSubdomain(v)).toBe(true),
+  );
+  it.each(["", " ", "..", ".", "a..b", "Orders", "a/b", "x".repeat(254)])(
+    "refuses %j",
+    (v) => expect(isDNSSubdomain(v)).toBe(false),
+  );
 });

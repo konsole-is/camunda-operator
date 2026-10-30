@@ -38,6 +38,12 @@ describe("renderJourneyIndex", () => {
     expect(html).not.toContain("<x>");
   });
 
+  it("uses the title it is given", () => {
+    const html = renderJourneyIndex([], "Fleet manager UI pages");
+    expect(html).toContain("<title>Fleet manager UI pages</title>");
+    expect(html).toContain("<h1>Fleet manager UI pages</h1>");
+  });
+
   it("says so when no journey took a shot", () => {
     expect(renderJourneyIndex([])).toContain("No journey took a screenshot");
   });

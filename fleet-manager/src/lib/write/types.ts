@@ -33,10 +33,15 @@ export type RefKey = `${string}/${string}/${string}`;
  * an object. A write of that object fails with Stale when the object
  * changed since. force sends each apply of the change with the force
  * option of server-side apply. A change with directOnly goes to the API
- * in Git mode too. The preview of the direct writer applies an object of
- * previewManagers as the field manager that it maps to, and apply ignores
- * previewManagers. For a change without directOnly, the Git writer sets
- * previewManagers itself.
+ * in Git mode too.
+ *
+ * The preview of the direct writer applies an object of previewManagers as
+ * the field manager that it maps to, unless it sends the object as a merge
+ * patch. It sends an object of previewMergePatches as the JSON merge patch
+ * of a client-side apply. An object whose live copy is missing or has no
+ * last applied file that is a JSON object gets the server-side-apply dry
+ * run. apply ignores both. For a change without directOnly, the Git writer
+ * sets both.
  */
 export type Change = {
   intent: string;
@@ -46,6 +51,7 @@ export type Change = {
   force?: boolean;
   directOnly?: boolean;
   previewManagers?: Record<RefKey, string>;
+  previewMergePatches?: RefKey[];
 };
 
 /**
@@ -84,7 +90,8 @@ export type Preview = { objects: PreviewObject[]; errors: ApiError[] };
 /**
  * WriteResult is the result of a write. In Git mode, revisions maps each
  * pushed object to its revision hash, and paths maps it to its file in the
- * repository. A deleted object is in neither map.
+ * repository. deleted maps each deleted object to the file that the commit
+ * removed. A deleted object is not in revisions or paths.
  */
 export type WriteResult =
   | { ok: true; mode: "direct" }
@@ -94,6 +101,7 @@ export type WriteResult =
       commit: string;
       revisions: Record<RefKey, string>;
       paths: Record<RefKey, string>;
+      deleted: Record<RefKey, string>;
     }
   | { ok: false; errors: ApiError[] };
 

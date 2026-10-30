@@ -49,6 +49,9 @@ func TestComponentsGolden(t *testing.T) {
 	golden.AssertComponentYAML(
 		t, "testdata/cluster.yaml", comps.Cluster, golden.WithScheme(scheme), golden.Update(*updateGolden),
 	)
+	golden.AssertComponentYAML(
+		t, "testdata/attachments.yaml", comps.Attachments, golden.WithScheme(scheme), golden.Update(*updateGolden),
+	)
 }
 
 func TestEverySlotPathOfTheClusterHasASetter(t *testing.T) {

@@ -18,7 +18,11 @@ afterEach(async () => {
 
 const author = { name: "test", email: "test@example.com" };
 
-describe("serveBareRepository", () => {
+// These tests start a local Git server. On a busy machine they need more
+// than the default 5 s.
+const slow = { timeout: 30_000 };
+
+describe("serveBareRepository", slow, () => {
   it("an isomorphic-git clone and push reach the bare repository", async () => {
     repo = await serveBareRepository();
     dir = await mkdtemp(path.join(os.tmpdir(), "fleet-clone-"));

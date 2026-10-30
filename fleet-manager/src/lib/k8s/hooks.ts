@@ -65,7 +65,7 @@ export interface GitSyncRef extends Ref {
   kind: KindName;
 }
 
-/** GitSync is "waiting" until the live object carries the pushed revision. */
+/** GitSync is "waiting" until GitOps applied a pushed object or delete. */
 export type GitSync = "waiting" | "applied";
 
 /**
@@ -84,6 +84,22 @@ export function useGitSync(ref: GitSyncRef, revision: string): GitSync {
   return annotations?.[REVISION_ANNOTATION] === revision
     ? "applied"
     : "waiting";
+}
+
+/**
+ * useGitGone follows the object of a pushed delete and returns "applied"
+ * once the object is gone or the cluster deletes it (it has a
+ * deletionTimestamp). GitOps has then done its part. It returns "waiting"
+ * while the watch fails and until the watch got a snapshot on the current
+ * connection. It needs a QueryClientProvider above it, as useResource does.
+ */
+export function useGitGone(ref: GitSyncRef): GitSync {
+  const { item, error, fresh } = useWatchedObject(ref.kind, ref);
+  if (error !== undefined || !fresh) return "waiting";
+  const deleting = (
+    item as { metadata?: { deletionTimestamp?: string } } | undefined
+  )?.metadata?.deletionTimestamp;
+  return item === undefined || deleting !== undefined ? "applied" : "waiting";
 }
 
 function useWatchedObject<K extends KindName>(

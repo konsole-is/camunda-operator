@@ -1,5 +1,7 @@
 import { backupsStories } from "@/components/cluster/backups.stories";
+import { cardsStories } from "@/components/cluster/cards.stories";
 import { clusterStories } from "@/components/cluster/cluster.stories";
+import { detailStories } from "@/components/cluster/detail.stories";
 import { settingsStories } from "@/components/cluster/settings.stories";
 import { confirmStories } from "@/components/fleet/confirm.stories";
 import { createFlowStories } from "@/components/fleet/create-flow.stories";
@@ -9,11 +11,13 @@ import { editorStories } from "@/components/fleet/editors.stories";
 import { helpStories } from "@/components/fleet/help.stories";
 import { lockedFieldStories } from "@/components/fleet/locked-field.stories";
 import { observeStories } from "@/components/fleet/observe.stories";
+import { planeCreateStories } from "@/components/planes/create/create.stories";
 import { planesStories } from "@/components/planes/planes.stories";
 import { reviewStories } from "@/components/fleet/review.stories";
 import { sectionCardsStories } from "@/components/fleet/section-cards.stories";
 import { shellStories } from "@/components/fleet/shell.stories";
 import { statusStories } from "@/components/fleet/status.stories";
+import { settingsPageStories } from "@/components/setup/settings-page.stories";
 import { uiStories } from "@/components/ui/ui.stories";
 import type { Story } from "./registry";
 
@@ -27,13 +31,17 @@ export const stories: readonly Story[] = [
   ...helpStories,
   ...dataTableStories,
   ...planesStories,
+  ...planeCreateStories,
   ...editorStories,
   ...workloadEditorStories,
   ...sectionCardsStories,
   ...createFlowStories,
   ...observeStories,
   ...clusterStories,
+  ...cardsStories,
+  ...detailStories,
   ...backupsStories,
   ...settingsStories,
+  ...settingsPageStories,
   ...uiStories,
 ];

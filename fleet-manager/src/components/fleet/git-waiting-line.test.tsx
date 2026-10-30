@@ -39,6 +39,19 @@ describe("GitWaitingLine", () => {
     expect(container.innerHTML).toBe("");
   });
 
+  it("shows a delete line, whatever the live revision", () => {
+    render(
+      <GitWaitingLine
+        pushed={{ path: pushed.path, pushedAt: pushed.pushedAt, deleted: true }}
+        liveRevision="aaa"
+        now={now}
+      />,
+    );
+    expect(screen.getByRole("status").textContent).toBe(
+      "1 delete waiting for GitOps: clusters/team-a/camundaclusterclaims/orders.yaml, pushed 2m ago.",
+    );
+  });
+
   it("never names a GitOps tool", () => {
     render(<GitWaitingLine pushed={pushed} now={now} />);
     expect(screen.getByRole("status").textContent).not.toMatch(/argo|flux/i);

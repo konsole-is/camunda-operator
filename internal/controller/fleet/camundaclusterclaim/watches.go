@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,9 +35,12 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/observability"
+	components "github.com/konsole-is/camunda-operator/pkg/components/camundaclusterclaim"
 	"github.com/konsole-is/camunda-operator/pkg/components/claimrequests"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/backupschedule"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/pluginrequest"
 )
 
@@ -72,7 +76,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		r.componentClient = pluginrequest.NewApplyClient(camundacluster.NewApplyClient(uncached))
+		r.componentClient = applyClient(uncached)
 	}
 
 	indexers := map[string]func(*fleetv1alpha1.CamundaClusterClaim, fleetv1alpha1.PluginSelection) []string{
@@ -110,8 +114,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			refindex.Enqueue(cached, list, requestNamesField, refindex.ObjectNamespacedName),
 		).
 		Watches(&v1.CamundaCluster{}, &handler.EnqueueRequestForObject{}).
-		Owns(&v1.CamundaOptimize{}).
-		Owns(&v1.BackupSchedule{}).
+		Watches(&v1.CamundaOptimize{}, enqueueClaimOfAttachment(components.OptimizeName(""))).
+		Watches(&v1.BackupSchedule{}, enqueueClaimOfAttachment(components.BackupScheduleName(""))).
 		// A required section that the claim does not select decides NotAllowed.
 		Watches(&pluginsv1alpha1.PluginSection{}, all).
 		Watches(
@@ -125,6 +129,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Namespace{}, enqueueClaimsInNamespace(cached), builder.OnlyMetadata).
 		Named(controllerName).
 		Complete(r)
+}
+
+// applyClient wraps c so that an apply of each kind that the claim writes
+// sends only the fields that the claim and the outputs set.
+func applyClient(c client.Client) client.Client {
+	return pluginrequest.NewApplyClient(
+		camundacluster.NewApplyClient(camundaoptimize.NewApplyClient(backupschedule.NewApplyClient(c))),
+	)
 }
 
 // distinctNames returns the distinct names that name gives for the items of
@@ -145,6 +157,20 @@ func distinctNames(
 	slices.Sort(names)
 
 	return slices.Compact(names)
+}
+
+// enqueueClaimOfAttachment maps the event of an object whose name ends with
+// suffix to a request for the claim of the name without the suffix, whoever
+// controls the object.
+func enqueueClaimOfAttachment(suffix string) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {
+		claim, ok := strings.CutSuffix(o.GetName(), suffix)
+		if !ok || claim == "" {
+			return nil
+		}
+
+		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: o.GetNamespace(), Name: claim}}}
+	})
 }
 
 // enqueueAllClaims maps an event to a request for every claim.

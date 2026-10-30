@@ -3,6 +3,7 @@ import { listServerRefs } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
 import { readSecretValues } from "@/lib/secrets/values";
 import { reasonOf } from "@/lib/write/errors";
+import { gitCredentials } from "@/lib/write/git-auth";
 import { type Settings, appNamespace } from "./keys";
 import { prometheusAuthHeader, prometheusURL } from "./prometheus";
 import { getSettings } from "./store";
@@ -17,11 +18,12 @@ type Credentials =
   | { ok: false; result: TestResult };
 
 /**
- * testGit lists the branches of git.repository, with the username and
- * token of the Secret of git.credentialsSecretRef when it is set. It fails
- * when git.branch is set and the repository does not have it, and it
- * refuses to send credentials to an address that is not https://. The
- * message never holds a credential or a response body.
+ * testGit lists the branches of git.repository, with the credentials of
+ * the Secret of git.credentialsSecretRef when it is set: a username and
+ * token, or GitHub App keys. It fails when git.branch is set and the
+ * repository does not have it, and it refuses to send credentials to an
+ * address that is not https://. The message never holds a credential or a
+ * response body.
  */
 export async function testGit(): Promise<TestResult> {
   let settings: Settings;
@@ -32,26 +34,11 @@ export async function testGit(): Promise<TestResult> {
   }
   const url = settings["git.repository"];
   if (!url) return { ok: false, message: "No Git repository is set." };
-  const secret = settings["git.credentialsSecretRef"];
-  if (secret && URL.parse(url)?.protocol !== "https:") {
-    return {
-      ok: false,
-      message: `${url} must start with https:// to use the credentials of the Secret ${secret}.`,
-    };
-  }
-  const credentials = await readCredentials(secret);
-  if (!credentials.ok) return credentials.result;
-  const values = credentials.values;
-  if (values) {
-    for (const key of ["username", "token"]) {
-      if (!values[key]) {
-        return {
-          ok: false,
-          message: `The Secret ${secret} has no key ${key}.`,
-        };
-      }
-    }
-  }
+  const credentials = await gitCredentials(
+    url,
+    settings["git.credentialsSecretRef"],
+  );
+  if (!credentials.ok) return { ok: false, message: credentials.error.message };
   try {
     // The signal also closes a request that never ends. The transport keeps
     // the credentials on a redirect, also to http://, so it follows none.
@@ -68,8 +55,7 @@ export async function testGit(): Promise<TestResult> {
       url,
       prefix: "refs/heads/",
       protocolVersion: 1,
-      onAuth: () =>
-        values ? { username: values.username, password: values.token } : {},
+      onAuth: () => credentials.auth ?? {},
       // Without cancel, a refused token makes isomorphic-git ask again.
       onAuthFailure: () => ({ cancel: true }),
     });
@@ -83,6 +69,7 @@ export async function testGit(): Promise<TestResult> {
       ?.statusCode;
     const code = (error as { code?: string }).code;
     if (code === "UserCanceledError" || status === 401 || status === 403) {
+      credentials.forget();
       return { ok: false, message: `${url} refused the credentials.` };
     }
     return { ok: false, message: `Could not reach ${url}: ${reasonOf(error)}` };
