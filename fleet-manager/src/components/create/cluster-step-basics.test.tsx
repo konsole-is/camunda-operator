@@ -62,13 +62,15 @@ const namespaces = [namespace("team-a", "prod"), namespace("sandbox", "dev")];
 function Harness({
   environments,
   spy,
+  initial = { claim: { metadata: { name: "" }, spec: {} } },
 }: {
   environments: Environment[];
   spy: (path: DraftPath, value: unknown) => void;
+  initial?: ClusterDraft;
 }) {
   const flow = useCreateFlow<ClusterDraft>({
     steps: [{ id: "basics", label: "Basics" }],
-    initial: { claim: { metadata: { name: "" }, spec: {} } },
+    initial,
   });
   const picked = environments.find(
     (e) => e.metadata.name === flow.draft.environment,
@@ -200,6 +202,37 @@ describe("ClusterStepBasics", () => {
     expect(options).toEqual(["Pick a namespace", "team-a", "sandbox"]);
     expect(screen.getByRole("radio", { name: /^small/ })).toBeTruthy();
     expect(screen.getByRole("radio", { name: /^large/ })).toBeTruthy();
+  });
+
+  it("gives a saved new namespace the current labels of its environment", () => {
+    const spy = vi.fn();
+    const prod = environment("prod", {
+      namespaceCreation: { allowed: true, labels: { "cost-center": "4712" } },
+    });
+    render(
+      <Harness
+        environments={[prod]}
+        spy={spy}
+        initial={{
+          environment: "prod",
+          namespace: {
+            kind: "new",
+            name: "team-new",
+            labels: {
+              "cost-center": "4711",
+              [ENVIRONMENT_LABEL]: "prod",
+            },
+          },
+          claim: { metadata: { name: "" }, spec: {} },
+        }}
+      />,
+    );
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(["namespace"], {
+      kind: "new",
+      name: "team-new",
+      labels: { "cost-center": "4712", [ENVIRONMENT_LABEL]: "prod" },
+    });
   });
 
   it("sets the name and the preset of the claim", async () => {

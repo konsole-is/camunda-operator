@@ -1,7 +1,7 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
 import { NamespacePicker } from "@/components/fleet/namespace-picker";
@@ -9,7 +9,11 @@ import type { RenderedHost } from "@/lib/claims/hosts";
 import { environmentOf } from "@/lib/policy";
 import type { EnvironmentCount } from "@/lib/usage";
 import { ClaimNameField } from "./claim-name-field";
-import { type ClusterDraft, pickerEnvironment } from "./cluster-draft";
+import {
+  type ClusterDraft,
+  pickerEnvironment,
+  syncedNamespace,
+} from "./cluster-draft";
 import { EnvironmentCards } from "./environment-cards";
 import { PresetCards } from "./preset-cards";
 import type { DraftPath } from "./use-create-flow";
@@ -49,6 +53,13 @@ export function ClusterStepBasics({
   );
   const waiting = environments.length > 0 && !environment;
   const presetRef = draft.claim.spec.presetRef;
+
+  // NamespacePicker reports no change on mount, so a new namespace that was
+  // saved before the rules of its environment changed would keep old labels.
+  const synced = syncedNamespace(draft.namespace, environment);
+  useEffect(() => {
+    if (synced !== draft.namespace) set(["namespace"], synced);
+  });
 
   const pickEnvironment = (name: string) => {
     if (name === draft.environment) return;

@@ -5,6 +5,7 @@ import type {
   PickerEnvironment,
 } from "@/components/fleet/namespace-picker";
 import { claimNameErrors } from "@/lib/claims/names";
+import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { byCodeUnit } from "@/lib/policy";
 import { environmentReady } from "./environment-cards";
 
@@ -125,6 +126,38 @@ export function offeredPresets(
   return (environment.spec.presets?.camundaCluster ?? []).flatMap((name) =>
     presets.filter((p) => p.metadata.name === name).slice(0, 1),
   );
+}
+
+/**
+ * syncedNamespace returns choice with the labels that a new namespace gets
+ * under the current rules of environment: its fixed labels, the values of
+ * its required label keys from choice, and the environment label. It
+ * returns choice itself when nothing changes, and for an existing
+ * namespace.
+ */
+export function syncedNamespace(
+  choice: NamespaceChoice | undefined,
+  environment: Environment | undefined,
+): NamespaceChoice | undefined {
+  if (choice?.kind !== "new" || !environment) return choice;
+  const creation = environment.spec.namespaceCreation;
+  const fixed = creation?.labels ?? {};
+  const asked = (creation?.requiredLabelKeys ?? []).filter(
+    (key) => !Object.hasOwn(fixed, key) && Object.hasOwn(choice.labels, key),
+  );
+  const labels = {
+    ...fixed,
+    ...Object.fromEntries(asked.map((key) => [key, choice.labels[key]])),
+    [ENVIRONMENT_LABEL]: environment.metadata.name ?? "",
+  };
+  return JSON.stringify(sorted(labels)) ===
+    JSON.stringify(sorted(choice.labels))
+    ? choice
+    : { ...choice, labels };
+}
+
+function sorted(labels: Record<string, string>): [string, string][] {
+  return Object.entries(labels).sort(([a], [b]) => byCodeUnit(a, b));
 }
 
 /** pickerEnvironment returns the part of environment that NamespacePicker reads. */

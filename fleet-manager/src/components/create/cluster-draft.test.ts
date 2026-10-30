@@ -7,6 +7,7 @@ import {
   basicsErrors,
   offeredPresets,
   pickerEnvironment,
+  syncedNamespace,
 } from "./cluster-draft";
 
 function environment(
@@ -303,5 +304,59 @@ describe("pickerEnvironment", () => {
       displayName: "Production",
       namespaceCreation: creation,
     });
+  });
+});
+
+describe("syncedNamespace", () => {
+  const creating = environment("prod", {
+    namespaceCreation: {
+      allowed: true,
+      labels: { "cost-center": "4712" },
+      requiredLabelKeys: ["team"],
+    },
+  });
+
+  it("takes the current fixed labels and keeps the required values", () => {
+    expect(
+      syncedNamespace(
+        {
+          kind: "new",
+          name: "team-new",
+          labels: {
+            "cost-center": "4711",
+            old: "x",
+            team: "search",
+            "fleet.camunda.io/environment": "prod",
+          },
+        },
+        creating,
+      ),
+    ).toEqual({
+      kind: "new",
+      name: "team-new",
+      labels: {
+        "cost-center": "4712",
+        team: "search",
+        "fleet.camunda.io/environment": "prod",
+      },
+    });
+  });
+
+  it("returns the same choice when the labels follow the rules", () => {
+    const choice = {
+      kind: "new" as const,
+      name: "team-new",
+      labels: {
+        team: "search",
+        "cost-center": "4712",
+        "fleet.camunda.io/environment": "prod",
+      },
+    };
+    expect(syncedNamespace(choice, creating)).toBe(choice);
+  });
+
+  it("returns an existing namespace as it is", () => {
+    const choice = { kind: "existing" as const, name: "team-a" };
+    expect(syncedNamespace(choice, creating)).toBe(choice);
   });
 });
