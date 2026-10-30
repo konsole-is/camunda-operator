@@ -396,6 +396,16 @@ describe("locks above a field", () => {
     ).toEqual({ refused: admin });
   });
 
+  it("refuses an index step that replaces an item with a locked field by another item", () => {
+    const s = open(claim(), hostLocked);
+    expect(
+      setValue(s, [f("spec"), f("plugins"), { index: 0 }], {
+        section: "backup",
+        registration: "s3-backup",
+      }),
+    ).toEqual({ refused: admin });
+  });
+
   it("refuses a change below a pending parent that changes a locked field", () => {
     const locks: LockProvider = (p) =>
       p === "spec.cluster.zeebe.replicas" ? admin : undefined;

@@ -233,16 +233,22 @@ function lockAt(
   steps: readonly Step[],
   after: unknown,
 ): FieldLock | undefined {
+  const keyedIn = (object: unknown) =>
+    steps.map((step, i) =>
+      "index" in step
+        ? itemStep(valueAt(object, steps.slice(0, i + 1)), step.index)
+        : step,
+    );
+  const before = valueAt(claim, steps);
   const target = after === undefined ? claim : withValue(claim, steps, after);
-  const keyed = steps.map((step, i) =>
-    "index" in step
-      ? itemStep(valueAt(target, steps.slice(0, i + 1)), step.index)
-      : step,
-  );
   return (
     lockOf(locks, steps) ??
-    lockOf(locks, keyed) ??
-    lockedChange(locks, keyed, valueAt(claim, steps), after)
+    [keyedIn(claim), keyedIn(target)]
+      .map(
+        (keyed) =>
+          lockOf(locks, keyed) ?? lockedChange(locks, keyed, before, after),
+      )
+      .find((lock) => lock !== undefined)
   );
 }
 
