@@ -109,6 +109,31 @@ Some writes do not need `serve`. The identity extension writes the status of a g
 
 A user with the verb `*` on `pluginregistrations`, for example through the ClusterRole `cluster-admin`, has `serve` on every registration.
 
+## Deletion
+
+Each grant has an owner reference to its request. With the deletion policy `Delete`, Kubernetes deletes the grants when the request goes away. With `Orphan`, a grant that `status.resources` of the request lists with `onOrphan: Kept` stays, without the owner reference. See [Deletion](pluginrequest.md#deletion).
+
+`spec.cluster.name` and the label `plugins.camunda.io/cluster` are `spec.target.name` of the request. A grant always gives its permission to the cluster that its request serves:
+
+```yaml
+apiVersion: plugins.camunda.io/v1alpha1
+kind: Grant
+metadata:
+  name: orders-backup-storage-bucket-access
+  namespace: my-cluster-ns
+  labels:
+    plugins.camunda.io/cluster: orders
+  ownerReferences:
+    - apiVersion: plugins.camunda.io/v1alpha1
+      kind: PluginRequest
+      name: orders-backup-storage
+      uid: 4b8d5f3e-1c2a-4e7f-9a0b-6d3c2e1f0a9b
+spec:
+  cluster:
+    name: orders
+  # ... the rest of your grant
+```
+
 ## Status
 
 | Type | Reason | Meaning | What to do |
