@@ -254,7 +254,21 @@ describe("normalizeIssuer", () => {
     ["https://idp.example.com/%7Euser/", "https://idp.example.com/~user"],
     ["https://idp.example.com/a%3Bb", "https://idp.example.com/a%3Bb"],
     ["not a url/", "not%20a%20url"],
-  ])("escapes the path of %s as Go does: %s", (input, want) => {
+    ["IDP:8443/x/", "idp:8443/x/"],
+    ["HTTPS:host/x/", "https:host/x/"],
+    ["https:/Host/x/", "https:/Host/x"],
+    ["https://host:abc/X/", "https://host:abc/X"],
+    ["HTTPS://User:PW@Host/x/", "https://User:PW@host/x"],
+    ["https://h/x/#frag ment", "https://h/x#frag%20ment"],
+    ['https://h/x#a"b', "https://h/x#a%22b"],
+    ["https://h/x#é", "https://h/x#%C3%A9"],
+    ["https://H/x/?q=a b", "https://h/x?q=a b"],
+    ["https://[::1]:8443/X/", "https://[::1]:8443/X"],
+    ["https://h/(x)/", "https://h/%28x%29"],
+    ["https://h/a%2f/", "https://h/a"],
+    ["https://h/!x/", "https://h/%21x"],
+    ["", ""],
+  ])("writes %s as Go does: %s", (input, want) => {
     expect(normalizeIssuer(input)).toBe(want);
   });
 
