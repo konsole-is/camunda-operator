@@ -83,7 +83,7 @@ The operator writes these fields with the field manager `camunda-operator-builti
 - `Default`: a new claim selects the option. A section has at most one `Default` option.
 - `Optional`: the fleet manager offers the option, and a new claim does not select it.
 
-`deletionPolicies` lists the deletion policies that a claim can ask for. A claim with the policy `Orphan` that selects a registration without `Orphan` deletes nothing when you delete it. See [Deletion](pluginrequest.md#deletion).
+`deletionPolicies` lists the deletion policies that a claim can ask for. A claim with the policy `Orphan` that selects a registration without `Orphan` is refused with `NotAllowed`. When you delete such a claim, it deletes nothing. See [Deletion](pluginrequest.md#deletion).
 
 ## Inputs and outputs
 

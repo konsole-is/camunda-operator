@@ -66,9 +66,14 @@ The claim names each request `<claim>-<section>`, for example `orders-backup-sto
 kubectl get pluginrequest orders-backup-storage -n my-cluster-ns
 ```
 
-A name longer than 63 characters is cut to 54 characters. It then ends in `-` and 8 hexadecimal characters of a hash of the full name.
+A name longer than 63 characters is cut to at most 54 characters. It then ends in `-` and 8 hexadecimal characters of a hash of the full name.
 
-When two selections of a claim give the same request name, the claim is refused. Its `Ready` condition is `False` with reason `NotAllowed`, and the message is `the selections <section>/<registration> and <section>/<registration> get the same request name "<name>"`. The selections of a claim do not change after creation. Delete the claim, and create it again with other options.
+When two selections of a claim give the same request name, the claim is refused. Its `Ready` condition is `False` with reason `NotAllowed`, and the message is one of these:
+
+- Two options in a section that takes one: `section "<section>" takes one option, and the claim selects "<a>" and "<b>"`.
+- Two selections in different sections: `the selections <section>/<registration> and <section>/<registration> get the same request name "<name>"`.
+
+The selections of a claim do not change after creation. Delete the claim, and create it again with other options.
 
 ## Target
 

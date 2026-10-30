@@ -163,7 +163,7 @@ The fields that a claim writes have a field manager that starts with `CamundaClu
 
 A plugin is a Helm chart that installs a plugin controller and one or more [PluginRegistrations](crds/pluginregistration.md). Each registration is an option of one or more [PluginSections](crds/pluginsection.md), for example "New S3 bucket" in the section `backup-storage`. The operator brings the core sections and six [built-in registrations](crds/pluginregistration.md#built-in-registrations), and it serves the built-in registrations itself.
 
-A claim selects an option in each section, or more than one in a section with `selection: Many`. For each option that it selects, the claim writes one [PluginRequest](crds/pluginrequest.md). The plugin controller of the registration answers the request with outputs in `status.outputs`. The claim fills fields of the `CamundaCluster` from these outputs. It also gives the outputs of one section to the requests of other sections as inputs.
+A claim selects at most one option in a section, or more than one in a section with `selection: Many`. For each option that it selects, the claim writes one [PluginRequest](crds/pluginrequest.md). The plugin controller of the registration answers the request with outputs in `status.outputs`. The claim fills fields of the `CamundaCluster` from these outputs, or of the `CamundaManagementCluster` for a management plane claim. It also gives the outputs of one section to the requests of other sections as inputs.
 
 ```mermaid
 graph LR
