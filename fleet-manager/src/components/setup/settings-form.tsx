@@ -65,7 +65,6 @@ export function SettingsForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<ToastResult>();
   const [stale, setStale] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [sent, setSent] = useState<{ values: Settings; gitOn: boolean }>();
 
   if (version !== resourceVersion) {
@@ -107,29 +106,32 @@ export function SettingsForm({
     setValues((v) => ({ ...v, [key]: value }));
 
   async function submit() {
-    setSaving(true);
+    // A save that succeeded stays pending until the refresh brings the new
+    // resourceVersion, so a second save cannot send the old one.
     setSent({ values, gitOn });
+    let result: WriteResult;
     try {
-      const result = await save(patch, resourceVersion);
-      setToast(toastResultOf(result, "Saved the settings."));
-      if (result.ok) {
-        setFieldErrors({});
-        setStale(false);
-        router.refresh();
-        return;
-      }
+      result = await save(patch, resourceVersion);
+    } catch (error) {
       setSent(undefined);
-      setFieldErrors(
-        Object.fromEntries(
-          result.errors
-            .filter((e) => e.code === "Invalid" && e.path)
-            .map((e) => [e.path!, e.message]),
-        ),
-      );
-      setStale(result.errors.some((e) => e.code === "Stale"));
-    } finally {
-      setSaving(false);
+      throw error;
     }
+    setToast(toastResultOf(result, "Saved the settings."));
+    if (result.ok) {
+      setFieldErrors({});
+      setStale(false);
+      router.refresh();
+      return;
+    }
+    setSent(undefined);
+    setFieldErrors(
+      Object.fromEntries(
+        result.errors
+          .filter((e) => e.code === "Invalid" && e.path)
+          .map((e) => [e.path!, e.message]),
+      ),
+    );
+    setStale(result.errors.some((e) => e.code === "Stale"));
   }
 
   const names = Array.isArray(secretNames) ? secretNames : undefined;
@@ -216,6 +218,7 @@ export function SettingsForm({
             />
             <TextField {...field("secretStore.name", "SecretStore name")} />
             <TestButton
+              key={resourceVersion}
               label="Test the connection"
               dirty={dirty}
               run={testGit}
@@ -240,13 +243,18 @@ export function SettingsForm({
           names={names}
           namespace={namespace}
         />
-        <TestButton label="Test the query" dirty={dirty} run={testPrometheus} />
+        <TestButton
+          key={resourceVersion}
+          label="Test the query"
+          dirty={dirty}
+          run={testPrometheus}
+        />
       </section>
 
       <div className="flex flex-wrap items-start gap-3">
         <Button
           type="submit"
-          disabled={!dirty || noRepository || badPath || saving}
+          disabled={!dirty || noRepository || badPath || sent !== undefined}
         >
           Save
         </Button>

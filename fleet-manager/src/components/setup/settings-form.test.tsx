@@ -270,6 +270,53 @@ describe("SettingsForm", () => {
     expect(screen.queryByText(/not found/)).toBeNull();
   });
 
+  it("cannot save again until the refresh brings the new version", async () => {
+    const p = props();
+    const { rerender } = render(<SettingsForm {...p} />);
+
+    type("Kubernetes cluster name", "prod-us");
+    save();
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    type("Branch", "release");
+    expect(saveButton().disabled).toBe(true);
+
+    rerender(
+      <SettingsForm
+        {...p}
+        settings={{ ...full, kubernetesClusterName: "prod-us" }}
+        resourceVersion="8"
+      />,
+    );
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("a refused save can be sent again", async () => {
+    const p = props({
+      save: vi.fn(async (): Promise<WriteResult> => ({
+        ok: false,
+        errors: [{ code: "Unavailable", message: "timeout" }],
+      })),
+    });
+    render(<SettingsForm {...p} />);
+
+    type("Kubernetes cluster name", "prod-us");
+    save();
+
+    await screen.findByRole("alert");
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("a test result goes away when the saved settings change", async () => {
+    const p = props();
+    const { rerender } = render(<SettingsForm {...p} />);
+    fireEvent.click(screen.getByRole("button", { name: "Test the query" }));
+    await screen.findByRole("status");
+
+    rerender(<SettingsForm {...p} resourceVersion="8" />);
+
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("cannot save without a change", () => {
     render(<SettingsForm {...props()} />);
     expect(saveButton().disabled).toBe(true);
