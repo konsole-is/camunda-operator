@@ -8,6 +8,7 @@ import {
   COMPONENT_LABEL,
   ENVIRONMENT_LABEL,
   OPTIMIZE_COMPONENTS,
+  OPTIMIZE_UID_LABEL,
   REVISION_ANNOTATION,
   SECTION_LABEL,
   isLabelKey,
@@ -88,6 +89,7 @@ it.each([
   [CLUSTER_LABEL, "pkg/labels/labels.go", "ClusterKey"],
   [COMPONENT_LABEL, "pkg/labels/labels.go", "ComponentKey"],
   [BACKUP_SCHEDULE_LABEL, "pkg/labels/labels.go", "BackupScheduleKey"],
+  [OPTIMIZE_UID_LABEL, "pkg/labels/labels.go", "OptimizeUIDKey"],
 ])("%s matches %s %s", (value, file, name) => {
   expect(value).toBe(goConstant(file, name));
 });

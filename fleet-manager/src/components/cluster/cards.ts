@@ -6,7 +6,11 @@ import {
   conditionsAt,
 } from "@/lib/conditions";
 import type { Resource } from "@/lib/k8s/kinds";
-import { COMPONENT_LABEL, OPTIMIZE_COMPONENTS } from "@/lib/labels";
+import {
+  COMPONENT_LABEL,
+  OPTIMIZE_COMPONENTS,
+  OPTIMIZE_UID_LABEL,
+} from "@/lib/labels";
 import type {
   PartitionHealth,
   PodUsage,
@@ -102,7 +106,11 @@ export function componentCards(input: CardInput): ComponentCardModel[] {
   if (!input.optimize) {
     cards.push(notUsed("optimize", OPTIMIZE_LABEL));
   } else {
-    const pods = podsWhere(OPTIMIZE_COMPONENTS);
+    // A deleted Optimize of the cluster can leave pods that still stop.
+    const uid = input.optimize.metadata?.uid;
+    const pods = podsWhere(OPTIMIZE_COMPONENTS).filter(
+      (p) => p.metadata?.labels?.[OPTIMIZE_UID_LABEL] === uid,
+    );
     cards.push({
       id: "optimize",
       label: OPTIMIZE_LABEL,
@@ -128,8 +136,9 @@ export function podsReady(pods: readonly Resource<"Pod">[]): CardNumber {
 
 /**
  * highestUse gives the highest CPU or memory use of one of pods against its
- * limit, such as "82 % memory". It counts only the usage of pods that have
- * a limit, and says "No limit" when none has one.
+ * limit, such as "82 % memory". It says "No limit" when usage has a sample of
+ * some of pods and none of those samples has a limit. When usage is a list
+ * that has no sample of any of pods, it says "Not available".
  */
 export function highestUse(
   usage: PodUsage[] | Unavailable | undefined,
@@ -139,8 +148,10 @@ export function highestUse(
   if (usage === undefined) return { label, value: "Loading" };
   if (usage === "unavailable") return { label, value: "Not available" };
 
+  const sampled = usage.filter((u) => pods.includes(u.pod));
+  if (sampled.length === 0) return { label, value: "Not available" };
   let highest: { share: number; resource: "cpu" | "memory" } | undefined;
-  for (const u of usage.filter((u) => pods.includes(u.pod))) {
+  for (const u of sampled) {
     for (const [resource, used, limit] of [
       ["cpu", u.cpu.usedCores, u.cpu.limitCores],
       ["memory", u.memory.usedBytes, u.memory.limitBytes],

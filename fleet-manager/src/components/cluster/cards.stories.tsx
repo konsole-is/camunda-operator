@@ -1,7 +1,7 @@
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Story } from "@/gallery/registry";
 import type { Resource } from "@/lib/k8s/kinds";
-import { COMPONENT_LABEL } from "@/lib/labels";
+import { COMPONENT_LABEL, OPTIMIZE_UID_LABEL } from "@/lib/labels";
 import type { PodUsage } from "@/lib/observe/types";
 import { componentCards } from "./cards";
 import { ComponentCards } from "./component-card";
@@ -12,7 +12,15 @@ const now = "2026-10-18T12:00:00Z";
 function pod(name: string, component: string, isReady = true): Resource<"Pod"> {
   return {
     kind: "Pod",
-    metadata: { name, labels: { [COMPONENT_LABEL]: component } },
+    metadata: {
+      name,
+      labels: {
+        [COMPONENT_LABEL]: component,
+        ...(component.startsWith("optimize-") && {
+          [OPTIMIZE_UID_LABEL]: "uid-orders-optimize",
+        }),
+      },
+    },
     status: isReady
       ? { phase: "Running", conditions: [{ type: "Ready", status: "True" }] }
       : {
@@ -64,7 +72,11 @@ const allPods = [
 
 const optimize = {
   kind: "CamundaOptimize",
-  metadata: { name: "orders-optimize", namespace: "team-a" },
+  metadata: {
+    name: "orders-optimize",
+    namespace: "team-a",
+    uid: "uid-orders-optimize",
+  },
   spec: { clusterRef: { name: "orders" } },
   status: { conditions: [healthy("Ready")] },
 } as unknown as Resource<"CamundaOptimize">;

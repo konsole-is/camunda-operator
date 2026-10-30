@@ -7,13 +7,14 @@ import {
   CAMUNDA_OPTIMIZE_PLACEMENT,
   CLAIM_PLACEMENT,
   conditionsAt,
+  placementOf,
 } from "@/lib/conditions";
 
 /**
  * OverviewConditions lists the conditions that belong to no component: those
  * of the cluster and of its Optimize that the maps place at resource, and
- * the claim group. A group shows only when it has rows. now is the time that
- * the ages count to.
+ * the claim group, which also holds the claim conditions at resource. A group
+ * shows only when it has rows. now is the time that the ages count to.
  */
 export function OverviewConditions({
   cluster,
@@ -37,7 +38,9 @@ export function OverviewConditions({
     },
     {
       label: "Claim",
-      conditions: conditionsAt(CLAIM_PLACEMENT, claim, "claim"),
+      conditions: (claim ?? []).filter((c) =>
+        ["claim", "resource"].includes(placementOf(CLAIM_PLACEMENT, c.type)),
+      ),
     },
   ].filter((g) => g.conditions.length > 0);
   return (

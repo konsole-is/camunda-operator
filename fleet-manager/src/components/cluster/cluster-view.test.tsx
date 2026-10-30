@@ -8,6 +8,7 @@ import {
   BACKUP_SCHEDULE_LABEL,
   COMPONENT_LABEL,
   ENVIRONMENT_LABEL,
+  OPTIMIZE_UID_LABEL,
   REVISION_ANNOTATION,
 } from "@/lib/labels";
 import { type ClusterPageData, ClusterView } from "./cluster-view";
@@ -794,7 +795,7 @@ describe("Backups tab", () => {
           },
         },
       );
-      window.history.replaceState(null, "", "?tab=overview");
+      window.history.replaceState(null, "", "?tab=endpoints");
       const { rerender } = render(view({ initial: page }));
       act(() => {
         vi.advanceTimersByTime(60_000);
@@ -870,13 +871,17 @@ function withConditions(
   return c;
 }
 
-function podOf(name: string, component: string): Resource<"Pod"> {
+function podOf(
+  name: string,
+  component: string,
+  labels: Record<string, string> = {},
+): Resource<"Pod"> {
   return {
     kind: "Pod",
     metadata: {
       name,
       namespace: "team-a",
-      labels: { [COMPONENT_LABEL]: component },
+      labels: { [COMPONENT_LABEL]: component, ...labels },
     },
     status: {
       phase: "Running",
@@ -971,16 +976,17 @@ describe("Overview components and conditions", () => {
       "orders-optimize",
       { clusterRef: { name: "orders" } },
       { conditions: [condition("Ready", "True", "Healthy")] },
-      { creationTimestamp: now },
+      { creationTimestamp: now, uid: "uid-optimize" },
     );
+    const ofOptimize = { [OPTIMIZE_UID_LABEL]: "uid-optimize" };
     render(
       view({
         initial: data({
           optimizes: [optimize],
           pods: [
             brokerPod(0),
-            podOf("orders-optimize-web", "optimize-webapp"),
-            podOf("orders-optimize-imp", "optimize-importer"),
+            podOf("orders-optimize-web", "optimize-webapp", ofOptimize),
+            podOf("orders-optimize-imp", "optimize-importer", ofOptimize),
           ],
         }),
       }),
@@ -995,6 +1001,32 @@ describe("Overview components and conditions", () => {
     expect(
       within(card).getByRole("img", { name: "Optimize: Ready" }),
     ).toBeTruthy();
+  });
+
+  it("counts the ages of the conditions on with the clock on the Overview", () => {
+    vi.useFakeTimers({ now: Date.parse(now) });
+    try {
+      render(
+        view({
+          initial: data({
+            cluster: withConditions(
+              condition("AdminSecretReady", "False", "MissingSecret"),
+            ),
+          }),
+        }),
+      );
+      const row = () =>
+        within(screen.getByRole("region", { name: "Conditions" }))
+          .getByRole("rowheader", { name: "AdminSecretReady" })
+          .closest("tr")!;
+      expect(row().textContent).toContain("0s");
+      act(() => {
+        vi.advanceTimersByTime(65_000);
+      });
+      expect(row().textContent).toContain("1m");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the claim conditions show in the Claim group", () => {

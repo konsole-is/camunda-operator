@@ -28,6 +28,12 @@ export const CLUSTER_LABEL = "camunda.io/cluster";
 export const COMPONENT_LABEL = "camunda.io/component";
 
 /**
+ * OPTIMIZE_UID_LABEL on a pod of a CamundaOptimize holds the UID of that
+ * CamundaOptimize. It is OptimizeUIDKey of pkg/labels.
+ */
+export const OPTIMIZE_UID_LABEL = "camunda.io/optimize-uid";
+
+/**
  * OPTIMIZE_COMPONENTS are the COMPONENT_LABEL values of the pods of a
  * CamundaOptimize. They are ComponentWebapp and ComponentImporter of
  * pkg/components/camundaoptimize.

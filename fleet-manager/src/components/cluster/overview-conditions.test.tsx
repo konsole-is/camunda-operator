@@ -76,4 +76,18 @@ describe("OverviewConditions", () => {
     );
     expect(headers()).toEqual(["AdminSecretReady"]);
   });
+
+  it("shows a claim condition type that the app does not know in the Claim group", () => {
+    render(
+      <OverviewConditions
+        cluster={[]}
+        claim={[
+          row("Ready", "True", "Healthy"),
+          row("FutureReady", "False", "Blocked"),
+        ]}
+        now={now}
+      />,
+    );
+    expect(headers()).toEqual(["Claim", "FutureReady"]);
+  });
 });

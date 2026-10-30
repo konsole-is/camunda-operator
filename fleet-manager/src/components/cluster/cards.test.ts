@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Resource } from "@/lib/k8s/kinds";
-import { COMPONENT_LABEL } from "@/lib/labels";
+import { COMPONENT_LABEL, OPTIMIZE_UID_LABEL } from "@/lib/labels";
 import type { PodUsage } from "@/lib/observe/types";
 import { componentCards, highestUse, partitionsLed } from "./cards";
 
@@ -9,23 +9,31 @@ function pod(
   name: string,
   component: string,
   status: Resource<"Pod">["status"],
+  labels: Record<string, string> = {},
 ): Resource<"Pod"> {
   return {
     kind: "Pod",
     metadata: {
       name,
       namespace: "team-a",
-      labels: { [COMPONENT_LABEL]: component },
+      labels: { [COMPONENT_LABEL]: component, ...labels },
     },
     status,
   } as Resource<"Pod">;
 }
 
-const readyPod = (name: string, component: string) =>
-  pod(name, component, {
-    phase: "Running",
-    conditions: [{ type: "Ready", status: "True" }],
-  });
+const readyPod = (
+  name: string,
+  component: string,
+  labels: Record<string, string> = {},
+) =>
+  pod(
+    name,
+    component,
+    { phase: "Running", conditions: [{ type: "Ready", status: "True" }] },
+    labels,
+  );
+const ofOptimize = { [OPTIMIZE_UID_LABEL]: "uid-optimize" };
 const crashLooping = {
   phase: "Running",
   containerStatuses: [
@@ -58,7 +66,11 @@ const optimizeWith = (
 ) =>
   ({
     kind: "CamundaOptimize",
-    metadata: { name: "orders-optimize", namespace: "team-a" },
+    metadata: {
+      name: "orders-optimize",
+      namespace: "team-a",
+      uid: "uid-optimize",
+    },
     spec: { clusterRef: { name: "orders" } },
     status: { conditions },
   }) as unknown as Resource<"CamundaOptimize">;
@@ -186,8 +198,8 @@ describe("componentCards", () => {
         { type: "Ready", status: "True", reason: "Healthy" },
       ]),
       pods: [
-        readyPod("o-web", "optimize-webapp"),
-        pod("o-imp", "optimize-importer", pending),
+        readyPod("o-web", "optimize-webapp", ofOptimize),
+        pod("o-imp", "optimize-importer", pending, ofOptimize),
         readyPod("orders-zeebe-0", "zeebe"),
       ],
       usage: "unavailable",
@@ -201,6 +213,21 @@ describe("componentCards", () => {
       { label: "Pods ready", value: "1/2" },
       { label: "Highest use", value: "Not available" },
     ]);
+  });
+
+  it("the Optimize card leaves out the pods of a deleted Optimize of the cluster", () => {
+    const card = componentCards({
+      spec: spec({}),
+      optimize: optimizeWith([]),
+      pods: [
+        readyPod("o-web", "optimize-webapp", ofOptimize),
+        pod("old-imp", "optimize-importer", pending, {
+          [OPTIMIZE_UID_LABEL]: "uid-deleted",
+        }),
+      ],
+    }).find((c) => c.id === "optimize")!;
+    expect(card.pods).toEqual(["o-web"]);
+    expect(card.numbers[0]).toEqual({ label: "Pods ready", value: "1/1" });
   });
 
   it("a card counts only the pods of its own process", () => {
@@ -242,7 +269,13 @@ describe("highestUse", () => {
     [
       "usage of a pod that is not on the card only",
       [usage("other", { cpu: [1, 1], memory: [1, 1] })],
-      "No limit",
+      "Not available",
+    ],
+    ["no usage of any pod", [], "Not available"],
+    [
+      "usage of one pod of the card, the other without a sample yet",
+      [usage("p-1", { cpu: [0.3, 1], memory: [1, 4] })],
+      "30 % cpu",
     ],
     [
       "CPU higher than memory",
