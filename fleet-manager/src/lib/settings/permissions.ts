@@ -29,7 +29,7 @@ const DISCOVERY_GROUPS = ["authorization.k8s.io", "authentication.k8s.io"];
 
 /**
  * appPermissions returns the resource rules that the app has in
- * FLEET_NAMESPACE, sorted by API group, then by resource. It leaves out the
+ * FLEET_NAMESPACE, once each, sorted by API group, then by resource. It leaves out the
  * rules that every user has to review itself (the selfsubject resources) and
  * the non-resource rules. It rejects when the API server refuses the review.
  */
@@ -52,6 +52,13 @@ export async function appPermissions(): Promise<AppPermissions> {
       verbs: rule.verbs ?? [],
     }))
     .filter((rule) => !isDiscovery(rule))
+    // Two roles can grant the same rule.
+    .filter(
+      (rule, index, all) =>
+        all.findIndex(
+          (other) => JSON.stringify(other) === JSON.stringify(rule),
+        ) === index,
+    )
     .sort(
       (a, b) =>
         a.apiGroups.join(",").localeCompare(b.apiGroups.join(",")) ||

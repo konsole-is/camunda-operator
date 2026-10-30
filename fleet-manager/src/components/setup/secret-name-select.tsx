@@ -18,12 +18,16 @@ export function SecretNameSelect({
   names,
   namespace,
   onChange,
+  describedBy,
+  invalid = false,
 }: {
   label: string;
   value: string;
   names?: string[];
   namespace: string;
   onChange: (name: string) => void;
+  describedBy?: string;
+  invalid?: boolean;
 }) {
   const id = useId();
   const missing = names !== undefined && value !== "" && !names.includes(value);
@@ -36,8 +40,11 @@ export function SecretNameSelect({
       <NativeSelect
         id={id}
         value={value}
-        aria-invalid={missing || undefined}
-        aria-describedby={missing ? `${id}-missing` : undefined}
+        aria-invalid={missing || invalid || undefined}
+        aria-describedby={
+          [describedBy, missing && `${id}-missing`].filter(Boolean).join(" ") ||
+          undefined
+        }
         onChange={(event) => onChange(event.target.value)}
       >
         <NativeSelectOption value="">None</NativeSelectOption>

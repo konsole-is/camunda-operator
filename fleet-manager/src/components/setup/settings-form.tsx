@@ -8,6 +8,7 @@ import {
   toastResultOf,
 } from "@/components/fleet/toast";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
@@ -60,6 +61,7 @@ export function SettingsForm({
 }: SettingsFormProps) {
   const router = useRouter();
   const [version, setVersion] = useState(resourceVersion);
+  const [shown, setShown] = useState(settings);
   const [values, setValues] = useState(settings);
   const [gitOn, setGitOn] = useState(settings["git.repository"] !== "");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -67,9 +69,18 @@ export function SettingsForm({
   const [stale, setStale] = useState(false);
   const [sent, setSent] = useState<{ values: Settings; gitOn: boolean }>();
 
+  // A refresh that brings no new version still ends a pending save.
+  if (shown !== settings && version === resourceVersion) {
+    setShown(settings);
+    setSent(undefined);
+  }
   if (version !== resourceVersion) {
+    setShown(settings);
+    const gitModeEdited = sent !== undefined && gitOn !== sent.gitOn;
+    // Git mode turned on again keeps the repository that its field shows.
     const editedSinceSave = (key: SettingKey) =>
-      sent !== undefined && values[key] !== sent.values[key];
+      (sent !== undefined && values[key] !== sent.values[key]) ||
+      (key === "git.repository" && gitModeEdited && gitOn);
     setVersion(resourceVersion);
     setValues(
       Object.fromEntries(
@@ -79,11 +90,7 @@ export function SettingsForm({
         ]),
       ) as Settings,
     );
-    setGitOn(
-      sent !== undefined && gitOn !== sent.gitOn
-        ? gitOn
-        : settings["git.repository"] !== "",
-    );
+    setGitOn(gitModeEdited ? gitOn : settings["git.repository"] !== "");
     setSent(undefined);
     setFieldErrors({});
     setStale(false);
@@ -172,13 +179,12 @@ export function SettingsForm({
       <section className="space-y-3">
         <h2 className={HEADING}>Git mode</h2>
         <div className="flex items-start gap-2">
-          <input
-            type="checkbox"
+          <Checkbox
             id="git-mode"
             aria-describedby="git-mode-help"
             checked={gitOn}
-            onChange={(event) => setGitOn(event.target.checked)}
-            className="mt-0.5 size-4 shrink-0 accent-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+            onCheckedChange={(on) => setGitOn(on === true)}
+            className="mt-0.5"
           />
           <div className="space-y-0.5">
             <label htmlFor="git-mode" className="text-sm font-medium text-text">
@@ -369,6 +375,7 @@ function SelectField(props: FieldProps & { options: [string, string][] }) {
 function SecretField(
   props: FieldProps & { names?: string[]; namespace: string },
 ) {
+  const id = useId();
   return (
     <div className="space-y-1">
       <SecretNameSelect
@@ -377,11 +384,17 @@ function SecretField(
         names={props.names}
         namespace={props.namespace}
         onChange={props.onChange}
+        describedBy={describedBy(id, props.error)}
+        invalid={props.error !== undefined}
       />
-      <p className="text-xs text-muted">
+      <p id={`${id}-key`} className="text-xs text-muted">
         Key <code className="font-mono">{props.settingKey}</code>
       </p>
-      {props.error && <p className="text-sm text-bad">{props.error}</p>}
+      {props.error && (
+        <p id={`${id}-error`} className="text-sm text-bad">
+          {props.error}
+        </p>
+      )}
     </div>
   );
 }

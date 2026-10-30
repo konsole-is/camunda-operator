@@ -135,6 +135,20 @@ describe("appPermissions", () => {
     ]);
   });
 
+  it("lists a rule that two roles grant once", async () => {
+    const rule = {
+      verbs: ["get"],
+      apiGroups: [""],
+      resources: ["configmaps"],
+      resourceNames: ["fleet-manager-settings"],
+    };
+    vi.mocked(requestJSON).mockResolvedValue(
+      review({ resourceRules: [rule, { ...rule }], incomplete: false }),
+    );
+
+    expect((await appPermissions()).rules).toEqual([rule]);
+  });
+
   it("passes incomplete on", async () => {
     vi.mocked(requestJSON).mockResolvedValue(
       review({ resourceRules: [], incomplete: true }),

@@ -13,6 +13,15 @@ import type { WriteResult } from "@/lib/write/types";
 import { SettingsForm, type SettingsFormProps } from "./settings-form";
 
 const refresh = vi.fn();
+
+// jsdom has no ResizeObserver, and the Radix checkbox measures its hidden
+// input inside a form.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 
 afterEach(cleanup);
@@ -67,14 +76,13 @@ const save = () =>
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
 const saveButton = () =>
   screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
-const gitMode = () =>
-  screen.getByRole("checkbox", { name: "Git mode" }) as HTMLInputElement;
+const gitMode = () => screen.getByRole("checkbox", { name: "Git mode" });
 
 describe("SettingsForm", () => {
   it("shows each key of the settings", () => {
     render(<SettingsForm {...props()} />);
     expect(field("Kubernetes cluster name").value).toBe("prod-eu");
-    expect(gitMode().checked).toBe(true);
+    expect(gitMode().getAttribute("aria-checked")).toBe("true");
     expect(field("Repository").value).toBe("https://git.example.com/fleet.git");
     expect(field("Branch").value).toBe("main");
     expect(field("Path").value).toBe("clusters/prod");
@@ -288,6 +296,75 @@ describe("SettingsForm", () => {
       />,
     );
     expect(saveButton().disabled).toBe(false);
+  });
+
+  it("Git mode turned on again while a save runs keeps the repository", async () => {
+    let finish: (result: WriteResult) => void = () => {};
+    const p = props({
+      save: vi.fn(
+        () =>
+          new Promise<WriteResult>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    });
+    const { rerender } = render(<SettingsForm {...p} />);
+
+    fireEvent.click(gitMode());
+    save();
+    fireEvent.click(gitMode());
+    finish({ ok: true, mode: "direct" });
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    rerender(
+      <SettingsForm
+        {...p}
+        settings={{ ...full, "git.repository": "" }}
+        resourceVersion="8"
+      />,
+    );
+
+    expect(gitMode().getAttribute("aria-checked")).toBe("true");
+    expect(field("Repository").value).toBe("https://git.example.com/fleet.git");
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("a refresh without a new version ends the pending save", async () => {
+    const p = props();
+    const { rerender } = render(<SettingsForm {...p} />);
+
+    type("Kubernetes cluster name", "prod-us");
+    save();
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    rerender(<SettingsForm {...p} settings={{ ...full }} />);
+
+    expect(saveButton().disabled).toBe(false);
+  });
+
+  it("an Invalid error of a Secret setting is linked to its select", async () => {
+    const message = "git.credentialsSecretRef is not a valid Secret name";
+    const p = props({
+      save: vi.fn(async (): Promise<WriteResult> => ({
+        ok: false,
+        errors: [
+          { code: "Invalid", path: "git.credentialsSecretRef", message },
+        ],
+      })),
+    });
+    render(<SettingsForm {...p} />);
+
+    type("Git credentials Secret", "prom");
+    save();
+
+    const select = field("Git credentials Secret");
+    await waitFor(() =>
+      expect(select.getAttribute("aria-invalid")).toBe("true"),
+    );
+    expect(
+      select
+        .getAttribute("aria-describedby")
+        ?.split(" ")
+        .map((id) => document.getElementById(id)?.textContent),
+    ).toContain(message);
   });
 
   it("a refused save can be sent again", async () => {

@@ -13,6 +13,14 @@ import { appPermissions, readSettings } from "@/lib/settings";
 import { saveSettings } from "./actions";
 import SettingsPage, { dynamic } from "./page";
 
+// jsdom has no ResizeObserver, and the Radix checkbox measures its hidden
+// input inside a form.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/lib/settings", () => ({
   readSettings: vi.fn(),
