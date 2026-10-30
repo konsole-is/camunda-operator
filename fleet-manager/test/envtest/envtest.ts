@@ -25,6 +25,23 @@ export interface EnvtestOptions {
   crdDirs?: string[];
   /** startTimeoutMs bounds each wait of the start. The default is two minutes, as in test/envtest. */
   startTimeoutMs?: number;
+  /**
+   * users are users outside system:masters, which hold no permission until
+   * a test binds a role to them. Each name is unique and not envtest-admin.
+   */
+  users?: EnvtestUser[];
+}
+
+/** EnvtestUser is a user that a token authenticates, with its groups. */
+export interface EnvtestUser {
+  name: string;
+  groups?: string[];
+}
+
+/** EnvtestUserConfig is the kubeconfig of one user of EnvtestOptions.users. */
+export interface EnvtestUserConfig {
+  kubeconfigPath: string;
+  kubeConfig: KubeConfig;
 }
 
 /** Envtest is a running control plane. stop ends both processes and removes their files. */
@@ -32,6 +49,8 @@ export interface Envtest {
   /** kubeconfigPath is a kubeconfig file of a user in system:masters. */
   kubeconfigPath: string;
   kubeConfig: KubeConfig;
+  /** users holds the kubeconfig of each user of EnvtestOptions.users, by name. */
+  users: Record<string, EnvtestUserConfig>;
   stop(): Promise<void>;
 }
 
@@ -59,6 +78,8 @@ export async function startEnvtest(
       "KUBEBUILDER_ASSETS is not set, so the tests cannot start the envtest API server. Run make setup-envtest, or run the tests with make fleet-test, which sets it.",
     );
   }
+  const users = options.users ?? [];
+  checkUsers(users);
   const timeoutMs = options.startTimeoutMs ?? 120_000;
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "fleet-envtest-"));
   const running: Running[] = [];
@@ -84,11 +105,21 @@ export async function startEnvtest(
     await waitUntil(etcd, timeoutMs, () => answers(`${etcdURL}/health`));
 
     const token = randomBytes(24).toString("hex");
-    await fs.writeFile(
-      path.join(dir, "tokens.csv"),
-      `${token},envtest-admin,envtest-admin,"system:masters"\n`,
-      { mode: 0o600 },
-    );
+    const userTokens = users.map(() => randomBytes(24).toString("hex"));
+    const lines = [
+      `${token},${ADMIN},${ADMIN},"system:masters"`,
+      ...users.map((u, i) =>
+        [
+          userTokens[i],
+          u.name,
+          u.name,
+          ...(u.groups?.length ? [`"${u.groups.join(",")}"`] : []),
+        ].join(","),
+      ),
+    ];
+    await fs.writeFile(path.join(dir, "tokens.csv"), `${lines.join("\n")}\n`, {
+      mode: 0o600,
+    });
     const keys = generateKeyPairSync("rsa", {
       modulusLength: 2048,
       publicKeyEncoding: { type: "spki", format: "pem" },
@@ -123,12 +154,23 @@ export async function startEnvtest(
       answers(`${server}/readyz`, token),
     );
 
-    const kubeconfigPath = path.join(dir, "kubeconfig");
-    await fs.writeFile(kubeconfigPath, kubeconfig(server, token), {
-      mode: 0o600,
-    });
-    const kubeConfig = new KubeConfig();
-    kubeConfig.loadFromFile(kubeconfigPath);
+    const admin = await writeKubeconfig(
+      dir,
+      "kubeconfig",
+      server,
+      ADMIN,
+      token,
+    );
+    const userConfigs: Record<string, EnvtestUserConfig> = {};
+    for (const [i, u] of users.entries()) {
+      userConfigs[u.name] = await writeKubeconfig(
+        dir,
+        `kubeconfig-${u.name}`,
+        server,
+        u.name,
+        userTokens[i],
+      );
+    }
 
     await installCRDs(
       server,
@@ -139,8 +181,8 @@ export async function startEnvtest(
     );
 
     return {
-      kubeconfigPath,
-      kubeConfig,
+      ...admin,
+      users: userConfigs,
       async stop() {
         process.off("exit", killAll);
         await stopAll(running);
@@ -308,7 +350,40 @@ async function installCRDs(
   }
 }
 
-function kubeconfig(server: string, token: string): string {
+const ADMIN = "envtest-admin";
+
+function checkUsers(users: EnvtestUser[]): void {
+  const seen = new Set<string>();
+  for (const { name } of users) {
+    if (name === ADMIN) {
+      throw new Error(
+        `The envtest user ${ADMIN} is the admin of envtest. Give the user another name.`,
+      );
+    }
+    if (seen.has(name)) {
+      throw new Error(`The envtest user ${name} is given twice.`);
+    }
+    seen.add(name);
+  }
+}
+
+async function writeKubeconfig(
+  dir: string,
+  file: string,
+  server: string,
+  user: string,
+  token: string,
+): Promise<EnvtestUserConfig> {
+  const kubeconfigPath = path.join(dir, file);
+  await fs.writeFile(kubeconfigPath, kubeconfig(server, user, token), {
+    mode: 0o600,
+  });
+  const kubeConfig = new KubeConfig();
+  kubeConfig.loadFromFile(kubeconfigPath);
+  return { kubeconfigPath, kubeConfig };
+}
+
+function kubeconfig(server: string, user: string, token: string): string {
   return [
     "apiVersion: v1",
     "kind: Config",
@@ -318,14 +393,14 @@ function kubeconfig(server: string, token: string): string {
     `      server: ${server}`,
     "      insecure-skip-tls-verify: true",
     "users:",
-    "  - name: envtest-admin",
+    `  - name: ${user}`,
     "    user:",
     `      token: ${token}`,
     "contexts:",
     "  - name: envtest",
     "    context:",
     "      cluster: envtest",
-    "      user: envtest-admin",
+    `      user: ${user}`,
     "current-context: envtest",
     "",
   ].join("\n");
