@@ -1,7 +1,9 @@
+import { pathFrom } from "@/lib/fields";
 import { child, type FieldPath } from "@/lib/merge";
 import type { Preview, WriteResult } from "@/lib/write/types";
 import type { FieldError } from "./cluster";
-import type { Session } from "./session";
+import { claimAfter, type Session } from "./session";
+import { indexSteps } from "./steps";
 
 /** STALE_CLAIM_MESSAGE is what a session shows when its claim changed since the form read it. */
 export const STALE_CLAIM_MESSAGE =
@@ -18,8 +20,8 @@ export type WriteOutcome =
 /**
  * outcomeOf maps a result to what the session shows. A Stale error gives
  * STALE_CLAIM_MESSAGE and nothing else. An error whose path names a pending
- * field, with or without the leading spec, goes to that field. It does not
- * change s.
+ * field or a field below it, with or without the leading spec, goes to that
+ * pending field. It does not change s.
  */
 export function outcomeOf(
   result: WriteResult | Preview,
@@ -37,14 +39,40 @@ export function outcomeOf(
     };
   const fields: FieldError[] = [];
   const messages: string[] = [];
+  const targets = targetsOf(s);
   for (const error of errors) {
-    const path = error.path && pendingPath(error.path, s);
+    const path = error.path && pendingPath(error.path, targets);
     if (path) fields.push({ path, message: error.message });
     else messages.push(error.message);
   }
   return { ok: false, stale: false, fields, messages };
 }
 
-function pendingPath(path: FieldPath, s: Session): FieldPath | undefined {
-  return [path, child("spec", path)].find((p) => s.pending.has(p));
+// targetsOf maps the path of each pending field, keyed and by index in the
+// claim after the change, to its pending path. The API server names a list
+// item by its index.
+function targetsOf(s: Session): Map<FieldPath, FieldPath> {
+  const after = claimAfter(s);
+  const targets = new Map<FieldPath, FieldPath>();
+  for (const [path, entry] of s.pending) {
+    targets.set(path, path);
+    const steps = indexSteps(after, entry.steps);
+    if (steps) targets.set(pathFrom("", steps), path);
+  }
+  return targets;
+}
+
+function pendingPath(
+  path: FieldPath,
+  targets: Map<FieldPath, FieldPath>,
+): FieldPath | undefined {
+  for (const p of [path, child("spec", path)])
+    for (const [target, pending] of targets)
+      if (
+        p === target ||
+        p.startsWith(`${target}.`) ||
+        p.startsWith(`${target}[`)
+      )
+        return pending;
+  return undefined;
 }

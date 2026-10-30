@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Step } from "@/lib/fields";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { outcomeOf, STALE_CLAIM_MESSAGE } from "./outcome";
 import {
@@ -129,6 +130,77 @@ describe("outcomeOf", () => {
         s,
       ),
     ).toEqual(outcome);
+  });
+
+  it("an error at an index path or below a pending object goes to its pending field", () => {
+    const claim: ClaimObject = {
+      apiVersion: ref.apiVersion,
+      kind: ref.kind,
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "41" },
+      spec: {
+        cluster: {
+          zeebe: { replicas: 3 },
+          extraEnv: [{ name: "LOG", value: "info" }],
+        },
+      },
+    };
+    let s = openSession({
+      claim,
+      resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+      locks: () => undefined,
+    })!;
+    const env: Step[] = [
+      { field: "spec" },
+      { field: "cluster" },
+      { field: "extraEnv" },
+      { item: { name: "A" } },
+    ];
+    const zeebe: Step[] = [
+      { field: "spec" },
+      { field: "cluster" },
+      { field: "zeebe" },
+    ];
+    for (const [steps, value] of [
+      [env, { name: "A", value: "" }],
+      [zeebe, { replicas: -1 }],
+    ] as const) {
+      const result = setValue(s, [...steps], value);
+      if (!("session" in result)) throw new Error("refused");
+      s = result.session;
+    }
+    expect(
+      outcomeOf(
+        {
+          objects: [],
+          errors: [
+            {
+              code: "Invalid",
+              message: "must not be empty",
+              path: "spec.cluster.extraEnv[1].value",
+            },
+            {
+              code: "Invalid",
+              message: "must be >= 1",
+              path: "cluster.zeebe.replicas",
+            },
+            {
+              code: "Invalid",
+              message: "other item",
+              path: "spec.cluster.extraEnv[0].value",
+            },
+          ],
+        },
+        s,
+      ),
+    ).toEqual({
+      ok: false,
+      stale: false,
+      fields: [
+        { path: "spec.cluster.extraEnv[name=A]", message: "must not be empty" },
+        { path: "spec.cluster.zeebe", message: "must be >= 1" },
+      ],
+      messages: ["other item"],
+    });
   });
 
   it("any other error is a message", () => {

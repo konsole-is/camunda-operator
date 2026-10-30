@@ -64,8 +64,10 @@ export function openSession<C extends ClaimObject>(input: {
 /**
  * setValue sets value at steps. A value equal to the claim value removes
  * the change, and undefined is resetValue. A locked path, or a path below a
- * locked one, refuses. A change below a pending change goes into that
- * change, and a change above pending changes replaces them.
+ * locked one, refuses, and so does a value that changes a locked field
+ * below steps. A change below a pending change goes into that change, and a
+ * change above pending changes replaces them. An index in steps names the
+ * item of the list in the claim, as in withChanges.
  */
 export function setValue<C extends ClaimObject>(
   s: Session<C>,
@@ -74,7 +76,9 @@ export function setValue<C extends ClaimObject>(
 ): SetResult<C> {
   if (value === undefined) return resetValue(s, steps);
   const path = pathFrom("", steps);
-  const lock = lockOf(s.locks, steps);
+  const lock =
+    lockOf(s.locks, steps) ??
+    lockedChange(s.locks, steps, valueAt(s.claim, steps), value);
   if (lock) return { refused: lock };
   const parent = pendingParent(s, steps);
   if (parent)
@@ -105,15 +109,18 @@ export function setValue<C extends ClaimObject>(
 /**
  * resetValue removes the claim value at steps, as "Reset to preset" and
  * "Reset to environment" do. When the claim holds no value there, it only
- * drops a pending change. A locked path, or a path below a locked one,
- * refuses.
+ * drops a pending change. A locked path, a path below a locked one, or a
+ * path above a locked field that the claim holds, refuses. An index in steps
+ * names the item of the list in the claim, as in withChanges.
  */
 export function resetValue<C extends ClaimObject>(
   s: Session<C>,
   steps: Step[],
 ): SetResult<C> {
   const path = pathFrom("", steps);
-  const lock = lockOf(s.locks, steps);
+  const lock =
+    lockOf(s.locks, steps) ??
+    lockedChange(s.locks, steps, valueAt(s.claim, steps), undefined);
   if (lock) return { refused: lock };
   const parent = pendingParent(s, steps);
   if (parent) {
@@ -139,7 +146,10 @@ export function resetValue<C extends ClaimObject>(
   };
 }
 
-/** discard drops the pending change at path. */
+/**
+ * discard drops the pending change at path. An index in path names the item
+ * of the list in the claim, as in withChanges.
+ */
 export function discard<C extends ClaimObject>(
   s: Session<C>,
   path: FieldPath,
@@ -190,7 +200,12 @@ export function rebase<C extends ClaimObject>(
 ): Session<C> {
   const pending = new Map<FieldPath, PendingChange>();
   for (const [path, entry] of s.pending) {
-    if (lockOf(locks, entry.steps)) continue;
+    const value = "reset" in entry ? undefined : entry.value;
+    if (
+      lockOf(locks, entry.steps) ??
+      lockedChange(locks, entry.steps, valueAt(claim, entry.steps), value)
+    )
+      continue;
     if (movedIndex(s.claim, claim, entry.steps)) continue;
     const current = valueAt(claim, entry.steps);
     const changes =
@@ -211,6 +226,63 @@ function lockOf(
     if (lock) return lock;
   }
   return undefined;
+}
+
+// lockedChange returns the lock of a field at or below steps whose value
+// differs between before and after.
+function lockedChange(
+  locks: LockProvider,
+  steps: readonly Step[],
+  before: unknown,
+  after: unknown,
+): FieldLock | undefined {
+  if (equalJSON(before, after)) return undefined;
+  const lock = locks(pathFrom("", steps));
+  if (lock) return lock;
+  for (const [step, b, a] of childrenOf(before, after)) {
+    const found = lockedChange(locks, [...steps, step], b, a);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+// childrenOf pairs the children of before and after by their step. A list
+// item has the keys that the field paths use: section and registration for
+// a plugin selection, its name for a named item, else its index.
+function childrenOf(
+  before: unknown,
+  after: unknown,
+): [Step, unknown, unknown][] {
+  const pairs = new Map<string, [Step, unknown, unknown]>();
+  const add = (step: Step, value: unknown, side: 1 | 2) => {
+    const key = JSON.stringify(step);
+    const pair = pairs.get(key) ?? [step, undefined, undefined];
+    pair[side] = value;
+    pairs.set(key, pair);
+  };
+  for (const [value, side] of [
+    [before, 1],
+    [after, 2],
+  ] as const) {
+    if (Array.isArray(value))
+      value.forEach((item, index) => add(itemStep(item, index), item, side));
+    else if (isObject(value))
+      for (const [field, child] of Object.entries(value))
+        add({ field }, child, side);
+  }
+  return [...pairs.values()];
+}
+
+function itemStep(item: unknown, index: number): Step {
+  if (!isObject(item)) return { index };
+  if (typeof item.section === "string" && typeof item.registration === "string")
+    return { item: { section: item.section, registration: item.registration } };
+  if (typeof item.name === "string") return { item: { name: item.name } };
+  return { index };
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // movedIndex says whether a list that steps names an item of by index

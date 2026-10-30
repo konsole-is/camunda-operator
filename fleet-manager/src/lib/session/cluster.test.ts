@@ -341,6 +341,31 @@ describe("validateClusterClaim", () => {
     ]);
   });
 
+  it("checks a parameter that a change of its parameters or its selection sets", () => {
+    const at = pathFrom("", [...ACCESS, f("parameters"), f("replicas")]);
+    const params = set(open(), [...ACCESS, f("parameters")], {
+      hostnamePattern: "{name}.a.example.com",
+      replicas: "three",
+    });
+    expect(validateClusterClaim(params, ctx())).toEqual([
+      { path: at, message: expect.stringMatching(/integer/) },
+    ]);
+    const selection = set(
+      open(),
+      [f("spec"), f("plugins")],
+      [
+        {
+          section: "access",
+          registration: "gateway-access",
+          parameters: { replicas: "three" },
+        },
+      ],
+    );
+    expect(validateClusterClaim(selection, ctx())).toEqual([
+      { path: at, message: expect.stringMatching(/integer/) },
+    ]);
+  });
+
   it("checks a parameter by the additionalProperties schema of its registration", () => {
     const c = ctx();
     c.registrations = [

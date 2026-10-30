@@ -332,6 +332,47 @@ describe("overlapping changes", () => {
   });
 });
 
+describe("locks above a field", () => {
+  const admin: FieldLock = { reason: "admin" };
+  const hostLocked: LockProvider = (p) =>
+    p ===
+    "spec.plugins[section=access,registration=gateway-access].parameters.hostnamePattern"
+      ? admin
+      : undefined;
+
+  it("refuses a parent that changes a locked field below it", () => {
+    const s = open(claim(), hostLocked);
+    expect(
+      setValue(s, [...ACCESS, f("parameters")], { hostnamePattern: "x" }),
+    ).toEqual({ refused: admin });
+    expect(setValue(s, [f("spec")], { ...claim().spec, plugins: [] })).toEqual({
+      refused: admin,
+    });
+    expect(resetValue(s, [...ACCESS, f("parameters")])).toEqual({
+      refused: admin,
+    });
+  });
+
+  it("accepts a parent that keeps a locked field below it", () => {
+    const s = ok(
+      setValue(open(claim(), hostLocked), [...ACCESS, f("parameters")], {
+        hostnamePattern: "{name}.a.example.com",
+        tier: "small",
+      }),
+    );
+    expect(s.pending.size).toBe(1);
+  });
+
+  it("refuses a change below a pending parent that changes a locked field", () => {
+    const locks: LockProvider = (p) =>
+      p === "spec.cluster.zeebe.replicas" ? admin : undefined;
+    const s = ok(setValue(open(claim(), locks), cluster("zeebe", "cpu"), 2));
+    expect(setValue(s, cluster("zeebe"), { replicas: 9 })).toEqual({
+      refused: admin,
+    });
+  });
+});
+
 describe("locks below a field", () => {
   it("refuses a change below a locked field", () => {
     const s = open(claim(), (p) =>

@@ -14,6 +14,7 @@ import type { FieldPath } from "@/lib/merge";
 import {
   checkAllowed,
   checkSlotConflicts,
+  equalJSON,
   releaseMove,
   resolve,
   type BackupLike,
@@ -23,7 +24,7 @@ import {
   type ResolvedPolicy,
 } from "@/lib/policy";
 import { schemaError, validate, type OpenAPISchema } from "@/lib/schema";
-import { claimAfter, type PendingChange, type Session } from "./session";
+import { claimAfter, type Session } from "./session";
 import { valueAt } from "./steps";
 
 /** FieldError is one error of a session. Without a path, it shows above the fields. */
@@ -101,8 +102,7 @@ export function validateClusterClaim(
     ),
   );
 
-  for (const entry of s.pending.values())
-    errors.push(...parameterErrors(entry, ctx, policy, after));
+  errors.push(...changedParameterErrors(s.claim, after, ctx, policy));
 
   // A claim without a release runs the default release of the Environment.
   const fallback = ctx.environment?.spec.releases?.default;
@@ -139,55 +139,79 @@ function messagesOf(result: PolicyResult<unknown>): FieldError[] {
   return [];
 }
 
-// A section parameter has the steps spec, plugins, the selection,
-// parameters, and its name.
-function parameterErrors(
-  entry: PendingChange,
+// changedParameterErrors checks each section parameter that after sets to
+// another value than claim.
+function changedParameterErrors(
+  claim: Claim,
+  after: Claim,
   ctx: ClusterClaimContext,
   policy: ResolvedPolicy | undefined,
-  after: Claim,
 ): FieldError[] {
-  if ("reset" in entry || entry.steps.length !== 5) return [];
-  const [, plugins, selection, parameters, name] = entry.steps as [
-    Step,
-    Step,
-    Step,
-    Step,
-    Step,
-  ];
-  if (
-    !("field" in plugins && plugins.field === "plugins") ||
-    !("item" in selection) ||
-    !("field" in parameters && parameters.field === "parameters") ||
-    !("field" in name)
-  )
-    return [];
+  const errors: FieldError[] = [];
+  for (const selection of (after.spec?.plugins ?? []) as PluginSelection[]) {
+    const keys = {
+      section: selection.section,
+      registration: selection.registration,
+    };
+    const steps: Step[] = [
+      { field: "spec" },
+      { field: "plugins" },
+      { item: keys },
+    ];
+    const before = asObject(
+      valueAt(claim, [...steps, { field: "parameters" }]),
+    );
+    for (const [name, value] of Object.entries(
+      asObject(selection.parameters),
+    )) {
+      if (
+        equalJSON(value, Object.hasOwn(before, name) ? before[name] : undefined)
+      )
+        continue;
+      const path = pathFrom("", [
+        ...steps,
+        { field: "parameters" },
+        { field: name },
+      ]);
+      errors.push(
+        ...parameterErrors(after, keys, name, value, path, ctx, policy),
+      );
+    }
+  }
+  return errors;
+}
+
+function parameterErrors(
+  after: Claim,
+  keys: { section: string; registration: string },
+  name: string,
+  value: unknown,
+  path: FieldPath,
+  ctx: ClusterClaimContext,
+  policy: ResolvedPolicy | undefined,
+): FieldError[] {
   // A parameter with choices holds the name of a choice, which the policy
   // check covers. The schema describes the value of the choice.
-  const choices =
-    policy?.parameters?.[selection.item.registration as string]?.[name.field]
-      ?.allowed;
+  const choices = policy?.parameters?.[keys.registration]?.[name]?.allowed;
   if (choices?.length) return [];
   const registration = ctx.registrations.find(
-    (r) => r.metadata?.name === selection.item.registration,
+    (r) => r.metadata?.name === keys.registration,
   );
   const root = asObject(registration?.spec.parameters) as OpenAPISchema;
   if (Object.keys(root).length === 0) return [];
   const broken = schemaError(root);
   if (broken !== undefined)
-    return [
-      { path: entry.path, message: `The schema is not valid: ${broken}` },
-    ];
+    return [{ path, message: `The schema is not valid: ${broken}` }];
   // The parameters of the request are checked, so that references and root
   // rules see the values that the plugin gets.
   const result = validate(root, {
-    ...requestOf(after, selection.item, ctx, policy),
-    [name.field]: valueAt(after, entry.steps),
+    ...requestOf(after, keys, ctx, policy),
+    [name]: value,
   });
   if (result.ok) return [];
   return result.errors
-    .filter((e) => e.path === name.field || e.path.startsWith(`${name.field}.`))
-    .map((e) => ({ path: entry.path, message: e.message }));
+    .filter((e) => e.path === name || e.path.startsWith(`${name}.`))
+    .map((e) => ({ path, message: e.message }));
 }
 
 // requestOf returns the parameters of the request of the selection with

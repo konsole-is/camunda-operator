@@ -59,6 +59,29 @@ export function withChanges<T>(object: T, changes: readonly StepChange[]): T {
   return (compacted === REMOVED ? {} : compacted) as T;
 }
 
+/**
+ * indexSteps returns steps with each keyed item step replaced by the index
+ * of its item in object, as the API server names a list item. It returns
+ * undefined when object has no value at steps.
+ */
+export function indexSteps(
+  object: unknown,
+  steps: readonly Step[],
+): Step[] | undefined {
+  const out: Step[] = [];
+  let at = object;
+  for (const step of steps) {
+    if (at === undefined) return undefined;
+    if ("item" in step && Array.isArray(at)) {
+      const index = at.findIndex((item) => matches(item, step.item));
+      if (index < 0) return undefined;
+      out.push({ index });
+    } else out.push(step);
+    at = childOf(at, step);
+  }
+  return at === undefined ? undefined : out;
+}
+
 // REMOVED holds the place of a list item that withChanges removes, so that
 // the indexes of the later changes still name the items of the input.
 const REMOVED = Symbol("removed");
