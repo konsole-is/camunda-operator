@@ -303,26 +303,6 @@ var _ = Describe("A cluster claim with a registration that cannot orphan", func(
 	})
 })
 
-// readyClaim creates a claim in namespace with the requests
-// secondary-storage and encryption-key, and waits until its cluster exists
-// and the fake plugin holds both requests.
-func readyClaim(namespace string) *fleetv1alpha1.CamundaClusterClaim {
-	GinkgoHelper()
-	claim := newClaim(namespace, selection(pluginstartup.SectionEncryptionKey, registrationKey))
-	create(claim)
-
-	eventuallyCluster(claim)
-	Eventually(func(g Gomega) {
-		for _, section := range []string{pluginstartup.SectionSecondaryStorage, pluginstartup.SectionEncryptionKey} {
-			request, err := requestOf(claim, section)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(request.Finalizers).To(ContainElement(pluginsv1alpha1.FinalizerCleanup))
-		}
-	}, timeout, interval).Should(Succeed())
-
-	return claim
-}
-
 // ownedOptimize creates <claim>-optimize with a controller reference to
 // claim and the finalizer testHold.
 func ownedOptimize(claim *fleetv1alpha1.CamundaClusterClaim) *v1.CamundaOptimize {

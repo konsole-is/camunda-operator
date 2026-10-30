@@ -57,8 +57,9 @@ type resolved struct {
 // preCheck reads what the components of claim need and refuses the claim, in
 // this order, with NoEnvironment or UnknownEnvironment, InvalidReference,
 // NotAllowed, SlotConflict, and then MissingInput, WiringCycle, or
-// InvalidReference from the wiring. A refusal is a
-// *conditions.PreCheckFailure. It writes nothing.
+// InvalidReference from the wiring. The preset and the release are checked
+// against the Environment only when the cluster of the claim does not carry
+// them yet. A refusal is a *conditions.PreCheckFailure. It writes nothing.
 func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaClusterClaim) (resolved, error) {
 	var res resolved
 
@@ -117,13 +118,23 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		return res, err
 	}
 
+	var live v1.CamundaCluster
+	err = r.Get(ctx, client.ObjectKeyFromObject(claim), &live)
+	switch {
+	case err == nil:
+		res.live = &live
+	case !apierrors.IsNotFound(err):
+		return res, fmt.Errorf("reading the CamundaCluster of the claim: %w", err)
+	}
+
+	presetRef, releaseRef := components.ChangedReferences(claim, res.live)
 	if err := claimpolicy.CheckAllowed(claimpolicy.AllowedInput{
 		Environment: environment,
 		Kind:        pluginsv1alpha1.ClaimKindCamundaClusterClaim,
 		Sections:    res.sections,
 		Policy:      res.resolution.Policy,
-		PresetRef:   claim.Spec.PresetRef,
-		ReleaseRef:  claim.Spec.ReleaseRef,
+		PresetRef:   presetRef,
+		ReleaseRef:  releaseRef,
 		Selections:  claim.Spec.Plugins,
 	}); err != nil {
 		return res, err
@@ -164,15 +175,6 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		claim.Spec.Plugins,
 		res.sections,
 	)
-
-	var live v1.CamundaCluster
-	err = r.Get(ctx, client.ObjectKeyFromObject(claim), &live)
-	switch {
-	case err == nil:
-		res.live = &live
-	case !apierrors.IsNotFound(err):
-		return res, fmt.Errorf("reading the CamundaCluster of the claim: %w", err)
-	}
 
 	return res, nil
 }

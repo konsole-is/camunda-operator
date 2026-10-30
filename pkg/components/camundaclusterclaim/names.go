@@ -109,3 +109,22 @@ func References(
 
 	return release, platformConfig
 }
+
+// ChangedReferences returns spec.presetRef and spec.releaseRef of claim,
+// with "" for each one that live already carries. A nil live, or one that
+// the claim does not control, carries nothing.
+func ChangedReferences(claim *fleetv1alpha1.CamundaClusterClaim, live *v1.CamundaCluster) (presetRef, releaseRef string) {
+	presetRef, releaseRef = claim.Spec.PresetRef, claim.Spec.ReleaseRef
+	if live == nil || !metav1.IsControlledBy(live, claim) {
+		return presetRef, releaseRef
+	}
+
+	if presetRef == live.Spec.PresetRef {
+		presetRef = ""
+	}
+	if releaseRef == live.Spec.ReleaseRef {
+		releaseRef = ""
+	}
+
+	return presetRef, releaseRef
+}

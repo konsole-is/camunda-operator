@@ -24,6 +24,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -31,6 +32,7 @@ import (
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 )
 
 // The cluster-scoped objects that every claim of the suite names.
@@ -38,6 +40,10 @@ const (
 	presetName         = "suite-preset"
 	releaseName        = "suite-release"
 	platformConfigName = "suite-platform"
+	// nextReleaseName is a release of a later patch than releaseName.
+	nextReleaseName = "suite-release-next"
+	// olderReleaseName is a release of an earlier patch than releaseName.
+	olderReleaseName = "suite-release-older"
 )
 
 // The test registrations, and the outputs that the fake plugin writes for
@@ -100,10 +106,16 @@ func createFixtures() {
 
 	Expect(k8sClient.Create(ctx, &v1.CamundaClusterPreset{ObjectMeta: metav1.ObjectMeta{Name: presetName}})).
 		To(Succeed())
-	Expect(k8sClient.Create(ctx, &v1.CamundaRelease{
-		ObjectMeta: metav1.ObjectMeta{Name: releaseName},
-		Spec:       v1.CamundaReleaseSpec{Version: "8.9.9"},
-	})).To(Succeed())
+	for name, version := range map[string]string{
+		releaseName:      "8.9.9",
+		nextReleaseName:  "8.9.10",
+		olderReleaseName: "8.9.3",
+	} {
+		Expect(k8sClient.Create(ctx, &v1.CamundaRelease{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       v1.CamundaReleaseSpec{Version: version},
+		})).To(Succeed())
+	}
 	Expect(k8sClient.Create(ctx, &v1.CamundaPlatformConfig{
 		ObjectMeta: metav1.ObjectMeta{Name: platformConfigName},
 		Spec:       v1.CamundaPlatformConfigSpec{Auth: &v1.PlatformAuthSpec{Method: v1.AuthenticationMethodBasic}},
@@ -225,6 +237,53 @@ func selection(section, registration string) fleetv1alpha1.PluginSelection {
 	return fleetv1alpha1.PluginSelection{Section: section, Registration: registration}
 }
 
+// readyClaim creates a claim in namespace with the requests
+// secondary-storage and encryption-key, and waits until its cluster exists
+// and the fake plugin holds both requests.
+func readyClaim(namespace string) *fleetv1alpha1.CamundaClusterClaim {
+	GinkgoHelper()
+	claim := newClaim(namespace, selection(pluginstartup.SectionEncryptionKey, registrationKey))
+	create(claim)
+
+	eventuallyCluster(claim)
+	Eventually(func(g Gomega) {
+		for _, section := range []string{pluginstartup.SectionSecondaryStorage, pluginstartup.SectionEncryptionKey} {
+			request, err := requestOf(claim, section)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(request.Finalizers).To(ContainElement(pluginsv1alpha1.FinalizerCleanup))
+		}
+	}, timeout, interval).Should(Succeed())
+
+	return claim
+}
+
+// updateClaim reads claim again, applies change, and updates it, until the
+// update succeeds.
+func updateClaim(claim *fleetv1alpha1.CamundaClusterClaim, change func(*fleetv1alpha1.CamundaClusterClaim)) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) error {
+		current := latest(g, claim)
+		change(current)
+		return k8sClient.Update(ctx, current)
+	}, timeout, interval).Should(Succeed())
+}
+
+// expectNewPass changes an annotation of claim and waits until a later pass
+// applied its requests.
+func expectNewPass(claim *fleetv1alpha1.CamundaClusterClaim) {
+	GinkgoHelper()
+	applies := len(witness.recorded(client.ObjectKeyFromObject(claim)))
+	updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) {
+		if c.Annotations == nil {
+			c.Annotations = map[string]string{}
+		}
+		c.Annotations["test.camunda.io/touch"] = utilrand.String(8)
+	})
+	Eventually(func() int {
+		return len(witness.recorded(client.ObjectKeyFromObject(claim)))
+	}, timeout, interval).Should(BeNumerically(">", applies))
+}
+
 // requestOf reads the request of claim in section.
 func requestOf(claim *fleetv1alpha1.CamundaClusterClaim, section string) (*pluginsv1alpha1.PluginRequest, error) {
 	var request pluginsv1alpha1.PluginRequest
@@ -297,4 +356,39 @@ func setClusterReady(claim *fleetv1alpha1.CamundaClusterClaim, status metav1.Con
 		})
 		return k8sClient.Status().Update(ctx, cluster)
 	}, timeout, interval).Should(Succeed())
+}
+
+// setManagement writes status.management of the CamundaCluster of claim
+// with version, or removes it when version is empty. No controller of the
+// suite reconciles a CamundaCluster, so the spec plays its part.
+func setManagement(claim *fleetv1alpha1.CamundaClusterClaim, version string) {
+	GinkgoHelper()
+	Eventually(func() error {
+		cluster, err := clusterOf(claim)
+		if err != nil {
+			return err
+		}
+		cluster.Status.Management = nil
+		if version != "" {
+			cluster.Status.Management = &v1.ManagementBinding{
+				Endpoint:   "http://orders:9600",
+				Auth:       v1.ManagementAuth{Method: v1.ManagementAuthMethodNone},
+				Version:    version,
+				Partitions: 1,
+			}
+		}
+		return k8sClient.Status().Update(ctx, cluster)
+	}, timeout, interval).Should(Succeed())
+}
+
+// consumeSanction removes the downgrade annotation from the CamundaCluster
+// of claim with a merge patch, as the operator does once the cluster runs
+// the target. No controller of the suite reconciles a CamundaCluster, so
+// the spec plays its part.
+func consumeSanction(claim *fleetv1alpha1.CamundaClusterClaim) {
+	GinkgoHelper()
+	cluster, err := clusterOf(claim)
+	Expect(err).NotTo(HaveOccurred())
+	patch := []byte(`{"metadata":{"annotations":{"` + clustercomponents.AllowVersionDowngradeAnnotation + `":null}}}`)
+	Expect(k8sClient.Patch(ctx, cluster, client.RawPatch(types.MergePatchType, patch))).To(Succeed())
 }
