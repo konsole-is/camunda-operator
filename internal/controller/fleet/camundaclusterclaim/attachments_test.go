@@ -21,11 +21,13 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -153,6 +155,34 @@ var _ = Describe("Cluster claim attachments", func() {
 			g.Expect(optimize.Spec.IndexReplicas).NotTo(BeNil())
 			g.Expect(*optimize.Spec.IndexReplicas).To(Equal(int32(2)))
 		}, consistently, interval).Should(Succeed())
+	})
+
+	It("creates the Optimize once an Optimize of another owner is gone", func() {
+		claim := withAttachments(newClaim(newNamespace(nil)))
+		owner := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "other-owner", Namespace: claim.Namespace}}
+		create(owner)
+		foreign := &v1.CamundaOptimize{
+			ObjectMeta: metav1.ObjectMeta{Name: components.OptimizeName(claim.Name), Namespace: claim.Namespace},
+			Spec: v1.CamundaOptimizeSpec{
+				Version:           "8.9.9",
+				ManagementAuthRef: "management",
+				ClusterRef:        v1.ClusterRef{Name: claim.Name},
+			},
+		}
+		Expect(controllerutil.SetControllerReference(owner, foreign, k8sClient.Scheme())).To(Succeed())
+		create(foreign)
+		create(claim)
+		eventuallyCluster(claim)
+		setClusterReady(claim, metav1.ConditionTrue, v1.ReasonHealthy, "")
+		expectFalse(claim, fleetv1alpha1.ConditionAttachmentsReady, "Blocked", Not(BeEmpty()))
+
+		Expect(k8sClient.Delete(ctx, foreign)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			optimize, err := optimizeOf(claim)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(metav1.IsControlledBy(optimize, latest(g, claim))).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	It("reports AttachmentsReady in Ready", func() {
