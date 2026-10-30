@@ -116,14 +116,14 @@ export function resetValue<C extends ClaimObject>(
   const lock = lockOf(s.locks, steps);
   if (lock) return { refused: lock };
   const parent = pendingParent(s, steps);
-  if (parent)
-    return "reset" in parent.entry
-      ? { session: s }
-      : setValue(
-          s,
-          parent.entry.steps,
-          without(parent.entry.value, parent.rest),
-        );
+  if (parent) {
+    if ("reset" in parent.entry) return { session: s };
+    const rest = without(parent.entry.value, parent.rest);
+    // An empty value would stay in the claim as an empty field.
+    return isEmpty(rest)
+      ? resetValue(s, parent.entry.steps)
+      : setValue(s, parent.entry.steps, rest);
+  }
   return {
     session: withEntry(
       s,
@@ -246,6 +246,14 @@ function pendingParent(
     if (isBelow(steps, entry.steps))
       return { entry, rest: steps.slice(entry.steps.length) };
   return undefined;
+}
+
+function isEmpty(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Object.keys(value).length === 0
+  );
 }
 
 function isBelow(steps: readonly Step[], parent: readonly Step[]): boolean {

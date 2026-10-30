@@ -289,6 +289,23 @@ describe("overlapping changes", () => {
     ).toEqual({ replicas: 7 });
   });
 
+  it("a reset of the last item of a pending list removes the list", () => {
+    let s = ok(
+      setValue(open(), cluster("extraEnv"), [{ name: "TZ", value: "UTC" }]),
+    );
+    s = ok(resetValue(s, [...cluster("extraEnv"), { item: { name: "TZ" } }]));
+    expect([...s.pending.values()]).toEqual([
+      {
+        path: "spec.cluster.extraEnv",
+        steps: cluster("extraEnv"),
+        reset: true,
+      },
+    ]);
+    expect(
+      (claimAfter(s).spec as { cluster: Record<string, unknown> }).cluster,
+    ).not.toHaveProperty("extraEnv");
+  });
+
   it("a change of a parent drops the pending changes below it", () => {
     let s = ok(setValue(open(), cluster("zeebe", "replicas"), 5));
     s = ok(setValue(s, cluster("zeebe"), { replicas: 4 }));
