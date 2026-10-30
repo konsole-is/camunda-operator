@@ -7,6 +7,7 @@ import {
   CLUSTER_LABEL,
   COMPONENT_LABEL,
   ENVIRONMENT_LABEL,
+  OPTIMIZE_COMPONENTS,
   REVISION_ANNOTATION,
   SECTION_LABEL,
   isLabelKey,
@@ -89,6 +90,14 @@ it.each([
   [BACKUP_SCHEDULE_LABEL, "pkg/labels/labels.go", "BackupScheduleKey"],
 ])("%s matches %s %s", (value, file, name) => {
   expect(value).toBe(goConstant(file, name));
+});
+
+it("OPTIMIZE_COMPONENTS match ComponentWebapp and ComponentImporter of pkg/components/camundaoptimize", () => {
+  const names = "pkg/components/camundaoptimize/names.go";
+  expect(OPTIMIZE_COMPONENTS).toEqual([
+    goConstant(names, "ComponentWebapp"),
+    goConstant(names, "ComponentImporter"),
+  ]);
 });
 
 describe("isManaged", () => {

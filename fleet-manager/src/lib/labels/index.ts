@@ -28,6 +28,13 @@ export const CLUSTER_LABEL = "camunda.io/cluster";
 export const COMPONENT_LABEL = "camunda.io/component";
 
 /**
+ * OPTIMIZE_COMPONENTS are the COMPONENT_LABEL values of the pods of a
+ * CamundaOptimize. They are ComponentWebapp and ComponentImporter of
+ * pkg/components/camundaoptimize.
+ */
+export const OPTIMIZE_COMPONENTS = ["optimize-webapp", "optimize-importer"] as const;
+
+/**
  * BACKUP_SCHEDULE_LABEL on a backup holds labels.OwnerName of the
  * BackupSchedule that made it. It is BackupScheduleKey of pkg/labels.
  */
