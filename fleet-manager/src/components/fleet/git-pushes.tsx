@@ -117,8 +117,8 @@ function SettleDelete({
 /**
  * useGitPushes returns the pending pushes. record adds one push for each
  * written and each deleted object of a Git result, and replaces an older
- * push of the same object; it ignores any other result. settle removes the push of key. It throws
- * without a GitPushesProvider above it.
+ * push of the same object; it ignores any other result. settle removes the
+ * push of key. It throws without a GitPushesProvider above it.
  */
 export function useGitPushes(): GitPushes {
   const pushes = useContext(GitPushesContext);

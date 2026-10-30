@@ -44,8 +44,9 @@ export function toastResultOf(
  * the transition, never in an effect, and never calls record of
  * useGitPushes itself. show records a Git result in useGitPushes. The toast
  * of a Git result is waiting until GitOps applied each written and each
- * deleted object, and then applied with message. dismiss clears the toast.
- * It needs a GitPushesProvider and a QueryClientProvider above it.
+ * deleted object, and then applied with message. An applied toast stays
+ * applied. dismiss clears the toast. It needs a GitPushesProvider and a
+ * QueryClientProvider above it.
  */
 export function useWriteToast(): {
   toast?: ToastResult;
@@ -78,7 +79,7 @@ export function useWriteToast(): {
   const applied =
     last.applied || !pushes.some((push) => keys.includes(push.key));
   // A later save of the same object adds a push with the same key, so the
-  // toast keeps applied once it got there.
+  // toast stays applied once it is applied.
   if (applied && !last.applied) setLast({ ...last, applied: true });
   const toast: ToastResult = applied
     ? { kind: "applied", message, commit: result.commit }
