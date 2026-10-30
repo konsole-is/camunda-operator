@@ -124,6 +124,17 @@ function input(
           selection: "One",
         },
       } as unknown as Resource<"PluginSection">,
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginSection",
+        metadata: { name: "backup" },
+        spec: {
+          label: "Backup",
+          slot: "backupStorage",
+          appliesTo: ["CamundaClusterClaim"],
+          selection: "One",
+        },
+      } as unknown as Resource<"PluginSection">,
     ],
   };
 }
@@ -139,6 +150,51 @@ function encrypted(clusterSpec: Record<string, unknown> = {}): Claim {
   ];
   return c;
 }
+
+// selecting returns claim with the selections of the named sections only.
+function selecting(c: Claim, ...sections: string[]): Claim {
+  (c.spec as { plugins: unknown[] }).plugins = sections.map((section) => ({
+    section,
+    registration: section,
+  }));
+  return c;
+}
+
+const RESTART_ALL =
+  "The brokers restart one at a time. The other processes restart.";
+
+const platform = (auth: Record<string, unknown>) =>
+  ({
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaPlatformConfig",
+    metadata: { name: "default" },
+    spec: { auth },
+  }) as unknown as Resource<"CamundaPlatformConfig">;
+
+const BASIC = platform({ method: "basic" });
+const OIDC = platform({
+  method: "oidc",
+  oidc: {
+    issuerUrl: "https://idp",
+    clientId: "camunda",
+    clientSecretRef: { name: "idp", key: "secret" },
+    clientIdClaim: "azp",
+  },
+});
+
+const storage = (spec: Record<string, unknown>) =>
+  ({
+    apiVersion: "core.camunda.io/v1",
+    kind: "SecondaryStorageConfig",
+    metadata: { name: "data", namespace: "team-a" },
+    spec,
+  }) as unknown as Resource<"SecondaryStorageConfig">;
+
+const ELASTICSEARCH = storage({
+  type: "elasticsearch",
+  elasticsearch: { nodeCount: 3 },
+});
+const RDBMS = storage({ type: "rdbms", rdbms: { databaseConfigRef: "db" } });
 
 const environment = (release: string) =>
   ({
@@ -180,33 +236,61 @@ describe("clusterImpacts", () => {
     ]);
   });
 
-  it("a release with the same Camunda version gives no line", () => {
+  it("a release with the same Camunda version restarts every process", () => {
+    // The config hash of every process takes the name of the release.
     expect(
       clusterImpacts(
         input(set([f("spec"), f("releaseRef")], "camunda-8-9-5-images")),
       ),
+    ).toEqual([RESTART_ALL]);
+  });
+
+  it("a release that names the live release gives no line", () => {
+    const inherits = claim();
+    delete (inherits.spec as { releaseRef?: string }).releaseRef;
+    expect(
+      clusterImpacts(
+        input(set([f("spec"), f("releaseRef")], "camunda-8-9-5"), {
+          claim: inherits,
+        }),
+      ),
     ).toEqual([]);
+  });
+
+  it("a new platform config restarts every process", () => {
+    expect(
+      clusterImpacts(
+        input(set([f("spec"), f("platformConfigRef")], "b"), {
+          live: live({ platformConfigRef: "a" }),
+        }),
+      ),
+    ).toEqual([RESTART_ALL]);
   });
 
   it("a preset lists each merged field that changes", () => {
     expect(
       clusterImpacts(input(set([f("spec"), f("presetRef")], "large"))),
-    ).toEqual(["spec.tasklist.replicas: 1 to 2."]);
+    ).toEqual([RESTART_ALL, "spec.tasklist.replicas: 1 to 2."]);
   });
 
   it("a preset field that the new preset drops shows as unset", () => {
     const i = input(set([f("spec"), f("presetRef")], "small"));
     i.presets = [...i.presets, preset("small", { gateway: { replicas: 1 } })];
-    expect(clusterImpacts(i)).toEqual(["spec.tasklist.replicas: 1 to unset."]);
+    expect(clusterImpacts(i)).toEqual([
+      RESTART_ALL,
+      "spec.tasklist.replicas: 1 to unset.",
+    ]);
   });
 
   it("a field of a standalone process restarts its pods", () => {
     expect(
       clusterImpacts(input(set(cluster("gateway", "replicas"), 3))),
     ).toEqual(["Gateway pods restart."]);
-    expect(clusterImpacts(input(set(cluster("zeebe", "replicas"), 5)))).toEqual(
-      ["Broker pods restart."],
-    );
+    expect(
+      clusterImpacts(
+        input(set(cluster("zeebe", "resources"), { limits: { cpu: "2" } })),
+      ),
+    ).toEqual(["Broker pods restart."]);
   });
 
   it("two fields of one process give one line", () => {
@@ -214,7 +298,7 @@ describe("clusterImpacts", () => {
       clusterImpacts(
         input(
           both(
-            set(cluster("zeebe", "replicas"), 5),
+            set(cluster("zeebe", "resources"), { limits: { cpu: "2" } }),
             set(cluster("zeebe", "storageSize"), "64Gi"),
           ),
         ),
@@ -362,6 +446,229 @@ describe("clusterImpacts", () => {
     ).toEqual([
       "Removes Deployment orders-gateway and Service orders-gateway. Gateway runs in the brokers, which restarts.",
     ]);
+  });
+
+  it("a gateway that changes its mode restarts the connectors, which call it", () => {
+    const enabled = { connectors: { enabled: true } };
+    const i = input(set(cluster("gateway", "mode"), "Embedded"), {
+      claim: claim(enabled),
+      live: live(enabled),
+    });
+    i.platform = BASIC;
+    expect(clusterImpacts(i)).toEqual([
+      "Connectors pods restart.",
+      "Removes Deployment orders-gateway and Service orders-gateway. Gateway runs in the brokers, which restarts.",
+    ]);
+  });
+
+  it("a process that becomes standalone in the change does not restart", () => {
+    expect(
+      clusterImpacts(
+        input(
+          both(
+            set(cluster("tasklist", "mode"), "Standalone"),
+            set(cluster("tasklist", "replicas"), 2),
+          ),
+        ),
+      ),
+    ).toEqual([
+      "Creates Deployment orders-tasklist and Service orders-tasklist.",
+      "Tasklist starts with the settings prepared in the claim (1 fields).",
+      "Gateway pods restart.",
+    ]);
+  });
+
+  it("enabled connectors create their Deployment and restart nothing else", () => {
+    const i = input(set(cluster("connectors", "enabled"), true));
+    i.platform = BASIC;
+    expect(clusterImpacts(i)).toEqual([
+      "Creates Deployment orders-connectors and Service orders-connectors.",
+      "Connectors starts from the workload settings of the preset: replicas, CPU, and memory.",
+    ]);
+  });
+
+  it("disabled connectors remove their Deployment", () => {
+    const enabled = { connectors: { enabled: true, replicas: 2 } };
+    const i = input(set(cluster("connectors", "enabled"), false), {
+      claim: claim(enabled),
+      live: live(enabled),
+    });
+    i.platform = BASIC;
+    expect(clusterImpacts(i)).toEqual([
+      "Removes Deployment orders-connectors and Service orders-connectors.",
+    ]);
+  });
+
+  it("connectors under OIDC with a client id claim restart the other processes", () => {
+    // The OIDC client gets the connectors role only while connectors run.
+    const i = input(set(cluster("connectors", "enabled"), true));
+    i.platform = OIDC;
+    expect(clusterImpacts(i)).toEqual([
+      "Broker pods restart.",
+      "Gateway pods restart.",
+      "Creates Deployment orders-connectors and Service orders-connectors.",
+      "Connectors starts from the workload settings of the preset: replicas, CPU, and memory.",
+    ]);
+  });
+
+  describe("settings that every process except the connectors renders", () => {
+    // Operate runs standalone and connectors run, so the lists show which
+    // processes take the setting.
+    const running = {
+      operate: { mode: "Standalone" },
+      connectors: { enabled: true },
+    };
+    const impacts = (
+      change: (s: Session<Claim>) => Session<Claim>,
+      over: {
+        claim?: Claim;
+        live?: Record<string, unknown>;
+        platform?: Resource<"CamundaPlatformConfig">;
+        storage?: Resource<"SecondaryStorageConfig">;
+      } = {},
+    ) => {
+      const i = input(change, {
+        claim: over.claim ?? claim(running),
+        live: live({ ...running, ...over.live }),
+      });
+      i.platform = over.platform;
+      i.storage = over.storage;
+      return clusterImpacts(i);
+    };
+    const EVERY_UNIFIED = [
+      "Broker pods restart.",
+      "Gateway pods restart.",
+      "Operate pods restart.",
+    ];
+
+    it.each(["replicas", "partitions", "replicationFactor"])(
+      "zeebe.%s restarts the brokers, the gateway, and the standalone apps",
+      (field) => {
+        expect(impacts(set(cluster("zeebe", field), 5))).toEqual(EVERY_UNIFIED);
+      },
+    );
+
+    it("indexReplicas restarts them on Elasticsearch only", () => {
+      const change = set(cluster("indexReplicas"), 2);
+      expect(impacts(change)).toEqual(EVERY_UNIFIED);
+      expect(impacts(change, { storage: ELASTICSEARCH })).toEqual(
+        EVERY_UNIFIED,
+      );
+      expect(impacts(change, { storage: RDBMS })).toEqual([]);
+    });
+
+    it("indexReplicas restarts nothing when it names the count the operator renders", () => {
+      // Three nodes give one replica without the field.
+      expect(
+        impacts(set(cluster("indexReplicas"), 1), { storage: ELASTICSEARCH }),
+      ).toEqual([]);
+    });
+
+    it("the admin role restarts them under OIDC only", () => {
+      const change = set(cluster("auth", "admin"), { users: ["ada"] });
+      expect(impacts(change)).toEqual(EVERY_UNIFIED);
+      expect(impacts(change, { platform: OIDC })).toEqual(EVERY_UNIFIED);
+      expect(impacts(change, { platform: BASIC })).toEqual([]);
+    });
+
+    it("the OIDC client restarts the connectors too", () => {
+      expect(
+        impacts(set(cluster("auth", "clientId"), "orders"), {
+          platform: OIDC,
+        }),
+      ).toEqual([...EVERY_UNIFIED, "Connectors pods restart."]);
+      expect(
+        impacts(set(cluster("auth", "clientId"), "orders"), {
+          platform: BASIC,
+        }),
+      ).toEqual([]);
+    });
+
+    it("an audience equal to the client id restarts nothing", () => {
+      expect(
+        impacts(set(cluster("auth", "audience"), "camunda"), {
+          platform: OIDC,
+        }),
+      ).toEqual([]);
+    });
+
+    it("a password rotation restarts the connectors only", () => {
+      expect(
+        impacts(set(cluster("auth", "basic", "passwordRotation"), "2"), {
+          platform: BASIC,
+        }),
+      ).toEqual(["Connectors pods restart."]);
+      expect(
+        impacts(set(cluster("auth", "basic", "adminEmail"), "a@b.c"), {
+          platform: BASIC,
+        }),
+      ).toEqual([]);
+    });
+
+    it("externalUrl restarts them under OIDC only", () => {
+      const change = set(cluster("externalUrl"), "https://orders.example");
+      const own = selecting(claim(running));
+      expect(impacts(change, { claim: own, platform: OIDC })).toEqual(
+        EVERY_UNIFIED,
+      );
+      expect(impacts(change, { claim: own, platform: BASIC })).toEqual([]);
+      expect(
+        impacts(set(cluster("externalUrl"), "https://orders.example/"), {
+          claim: selecting(
+            claim({ ...running, externalUrl: "https://orders.example" }),
+          ),
+          live: { externalUrl: "https://orders.example" },
+          platform: OIDC,
+        }),
+      ).toEqual([]);
+    });
+
+    describe("backup", () => {
+      const bucket = {
+        claim: selecting(claim(running), "access", "backup"),
+        live: { backupStorageRef: "bucket" },
+      };
+      const schedule = set(
+        cluster("backup", "primaryStorage", "schedule"),
+        "PT2H",
+      );
+
+      it("the schedule restarts the brokers and the gateway on a relational cluster with a bucket", () => {
+        expect(impacts(schedule, { ...bucket, storage: RDBMS })).toEqual([
+          "Broker pods restart.",
+          "Gateway pods restart.",
+        ]);
+        expect(impacts(schedule, bucket)).toEqual([
+          "Broker pods restart.",
+          "Gateway pods restart.",
+        ]);
+      });
+
+      it("the retention restarts the brokers only", () => {
+        expect(
+          impacts(
+            set(
+              cluster("backup", "primaryStorage", "retention", "window"),
+              "P1D",
+            ),
+            { ...bucket, storage: RDBMS },
+          ),
+        ).toEqual(["Broker pods restart."]);
+      });
+
+      it("restarts nothing on Elasticsearch, without a bucket, or for the dump", () => {
+        expect(
+          impacts(schedule, { ...bucket, storage: ELASTICSEARCH }),
+        ).toEqual([]);
+        expect(impacts(schedule, { storage: RDBMS })).toEqual([]);
+        expect(
+          impacts(set(cluster("backup", "dump"), { resources: {} }), {
+            ...bucket,
+            storage: RDBMS,
+          }),
+        ).toEqual([]);
+      });
+    });
   });
 
   it("a smaller storage size cannot shrink the volumes", () => {

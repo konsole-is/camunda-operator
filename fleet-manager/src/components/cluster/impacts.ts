@@ -12,6 +12,7 @@ import {
   withValue,
   type Session,
 } from "@/lib/session";
+import { podInputs, type PodContext } from "./pod-inputs";
 import { topologyOf, type Process } from "./topology";
 
 /**
@@ -20,7 +21,7 @@ import { topologyOf, type Process } from "./topology";
  * name. Without environment, a change that removes the release of the
  * claim has no release after it.
  */
-export type ClusterChangeInput = {
+export type ClusterChangeInput = PodContext & {
   session: Session<Resource<"CamundaClusterClaim">>;
   live: Resource<"CamundaCluster">;
   presets: readonly Resource<"CamundaClusterPreset">[];
@@ -28,6 +29,9 @@ export type ClusterChangeInput = {
   sections: readonly Resource<"PluginSection">[];
   environment?: Resource<"Environment">;
 };
+
+const RESTART_ALL =
+  "The brokers restart one at a time. The other processes restart.";
 
 const PROCESS_NAME: Record<Process, string> = {
   zeebe: "Broker",
@@ -74,20 +78,19 @@ export function mergedSpecs(input: ClusterChangeInput): {
 export function clusterImpacts(input: ClusterChangeInput): string[] {
   const { session, live } = input;
   const { before, after } = mergedSpecs(input);
+  const refs = clusterAfter(input);
   const was = session.claim.spec;
   const is = claimAfter(session).spec;
   const changed = (name: keyof typeof was) => !equalJSON(was[name], is[name]);
   const cluster = clusterChanges(input);
   const lines = new Set<string>();
 
-  if (changed("releaseRef")) {
-    const version = (name: string | undefined) =>
-      input.releases.find((r) => r.metadata?.name === name)?.spec.version;
-    if (version(live.spec.releaseRef) !== version(releaseAfter(input)))
-      lines.add(
-        "The brokers restart one at a time. The other processes restart.",
-      );
-  }
+  // The config hash of every process takes the name and the generation of
+  // the preset, the release, and the platform config of the cluster.
+  const restartsAll = (
+    ["presetRef", "releaseRef", "platformConfigRef"] as const
+  ).some((name) => changed(name) && refs[name] !== live.spec[name]);
+  if (restartsAll) lines.add(RESTART_ALL);
 
   if (changed("presetRef"))
     for (const line of leafChanges(
@@ -97,6 +100,7 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
       lines.add(line);
 
   const boxes = topologyOf(after.spec, []);
+  const had = new Set(topologyOf(before.spec, []).map((b) => b.process));
   const shrinks = shrinksStorage(before.spec, after.spec);
   for (const steps of cluster) {
     const [first, second] = steps;
@@ -104,17 +108,28 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
       continue;
     const process = first.field as Process;
     const field = second && "field" in second ? second.field : undefined;
-    if (field === "mode") continue;
+    if (isSwitch(process, field)) continue;
     if (shrinks && process === "zeebe" && field === "storageSize") continue;
     const host = boxes.find((b) =>
       b.embedded.some((e) => e.process === process),
     );
-    if (boxes.some((b) => b.process === process))
-      lines.add(`${PROCESS_NAME[process]} pods restart.`);
-    else if (host && field !== undefined && HOST_FIELDS.has(field))
+    if (boxes.some((b) => b.process === process)) {
+      if (had.has(process)) lines.add(`${PROCESS_NAME[process]} pods restart.`);
+    } else if (host && field !== undefined && HOST_FIELDS.has(field))
       lines.add(`${PROCESS_NAME[host.process]} pods restart.`);
     else lines.add(`Applies when ${PROCESS_NAME[process]} runs standalone.`);
   }
+
+  if (!restartsAll)
+    for (const { process } of boxes)
+      if (
+        had.has(process) &&
+        !equalJSON(
+          podInputs(before.spec, input, process),
+          podInputs(after.spec, input, process),
+        )
+      )
+        lines.add(`${PROCESS_NAME[process]} pods restart.`);
 
   if (
     cluster.some(([first]) => "field" in first && CLUSTER_WIDE.has(first.field))
@@ -316,13 +331,6 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function startsWith(steps: readonly Step[], fields: readonly string[]) {
-  return fields.every((name, i) => {
-    const step = steps[i];
-    return step !== undefined && "field" in step && step.field === name;
-  });
-}
-
 function leafChanges(
   before: CamundaClusterSpec,
   after: CamundaClusterSpec,
@@ -398,9 +406,18 @@ function startLine(input: ClusterChangeInput, p: Process): string {
     (node) =>
       node.leaf &&
       node.parent !== undefined &&
-      !startsWith(node.steps, ["mode"]),
+      !(
+        node.steps[0] &&
+        "field" in node.steps[0] &&
+        isSwitch(p, node.steps[0].field)
+      ),
   ).length;
   return n > 0
     ? `${PROCESS_NAME[p]} starts with the settings prepared in the claim (${n} fields).`
     : `${PROCESS_NAME[p]} starts from the workload settings of the preset: replicas, CPU, and memory.`;
+}
+
+// isSwitch says whether field of process p creates or removes its workload.
+function isSwitch(p: Process, field: string | undefined): boolean {
+  return field === "mode" || (p === "connectors" && field === "enabled");
 }
