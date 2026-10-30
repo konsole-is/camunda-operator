@@ -383,6 +383,48 @@ describe("validateClusterClaim", () => {
     expect(validateClusterClaim(set(open(), steps, "x"), c)).toHaveLength(1);
   });
 
+  it("resolves a reference to another parameter of the schema", () => {
+    const c = ctx();
+    c.registrations = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRegistration",
+        metadata: { name: "gateway-access" },
+        spec: {
+          parameters: {
+            type: "object",
+            properties: {
+              port: { type: "integer" },
+              adminPort: { $ref: "#/properties/port" },
+            },
+          },
+        },
+      } as unknown as Resource<"PluginRegistration">,
+    ];
+    const steps = [...ACCESS, f("parameters"), f("adminPort")];
+    expect(validateClusterClaim(set(open(), steps, 9090), c)).toEqual([]);
+  });
+
+  it("does not report a constraint of the whole parameters at one parameter", () => {
+    const c = ctx();
+    c.registrations = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRegistration",
+        metadata: { name: "gateway-access" },
+        spec: {
+          parameters: {
+            type: "object",
+            minProperties: 3,
+            properties: { replicas: { type: "integer" } },
+          },
+        },
+      } as unknown as Resource<"PluginRegistration">,
+    ];
+    const steps = [...ACCESS, f("parameters"), f("replicas")];
+    expect(validateClusterClaim(set(open(), steps, 2), c)).toEqual([]);
+  });
+
   it("checks the values that a reset leaves", () => {
     const s = open(claim({ cluster: { externalUrl: "https://x" } }));
     const result = resetValue(s, [f("spec"), f("cluster"), f("externalUrl")]);

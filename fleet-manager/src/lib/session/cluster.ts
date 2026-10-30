@@ -100,7 +100,7 @@ export function validateClusterClaim(
   );
 
   for (const entry of s.pending.values())
-    errors.push(...parameterErrors(entry, ctx, policy));
+    errors.push(...parameterErrors(entry, ctx, policy, after));
 
   // A claim without a release runs the default release of the Environment.
   const fallback = ctx.environment?.spec.releases?.default;
@@ -143,6 +143,7 @@ function parameterErrors(
   entry: PendingChange,
   ctx: ClusterClaimContext,
   policy: ResolvedPolicy | undefined,
+  after: Claim,
 ): FieldError[] {
   if ("reset" in entry || entry.steps.length !== 5) return [];
   const [, plugins, selection, parameters, name] = entry.steps as [
@@ -169,25 +170,17 @@ function parameterErrors(
     (r) => r.metadata?.name === selection.item.registration,
   );
   const root = asObject(registration?.spec.parameters);
-  const properties = asObject(root.properties);
-  const schema = Object.hasOwn(properties, name.field)
-    ? asObject(properties[name.field])
-    : asObject(root.additionalProperties);
-  if (Object.keys(schema).length === 0) return [];
-  // The parameter is checked inside the root schema, so that a reference to
-  // a definition of the root resolves.
+  if (Object.keys(root).length === 0) return [];
+  // The whole parameters of the selection are checked, so that references
+  // and root rules see the real object.
   const result = validate(
-    {
-      ...root,
-      properties: { [name.field]: schema },
-      required: [],
-      additionalProperties: true,
-    } as OpenAPISchema,
-    { [name.field]: entry.value },
+    root as OpenAPISchema,
+    valueAt(after, entry.steps.slice(0, 4)) ?? {},
   );
-  return result.ok
-    ? []
-    : result.errors.map((e) => ({ path: entry.path, message: e.message }));
+  if (result.ok) return [];
+  return result.errors
+    .filter((e) => e.path === name.field || e.path.startsWith(`${name.field}.`))
+    .map((e) => ({ path: entry.path, message: e.message }));
 }
 
 function releaseErrors(
