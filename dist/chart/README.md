@@ -78,7 +78,7 @@ helm upgrade camunda-operator \
   oci://ghcr.io/konsole-is/charts/camunda-operator \
   --version <version> \
   --namespace camunda-operator-system \
-  --set 'manager.args={--leader-elect,--zap-log-level=info}'
+  --set 'manager.args={--leader-elect,--zap-log-level=debug}'
 ```
 
 To set an environment variable, use `manager.envOverrides.<NAME>=<value>`, for example `--set manager.envOverrides.CAMUNDA_OPERATOR_WORKLOAD_GRACE_PERIOD=60m`. The manager ignores a name that it does not know, and it gives no error. Copy the names from this table.
@@ -104,8 +104,8 @@ The chart sets some flags from its own values. The column "Set by the chart" nam
 | `--webhook-cert-path` | none | empty | no | The directory that holds the certificate of the webhook server. The operator has no webhooks, so this flag changes nothing. |
 | `--webhook-cert-name` | none | `tls.crt` | no | The file name of the webhook certificate. It changes nothing, as above. |
 | `--webhook-cert-key` | none | `tls.key` | no | The file name of the webhook key. It changes nothing, as above. |
-| `--zap-devel` | none | `true` | no | Development logging: console format, `debug` level, and stack traces from `warn`. `false` gives JSON format, `info` level, and stack traces from `error`. |
-| `--zap-log-level` | none | `debug` | no | The lowest level that the manager logs: `debug`, `info`, `error`, or `panic`. An integer above 0 also works: `1` is the same as `debug`. A larger integer logs more detail. The default follows `--zap-devel`. |
-| `--zap-encoder` | none | `console` | no | The log format: `json` or `console`. The default follows `--zap-devel`. |
-| `--zap-stacktrace-level` | none | `warn` | no | The lowest level that gets a stack trace: `info`, `error`, or `panic`. The default follows `--zap-devel`. The flag cannot set `warn`, so only `--zap-devel=true` gives stack traces from `warn`. |
+| `--zap-devel` | none | `false` | no | Development logging: console format, `debug` level, and stack traces from `warn`. The default `false` gives JSON lines, `info` level, and stack traces from `error`. The fleet manager finds the log lines of a built-in `PluginRequest` only in JSON lines. |
+| `--zap-log-level` | none | `info` | no | The lowest level that the manager logs: `debug`, `info`, `error`, or `panic`. An integer above 0 also works: `1` is the same as `debug`. A larger integer logs more detail. The default follows `--zap-devel`. |
+| `--zap-encoder` | none | `json` | no | The log format: `json` or `console`. The default follows `--zap-devel`. |
+| `--zap-stacktrace-level` | none | `error` | no | The lowest level that gets a stack trace: `info`, `error`, or `panic`. The default follows `--zap-devel`. The flag cannot set `warn`, so only `--zap-devel=true` gives stack traces from `warn`. |
 | `--zap-time-encoding` | none | `rfc3339` | no | The time format of a log line: `epoch`, `millis`, `nanos`, `iso8601`, `rfc3339`, or `rfc3339nano`. The help text of the flag says `nano`, but the manager accepts only `nanos`. |

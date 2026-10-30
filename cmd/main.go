@@ -28,6 +28,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -99,7 +100,11 @@ func main() {
 	s := bindFlags(flag.CommandLine, os.Getenv)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&s.zapOptions)))
+	logger := zap.New(zap.UseFlagOptions(&s.zapOptions))
+	ctrl.SetLogger(logger)
+	// The fleet manager and REQ-LOGS read each line of the manager as JSON, and
+	// client-go also writes through klog.
+	klog.SetLogger(logger)
 
 	if err := s.checkGracePeriods(); err != nil {
 		setupLog.Error(err, "Failed to read the grace periods")
@@ -290,11 +295,7 @@ func main() {
 // table "Manager settings" of dist/chart/README.md lists these flags, and
 // TestManagerSettingsTable fails when the two differ.
 func bindFlags(fs *flag.FlagSet, getenv func(string) string) *settings {
-	s := &settings{
-		zapOptions: zap.Options{
-			Development: true,
-		},
-	}
+	s := &settings{}
 
 	fs.StringVar(&s.metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
