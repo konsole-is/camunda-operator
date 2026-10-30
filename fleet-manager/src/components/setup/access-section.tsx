@@ -12,7 +12,7 @@ export function AccessSection({
   const service = serviceName ?? "<fleet manager Service>";
   return (
     <div className="space-y-2 text-sm">
-      <pre className="overflow-x-auto rounded-md bg-panel-2 px-3 py-2">
+      <pre className="rounded-md bg-panel-2 px-3 py-2 whitespace-pre-wrap [overflow-wrap:anywhere]">
         <code className="font-mono text-xs text-text">
           {`kubectl -n ${namespace} port-forward service/${service} 3000:3000`}
         </code>
