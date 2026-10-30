@@ -149,6 +149,19 @@ export const reviewStories: Story[] = [
   },
   {
     component: "ClaimReview",
+    name: "With caution",
+    render: () => (
+      <ClaimReviewStory
+        claim={claim}
+        changes={scale}
+        mode="direct"
+        impacts={restart}
+        caution="A backup of orders runs now. The rollout makes it fail."
+      />
+    ),
+  },
+  {
+    component: "ClaimReview",
     name: "Preview refused",
     render: () => (
       <ClaimReviewStory

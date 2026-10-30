@@ -131,6 +131,18 @@ afterEach(() => {
 });
 
 describe("ClaimReview", () => {
+  it("shows the caution when given, and no caution otherwise", () => {
+    const { unmount } = review();
+    expect(screen.queryByRole("note", { name: "Caution" })).toBeNull();
+    unmount();
+    review({
+      caution: "A backup of orders runs now. The rollout makes it fail.",
+    });
+    expect(screen.getByRole("note", { name: "Caution" }).textContent).toContain(
+      "A backup of orders runs now.",
+    );
+  });
+
   it("direct mode applies exactly the changed claim with the precondition", async () => {
     const onWritten = vi.fn();
     review({ onWritten });
