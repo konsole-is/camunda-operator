@@ -127,8 +127,8 @@ afterEach(async () => {
   await repo?.close();
 });
 
-// These tests start git child processes and a local Git server. On a busy
-// machine they need more than the default 5 s.
+// These tests start a local Git server. On a busy machine they need more
+// than the default 5 s.
 const slow = { timeout: 30_000 };
 
 describe("the Git writer", slow, () => {
