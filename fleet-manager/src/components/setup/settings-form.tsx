@@ -114,7 +114,11 @@ export function SettingsForm({
       result = await save(patch, resourceVersion);
     } catch (error) {
       setSent(undefined);
-      throw error;
+      setToast({
+        kind: "error",
+        message: `Could not save the settings: ${errorText(error)}`,
+      });
+      return;
     }
     setToast(toastResultOf(result, "Saved the settings."));
     if (result.ok) {
@@ -405,6 +409,11 @@ function TestButton({
           setRunning(true);
           try {
             setResult(await run());
+          } catch (error) {
+            setResult({
+              ok: false,
+              message: `Could not run the test: ${errorText(error)}`,
+            });
           } finally {
             setRunning(false);
           }
@@ -427,4 +436,8 @@ function TestButton({
       )}
     </div>
   );
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

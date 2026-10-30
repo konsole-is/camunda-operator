@@ -317,6 +317,45 @@ describe("SettingsForm", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
+  it("a save that does not reach the server shows an error and can be sent again", async () => {
+    const p = props({
+      save: vi.fn(async (): Promise<WriteResult> => {
+        throw new Error("Failed to fetch");
+      }),
+    });
+    render(<SettingsForm {...p} />);
+
+    type("Kubernetes cluster name", "prod-us");
+    save();
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Could not save the settings: Failed to fetch",
+    );
+    expect(saveButton().disabled).toBe(false);
+    expect(field("Kubernetes cluster name").value).toBe("prod-us");
+  });
+
+  it("a test that does not reach the server replaces the last result with an error", async () => {
+    const testPrometheus = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        message: "Prometheus answered the query.",
+      })
+      .mockRejectedValueOnce(new Error("Failed to fetch"));
+    render(<SettingsForm {...props({ testPrometheus })} />);
+    const button = screen.getByRole("button", { name: "Test the query" });
+
+    fireEvent.click(button);
+    await screen.findByRole("status");
+    fireEvent.click(button);
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Could not run the test: Failed to fetch",
+    );
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("cannot save without a change", () => {
     render(<SettingsForm {...props()} />);
     expect(saveButton().disabled).toBe(true);
