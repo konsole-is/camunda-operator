@@ -61,9 +61,10 @@ function registration(
   };
 }
 
-function environment(
-  access: { allowed?: string[]; default?: string },
-): Environment {
+function environment(access: {
+  allowed?: string[];
+  default?: string;
+}): Environment {
   return {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "Environment",

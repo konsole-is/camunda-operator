@@ -70,9 +70,9 @@ describe("basicsErrors", () => {
   });
 
   it("asks for an environment when the picked one is gone", () => {
-    expect(
-      basicsErrors({ ...complete, environment: "old" }, context),
-    ).toEqual(["Choose an environment"]);
+    expect(basicsErrors({ ...complete, environment: "old" }, context)).toEqual([
+      "Choose an environment",
+    ]);
   });
 
   it("asks for no environment when none exists", () => {
@@ -105,9 +105,9 @@ describe("basicsErrors", () => {
   });
 
   it("refuses a taken name", () => {
-    expect(basicsErrors(complete, { ...context, takenNames: ["orders"] })).toEqual(
-      ["A cluster named orders already exists in this namespace."],
-    );
+    expect(
+      basicsErrors(complete, { ...context, takenNames: ["orders"] }),
+    ).toEqual(["A cluster named orders already exists in this namespace."]);
   });
 
   it("gives each host conflict", () => {
@@ -174,9 +174,11 @@ describe("offeredPresets", () => {
   });
 
   it("offers every preset by name without an environment", () => {
-    expect(offeredPresets(all, undefined).map((p) => p.metadata.name)).toEqual(
-      ["large", "medium", "small"],
-    );
+    expect(offeredPresets(all, undefined).map((p) => p.metadata.name)).toEqual([
+      "large",
+      "medium",
+      "small",
+    ]);
   });
 });
 

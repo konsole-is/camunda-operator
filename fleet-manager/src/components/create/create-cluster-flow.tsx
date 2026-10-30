@@ -1,5 +1,12 @@
 "use client";
 
+import type { V1Namespace } from "@kubernetes/client-node";
+import type { CamundaCluster } from "@/generated/crds/camundacluster";
+import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
+import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import { useResources } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
@@ -44,46 +51,33 @@ const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
  * yet, and the flow writes nothing.
  */
 export function CreateClusterFlow({ initial }: { initial: CreateClusterData }) {
-  const environments = useResources(
-    "Environment",
-    EVERYWHERE,
-    initial.environments,
-  ).items;
-  const namespaces = useResources(
-    "Namespace",
-    EVERYWHERE,
-    initial.namespaces,
-  ).items;
+  const environments = models<Environment>(
+    useResources("Environment", EVERYWHERE, initial.environments).items,
+  );
+  const namespaces = models<V1Namespace>(
+    useResources("Namespace", EVERYWHERE, initial.namespaces).items,
+  );
   const claims = useResources(
     "CamundaClusterClaim",
     EVERYWHERE,
     initial.claims,
   ).items;
-  const clusters = useResources(
-    "CamundaCluster",
-    EVERYWHERE,
-    initial.clusters,
-  ).items;
-  const allPresets = useResources(
-    "CamundaClusterPreset",
-    EVERYWHERE,
-    initial.presets,
-  ).items;
-  const sections = useResources(
-    "PluginSection",
-    EVERYWHERE,
-    initial.sections,
-  ).items;
-  const registrations = useResources(
-    "PluginRegistration",
-    EVERYWHERE,
-    initial.registrations,
-  ).items;
-  const accessRequests = useResources(
-    "PluginRequest",
-    ACCESS_REQUESTS,
-    initial.accessRequests,
-  ).items;
+  const clusters = models<CamundaCluster>(
+    useResources("CamundaCluster", EVERYWHERE, initial.clusters).items,
+  );
+  const allPresets = models<CamundaClusterPreset>(
+    useResources("CamundaClusterPreset", EVERYWHERE, initial.presets).items,
+  );
+  const sections = models<PluginSection>(
+    useResources("PluginSection", EVERYWHERE, initial.sections).items,
+  );
+  const registrations = models<PluginRegistration>(
+    useResources("PluginRegistration", EVERYWHERE, initial.registrations).items,
+  );
+  const accessRequests = models<PluginRequest>(
+    useResources("PluginRequest", ACCESS_REQUESTS, initial.accessRequests)
+      .items,
+  );
 
   // Each value below reads the draft, so the step check gets it as an
   // argument and the screen gets it from the flow.
@@ -165,4 +159,10 @@ export function CreateClusterFlow({ initial }: { initial: CreateClusterData }) {
       )}
     </WizardStepper>
   );
+}
+
+// A Resource is plain JSON, so it differs from its model type only in its
+// timestamps, which neither the policy rules nor the step read.
+function models<T>(items: readonly unknown[]): T[] {
+  return items as T[];
 }

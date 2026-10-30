@@ -73,8 +73,15 @@ const counts = {
   legacy: { namespaces: 0, clusters: 0 },
 };
 const clusterNamespaces: V1Namespace[] = [
-  { metadata: { name: "team-payments", labels: { [ENVIRONMENT_LABEL]: "prod" } } },
-  { metadata: { name: "team-orders", labels: { [ENVIRONMENT_LABEL]: "prod" } } },
+  {
+    metadata: {
+      name: "team-payments",
+      labels: { [ENVIRONMENT_LABEL]: "prod" },
+    },
+  },
+  {
+    metadata: { name: "team-orders", labels: { [ENVIRONMENT_LABEL]: "prod" } },
+  },
   { metadata: { name: "sandbox", labels: { [ENVIRONMENT_LABEL]: "dev" } } },
 ];
 const preset = (
@@ -189,10 +196,7 @@ export const createFlowStories: Story[] = [
     component: "EnvironmentCards",
     name: "Not ready",
     render: () => (
-      <EnvironmentCards
-        environments={[production, legacy]}
-        counts={counts}
-      />
+      <EnvironmentCards environments={[production, legacy]} counts={counts} />
     ),
   },
   {
@@ -218,10 +222,16 @@ export const createFlowStories: Story[] = [
         initial={{
           environment: "prod",
           namespace: { kind: "existing", name: "team-orders" },
-          claim: { metadata: { name: "search" }, spec: { presetRef: "medium" } },
+          claim: {
+            metadata: { name: "search" },
+            spec: { presetRef: "medium" },
+          },
         }}
         hosts={[
-          { parameter: "hostnamePattern", host: "search.team-orders.example.com" },
+          {
+            parameter: "hostnamePattern",
+            host: "search.team-orders.example.com",
+          },
           {
             parameter: "grpcHostnamePattern",
             host: "grpc-search.team-orders.example.com",
@@ -242,10 +252,16 @@ export const createFlowStories: Story[] = [
         initial={{
           environment: "prod",
           namespace: { kind: "existing", name: "team-orders" },
-          claim: { metadata: { name: "billing" }, spec: { presetRef: "small" } },
+          claim: {
+            metadata: { name: "billing" },
+            spec: { presetRef: "small" },
+          },
         }}
         hosts={[
-          { parameter: "hostnamePattern", host: "billing.team-orders.example.com" },
+          {
+            parameter: "hostnamePattern",
+            host: "billing.team-orders.example.com",
+          },
         ]}
         conflicts={[
           "The host billing.team-orders.example.com is taken by team-payments/billing. Choose another name.",

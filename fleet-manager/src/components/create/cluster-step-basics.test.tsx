@@ -191,7 +191,9 @@ describe("ClusterStepBasics", () => {
 
   it("shows no environment choice without any Environment", () => {
     render(<Harness environments={[]} spy={vi.fn()} />);
-    expect(screen.queryByRole("radiogroup", { name: "Environment" })).toBeNull();
+    expect(
+      screen.queryByRole("radiogroup", { name: "Environment" }),
+    ).toBeNull();
     const options = within(screen.getByRole("combobox"))
       .getAllByRole("option")
       .map((o) => o.textContent);

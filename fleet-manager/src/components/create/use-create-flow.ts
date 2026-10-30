@@ -94,13 +94,15 @@ export function useCreateFlow<T extends object>(options: {
 function setIn(target: unknown, path: DraftPath, value: unknown): unknown {
   if (path.length === 0) return value;
   const [key, ...rest] = path;
-  const copy: Record<string | number, unknown> = Array.isArray(target)
-    ? [...target]
-    : typeof target === "object" && target !== null
-      ? { ...target }
-      : typeof key === "number"
-        ? []
-        : {};
+  const copy = (
+    Array.isArray(target)
+      ? [...(target as unknown[])]
+      : typeof target === "object" && target !== null
+        ? { ...target }
+        : typeof key === "number"
+          ? []
+          : {}
+  ) as Record<string | number, unknown>;
   if (rest.length === 0 && value === undefined) {
     if (Array.isArray(copy)) copy.splice(Number(key), 1);
     else delete copy[key];

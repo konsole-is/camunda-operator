@@ -50,9 +50,9 @@ describe("PresetCards", () => {
       />,
     );
     const card = (name: string) =>
-      screen.getByRole("radio", { name: new RegExp(`^${name}`) }).closest(
-        "label",
-      )?.textContent;
+      screen
+        .getByRole("radio", { name: new RegExp(`^${name}`) })
+        .closest("label")?.textContent;
     expect(card("small")).toContain("Brokers3");
     expect(card("small")).toContain("Partitions6");
     expect(card("small")).toContain("Used by 2 clusters");

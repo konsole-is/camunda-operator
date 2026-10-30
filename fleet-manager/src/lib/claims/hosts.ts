@@ -141,7 +141,9 @@ export function hostConflicts(
     const claim = taken.get(host);
     if (claim === undefined || seen.has(host)) continue;
     seen.add(host);
-    conflicts.push(`The host ${host} is taken by ${claim}. Choose another name.`);
+    conflicts.push(
+      `The host ${host} is taken by ${claim}. Choose another name.`,
+    );
   }
   return conflicts;
 }

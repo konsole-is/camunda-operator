@@ -96,7 +96,7 @@ const billingAccess = {
     section: "access",
   },
   status: { outputs: { externalUrl: "https://orders.team-a.example.com" } },
-} as Resource<"PluginRequest">;
+} as unknown as Resource<"PluginRequest">;
 
 function data(over: Partial<CreateClusterData> = {}): CreateClusterData {
   return {
@@ -221,7 +221,10 @@ describe("CreateClusterFlow", () => {
       />,
     );
     await userEvent.click(screen.getByRole("radio", { name: /Production/ }));
-    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "search");
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Name" }),
+      "search",
+    );
     await userEvent.click(
       screen.getByRole("radio", { name: "Create a namespace" }),
     );
@@ -230,11 +233,16 @@ describe("CreateClusterFlow", () => {
       screen.getAllByRole("textbox", { name: "Name" })[1],
       "team-search",
     );
-    await userEvent.type(screen.getByRole("textbox", { name: "team" }), "search");
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "team" }),
+      "search",
+    );
     await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
     await userEvent.click(next());
     expect(
-      screen.getByText("This step comes in a later version of the fleet manager."),
+      screen.getByText(
+        "This step comes in a later version of the fleet manager.",
+      ),
     ).toBeTruthy();
     await userEvent.click(
       screen.getByRole("button", { name: /Environment and name/ }),

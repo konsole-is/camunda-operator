@@ -50,7 +50,10 @@ export function ClaimNameField({
         }}
       />
       {shown.length > 0 && (
-        <ul id={`${id}-errors`} className="flex flex-col gap-0.5 text-xs text-bad">
+        <ul
+          id={`${id}-errors`}
+          className="flex flex-col gap-0.5 text-xs text-bad"
+        >
           {shown.map((error) => (
             <li key={error}>{error}</li>
           ))}
