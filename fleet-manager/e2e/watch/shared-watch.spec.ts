@@ -1,75 +1,17 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import net from "node:net";
 import { expect, test } from "@playwright/test";
-import { startEnvtest, type Envtest } from "../../test/envtest/envtest";
+import { type EnvtestApp, startEnvtestApp } from "../envtest-app";
 
 // Chromium speaks HTTP/2 only over TLS, so this plain http:// server keeps
 // the browser at its limit of 6 connections for one origin.
-let envtest: Envtest | undefined;
-let server: ChildProcess | undefined;
-let baseURL = "";
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const { port } = probe.address() as net.AddressInfo;
-      probe.close(() => resolve(port));
-    });
-  });
-}
+let app: EnvtestApp | undefined;
 
 test.beforeAll(async () => {
   test.setTimeout(180_000);
-  envtest = await startEnvtest();
-  const port = await freePort();
-  baseURL = `http://127.0.0.1:${port}`;
-  const stderr: string[] = [];
-  const child = spawn(
-    "./node_modules/.bin/next",
-    ["start", "--hostname", "127.0.0.1", "--port", String(port)],
-    {
-      env: {
-        ...process.env,
-        FLEET_DEV_GALLERY: "1",
-        KUBECONFIG: envtest.kubeconfigPath,
-        NEXT_TELEMETRY_DISABLED: "1",
-      },
-      stdio: ["ignore", "ignore", "pipe"],
-    },
-  );
-  server = child;
-  child.stderr!.on("data", (chunk) => stderr.push(String(chunk)));
-  const exited = new Promise<never>((_, reject) =>
-    child.once("exit", (code) =>
-      reject(new Error(`next start exited with ${code}: ${stderr.join("")}`)),
-    ),
-  );
-  const ready = (async () => {
-    const deadline = Date.now() + 60_000;
-    while (Date.now() < deadline) {
-      try {
-        if ((await fetch(`${baseURL}/dev/watch-probe`)).status === 200) return;
-      } catch {
-        // The server does not listen yet.
-      }
-      await new Promise((wake) => setTimeout(wake, 250));
-    }
-    throw new Error(
-      `next start did not serve /dev/watch-probe within 60 s: ${stderr.join("")}`,
-    );
-  })();
-  await Promise.race([ready, exited]);
+  app = await startEnvtestApp({ readyPath: "/dev/watch-probe" });
 });
 
 test.afterAll(async () => {
-  if (server && server.exitCode === null && server.signalCode === null) {
-    const exit = new Promise((resolve) => server!.once("exit", resolve));
-    server.kill();
-    await exit;
-  }
-  await envtest?.stop();
+  await app?.stop();
 });
 
 test("8 hooks over HTTP/1.1 open one watch connection, and navigation and a server action still complete", async ({
@@ -82,7 +24,7 @@ test("8 hooks over HTTP/1.1 open one watch connection, and navigation and a serv
   const stream = page.waitForResponse(
     (r) => new URL(r.url()).pathname === "/api/watch",
   );
-  await page.goto(`${baseURL}/dev/watch-probe`);
+  await page.goto(`${app!.baseURL}/dev/watch-probe`);
   expect((await stream).headers()["content-type"]).toContain(
     "text/event-stream",
   );
