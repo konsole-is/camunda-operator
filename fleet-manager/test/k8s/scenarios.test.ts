@@ -194,7 +194,11 @@ describe("the scenario loader", () => {
     const namespace: KubeObject = {
       apiVersion: "v1",
       kind: "Namespace",
-      metadata: { name: "default", uid: recordedUID },
+      metadata: {
+        name: "default",
+        uid: recordedUID,
+        labels: { "scenario.test/taken-over": "yes" },
+      },
     };
     const cm: KubeObject = {
       apiVersion: "v1",
@@ -211,6 +215,9 @@ describe("the scenario loader", () => {
 
     const live = await getLive(envtest.kubeConfig, namespace);
     expect(loader.realUID(recordedUID)).toBe(live.metadata.uid);
+    expect(live.metadata.labels).toMatchObject({
+      "scenario.test/taken-over": "yes",
+    });
     expect(
       (await getLive(envtest.kubeConfig, cm)).metadata.annotations,
     ).toEqual({ "scenario.test/namespace-uid": live.metadata.uid });

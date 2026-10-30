@@ -89,7 +89,10 @@ export class ScenarioLoader {
   ): Promise<void> {
     const known = new Map(this.uids);
     const posted = new Map<KubeObject, KubeObject>();
-    for (const o of create) posted.set(o, await this.create(o));
+    for (const o of create) {
+      const body = await this.create(o);
+      if (body) posted.set(o, body);
+    }
     // A recreated object keeps its scenario UID and gets a new real UID.
     const fresh = [...this.uids]
       .filter(([uid, real]) => known.get(uid) !== real)
@@ -103,7 +106,9 @@ export class ScenarioLoader {
     }
   }
 
-  private async create(o: KubeObject): Promise<KubeObject> {
+  // create returns the body that it posted, or undefined when it took over
+  // a Namespace that the API server already had.
+  private async create(o: KubeObject): Promise<KubeObject | undefined> {
     const body = await this.desired(o);
     let live: KubeObject;
     try {
@@ -116,11 +121,17 @@ export class ScenarioLoader {
         o.kind === "Namespace";
       if (!namespaceExists) throw error;
       live = await this.send(o, "read", "GET");
+      this.record(o, live);
+      return undefined;
     }
+    this.record(o, live);
+    return body;
+  }
+
+  private record(o: KubeObject, live: KubeObject): void {
     if (o.metadata.uid && live.metadata.uid) {
       this.uids.set(o.metadata.uid, live.metadata.uid);
     }
-    return body;
   }
 
   // settle writes o again with every real UID, then its status, then its
