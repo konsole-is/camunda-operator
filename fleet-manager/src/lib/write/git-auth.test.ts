@@ -187,6 +187,63 @@ describe("gitCredentials", () => {
     });
   });
 
+  it("App keys with enterpriseHost get the token from that GitHub Enterprise Server", async () => {
+    vi.mocked(readSecretValues).mockResolvedValue({
+      appId: "123",
+      installationId: "803",
+      privateKey,
+      enterpriseHost: "ghe.example.com",
+    });
+    const requests: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const key = `${init?.method ?? "GET"} ${String(input)}`;
+      requests.push(key);
+      if (
+        key ===
+        "POST https://ghe.example.com/api/v3/app/installations/803/access_tokens"
+      ) {
+        return Response.json(
+          {
+            token: "ghs_ghe",
+            expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+          { status: 201 },
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+
+    const result = await gitCredentials(
+      "https://ghe.example.com/acme/fleet.git",
+      "git",
+    );
+
+    expect(result.ok && result.auth).toEqual({
+      username: "x-access-token",
+      password: "ghs_ghe",
+    });
+    expect(requests.every((r) => r.includes("//ghe.example.com/api/v3/"))).toBe(
+      true,
+    );
+  });
+
+  it("App keys without enterpriseHost send nothing for a repository that is not on github.com", async () => {
+    vi.mocked(readSecretValues).mockResolvedValue({
+      appId: "123",
+      installationId: "804",
+      privateKey,
+    });
+    const fetch = vi.spyOn(globalThis, "fetch");
+
+    const url = "https://ghe.example.com/acme/fleet.git";
+    expect(await gitCredentials(url, "git")).toEqual(
+      unavailable(
+        `${url} is not on github.com. To use the GitHub App keys of the Secret git with GitHub Enterprise Server, set its key enterpriseHost to the host of the server.`,
+      ),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("a failed App session passes its error on", async () => {
     vi.mocked(readSecretValues).mockResolvedValue({
       appId: "12a",

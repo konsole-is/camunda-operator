@@ -120,16 +120,19 @@ A GitHub App works for repositories on `github.com` and on GitHub Enterprise Ser
 3. Write down the App ID from the settings page of the App.
 4. Write down the installation ID. It is the number at the end of the address of the installation settings page.
 5. Generate a private key for the App, and download the `.pem` file.
-6. Create the Secret:
+6. Create the Secret. If the App is on GitHub Enterprise Server, keep the line of `enterpriseHost` and set the host of the server, for example `ghe.example.com`. Otherwise, remove the line:
 
     ```bash
     kubectl -n camunda-operator-system create secret generic fleet-git \
       --from-literal=appId=<app id> \
       --from-literal=installationId=<installation id> \
+      --from-literal=enterpriseHost=<host> \
       --from-file=privateKey=<app>.private-key.pem
     ```
 
-The fleet manager must reach the GitHub API: `https://api.github.com` for `github.com`, or `https://<host>/api/v3` for GitHub Enterprise Server. It gets a token from GitHub that expires after one hour, and gets a new token before the old one expires.
+Without `enterpriseHost`, the fleet manager uses the App keys only for a repository on `github.com`. With `enterpriseHost`, it uses them only for a repository on that host.
+
+The fleet manager must reach the GitHub API: `https://api.github.com` for `github.com`, or `https://<enterpriseHost>/api/v3` for GitHub Enterprise Server. It gets a token from GitHub that expires after one hour, and gets a new token before the old one expires.
 
 Commits show the bot of the App, `<app slug>[bot]`, as the author. The slug is the name of the App in its GitHub address, `https://github.com/apps/<app slug>`. If the fleet manager cannot find the bot, commits show `fleet-manager`, and the save still works.
 
@@ -199,7 +202,9 @@ When someone pushed to the branch after the fleet manager read it, the save comm
 | `The Secret <secret> needs the keys appId, installationId, and privateKey for a GitHub App. It has no key <keys>.` | The Secret holds some keys of a GitHub App, or a key has an empty value. | Add the keys to the Secret, as [A GitHub App](#a-github-app) shows. |
 | `The Secret <secret> has a key <key> that is not a number.` | The value of `appId` or `installationId` is not the ID that GitHub shows. | Correct the value in the Secret. |
 | `The Secret <secret> has a key privateKey that is not a PEM private key.` | The value of `privateKey` is not the content of the `.pem` file of the App. | Create the Secret again with `--from-file=privateKey=<app>.private-key.pem`. |
-| `<repository> is not on GitHub or GitHub Enterprise Server. The keys appId, installationId, and privateKey of the Secret <secret> work only there.` | The Secret holds the keys of a GitHub App, and the repository is on another Git server. | Use a token, as [A token](#a-token) shows. |
+| `<repository> is not on github.com. To use the GitHub App keys of the Secret <secret> with GitHub Enterprise Server, set its key enterpriseHost to the host of the server.` | The Secret holds the keys of a GitHub App without `enterpriseHost`, and the repository is not on `github.com`. | If the repository is on GitHub Enterprise Server, add `enterpriseHost`, as [A GitHub App](#a-github-app) shows. For another Git server, use a token, as [A token](#a-token) shows. |
+| `<repository> is not on the host of the key enterpriseHost of the Secret <secret>. The GitHub App keys of the Secret work only there.` | The repository is on another host than `enterpriseHost`. | Correct `git.repository` or `enterpriseHost`. |
+| `The Secret <secret> has a key enterpriseHost that is not a host name.` | The value of `enterpriseHost` holds more than a host, for example `https://` or a path. | Set `enterpriseHost` to the host only, for example `ghe.example.com`. |
 | `GitHub refused the token request of the App <app id> for the installation <installation id> (HTTP <status>).` | The App ID, the installation ID, or the private key is wrong, or the App is not installed on the repository. | Correct the keys of the Secret, or install the App on the repository. |
 | `<repository> has no branch <branch>.` | The branch of `git.branch` does not exist. | Create the branch, or correct `git.branch`. |
 | `<file> is not in the repository. GitOps does not manage <kind> <name>.` | A delete of an object that has no file in the repository. | Delete the object in the cluster with `kubectl delete`. |

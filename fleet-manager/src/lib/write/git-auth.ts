@@ -39,7 +39,8 @@ const noop = () => {};
  * is no auth and the author is GIT_AUTHOR.
  *
  * The Secret holds username and token, or the GitHub App keys appId,
- * installationId, and privateKey. A key with an empty value counts as
+ * installationId, and privateKey, with enterpriseHost for an App on GitHub
+ * Enterprise Server. A key with an empty value counts as
  * missing. A token gives GIT_AUTHOR as the author. App keys give an
  * installation token as the password of x-access-token, and the bot of
  * the App as the author, or GIT_AUTHOR when GitHub does not give the bot.
@@ -100,6 +101,7 @@ export async function gitCredentials(
         appId: values.appId,
         installationId: values.installationId,
         privateKey: values.privateKey,
+        enterpriseHost: values.enterpriseHost || undefined,
       },
       fallbackAuthor: GIT_AUTHOR,
     });

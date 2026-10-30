@@ -14,7 +14,7 @@ import path from "node:path";
 import git, { type HttpClient } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
 import { parse } from "yaml";
-import { REVISION_ANNOTATION } from "@/lib/labels";
+import { REVISION_ANNOTATION, isDNSLabel, isDNSSubdomain } from "@/lib/labels";
 import { inOrder } from "@/lib/serial";
 import { apiErrorsOf, reasonOf, staleError } from "./errors";
 import { type GitAuthor, gitCredentials } from "./git-auth";
@@ -114,12 +114,12 @@ type Remote = {
  * target.credentialsSecretRef are a username and token, or GitHub App
  * keys, as gitCredentials reads them. They go only to an https://
  * address. The JWT of App keys goes only to api.github.com for a
- * github.com repository, or to the host of the repository when its
- * /api/v3/meta answers as GitHub Enterprise Server. With App keys, the
- * author of a commit is the bot of the App, or GIT_AUTHOR when GitHub
- * does not give the bot. Otherwise it is GIT_AUTHOR. No error holds a
- * credential or the text of a Git server answer. Changes to one
- * repository and branch run one after the other in this server process.
+ * github.com repository, or to the enterpriseHost of the keys for a
+ * repository on that host. With App keys, the author of a commit is the
+ * bot of the App, or GIT_AUTHOR when GitHub does not give the bot.
+ * Otherwise it is GIT_AUTHOR. No error holds a credential or the text of
+ * a Git server answer. Changes to one repository and branch run one after
+ * the other in this server process.
  */
 export function gitWriter(options: GitWriterOptions): Writer {
   const { target, direct, read } = options;
@@ -571,8 +571,13 @@ function gitRefusalOf(ref: ObjectRef): ApiError[] {
   const refusals = refusalOf(ref);
   if (refusals.length > 0) return refusals;
   // The name and the namespace are segments of the file path, and the dry
-  // run that would refuse such a name skips some objects.
-  if ([ref.name, ref.namespace].some((part) => /[/\\]/.test(part ?? ""))) {
+  // run that would refuse such a name skips some objects. A namespace such
+  // as .git would put the file inside the Git folder.
+  const nameOK = ref.kind === "Namespace" ? isDNSLabel : isDNSSubdomain;
+  if (
+    !nameOK(ref.name) ||
+    (ref.namespace !== undefined && !isDNSLabel(ref.namespace))
+  ) {
     return [
       {
         code: "Invalid",

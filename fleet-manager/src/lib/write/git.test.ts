@@ -23,7 +23,7 @@ import type {
   WriteResult,
   Writer,
 } from "./types";
-import { refKey } from "./writer";
+import { refKey, refOf } from "./writer";
 
 vi.mock("@/lib/secrets/values", () => ({ readSecretValues: vi.fn() }));
 
@@ -667,6 +667,35 @@ describe("the Git writer", slow, () => {
     expect(await repo.log()).toEqual(["Other admin", "Initial commit"]);
   });
 
+  it("a push that another clone beat with the same bytes fails with Conflict and makes no empty commit", async () => {
+    const file = "team-a/camundaclusterclaims/orders.yaml";
+    const change: Change = {
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    };
+    repo = await serveBareRepository();
+    ok(await writerFor().apply(change));
+    const same = (await repo.show(file))!;
+    await repo.close();
+    repo = await serveBareRepository({
+      beforeFirstPush: () =>
+        repo.commitFromOtherClone({ [file]: same }, "Other admin"),
+    });
+
+    const result = await writerFor().apply(change);
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        {
+          code: "Conflict",
+          message: `Someone changed ${file} in ${repo.url} since the fleet manager read it. Open the page again.`,
+        },
+      ],
+    });
+    expect(await repo.log()).toEqual(["Other admin", "Initial commit"]);
+  });
+
   it("fetches only the head commit, and rebases once on a repository with history", async () => {
     repo = await serveBareRepository({
       beforeFirstPush: () =>
@@ -760,6 +789,57 @@ describe("the Git writer", slow, () => {
       ok: false,
       errors: [expect.objectContaining({ code: "Invalid" })],
     });
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it.each([
+    [".git", "db"],
+    [".github", "db"],
+    ["Team-A", "db"],
+    ["team-a", "Orders DB"],
+    ["team-a", ".git"],
+  ])(
+    "refuses an ExternalSecret in namespace %s with the name %s and writes nothing",
+    async (ns, name) => {
+      repo = await serveBareRepository();
+      const object: KubeObject = {
+        apiVersion: "external-secrets.io/v1",
+        kind: "ExternalSecret",
+        metadata: { name, namespace: ns },
+      };
+
+      const result = await writerFor().apply({
+        intent: "Set the secret",
+        apply: [object],
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Invalid",
+            message:
+              "The name or the namespace of the ExternalSecret is not a valid name.",
+            ref: refOf(object),
+          },
+        ],
+      });
+      expect(await repo.log()).toEqual(["Initial commit"]);
+    },
+  );
+
+  it("refuses an object in a namespace that the change creates when the namespace is not a DNS-1123 label", async () => {
+    repo = await serveBareRepository();
+
+    const result = await writerFor().apply({
+      intent: "Create .git with the claim orders",
+      apply: [namespace(".git"), claim(".git", "orders")],
+    });
+
+    expect(!result.ok && result.errors.map((e) => e.code)).toEqual([
+      "Invalid",
+      "Invalid",
+    ]);
     expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
@@ -1180,25 +1260,25 @@ describe("the credentials of the Git writer", slow, () => {
       privateKeyEncoding: { type: "pkcs1", format: "pem" },
       publicKeyEncoding: { type: "spki", format: "pem" },
     });
+    // The bare repository runs on 127.0.0.1, so the App is on GitHub
+    // Enterprise Server at the host of the repository.
     const appKeys = (installationId: string) => ({
       appId: "123",
       installationId,
       privateKey,
+      enterpriseHost: new URL(repo.url).host,
     });
     let tokenRequests: { authorization: string }[];
 
-    // githubFor answers as GitHub Enterprise Server on the host of the
-    // bare repository. Each token request gets the next of tokens. app
-    // answers GET /app.
+    // githubFor answers as the GitHub API of the host of the bare
+    // repository. Each token request gets the next of tokens. app answers
+    // GET /app.
     const githubFor = (tokens: string[], app: () => Response) => {
       const api = `${new URL(repo.url).origin.replace(/^http:/, "https:")}/api/v3`;
       tokenRequests = [];
       vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
         const url = String(input);
         const method = init?.method ?? "GET";
-        if (method === "GET" && url === `${api}/meta`) {
-          return Response.json({ installed_version: "3.17.0" });
-        }
         if (method === "POST" && url.endsWith("/access_tokens")) {
           tokenRequests.push({
             authorization: new Headers(init?.headers).get("authorization")!,
@@ -1312,6 +1392,29 @@ describe("the credentials of the Git writer", slow, () => {
 
       ok(await save("billing"));
       expect(tokenRequests).toHaveLength(2);
+    });
+
+    it("App keys for another host than enterpriseHost refuse the save before any request", async () => {
+      repo = await serveBareRepository();
+      const before = await repo.log();
+      const fetch = vi.spyOn(globalThis, "fetch");
+      vi.mocked(readSecretValues).mockResolvedValue({
+        ...appKeys("905"),
+        enterpriseHost: "ghe.example.com",
+      });
+      const url = repo.url.replace(/^http:/, "https:");
+
+      expect(await save("orders")).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Unavailable",
+            message: `${url} is not on the host of the key enterpriseHost of the Secret git. The GitHub App keys of the Secret work only there.`,
+          },
+        ],
+      });
+      expect(fetch).not.toHaveBeenCalled();
+      expect(await repo.log()).toEqual(before);
     });
   });
 });

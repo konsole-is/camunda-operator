@@ -370,14 +370,12 @@ describe("testGit", slow, () => {
         privateKeyEncoding: { type: "pkcs1", format: "pem" },
         publicKeyEncoding: { type: "spki", format: "pem" },
       }).privateKey,
+      enterpriseHost: new URL(base).host,
     });
-    // The Git server runs on 127.0.0.1, so it has to answer as GitHub
-    // Enterprise Server. The bot lookup fails, which a test does not need.
+    // The Git server runs on 127.0.0.1, so the App is on GitHub Enterprise
+    // Server at that host. The bot lookup fails, which a test does not need.
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const key = `${init?.method ?? "GET"} ${String(input)}`;
-      if (key === `GET ${base}/api/v3/meta`) {
-        return Response.json({ installed_version: "3.17.0" });
-      }
       if (key === `POST ${base}/api/v3/app/installations/701/access_tokens`) {
         return Response.json(
           {
@@ -412,14 +410,12 @@ describe("testGit", slow, () => {
         privateKeyEncoding: { type: "pkcs1", format: "pem" },
         publicKeyEncoding: { type: "spki", format: "pem" },
       }).privateKey,
+      enterpriseHost: new URL(base).host,
     });
     const tokens = ["ghs_old", "ghs_new"];
     let tokenRequests = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const key = `${init?.method ?? "GET"} ${String(input)}`;
-      if (key === `GET ${base}/api/v3/meta`) {
-        return Response.json({ installed_version: "3.17.0" });
-      }
       if (key === `POST ${base}/api/v3/app/installations/702/access_tokens`) {
         tokenRequests++;
         return Response.json(
@@ -442,6 +438,29 @@ describe("testGit", slow, () => {
       message: `Connected to ${url}.`,
     });
     expect(tokenRequests).toBe(2);
+  });
+
+  it("App keys without enterpriseHost report the refusal and send nothing for a host that is not github.com", async () => {
+    const url = "https://git.example.com/fleet.git";
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({ "git.repository": url, "git.credentialsSecretRef": "git" }),
+    );
+    vi.mocked(readSecretValues).mockResolvedValue({
+      appId: "123",
+      installationId: "703",
+      privateKey: generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+        privateKeyEncoding: { type: "pkcs1", format: "pem" },
+        publicKeyEncoding: { type: "spki", format: "pem" },
+      }).privateKey,
+    });
+    const fetch = vi.spyOn(globalThis, "fetch");
+
+    expect(await testGit()).toEqual({
+      ok: false,
+      message: `${url} is not on github.com. To use the GitHub App keys of the Secret git with GitHub Enterprise Server, set its key enterpriseHost to the host of the server.`,
+    });
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("a Secret with token keys and App keys gives the message that names both sets", async () => {
