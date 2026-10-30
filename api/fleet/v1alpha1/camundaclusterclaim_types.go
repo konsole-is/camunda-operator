@@ -118,10 +118,15 @@ type CamundaClusterClaimSpec struct {
 	// +optional
 	DeletionPolicy pluginsv1alpha1.DeletionPolicy `json:"deletionPolicy,omitempty"`
 	// AllowVersionDowngrade is the target version of a confirmed downgrade,
-	// as a full version such as 8.9.3. The claim controller sets the
-	// annotation camunda.io/allow-version-downgrade on the CamundaCluster to
-	// this version until the cluster reports it. The fleet manager clears
-	// the field after the cluster reports the target version.
+	// as a full version such as 8.9.3. Set it to the version of the release
+	// of the claim. The claim controller sets the annotation
+	// camunda.io/allow-version-downgrade on the CamundaCluster to this
+	// version until the cluster reports it. A version that the release does
+	// not have sets no annotation, and neither does a CamundaCluster whose
+	// spec.version another writer set. While the cluster is suspended, the
+	// claim controller neither adds nor removes the annotation, so a
+	// downgrade set during a suspension waits for the resume. The fleet
+	// manager clears the field after the cluster reports the target version.
 	// +kubebuilder:validation:Pattern=`^(\d+\.\d+\.\d+)?$`
 	// +optional
 	AllowVersionDowngrade string `json:"allowVersionDowngrade,omitempty"`

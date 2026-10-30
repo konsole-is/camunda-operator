@@ -43,6 +43,9 @@ type Input struct {
 	// defaults of the Environment. Empty leaves the field unset.
 	ReleaseRef        string
 	PlatformConfigRef string
+	// ReleaseVersion is spec.version of the release. Empty without a
+	// release.
+	ReleaseVersion string
 	// Order holds spec.plugins of the claim in the order of
 	// claimpolicy.Order.
 	Order         []fleetv1alpha1.PluginSelection
