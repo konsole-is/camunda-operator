@@ -356,6 +356,11 @@ const ADMIN = "envtest-admin";
 function checkUsers(users: EnvtestUser[]): void {
   const seen = new Set<string>();
   for (const { name, groups = [] } of users) {
+    if (/[,"\r\n]/.test(name)) {
+      throw new Error(
+        `The envtest user name ${JSON.stringify(name)} has a comma, a quote, or a line break, which tokens.csv cannot hold.`,
+      );
+    }
     if (groups.includes("system:masters")) {
       throw new Error(
         `The envtest user ${name} has the group system:masters. Use the admin kubeconfig of envtest instead.`,

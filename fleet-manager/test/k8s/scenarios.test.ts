@@ -75,6 +75,14 @@ describe("the users option of startEnvtest", () => {
     }
   }, 120_000);
 
+  it("refuses a user name that tokens.csv cannot hold", async () => {
+    for (const name of ["a,uid,system:masters", 'a"b', "a\nb"]) {
+      await expect(startEnvtest({ users: [{ name }] })).rejects.toThrow(
+        /tokens.csv/,
+      );
+    }
+  });
+
   it("refuses a user in system:masters, also in a group list", async () => {
     await expect(
       startEnvtest({ users: [{ name: "b", groups: ["system:masters"] }] }),
@@ -400,6 +408,32 @@ describe("bindChartRBAC", () => {
       }),
     ).toBe(true);
   });
+
+  it("does not bind a built-in role that has the name of the user", async () => {
+    const edit = await startEnvtest({ users: [{ name: "edit" }] });
+    try {
+      await bindChartRBAC(edit.kubeConfig, "edit", "default");
+      const kc = edit.users["edit"].kubeConfig;
+      // The built-in ClusterRole edit allows a delete of a Secret, and the
+      // chart rules do not.
+      expect(
+        await allowed(kc, {
+          namespace: "default",
+          resource: "secrets",
+          verb: "delete",
+        }),
+      ).toBe(false);
+      expect(
+        await allowed(kc, {
+          group: "core.camunda.io",
+          resource: "camundaclusters",
+          verb: "list",
+        }),
+      ).toBe(true);
+    } finally {
+      await edit.stop();
+    }
+  }, 120_000);
 
   it("binds the chart rules to a second user too", async () => {
     const other = envtest.users[OTHER_USER].kubeConfig;

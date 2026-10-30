@@ -53,9 +53,9 @@ const RBAC = "/apis/rbac.authorization.k8s.io/v1";
 /**
  * bindChartRBAC gives user the rules of clusterrole.yaml in every namespace
  * and the rules of role.yaml in namespace, through roles and bindings named
- * after user, so user must be a valid object name. admin is a kubeconfig
- * that may create them. A second call for the same user keeps the objects
- * of the first.
+ * fleet-scenarios-<user>, which must be a valid object name. admin is a
+ * kubeconfig that may create them. A second call for the same user keeps
+ * the objects of the first.
  */
 export async function bindChartRBAC(
   admin: KubeConfig,
@@ -63,6 +63,9 @@ export async function bindChartRBAC(
   namespace: string,
   chartDir: string = CHART_DIR,
 ): Promise<void> {
+  // The prefix keeps the name apart from the built-in roles of the API
+  // server, such as edit and view.
+  const name = `fleet-scenarios-${user}`;
   const read = async (file: string) => {
     const full = path.join(chartDir, file);
     return chartRules(await fs.readFile(full, "utf8"), full);
@@ -71,15 +74,15 @@ export async function bindChartRBAC(
     { apiGroup: "rbac.authorization.k8s.io", kind: "User", name: user },
   ];
   const binding = (kind: "ClusterRole" | "Role") => ({
-    metadata: { name: user },
-    roleRef: { apiGroup: "rbac.authorization.k8s.io", kind, name: user },
+    metadata: { name },
+    roleRef: { apiGroup: "rbac.authorization.k8s.io", kind, name },
     subjects,
   });
   const scoped = `${RBAC}/namespaces/${namespace}`;
 
   await create(admin, `${RBAC}/clusterroles`, {
     kind: "ClusterRole",
-    metadata: { name: user },
+    metadata: { name },
     rules: await read("clusterrole.yaml"),
   });
   await create(admin, `${RBAC}/clusterrolebindings`, {
@@ -88,7 +91,7 @@ export async function bindChartRBAC(
   });
   await create(admin, `${scoped}/roles`, {
     kind: "Role",
-    metadata: { name: user },
+    metadata: { name },
     rules: await read("role.yaml"),
   });
   await create(admin, `${scoped}/rolebindings`, {
