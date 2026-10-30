@@ -191,6 +191,19 @@ describe("endpointRows", () => {
     ).toBeUndefined();
   });
 
+  it("gives no URL to an HTTP route of a cluster with an empty external URL", () => {
+    expect(
+      row(
+        endpointRows({
+          cluster: withExternalUrl(""),
+          spec: {},
+          optimizes: [],
+        }),
+        "operate",
+      )?.url,
+    ).toBeUndefined();
+  });
+
   it("keeps the order of the cluster routes and gives each a unique key", () => {
     const rows = endpointRows({ cluster, spec: {}, optimizes: [] });
     expect(rows.map((r) => r.name)).toEqual(ENDPOINTS.map((e) => e.name));

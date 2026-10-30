@@ -64,7 +64,7 @@ export function endpointRows(input: {
     return { label: PROCESS_LABEL[process], embedded: false };
   };
 
-  const base = cluster.spec.externalUrl?.replace(/\/+$/, "");
+  const base = cluster.spec.externalUrl?.replace(/\/+$/, "") || undefined;
   const clusterRows = (cluster.status?.endpoints ?? []).map(
     (e): EndpointRow => ({
       key: `CamundaCluster/${e.name}`,
