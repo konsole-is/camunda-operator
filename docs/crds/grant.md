@@ -111,7 +111,7 @@ A user with the verb `*` on `pluginregistrations`, for example through the Clust
 
 ## Deletion
 
-Each grant has an owner reference to its request. When the request goes away, Kubernetes deletes its grants.
+Each grant has an owner reference to its request. With the deletion policy `Delete`, Kubernetes deletes the grants when the request goes away. With `Orphan`, a grant that `status.resources` of the request lists with `onOrphan: Kept` stays, without the owner reference. See [Deletion](pluginrequest.md#deletion).
 
 `spec.cluster.name` and the label `plugins.camunda.io/cluster` are `spec.target.name` of the request. A grant always gives its permission to the cluster that its request serves:
 
