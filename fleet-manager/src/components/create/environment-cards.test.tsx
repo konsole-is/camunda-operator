@@ -208,7 +208,8 @@ describe("EnvironmentCards in multiple mode", () => {
     expect(onChange).toHaveBeenLastCalledWith(["dev"]);
   });
 
-  it("disables an environment that is not ready", () => {
+  it("lets the admin pick an environment that is not ready, and shows its message", async () => {
+    const onChange = vi.fn();
     const old = environment("old", {
       ready: { status: "False", message: "x" },
     });
@@ -218,13 +219,16 @@ describe("EnvironmentCards in multiple mode", () => {
         environments={[old]}
         counts={{}}
         value={[]}
-        onChange={vi.fn()}
+        onChange={onChange}
       />,
     );
-    expect(
-      (screen.getByRole("checkbox", { name: /old/ }) as HTMLInputElement)
-        .disabled,
-    ).toBe(true);
+    const box = screen.getByRole("checkbox", {
+      name: /old/,
+    }) as HTMLInputElement;
+    expect(box.disabled).toBe(false);
+    expect(screen.getByText("Not ready: x")).toBeTruthy();
+    await userEvent.click(box);
+    expect(onChange).toHaveBeenCalledWith(["old"]);
   });
 });
 

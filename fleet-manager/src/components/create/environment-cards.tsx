@@ -45,10 +45,10 @@ export type EnvironmentCardsProps = {
 /**
  * EnvironmentCards is the environment choice of a create flow: one card for
  * each environment, by name, with its display name, its color, its counts,
- * and extra under the counts. An environment that is not ready cannot be
- * picked and shows its message. counts can lack an environment: it then
- * shows zeros. In multiple mode each card names the environment by its
- * object name, with the display name next to it.
+ * and extra under the counts. An environment that is not ready shows its
+ * message, and in single mode it cannot be picked. counts can lack an
+ * environment: it then shows zeros. In multiple mode each card names the
+ * environment by its object name, with the display name next to it.
  */
 export function EnvironmentCards(props: EnvironmentCardsProps) {
   const { environments, counts, extra } = props;
@@ -87,13 +87,16 @@ export function EnvironmentCards(props: EnvironmentCardsProps) {
           const color = environment.spec.color;
           const displayName = environment.spec.displayName;
           const checked = isChecked(name);
+          // A plane serves any Environment that exists, also one that is
+          // not ready, so multiple mode leaves it pickable.
+          const pickable = ready || props.multiple;
           return (
             <label
               key={name}
               className={cn(
                 "flex min-w-0 gap-3 rounded-md border bg-panel p-3",
                 checked ? "border-accent" : "border-border",
-                ready ? "cursor-pointer" : "cursor-not-allowed",
+                pickable ? "cursor-pointer" : "cursor-not-allowed",
               )}
             >
               <input
@@ -101,8 +104,8 @@ export function EnvironmentCards(props: EnvironmentCardsProps) {
                 name={`${id}-environment`}
                 value={name}
                 checked={checked}
-                disabled={!ready}
-                aria-disabled={!ready || undefined}
+                disabled={!pickable}
+                aria-disabled={!pickable || undefined}
                 onChange={() => pick(name)}
                 className="mt-1 size-4 shrink-0 accent-[var(--accent)]"
               />
