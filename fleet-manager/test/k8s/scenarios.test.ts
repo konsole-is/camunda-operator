@@ -13,13 +13,16 @@ import { type KubeObject, readObjects } from "../scenarios/objects";
 import { bindChartRBAC } from "../scenarios/rbac";
 
 const USER = "fleet-manager-scenarios";
+const OTHER_USER = "other-scenario-user";
 
 // This file loads whole scenarios, whose objects would collide with the
 // objects of the other files, so it starts an envtest of its own.
 let envtest: Envtest;
 
 beforeAll(async () => {
-  envtest = await startEnvtest({ users: [{ name: USER }] });
+  envtest = await startEnvtest({
+    users: [{ name: USER }, { name: OTHER_USER }],
+  });
 }, 120_000);
 
 afterAll(async () => {
@@ -54,6 +57,15 @@ describe("the users option of startEnvtest", () => {
     await expect(
       startEnvtest({ users: [{ name: "a" }, { name: "a" }] }),
     ).rejects.toThrow(/a.*twice/);
+  });
+
+  it("refuses a user in system:masters, also in a group list", async () => {
+    await expect(
+      startEnvtest({ users: [{ name: "b", groups: ["system:masters"] }] }),
+    ).rejects.toThrow(/b.*system:masters/);
+    await expect(
+      startEnvtest({ users: [{ name: "b", groups: ["x,system:masters"] }] }),
+    ).rejects.toThrow(/b.*comma/);
   });
 });
 
@@ -241,7 +253,32 @@ describe("the scenario loader", () => {
       ]);
     });
 
-    it("advance deletes an object with a finalizer and a Pod", async () => {
+    it("advance clears a status that the state does not have", async () => {
+      const rs = await getLive(envtest.kubeConfig, {
+        apiVersion: "apps/v1",
+        kind: "ReplicaSet",
+        metadata: { name: "app-1", namespace: "advance" },
+      });
+      expect(rs.status).not.toHaveProperty("readyReplicas");
+    });
+
+    it("advance writes the UID of a new object into an object that did not change", async () => {
+      const created = await getLive(envtest.kubeConfig, {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        metadata: { name: "new", namespace: "advance" },
+      });
+      const names = await getLive(envtest.kubeConfig, {
+        apiVersion: "v1",
+        kind: "ConfigMap",
+        metadata: { name: "names-new", namespace: "advance" },
+      });
+      expect(names.metadata.annotations).toEqual({
+        "scenario.test/new-uid": created.metadata.uid,
+      });
+    });
+
+    it("advance deletes an object with a finalizer, a Pod, and a Namespace", async () => {
       const removed = [
         {
           apiVersion: "v1",
@@ -253,6 +290,11 @@ describe("the scenario loader", () => {
           kind: "Pod",
           metadata: { name: "gone-pod", namespace: "advance" },
         },
+        {
+          apiVersion: "v1",
+          kind: "Namespace",
+          metadata: { name: "advance-gone" },
+        },
       ];
       await expect
         .poll(
@@ -260,7 +302,7 @@ describe("the scenario loader", () => {
             Promise.all(removed.map((o) => gone(envtest.kubeConfig, o))),
           { timeout: 10_000 },
         )
-        .toEqual([true, true]);
+        .toEqual([true, true, true]);
     });
 
     it("advance to an unknown state names the states", async () => {
@@ -317,6 +359,28 @@ describe("bindChartRBAC", () => {
     );
     expect(
       await allowed(user, {
+        namespace: "camunda-system",
+        resource: "configmaps",
+        name: "fleet-manager-settings",
+        verb: "update",
+      }),
+    ).toBe(true);
+  });
+
+  it("binds the chart rules to a second user too", async () => {
+    const other = envtest.users[OTHER_USER].kubeConfig;
+    await bindChartRBAC(envtest.kubeConfig, USER, "camunda-system");
+    await bindChartRBAC(envtest.kubeConfig, OTHER_USER, "camunda-system");
+
+    expect(
+      await allowed(other, {
+        group: "core.camunda.io",
+        resource: "camundaclusters",
+        verb: "list",
+      }),
+    ).toBe(true);
+    expect(
+      await allowed(other, {
         namespace: "camunda-system",
         resource: "configmaps",
         name: "fleet-manager-settings",

@@ -126,3 +126,22 @@ metadata:
     time: "2026-01-01T00:00:00Z"
 data:
   key: new
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    scenario.test/new-uid: 00000000-0000-5000-8000-000000000006
+  name: names-new
+  namespace: advance
+  uid: 00000000-0000-5000-8000-000000000008
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          f:scenario.test/new-uid: {}
+    manager: kubectl
+    operation: Update
+    time: "2026-01-01T00:00:00Z"

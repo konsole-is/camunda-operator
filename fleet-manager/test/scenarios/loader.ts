@@ -62,7 +62,12 @@ export class ScenarioLoader {
    */
   async advance(next: readonly KubeObject[]): Promise<void> {
     const { create, update, remove } = diffStates(this.current, next);
-    await this.apply(create, update);
+    const changed = new Set([...create, ...update]);
+    await this.apply(
+      create,
+      update,
+      next.filter((o) => !changed.has(o)),
+    );
     for (const o of remove) await this.remove(o);
     this.current = next;
   }
@@ -74,14 +79,21 @@ export class ScenarioLoader {
 
   // Each object is created first, so that every real UID is known before
   // any object is written with the full map: an annotation can name the UID
-  // of an object that is created after it.
+  // of an object that is created after it, also in a later state.
   private async apply(
     create: readonly KubeObject[],
     update: readonly KubeObject[],
+    unchanged: readonly KubeObject[] = [],
   ): Promise<void> {
+    const known = new Set(this.uids.keys());
     const posted = new Map<KubeObject, KubeObject>();
     for (const o of create) posted.set(o, await this.create(o));
-    for (const o of [...create, ...update]) {
+    const fresh = [...this.uids.keys()].filter((uid) => !known.has(uid));
+    const names = unchanged.filter((o) => {
+      const text = JSON.stringify(o);
+      return fresh.some((uid) => text.includes(uid));
+    });
+    for (const o of [...create, ...update, ...names]) {
       await this.settle(o, posted.get(o));
     }
   }
@@ -115,9 +127,11 @@ export class ScenarioLoader {
       live = await this.send(o, "update", "PUT", { body });
     }
 
-    if (hasStatus && recorded.status !== undefined) {
+    // A PUT of the object leaves a status subresource as it is, so an
+    // update to a state without a status writes an empty one.
+    if (hasStatus && (recorded.status !== undefined || !posted)) {
       live.status = alignObservedGeneration(
-        recorded.status,
+        recorded.status ?? {},
         o.metadata.generation ?? 1,
         live.metadata.generation ?? 1,
       );
@@ -141,8 +155,9 @@ export class ScenarioLoader {
     }
   }
 
-  // Envtest runs no garbage collector and no kubelet, so remove drops the
-  // finalizers and deletes without a grace period.
+  // Envtest runs no garbage collector, no kubelet, and no namespace
+  // controller, so remove drops the finalizers and deletes without a grace
+  // period.
   private async remove(o: KubeObject): Promise<void> {
     try {
       if (o.metadata.finalizers?.length) {
@@ -152,6 +167,14 @@ export class ScenarioLoader {
         });
       }
       await this.send(o, "delete", "DELETE", { query: "gracePeriodSeconds=0" });
+      if (o.apiVersion === "v1" && o.kind === "Namespace") {
+        const live = await this.send(o, "read", "GET");
+        live.spec = { ...(live.spec as object), finalizers: [] };
+        await this.send(o, "finalize", "PUT", {
+          subresource: "finalize",
+          body: live,
+        });
+      }
     } catch (error) {
       if (error instanceof KubeError && error.status === 404) return;
       throw error;
@@ -175,7 +198,7 @@ export class ScenarioLoader {
     method: KubeMethod,
     opts: {
       collection?: boolean;
-      subresource?: "status";
+      subresource?: "status" | "finalize";
       body?: unknown;
       contentType?: string;
       query?: string;

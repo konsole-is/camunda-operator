@@ -109,7 +109,7 @@ export class Discovery {
       kind: string;
       metadata: { name?: string; namespace?: string };
     },
-    opts: { collection?: boolean; subresource?: "status" } = {},
+    opts: { collection?: boolean; subresource?: "status" | "finalize" } = {},
   ): Promise<string> {
     const resource = (await this.resources(o.apiVersion)).find(
       (r) => r.kind === o.kind && !r.name.includes("/"),

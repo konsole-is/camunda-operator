@@ -42,6 +42,24 @@ describe("chartRules", () => {
     );
   });
 
+  it("refuses a template directive inside the rules block", () => {
+    const text = [
+      "{{- if .Values.fleetManager.enabled }}",
+      "kind: Role",
+      "rules:",
+      "  {{- if .Values.allowDelete }}",
+      '  - apiGroups: [""]',
+      "    resources: [configmaps]",
+      "    verbs: [delete]",
+      "  {{- end }}",
+      "{{- end }}",
+      "",
+    ].join("\n");
+    expect(() => chartRules(text, "role.yaml")).toThrow(
+      "The rules of role.yaml hold a template",
+    );
+  });
+
   it("refuses a file without a rules block", () => {
     expect(() => chartRules("kind: Role\n", "role.yaml")).toThrow(
       /role.yaml has no rules/,

@@ -354,7 +354,17 @@ const ADMIN = "envtest-admin";
 
 function checkUsers(users: EnvtestUser[]): void {
   const seen = new Set<string>();
-  for (const { name } of users) {
+  for (const { name, groups = [] } of users) {
+    if (groups.includes("system:masters")) {
+      throw new Error(
+        `The envtest user ${name} has the group system:masters. Use the admin kubeconfig of envtest instead.`,
+      );
+    }
+    if (groups.some((g) => g.includes(","))) {
+      throw new Error(
+        `A group of the envtest user ${name} has a comma, and tokens.csv reads a comma as the end of a group.`,
+      );
+    }
     if (name === ADMIN) {
       throw new Error(
         `The envtest user ${ADMIN} is the admin of envtest. Give the user another name.`,

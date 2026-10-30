@@ -22,19 +22,24 @@ export interface PolicyRule {
 }
 
 /**
- * chartRules returns the rules of the Role or ClusterRole template text,
- * without the template lines around them. It throws when the rules block
- * holds a template, so that a test never binds fewer rules than the chart,
- * and when the text has no rules block. file names the template in the
- * error.
+ * chartRules returns the rules of the Role or ClusterRole template text. It
+ * throws when the rules block holds a template, so that a test never binds
+ * other rules than the chart, and when the text has no rules block. file
+ * names the template in the error.
  */
 export function chartRules(text: string, file: string): PolicyRule[] {
-  const lines = text
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("{{"));
+  const lines = text.split("\n");
   const start = lines.findIndex((line) => line.startsWith("rules:"));
   if (start < 0) throw new Error(`The template ${file} has no rules block`);
-  const block = lines.slice(start).join("\n");
+  const rules = lines.slice(start);
+  // The templates close their outer if after the rules.
+  while (
+    rules.length > 0 &&
+    /^(\{\{-?\s*end\s*-?\}\})?\s*$/.test(rules.at(-1)!)
+  ) {
+    rules.pop();
+  }
+  const block = rules.join("\n");
   if (block.includes("{{")) {
     throw new Error(
       `The rules of ${file} hold a template. Read them with helm template instead`,
@@ -43,14 +48,14 @@ export function chartRules(text: string, file: string): PolicyRule[] {
   return (parse(block) as { rules: PolicyRule[] }).rules;
 }
 
-const NAME = "fleet-manager-scenarios";
 const RBAC = "/apis/rbac.authorization.k8s.io/v1";
 
 /**
  * bindChartRBAC gives user the rules of clusterrole.yaml in every namespace
  * and the rules of role.yaml in namespace, through roles and bindings named
- * fleet-manager-scenarios. admin is a kubeconfig that may create them. A
- * second call keeps the objects of the first.
+ * after user, so user must be a valid object name. admin is a kubeconfig
+ * that may create them. A second call for the same user keeps the objects
+ * of the first.
  */
 export async function bindChartRBAC(
   admin: KubeConfig,
@@ -66,15 +71,15 @@ export async function bindChartRBAC(
     { apiGroup: "rbac.authorization.k8s.io", kind: "User", name: user },
   ];
   const binding = (kind: "ClusterRole" | "Role") => ({
-    metadata: { name: NAME },
-    roleRef: { apiGroup: "rbac.authorization.k8s.io", kind, name: NAME },
+    metadata: { name: user },
+    roleRef: { apiGroup: "rbac.authorization.k8s.io", kind, name: user },
     subjects,
   });
   const scoped = `${RBAC}/namespaces/${namespace}`;
 
   await create(admin, `${RBAC}/clusterroles`, {
     kind: "ClusterRole",
-    metadata: { name: NAME },
+    metadata: { name: user },
     rules: await read("clusterrole.yaml"),
   });
   await create(admin, `${RBAC}/clusterrolebindings`, {
@@ -83,7 +88,7 @@ export async function bindChartRBAC(
   });
   await create(admin, `${scoped}/roles`, {
     kind: "Role",
-    metadata: { name: NAME },
+    metadata: { name: user },
     rules: await read("role.yaml"),
   });
   await create(admin, `${scoped}/rolebindings`, {
