@@ -94,8 +94,10 @@ export function claimView(input: {
         f.target.registration === s.registration,
     ),
   }));
-  const order = (name: string) =>
-    sectionOf(name)?.spec.order ?? Number.MAX_SAFE_INTEGER;
+  const order = (name: string) => {
+    const known = sectionOf(name);
+    return known ? (known.spec.order ?? 0) : Number.MAX_SAFE_INTEGER;
+  };
   selections.sort(
     (a, b) =>
       order(a.section) - order(b.section) || a.section.localeCompare(b.section),

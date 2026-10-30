@@ -178,6 +178,29 @@ describe("claimView", () => {
     expect(v.sections[0].parameters).toEqual([]);
   });
 
+  it("reads an omitted order as zero and puts an unknown section last", () => {
+    const v = view(
+      claimOf({
+        plugins: [
+          { section: "unknown", registration: "x" },
+          { section: "storage", registration: "rustfs" },
+          { section: "access", registration: "gateway-access" },
+        ],
+      }),
+      {
+        sections: [
+          section("storage", "Storage", 10),
+          section("access", "Access"),
+        ],
+      },
+    );
+    expect(v.sections.map((s) => s.section)).toEqual([
+      "access",
+      "storage",
+      "unknown",
+    ]);
+  });
+
   it("falls back to the names of a missing section and registration", () => {
     const v = view(
       claimOf({ plugins: [{ section: "dns", registration: "route53" }] }),
