@@ -11,8 +11,19 @@ import {
 } from "@kubernetes/client-node";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { ping } from "@/app/dev/watch-probe/actions";
+import {
+  applyClaimChange,
+  previewClaimChange,
+} from "@/app/fleet/clusters/[namespace]/[name]/actions";
+import {
+  saveSettings,
+  testGitConnection,
+  testPrometheusQuery,
+} from "@/app/setup/settings/actions";
 import { GET as healthz } from "@/app/api/healthz/route";
 import { GET as logsRoute } from "@/app/api/logs/route";
+import { GET as partitionsRoute } from "@/app/api/partitions/route";
+import { GET as usageRoute } from "@/app/api/usage/route";
 import { GET as watchRoute } from "@/app/api/watch/route";
 import { defaultCache } from "@/lib/k8s/cache";
 import * as secrets from "@/lib/secrets";
@@ -143,14 +154,64 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
         ),
       )
     ).text(),
+  // envtest serves no metrics.k8s.io, so the usage is unavailable.
+  "api/usage": async () =>
+    (
+      await usageRoute(
+        new Request(
+          `http://localhost/api/usage?namespace=${namespace}&selector=app%3Dx`,
+        ),
+      )
+    ).text(),
+  "api/partitions": async () =>
+    (
+      await partitionsRoute(
+        new Request(
+          `http://localhost/api/partitions?namespace=${namespace}&name=missing`,
+        ),
+      )
+    ).text(),
   "api/watch": () => watchText(`kind=Secret&namespace=${namespace}`),
 };
 // "<file under src>#<export>".
 const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/dev/watch-probe/actions.ts#ping": () => ping(),
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimChange": () =>
+    previewClaimChange(claimChange()),
+  // The precondition names a claim that does not exist, so the write
+  // refuses with Stale and leaves nothing behind.
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimChange": () =>
+    applyClaimChange({
+      ...claimChange(),
+      preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
+    }),
+  "app/setup/settings/actions.ts#saveSettings": async () =>
+    saveSettings(
+      { "git.path": "y" },
+      (await settings.readSettings()).resourceVersion,
+    ),
+  "app/setup/settings/actions.ts#testGitConnection": () => testGitConnection(),
+  "app/setup/settings/actions.ts#testPrometheusQuery": () =>
+    testPrometheusQuery(),
 };
+
+function claimChange() {
+  return {
+    intent: "Change the claim leak",
+    apply: [
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaClusterClaim",
+        metadata: { name: "leak", namespace },
+        spec: { presetRef: "medium" },
+      },
+    ],
+  };
+}
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
+  "settings#appPermissions": () => settings.appPermissions(),
   "settings#getSettings": () => settings.getSettings(),
+  "settings#readSettings": () => settings.readSettings(),
   "settings#updateSettings": () => settings.updateSettings({ "git.path": "x" }),
   "settings#testGit": () => settings.testGit(),
   "settings#testPrometheus": () => settings.testPrometheus(),

@@ -33,8 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
-	"github.com/konsole-is/camunda-operator/pkg/wrappers/camundacluster"
-	"github.com/konsole-is/camunda-operator/pkg/wrappers/pluginrequest"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
@@ -78,7 +76,7 @@ var _ = BeforeSuite(func() {
 			Client:          mgr.GetClient(),
 			APIReader:       mgr.GetAPIReader(),
 			Scheme:          mgr.GetScheme(),
-			componentClient: pluginrequest.NewApplyClient(camundacluster.NewApplyClient(witnessed)),
+			componentClient: applyClient(witnessed),
 		}).SetupWithManager(mgr); err != nil {
 			return err
 		}

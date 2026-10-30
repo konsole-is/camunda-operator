@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
-import { useGitSync } from "@/lib/k8s/hooks";
-import type { RefKey } from "@/lib/write/types";
-import { type PendingPush, useGitPushes } from "./git-pushes";
+import { useGitPushes } from "./git-pushes";
 import { GitWaitingLine } from "./git-waiting-line";
 
 const NOW_INTERVAL_MS = 30_000;
@@ -40,12 +38,12 @@ export function GitBannerView({
 }
 
 /**
- * GitBanner shows each pending push of useGitPushes until the live object
- * carries its revision. It needs a GitPushesProvider and a
- * QueryClientProvider above it.
+ * GitBanner shows each pending push of useGitPushes. GitPushesProvider
+ * removes a push when GitOps applied it. It needs a GitPushesProvider above
+ * it.
  */
 export function GitBanner() {
-  const { pushes, settle } = useGitPushes();
+  const { pushes } = useGitPushes();
   const [now, setNow] = useState(() => new Date().toISOString());
   useEffect(() => {
     const timer = setInterval(
@@ -57,24 +55,8 @@ export function GitBanner() {
   return (
     <GitBannerView count={pushes.length}>
       {pushes.map((push) => (
-        <PendingLine key={push.key} push={push} now={now} settle={settle} />
+        <GitWaitingLine key={push.key} pushed={push} now={now} />
       ))}
     </GitBannerView>
   );
-}
-
-function PendingLine({
-  push,
-  now,
-  settle,
-}: {
-  push: PendingPush;
-  now: string;
-  settle: (key: RefKey) => void;
-}) {
-  const sync = useGitSync(push.ref, push.revision);
-  useEffect(() => {
-    if (sync === "applied") settle(push.key);
-  }, [sync, settle, push.key]);
-  return <GitWaitingLine pushed={push} now={now} />;
 }

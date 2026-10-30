@@ -24,6 +24,7 @@ import (
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
+	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	"github.com/konsole-is/camunda-operator/pkg/claimpolicy"
 )
 
@@ -160,6 +161,42 @@ func TestReferences(t *testing.T) {
 
 			assert.Equal(t, tt.wantRelease, release)
 			assert.Equal(t, tt.wantPlatform, platform)
+		})
+	}
+}
+
+func TestChangedReferences(t *testing.T) {
+	claim := &fleetv1alpha1.CamundaClusterClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "orders", UID: "claim-uid"},
+		Spec:       fleetv1alpha1.CamundaClusterClaimSpec{PresetRef: "small", ReleaseRef: "camunda-8-9-3"},
+	}
+	controlled := func(preset, release string) *v1.CamundaCluster {
+		return &v1.CamundaCluster{
+			ObjectMeta: metav1.ObjectMeta{OwnerReferences: []metav1.OwnerReference{{
+				Kind: "CamundaClusterClaim", Name: "orders", UID: "claim-uid", Controller: new(true),
+			}}},
+			Spec: v1.CamundaClusterSpec{PresetRef: preset, ReleaseRef: release},
+		}
+	}
+	foreign := controlled("small", "camunda-8-9-3")
+	foreign.OwnerReferences[0].UID = "other"
+
+	tests := []struct {
+		name                    string
+		live                    *v1.CamundaCluster
+		wantPreset, wantRelease string
+	}{
+		{name: "no cluster", wantPreset: "small", wantRelease: "camunda-8-9-3"},
+		{name: "cluster carries both", live: controlled("small", "camunda-8-9-3")},
+		{name: "release changed", live: controlled("small", "camunda-8-9-1"), wantRelease: "camunda-8-9-3"},
+		{name: "preset changed", live: controlled("large", "camunda-8-9-3"), wantPreset: "small"},
+		{name: "foreign cluster", live: foreign, wantPreset: "small", wantRelease: "camunda-8-9-3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			preset, release := ChangedReferences(claim, tt.live)
+			assert.Equal(t, tt.wantPreset, preset)
+			assert.Equal(t, tt.wantRelease, release)
 		})
 	}
 }

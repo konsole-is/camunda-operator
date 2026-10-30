@@ -1,9 +1,9 @@
 # CamundaClusterClaim
 
-A `CamundaClusterClaim` asks for one Camunda cluster. It names a preset, a release, and one option for each section of the create flow, for example the secondary storage or the backup storage. The [fleet manager](../fleet-manager/install.md) writes claims, and you can also apply one with `kubectl`. The operator creates a [PluginRequest](pluginrequest.md) for each option and a [CamundaCluster](camundacluster.md) with the name of the claim. The [Environment](environment.md) of the namespace sets what the claim can use.
+A `CamundaClusterClaim` asks for one Camunda cluster. It names a preset, a release, and one option for each section of the create flow, for example the secondary storage or the backup storage. The [fleet manager](../fleet-manager/install.md) writes claims, and you can also apply one with `kubectl`. The operator creates a [PluginRequest](pluginrequest.md) for each option and a [CamundaCluster](camundacluster.md) with the name of the claim. A claim can also add a [CamundaOptimize](camundaoptimize.md) and a [BackupSchedule](backupschedule.md) to its cluster. The [Environment](environment.md) of the namespace sets what the claim can use.
 
 !!! note
-    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release. In this release, the operator creates the requests and the cluster of a claim. It does not act on `spec.attachments`, `spec.suspend`, or `spec.allowVersionDowngrade` yet.
+    `fleet.camunda.io/v1alpha1` is an alpha API. Its fields can change in a later release.
 
 The smallest claim:
 
@@ -30,6 +30,8 @@ graph LR
     NS[Namespace] -.->|"label fleet.camunda.io/environment"| ENV[Environment]
     CL[CamundaClusterClaim] -->|creates| PQ["PluginRequest my-cluster-secondary-storage"]
     CL -->|creates| CC["CamundaCluster my-cluster"]
+    CL -->|creates| OPT["CamundaOptimize my-cluster-optimize"]
+    CL -->|creates| BS["BackupSchedule my-cluster-backups"]
     CL -.->|presetRef| CCP[CamundaClusterPreset]
     CL -.->|releaseRef| CR[CamundaRelease]
     CL -.->|platformConfigRef| PFC[CamundaPlatformConfig]
@@ -51,7 +53,7 @@ metadata:
 
 When no `Environment` exists in the Kubernetes cluster, a namespace without the label is valid too. The registrations then give the policy. A claim can select each registration of a section. It can change only the parameters in `claimEditable` of the registration. When at least one `Environment` exists, a claim in a namespace without the label is refused with `NoEnvironment`.
 
-On its first check, the claim records the policy of its `Environment` in `status.resolvedPolicy`, and the name of the `Environment` in `status.environment`. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of `spec.sections`, `spec.parameters`, or `spec.deletionPolicy` of the `Environment` does not change the claim. The preset and the release are different. The claim checks them against the current `spec.presets.camundaCluster` and `spec.releases.allowed`. When the `Environment` no longer lists them, `Ready` is `False` with reason `NotAllowed`, and the requests and the cluster stay as they are.
+On its first check, the claim records the policy of its `Environment` in `status.resolvedPolicy`, and the name of the `Environment` in `status.environment`. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of `spec.sections`, `spec.parameters`, or `spec.deletionPolicy` of the `Environment` does not change the claim. The claim checks a new preset or release against the current `spec.presets.camundaCluster` and `spec.releases.allowed` of the `Environment`. A preset or release that the cluster already uses stays allowed when the `Environment` drops it. Other changes of such a claim, such as a suspend or a parameter, still apply. A change to a value that the `Environment` does not list gives `Ready` `False` with reason `NotAllowed`. The requests and the cluster then stay as they are.
 
 A section of the policy that does not apply to a cluster claim, such as `management-database`, is never required for a cluster. A claim that selects an option in such a section is refused with `NotAllowed`. The [PluginSection](pluginsection.md#claim-kinds) page says what `appliesTo` does.
 
@@ -90,6 +92,7 @@ The cluster gets these fields from the claim:
 | `spec.presetRef` | `spec.presetRef` of the claim |
 | `spec.releaseRef` | `spec.releaseRef` of the claim, or the default release of the `Environment` |
 | `spec.platformConfigRef` | `spec.platformConfigRef` of the claim, or that of the `Environment` |
+| `spec.suspend` | `spec.suspend` of the claim |
 | `spec.serviceAccount.name` | `<claim>-camunda` |
 | `spec.connectors.serviceAccount.name` | `<claim>-connectors` |
 | every other field | `spec.cluster` of the claim |
@@ -105,11 +108,88 @@ The outputs of the requests fill these fields:
 | `secondary-storage` | `secondaryStorageConfig` | `spec.storageRef` |
 | `access` | `externalUrl` | `spec.externalUrl` |
 
+The `optimizeUrl` output of `access` goes to the `CamundaOptimize` of the claim. See [Attachments](#attachments).
+
 When a request loses an output after the cluster exists, the cluster keeps the last value of that field. The cluster carries the label `fleet.camunda.io/claim` and an owner reference to the claim. The claim sets only the fields above. A field that it does not set stays free for another writer.
 
 A `CamundaCluster` needs `spec.storageRef`, so a claim without an option of `secondary-storage` gets no cluster. `ClusterReady` is then `False` with reason `Error`, and the message holds `spec.storageRef is required`.
 
 A `CamundaCluster` of the same name that another owner controls stays as it is. `ClusterReady` is then `False` with reason `Blocked`, and the message names the owner.
+
+## Suspend
+
+Set `spec.suspend: true` to stop the cluster:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  suspend: true
+  # ... the rest of your claim
+```
+
+The `CamundaCluster` `my-cluster` gets `spec.suspend: true`. It scales to zero and keeps its data, as [Suspend and pause](camundacluster.md#suspend-and-pause) describes. The plugin requests do not change. Remove `spec.suspend`, or set it to `false`, to start the cluster again.
+
+## Downgrade
+
+The operator refuses a move of a cluster to a lower version, as [A lower version is refused](camundacluster.md#a-lower-version-is-refused) describes. To downgrade on purpose, set `spec.releaseRef` to the older release and `spec.allowVersionDowngrade` to its version, in the same edit. The `Environment` must allow the older release:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  releaseRef: camunda-8-9-3
+  allowVersionDowngrade: "8.9.3"
+  # ... the rest of your claim
+```
+
+The `CamundaCluster` then gets the annotation `camunda.io/allow-version-downgrade: "8.9.3"`, see [Downgrade on purpose](camundacluster.md#downgrade-on-purpose). The cluster carries the annotation until it runs that version. Clear `spec.allowVersionDowngrade` after that.
+
+The annotation names only the version of the release of the claim. When `spec.allowVersionDowngrade` names another version, the cluster gets no annotation until `spec.releaseRef` names a release of that version. The cluster stays on the version of its release. A `CamundaCluster` whose `spec.version` you set yourself runs that version, and it gets no annotation from the claim. While the claim is suspended, the annotation does not change, and a downgrade waits until the claim starts the cluster again.
+
+## Attachments
+
+`spec.attachments` adds an Optimize and a backup schedule to the cluster of the claim:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  attachments:
+    optimize:
+      managementAuthConfigRef: my-management-auth
+    backupSchedule:
+      schedule: "0 2 * * *"
+  # ... the rest of your claim
+```
+
+The claim creates the attachments when `ClusterReady` is `True` for the first time. After that, the claim applies each change of an attachment at once, also while the cluster is not ready. Each attachment gets these fields:
+
+| Attachment | Name | Fields |
+| --- | --- | --- |
+| [CamundaOptimize](camundaoptimize.md) | `<claim>-optimize` | `spec.clusterRef.name` is `<claim>`. `spec.managementAuthRef` is `managementAuthConfigRef` of the claim. `spec.version` is `spec.version` of the release of the claim. `spec.externalUrl` is the `optimizeUrl` output of `access`, or `spec.attachments.optimize.externalUrl` without an option of `access`. `spec.webapp`, `spec.importer`, `spec.indexReplicas`, and `spec.monitoring` are the fields of the same name in `spec.attachments.optimize`. |
+| [BackupSchedule](backupschedule.md) | `<claim>-backups` | `spec.clusterRef.name` is `<claim>`. `spec.schedule` and `spec.retained` are the fields of the same name in `spec.attachments.backupSchedule`. The schedule is a five-field cron expression in UTC. |
+
+Each attachment carries the label `fleet.camunda.io/claim` and an owner reference to the claim. When the release of the claim changes, the `CamundaOptimize` gets the new version too. When the `optimizeUrl` output is missing, a new `CamundaOptimize` waits for it, and one that exists keeps its URL. The claim sets only the fields above that have a value. A field that the claim leaves empty stays free for another writer.
+
+Remove an attachment from the claim to delete it. The claim deletes only an object that has an owner reference to the claim. An object of that name that you created yourself stays, unless the claim took it over as the next paragraph says.
+
+An object of the name of an attachment that another owner controls stays as it is. `AttachmentsReady` is then `False` with reason `Blocked`, and the message names the owner. When the claim sets the attachment and an object of that name has no controller, the claim takes over the object.
+
+A `BackupSchedule` needs a cluster with `spec.backupStorageRef`, see [BackupSchedule](backupschedule.md). So a claim with a backup schedule must select an option of `backup-storage`, and the selections are fixed at creation.
+
+The cluster needs a version from the release of the claim. When the claim names no release and the `Environment` has no default release, `ClusterReady` is `False`, and its message holds `missing required fields: version`. The claim then creates no attachments.
+
+A suspended claim keeps its attachments. Optimize stops with its cluster, as [Suspension](camundaoptimize.md#suspension) describes. `AttachmentsReady` stays `True` while Optimize is suspended.
 
 ## Deletion
 
@@ -150,13 +230,13 @@ kubectl get camundaclusterclaim my-cluster -n my-cluster-ns -o jsonpath='{.spec.
 | `UnknownEnvironment` | The label names no `Environment`. | Create the `Environment`, or fix the label. |
 | `InvalidReference` | The preset, the release, the platform config, a section, or a registration does not exist. The message names each one. | Create the object, or fix the name. |
 | `NotAllowed` | The `Environment` does not allow the preset, the release, or a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. A selected section does not apply to a cluster claim. A selected registration does not serve its section. The deletion policy of the claim, or the default of the `Environment`, is `Orphan`, and a selected registration does not list `Orphan` in `spec.deletionPolicies`. The claim selects two options of a section that takes one, or two selections get the same request name. The message names the value. | Pick an allowed value, or change the `Environment`. Select one option of a section that takes one. For `Orphan`, set `spec.deletionPolicy: Delete`, or pick a registration that supports `Orphan`. |
-| `SlotConflict` | `spec.cluster` sets a field that a selected section fills, for example `externalUrl` with an option of `access`. | Remove the field from `spec.cluster`. |
+| `SlotConflict` | `spec.cluster` or `spec.attachments.optimize` sets a field that a selected section fills, for example `externalUrl` with an option of `access`. | Remove the field from the claim. |
 | `MissingInput` | An option needs an output of a section in which the claim selects nothing. | Select an option of that section. |
 | `WiringCycle` | The options read the outputs of each other in a cycle. The message names the sections. | Pick other options. |
 
 You do not need to edit the claim after you correct the cause. The claim checks itself again when the namespace, the `Environment`, the preset, the release, the platform config, a section, or a registration changes.
 
-When the check passes, `Ready` follows two conditions:
+When the check passes, `Ready` follows three conditions:
 
 | Type | Reason | Meaning | What to do |
 | --- | --- | --- | --- |
@@ -168,8 +248,13 @@ When the check passes, `Ready` follows two conditions:
 | `ClusterReady` | `Blocked` | Another owner controls a `CamundaCluster` of this name, or an output came in after the check of the claim. The message says which. | For another owner, delete that cluster, or rename the claim. For an output, wait. |
 | `ClusterReady` | `Error` | The API server refused the `CamundaCluster`. The message holds its answer. | Correct the claim. |
 | `ClusterReady` | `Healthy` | The `CamundaCluster` is ready. | Nothing. |
+| `AttachmentsReady` | `PrerequisiteNotMet` | The attachments wait for the first `ClusterReady` `True`. The message holds the message of `ClusterReady`. | See `ClusterReady`. |
+| `AttachmentsReady` | `Creating`, `Updating`, `Failing`, `Degraded`, `Down` | The `CamundaOptimize` or the `BackupSchedule` is not ready. The message holds its `Ready` reason and message. | See [CamundaOptimize](camundaoptimize.md#status) or [BackupSchedule](backupschedule.md#status). |
+| `AttachmentsReady` | `Blocked` | Another owner controls an object of the name of an attachment. Or the `CamundaOptimize` does not exist yet, and the `optimizeUrl` output is missing. The message says which. | For another owner, delete that object, or rename the claim. For the output, wait. |
+| `AttachmentsReady` | `Error` | The API server refused an attachment. The message holds its answer. | Correct the claim. |
+| `AttachmentsReady` | `Healthy` | Each attachment that the claim sets is ready. A claim without attachments is `Healthy` too. | Nothing. |
 
-`Ready` is `True` only when both are `True`. Otherwise, it takes the reason of the condition that blocks it, and its message starts with `requests:` or `cluster:`. A claim that waits for an output reports `PrerequisiteNotMet`:
+`Ready` is `True` only when all three are `True`. Otherwise, it takes the reason of the condition that blocks it, and its message starts with `requests:`, `cluster:`, or `attachments:`. Before the cluster is ready for the first time, the message of `Ready` can start with `attachments:`. Then read `ClusterReady`, because the attachments wait for it. A claim that waits for an output reports `PrerequisiteNotMet`:
 
 ```yaml
 status:
@@ -185,6 +270,11 @@ status:
       status: "False"
       reason: PrerequisiteNotMet
       message: 'Prerequisite not met: waiting for condition "RequestsReady" to become True (currently False: waiting for the outputs of encryption-key)'
+      observedGeneration: 1
+    - type: AttachmentsReady
+      status: "False"
+      reason: PrerequisiteNotMet
+      message: 'Prerequisite not met: waiting for condition "ClusterReady" to become True (currently False: Prerequisite not met: waiting for condition "RequestsReady" to become True (currently False: waiting for the outputs of encryption-key))'
       observedGeneration: 1
     - type: Ready
       status: "False"
@@ -281,4 +371,5 @@ spec:
 - [PluginRequest](pluginrequest.md): the request that the claim creates for each option.
 - [PluginSection](pluginsection.md) and [PluginRegistration](pluginregistration.md): the sections and the options that a claim selects.
 - [CamundaCluster](camundacluster.md): the cluster that the claim creates.
+- [CamundaOptimize](camundaoptimize.md) and [BackupSchedule](backupschedule.md): the attachments of the claim.
 - [Claims guide](../guides/claims.md): create a cluster from a claim, step by step.

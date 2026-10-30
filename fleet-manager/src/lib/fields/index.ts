@@ -8,4 +8,9 @@ export type {
   FieldState,
   FieldTarget,
 } from "./types";
-export { pathFrom, walk, type Step, type WalkNode } from "./walk";
+export { itemStep, pathFrom, walk, type Step, type WalkNode } from "./walk";
+export {
+  REFUSED_CLUSTER_FIELDS,
+  refusedSteps,
+  type RefusedField,
+} from "./claim";

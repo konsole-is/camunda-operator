@@ -1,4 +1,5 @@
 import type { FieldPath } from "@/lib/merge";
+import type { Step } from "./walk";
 
 /**
  * FieldGroup is where a field shows: one of the six components of a cluster,
@@ -50,7 +51,8 @@ export type FieldLock =
  * ClusterField is one value of a cluster as the admin sees it. key is
  * unique in one result. path is the FieldPath in the target object, label
  * the path from the root of its group. value is undefined while the field
- * has no value. claimPath is where a claim sets the value, when it can.
+ * has no value. claimPath is where a claim sets the value, when it can,
+ * and claimSteps are the steps of claimPath from the root of the claim.
  * docNames are the JSON field names from the root of a CRD target, without
  * list items, for the field docs. description is the schema description of
  * a section parameter.
@@ -65,6 +67,7 @@ export type ClusterField = {
   state: FieldState;
   lock?: FieldLock;
   claimPath?: FieldPath;
+  claimSteps?: Step[];
   docNames?: string[];
   description?: string;
 };

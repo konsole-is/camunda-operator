@@ -102,6 +102,47 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 	}
 }
 
+func TestVerbatimConvergingStatusHandler(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		optimize   *apiv1.CamundaOptimize
+		want       concepts.AliveConvergingStatus
+		wantReason string
+	}{
+		{
+			name:       "Ready=True with reason Suspended is Healthy",
+			optimize:   optimizeWithReady(2, metav1.ConditionTrue, string(component.Suspended)),
+			want:       concepts.AliveConvergingStatusHealthy,
+			wantReason: string(component.Suspended),
+		},
+		{
+			name:       "Ready=False with reason Failing is Failing",
+			optimize:   optimizeWithReady(2, metav1.ConditionFalse, string(component.AliveFailing)),
+			want:       concepts.AliveConvergingStatusFailing,
+			wantReason: string(component.AliveFailing),
+		},
+		{
+			name:     "Ready of an older generation is Updating",
+			optimize: olderReady(),
+			want:     concepts.AliveConvergingStatusUpdating,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := VerbatimConvergingStatusHandler(concepts.ConvergingOperationUpdated, tt.optimize)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.want, got.Status)
+			assert.Contains(t, got.Reason, tt.wantReason)
+		})
+	}
+}
+
 func TestDefaultGraceStatusHandler(t *testing.T) {
 	t.Parallel()
 

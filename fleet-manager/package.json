@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "gallery": "rm -rf ui-gallery test-results && playwright test",
+    "scenarios": "rm -rf ui-pages test-results/scenarios && playwright test -c playwright.scenarios.config.ts",
     "generate": "node scripts/generate-crd-types.mts ../config/crd/bases src/generated/crds"
   },
   "dependencies": {

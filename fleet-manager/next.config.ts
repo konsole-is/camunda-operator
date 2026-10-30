@@ -12,7 +12,18 @@ const nextConfig: NextConfig = {
   // tracing root. A lockfile in a parent directory moves server.js to a nested
   // path inside .next/standalone.
   outputFileTracingRoot: __dirname,
-  turbopack: { root: __dirname },
+  turbopack: {
+    root: __dirname,
+    // The page scenarios run on envtest, which has no kubelet and no
+    // metrics.k8s.io. In the gallery build the observe readers read the
+    // observe.yaml of the scenario instead. A production build never
+    // bundles readers.gallery.ts.
+    ...(galleryBuild && {
+      resolveAlias: {
+        "@/lib/observe/readers": "./src/lib/observe/readers.gallery.ts",
+      },
+    }),
+  },
   pageExtensions: galleryBuild
     ? ["gallery.tsx", "tsx", "ts", "jsx", "js"]
     : ["tsx", "ts", "jsx", "js"],

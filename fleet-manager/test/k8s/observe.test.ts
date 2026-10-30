@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { KubeConfig, KubernetesObjectApi } from "@kubernetes/client-node";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { defaultCache } from "@/lib/k8s/cache";
-import { events, podUsage } from "@/lib/observe/kube";
+import { events, metricsServerFound, podUsage } from "@/lib/observe/kube";
 
 // The data layer reads KUBECONFIG through kubeConfig, on its first call.
 process.env.KUBECONFIG = inject("kubeconfig");
@@ -26,6 +26,10 @@ afterAll(async () => {
 describe("observe readers against envtest", () => {
   it("podUsage returns unavailable without metrics-server", async () => {
     expect(await podUsage(namespace, "")).toBe("unavailable");
+  });
+
+  it("metricsServerFound is false without metrics-server", async () => {
+    expect(await metricsServerFound(namespace)).toBe(false);
   });
 
   it("events returns an event recorded on a PluginRequest", async () => {

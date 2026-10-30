@@ -1,0 +1,26 @@
+apiVersion: core.camunda.io/v1
+kind: BackupSchedule
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+  name: orders-backups
+  namespace: team-a
+spec:
+  clusterRef:
+    name: orders
+  schedule: 0 2 * * *
+---
+apiVersion: core.camunda.io/v1
+kind: CamundaOptimize
+metadata:
+  labels:
+    fleet.camunda.io/claim: orders
+  name: orders-optimize
+  namespace: team-a
+spec:
+  clusterRef:
+    name: orders
+  externalUrl: https://orders.example.com/optimize
+  indexReplicas: 1
+  managementAuthRef: management
+  version: 8.9.9

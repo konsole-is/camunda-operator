@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { KeyValueEditor } from "./key-value-editor";
+import { KeyValueEditor, keyValueErrors } from "./key-value-editor";
 
 afterEach(cleanup);
 
@@ -82,5 +82,36 @@ describe("KeyValueEditor", () => {
       screen.getByRole("button", { name: "Remove entry 1" }),
     );
     expect(onChange).toHaveBeenLastCalledWith({ b: "2" }, []);
+  });
+});
+
+describe("keyValueErrors", () => {
+  it("gives the errors that the editor shows, by row", () => {
+    expect(
+      keyValueErrors(
+        [
+          { key: "tier", value: "gold" },
+          { key: "-x", value: "-y" },
+          { key: "", value: "" },
+          { key: "", value: "v" },
+        ],
+        "label",
+      ),
+    ).toEqual([
+      {
+        path: "1.key",
+        message: "Use a valid label key, for example team or example.com/team",
+      },
+      {
+        path: "1.value",
+        message:
+          "Use at most 63 letters, digits, '-', '_', or '.', starting and ending with a letter or digit",
+      },
+      { path: "3.key", message: "Enter a key" },
+    ]);
+  });
+
+  it("checks no label rule without the label format", () => {
+    expect(keyValueErrors([{ key: "-x", value: "-y" }])).toEqual([]);
   });
 });

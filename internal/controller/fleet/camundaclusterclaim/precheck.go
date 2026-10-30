@@ -47,15 +47,21 @@ type resolved struct {
 	// requests holds only the requests whose claimRef names this claim.
 	requests                []pluginsv1alpha1.PluginRequest
 	release, platformConfig string
+	// releaseVersion is spec.version of the release. Empty without a
+	// release.
+	releaseVersion string
 	// live is nil before the CamundaCluster of the claim exists.
 	live *v1.CamundaCluster
+	// liveOptimize is nil before the CamundaOptimize of the claim exists.
+	liveOptimize *v1.CamundaOptimize
 }
 
 // preCheck reads what the components of claim need and refuses the claim, in
 // this order, with NoEnvironment or UnknownEnvironment, InvalidReference,
 // NotAllowed, SlotConflict, and then MissingInput, WiringCycle, or
-// InvalidReference from the wiring. A refusal is a
-// *conditions.PreCheckFailure. It writes nothing.
+// InvalidReference from the wiring. The preset and the release are checked
+// against the Environment only when the cluster of the claim does not carry
+// them yet. A refusal is a *conditions.PreCheckFailure. It writes nothing.
 func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaClusterClaim) (resolved, error) {
 	var res resolved
 
@@ -84,8 +90,12 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 	res.sections, res.registrations = sections.Items, registrations.Items
 	res.release, res.platformConfig = components.References(claim, environment)
 
-	if err := r.checkReferences(ctx, claim, res); err != nil {
+	release, err := r.checkReferences(ctx, claim, res)
+	if err != nil {
 		return res, err
+	}
+	if release != nil {
+		res.releaseVersion = release.Spec.Version
 	}
 
 	if err := claimrequests.CheckParameterObjects(claim.Spec.Plugins); err != nil {
@@ -110,13 +120,36 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		return res, err
 	}
 
+	var live v1.CamundaCluster
+	err = r.Get(ctx, client.ObjectKeyFromObject(claim), &live)
+	switch {
+	case err == nil:
+		res.live = &live
+	case !apierrors.IsNotFound(err):
+		return res, fmt.Errorf("reading the CamundaCluster of the claim: %w", err)
+	}
+
+	var liveOptimize v1.CamundaOptimize
+	err = r.Get(
+		ctx,
+		client.ObjectKey{Namespace: claim.Namespace, Name: components.OptimizeName(claim.Name)},
+		&liveOptimize,
+	)
+	switch {
+	case err == nil:
+		res.liveOptimize = &liveOptimize
+	case !apierrors.IsNotFound(err):
+		return res, fmt.Errorf("reading the CamundaOptimize of the claim: %w", err)
+	}
+
+	presetRef, releaseRef := components.ChangedReferences(claim, res.live)
 	if err := claimpolicy.CheckAllowed(claimpolicy.AllowedInput{
 		Environment: environment,
 		Kind:        pluginsv1alpha1.ClaimKindCamundaClusterClaim,
 		Sections:    res.sections,
 		Policy:      res.resolution.Policy,
-		PresetRef:   claim.Spec.PresetRef,
-		ReleaseRef:  claim.Spec.ReleaseRef,
+		PresetRef:   presetRef,
+		ReleaseRef:  releaseRef,
 		Selections:  claim.Spec.Plugins,
 	}); err != nil {
 		return res, err
@@ -158,34 +191,27 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		res.sections,
 	)
 
-	var live v1.CamundaCluster
-	err = r.Get(ctx, client.ObjectKeyFromObject(claim), &live)
-	switch {
-	case err == nil:
-		res.live = &live
-	case !apierrors.IsNotFound(err):
-		return res, fmt.Errorf("reading the CamundaCluster of the claim: %w", err)
-	}
-
 	return res, nil
 }
 
 // checkReferences refuses with InvalidReference a claim that names an
 // object that does not exist. The message names each missing object: the
 // preset, the release, the platform config, then each selected section and
-// registration. An empty release or platform config is not checked.
+// registration. An empty release or platform config is not checked. It
+// returns the release that it read, or nil when the claim has none.
 func (r *Reconciler) checkReferences(
 	ctx context.Context,
 	claim *fleetv1alpha1.CamundaClusterClaim,
 	res resolved,
-) error {
+) (*v1.CamundaRelease, error) {
+	var release v1.CamundaRelease
 	var missing []string
 	for _, ref := range []struct {
 		kind, name string
 		obj        client.Object
 	}{
 		{"CamundaClusterPreset", claim.Spec.PresetRef, &v1.CamundaClusterPreset{}},
-		{"CamundaRelease", res.release, &v1.CamundaRelease{}},
+		{"CamundaRelease", res.release, &release},
 		{"CamundaPlatformConfig", res.platformConfig, &v1.CamundaPlatformConfig{}},
 	} {
 		if ref.name == "" {
@@ -198,7 +224,7 @@ func (r *Reconciler) checkReferences(
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("reading %s %s: %w", ref.kind, ref.name, err)
+			return nil, fmt.Errorf("reading %s %s: %w", ref.kind, ref.name, err)
 		}
 	}
 
@@ -213,14 +239,17 @@ func (r *Reconciler) checkReferences(
 		}
 	}
 
-	if len(missing) == 0 {
-		return nil
+	if len(missing) > 0 {
+		return nil, &conditions.PreCheckFailure{
+			Reason:  v1.ReasonInvalidReference,
+			Message: "the claim names objects that do not exist: " + strings.Join(missing, ", "),
+		}
+	}
+	if res.release == "" {
+		return nil, nil
 	}
 
-	return &conditions.PreCheckFailure{
-		Reason:  v1.ReasonInvalidReference,
-		Message: "the claim names objects that do not exist: " + strings.Join(missing, ", "),
-	}
+	return &release, nil
 }
 
 func named[T any, P interface {

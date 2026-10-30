@@ -1,46 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { KindMap } from "@/lib/k8s/kinds";
-import { REVISION_ANNOTATION } from "@/lib/labels";
+import { LAST_APPLIED_ANNOTATION, REVISION_ANNOTATION } from "@/lib/labels";
 import { APP_FIELD_MANAGER } from "@/lib/merge";
-import { gitBase, gitOpsManager, gitPath, renderObject } from "./git-files";
+import { appliedClientSide, gitOpsManager, renderObject } from "./git-files";
 import type { KubeObject } from "./types";
-
-describe("gitPath", () => {
-  it("puts a namespaced object under its namespace and kind plural", () => {
-    expect(
-      gitPath("clusters/prod", KindMap.CamundaClusterClaim, {
-        apiVersion: "fleet.camunda.io/v1alpha1",
-        kind: "CamundaClusterClaim",
-        namespace: "team-a",
-        name: "orders",
-      }),
-    ).toBe("clusters/prod/team-a/camundaclusterclaims/orders.yaml");
-  });
-
-  it("puts a cluster-scoped object under _cluster", () => {
-    expect(
-      gitPath("", KindMap.Namespace, {
-        apiVersion: "v1",
-        kind: "Namespace",
-        name: "team-a",
-      }),
-    ).toBe("_cluster/namespaces/team-a.yaml");
-  });
-});
-
-describe("gitBase", () => {
-  it.each([
-    ["", ""],
-    ["/", ""],
-    ["/fleet/", "fleet"],
-    ["a/b", "a/b"],
-  ])("%s is the folder %s", (input, out) => expect(gitBase(input)).toBe(out));
-
-  it.each(["../x", "a/../b", "a/./b", "a\\b", "a//b"])("refuses %s", (input) =>
-    expect(gitBase(input)).toBeUndefined(),
-  );
-});
 
 describe("renderObject", () => {
   const claim = {
@@ -185,5 +148,72 @@ describe("gitOpsManager", () => {
         ),
       ),
     ).toBe("gitops");
+  });
+});
+
+describe("appliedClientSide", () => {
+  const withLastApplied = (
+    apiVersion: string,
+    kind: string,
+    lastApplied: string,
+  ): KubeObject => ({
+    apiVersion,
+    kind,
+    metadata: {
+      name: "prod",
+      annotations: { [LAST_APPLIED_ANNOTATION]: lastApplied },
+    },
+  });
+  const file = JSON.stringify({ spec: { displayName: "One" } });
+
+  it("is true for a custom resource with a last applied file", () => {
+    expect(
+      appliedClientSide(
+        withLastApplied("fleet.camunda.io/v1alpha1", "Environment", file),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false without a last applied file, and for a missing object", () => {
+    expect(
+      appliedClientSide({
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        metadata: { name: "prod" },
+      }),
+    ).toBe(false);
+    expect(appliedClientSide(undefined)).toBe(false);
+  });
+
+  it("is false for a built-in kind with a last applied file", () => {
+    expect(appliedClientSide(withLastApplied("v1", "Namespace", file))).toBe(
+      false,
+    );
+    expect(
+      appliedClientSide(
+        withLastApplied("gateway.networking.k8s.io/v1", "HTTPRoute", file),
+      ),
+    ).toBe(false);
+  });
+
+  it("is false for a kind of a built-in group without a dot", () => {
+    for (const [apiVersion, kind] of [
+      ["apps/v1", "Deployment"],
+      ["batch/v1", "Job"],
+      ["policy/v1", "PodDisruptionBudget"],
+      ["autoscaling/v2", "HorizontalPodAutoscaler"],
+    ]) {
+      expect(appliedClientSide(withLastApplied(apiVersion, kind, file))).toBe(
+        false,
+      );
+    }
+  });
+
+  it("is false when the last applied file is not a JSON object", () => {
+    expect(
+      appliedClientSide(
+        withLastApplied("fleet.camunda.io/v1alpha1", "Environment", "{"),
+      ),
+    ).toBe(false);
   });
 });

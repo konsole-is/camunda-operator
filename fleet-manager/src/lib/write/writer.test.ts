@@ -19,6 +19,7 @@ import {
   directWriter,
   getWriter,
   refKey,
+  writeMode,
 } from "./writer";
 
 vi.mock("@/lib/settings/store", () => ({ getSettings: vi.fn() }));
@@ -402,5 +403,20 @@ describe("getWriter", () => {
   it("throws when the settings cannot be read", async () => {
     vi.mocked(getSettings).mockRejectedValueOnce(new Error("no settings"));
     await expect(getWriter()).rejects.toThrow("no settings");
+  });
+
+  it("writeMode is git when git.repository is set, else direct", async () => {
+    vi.mocked(getSettings).mockResolvedValueOnce(
+      settings({ "git.repository": "https://git.example.com/fleet.git" }),
+    );
+    expect(await writeMode()).toBe("git");
+
+    vi.mocked(getSettings).mockResolvedValueOnce(settings({}));
+    expect(await writeMode()).toBe("direct");
+  });
+
+  it("writeMode throws when the settings cannot be read", async () => {
+    vi.mocked(getSettings).mockRejectedValueOnce(new Error("no settings"));
+    await expect(writeMode()).rejects.toThrow("no settings");
   });
 });

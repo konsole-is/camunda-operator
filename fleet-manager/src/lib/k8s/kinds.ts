@@ -366,10 +366,19 @@ export function objectPath(
   name: string,
 ): string {
   const scope =
-    namespace === undefined
-      ? ""
-      : `/namespaces/${encodeURIComponent(namespace)}`;
-  return `${versionPath(info)}${scope}/${info.plural}/${encodeURIComponent(name)}`;
+    namespace === undefined ? "" : `/namespaces/${pathSegment(namespace)}`;
+  return `${versionPath(info)}${scope}/${info.plural}/${pathSegment(name)}`;
+}
+
+/**
+ * pathSegment encodes value as one segment of a request path. It throws for
+ * "", ".", and "..", which a URL resolves as no segment or a step up.
+ */
+export function pathSegment(value: string): string {
+  if (value === "" || value === "." || value === "..") {
+    throw new Error(`The path segment ${JSON.stringify(value)} is not valid`);
+  }
+  return encodeURIComponent(value);
 }
 
 function versionPath(info: KindInfo): string {

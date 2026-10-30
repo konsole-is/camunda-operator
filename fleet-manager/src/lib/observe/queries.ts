@@ -62,6 +62,18 @@ const ZEEBE: CoreQuery[] = [
 ];
 
 /**
+ * PARTITION_HEALTH gives one series for each partition, named by its
+ * partition label, with the worst zeebe_health value of the pods: 1
+ * healthy, 0 unhealthy, -1 dead.
+ */
+export const PARTITION_HEALTH: CoreQuery = {
+  label: "Partition health",
+  query: `min by (partition) (zeebe_health{${SELECT}})`,
+  metric: "zeebe_health",
+  source: CAMUNDA,
+};
+
+/**
  * coreQueries holds the fixed queries of each core component. Each query
  * reads one documented metric, which metric and source name. The query is
  * a metric template with {{ .namespace }} and {{ .pods }}.
@@ -98,16 +110,31 @@ export function coreMetricDefs(
   pods: readonly string[],
 ): MetricDef[] {
   if (pods.length === 0) return [];
+  return coreQueries[component].map((q) => ({
+    label: q.label,
+    query: renderCoreQuery(q, namespace, pods),
+    ...(q.unit && { unit: q.unit }),
+    source: q.source,
+  }));
+}
+
+/**
+ * renderCoreQuery returns the PromQL of query for pods in namespace. Callers
+ * must not pass an empty pods list, as for podsPattern.
+ */
+export function renderCoreQuery(
+  query: CoreQuery,
+  namespace: string,
+  pods: readonly string[],
+): string {
   const data = templateData({ namespace, pods: podsPattern(pods) });
-  return coreQueries[component].map(({ label, query, unit, source }) => {
-    const rendered = render(query, data, "metric");
-    if ("error" in rendered) {
-      throw new Error(
-        `The core query ${label} does not render: ${rendered.error}`,
-      );
-    }
-    return { label, query: rendered.text, ...(unit && { unit }), source };
-  });
+  const rendered = render(query.query, data, "metric");
+  if ("error" in rendered) {
+    throw new Error(
+      `The core query ${query.label} does not render: ${rendered.error}`,
+    );
+  }
+  return rendered.text;
 }
 
 /**

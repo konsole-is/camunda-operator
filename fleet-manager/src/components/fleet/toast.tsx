@@ -1,9 +1,11 @@
 "use client";
 
 import { CircleCheck, CircleAlert, GitCommitHorizontal, X } from "lucide-react";
+import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { WriteResult } from "@/lib/write/types";
+import { useGitPushes } from "./git-pushes";
 
 /**
  * ToastResult is the result of a write as the user sees it: saved to the
@@ -17,7 +19,8 @@ export type ToastResult =
 
 /**
  * toastResultOf returns the toast of a write. message is the text of a
- * direct save. A refusal shows the messages of all its errors.
+ * direct save. A refusal shows the messages of all its errors. A Git push
+ * is waiting. useWriteToast moves a waiting toast to applied.
  */
 export function toastResultOf(
   result: WriteResult,
@@ -33,6 +36,55 @@ export function toastResultOf(
     return { kind: "waiting", commit: result.commit };
   }
   return { kind: "saved", message };
+}
+
+/**
+ * useWriteToast holds the toast of the last save of a page. A page calls
+ * show once with the result of its server action, in the event handler or
+ * the transition, never in an effect, and never calls record of
+ * useGitPushes itself. show records a Git result in useGitPushes. The toast
+ * of a Git result is waiting until GitOps applied each written and each
+ * deleted object, and then applied with message. An applied toast stays
+ * applied. dismiss clears the toast. It needs a GitPushesProvider and a
+ * QueryClientProvider above it.
+ */
+export function useWriteToast(): {
+  toast?: ToastResult;
+  show(result: WriteResult, message: string): void;
+  dismiss(): void;
+} {
+  const { pushes, record } = useGitPushes();
+  const [last, setLast] = useState<{
+    result: WriteResult;
+    message: string;
+    applied?: boolean;
+  }>();
+  const show = useCallback(
+    (result: WriteResult, message: string) => {
+      record(result, new Date().toISOString());
+      setLast({ result, message });
+    },
+    [record],
+  );
+  const dismiss = useCallback(() => setLast(undefined), []);
+  if (!last) return { show, dismiss };
+  const { result, message } = last;
+  if (!result.ok || result.mode !== "git") {
+    return { toast: toastResultOf(result, message), show, dismiss };
+  }
+  const keys = [
+    ...Object.keys(result.revisions),
+    ...Object.keys(result.deleted),
+  ];
+  const applied =
+    last.applied || !pushes.some((push) => keys.includes(push.key));
+  // A later save of the same object adds a push with the same key, so the
+  // toast stays applied once it is applied.
+  if (applied && !last.applied) setLast({ ...last, applied: true });
+  const toast: ToastResult = applied
+    ? { kind: "applied", message, commit: result.commit }
+    : toastResultOf(result, message);
+  return { toast, show, dismiss };
 }
 
 /**

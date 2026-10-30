@@ -26,9 +26,13 @@ export function shotFile(journey: string, seq: number, name: string): string {
 /**
  * renderJourneyIndex returns one HTML page with every shot: a section per
  * journey in first-seen order, and its shots in input order. The image paths
- * stay relative, so the page works from the artifact.
+ * stay relative, so the page works from the artifact. title is the title and
+ * the heading of the page.
  */
-export function renderJourneyIndex(shots: readonly JourneyShot[]): string {
+export function renderJourneyIndex(
+  shots: readonly JourneyShot[],
+  title = "Fleet manager UI journeys",
+): string {
   const journeys = new Map<string, JourneyShot[]>();
   for (const s of shots) {
     journeys.set(s.journey, [...(journeys.get(s.journey) ?? []), s]);
@@ -46,5 +50,5 @@ export function renderJourneyIndex(shots: readonly JourneyShot[]): string {
     sections.length > 0
       ? sections.join("")
       : "<p>No journey took a screenshot.</p>";
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Fleet manager UI journeys</title><style>body{margin:0;padding:24px;background:#0a0f1e;color:#e8ecf5;font-family:system-ui,sans-serif}figure{margin:0 0 24px}img{display:block;max-width:100%;border:1px solid #1f2a55}figcaption{color:#a3adc2;font-size:12px;padding-top:4px}</style></head><body><h1>Fleet manager UI journeys</h1>${body}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)}</title><style>body{margin:0;padding:24px;background:#0a0f1e;color:#e8ecf5;font-family:system-ui,sans-serif}figure{margin:0 0 24px}img{display:block;max-width:100%;border:1px solid #1f2a55}figcaption{color:#a3adc2;font-size:12px;padding-top:4px}</style></head><body><h1>${escape(title)}</h1>${body}</body></html>`;
 }

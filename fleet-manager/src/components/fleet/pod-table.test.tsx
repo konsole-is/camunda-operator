@@ -75,4 +75,27 @@ describe("PodTable", () => {
         .getAttribute("aria-valuetext"),
     ).toBe("1 GiB of 4 GiB");
   });
+
+  it("shows the node of each pod", () => {
+    render(
+      <PodTable
+        pods={[
+          {
+            metadata: { name: "orders-zeebe-0" },
+            spec: { nodeName: "node-2" },
+          },
+          { metadata: { name: "orders-zeebe-1" } },
+        ]}
+        usage="unavailable"
+        now={now}
+      />,
+    );
+    expect(screen.getByRole("columnheader", { name: "Node" })).toBeTruthy();
+    const node = (pod: string) =>
+      screen
+        .getByRole("row", { name: new RegExp(pod) })
+        .querySelectorAll("td")[2]?.textContent;
+    expect(node("orders-zeebe-0")).toBe("node-2");
+    expect(node("orders-zeebe-1")).toBe("-");
+  });
 });

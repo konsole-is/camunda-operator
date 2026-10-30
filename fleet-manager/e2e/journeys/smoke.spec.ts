@@ -1,8 +1,7 @@
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { shot } from "../shot";
+import { blockingViolations } from "../axe";
+import { JOURNEYS_DIR, shot } from "../shot";
 
-const BLOCKING = new Set(["serious", "critical"]);
 const [namespace, name] = (process.env.FLEET_JOURNEYS_CLUSTER ?? "").split("/");
 
 test("the chart install serves the app and shows the sample cluster", async ({
@@ -31,24 +30,18 @@ test("the chart install serves the app and shows the sample cluster", async ({
   await expect(
     page.getByRole("heading", { level: 1, name: "Fleet" }),
   ).toBeVisible();
-  const { violations } = await new AxeBuilder({ page }).analyze();
   expect(
-    violations
-      .filter((v) => BLOCKING.has(v.impact ?? ""))
-      .map(
-        (v) =>
-          `rule ${v.id} (${v.impact}) at ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`,
-      ),
+    await blockingViolations(page),
     "serious or critical axe violations on the fleet page",
   ).toEqual([]);
-  await shot(page, "fleet");
+  await shot(page, "fleet", { dir: JOURNEYS_DIR });
 
   // TODO(#625): assert the cluster name on the fleet page when the fleet view
   // lists clusters. The cluster page reads the CamundaCluster through the
   // same informer, which lists every namespace.
   await page.goto(`/fleet/clusters/${namespace}/${name}`);
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
-  await shot(page, "cluster");
+  await shot(page, "cluster", { dir: JOURNEYS_DIR });
 
   expect(
     foreign,

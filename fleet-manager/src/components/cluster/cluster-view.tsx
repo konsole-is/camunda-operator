@@ -1,13 +1,15 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   GitWaitingLine,
   type PushedObject,
 } from "@/components/fleet/git-waiting-line";
+import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { ConditionLike } from "@/components/fleet/status";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { FieldDoc } from "@/generated/fielddocs";
 import { useResource, useResources } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
@@ -18,17 +20,34 @@ import {
   SECTION_LABEL,
   isManaged,
 } from "@/lib/labels";
+import { clusterFields } from "@/lib/fields";
 import { mergeCluster } from "@/lib/merge";
+import { usePartitions, usePodUsage } from "@/lib/observe/use-observe";
 import { runningBackup, runningRestore } from "@/lib/policy/backups";
 import { ActionSlot } from "./action-slot";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
 import { backupRowsOf, backupStorageOf, restoreRowsOf } from "./backups";
 import { BackupsTab } from "./backups-tab";
+import { type CardId, componentCards, componentOf } from "./cards";
+import { claimView } from "./claim";
+import { ClaimTab } from "./claim-tab";
+import { ClusterComponentDetail } from "./cluster-detail";
 import { ClusterHeader } from "./cluster-header";
+import { ComponentCards } from "./component-card";
+import { ComponentSettings } from "./component-settings";
+import { endpointRows } from "./endpoints";
+import { EndpointsTab } from "./endpoints-tab";
 import { launchLinks } from "./launch";
+import { clusterOptimize } from "./optimize";
+import { OverviewConditions } from "./overview-conditions";
+import {
+  clusterFieldsInputOf,
+  componentSettings,
+  operatorVersionOf,
+} from "./settings";
 import type { ActionSlots } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
-import { topologyOf } from "./topology";
+import { type Process, topologyOf } from "./topology";
 import { TopologyView } from "./topology-view";
 
 /**
@@ -38,6 +57,9 @@ import { TopologyView } from "./topology-view";
  * the cluster by its owner label, and pods holds them. backupStorage holds
  * the objects that the Backups tab follows from the cluster to its backup
  * storage and its schedules. Its databaseServerPresets are cluster-scoped.
+ * optimizes holds every CamundaOptimize of the namespace, and sections and
+ * registrations every PluginSection and PluginRegistration. fieldDocs holds
+ * the help of the settings fields by field key.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -67,15 +89,21 @@ export type ClusterPageData = {
     databaseServerPresets: Resource<"DatabaseServerPreset">[];
     schedules: Resource<"BackupSchedule">[];
   };
+  optimizes: Resource<"CamundaOptimize">[];
+  sections: Resource<"PluginSection">[];
+  registrations: Resource<"PluginRegistration">[];
+  fieldDocs: Record<string, FieldDoc>;
 };
 
 /**
  * ClusterView is the cluster page. It follows the objects of initial live,
  * and selects the tab that the tab query parameter of the URL names. A
- * click on a tab replaces that parameter. slots fill the action slots of a managed cluster, and an
- * unmanaged cluster ignores them. pushedClaim is the claim file that the
- * fleet manager pushed in Git mode. When the cluster is deleted, the page
- * says so and shows nothing else.
+ * click on a tab replaces that parameter. The component query parameter
+ * opens the detail of a used component, or of an app embedded in one, on
+ * the Overview tab, in place of the cards. slots fill the action slots of a
+ * managed cluster, and an unmanaged cluster ignores them. pushedClaim is the
+ * claim file that the fleet manager pushed in Git mode. When the cluster is
+ * deleted, the page says so and shows nothing else.
  */
 export function ClusterView({
   initial,
@@ -90,12 +118,22 @@ export function ClusterView({
 }) {
   const { namespace, name } = initial.cluster.metadata ?? {};
   const ns = namespace ?? "";
-  const urlTab = clusterTabOf(useSearchParams().get("tab") ?? undefined);
+  const params = useSearchParams();
+  const urlTab = clusterTabOf(params.get("tab") ?? undefined);
   const [tab, setTab] = useState<ClusterTab>(urlTab);
   const [seenUrlTab, setSeenUrlTab] = useState(urlTab);
   if (urlTab !== seenUrlTab) {
     setSeenUrlTab(urlTab);
     setTab(urlTab);
+  }
+  const overviewRef = useRef<HTMLDivElement>(null);
+  const focusNext = useRef<string | null>(null);
+  const urlComponent = params.get("component");
+  const [component, setComponent] = useState(urlComponent);
+  const [seenUrlComponent, setSeenUrlComponent] = useState(urlComponent);
+  if (urlComponent !== seenUrlComponent) {
+    setSeenUrlComponent(urlComponent);
+    setComponent(urlComponent);
   }
 
   const cluster = useResource(
@@ -186,8 +224,30 @@ export function ClusterView({
     { namespace: ns },
     initial.backupStorage.schedules,
   );
+  const optimizes = useResources(
+    "CamundaOptimize",
+    { namespace: ns },
+    initial.optimizes,
+  );
+  const sections = useResources("PluginSection", {}, initial.sections);
+  const registrations = useResources(
+    "PluginRegistration",
+    {},
+    initial.registrations,
+  );
+  useEffect(() => {
+    const selector = focusNext.current;
+    if (!selector) return;
+    focusNext.current = null;
+    overviewRef.current?.querySelector<HTMLElement>(selector)?.focus();
+  }, [component]);
+  const usage = usePodUsage(ns, initial.podSelector);
+  const partitions = usePartitions(ns, name ?? "");
   const backups = [...backupsES.items, ...backupsRDBMS.items];
-  const clock = useClock(now, tab === "backups");
+  const clock = useClock(
+    now,
+    tab === "backups" || tab === "overview" || tab === "claim",
+  );
 
   const live = cluster.item;
   if (!live) {
@@ -216,6 +276,9 @@ export function ClusterView({
       ["DatabaseServer", databaseServers],
       ["DatabaseServerPreset", databaseServerPresets],
       ["BackupSchedule", schedules],
+      ["CamundaOptimize", optimizes],
+      ["PluginSection", sections],
+      ["PluginRegistration", registrations],
     ] as const
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
@@ -249,6 +312,22 @@ export function ClusterView({
   )?.spec.type;
   const ready = live.status?.conditions?.find((c) => c.type === "Ready") as
     ConditionLike | undefined;
+  const clusterConditions = conditionRows(live.status?.conditions);
+  const optimize = clusterOptimize(name ?? "", optimizes.items);
+  const cards = componentCards({
+    spec: merged.spec,
+    pods: pods.items,
+    conditions: clusterConditions,
+    optimize,
+    usage,
+    partitions,
+  });
+  const processConditions: Partial<Record<Process, ConditionLike>> =
+    Object.fromEntries(
+      cards.flatMap((c) =>
+        c.id !== "optimize" && c.condition ? [[c.id, c.condition]] : [],
+      ),
+    );
 
   const restores = [
     ...restoresES.items,
@@ -259,8 +338,20 @@ export function ClusterView({
   const selectTab = (value: string) => {
     const next = clusterTabOf(value);
     setTab(next);
+    setComponent(null);
     window.history.replaceState(null, "", `?tab=${next}`);
   };
+  const openComponent = (id: CardId | null) => {
+    focusNext.current = id
+      ? "h2"
+      : openId
+        ? `a[href="${overviewHref(openId)}"]`
+        : null;
+    setTab("overview");
+    setComponent(id);
+    window.history.replaceState(null, "", overviewHref(id));
+  };
+  const openId = componentOf(component, cards);
   const slot = (
     slotName: Parameters<typeof ActionSlot>[0]["name"],
   ): ReactNode => (
@@ -307,11 +398,81 @@ export function ClusterView({
             </TabsTrigger>
           ))}
         </TabsList>
-        <TabsContent value="overview">
-          <TopologyView
-            boxes={topologyOf(merged.spec, pods.items)}
-            actions={slot("cluster.topology.actions")}
-          />
+        <TabsContent value="overview" ref={overviewRef}>
+          {openId ? (
+            <div className="flex flex-col gap-3">
+              <a
+                href={overviewHref(null)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  openComponent(null);
+                }}
+                className="w-fit text-sm text-text-2 underline-offset-4 hover:text-text hover:underline"
+              >
+                All components
+              </a>
+              <ClusterComponentDetail
+                id={openId}
+                cards={cards}
+                namespace={ns}
+                podSelector={initial.podSelector}
+                conditions={clusterConditions}
+                optimize={optimize}
+                partitions={partitions}
+                now={clock}
+                settings={
+                  <div className="flex flex-col gap-4">
+                    <ComponentSettings
+                      groups={componentSettings(
+                        clusterFields(
+                          clusterFieldsInputOf({
+                            cluster: live,
+                            merged,
+                            claim,
+                            sections: sections.items,
+                            registrations: registrations.items,
+                            optimize,
+                            schedules: schedules.items,
+                          }),
+                        ),
+                        openId,
+                        merged.spec,
+                      )}
+                      docs={initial.fieldDocs}
+                      operatorVersion={operatorVersionOf(registrations.items)}
+                      cluster={{ namespace: ns, name: name ?? "" }}
+                    />
+                    {slot("component.settings.editor")}
+                  </div>
+                }
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <TopologyView
+                boxes={topologyOf(merged.spec, pods.items)}
+                actions={slot("cluster.topology.actions")}
+                conditions={processConditions}
+              />
+              <ComponentCards
+                cards={cards}
+                hrefOf={overviewHref}
+                onOpen={openComponent}
+              />
+              <OverviewConditions
+                cluster={clusterConditions}
+                optimize={
+                  optimize
+                    ? conditionRows(optimize.status?.conditions)
+                    : undefined
+                }
+                claim={
+                  claim ? conditionRows(claim.status?.conditions) : undefined
+                }
+                now={clock}
+              />
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="backups">
           <BackupsTab
@@ -332,11 +493,65 @@ export function ClusterView({
             actions={slot("cluster.backups.actions")}
           />
         </TabsContent>
-        <TabsContent value="endpoints" />
-        <TabsContent value="claim">{slot("cluster.claim.editor")}</TabsContent>
+        <TabsContent value="endpoints">
+          <EndpointsTab
+            rows={endpointRows({
+              cluster: live,
+              spec: merged.spec,
+              optimizes: optimizes.items,
+              accessOutputs: access?.status?.outputs,
+            })}
+          />
+        </TabsContent>
+        <TabsContent value="claim">
+          <div className="flex flex-col gap-6">
+            {claim ? (
+              <ClaimTab
+                view={claimView({
+                  claim,
+                  cluster: live,
+                  merged,
+                  environments: environments.items,
+                  sections: sections.items,
+                  registrations: registrations.items,
+                })}
+                stored={claim}
+                now={clock}
+              />
+            ) : (
+              <NoClaim managed={managed} name={claimName} />
+            )}
+            {slot("cluster.claim.editor")}
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
   );
+}
+
+function NoClaim({ managed, name }: { managed: boolean; name?: string }) {
+  return (
+    <p className="text-sm text-muted">
+      {managed
+        ? `The claim ${name} is not in this namespace.`
+        : "This cluster was not made from a claim."}
+    </p>
+  );
+}
+
+// overviewHref is the URL of the Overview tab with the detail of id open,
+// or with the cards when id is null.
+function overviewHref(id: CardId | null): string {
+  return id ? `?tab=overview&component=${id}` : "?tab=overview";
+}
+
+// conditionRows gives the conditions of a status as the table rows. The
+// API server sends metav1.Condition, whose status is one of the three values
+// of ConditionRow.
+function conditionRows(
+  conditions: readonly { type: string; status: string }[] | undefined,
+): ConditionRow[] | undefined {
+  return conditions as ConditionRow[] | undefined;
 }
 
 // useClock starts at the time of the server, so that the first render in

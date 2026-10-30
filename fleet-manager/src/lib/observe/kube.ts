@@ -1,6 +1,6 @@
 import "server-only";
 import { KubernetesRequestError, getJSON, kubeConfig } from "@/lib/k8s/client";
-import type { Resource } from "@/lib/k8s/kinds";
+import { type Resource, pathSegment } from "@/lib/k8s/kinds";
 import { list } from "@/lib/k8s/read";
 import { labelSelectorString } from "@/lib/labels";
 import { parseQuantity } from "./quantity";
@@ -16,7 +16,8 @@ export type EventRef = {
   uid?: string;
 };
 
-type PodMetrics = {
+/** PodMetrics is a list of metrics.k8s.io PodMetrics, with the fields that podUsageFrom reads. */
+export type PodMetrics = {
   items?: {
     metadata?: { name?: string };
     containers?: { usage?: { cpu?: string; memory?: string } }[];
@@ -27,6 +28,36 @@ type Resources = {
   requests?: Record<string, string>;
   limits?: Record<string, string>;
 };
+
+/**
+ * metricsServerFound is true unless metrics.k8s.io answers 404 or 503 in
+ * namespace, the rule of podUsage. Another answer of the API server, such
+ * as 403, is true, because the API is served. It rejects when the API
+ * server does not answer.
+ */
+export async function metricsServerFound(namespace: string): Promise<boolean> {
+  try {
+    await getJSON(
+      kubeConfig(),
+      `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods?limit=1`,
+      TIMEOUT_MS,
+    );
+    return true;
+  } catch (error) {
+    if (metricsUnavailable(error)) return false;
+    if (error instanceof KubernetesRequestError) return true;
+    throw error;
+  }
+}
+
+// The API server answers 404 or 503 for metrics.k8s.io when no metrics
+// server serves it.
+function metricsUnavailable(error: unknown): boolean {
+  return (
+    error instanceof KubernetesRequestError &&
+    (error.statusCode === 404 || error.statusCode === 503)
+  );
+}
 
 /**
  * podUsage returns the live CPU and memory of the pods in namespace that
@@ -47,18 +78,26 @@ export async function podUsage(
   try {
     metrics = await getJSON<PodMetrics>(
       kubeConfig(),
-      `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods${query}`,
+      `/apis/metrics.k8s.io/v1beta1/namespaces/${pathSegment(namespace)}/pods${query}`,
       TIMEOUT_MS,
     );
   } catch (error) {
-    if (
-      error instanceof KubernetesRequestError &&
-      (error.statusCode === 404 || error.statusCode === 503)
-    ) {
-      return "unavailable";
-    }
+    if (metricsUnavailable(error)) return "unavailable";
     throw error;
   }
+  return podUsageFrom(namespace, selector, metrics);
+}
+
+/**
+ * podUsageFrom returns the usage of each pod of metrics, with the requests
+ * and limits of the spec of the pod of that name in namespace that selector
+ * selects, by the rules of podUsage.
+ */
+export async function podUsageFrom(
+  namespace: string,
+  selector: string,
+  metrics: PodMetrics,
+): Promise<PodUsage[]> {
   const pods = await list("Pod", {
     namespace,
     ...(selector && { labelSelector: selector }),

@@ -130,3 +130,8 @@ export function appNamespace(): string {
   }
   return namespace;
 }
+
+/** appServiceName returns FLEET_SERVICE_NAME, the Service of the fleet manager, or undefined when it is empty. */
+export function appServiceName(): string | undefined {
+  return process.env.FLEET_SERVICE_NAME || undefined;
+}
