@@ -76,6 +76,24 @@ describe("clientSideApplyPatch", () => {
     ).toEqual({ displayName: "One", releases: null });
   });
 
+  it("sets null at a field that the body sets to undefined", () => {
+    const live = applied(env({ releases: { allowed: ["r1"], default: "r1" } }));
+    expect(
+      clientSideApplyPatch(
+        live,
+        env({ releases: { allowed: undefined, default: "r1" } }),
+      )?.spec,
+    ).toEqual({ releases: { allowed: null, default: "r1" } });
+  });
+
+  it("sets null at a __proto__ key that the body leaves out", () => {
+    const live = applied(env(JSON.parse('{"parameters":{"__proto__":"x"}}')));
+    const patch = clientSideApplyPatch(live, env({ parameters: {} }));
+    expect(JSON.parse(JSON.stringify(patch?.spec))).toEqual(
+      JSON.parse('{"parameters":{"__proto__":null}}'),
+    );
+  });
+
   it("sends a shorter list whole, with no null for a removed item", () => {
     const live = applied(env({ releases: { allowed: ["r1", "r2"] } }));
     expect(

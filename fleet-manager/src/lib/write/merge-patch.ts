@@ -55,10 +55,24 @@ function withRemovals(last: JsonMap, next: JsonMap): JsonMap {
   const patch: JsonMap = { ...next };
   for (const [key, old] of Object.entries(last)) {
     const value = next[key];
-    if (!Object.hasOwn(next, key)) patch[key] = null;
-    else if (isMap(old) && isMap(value)) patch[key] = withRemovals(old, value);
+    // JSON drops an undefined value, so the field is left out.
+    if (!Object.hasOwn(next, key) || value === undefined) {
+      setOwn(patch, key, null);
+    } else if (isMap(old) && isMap(value)) {
+      setOwn(patch, key, withRemovals(old, value));
+    }
   }
   return patch;
+}
+
+// A plain assignment of the key __proto__ sets the prototype, not a field.
+function setOwn(map: JsonMap, key: string, value: unknown) {
+  Object.defineProperty(map, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }
 
 function annotationsOf(object: KubeObject | undefined): JsonMap | undefined {
