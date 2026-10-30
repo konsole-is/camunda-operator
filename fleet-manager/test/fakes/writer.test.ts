@@ -132,6 +132,32 @@ describe("FakeWriter", () => {
     });
   });
 
+  it("in Git mode keeps an object that a change applies and deletes only in deleted", async () => {
+    const git = new FakeWriter("git");
+    const result = await git.apply({
+      intent: "Replace a",
+      apply: [claim("a")],
+      delete: [
+        {
+          apiVersion: "fleet.camunda.io/v1alpha1",
+          kind: "CamundaClusterClaim",
+          namespace: "team-a",
+          name: "a",
+        },
+      ],
+    });
+    expect(result).toEqual({
+      ok: true,
+      mode: "git",
+      commit: expect.any(String),
+      revisions: {},
+      paths: {},
+      deleted: {
+        "CamundaClusterClaim/team-a/a": "team-a/camundaclusterclaim/a.yaml",
+      },
+    });
+  });
+
   it("records a deep copy, so a later edit of the change does not change the record", async () => {
     const writer = new FakeWriter();
     const sent = change();

@@ -75,7 +75,12 @@ export class FakeWriter implements Writer {
         .digest("hex");
       paths[key] = fileOf({ ...object.metadata, kind: object.kind });
     }
-    for (const ref of change.delete ?? []) deleted[refKey(ref)] = fileOf(ref);
+    for (const ref of change.delete ?? []) {
+      const key = refKey(ref);
+      delete revisions[key];
+      delete paths[key];
+      deleted[key] = fileOf(ref);
+    }
     this.commits++;
     return {
       ok: true,
