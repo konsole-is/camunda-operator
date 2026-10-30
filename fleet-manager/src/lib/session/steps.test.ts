@@ -96,6 +96,15 @@ describe("withValue", () => {
     ]);
   });
 
+  it("keeps the keys of a new keyed item that the value lacks", () => {
+    const after = withValue(
+      object(),
+      [f("spec"), f("cluster"), f("extraEnv"), { item: { name: "NEW" } }],
+      { value: "x" },
+    );
+    expect(after.spec.cluster.extraEnv[2]).toEqual({ name: "NEW", value: "x" });
+  });
+
   it("sets an index", () => {
     const after = withValue(
       object(),

@@ -81,7 +81,11 @@ export function setValue<C extends ClaimObject>(
       path,
       equalJSON(value, valueAt(s.claim, steps))
         ? undefined
-        : { path, steps, value },
+        : {
+            path,
+            steps: structuredClone(steps),
+            value: structuredClone(value),
+          },
     ),
   };
 }
@@ -105,7 +109,7 @@ export function resetValue<C extends ClaimObject>(
       path,
       valueAt(s.claim, steps) === undefined
         ? undefined
-        : { path, steps, reset: true },
+        : { path, steps: structuredClone(steps), reset: true },
     ),
   };
 }

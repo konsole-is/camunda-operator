@@ -168,11 +168,23 @@ function parameterErrors(
   const registration = ctx.registrations.find(
     (r) => r.metadata?.name === selection.item.registration,
   );
-  const schema = asObject(
-    asObject(asObject(registration?.spec.parameters).properties)[name.field],
-  );
+  const root = asObject(registration?.spec.parameters);
+  const properties = asObject(root.properties);
+  const schema = Object.hasOwn(properties, name.field)
+    ? asObject(properties[name.field])
+    : asObject(root.additionalProperties);
   if (Object.keys(schema).length === 0) return [];
-  const result = validate(schema as OpenAPISchema, entry.value);
+  // The parameter is checked inside the root schema, so that a reference to
+  // a definition of the root resolves.
+  const result = validate(
+    {
+      ...root,
+      properties: { [name.field]: schema },
+      required: [],
+      additionalProperties: true,
+    } as OpenAPISchema,
+    { [name.field]: entry.value },
+  );
   return result.ok
     ? []
     : result.errors.map((e) => ({ path: entry.path, message: e.message }));

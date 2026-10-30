@@ -202,6 +202,19 @@ describe("setValue", () => {
     expect(s.pending.size).toBe(0);
   });
 
+  it("keeps its entry when the caller edits the steps or the value later", () => {
+    const steps = cluster("gateway");
+    const value = { replicas: 2 };
+    const s = ok(setValue(open(), steps, value));
+    steps.push(f("mode"));
+    value.replicas = 9;
+    expect(s.pending.get("spec.cluster.gateway")).toEqual({
+      path: "spec.cluster.gateway",
+      steps: cluster("gateway"),
+      value: { replicas: 2 },
+    });
+  });
+
   it("a value of undefined is a reset", () => {
     const s = ok(setValue(open(), cluster("zeebe", "replicas"), undefined));
     expect(s.pending.get("spec.cluster.zeebe.replicas")).toEqual({

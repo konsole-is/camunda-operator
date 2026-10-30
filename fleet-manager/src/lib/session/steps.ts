@@ -16,7 +16,8 @@ export function valueAt(object: unknown, steps: readonly Step[]): unknown {
 /**
  * withValue returns a copy of object with value at steps. It creates
  * missing objects, and a missing keyed list item with its keys at the end
- * of its list. It does not change object.
+ * of its list. An object value at a keyed item keeps the keys of the step.
+ * It does not change object.
  */
 export function withValue<T>(
   object: T,
@@ -85,9 +86,13 @@ function put(at: unknown, steps: readonly Step[], value: unknown): unknown {
     "item" in step
       ? list.findIndex((item) => matches(item, step.item))
       : step.index;
-  if (index >= 0) list[index] = put(list[index], rest, value);
+  const item =
+    rest.length === 0 && "item" in step && isObject(value)
+      ? { ...value, ...step.item }
+      : value;
+  if (index >= 0) list[index] = put(list[index], rest, item);
   else if ("item" in step)
-    list.push(put(structuredClone(step.item), rest, value));
+    list.push(put(structuredClone(step.item), rest, item));
   return list;
 }
 

@@ -341,6 +341,48 @@ describe("validateClusterClaim", () => {
     ]);
   });
 
+  it("checks a parameter by the additionalProperties schema of its registration", () => {
+    const c = ctx();
+    c.registrations = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRegistration",
+        metadata: { name: "gateway-access" },
+        spec: {
+          parameters: {
+            type: "object",
+            additionalProperties: { type: "integer" },
+          },
+        },
+      } as unknown as Resource<"PluginRegistration">,
+    ];
+    const steps = [...ACCESS, f("parameters"), f("replicas")];
+    const errors = validateClusterClaim(set(open(), steps, "three"), c);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].path).toBe(pathFrom("", steps));
+  });
+
+  it("resolves a reference of the registration schema", () => {
+    const c = ctx();
+    c.registrations = [
+      {
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRegistration",
+        metadata: { name: "gateway-access" },
+        spec: {
+          parameters: {
+            type: "object",
+            definitions: { Port: { type: "integer" } },
+            properties: { port: { $ref: "#/definitions/Port" } },
+          },
+        },
+      } as unknown as Resource<"PluginRegistration">,
+    ];
+    const steps = [...ACCESS, f("parameters"), f("port")];
+    expect(validateClusterClaim(set(open(), steps, 8080), c)).toEqual([]);
+    expect(validateClusterClaim(set(open(), steps, "x"), c)).toHaveLength(1);
+  });
+
   it("checks the values that a reset leaves", () => {
     const s = open(claim({ cluster: { externalUrl: "https://x" } }));
     const result = resetValue(s, [f("spec"), f("cluster"), f("externalUrl")]);
