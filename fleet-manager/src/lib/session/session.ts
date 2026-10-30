@@ -262,8 +262,36 @@ function lockAt(
         (keyed) =>
           lockOf(locks, keyed) ?? lockedChange(locks, keyed, before, after),
       )
-      .find((lock) => lock !== undefined)
+      .find((lock) => lock !== undefined) ??
+    renamedLock(locks, claim, target, steps)
   );
+}
+
+// renamedLock returns the lock of a field in an item of the claim that the
+// change gives other keys, because the item leaves its old keys.
+function renamedLock(
+  locks: LockProvider,
+  claim: ClaimObject,
+  target: unknown,
+  steps: readonly Step[],
+): FieldLock | undefined {
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    if ("field" in step) continue;
+    const prefix = steps.slice(0, i + 1);
+    const old = valueAt(claim, prefix);
+    if (old === undefined) continue;
+    const index = "index" in step ? step.index : 0;
+    const now = valueAt(target, prefix);
+    if (
+      now !== undefined &&
+      equalJSON(itemStep(old, index), itemStep(now, index))
+    )
+      continue;
+    const lock = lockedChange(locks, rekeyed(claim, prefix), old, undefined);
+    if (lock) return lock;
+  }
+  return undefined;
 }
 
 function lockOf(

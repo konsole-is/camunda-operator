@@ -55,13 +55,14 @@ export function outcomeOf(
 function targetsOf(s: Session): Map<FieldPath, FieldPath> {
   const after = claimAfter(s);
   const targets = new Map<FieldPath, FieldPath>();
+  const removed = new Map<string, number[]>();
   for (const [path, entry] of s.pending) {
     // The path of an index names an item of the claim, which a reset can
     // move.
     const indexed = entry.steps.some((step) => "index" in step);
     if (!indexed) targets.set(path, path);
     if ("reset" in entry) continue;
-    const steps = indexSteps(after, shifted(s, entry.steps));
+    const steps = indexSteps(after, shifted(s, entry.steps, removed));
     if (steps) targets.set(pathFrom("", steps), path);
   }
   return targets;
@@ -69,30 +70,45 @@ function targetsOf(s: Session): Map<FieldPath, FieldPath> {
 
 // shifted moves each index of steps, which names an item of the claim, to
 // the place of that item after the changes of the session removed earlier
-// items.
-function shifted(s: Session, steps: readonly Step[]): Step[] {
+// items. removed holds the removed claim indexes of each list.
+function shifted(
+  s: Session,
+  steps: readonly Step[],
+  removed: Map<string, number[]>,
+): Step[] {
   return steps.map((step, j) => {
     if (!("index" in step)) return step;
     const list = steps.slice(0, j);
-    const below = new Map<number, PendingChange[]>();
-    for (const entry of s.pending.values()) {
-      if (entry.steps.length <= j || !equalJSON(entry.steps.slice(0, j), list))
-        continue;
-      const at = indexSteps(s.claim, entry.steps.slice(0, j + 1))?.[j];
-      if (!at || !("index" in at) || at.index >= step.index) continue;
-      below.set(at.index, [...(below.get(at.index) ?? []), entry]);
-    }
-    const length = (items: unknown) =>
-      Array.isArray(items) ? items.length : 0;
-    let removed = 0;
-    for (const changes of below.values())
-      if (
-        length(valueAt(withChanges(s.claim, changes), list)) <
-        length(valueAt(s.claim, list))
-      )
-        removed++;
-    return { index: step.index - removed };
+    const key = JSON.stringify(list);
+    if (!removed.has(key)) removed.set(key, removedItems(s, list));
+    return {
+      index:
+        step.index - removed.get(key)!.filter((i) => i < step.index).length,
+    };
   });
+}
+
+// removedItems returns the indexes of the items of the claim list at list
+// that the changes of the session remove. Only a reset can remove an item.
+function removedItems(s: Session, list: readonly Step[]): number[] {
+  const j = list.length;
+  const below = new Map<number, PendingChange[]>();
+  for (const entry of s.pending.values()) {
+    if (entry.steps.length <= j || !equalJSON(entry.steps.slice(0, j), list))
+      continue;
+    const at = indexSteps(s.claim, entry.steps.slice(0, j + 1))?.[j];
+    if (!at || !("index" in at)) continue;
+    below.set(at.index, [...(below.get(at.index) ?? []), entry]);
+  }
+  const length = (items: unknown) => (Array.isArray(items) ? items.length : 0);
+  const before = length(valueAt(s.claim, list));
+  return [...below]
+    .filter(
+      ([, changes]) =>
+        changes.some((c) => "reset" in c) &&
+        length(valueAt(withChanges(s.claim, changes), list)) < before,
+    )
+    .map(([index]) => index);
 }
 
 function pendingPath(

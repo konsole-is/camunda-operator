@@ -432,6 +432,17 @@ describe("locks above a field", () => {
     },
   );
 
+  it("refuses a change of the keys of an item with a locked field", () => {
+    const s = open(claim(), hostLocked);
+    expect(
+      setValue(
+        s,
+        [f("spec"), f("plugins"), { index: 0 }, f("section")],
+        "other",
+      ),
+    ).toEqual({ refused: admin });
+  });
+
   it("refuses a change below a pending parent that changes a locked field", () => {
     const locks: LockProvider = (p) =>
       p === "spec.cluster.zeebe.replicas" ? admin : undefined;

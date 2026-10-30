@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Step } from "@/lib/fields";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { outcomeOf, STALE_CLAIM_MESSAGE } from "./outcome";
@@ -355,6 +355,48 @@ describe("outcomeOf", () => {
       fields: [{ path: "spec.cluster.mixed[1].v", message: "empty" }],
       messages: [],
     });
+  });
+
+  it("maps errors with one copy of the claim for each list, not for each item", () => {
+    const items = Array.from({ length: 40 }, (_, i) => ({ v: String(i) }));
+    const claim: ClaimObject = {
+      apiVersion: ref.apiVersion,
+      kind: ref.kind,
+      metadata: { name: "orders", namespace: "team-a", resourceVersion: "41" },
+      spec: { cluster: { list: items } },
+    };
+    let s = openSession({
+      claim,
+      resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+      locks: () => undefined,
+    })!;
+    for (let i = 0; i < items.length; i++) {
+      const result = setValue(
+        s,
+        [
+          { field: "spec" },
+          { field: "cluster" },
+          { field: "list" },
+          { index: i },
+          { field: "v" },
+        ],
+        `n${i}`,
+      );
+      if (!("session" in result)) throw new Error("refused");
+      s = result.session;
+    }
+    const clone = vi.spyOn(globalThis, "structuredClone");
+    outcomeOf(
+      {
+        objects: [],
+        errors: [
+          { code: "Invalid", message: "bad", path: "spec.cluster.list[39].v" },
+        ],
+      },
+      s,
+    );
+    expect(clone.mock.calls.length).toBeLessThan(items.length * 4);
+    clone.mockRestore();
   });
 
   it("any other error is a message", () => {
