@@ -68,15 +68,20 @@ export function mergePartitions(
 /**
  * withHealth returns partitions with the health that series give. A series
  * named partition="<n>" sets partition n from its last point: 1 healthy, 0
- * unhealthy, -1 dead, any other value unknown. A partition without a
- * series keeps its health.
+ * unhealthy, -1 dead, any other value unknown. A last point before since,
+ * in Unix milliseconds, is unknown. A partition without a series keeps its
+ * health.
  */
 export function withHealth(
   partitions: readonly PartitionHealth[],
   series: readonly Series[],
+  since: number,
 ): PartitionHealth[] {
   const last = new Map<string, number | undefined>(
-    series.map(({ name, points }) => [name, points.at(-1)?.[1]]),
+    series.map(({ name, points }) => {
+      const point = points.at(-1);
+      return [name, point && point[0] >= since ? point[1] : undefined];
+    }),
   );
   return partitions.map((p) => {
     const name = `partition="${p.partition}"`;
@@ -116,7 +121,10 @@ export async function brokerPartitions(
       stepSeconds: HEALTH_STEP_SECONDS,
     },
   ).catch(() => "unavailable" as const);
-  return series === "unavailable" ? partitions : withHealth(partitions, series);
+  // A series that went stale keeps points from before in the range.
+  return series === "unavailable"
+    ? partitions
+    : withHealth(partitions, series, now - HEALTH_STEP_SECONDS * 1000);
 }
 
 /**

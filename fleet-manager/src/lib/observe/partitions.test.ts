@@ -96,20 +96,24 @@ describe("withHealth", () => {
     [7, "unknown"],
   ] as const)("reads %i as %s", (value, state) =>
     expect(
-      withHealth(partitions, [
-        {
-          name: 'partition="2"',
-          points: [
-            [1, 1],
-            [2, value],
-          ],
-        },
-      ])[1].health,
+      withHealth(
+        partitions,
+        [
+          {
+            name: 'partition="2"',
+            points: [
+              [1, 1],
+              [2, value],
+            ],
+          },
+        ],
+        2,
+      )[1].health,
     ).toBe(state),
   );
 
   it("keeps unknown for a partition without a series", () =>
-    expect(withHealth(partitions, []).map((p) => p.health)).toEqual([
+    expect(withHealth(partitions, [], 0).map((p) => p.health)).toEqual([
       "unknown",
       "unknown",
       "unknown",
@@ -117,7 +121,25 @@ describe("withHealth", () => {
 
   it("keeps unknown for a series without points", () =>
     expect(
-      withHealth(partitions, [{ name: 'partition="1"', points: [] }])[0].health,
+      withHealth(partitions, [{ name: 'partition="1"', points: [] }], 0)[0]
+        .health,
+    ).toBe("unknown"));
+
+  it("reads a series whose last point is before since as unknown", () =>
+    expect(
+      withHealth(
+        partitions,
+        [
+          {
+            name: 'partition="1"',
+            points: [
+              [1, 1],
+              [2, 1],
+            ],
+          },
+        ],
+        3,
+      )[0].health,
     ).toBe("unknown"));
 });
 
@@ -370,6 +392,20 @@ describe("brokerPartitions", () => {
     expect(promRange).toHaveBeenCalledWith(
       'min by (partition) (zeebe_health{namespace="team-a", pod=~"orders-zeebe-0"})',
       { start: NOW - 300_000, end: NOW, stepSeconds: 30 },
+    );
+  });
+
+  it("keeps the health unknown for a series that ended before the last step", async () => {
+    const port = await serve(broker());
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
+    vi.mocked(promRange).mockResolvedValue([
+      { name: 'partition="1"', points: [[NOW - 120_000, 1]] },
+    ]);
+
+    expect((await brokerPartitions(cluster(port), NOW))[0]).toEqual(
+      expect.objectContaining({ partition: 1, health: "unknown" }),
     );
   });
 
