@@ -12,6 +12,10 @@ import {
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { ping } from "@/app/dev/watch-probe/actions";
 import {
+  applyClaimChange,
+  previewClaimChange,
+} from "@/app/fleet/clusters/[namespace]/[name]/actions";
+import {
   saveSettings,
   testGitConnection,
   testPrometheusQuery,
@@ -172,6 +176,15 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
 // "<file under src>#<export>".
 const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/dev/watch-probe/actions.ts#ping": () => ping(),
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimChange": () =>
+    previewClaimChange(claimChange()),
+  // The precondition names a claim that does not exist, so the write
+  // refuses with Stale and leaves nothing behind.
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyClaimChange": () =>
+    applyClaimChange({
+      ...claimChange(),
+      preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
+    }),
   "app/setup/settings/actions.ts#saveSettings": async () =>
     saveSettings(
       { "git.path": "y" },
@@ -181,6 +194,20 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/setup/settings/actions.ts#testPrometheusQuery": () =>
     testPrometheusQuery(),
 };
+
+function claimChange() {
+  return {
+    intent: "Change the claim leak",
+    apply: [
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaClusterClaim",
+        metadata: { name: "leak", namespace },
+        spec: { presetRef: "medium" },
+      },
+    ],
+  };
+}
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
   "settings#appPermissions": () => settings.appPermissions(),
   "settings#getSettings": () => settings.getSettings(),

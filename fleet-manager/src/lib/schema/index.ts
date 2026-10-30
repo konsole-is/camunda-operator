@@ -37,6 +37,12 @@ export function validate(
   return { ok: false, errors: (check.errors ?? []).map(toError) };
 }
 
+/** schemaError returns why schema cannot compile, or undefined when it compiles. */
+export function schemaError(schema: OpenAPISchema): string | undefined {
+  const check = compile(schema);
+  return check instanceof Error ? check.message : undefined;
+}
+
 function compile(schema: OpenAPISchema): ValidateFunction | Error {
   let check = compiled.get(schema);
   if (!check) {

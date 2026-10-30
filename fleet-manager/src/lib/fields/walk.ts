@@ -32,9 +32,8 @@ export type WalkNode = {
 
 /**
  * walk returns every node of value under root, the root included, by path,
- * parents before children. A list item with a string name has the path
- * [name=<name>], any other item its index. A field whose value is undefined
- * has no node.
+ * parents before children. A list item has the path of its itemStep. A
+ * field whose value is undefined has no node.
  */
 export function walk(
   value: unknown,
@@ -68,10 +67,17 @@ export function walk(
   return nodes;
 }
 
-function itemStep(item: unknown, index: number): Step {
-  return isObject(item) && typeof item.name === "string"
-    ? { item: { name: item.name } }
-    : { index };
+/**
+ * itemStep returns the step of item at index of its list: its section and
+ * registration for a plugin selection, its name for an item with a string
+ * name, else its index.
+ */
+export function itemStep(item: unknown, index: number): Step {
+  if (!isObject(item)) return { index };
+  if (typeof item.section === "string" && typeof item.registration === "string")
+    return { item: { section: item.section, registration: item.registration } };
+  if (typeof item.name === "string") return { item: { name: item.name } };
+  return { index };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

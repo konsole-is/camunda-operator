@@ -1,8 +1,9 @@
 import { isManaged } from "@/lib/labels";
-import { child, keyedItem } from "@/lib/merge";
+import { child } from "@/lib/merge";
 import { resolve, type PluginSelection } from "@/lib/policy";
 import type { ClusterFieldsInput } from "./cluster";
 import type { ClusterField, FieldState } from "./types";
+import { pathFrom, type Step } from "./walk";
 
 /**
  * parameterFields returns one field for each parameter of each selection of
@@ -40,10 +41,11 @@ export function parameterFields(input: ClusterFieldsInput): ClusterField[] {
         ...Object.keys(claimed),
       ]),
     ].sort();
-    const selection = keyedItem(child("spec", "plugins"), {
-      section: s.section,
-      registration: s.registration,
-    });
+    const selection: Step[] = [
+      { field: "spec" },
+      { field: "plugins" },
+      { item: { section: s.section, registration: s.registration } },
+    ];
 
     for (const name of names) {
       const policy = Object.hasOwn(policies, name) ? policies[name] : undefined;
@@ -55,6 +57,11 @@ export function parameterFields(input: ClusterFieldsInput): ClusterField[] {
           ? { kind: "claim" }
           : { kind: "environment" };
       const path = child(child("spec", "parameters"), name);
+      const claimSteps: Step[] = [
+        ...selection,
+        { field: "parameters" },
+        { field: name },
+      ];
       const description = Object.hasOwn(schema, name)
         ? describe(schema[name])
         : undefined;
@@ -75,7 +82,8 @@ export function parameterFields(input: ClusterFieldsInput): ClusterField[] {
             : policy?.value,
         state,
         ...(!editable && { lock: { reason: "admin" as const } }),
-        claimPath: child(child(selection, "parameters"), name),
+        claimPath: pathFrom("", claimSteps),
+        claimSteps,
         ...(description !== undefined && { description }),
       });
     }
