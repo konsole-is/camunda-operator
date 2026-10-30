@@ -310,6 +310,16 @@ describe("indexed items", () => {
     ).toEqual([{ b: 2 }, { c: 4 }]);
   });
 
+  it("a reset of the only item and an append at the next index keep one item", () => {
+    const one = withSpec({ cluster: { extraEnvFrom: [{ a: 1 }] } });
+    let s = ok(resetValue(open(one), item(0)));
+    s = ok(setValue(s, item(1), { d: 4 }));
+    expect(
+      (claimAfter(s).spec as { cluster: { extraEnvFrom: unknown } }).cluster
+        .extraEnvFrom,
+    ).toEqual([{ d: 4 }]);
+  });
+
   it("rebase drops an indexed change when its list changed", () => {
     const s = ok(setValue(open(listClaim()), item(1), { b: 5 }));
     const next = withSpec({ cluster: { extraEnvFrom: [{ b: 2 }, { c: 3 }] } });

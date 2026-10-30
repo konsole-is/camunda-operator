@@ -318,6 +318,29 @@ describe("validateClusterClaim", () => {
     expect(validateClusterClaim(s, ctx())).toEqual([]);
   });
 
+  it("validates a claim whose spec a reset empties", () => {
+    const only = {
+      ...claim(),
+      spec: { presetRef: "medium" },
+    } as unknown as Parameters<typeof open>[0];
+    const result = resetValue(open(only), [f("spec"), f("presetRef")]);
+    if (!("session" in result)) throw new Error("refused");
+    expect(validateClusterClaim(result.session, ctx())).toEqual([]);
+  });
+
+  it("checks a release that a change of the whole spec sets", () => {
+    const s = set(open(), [f("spec")], {
+      ...claim().spec,
+      releaseRef: "camunda-8-11-0",
+    });
+    expect(validateClusterClaim(s, ctx())).toEqual([
+      {
+        path: "spec.releaseRef",
+        message: "Skips 8.10. Move to an 8.10 release first.",
+      },
+    ]);
+  });
+
   it("checks the values that a reset leaves", () => {
     const s = open(claim({ cluster: { externalUrl: "https://x" } }));
     const result = resetValue(s, [f("spec"), f("cluster"), f("externalUrl")]);

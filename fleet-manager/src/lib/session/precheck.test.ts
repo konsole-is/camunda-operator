@@ -35,6 +35,29 @@ describe("precheckOf", () => {
     expect(precheckOf({})).toBeUndefined();
   });
 
+  it("returns nothing for a condition of an older generation", () => {
+    expect(
+      precheckOf({
+        metadata: { generation: 3 },
+        status: {
+          conditions: [
+            { ...ready("False", "SlotConflict"), observedGeneration: 2 },
+          ],
+        },
+      }),
+    ).toBeUndefined();
+    const current = {
+      ...ready("False", "SlotConflict"),
+      observedGeneration: 3,
+    };
+    expect(
+      precheckOf({
+        metadata: { generation: 3 },
+        status: { conditions: [current] },
+      }),
+    ).toEqual(current);
+  });
+
   it("reads only the Ready condition", () => {
     expect(
       precheckOf({

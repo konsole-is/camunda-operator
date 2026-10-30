@@ -112,7 +112,9 @@ function drop(at: unknown, steps: readonly Step[], hold = false): unknown {
   if (next !== undefined) list[index] = next;
   else if (hold) list[index] = REMOVED;
   else list.splice(index, 1);
-  return list.every((item) => item === REMOVED) ? undefined : list;
+  // With hold, compact removes a list that holds only REMOVED.
+  if (hold) return list;
+  return list.length === 0 ? undefined : list;
 }
 
 // compact takes each REMOVED item out of its list. It returns REMOVED for a

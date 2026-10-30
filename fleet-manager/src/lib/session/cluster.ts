@@ -60,7 +60,10 @@ export function validateClusterClaim(
   ctx: ClusterClaimContext,
 ): FieldError[] {
   const after = claimAfter(s);
-  const spec = after.spec;
+  // A reset of the last field of spec removes spec.
+  const spec = (after.spec ?? {}) as Claim["spec"];
+  const changed = (field: "presetRef" | "releaseRef") =>
+    Boolean(spec[field]) && spec[field] !== s.claim.spec?.[field];
   const selections = (spec.plugins ?? []) as PluginSelection[];
   const errors: FieldError[] = [];
 
@@ -81,8 +84,8 @@ export function validateClusterClaim(
         environment: generated<Environment | undefined>(ctx.environment),
         policy: policy ?? {},
         selections: policy ? selections : [],
-        ...(changed(s, "presetRef") && { presetRef: spec.presetRef }),
-        ...(changed(s, "releaseRef") && { releaseRef: spec.releaseRef }),
+        ...(changed("presetRef") && { presetRef: spec.presetRef }),
+        ...(changed("releaseRef") && { releaseRef: spec.releaseRef }),
       }),
     ),
   );
@@ -99,9 +102,10 @@ export function validateClusterClaim(
   for (const entry of s.pending.values())
     errors.push(...parameterErrors(entry, ctx, policy));
 
-  const release =
-    spec.releaseRef || ctx.environment?.spec.releases?.default || undefined;
-  if (topEntry(s, "releaseRef") && release)
+  // A claim without a release runs the default release of the Environment.
+  const fallback = ctx.environment?.spec.releases?.default;
+  const release = spec.releaseRef || fallback;
+  if (release && release !== (s.claim.spec?.releaseRef || fallback))
     errors.push(...releaseErrors(release, spec, ctx));
 
   return errors;
@@ -125,20 +129,6 @@ function isSet(value: unknown): boolean {
   return (
     value !== undefined && value !== null && value !== false && value !== ""
   );
-}
-
-function topEntry(s: Session<Claim>, field: string): PendingChange | undefined {
-  return [...s.pending.values()].find(
-    (e) =>
-      e.steps.length === 2 &&
-      "field" in e.steps[1] &&
-      e.steps[1].field === field,
-  );
-}
-
-function changed(s: Session<Claim>, field: string): boolean {
-  const entry = topEntry(s, field);
-  return entry !== undefined && !("reset" in entry);
 }
 
 function messagesOf(result: PolicyResult<unknown>): FieldError[] {
