@@ -102,6 +102,7 @@ nav:
       - Backup: guides/backup.md
       - Operations: guides/operations.md
       - Claims: guides/claims.md
+      - Write a plugin: guides/writing-a-plugin.md
   - CRD reference:
       - Overview: crds/index.md
       - Cluster:

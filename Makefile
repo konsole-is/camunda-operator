@@ -163,15 +163,14 @@ ECK_VERSION ?= 3.5.0
 # E2E_CAMUNDA_MINOR selects the Camunda minor the suite runs against. Each
 # supported minor has a file test/e2e/matrix/<minor>.env with the image
 # versions of that minor and the list of spec flows that run for it. The
-# recipe exports the file to the suite. The e2e workflow runs three jobs per
-# file, each with an E2E_LABEL_FILTER of its own.
+# recipe exports the file to the suite. The e2e workflow runs one job for each
+# entry of its matrix, each with an E2E_LABEL_FILTER of its own.
 E2E_CAMUNDA_MINOR ?= 8.9
 
 # E2E_LABEL_FILTER is a Ginkgo label filter for one run of the suite. It wins
-# over the E2E_LABELS list of the matrix entry. The e2e workflow runs each
-# minor as three jobs with a filter each. The filters select the
-# Elasticsearch flows, the Postgres flows, and the management plane flows.
-# Empty runs the flows that the matrix entry names.
+# over the E2E_LABELS list of the matrix entry. The e2e workflow runs one job
+# for each entry of its matrix, with a filter each. Empty runs the flows that
+# the matrix entry names.
 E2E_LABEL_FILTER ?=
 
 # E2E_TIMEOUT bounds one `go test` run of the e2e suite. The suite pulls the
@@ -279,7 +278,7 @@ dist-conformance: ## Build the plugin-conformance binary of each of CONFORMANCE_
 run: manifests generate fmt vet ## Run a controller from your host. The backup Jobs it renders run CLI_IMG.
 	@"$(KUBECTL)" create namespace "$(OPERATOR_NAMESPACE)" --dry-run=client -o yaml | "$(KUBECTL)" apply -f -
 	go run ./cmd/main.go --camunda-operator-cli-image=${CLI_IMG} --namespace=${OPERATOR_NAMESPACE} \
-		--service-account=${OPERATOR_SERVICE_ACCOUNT}
+		--service-account=${OPERATOR_SERVICE_ACCOUNT} --zap-devel
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.

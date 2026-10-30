@@ -17,7 +17,10 @@ limitations under the License.
 package builtin
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,6 +47,8 @@ var (
 	env       *envtest.Env
 	ctx       context.Context
 	k8sClient client.Client
+	// logs holds every line that the manager of the suite logs, as JSON.
+	logs = &syncBuffer{}
 )
 
 func TestBuiltin(t *testing.T) {
@@ -53,7 +58,7 @@ func TestBuiltin(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+	logf.SetLogger(zap.New(zap.WriteTo(io.MultiWriter(GinkgoWriter, logs)), zap.UseDevMode(true), zap.JSONEncoder()))
 
 	env = envtest.StartWith(
 		envtest.Options{WithoutKeycloak: true, WithoutCNPG: true},
@@ -81,3 +86,21 @@ var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	Eventually(env.Stop, time.Minute, time.Second).Should(Succeed())
 })
+
+// syncBuffer is a buffer that the logger and the specs share.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
