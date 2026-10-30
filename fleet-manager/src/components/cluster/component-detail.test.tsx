@@ -141,6 +141,13 @@ describe("ComponentDetailView", () => {
     expect(screen.getByText("No settings.")).toBeTruthy();
   });
 
+  it("the heading takes focus from a script but is not in the tab order", () => {
+    render(view({}));
+    expect(
+      screen.getByRole("heading", { name: "Operate" }).getAttribute("tabindex"),
+    ).toBe("-1");
+  });
+
   it("has the tabs Overview and Settings", () =>
     expect(DETAIL_TABS.map((t) => t.label)).toEqual(["Overview", "Settings"]));
 });

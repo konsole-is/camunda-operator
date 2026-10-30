@@ -73,7 +73,10 @@ export function ComponentDetailView({
       className="flex flex-col gap-4 rounded-lg border border-border bg-panel p-4"
     >
       <header className="flex flex-col gap-0.5">
-        <h2 className="font-heading text-lg font-semibold text-text">
+        <h2
+          tabIndex={-1}
+          className="font-heading text-lg font-semibold text-text outline-none"
+        >
           {title}
         </h2>
         {subtitle && <p className="text-sm text-muted">{subtitle}</p>}

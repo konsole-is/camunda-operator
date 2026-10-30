@@ -59,11 +59,14 @@ function ComponentCard({
       className={`relative flex w-full flex-col gap-3 rounded-md border p-3 ${frame} ${href ? "hover:bg-panel" : ""}`}
     >
       <div className="flex items-center gap-2">
-        <StatusDot
-          label={card.label}
-          condition={card.condition}
-          off={!card.used}
-        />
+        {/* Above the link that covers the card, so its title shows. */}
+        <span className="relative z-10 flex">
+          <StatusDot
+            label={card.label}
+            condition={card.condition}
+            off={!card.used}
+          />
+        </span>
         {href ? (
           // The link covers the whole card, so a click anywhere opens it.
           <a

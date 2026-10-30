@@ -18,8 +18,7 @@ import { mergeCluster } from "@/lib/merge";
 /**
  * loadClusterPage reads the first snapshot of the cluster page from the
  * cache of the server. It returns undefined when the cluster does not exist.
- * A failed read of another kind gives no objects of that kind. fieldDocs
- * holds the docs of the fields of this first snapshot.
+ * A failed read of another kind gives no objects of that kind.
  */
 export async function loadClusterPage(
   namespace: string,

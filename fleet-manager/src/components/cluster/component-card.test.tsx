@@ -125,4 +125,14 @@ describe("ComponentCards", () => {
     );
     expect(onOpen.mock.calls).toEqual([["gateway"], ["operate"]]);
   });
+
+  it("the dot of a linked card sits above the link, so its title shows", () => {
+    render(
+      <ComponentCards cards={[brokers]} hrefOf={(id) => `?component=${id}`} />,
+    );
+    expect(
+      screen.getByRole("img", { name: "Brokers: Not ready (Degraded)" })
+        .parentElement?.className,
+    ).toContain("z-10");
+  });
 });

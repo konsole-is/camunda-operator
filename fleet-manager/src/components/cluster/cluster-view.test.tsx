@@ -1373,6 +1373,29 @@ describe("Component detail", () => {
     expect(screen.queryByRole("region", { name: "Components" })).toBeNull();
   });
 
+  it("opening a card moves the focus to the detail heading, and All components moves it back to the card", async () => {
+    render(view());
+    await open("Brokers");
+    expect(document.activeElement).toBe(
+      within(detail("Brokers")).getByRole("heading", { name: "Brokers" }),
+    );
+    await userEvent.click(screen.getByRole("link", { name: "All components" }));
+    expect(document.activeElement).toBe(
+      within(components()).getByRole("link", { name: "Brokers" }),
+    );
+  });
+
+  it("closing the detail of an embedded app moves the focus back to its chip", async () => {
+    render(view());
+    await userEvent.click(
+      within(components()).getByRole("link", { name: "Embedded: Operate" }),
+    );
+    await userEvent.click(screen.getByRole("link", { name: "All components" }));
+    expect(document.activeElement).toBe(
+      within(components()).getByRole("link", { name: "Embedded: Operate" }),
+    );
+  });
+
   it("ZeebeReady=False shows in the Brokers detail only", async () => {
     const optimize = nsObject(
       "CamundaOptimize",

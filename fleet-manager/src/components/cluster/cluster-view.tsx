@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   GitWaitingLine,
   type PushedObject,
@@ -99,8 +99,8 @@ export type ClusterPageData = {
  * ClusterView is the cluster page. It follows the objects of initial live,
  * and selects the tab that the tab query parameter of the URL names. A
  * click on a tab replaces that parameter. The component query parameter
- * opens the detail of a component on the Overview tab, in place of the
- * cards. slots fill the action slots of a managed cluster, and an
+ * opens the detail of a used component, or of an app embedded in one, on
+ * the Overview tab, in place of the cards. slots fill the action slots of a managed cluster, and an
  * unmanaged cluster ignores them. pushedClaim is the claim file that the
  * fleet manager pushed in Git mode. When the cluster is deleted, the page
  * says so and shows nothing else.
@@ -126,6 +126,8 @@ export function ClusterView({
     setSeenUrlTab(urlTab);
     setTab(urlTab);
   }
+  const overviewRef = useRef<HTMLDivElement>(null);
+  const focusNext = useRef<string | null>(null);
   const urlComponent = params.get("component");
   const [component, setComponent] = useState(urlComponent);
   const [seenUrlComponent, setSeenUrlComponent] = useState(urlComponent);
@@ -233,6 +235,12 @@ export function ClusterView({
     {},
     initial.registrations,
   );
+  useEffect(() => {
+    const selector = focusNext.current;
+    if (!selector) return;
+    focusNext.current = null;
+    overviewRef.current?.querySelector<HTMLElement>(selector)?.focus();
+  }, [component]);
   const usage = usePodUsage(ns, initial.podSelector);
   const partitions = usePartitions(ns, name ?? "");
   const backups = [...backupsES.items, ...backupsRDBMS.items];
@@ -334,6 +342,11 @@ export function ClusterView({
     window.history.replaceState(null, "", `?tab=${next}`);
   };
   const openComponent = (id: CardId | null) => {
+    focusNext.current = id
+      ? "h2"
+      : openId
+        ? `a[href="${overviewHref(openId)}"]`
+        : null;
     setTab("overview");
     setComponent(id);
     window.history.replaceState(null, "", overviewHref(id));
@@ -385,7 +398,7 @@ export function ClusterView({
             </TabsTrigger>
           ))}
         </TabsList>
-        <TabsContent value="overview">
+        <TabsContent value="overview" ref={overviewRef}>
           {openId ? (
             <div className="flex flex-col gap-3">
               <a
