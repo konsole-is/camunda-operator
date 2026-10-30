@@ -1,0 +1,181 @@
+import { pathFrom, type FieldLock, type Step } from "@/lib/fields";
+import { isManaged } from "@/lib/labels";
+import type { FieldPath } from "@/lib/merge";
+import { equalJSON } from "@/lib/policy";
+import { refKey } from "@/lib/write/refs";
+import type { Change, KubeObject } from "@/lib/write/types";
+import type { LockProvider } from "./locks";
+import { valueAt, without, withValue } from "./steps";
+
+/** ClaimObject is a claim of any kind, as the form read it. */
+export type ClaimObject = {
+  apiVersion: string;
+  kind: string;
+  metadata: { name?: string; namespace?: string; resourceVersion?: string };
+  spec?: object;
+};
+
+/**
+ * PendingChange is one change of a session at path: a new value, or a
+ * reset that removes the claim value so that the value below the claim
+ * applies.
+ */
+export type PendingChange =
+  | { path: FieldPath; steps: Step[]; value: unknown }
+  | { path: FieldPath; steps: Step[]; reset: true };
+
+/**
+ * Session holds the pending changes of one live claim, by claim path, in
+ * the order of their first change. A session never changes: each function
+ * returns a new one.
+ */
+export type Session<C extends ClaimObject = ClaimObject> = {
+  claim: C;
+  pending: ReadonlyMap<FieldPath, PendingChange>;
+  locks: LockProvider;
+};
+
+/** SetResult is the new session, or the lock that refused the change. */
+export type SetResult<C extends ClaimObject> =
+  { session: Session<C> } | { refused: FieldLock };
+
+/**
+ * openSession opens a session over claim with no pending changes. There is
+ * none when claim is undefined, when resource does not carry the claim
+ * label, or when claim has no name or no resourceVersion, because a write
+ * needs both for its precondition.
+ */
+export function openSession<C extends ClaimObject>(input: {
+  claim: C | undefined;
+  resource: { metadata?: { labels?: Record<string, string> } };
+  locks: LockProvider;
+}): Session<C> | undefined {
+  const { claim, resource, locks } = input;
+  if (
+    !claim ||
+    !isManaged(resource) ||
+    !claim.metadata.name ||
+    !claim.metadata.resourceVersion
+  )
+    return undefined;
+  return { claim, pending: new Map(), locks };
+}
+
+/**
+ * setValue sets value at steps. A value equal to the claim value removes
+ * the change, and undefined is resetValue. A locked path refuses.
+ */
+export function setValue<C extends ClaimObject>(
+  s: Session<C>,
+  steps: Step[],
+  value: unknown,
+): SetResult<C> {
+  if (value === undefined) return resetValue(s, steps);
+  const path = pathFrom("", steps);
+  const lock = s.locks(path);
+  if (lock) return { refused: lock };
+  return {
+    session: withEntry(
+      s,
+      path,
+      equalJSON(value, valueAt(s.claim, steps))
+        ? undefined
+        : { path, steps, value },
+    ),
+  };
+}
+
+/**
+ * resetValue removes the claim value at steps, as "Reset to preset" and
+ * "Reset to environment" do. When the claim holds no value there, it only
+ * drops a pending change. A locked path refuses.
+ */
+export function resetValue<C extends ClaimObject>(
+  s: Session<C>,
+  steps: Step[],
+): SetResult<C> {
+  const path = pathFrom("", steps);
+  const lock = s.locks(path);
+  if (lock) return { refused: lock };
+  return {
+    session: withEntry(
+      s,
+      path,
+      valueAt(s.claim, steps) === undefined
+        ? undefined
+        : { path, steps, reset: true },
+    ),
+  };
+}
+
+/** discard drops the pending change at path. */
+export function discard<C extends ClaimObject>(
+  s: Session<C>,
+  path: FieldPath,
+): Session<C> {
+  return withEntry(s, path, undefined);
+}
+
+/** claimAfter returns a copy of the claim with each pending change applied. */
+export function claimAfter<C extends ClaimObject>(s: Session<C>): C {
+  let claim = structuredClone(s.claim);
+  for (const entry of s.pending.values())
+    claim =
+      "reset" in entry
+        ? without(claim, entry.steps)
+        : withValue(claim, entry.steps, entry.value);
+  return claim;
+}
+
+/**
+ * changeOf returns the write of the session: the claim after the change,
+ * with the resourceVersion that the form read as its precondition.
+ */
+export function changeOf<C extends ClaimObject>(
+  s: Session<C>,
+  intent: string,
+): Change {
+  const { kind, metadata } = s.claim;
+  return {
+    intent,
+    apply: [claimAfter(s) as unknown as KubeObject],
+    preconditions: {
+      [refKey({ kind, namespace: metadata.namespace, name: metadata.name! })]:
+        metadata.resourceVersion!,
+    },
+  };
+}
+
+/**
+ * rebase moves the session to a newer copy of its claim. It keeps each
+ * pending change that locks, by default the lock provider of s, do not
+ * lock and that still changes claim, and drops the others.
+ */
+export function rebase<C extends ClaimObject>(
+  s: Session<C>,
+  claim: C,
+  locks: LockProvider = s.locks,
+): Session<C> {
+  const pending = new Map<FieldPath, PendingChange>();
+  for (const [path, entry] of s.pending) {
+    if (locks(path)) continue;
+    const current = valueAt(claim, entry.steps);
+    const changes =
+      "reset" in entry
+        ? current !== undefined
+        : !equalJSON(entry.value, current);
+    if (changes) pending.set(path, entry);
+  }
+  return { claim, pending, locks };
+}
+
+function withEntry<C extends ClaimObject>(
+  s: Session<C>,
+  path: FieldPath,
+  entry: PendingChange | undefined,
+): Session<C> {
+  const pending = new Map(s.pending);
+  if (entry === undefined) pending.delete(path);
+  else pending.set(path, entry);
+  return { ...s, pending };
+}
