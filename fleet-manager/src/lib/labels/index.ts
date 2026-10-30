@@ -19,6 +19,12 @@ export const SECTION_LABEL = "plugins.camunda.io/section";
 export const ACCESS_SECTION = "access";
 
 /**
+ * BUILTIN_CONTROLLER is the controller name of the built-in registrations.
+ * It is ControllerName of internal/pluginstartup.
+ */
+export const BUILTIN_CONTROLLER = "camunda-operator";
+
+/**
  * CLUSTER_LABEL on a pod holds labels.OwnerName of its CamundaCluster. It is
  * ClusterKey of pkg/labels.
  */

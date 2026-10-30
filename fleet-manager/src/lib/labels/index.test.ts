@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACCESS_SECTION,
   BACKUP_SCHEDULE_LABEL,
+  BUILTIN_CONTROLLER,
   CLAIM_LABEL,
   CLUSTER_LABEL,
   COMPONENT_LABEL,
@@ -88,6 +89,7 @@ it.each([
   ],
   [SECTION_LABEL, "api/plugins/v1alpha1/shared_types.go", "LabelSection"],
   [ACCESS_SECTION, "internal/pluginstartup/names.go", "SectionAccess"],
+  [BUILTIN_CONTROLLER, "internal/pluginstartup/names.go", "ControllerName"],
   [CLUSTER_LABEL, "pkg/labels/labels.go", "ClusterKey"],
   [COMPONENT_LABEL, "pkg/labels/labels.go", "ComponentKey"],
   [BACKUP_SCHEDULE_LABEL, "pkg/labels/labels.go", "BackupScheduleKey"],

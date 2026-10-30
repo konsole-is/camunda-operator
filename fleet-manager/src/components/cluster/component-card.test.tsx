@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ComponentCardModel } from "./cards";
 import { ComponentCards } from "./component-card";
 
@@ -96,5 +97,32 @@ describe("ComponentCards", () => {
         /Embedded/,
       ),
     ).toBeNull();
+  });
+
+  it("an embedded app of a linked card is a link of its own", () => {
+    render(
+      <ComponentCards cards={[gateway]} hrefOf={(id) => `?component=${id}`} />,
+    );
+    expect(
+      screen
+        .getByRole("link", { name: "Embedded: Operate" })
+        .getAttribute("href"),
+    ).toBe("?component=operate");
+  });
+
+  it("onOpen takes a plain click on a card or an embedded app", async () => {
+    const onOpen = vi.fn();
+    render(
+      <ComponentCards
+        cards={[gateway]}
+        hrefOf={(id) => `?component=${id}`}
+        onOpen={onOpen}
+      />,
+    );
+    await userEvent.click(screen.getByRole("link", { name: "Gateway" }));
+    await userEvent.click(
+      screen.getByRole("link", { name: "Embedded: Operate" }),
+    );
+    expect(onOpen.mock.calls).toEqual([["gateway"], ["operate"]]);
   });
 });

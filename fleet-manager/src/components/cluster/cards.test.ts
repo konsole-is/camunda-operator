@@ -3,7 +3,13 @@ import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Resource } from "@/lib/k8s/kinds";
 import { COMPONENT_LABEL, OPTIMIZE_UID_LABEL } from "@/lib/labels";
 import type { PodUsage } from "@/lib/observe/types";
-import { componentCards, highestUse, partitionsLed } from "./cards";
+import {
+  type ComponentCardModel,
+  componentCards,
+  componentOf,
+  highestUse,
+  partitionsLed,
+} from "./cards";
 
 function pod(
   name: string,
@@ -296,4 +302,40 @@ describe("highestUse", () => {
       value,
     });
   });
+});
+
+describe("componentOf", () => {
+  const card = (
+    id: ComponentCardModel["id"],
+    used: boolean,
+    embedded: ComponentCardModel["embedded"] = [],
+  ): ComponentCardModel => ({
+    id,
+    label: id,
+    used,
+    embedded,
+    pods: [],
+    numbers: [],
+  });
+  const cards = [
+    card("zeebe", true),
+    card("gateway", true, [{ process: "operate", label: "Operate" }]),
+    card("connectors", false),
+    card("optimize", true),
+  ];
+
+  it.each(["zeebe", "optimize"])("gives the used card %s", (id) =>
+    expect(componentOf(id, cards)).toBe(id),
+  );
+
+  it("gives an app that is embedded in a used card", () =>
+    expect(componentOf("operate", cards)).toBe("operate"));
+
+  it.each([
+    ["a card that is not used", "connectors"],
+    ["an unknown value", "keycloak"],
+    ["no value", null],
+  ])("gives undefined for %s", (_, value) =>
+    expect(componentOf(value, cards)).toBeUndefined(),
+  );
 });
