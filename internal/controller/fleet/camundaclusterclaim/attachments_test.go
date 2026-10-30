@@ -185,6 +185,37 @@ var _ = Describe("Cluster claim attachments", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("keeps an object of an attachment name that the claim does not set", func() {
+		claim := newClaim(newNamespace(nil))
+		optimize := &v1.CamundaOptimize{
+			ObjectMeta: metav1.ObjectMeta{Name: components.OptimizeName(claim.Name), Namespace: claim.Namespace},
+			Spec: v1.CamundaOptimizeSpec{
+				Version:           "8.9.9",
+				ManagementAuthRef: "management",
+				ClusterRef:        v1.ClusterRef{Name: claim.Name},
+			},
+		}
+		create(optimize)
+		schedule := &v1.BackupSchedule{
+			ObjectMeta: metav1.ObjectMeta{Name: components.BackupScheduleName(claim.Name), Namespace: claim.Namespace},
+			Spec:       v1.BackupScheduleSpec{ClusterRef: v1.ClusterRef{Name: claim.Name}, Schedule: "0 2 * * *"},
+		}
+		create(schedule)
+		create(claim)
+		eventuallyCluster(claim)
+		setClusterReady(claim, metav1.ConditionTrue, v1.ReasonHealthy, "")
+		Eventually(func(g Gomega) {
+			g.Expect(meta.IsStatusConditionTrue(latest(g, claim).Status.Conditions, fleetv1alpha1.ConditionAttachmentsReady)).
+				To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
+		expectNewPass(claim)
+		expectNewPass(claim)
+
+		expectNotDeleting(optimize)
+		expectNotDeleting(schedule)
+	})
+
 	It("reports AttachmentsReady in Ready", func() {
 		claim := attachedClaim()
 
