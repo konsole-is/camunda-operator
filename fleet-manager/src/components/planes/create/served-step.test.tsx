@@ -65,6 +65,7 @@ const ctx: PlaneContext = {
     },
   ] as unknown as CamundaPlatformConfig[],
   takenNames: [],
+  namespaces: [],
 };
 
 const namespaces = [
@@ -185,6 +186,30 @@ describe("ServedStep", () => {
     expect(onSelectorErrors).toHaveBeenLastCalledWith([
       { path: "0.key", message: "Enter a key" },
     ]);
+  });
+
+  it("reports the errors of the restored cluster labels when the step mounts again", () => {
+    const onSelectorErrors = vi.fn();
+    render(
+      <Harness
+        initial={{ ...draft, clusterLabels: { tier: "-gold" } }}
+        onSelectorErrors={onSelectorErrors}
+      />,
+    );
+    expect(onSelectorErrors).toHaveBeenLastCalledWith([
+      expect.objectContaining({ path: "0.value" }),
+    ]);
+  });
+
+  it("reports no errors for valid restored cluster labels", () => {
+    const onSelectorErrors = vi.fn();
+    render(
+      <Harness
+        initial={{ ...draft, clusterLabels: { tier: "gold" } }}
+        onSelectorErrors={onSelectorErrors}
+      />,
+    );
+    expect(onSelectorErrors).toHaveBeenLastCalledWith([]);
   });
 
   it("shows the new-issuer message on each OIDC cluster in Keycloak mode and not on a basic one", () => {

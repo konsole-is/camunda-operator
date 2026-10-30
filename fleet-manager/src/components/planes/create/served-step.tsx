@@ -1,6 +1,7 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
+import { useEffect, useRef } from "react";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import { EnvironmentCards } from "@/components/create/environment-cards";
 import type { DraftPath } from "@/components/create/use-create-flow";
@@ -8,6 +9,7 @@ import { DataTable } from "@/components/fleet/data-table";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { type StatusTone, TEXT_TONE } from "@/components/fleet/status";
 import { type Plane, servesEnvironment } from "@/components/planes/plane";
+import { isLabelKey, isLabelValue } from "@/lib/labels";
 import {
   type PlaneContext,
   type PlaneDraft,
@@ -37,7 +39,7 @@ const RESULT_TONE: Record<PreviewResult, StatusTone> = {
  * plane serves, the cluster labels that narrow them, and the expected
  * result of each cluster. Each environment card names the planes that
  * serve it now. onSelectorErrors gets the errors of the cluster labels
- * after each edit.
+ * when the step mounts and after each edit.
  */
 export function ServedStep({
   draft,
@@ -56,6 +58,14 @@ export function ServedStep({
   planes: readonly Plane[];
   onSelectorErrors: (errors: ValidationError[]) => void;
 }) {
+  // The editor restores only the rows of the draft, so errors of rows that
+  // the draft dropped would block the step with nothing left to fix.
+  const restored = useRef(draft.clusterLabels);
+  const report = useRef(onSelectorErrors);
+  useEffect(() => {
+    report.current(labelErrors(restored.current));
+  }, []);
+
   const served = servedOf(draft);
   const config = ctx.platformConfigs.find(
     (c) => c.metadata.name === platformConfigOf(draft, ctx),
@@ -156,4 +166,15 @@ export function PreviewTable({ rows }: { rows: PreviewRow[] }) {
       />
     </section>
   );
+}
+
+function labelErrors(labels: Record<string, string>): ValidationError[] {
+  return Object.entries(labels).flatMap(([key, value], row) => [
+    ...(isLabelKey(key)
+      ? []
+      : [{ path: `${row}.key`, message: "Use a valid label key" }]),
+    ...(isLabelValue(value)
+      ? []
+      : [{ path: `${row}.value`, message: "Use a valid label value" }]),
+  ]);
 }
