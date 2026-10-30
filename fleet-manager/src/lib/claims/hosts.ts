@@ -59,7 +59,7 @@ export function renderHosts(
  * default option, or when the policy of the default registration is
  * malformed. A create flow shows these hosts before the admin picks an
  * access option, so the step that picks the option must check its hosts
- * again (decision 13).
+ * again.
  */
 export function defaultAccessPatterns(
   sections: readonly PluginSection[],
