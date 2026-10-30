@@ -2,10 +2,10 @@ import type { StatusTone } from "@/components/fleet/status";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Resource } from "@/lib/k8s/kinds";
 import { COMPONENT_LABEL } from "@/lib/labels";
+import type { CoreComponent } from "@/lib/observe/types";
 
-/** Process is a value of COMPONENT_LABEL on the pods of a CamundaCluster. */
-export type Process =
-  "zeebe" | "gateway" | "operate" | "tasklist" | "admin" | "connectors";
+/** Process is the CoreComponent of a pod, as the topology names it. */
+export type Process = CoreComponent;
 
 export const PROCESS_LABEL: Record<Process, string> = {
   zeebe: "Brokers",

@@ -1,5 +1,4 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
-import type { Process } from "@/components/cluster/topology";
+import { describe, expect, it } from "vitest";
 import { parseTemplate, render } from "@/lib/gotemplate";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
@@ -9,7 +8,7 @@ import {
   podsPattern,
   registrationQueries,
 } from "./queries";
-import type { CoreComponent, QueryError } from "./types";
+import type { QueryError } from "./types";
 
 const registration = {
   metadata: { name: "rustfs-bucket" },
@@ -158,9 +157,6 @@ describe("coreQueries", () => {
     expect(cadvisor.length).toBeGreaterThan(0);
     for (const q of cadvisor) expect(q.query).toContain('container!=""');
   });
-
-  it("CoreComponent is the Process of the topology", () =>
-    expectTypeOf<CoreComponent>().toEqualTypeOf<Process>());
 });
 
 describe("coreMetricDefs", () => {
