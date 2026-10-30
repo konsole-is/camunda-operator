@@ -161,3 +161,13 @@ seed:
         enabled: true
       storageRef: camundacluster-sample-storage
       suspend: false
+states:
+  - name: three-brokers-ready
+    description: >-
+      3 of the 5 brokers of camundacluster-sample are ready, so the cluster
+      is no longer ready.
+    workload:
+      - kind: StatefulSet
+        namespace: team-a
+        name: camundacluster-sample-zeebe
+        readyReplicas: 3
