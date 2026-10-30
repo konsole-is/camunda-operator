@@ -590,6 +590,8 @@
       
         
       
+        
+      
     
     
     
@@ -813,6 +815,34 @@
     
   
     Claims
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/writing-a-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write a plugin
   
 
     
@@ -2657,7 +2687,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <tr>
 <td><code>workloadIdentity</code></td>
 <td><code>principal</code>, <code>serviceAccountAnnotations</code></td>
-<td>The ServiceAccount annotations of the <code>CamundaCluster</code>, from <code>serviceAccountAnnotations</code>.</td>
+<td><code>serviceAccountAnnotations</code> fills the ServiceAccount annotations of the <code>CamundaCluster</code>. <code>principal</code> fills no field.</td>
 </tr>
 <tr>
 <td><code>volumeEncryption</code></td>
@@ -2677,7 +2707,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <tr>
 <td><code>externalAccess</code></td>
 <td><code>externalUrl</code>, <code>grpcHost</code>, <code>optimizeUrl</code>, <code>managementHost</code></td>
-<td>The external URLs of the <code>CamundaCluster</code> and of its <code>CamundaOptimize</code>, or the host of the <code>CamundaManagementCluster</code>.</td>
+<td><code>externalUrl</code> fills the external URL of the <code>CamundaCluster</code>, and <code>optimizeUrl</code> the external URL of its <code>CamundaOptimize</code>. <code>managementHost</code> fills the five URLs of the <code>CamundaManagementCluster</code>: <code>https://&lt;host&gt;/auth</code>, <code>/identity</code>, <code>/console</code>, <code>/modeler</code>, and <code>/modeler-ws</code>. <code>grpcHost</code> fills no field.</td>
 </tr>
 <tr>
 <td><code>managementDatabases</code></td>
@@ -2687,10 +2717,11 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <tr>
 <td><code>connectorsIdentity</code></td>
 <td><code>principal</code>, <code>serviceAccountAnnotations</code></td>
-<td>The ServiceAccount annotations of the Connectors, from <code>serviceAccountAnnotations</code>.</td>
+<td><code>serviceAccountAnnotations</code> fills the ServiceAccount annotations of the Connectors. <code>principal</code> fills no field.</td>
 </tr>
 </tbody>
 </table>
+<p>An output that fills no field, such as <code>principal</code> or <code>grpcHost</code>, is still in <code>status.outputs</code> of the request. Another option can read it as an input, for example <code>cloud-identity/principal</code>.</p>
 <p>The set of slots is closed, and only core sections use them. A section that a plugin brings has no slot. Its outputs fill nothing in the generated resource. They are only inputs of other registrations, as in <a href="#a-section-that-a-plugin-brings">A section that a plugin brings</a>. The core section <code>encryption-key</code> has no slot either. Other sections read its key as an input.</p>
 <p>A slot takes the outputs of one option only, so a section with a slot must have <code>selection: One</code>. A section without a slot can have <code>selection: One</code> or <code>selection: Many</code>.</p>
 <h2 id="claim-kinds">Claim kinds<a class="headerlink" href="#claim-kinds" title="Permanent link">&para;</a></h2>

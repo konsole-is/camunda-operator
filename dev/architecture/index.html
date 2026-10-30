@@ -591,6 +591,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugins
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-fleet-manager" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -782,6 +793,8 @@
   
     
     
+      
+        
       
         
       
@@ -1020,6 +1033,34 @@
     
   
     Claims
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/writing-a-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Write a plugin
   
 
     
@@ -2694,6 +2735,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plugins
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-fleet-manager" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3002,6 +3054,93 @@ An <code>ElasticsearchCluster</code> writes a <code>SecondaryStorageConfig</code
 <h2 id="claims">Claims<a class="headerlink" href="#claims" title="Permanent link">&para;</a></h2>
 <p>Claims sit above the core kinds. A <a href="../crds/camundaclusterclaim/">CamundaClusterClaim</a> asks for a cluster under the policy of an <a href="../crds/environment/">Environment</a>. The operator turns it into one <a href="../crds/pluginrequest/">PluginRequest</a> for each option that the claim selects, and into a <code>CamundaCluster</code> with the name of the claim. The plugins answer the requests, and their outputs fill fields of the <code>CamundaCluster</code>, such as <code>spec.storageRef</code>. The core kinds never read a claim, so a <code>CamundaCluster</code> that you write yourself works the same way. A <a href="../crds/camundamanagementclusterclaim/">CamundaManagementClusterClaim</a> does the same for a management plane. Its requests give the databases and the URLs of the <code>CamundaManagementCluster</code>.</p>
 <p>The fields that a claim writes have a field manager that starts with <code>CamundaClusterClaim/</code> or <code>CamundaManagementClusterClaim/</code>. A GitOps tool that writes the same field of a generated <code>CamundaCluster</code> reports a conflict with that manager. Set the field in <code>spec.cluster</code> or <code>spec.management</code> of the claim instead.</p>
+<h2 id="plugins">Plugins<a class="headerlink" href="#plugins" title="Permanent link">&para;</a></h2>
+<p>A plugin is a Helm chart that installs a plugin controller and one or more <a href="../crds/pluginregistration/">PluginRegistrations</a>. Each registration is an option of one or more <a href="../crds/pluginsection/">PluginSections</a>, for example "New S3 bucket" in the section <code>backup-storage</code>. The operator brings the core sections and six <a href="../crds/pluginregistration/#built-in-registrations">built-in registrations</a>, and it serves the built-in registrations itself.</p>
+<p>A claim selects at most one option in a section, or more than one in a section with <code>selection: Many</code>. For each option that it selects, the claim writes one <a href="../crds/pluginrequest/">PluginRequest</a>. The plugin controller of the registration answers the request with outputs in <code>status.outputs</code>. The claim fills fields of the <code>CamundaCluster</code> from these outputs, or of the <code>CamundaManagementCluster</code> for a management plane claim. It also gives the outputs of one section to the requests of other sections as inputs.</p>
+<div class="panzoom-box" data-key="alt" id="panzoom0" oncontextmenu="return false;">
+    
+    <nav class="panzoom-nav">
+    <button class="panzoom-reset panzoom-button">
+    <svg class="panzoom-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <path d="M125.7 160l50.3 0c17.7 0 32 14.3 32 32s-14.3 32-32 32L48 224c-17.7 0-32-14.3-32-32L16 64c0-17.7 14.3-32 32-32s32 14.3 32 32l0 51.2L97.6 97.6c87.5-87.5 229.3-87.5 316.8 0s87.5 229.3 0 316.8s-229.3 87.5-316.8 0c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0c62.5 62.5 163.8 62.5 226.3 0s62.5-163.8 0-226.3s-163.8-62.5-226.3 0L125.7 160z"></path>
+    </svg>
+</button><button class="panzoom-max panzoom-button">
+    <svg class="panzoom-icon" viewBox="0 0 448 512" xmlns="http://www.w3.org/2000/svg">
+        <path d="M32 32C14.3 32 0 46.3 0 64l0 96c0 17.7 14.3 32 32 32s32-14.3 32-32l0-64 64 0c17.7 0 32-14.3 32-32s-14.3-32-32-32L32 32zM64 352c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 96c0 17.7 14.3 32 32 32l96 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-64 0 0-64zM320 32c-17.7 0-32 14.3-32 32s14.3 32 32 32l64 0 0 64c0 17.7 14.3 32 32 32s32-14.3 32-32l0-96c0-17.7-14.3-32-32-32l-96 0zM448 352c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 64-64 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l96 0c17.7 0 32-14.3 32-32l0-96z"></path>
+    </svg>
+</button><button class="panzoom-min panzoom-button panzoom-hidden">
+    <svg class="panzoom-icon" viewBox="0 0 448 512" xmlns="http://www.w3.org/2000/svg">
+        <path d="M160 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 64-64 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l96 0c17.7 0 32-14.3 32-32l0-96zM32 320c-17.7 0-32 14.3-32 32s14.3 32 32 32l64 0 0 64c0 17.7 14.3 32 32 32s32-14.3 32-32l0-96c0-17.7-14.3-32-32-32l-96 0zM352 64c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 96c0 17.7 14.3 32 32 32l96 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-64 0 0-64zM320 320c-17.7 0-32 14.3-32 32l0 96c0 17.7 14.3 32 32 32s32-14.3 32-32l0-64 64 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-96 0z"></path>
+    </svg>
+</button>
+    </nav>
+    <pre class="mermaid"><code>graph LR
+    claim[CamundaClusterClaim] --&gt;|one per option| req[PluginRequest]
+    reg[PluginRegistration] -.-&gt;|option of| sec[PluginSection]
+    req -.-&gt;|names| reg
+    ctl[plugin controller] --&gt;|outputs, status| req
+    ctl --&gt;|resources| res[bucket, role, Elasticsearch]
+    ctl --&gt;|Grant| grant[Grant]
+    policy[admission policy] -.-&gt;|guards| grant
+    claim --&gt;|fields from outputs| cc[CamundaCluster]</code></pre> 
+    <div class="panzoom-info-box panzoom-info-box-bottom">
+Hold "Alt" / "Option" to enable pan &amp; zoom
+</div>
+</div>
+<p>Each object of the plugin kinds has its writers:</p>
+<table>
+<thead>
+<tr>
+<th>Object</th>
+<th>Written by</th>
+<th>What you see</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PluginSection</code></td>
+<td>The operator, for the core sections. A plugin chart, for a section that it brings.</td>
+<td>The steps of the create flow of a claim.</td>
+</tr>
+<tr>
+<td><code>PluginRegistration</code> spec</td>
+<td>The plugin controller, from its chart values. The operator, for the built-in registrations.</td>
+<td>The options of each step.</td>
+</tr>
+<tr>
+<td><code>PluginRegistration</code> condition <code>Accepted</code></td>
+<td>The operator.</td>
+<td><code>False</code> when a section is missing, the operator version is outside the range, or two options of a section are <code>Default</code>.</td>
+</tr>
+<tr>
+<td><code>PluginRegistration</code> condition <code>Ready</code></td>
+<td>The plugin controller. The operator, for the built-in registrations.</td>
+<td>The health of the plugin. The fleet manager offers the option only when <code>Accepted</code> and <code>Ready</code> are both <code>True</code>.</td>
+</tr>
+<tr>
+<td><code>PluginRequest</code> spec</td>
+<td>The claim.</td>
+<td>One request for each option that the claim selects.</td>
+</tr>
+<tr>
+<td><code>PluginRequest</code> status</td>
+<td>The plugin controller of the registration.</td>
+<td>The outputs, the health, and the resources of the request.</td>
+</tr>
+<tr>
+<td><code>Grant</code> spec</td>
+<td>The plugin controller.</td>
+<td>One permission that the cluster needs, for example access to its backup bucket.</td>
+</tr>
+<tr>
+<td><code>Grant</code> status</td>
+<td>The identity extension of the cluster.</td>
+<td>Whether the cloud identity of the cluster has the permission.</td>
+</tr>
+</tbody>
+</table>
+<p>One admission policy guards the grants. The operator installs it. The API server refuses a grant from a requester that does not have the verb <code>serve</code> on the registration of the grant. Thus a plugin cannot ask for permissions in the name of another plugin. See <a href="../crds/grant/#who-can-write-a-grant">Who can write a grant</a>.</p>
+<p>The core kinds never read a plugin kind. A <code>CamundaCluster</code> that you write yourself needs no plugin.</p>
 <h2 id="the-fleet-manager">The fleet manager<a class="headerlink" href="#the-fleet-manager" title="Permanent link">&para;</a></h2>
 <p>The fleet manager is a web app that the chart installs when <code>fleetManager.enabled</code> is <code>true</code>, see <a href="../fleet-manager/install/">Install the fleet manager</a>. It runs in the release namespace under its own ServiceAccount. The ClusterRole of that ServiceAccount reads every kind of the operator. It also reads pods, Services, and volume claims. The workloads of a resource carry the labels in <a href="#how-a-feature-finds-its-workloads">How a feature finds its workloads</a>. It can also write the claims, environments, presets, releases, platform configs, contracts, backups, restores, namespaces, and Secrets. It cannot write a <code>CamundaCluster</code> or a <code>CamundaManagementCluster</code>.</p>
 <h2 id="the-api-module">The api module<a class="headerlink" href="#the-api-module" title="Permanent link">&para;</a></h2>
