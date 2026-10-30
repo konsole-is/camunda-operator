@@ -324,19 +324,17 @@ func withAttachments(claim *fleetv1alpha1.CamundaClusterClaim) *fleetv1alpha1.Ca
 
 // optimizeOf reads the CamundaOptimize of claim.
 func optimizeOf(claim *fleetv1alpha1.CamundaClusterClaim) (*v1.CamundaOptimize, error) {
+	key := client.ObjectKey{Namespace: claim.Namespace, Name: components.OptimizeName(claim.Name)}
 	var optimize v1.CamundaOptimize
-	err := k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: claim.Namespace, Name: components.OptimizeName(claim.Name),
-	}, &optimize)
+	err := k8sClient.Get(ctx, key, &optimize)
 	return &optimize, err
 }
 
 // scheduleOf reads the BackupSchedule of claim.
 func scheduleOf(claim *fleetv1alpha1.CamundaClusterClaim) (*v1.BackupSchedule, error) {
+	key := client.ObjectKey{Namespace: claim.Namespace, Name: components.BackupScheduleName(claim.Name)}
 	var schedule v1.BackupSchedule
-	err := k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: claim.Namespace, Name: components.BackupScheduleName(claim.Name),
-	}, &schedule)
+	err := k8sClient.Get(ctx, key, &schedule)
 	return &schedule, err
 }
 

@@ -130,7 +130,11 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 	}
 
 	var liveOptimize v1.CamundaOptimize
-	err = r.Get(ctx, client.ObjectKey{Namespace: claim.Namespace, Name: components.OptimizeName(claim.Name)}, &liveOptimize)
+	err = r.Get(
+		ctx,
+		client.ObjectKey{Namespace: claim.Namespace, Name: components.OptimizeName(claim.Name)},
+		&liveOptimize,
+	)
 	switch {
 	case err == nil:
 		res.liveOptimize = &liveOptimize

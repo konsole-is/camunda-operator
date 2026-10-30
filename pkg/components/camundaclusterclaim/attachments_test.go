@@ -52,7 +52,7 @@ func TestOptimizeCarriesTheClaimAndReleaseFields(t *testing.T) {
 }
 
 func TestOptimizeTakesTheClaimURLWithoutAnAccessSelection(t *testing.T) {
-	in := withoutSection(fullInput(t), "access")
+	in := withoutSection(fullInput(t), accessSection)
 	in.Claim.Spec.Attachments.Optimize.ExternalURL = "https://optimize.example.com"
 
 	optimize, _ := previewAttachments(t, in)
@@ -216,7 +216,7 @@ func withoutSection(in Input, section string) Input {
 // not reporting its outputs.
 func withoutAccessOutputs(in Input) Input {
 	access := slices.IndexFunc(in.Requests, func(r pluginsv1alpha1.PluginRequest) bool {
-		return r.Spec.Section == "access"
+		return r.Spec.Section == accessSection
 	})
 	in.Requests[access].Status.Conditions = nil
 

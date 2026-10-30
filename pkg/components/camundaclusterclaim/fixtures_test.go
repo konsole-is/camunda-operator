@@ -37,6 +37,10 @@ type slotSection struct {
 	outputs               map[string]string
 }
 
+// accessSection is the section of slotSections with the externalAccess
+// slot.
+const accessSection = "access"
+
 // slotSections holds one section for each slot that fills a field of the
 // CamundaCluster.
 var slotSections = []slotSection{
@@ -62,7 +66,7 @@ var slotSections = []slotSection{
 		outputs: map[string]string{"storageClassName": "orders-encrypted"},
 	},
 	{
-		section: "access", registration: "test-access", slot: pluginsv1alpha1.SlotExternalAccess,
+		section: accessSection, registration: "test-access", slot: pluginsv1alpha1.SlotExternalAccess,
 		outputs: map[string]string{
 			"externalUrl": "https://orders.example.com",
 			"optimizeUrl": "https://orders.example.com/optimize",

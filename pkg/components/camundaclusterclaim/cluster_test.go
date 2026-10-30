@@ -61,7 +61,7 @@ func TestClusterCarriesTheSlotFieldsFromTheOutputs(t *testing.T) {
 func TestClusterKeepsTheLiveValueOfASlotFieldWhoseOutputIsMissing(t *testing.T) {
 	in := fullInput(t)
 	access := slices.IndexFunc(in.Requests, func(r pluginsv1alpha1.PluginRequest) bool {
-		return r.Spec.Section == "access"
+		return r.Spec.Section == accessSection
 	})
 	in.Requests[access].Status.Conditions = nil
 
@@ -101,7 +101,7 @@ func TestClusterWaitsForTheSlotOutputsOfTheRenderBeforeTheFirstApply(t *testing.
 			in.Live = tt.live
 			if tt.missing {
 				access := slices.IndexFunc(in.Requests, func(r pluginsv1alpha1.PluginRequest) bool {
-					return r.Spec.Section == "access"
+					return r.Spec.Section == accessSection
 				})
 				in.Requests[access].Status.Conditions = nil
 			}
