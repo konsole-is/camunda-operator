@@ -26,6 +26,13 @@ describe("GET /api/usage", () => {
       "namespace",
     ],
     ["the namespace ..", "namespace=..&selector=a%3Db", "namespace"],
+    ["the namespace .", "namespace=.&selector=a%3Db", "namespace"],
+    [
+      "a namespace that is still encoded",
+      "namespace=%252e%252e&selector=a%3Db",
+      "namespace",
+    ],
+    ["a namespace with a slash", "namespace=a%2Fb&selector=a%3Db", "namespace"],
     ["a namespace of spaces", "namespace=%20%20&selector=a%3Db", "namespace"],
     ["no selector", "namespace=n", "selector"],
     ["an empty selector", "namespace=n&selector=", "selector"],

@@ -27,6 +27,12 @@ describe("GET /api/partitions", () => {
       "namespace",
     ],
     ["the namespace ..", "namespace=..&name=orders", "namespace"],
+    ["the namespace .", "namespace=.&name=orders", "namespace"],
+    [
+      "a namespace that is still encoded",
+      "namespace=%252e%252e&name=orders",
+      "namespace",
+    ],
     ["a namespace of spaces", "namespace=%20&name=orders", "namespace"],
     ["the name ..", "namespace=team-a&name=..", "name"],
     ["a name with a slash", "namespace=team-a&name=a%2Fb", "name"],

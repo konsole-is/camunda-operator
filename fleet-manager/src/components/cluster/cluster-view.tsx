@@ -100,10 +100,10 @@ export type ClusterPageData = {
  * and selects the tab that the tab query parameter of the URL names. A
  * click on a tab replaces that parameter. The component query parameter
  * opens the detail of a used component, or of an app embedded in one, on
- * the Overview tab, in place of the cards. slots fill the action slots of a managed cluster, and an
- * unmanaged cluster ignores them. pushedClaim is the claim file that the
- * fleet manager pushed in Git mode. When the cluster is deleted, the page
- * says so and shows nothing else.
+ * the Overview tab, in place of the cards. slots fill the action slots of a
+ * managed cluster, and an unmanaged cluster ignores them. pushedClaim is the
+ * claim file that the fleet manager pushed in Git mode. When the cluster is
+ * deleted, the page says so and shows nothing else.
  */
 export function ClusterView({
   initial,
