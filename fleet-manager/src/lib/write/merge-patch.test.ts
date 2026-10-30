@@ -94,7 +94,7 @@ describe("clientSideApplyPatch", () => {
     );
   });
 
-  it("sends no null for a field that is null on live and in the body", () => {
+  it("sends no null for a field that is null in the last applied file and in the body", () => {
     const live = applied(env({ parameters: { keep: null, size: "s" } }));
     expect(
       clientSideApplyPatch(live, env({ parameters: { keep: null, size: "m" } }))
@@ -102,11 +102,31 @@ describe("clientSideApplyPatch", () => {
     ).toEqual({ parameters: { size: "m" } });
   });
 
-  it("sends the null of the body for a field that live holds with a value", () => {
+  it("sends the null of the body for a field that the last applied file holds with a value", () => {
     const live = applied(env({ parameters: { drop: "x" } }));
     expect(
       clientSideApplyPatch(live, env({ parameters: { drop: null } }))?.spec,
     ).toEqual({ parameters: { drop: null } });
+  });
+
+  it("sends the null of the body when the last applied file holds a value, also when live is null", () => {
+    const live = {
+      ...applied(env({ parameters: { keep: "x" } })),
+      spec: { parameters: { keep: null } },
+    };
+    expect(
+      clientSideApplyPatch(live, env({ parameters: { keep: null } }))?.spec,
+    ).toEqual({ parameters: { keep: null } });
+  });
+
+  it("sends no null of the body when the last applied file holds null, also when live holds a value", () => {
+    const live = {
+      ...applied(env({ parameters: { keep: null } })),
+      spec: { parameters: { keep: "x" } },
+    };
+    expect(
+      clientSideApplyPatch(live, env({ parameters: { keep: null } }))?.spec,
+    ).toEqual({ parameters: {} });
   });
 
   it("sends a shorter list whole, with no null for a removed item", () => {

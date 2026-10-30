@@ -41,7 +41,7 @@ export function clientSideApplyPatch(
     ...body,
     metadata: { ...body.metadata, annotations: { ...annotationsOf(body) } },
   };
-  const patch = withRemovals(last, next, live as JsonMap);
+  const patch = withRemovals(last, next);
   const metadata = patch.metadata as JsonMap;
   metadata.annotations = {
     ...(metadata.annotations as JsonMap),
@@ -50,25 +50,16 @@ export function clientSideApplyPatch(
   return patch;
 }
 
-function withRemovals(
-  last: JsonMap | undefined,
-  next: JsonMap,
-  live: JsonMap | undefined,
-): JsonMap {
+function withRemovals(last: JsonMap | undefined, next: JsonMap): JsonMap {
   const patch: JsonMap = {};
   for (const [key, value] of Object.entries(next)) {
     if (value === undefined) continue;
     if (value === null) {
-      // kubectl sends no change for a null of body at a field that is null
-      // on live. A null in a merge patch removes the field, so it would
-      // remove a null that live holds.
-      if (fieldOf(live, key) !== null) setOwn(patch, key, null);
+      // kubectl sends a null of the new file only when the last applied
+      // file does not hold null there.
+      if (fieldOf(last, key) !== null) setOwn(patch, key, null);
     } else if (isMap(value)) {
-      setOwn(
-        patch,
-        key,
-        withRemovals(mapOf(last, key), value, mapOf(live, key)),
-      );
+      setOwn(patch, key, withRemovals(mapOf(last, key), value));
     } else {
       setOwn(patch, key, value);
     }
