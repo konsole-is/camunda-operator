@@ -11,6 +11,11 @@ import {
 } from "@kubernetes/client-node";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { ping } from "@/app/dev/watch-probe/actions";
+import {
+  saveSettings,
+  testGitConnection,
+  testPrometheusQuery,
+} from "@/app/setup/settings/actions";
 import { GET as healthz } from "@/app/api/healthz/route";
 import { GET as logsRoute } from "@/app/api/logs/route";
 import { GET as watchRoute } from "@/app/api/watch/route";
@@ -148,6 +153,14 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
 // "<file under src>#<export>".
 const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/dev/watch-probe/actions.ts#ping": () => ping(),
+  "app/setup/settings/actions.ts#saveSettings": async () =>
+    saveSettings(
+      { "git.path": "y" },
+      (await settings.readSettings()).resourceVersion,
+    ),
+  "app/setup/settings/actions.ts#testGitConnection": () => testGitConnection(),
+  "app/setup/settings/actions.ts#testPrometheusQuery": () =>
+    testPrometheusQuery(),
 };
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
   "settings#appPermissions": () => settings.appPermissions(),
