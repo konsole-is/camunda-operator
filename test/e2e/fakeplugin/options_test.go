@@ -106,11 +106,12 @@ func TestParseOptionsWithoutAccessServesBackupStorageOnly(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{pluginstartup.SectionBackupStorage}, cfg.Echo.Sections)
-	assert.Equal(t, []echo.Output{{
+	want := []echo.Output{{
 		Key:     pluginstartup.OutputObjectStorageConfig,
 		Value:   "echo-bucket",
 		Section: pluginstartup.SectionBackupStorage,
-	}}, cfg.Echo.Outputs)
+	}}
+	assert.Equal(t, want, cfg.Echo.Outputs)
 	assert.Empty(t, cfg.Echo.GrantTemplates)
 
 	_, err = echo.New(cfg.Echo)
@@ -120,7 +121,7 @@ func TestParseOptionsWithoutAccessServesBackupStorageOnly(t *testing.T) {
 func TestParseOptionsPublishesTheGrantTemplate(t *testing.T) {
 	t.Parallel()
 
-	template := `{"Effect":"Allow","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::{{ .outputs.objectStorageConfig }}/*"}`
+	template := `{"Effect":"Allow","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::{{ .outputs.objectStorageConfig }}"}`
 	cfg, err := parseOptions([]string{
 		"--service-account-namespace=builtin-registrations-echo",
 		"--service-account-name=echo",

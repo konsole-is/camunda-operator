@@ -127,7 +127,12 @@ var _ = Describe("Built-in registrations", Ordered, Label(utils.LabelBuiltinRegi
 			)
 			g.Expect(err).NotTo(HaveOccurred())
 			expectCondition(
-				g, pluginRegistrationResource, echoRegistration, "", pluginsv1alpha1.ConditionAccepted, v1.ReasonHealthy,
+				g,
+				pluginRegistrationResource,
+				echoRegistration,
+				"",
+				pluginsv1alpha1.ConditionAccepted,
+				v1.ReasonHealthy,
 			)
 			expectReady(g, pluginRegistrationResource, echoRegistration, "", v1.ReasonHealthy)
 		}, 3*time.Minute, 5*time.Second).Should(Succeed())
@@ -161,69 +166,83 @@ var _ = Describe("Built-in registrations", Ordered, Label(utils.LabelBuiltinRegi
 		}
 	})
 
-	It("keeps the plugin contract with the elasticsearch registration", func(ctx SpecContext) {
-		runNamespace = esRunNamespace
-		prepareRunNamespace(runNamespace)
-		cfg := conformance.Config{
-			Registration: pluginstartup.RegistrationElasticsearch,
-			Namespace:    runNamespace,
-			Cases: []conformance.Case{{
-				Name: "elasticsearch",
-				Parameters: &apiextensionsv1.JSON{Raw: []byte(
-					`{"preset":"` + builtinPreset + `","releaseRef":"` + builtinRelease + `"}`,
-				)},
-				Target: pluginsv1alpha1.TargetRef{Kind: "CamundaCluster", Name: "builtin-target"},
-			}},
-			// One Elasticsearch node for each deletion policy, image pull included.
-			Timeouts: conformance.Timeouts{OutputsReady: esReadyTimeout, Ready: esReadyTimeout},
-			Skip:     builtinSkips,
-		}
+	It(
+		"keeps the plugin contract with the elasticsearch registration",
+		SpecTimeout(50*time.Minute),
+		func(ctx SpecContext) {
+			runNamespace = esRunNamespace
+			prepareRunNamespace(runNamespace)
+			cfg := conformance.Config{
+				Registration: pluginstartup.RegistrationElasticsearch,
+				Namespace:    runNamespace,
+				Cases: []conformance.Case{{
+					Name: "elasticsearch",
+					Parameters: &apiextensionsv1.JSON{Raw: []byte(
+						`{"preset":"` + builtinPreset + `","releaseRef":"` + builtinRelease + `"}`,
+					)},
+					Target: pluginsv1alpha1.TargetRef{Kind: "CamundaCluster", Name: "builtin-target"},
+				}},
+				// One Elasticsearch node for each deletion policy, image pull included.
+				Timeouts: conformance.Timeouts{OutputsReady: esReadyTimeout, Ready: esReadyTimeout},
+				Skip:     builtinSkips,
+			}
 
-		results, err := conformance.Execute(ctx, cfg)
-		reportResults(cfg.Registration, results)
-		Expect(err).NotTo(HaveOccurred())
-		expectConformant(results, slices.Concat(skipIDs(builtinSkips), builtinSelfSkips)...)
-	}, SpecTimeout(50*time.Minute))
+			results, err := conformance.Execute(ctx, cfg)
+			reportResults(cfg.Registration, results)
+			Expect(err).NotTo(HaveOccurred())
+			expectConformant(results, slices.Concat(skipIDs(builtinSkips), builtinSelfSkips)...)
+		},
+	)
 
-	It("keeps the plugin contract with the existing-object-storage registration", func(ctx SpecContext) {
-		runNamespace = bucketRunNamespace
-		prepareRunNamespace(runNamespace)
-		createBackupStorage(runNamespace)
-		cfg := conformance.Config{
-			Registration: pluginstartup.RegistrationExistingObjectStorage,
-			Namespace:    runNamespace,
-			Cases:        []conformance.Case{existingObjectStorageCase()},
-			Skip:         builtinSkips,
-		}
+	It(
+		"keeps the plugin contract with the existing-object-storage registration",
+		SpecTimeout(15*time.Minute),
+		func(ctx SpecContext) {
+			runNamespace = bucketRunNamespace
+			prepareRunNamespace(runNamespace)
+			createBackupStorage(runNamespace)
+			cfg := conformance.Config{
+				Registration: pluginstartup.RegistrationExistingObjectStorage,
+				Namespace:    runNamespace,
+				Cases:        []conformance.Case{existingObjectStorageCase()},
+				Skip:         builtinSkips,
+			}
 
-		results, err := conformance.Execute(ctx, cfg)
-		reportResults(cfg.Registration, results)
-		Expect(err).NotTo(HaveOccurred())
-		expectConformant(results, slices.Concat(skipIDs(builtinSkips), builtinSelfSkips)...)
-	}, SpecTimeout(15*time.Minute))
+			results, err := conformance.Execute(ctx, cfg)
+			reportResults(cfg.Registration, results)
+			Expect(err).NotTo(HaveOccurred())
+			expectConformant(results, slices.Concat(skipIDs(builtinSkips), builtinSelfSkips)...)
+		},
+	)
 
-	It("refuses a Grant of the echo registration from a requester without the verb serve", func(ctx SpecContext) {
-		runNamespace = echoRunNamespace
-		prepareRunNamespace(runNamespace)
-		cfg := conformance.Config{
-			Registration: echoRegistration,
-			Namespace:    runNamespace,
-			Cases: []conformance.Case{{
-				Name:       "echo",
-				Parameters: &apiextensionsv1.JSON{Raw: []byte(`{"message":"hi"}`)},
-				Target:     pluginsv1alpha1.TargetRef{Kind: "CamundaCluster", Name: "builtin-target"},
-			}},
-		}
+	It(
+		"refuses a Grant of the echo registration from a requester without the verb serve",
+		SpecTimeout(20*time.Minute),
+		func(ctx SpecContext) {
+			runNamespace = echoRunNamespace
+			prepareRunNamespace(runNamespace)
+			cfg := conformance.Config{
+				Registration: echoRegistration,
+				Namespace:    runNamespace,
+				Cases: []conformance.Case{{
+					Name:       "echo",
+					Parameters: &apiextensionsv1.JSON{Raw: []byte(`{"message":"hi"}`)},
+					Target:     pluginsv1alpha1.TargetRef{Kind: "CamundaCluster", Name: "builtin-target"},
+				}},
+			}
 
-		results, err := conformance.Execute(ctx, cfg)
-		reportResults(cfg.Registration, results)
-		Expect(err).NotTo(HaveOccurred())
-		// The echo template has no required input, and echo serves no access.
-		expectConformant(results, conformance.GrantRequires, conformance.DeleteRoutes)
-		Expect(outcomeOf(results, conformance.GrantAdmission)).To(Equal(conformance.OutcomePassed),
-			"GRANT-ADMISSION must run against the installed policy and see the refusal")
-		Expect(outcomeOf(results, conformance.RegRBAC)).To(Equal(conformance.OutcomePassed))
-	}, SpecTimeout(20*time.Minute))
+			results, err := conformance.Execute(ctx, cfg)
+			reportResults(cfg.Registration, results)
+			Expect(err).NotTo(HaveOccurred())
+			// The echo template has no required input, and echo serves no access.
+			expectConformant(results, conformance.GrantRequires, conformance.DeleteRoutes)
+			Expect(outcomeOf(results, conformance.GrantAdmission)).To(
+				Equal(conformance.OutcomePassed),
+				"GRANT-ADMISSION must run against the installed policy and see the refusal",
+			)
+			Expect(outcomeOf(results, conformance.RegRBAC)).To(Equal(conformance.OutcomePassed))
+		},
+	)
 })
 
 var _ = Describe("Built-in registration order", Ordered, Label(utils.LabelBuiltinRegistrationsOrder), func() {
@@ -231,34 +250,38 @@ var _ = Describe("Built-in registration order", Ordered, Label(utils.LabelBuilti
 		dumpDiagnostics(orderRunNamespace)
 	})
 
-	It("writes the existing-object-storage registration again before it serves a request", func(ctx SpecContext) {
-		prepareRunNamespace(orderRunNamespace)
-		createBackupStorage(orderRunNamespace)
-		cfg := conformance.Config{
-			Registration: pluginstartup.RegistrationExistingObjectStorage,
-			Namespace:    orderRunNamespace,
-			Cases:        []conformance.Case{existingObjectStorageCase()},
-			Skip:         []conformance.Skip{reqLogsSkip},
-		}
+	It(
+		"writes the existing-object-storage registration again before it serves a request",
+		SpecTimeout(20*time.Minute),
+		func(ctx SpecContext) {
+			prepareRunNamespace(orderRunNamespace)
+			createBackupStorage(orderRunNamespace)
+			cfg := conformance.Config{
+				Registration: pluginstartup.RegistrationExistingObjectStorage,
+				Namespace:    orderRunNamespace,
+				Cases:        []conformance.Case{existingObjectStorageCase()},
+				Skip:         []conformance.Skip{reqLogsSkip},
+			}
 
-		results, err := conformance.Execute(ctx, cfg)
-		reportResults(cfg.Registration, results)
-		Expect(err).NotTo(HaveOccurred())
-		expectConformant(results, slices.Concat([]conformance.CheckID{reqLogsSkip.ID}, builtinSelfSkips)...)
-		Expect(outcomeOf(results, conformance.OrderRegistrationFirst)).To(Equal(conformance.OutcomePassed))
+			results, err := conformance.Execute(ctx, cfg)
+			reportResults(cfg.Registration, results)
+			Expect(err).NotTo(HaveOccurred())
+			expectConformant(results, slices.Concat([]conformance.CheckID{reqLogsSkip.ID}, builtinSelfSkips)...)
+			Expect(outcomeOf(results, conformance.OrderRegistrationFirst)).To(Equal(conformance.OutcomePassed))
 
-		// The check scales the manager back. A broken scale back fails here,
-		// not in a later flow.
-		By("checking that the manager runs again")
-		Eventually(func(g Gomega) {
-			out, err := utils.Kubectl(
-				"get", "deployment", "-n", namespace, "-l", "control-plane=controller-manager",
-				"-o", "jsonpath={.items[0].status.availableReplicas}",
-			)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(out).To(Equal("1"))
-		}, 2*time.Minute).Should(Succeed())
-	}, SpecTimeout(20*time.Minute))
+			// The check scales the manager back. A broken scale back fails here,
+			// not in a later flow.
+			By("checking that the manager runs again")
+			Eventually(func(g Gomega) {
+				out, err := utils.Kubectl(
+					"get", "deployment", "-n", namespace, "-l", "control-plane=controller-manager",
+					"-o", "jsonpath={.items[0].status.availableReplicas}",
+				)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(out).To(Equal("1"))
+			}, 2*time.Minute).Should(Succeed())
+		},
+	)
 })
 
 // prepareRunNamespace creates the namespace of a conformance run, and deletes
