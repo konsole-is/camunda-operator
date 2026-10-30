@@ -25,6 +25,10 @@ const DEFAULT_REALM = "camunda-platform";
 const MAX_URL = 2048;
 const MAX_REALM = 255;
 const REALM = /^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$/;
+// The CRD refuses "https:host" and "https:/host", so the scheme and the host
+// are checked on the raw text too.
+const HTTP_AUTHORITY = /^https?:\/\/[^/?#]/i;
+const BAD_ESCAPE = /%(?![0-9a-fA-F]{2})/;
 const USER_INFO = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/?#]*@/;
 const OIDC_NEEDED = "OIDC needs a platform config with OIDC authentication.";
 
@@ -59,6 +63,9 @@ export function externalKeycloakErrors(
   if (!parsed) url("Use an http or https URL with a host.");
   if (draft.url.includes("?") || draft.url.includes("#")) {
     url("The URL must have no query and no fragment.");
+  }
+  if (BAD_ESCAPE.test(draft.url)) {
+    url("The URL has a % that does not start an escape such as %20.");
   }
   if (USER_INFO.test(draft.url)) {
     url("The URL must have no user and no password.");
@@ -122,6 +129,7 @@ export function planeIssuer(
 }
 
 function parseHttpUrl(value: string): URL | undefined {
+  if (!HTTP_AUTHORITY.test(value)) return undefined;
   try {
     const url = new URL(value);
     return (url.protocol === "http:" || url.protocol === "https:") &&

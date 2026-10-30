@@ -65,6 +65,7 @@ describe("externalKeycloakErrors", () => {
     "http://kc.internal:8080",
     "https://kc.example.com",
     "https://kc.example.com/any/path/",
+    "https://kc.example.com/a%20b",
   ])("accepts %s", (url) => {
     expect(externalKeycloakErrors({ ...ok, url })).toEqual([]);
   });
@@ -77,6 +78,10 @@ describe("externalKeycloakErrors", () => {
     ["https://kc.example.com/auth#x", "url"],
     ["https://user:pw@kc.example.com", "url"],
     ["https://kc.example.com/" + "a".repeat(2048), "url"],
+    ["https:kc.example.com", "url"],
+    ["https:/kc.example.com", "url"],
+    ["https://kc.example.com/a%zzb", "url"],
+    ["https://kc.example.com/a%2", "url"],
   ])("refuses %j", (url, path) => {
     expect(externalKeycloakErrors({ ...ok, url }).map((e) => e.path)).toContain(
       path,
