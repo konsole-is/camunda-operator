@@ -72,7 +72,7 @@ func clusterComponent(in Input) (*component.Component, error) {
 		return nil, err
 	}
 
-	resource, err := camundacluster.NewBuilder(desired).WithGuard(waitFor(waiting)).Build()
+	resource, err := camundacluster.NewBuilder(desired).WithGuard(waitFor[v1.CamundaCluster](waiting)).Build()
 	if err != nil {
 		return nil, fmt.Errorf("building the CamundaCluster %s: %w", desired.Name, err)
 	}
@@ -85,15 +85,15 @@ func clusterComponent(in Input) (*component.Component, error) {
 		Build()
 }
 
-// waitFor returns the guard of the CamundaCluster. It blocks with the
-// reason waiting when waiting is not empty.
-func waitFor(waiting string) func(v1.CamundaCluster) (concepts.GuardStatusWithReason, error) {
+// waitFor returns a guard that blocks with the reason waiting when waiting
+// is not empty.
+func waitFor[T any](waiting string) func(T) (concepts.GuardStatusWithReason, error) {
 	status := concepts.GuardStatusWithReason{Status: concepts.GuardStatusUnblocked}
 	if waiting != "" {
 		status = concepts.GuardStatusWithReason{Status: concepts.GuardStatusBlocked, Reason: waiting}
 	}
 
-	return func(v1.CamundaCluster) (concepts.GuardStatusWithReason, error) {
+	return func(T) (concepts.GuardStatusWithReason, error) {
 		return status, nil
 	}
 }
@@ -135,8 +135,7 @@ func cluster(in Input) (desired *v1.CamundaCluster, waiting string, err error) {
 
 	var missing []string
 	for _, f := range fields {
-		// The CamundaOptimize field of the access slot belongs to the
-		// attachments. TODO(#605): write it there.
+		// The CamundaOptimize field of the access slot belongs to the attachments.
 		if f.Kind != claimpolicy.KindCamundaCluster {
 			continue
 		}

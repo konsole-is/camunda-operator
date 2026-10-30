@@ -108,7 +108,7 @@ func TestClusterWaitsForTheSlotOutputsOfTheRenderBeforeTheFirstApply(t *testing.
 
 			_, waiting, err := cluster(in)
 			require.NoError(t, err)
-			status, err := waitFor(waiting)(v1.CamundaCluster{})
+			status, err := waitFor[v1.CamundaCluster](waiting)(v1.CamundaCluster{})
 			require.NoError(t, err)
 
 			assert.Equal(t, tt.wantStatus, status.Status)

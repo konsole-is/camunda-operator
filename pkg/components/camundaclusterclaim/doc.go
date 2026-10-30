@@ -16,8 +16,9 @@ limitations under the License.
 
 // Package camundaclusterclaim renders what a CamundaClusterClaim writes: the
 // PluginRequests of its selections, through pkg/components/claimrequests,
-// and the CamundaCluster of the claim, with the fields that the slot outputs
-// fill.
+// the CamundaCluster of the claim, with the fields that the slot outputs
+// fill, and the attachments: the CamundaOptimize and the BackupSchedule of
+// spec.attachments.
 //
 // The package is pure: spec in, resources out, no API calls. The controller in
 // internal/controller/fleet/camundaclusterclaim reads the cluster state into

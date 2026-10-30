@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
@@ -85,9 +86,19 @@ func fullInput(t *testing.T) Input {
 	in := Input{
 		Claim: &fleetv1alpha1.CamundaClusterClaim{
 			ObjectMeta: metav1.ObjectMeta{Name: "orders", Namespace: "team-a"},
-			Spec:       fleetv1alpha1.CamundaClusterClaimSpec{PresetRef: "small"},
+			Spec: fleetv1alpha1.CamundaClusterClaimSpec{
+				PresetRef: "small",
+				Attachments: &fleetv1alpha1.ClusterAttachments{
+					Optimize: &fleetv1alpha1.OptimizeAttachment{
+						ManagementAuthConfigRef: "management",
+						IndexReplicas:           ptr.To[int32](1),
+					},
+					BackupSchedule: &fleetv1alpha1.BackupScheduleAttachment{Schedule: "0 2 * * *"},
+				},
+			},
 		},
 		ReleaseRef:        "camunda-8-9",
+		ReleaseVersion:    "8.9.9",
 		PlatformConfigRef: "default",
 		Storage:           storage,
 	}
@@ -147,4 +158,29 @@ func previewCluster(t *testing.T, in Input) *v1.CamundaCluster {
 	require.True(t, ok, "unexpected %T", objects[0])
 
 	return cluster
+}
+
+// previewAttachments returns the CamundaOptimize and the BackupSchedule that
+// the attachments component of in renders, nil for each one that it does not
+// hold.
+func previewAttachments(t *testing.T, in Input) (optimize *v1.CamundaOptimize, schedule *v1.BackupSchedule) {
+	t.Helper()
+
+	comps, err := Build(in)
+	require.NoError(t, err)
+
+	objects, err := comps.Attachments.Preview()
+	require.NoError(t, err)
+	for _, obj := range objects {
+		switch o := obj.(type) {
+		case *v1.CamundaOptimize:
+			optimize = o
+		case *v1.BackupSchedule:
+			schedule = o
+		default:
+			require.Failf(t, "unexpected object", "%T", obj)
+		}
+	}
+
+	return optimize, schedule
 }
