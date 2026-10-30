@@ -41,8 +41,12 @@ var _ = Describe("Changing a cluster claim", func() {
 
 		updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.ReleaseRef = nextReleaseName })
 
-		expectFalse(claim, v1.ConditionReady, fleetv1alpha1.ReasonNotAllowed,
-			ContainSubstring(`CamundaRelease "suite-release-next" is not in spec.releases.allowed`))
+		expectFalse(
+			claim,
+			v1.ConditionReady,
+			fleetv1alpha1.ReasonNotAllowed,
+			ContainSubstring(`CamundaRelease "suite-release-next" is not in spec.releases.allowed`),
+		)
 		Consistently(func(g Gomega) {
 			cluster, err := clusterOf(claim)
 			g.Expect(err).NotTo(HaveOccurred())
@@ -113,8 +117,12 @@ var _ = Describe("Changing a cluster claim", func() {
 
 		By("changing a key that the claim cannot edit")
 		setKeyParameters(claim, `{"region":"us","tier":"silver"}`)
-		expectFalse(claim, v1.ConditionReady, fleetv1alpha1.ReasonNotAllowed,
-			ContainSubstring(`parameter "tier" of registration "test-key" is not claim-editable`))
+		expectFalse(
+			claim,
+			v1.ConditionReady,
+			fleetv1alpha1.ReasonNotAllowed,
+			ContainSubstring(`parameter "tier" of registration "test-key" is not claim-editable`),
+		)
 	})
 
 	It("copies suspend to the cluster and leaves the requests as they are", func() {

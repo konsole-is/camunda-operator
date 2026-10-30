@@ -238,7 +238,9 @@ func ownedDowngrade(uid string) metav1.ManagedFieldsEntry {
 		Manager:   "CamundaClusterClaim/cluster/" + uid,
 		Operation: metav1.ManagedFieldsOperationApply,
 		FieldsV1: &metav1.FieldsV1{
-			Raw: []byte(`{"f:metadata":{"f:annotations":{"f:` + clustercomponents.AllowVersionDowngradeAnnotation + `":{}}}}`),
+			Raw: []byte(
+				`{"f:metadata":{"f:annotations":{"f:` + clustercomponents.AllowVersionDowngradeAnnotation + `":{}}}}`,
+			),
 		},
 	}
 }
