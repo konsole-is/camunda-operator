@@ -30,66 +30,97 @@ export interface ScenarioHandle extends Scenario {
   prometheus: PrometheusStub;
 }
 
-type Worker = { scenarioApp: EnvtestApp & { scenario: ScenarioHandle } };
+type ScenarioApp = { file: string; app: EnvtestApp; scenario: ScenarioHandle };
+
+// Playwright reuses a worker for the next file with the same worker
+// options, so the worker keeps the app of one file and starts a new one
+// when the file changes.
+type ScenarioApps = { open(file: string): Promise<ScenarioApp> };
 
 /**
  * test runs a page test against the page scenario e2e/scenarios/<name>,
  * which the file sets with test.use({ scenarioName: "<name>" }). Each file
- * gets its own worker: envtest, the scenario, and a server of the gallery
- * build that reads the scenario as APP_USER. The tests of a file share them
- * and run in order. baseURL is the app.
+ * gets its own envtest, the scenario, and a server of the gallery build
+ * that reads the scenario as APP_USER. The tests of a file share them and
+ * run in order. baseURL is the app.
  */
 export const test = base.extend<
-  { scenario: ScenarioHandle },
-  { scenarioName: string } & Worker
+  { scenario: ScenarioHandle; scenarioApp: ScenarioApp },
+  { scenarioName: string; scenarioApps: ScenarioApps }
 >({
   scenarioName: [
     undefined as unknown as string,
     { scope: "worker", option: true },
   ],
-  scenarioApp: [
+  scenarioApps: [
     async ({ scenarioName }, provide) => {
-      if (!scenarioName) {
-        throw new Error("Set test.use({ scenarioName }) in the test file");
-      }
-      const dir = path.resolve("e2e/scenarios", scenarioName);
-      let handle: ScenarioHandle | undefined;
-      const app = await startEnvtestApp({
-        envtest: { users: [{ name: APP_USER }] },
-        readyPath: "/api/healthz",
-        prepare: async (envtest) => {
-          const admin = envtest.kubeConfig;
-          const scenario = await openScenario(admin, dir);
-          await ensureNamespace(admin, APP_NAMESPACE);
-          await bindChartRBAC(admin, APP_USER, APP_NAMESPACE);
-          const prometheus = await startPrometheusStub();
-          handle = { ...scenario, admin, prometheus };
-          return {
-            kubeconfigPath: envtest.users[APP_USER].kubeconfigPath,
-            env: {
-              FLEET_NAMESPACE: APP_NAMESPACE,
-              FLEET_SETTINGS_PROMETHEUS_URL: prometheus.url,
-              [OBSERVE_FILE_VARIABLE]: path.join(dir, "observe.yaml"),
-            },
-          };
+      let current: ScenarioApp | undefined;
+      await provide({
+        async open(file) {
+          if (current?.file === file) return current;
+          if (current) await stopScenarioApp(current);
+          current = undefined;
+          current = await startScenarioApp(scenarioName, file);
+          return current;
         },
-      }).catch(async (error: unknown) => {
-        await handle?.prometheus.close();
-        throw error;
       });
-      await provide({ ...app, scenario: handle! });
-      await handle!.prometheus.close();
-      await app.stop();
+      if (current) await stopScenarioApp(current);
     },
-    { scope: "worker", timeout: 180_000 },
+    { scope: "worker" },
+  ],
+  scenarioApp: [
+    async ({ scenarioApps }, provide, testInfo) => {
+      await provide(await scenarioApps.open(testInfo.file));
+    },
+    { timeout: 180_000 },
   ],
   scenario: async ({ scenarioApp }, provide) => {
     await provide(scenarioApp.scenario);
   },
   baseURL: async ({ scenarioApp }, provide) => {
-    await provide(scenarioApp.baseURL);
+    await provide(scenarioApp.app.baseURL);
   },
 });
+
+async function startScenarioApp(
+  scenarioName: string | undefined,
+  file: string,
+): Promise<ScenarioApp> {
+  if (!scenarioName) {
+    throw new Error("Set test.use({ scenarioName }) in the test file");
+  }
+  const dir = path.resolve("e2e/scenarios", scenarioName);
+  let handle: ScenarioHandle | undefined;
+  const app = await startEnvtestApp({
+    envtest: { users: [{ name: APP_USER }] },
+    readyPath: "/api/healthz",
+    prepare: async (envtest) => {
+      const admin = envtest.kubeConfig;
+      const scenario = await openScenario(admin, dir);
+      await ensureNamespace(admin, APP_NAMESPACE);
+      await bindChartRBAC(admin, APP_USER, APP_NAMESPACE);
+      const prometheus = await startPrometheusStub();
+      handle = { ...scenario, admin, prometheus };
+      return {
+        kubeconfigPath: envtest.users[APP_USER].kubeconfigPath,
+        env: {
+          FLEET_NAMESPACE: APP_NAMESPACE,
+          FLEET_SETTINGS_PROMETHEUS_URL: prometheus.url,
+          [OBSERVE_FILE_VARIABLE]: path.join(dir, "observe.yaml"),
+        },
+      };
+    },
+  }).catch(async (error: unknown) => {
+    await handle?.prometheus.close();
+    throw error;
+  });
+  return { file, app, scenario: handle! };
+}
+
+async function stopScenarioApp({ app, scenario }: ScenarioApp): Promise<void> {
+  await scenario.prometheus.close();
+  await app.stop();
+}
 
 async function ensureNamespace(admin: KubeConfig, name: string): Promise<void> {
   try {
