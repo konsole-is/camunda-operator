@@ -103,11 +103,11 @@ type Remote = {
  * dry run skips an ExternalSecret and an object in a
  * namespace that the same change creates; the preview shows them as
  * rendered. The dry run of an object that GitOps applied with server-side
- * apply runs as the field manager of GitOps. The dry run of a custom
- * resource that GitOps applied with client-side apply is the merge patch of
- * kubectl. Both drop each field of GitOps that the change leaves out. Any
- * other object is dry-run as the app. A delete of an object without a
- * file, and a file behind a symbolic link of the repository, are Invalid.
+ * apply, or of a custom resource that GitOps applied with client-side
+ * apply, drops each field of GitOps that the change leaves out, except the
+ * revision annotation. Any other object is dry-run as the app. A delete of
+ * an object without a file, and a file behind a symbolic link of the
+ * repository, are Invalid.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
@@ -183,10 +183,9 @@ export function gitWriter(options: GitWriterOptions): Writer {
     );
   };
 
-  // asGitOps marks each object that GitOps applied, so that the dry run
-  // removes the fields of GitOps that the file leaves out, as the GitOps
-  // apply does: after a server-side apply it runs as the field manager of
-  // GitOps, and after a client-side apply as the merge patch of kubectl.
+  // asGitOps marks each object that GitOps applied with server-side apply,
+  // and each custom resource that GitOps applied with client-side apply, so
+  // that the dry run removes the fields of GitOps that the file leaves out.
   const asGitOps = async (
     change: Change,
     objects: KubeObject[],

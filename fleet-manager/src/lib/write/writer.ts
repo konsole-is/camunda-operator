@@ -130,8 +130,6 @@ export function diffView(
  *
  * A preview of a Secret shows "(hidden)" for each value, and "(changed)"
  * for a value that the change sets to a new one. It holds no annotation.
- * A preview sends an object of previewMergePatches as the merge patch of a
- * client-side apply (see Change).
  */
 export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   const send = <T>(

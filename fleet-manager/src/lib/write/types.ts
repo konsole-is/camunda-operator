@@ -36,12 +36,10 @@ export type RefKey = `${string}/${string}/${string}`;
  * in Git mode too.
  *
  * The preview of the direct writer applies an object of previewManagers as
- * the field manager that it maps to. It sends an object of
- * previewMergePatches as the JSON merge patch of a client-side apply: the
- * object, plus null at each field of the last applied file of the live
- * object that the object leaves out. An object whose live copy has no last
- * applied file gets the server-side-apply dry run. apply ignores both. For
- * a change without directOnly, the Git writer sets both.
+ * the field manager that it maps to, unless it sends the object as a merge
+ * patch. It sends an object of previewMergePatches as the JSON merge patch
+ * of a client-side apply. apply ignores both. For a change without
+ * directOnly, the Git writer sets both.
  */
 export type Change = {
   intent: string;
