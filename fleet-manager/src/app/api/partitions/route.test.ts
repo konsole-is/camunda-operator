@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { get } from "@/lib/k8s/read";
 import { brokerPartitions } from "@/lib/observe/partitions";
+import type { PartitionHealth } from "@/lib/observe/types";
 import { GET } from "./route";
 
 vi.mock("@/lib/k8s/read", () => ({ get: vi.fn() }));
@@ -10,9 +11,9 @@ const call = (query: string) =>
   GET(new Request(`http://localhost/api/partitions?${query}`));
 
 const cluster = { metadata: { name: "orders", namespace: "team-a" } };
-const partitions = [
+const partitions: PartitionHealth[] = [
   { partition: 1, leader: "orders-zeebe-0", followers: [], health: "healthy" },
-] as const;
+];
 
 beforeEach(() => vi.resetAllMocks());
 
@@ -30,7 +31,7 @@ describe("GET /api/partitions", () => {
 
   it("answers the partitions of the cluster", async () => {
     vi.mocked(get).mockResolvedValue(cluster as never);
-    vi.mocked(brokerPartitions).mockResolvedValue([...partitions]);
+    vi.mocked(brokerPartitions).mockResolvedValue(partitions);
 
     const response = await call("namespace=team-a&name=orders");
 

@@ -1,6 +1,7 @@
 import { backupsStories } from "@/components/cluster/backups.stories";
 import { cardsStories } from "@/components/cluster/cards.stories";
 import { clusterStories } from "@/components/cluster/cluster.stories";
+import { detailStories } from "@/components/cluster/detail.stories";
 import { settingsStories } from "@/components/cluster/settings.stories";
 import { confirmStories } from "@/components/fleet/confirm.stories";
 import { createFlowStories } from "@/components/fleet/create-flow.stories";
@@ -38,6 +39,7 @@ export const stories: readonly Story[] = [
   ...observeStories,
   ...clusterStories,
   ...cardsStories,
+  ...detailStories,
   ...backupsStories,
   ...settingsStories,
   ...settingsPageStories,
