@@ -146,8 +146,8 @@ var _ = Describe("Built-in registrations", Ordered, Label(utils.LabelBuiltinRegi
 		_, _ = utils.Kubectl("delete", ccReleaseResource, builtinRelease, "--ignore-not-found")
 	})
 
-	// dumpDiagnostics writes the manager logs once. The echo plugin gets its
-	// pod and its logs only.
+	// dumpDiagnostics already writes the manager logs, so the echo namespace
+	// gets only its pod and logs.
 	AfterEach(func() {
 		dumpDiagnostics(runNamespace)
 		if !CurrentSpecReport().Failed() {
