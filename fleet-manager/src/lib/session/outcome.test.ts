@@ -1,0 +1,148 @@
+import { describe, expect, it } from "vitest";
+import { CLAIM_LABEL } from "@/lib/labels";
+import { outcomeOf, STALE_CLAIM_MESSAGE } from "./outcome";
+import {
+  openSession,
+  setValue,
+  type ClaimObject,
+  type Session,
+} from "./session";
+
+const ref = {
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaClusterClaim",
+  namespace: "team-a",
+  name: "orders",
+};
+
+function session(): Session {
+  const claim: ClaimObject = {
+    apiVersion: ref.apiVersion,
+    kind: ref.kind,
+    metadata: { name: "orders", namespace: "team-a", resourceVersion: "41" },
+    spec: { cluster: { zeebe: { replicas: 3 } } },
+  };
+  const s = openSession({
+    claim,
+    resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+    locks: () => undefined,
+  })!;
+  const result = setValue(
+    s,
+    [
+      { field: "spec" },
+      { field: "cluster" },
+      { field: "zeebe" },
+      { field: "replicas" },
+    ],
+    -1,
+  );
+  if (!("session" in result)) throw new Error("refused");
+  return result.session;
+}
+
+describe("outcomeOf", () => {
+  it("an ok write and a clean preview are ok", () => {
+    const s = session();
+    expect(outcomeOf({ ok: true, mode: "direct" }, s)).toEqual({ ok: true });
+    expect(outcomeOf({ objects: [], errors: [] }, s)).toEqual({ ok: true });
+  });
+
+  it("Stale gives the claim text and keeps the pending changes", () => {
+    const s = session();
+    expect(
+      outcomeOf(
+        {
+          ok: false,
+          errors: [
+            { code: "Stale", message: "The object changed.", ref },
+            { code: "Invalid", message: "other" },
+          ],
+        },
+        s,
+      ),
+    ).toEqual({
+      ok: false,
+      stale: true,
+      fields: [],
+      messages: [STALE_CLAIM_MESSAGE],
+    });
+    expect(s.pending.size).toBe(1);
+  });
+
+  it("Stale in Git mode gives the same text", () => {
+    const s = session();
+    expect(
+      outcomeOf(
+        {
+          ok: false,
+          errors: [{ code: "Stale", message: "The file changed in Git.", ref }],
+        },
+        s,
+      ),
+    ).toEqual({
+      ok: false,
+      stale: true,
+      fields: [],
+      messages: [STALE_CLAIM_MESSAGE],
+    });
+  });
+
+  it("an Invalid error with the path of a pending field goes to that field", () => {
+    const s = session();
+    const outcome = {
+      ok: false,
+      stale: false,
+      fields: [
+        { path: "spec.cluster.zeebe.replicas", message: "must be >= 1" },
+      ],
+      messages: [],
+    };
+    expect(
+      outcomeOf(
+        {
+          ok: false,
+          errors: [
+            {
+              code: "Invalid",
+              message: "must be >= 1",
+              path: "spec.cluster.zeebe.replicas",
+            },
+          ],
+        },
+        s,
+      ),
+    ).toEqual(outcome);
+    // The API server can name the path without the leading spec.
+    expect(
+      outcomeOf(
+        {
+          objects: [],
+          errors: [
+            {
+              code: "Invalid",
+              message: "must be >= 1",
+              path: "cluster.zeebe.replicas",
+            },
+          ],
+        },
+        s,
+      ),
+    ).toEqual(outcome);
+  });
+
+  it("any other error is a message", () => {
+    expect(
+      outcomeOf(
+        {
+          ok: false,
+          errors: [
+            { code: "Invalid", message: "bad", path: "spec.presetRef" },
+            { code: "Forbidden", message: "no" },
+          ],
+        },
+        session(),
+      ),
+    ).toEqual({ ok: false, stale: false, fields: [], messages: ["bad", "no"] });
+  });
+});
