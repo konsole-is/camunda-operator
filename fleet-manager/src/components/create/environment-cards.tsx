@@ -109,7 +109,7 @@ export function EnvironmentCards({
                 </span>
                 {!ready && (
                   <span className={cn("text-sm", TEXT_TONE.bad)}>
-                    {`Not ready: ${message ?? ""}`}
+                    {message ? `Not ready: ${message}` : "Not ready"}
                   </span>
                 )}
                 {extra?.(environment)}

@@ -98,6 +98,17 @@ describe("basicsErrors", () => {
     ).toEqual(["The environment Production is not ready: x"]);
   });
 
+  it("refuses a not-ready environment with no message without a colon", () => {
+    const notReady = environment(
+      "prod",
+      { displayName: "Production" },
+      { status: "False", message: "" },
+    );
+    expect(
+      basicsErrors(complete, { ...context, environments: [notReady] }),
+    ).toEqual(["The environment Production is not ready"]);
+  });
+
   it("gives the name errors", () => {
     expect(
       basicsErrors(
@@ -110,7 +121,7 @@ describe("basicsErrors", () => {
   it("refuses a taken name", () => {
     expect(
       basicsErrors(complete, { ...context, takenNames: ["orders"] }),
-    ).toEqual(["A cluster named orders already exists in this namespace."]);
+    ).toEqual(["The name orders is taken in this namespace."]);
   });
 
   it("gives each host conflict", () => {

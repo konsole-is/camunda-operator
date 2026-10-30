@@ -27,7 +27,7 @@ export function claimNameErrors(
     errors.push(`Use at most ${MAX_CLAIM_NAME} characters.`);
   }
   if (taken.includes(name)) {
-    errors.push(`A cluster named ${name} already exists in this namespace.`);
+    errors.push(`The name ${name} is taken in this namespace.`);
   }
   return errors;
 }

@@ -6,20 +6,22 @@ import type { RenderedHost } from "@/lib/claims/hosts";
 import { MAX_CLAIM_NAME } from "@/lib/claims/names";
 
 /**
- * ClaimNameField is the name of a new claim, with the hosts that the name
- * gives under it. errors show only after the first edit, so an empty form
- * does not open with an error.
+ * ClaimNameField is the name of a new claim, with hostsLabel and the hosts
+ * that the name gives under it. errors show only after the first edit, so an
+ * empty form does not open with an error.
  */
 export function ClaimNameField({
   value,
   onChange,
   errors,
   hosts,
+  hostsLabel,
 }: {
   value: string;
   onChange?: (name: string) => void;
   errors: readonly string[];
   hosts: readonly RenderedHost[];
+  hostsLabel: string;
 }) {
   const id = useId();
   const [edited, setEdited] = useState(false);
@@ -61,7 +63,7 @@ export function ClaimNameField({
       )}
       {hosts.length > 0 && (
         <div className="mt-1 text-xs text-muted">
-          <p>The cluster gets these hosts:</p>
+          <p>{hostsLabel}</p>
           <ul className="font-mono text-text-2">
             {hosts.map((h) => (
               <li key={h.parameter}>{h.host}</li>

@@ -12,18 +12,27 @@ describe("ClaimNameField", () => {
       <ClaimNameField
         value="orders"
         errors={[]}
+        hostsLabel="The cluster gets these hosts:"
         hosts={[
           { parameter: "hostnamePattern", host: "orders.team-a.example.com" },
           { parameter: "grpcHostnamePattern", host: "grpc-orders.example.com" },
         ]}
       />,
     );
+    expect(screen.getByText("The cluster gets these hosts:")).toBeTruthy();
     expect(screen.getByText("orders.team-a.example.com")).toBeTruthy();
     expect(screen.getByText("grpc-orders.example.com")).toBeTruthy();
   });
 
   it("shows no host line when there is no host", () => {
-    render(<ClaimNameField value="orders" errors={[]} hosts={[]} />);
+    render(
+      <ClaimNameField
+        value="orders"
+        errors={[]}
+        hosts={[]}
+        hostsLabel="The cluster gets these hosts:"
+      />,
+    );
     expect(screen.queryByText(/hosts/)).toBeNull();
   });
 
@@ -34,6 +43,7 @@ describe("ClaimNameField", () => {
         value=""
         errors={["Enter a name"]}
         hosts={[]}
+        hostsLabel="The cluster gets these hosts:"
         onChange={onChange}
       />,
     );

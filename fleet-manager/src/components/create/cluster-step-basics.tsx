@@ -88,6 +88,7 @@ export function ClusterStepBasics({
         value={draft.claim.metadata.name}
         errors={nameErrors}
         hosts={hosts}
+        hostsLabel="The cluster gets these hosts:"
         onChange={(name) => set(["claim", "metadata", "name"], name)}
       />
       {waiting ? (

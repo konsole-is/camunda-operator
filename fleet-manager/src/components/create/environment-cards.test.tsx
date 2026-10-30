@@ -125,6 +125,12 @@ describe("EnvironmentCards", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it("says only Not ready for a condition with no message", () => {
+    const old = environment("old", { ready: { status: "False", message: "" } });
+    render(<EnvironmentCards environments={[old]} counts={{}} />);
+    expect(screen.getByText("Not ready")).toBeTruthy();
+  });
+
   it("shows the extra content of each card", () => {
     render(
       <EnvironmentCards

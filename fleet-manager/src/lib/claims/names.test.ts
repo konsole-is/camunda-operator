@@ -30,13 +30,13 @@ describe("claimNameErrors", () => {
     expect(claimNameErrors(name, [name])).toEqual([
       "Start with a lowercase letter. Use only lowercase letters, digits, and '-'. End with a letter or a digit.",
       "Use at most 40 characters.",
-      `A cluster named ${name} already exists in this namespace.`,
+      `The name ${name} is taken in this namespace.`,
     ]);
   });
 
   it("refuses a name that a claim or a cluster has in the namespace", () => {
     expect(claimNameErrors("orders", ["orders"])).toEqual([
-      "A cluster named orders already exists in this namespace.",
+      "The name orders is taken in this namespace.",
     ]);
   });
 });

@@ -63,7 +63,7 @@ export function basicsErrors(
       const { ready, message } = environmentReady(environment);
       if (!ready) {
         errors.push(
-          `The environment ${environment.spec.displayName || draft.environment} is not ready: ${message ?? ""}`,
+          `The environment ${environment.spec.displayName || draft.environment} is not ready${message ? `: ${message}` : ""}`,
         );
       }
     }

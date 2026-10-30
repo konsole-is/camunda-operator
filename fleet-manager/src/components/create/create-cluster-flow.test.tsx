@@ -196,9 +196,7 @@ describe("CreateClusterFlow", () => {
     );
     await fillBasics("orders");
     expect(
-      screen.getAllByText(
-        "A cluster named orders already exists in this namespace.",
-      ).length,
+      screen.getAllByText("The name orders is taken in this namespace.").length,
     ).toBeGreaterThan(0);
     expect(next().disabled).toBe(true);
   });
