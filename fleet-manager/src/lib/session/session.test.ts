@@ -274,6 +274,35 @@ describe("locks", () => {
   });
 });
 
+describe("overlapping changes", () => {
+  it("a change below a pending change goes into that change", () => {
+    let s = ok(setValue(open(), cluster("zeebe"), { replicas: 5 }));
+    s = ok(setValue(s, cluster("zeebe", "replicas"), 3));
+    expect(s.pending.size).toBe(0);
+    expect(claimAfter(s)).toEqual(claim());
+
+    s = ok(setValue(open(), cluster("zeebe"), { replicas: 5 }));
+    s = ok(setValue(s, cluster("zeebe", "replicas"), 7));
+    expect([...s.pending.keys()]).toEqual(["spec.cluster.zeebe"]);
+    expect(
+      (claimAfter(s).spec as { cluster: { zeebe: unknown } }).cluster.zeebe,
+    ).toEqual({ replicas: 7 });
+  });
+
+  it("a change of a parent drops the pending changes below it", () => {
+    let s = ok(setValue(open(), cluster("zeebe", "replicas"), 5));
+    s = ok(setValue(s, cluster("zeebe"), { replicas: 4 }));
+    expect([...s.pending.keys()]).toEqual(["spec.cluster.zeebe"]);
+
+    s = ok(setValue(open(), cluster("zeebe", "replicas"), 5));
+    s = ok(resetValue(s, cluster("zeebe")));
+    expect([...s.pending.keys()]).toEqual(["spec.cluster.zeebe"]);
+    expect(
+      (claimAfter(s).spec as { cluster: Record<string, unknown> }).cluster,
+    ).not.toHaveProperty("zeebe");
+  });
+});
+
 describe("locks below a field", () => {
   it("refuses a change below a locked field", () => {
     const s = open(claim(), (p) =>

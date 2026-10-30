@@ -5,7 +5,7 @@ import { equalJSON } from "@/lib/policy";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 import type { LockProvider } from "./locks";
-import { valueAt, withChanges } from "./steps";
+import { valueAt, withChanges, without, withValue } from "./steps";
 
 /** ClaimObject is a claim of any kind, as the form read it. */
 export type ClaimObject = {
@@ -64,7 +64,8 @@ export function openSession<C extends ClaimObject>(input: {
 /**
  * setValue sets value at steps. A value equal to the claim value removes
  * the change, and undefined is resetValue. A locked path, or a path below a
- * locked one, refuses.
+ * locked one, refuses. A change below a pending change goes into that
+ * change, and a change above pending changes replaces them.
  */
 export function setValue<C extends ClaimObject>(
   s: Session<C>,
@@ -75,10 +76,21 @@ export function setValue<C extends ClaimObject>(
   const path = pathFrom("", steps);
   const lock = lockOf(s.locks, steps);
   if (lock) return { refused: lock };
+  const parent = pendingParent(s, steps);
+  if (parent)
+    return setValue(
+      s,
+      parent.entry.steps,
+      withValue(
+        "reset" in parent.entry ? {} : parent.entry.value,
+        parent.rest,
+        value,
+      ),
+    );
   return {
     session: withEntry(
       s,
-      path,
+      steps,
       equalJSON(value, valueAt(s.claim, steps))
         ? undefined
         : {
@@ -103,10 +115,19 @@ export function resetValue<C extends ClaimObject>(
   const path = pathFrom("", steps);
   const lock = lockOf(s.locks, steps);
   if (lock) return { refused: lock };
+  const parent = pendingParent(s, steps);
+  if (parent)
+    return "reset" in parent.entry
+      ? { session: s }
+      : setValue(
+          s,
+          parent.entry.steps,
+          without(parent.entry.value, parent.rest),
+        );
   return {
     session: withEntry(
       s,
-      path,
+      steps,
       valueAt(s.claim, steps) === undefined
         ? undefined
         : { path, steps: structuredClone(steps), reset: true },
@@ -119,7 +140,9 @@ export function discard<C extends ClaimObject>(
   s: Session<C>,
   path: FieldPath,
 ): Session<C> {
-  return withEntry(s, path, undefined);
+  const pending = new Map(s.pending);
+  pending.delete(path);
+  return { ...s, pending };
 }
 
 /** claimAfter returns a copy of the claim with each pending change applied. */
@@ -201,11 +224,33 @@ function movedIndex(
 
 function withEntry<C extends ClaimObject>(
   s: Session<C>,
-  path: FieldPath,
+  steps: readonly Step[],
   entry: PendingChange | undefined,
 ): Session<C> {
   const pending = new Map(s.pending);
-  if (entry === undefined) pending.delete(path);
-  else pending.set(path, entry);
+  pending.delete(pathFrom("", steps));
+  for (const [key, other] of pending)
+    if (isBelow(other.steps, steps)) pending.delete(key);
+  if (entry !== undefined) pending.set(entry.path, entry);
   return { ...s, pending };
+}
+
+// pendingParent returns the pending change above steps, and the steps from
+// it to steps. A change below a pending change goes into that change, so
+// that the two never apply in the wrong order.
+function pendingParent(
+  s: Session,
+  steps: readonly Step[],
+): { entry: PendingChange; rest: Step[] } | undefined {
+  for (const entry of s.pending.values())
+    if (isBelow(steps, entry.steps))
+      return { entry, rest: steps.slice(entry.steps.length) };
+  return undefined;
+}
+
+function isBelow(steps: readonly Step[], parent: readonly Step[]): boolean {
+  return (
+    steps.length > parent.length &&
+    parent.every((step, i) => equalJSON(step, steps[i]))
+  );
 }
