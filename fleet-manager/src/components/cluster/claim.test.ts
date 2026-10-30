@@ -131,6 +131,13 @@ describe("claimView", () => {
     });
   });
 
+  it("takes Delete when neither the claim nor the resolved policy sets a deletion policy", () => {
+    expect(view(claimOf()).deletionPolicy).toEqual({
+      value: "Delete",
+      fromEnvironment: true,
+    });
+  });
+
   it("orders the sections by their order and gives each its parameters", () => {
     const v = view(
       claimOf(

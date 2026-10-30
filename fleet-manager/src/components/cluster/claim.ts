@@ -117,9 +117,10 @@ export function claimView(input: {
     preset: spec.presetRef,
     release: ref(spec.releaseRef, cluster.spec.releaseRef),
     platformConfig: ref(spec.platformConfigRef, cluster.spec.platformConfigRef),
+    // The claim controller falls back to Delete (claimpolicy.DeletionPolicy).
     deletionPolicy: ref(
       spec.deletionPolicy,
-      status?.resolvedPolicy?.deletionPolicy,
+      status?.resolvedPolicy?.deletionPolicy || "Delete",
     ),
     sections: selections,
     ...(optimize && {
