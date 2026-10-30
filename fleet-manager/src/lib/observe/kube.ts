@@ -29,6 +29,36 @@ type Resources = {
 };
 
 /**
+ * metricsServerFound is true unless metrics.k8s.io answers 404 or 503 in
+ * namespace, the rule of podUsage. Another answer of the API server, such
+ * as 403, is true, because the API is served. It rejects when the API
+ * server does not answer.
+ */
+export async function metricsServerFound(namespace: string): Promise<boolean> {
+  try {
+    await getJSON(
+      kubeConfig(),
+      `/apis/metrics.k8s.io/v1beta1/namespaces/${namespace}/pods?limit=1`,
+      TIMEOUT_MS,
+    );
+    return true;
+  } catch (error) {
+    if (metricsUnavailable(error)) return false;
+    if (error instanceof KubernetesRequestError) return true;
+    throw error;
+  }
+}
+
+// The API server answers 404 or 503 for metrics.k8s.io when no metrics
+// server serves it.
+function metricsUnavailable(error: unknown): boolean {
+  return (
+    error instanceof KubernetesRequestError &&
+    (error.statusCode === 404 || error.statusCode === 503)
+  );
+}
+
+/**
  * podUsage returns the live CPU and memory of the pods in namespace that
  * selector selects, from metrics.k8s.io, with the requests and limits of
  * their spec. A request is set when a container of the pod has one, and a
@@ -51,12 +81,7 @@ export async function podUsage(
       TIMEOUT_MS,
     );
   } catch (error) {
-    if (
-      error instanceof KubernetesRequestError &&
-      (error.statusCode === 404 || error.statusCode === 503)
-    ) {
-      return "unavailable";
-    }
+    if (metricsUnavailable(error)) return "unavailable";
     throw error;
   }
   const pods = await list("Pod", {

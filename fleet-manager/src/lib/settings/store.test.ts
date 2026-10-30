@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KubernetesRequestError, getJSON } from "@/lib/k8s/client";
 import type { Change, Writer } from "@/lib/write/types";
 import { directWriter, getWriter } from "@/lib/write/writer";
-import { getSettings, updateSettings } from "./store";
+import { getSettings, readSettings, updateSettings } from "./store";
 
 vi.mock("@/lib/k8s/client", async (real) => ({
   ...(await real<typeof import("@/lib/k8s/client")>()),
@@ -223,5 +223,62 @@ describe("in Git mode", () => {
       expect(change.directOnly).toBe(true);
     }
     expect(getWriter).not.toHaveBeenCalled();
+  });
+});
+
+describe("readSettings", () => {
+  it("returns the settings with the resourceVersion of the ConfigMap", async () => {
+    vi.mocked(getJSON).mockResolvedValue(
+      configMap({ kubernetesClusterName: "a" }, "7"),
+    );
+
+    const read = await readSettings();
+
+    expect(read.resourceVersion).toBe("7");
+    expect(read.settings.kubernetesClusterName).toBe("a");
+  });
+});
+
+describe("updateSettings with the version that the page read", () => {
+  it("a changed ConfigMap gives Stale and sends no write", async () => {
+    vi.mocked(getJSON).mockResolvedValue(
+      configMap({ kubernetesClusterName: "a" }, "8"),
+    );
+
+    expect(await updateSettings({ kubernetesClusterName: "b" }, "7")).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Stale",
+          message:
+            "The ConfigMap fleet-manager-settings changed since you opened it.",
+        }),
+      ],
+    });
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("a deleted ConfigMap gives Stale and is not created again", async () => {
+    vi.mocked(getJSON).mockRejectedValue(
+      new KubernetesRequestError(404, "not found"),
+    );
+
+    expect(await updateSettings({ kubernetesClusterName: "b" }, "7")).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("the same version is the precondition of the write", async () => {
+    vi.mocked(getJSON).mockResolvedValue(
+      configMap({ kubernetesClusterName: "a" }, "7"),
+    );
+
+    await updateSettings({ kubernetesClusterName: "b" }, "7");
+
+    expect((apply.mock.calls[0][0] as Change).preconditions).toEqual({
+      "ConfigMap/fleet/fleet-manager-settings": "7",
+    });
   });
 });

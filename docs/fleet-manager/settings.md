@@ -2,7 +2,7 @@
 
 The settings of the fleet manager name this Kubernetes cluster, the Git repository and the Secret store for Git mode, and the Prometheus address. The fleet manager keeps them in the ConfigMap `fleet-manager-settings` in the release namespace. The release namespace is the namespace of the Helm release, `camunda-operator-system` in the examples on this page.
 
-In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. Git mode is on when `git.repository` is set. In this version, no page of the fleet manager shows the settings or saves a change yet.
+In Git mode, the fleet manager commits its changes to the Git repository and does not write them to the Kubernetes API. Git mode is on when `git.repository` is set. The page **Setup > Settings** of the fleet manager shows the settings and saves a change, as [Settings page](#settings-page) shows.
 
 ## Set the settings at install
 
@@ -19,7 +19,7 @@ helm upgrade --install camunda-operator \
   --set fleetManager.settings.prometheus.url=http://prometheus.monitoring:9090
 ```
 
-The fleet manager creates the ConfigMap `fleet-manager-settings` from these values the first time that it reads its settings. After that, the ConfigMap is the only source of the settings. A later `helm upgrade` with other `fleetManager.settings.*` values does not change the ConfigMap. To change a setting, edit the ConfigMap, as [Change a setting](#change-a-setting) shows.
+The fleet manager creates the ConfigMap `fleet-manager-settings` from these values the first time that it reads its settings. After that, the ConfigMap is the only source of the settings. A later `helm upgrade` with other `fleetManager.settings.*` values does not change the ConfigMap. To change a setting, use the Settings page or edit the ConfigMap, as [Change a setting](#change-a-setting) shows.
 
 ## Settings
 
@@ -37,16 +37,33 @@ The fleet manager creates the ConfigMap `fleet-manager-settings` from these valu
 
 An empty value means that the setting is not set. An address in `git.repository` or `prometheus.url` starts with `http://` or `https://`, and it must not hold a user name or a password, as in `https://user:token@git.example.com`. The fleet manager treats another address as not set. The pages show the settings, so put the credentials in a Secret. The fleet manager drops a user name and a password from an address when it reads the settings.
 
+## Settings page
+
+Open **Setup > Settings** in the fleet manager. The page has a field for each setting. The text under each field names its key in the ConfigMap, so you can match the field to the [Settings](#settings) table. The page shows only the names of Secrets, never a value.
+
+Select **Git mode** to show the Git settings. Git mode is on when the repository is set, so the page refuses to save Git mode without a repository. Clear **Git mode** to turn Git mode off. The save then clears `git.repository` and keeps the other Git settings for the next time.
+
+In Git mode, the page shows the files that a save writes, for a claim and for an environment under the current **Path**. If the path names no folder in the repository, as `a/../b` does, the page shows `git.path must name a folder in the repository.` and refuses to save.
+
+The settings stay in the cluster also in Git mode. A save on the page writes the ConfigMap `fleet-manager-settings` and the fleet manager never pushes it to Git.
+
+The credentials fields list the Secrets of the release namespace by name. A setting can name a Secret that does not exist. The field then keeps the name and marks it `(not found)`. It also shows `The Secret <name> does not exist in namespace <namespace>.` A save keeps that name until you pick another Secret or **None**. To correct it, create the Secret, as [Git credentials](#git-credentials) and [Prometheus credentials](#prometheus-credentials) show. If the page cannot list the Secrets, it shows `Could not list the Secrets of namespace <namespace>: <message>`. The fields then keep each name and do not mark it `(not found)`.
+
+**Test the connection** connects to the Git repository with the saved settings. **Test the query** sends a query to Prometheus with the saved settings. Both buttons show the result, or the error and its cause. The tests use the saved settings, not the values in the fields. So while the page has a change that you did not save, both buttons are off. Save the change to turn the buttons on again.
+
+**Save** writes only the settings that you changed. If someone changed the ConfigMap after you opened the page, the save writes nothing. It shows `The ConfigMap fleet-manager-settings changed since you opened it.` Select **Reload** to get the current settings, then make your change again.
+
+When `prometheus.url` is not set, the page shows `Charts do not show. Everything else works.` The pages then show no charts of metrics. Set **Prometheus URL** to show the charts.
+
+Below the settings, the page shows if metrics-server serves the live CPU and memory of the pods. With `metrics-server found`, the pages show the live CPU and memory. With `metrics-server not found`, the pages hide them.
+
+The page shows the `kubectl port-forward` command that opens the fleet manager, as [Open it](install.md#open-it) shows.
+
+The permissions table lists what the fleet manager can do in the release namespace. The page cannot change these permissions. The chart sets them.
+
 ## Change a setting
 
-In this version, no page reads the settings, so the ConfigMap does not exist after the install. Create it before you change a setting. Each key that you leave out is not set:
-
-```bash
-kubectl -n camunda-operator-system create configmap fleet-manager-settings \
-  --from-literal=kubernetesClusterName=prod-eu
-```
-
-When the ConfigMap exists, the fleet manager uses it and does not read the `fleetManager.settings.*` values. A ConfigMap that the fleet manager created holds one key for each setting:
+Use the [Settings page](#settings-page) to change a setting. You can also edit the ConfigMap. The fleet manager creates the ConfigMap the first time that it reads its settings. The ConfigMap exists at the latest after you open the Settings page once. A ConfigMap that the fleet manager created holds one key for each setting:
 
 ```bash
 kubectl -n camunda-operator-system get configmap fleet-manager-settings -o yaml
@@ -70,13 +87,13 @@ data:
   secretStore.name: ""
 ```
 
-To change a setting, edit the ConfigMap:
+To change a setting with `kubectl`, edit the ConfigMap:
 
 ```bash
 kubectl -n camunda-operator-system edit configmap fleet-manager-settings
 ```
 
-The fleet manager reads the ConfigMap each time that it needs a setting, so an edit takes effect without a restart. Git mode does not apply to the settings. The fleet manager never commits them to the repository.
+The fleet manager reads the ConfigMap each time that it needs a setting, so a change takes effect without a restart. Git mode does not apply to the settings. The fleet manager never commits them to the repository.
 
 ## Git credentials
 

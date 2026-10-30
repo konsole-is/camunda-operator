@@ -1,5 +1,10 @@
 import "server-only";
 
 export type { SettingKey, Settings } from "./keys";
-export { getSettings, updateSettings } from "./store";
+export { getSettings, readSettings, updateSettings } from "./store";
 export { type TestResult, testGit, testPrometheus } from "./connections";
+export {
+  type AppPermissions,
+  type PermissionRule,
+  appPermissions,
+} from "./permissions";
