@@ -278,7 +278,7 @@ dist-conformance: ## Build the plugin-conformance binary of each of CONFORMANCE_
 run: manifests generate fmt vet ## Run a controller from your host. The backup Jobs it renders run CLI_IMG.
 	@"$(KUBECTL)" create namespace "$(OPERATOR_NAMESPACE)" --dry-run=client -o yaml | "$(KUBECTL)" apply -f -
 	go run ./cmd/main.go --camunda-operator-cli-image=${CLI_IMG} --namespace=${OPERATOR_NAMESPACE} \
-		--service-account=${OPERATOR_SERVICE_ACCOUNT}
+		--service-account=${OPERATOR_SERVICE_ACCOUNT} --zap-devel
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.

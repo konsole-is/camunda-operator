@@ -17,7 +17,11 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
+	"log"
+	"log/slog"
 	"maps"
 	"os"
 	"slices"
@@ -26,6 +30,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 // chartReadme is the page that Artifact Hub shows for the chart. Its section
@@ -188,4 +194,55 @@ func codeSpan(cell string) (string, bool) {
 	}
 
 	return inner, true
+}
+
+// TestManagerLogFormat checks that the manager logs JSON lines by default,
+// as a plugin controller must, and console lines with --zap-devel.
+func TestManagerLogFormat(t *testing.T) {
+	for name, tc := range map[string]struct {
+		args []string
+		json bool
+	}{
+		"default":     {args: nil, json: true},
+		"--zap-devel": {args: []string{"--zap-devel"}, json: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fs := flag.NewFlagSet("manager", flag.ContinueOnError)
+			s := bindFlags(fs, func(string) string { return "" })
+			require.NoError(t, fs.Parse(tc.args))
+
+			var out bytes.Buffer
+			s.zapOptions.DestWriter = &out
+			zap.New(zap.UseFlagOptions(&s.zapOptions)).Info("Started manager")
+
+			assert.Equal(t, tc.json, json.Valid(bytes.TrimSpace(out.Bytes())), out.String())
+		})
+	}
+}
+
+// TestSetLoggers checks that a line of klog and of the standard log package,
+// as net/http writes one, comes out as a JSON line of the manager logger.
+func TestSetLoggers(t *testing.T) {
+	previous := slog.Default()
+	t.Cleanup(func() {
+		klog.ClearLogger()
+		slog.SetDefault(previous)
+		log.SetOutput(os.Stderr)
+		log.SetFlags(log.LstdFlags)
+	})
+
+	var out bytes.Buffer
+	setLoggers(zap.New(zap.WriteTo(&out), zap.JSONEncoder()))
+
+	log.Print("http: TLS handshake error from 10.0.0.1:4242: EOF")
+	klog.InfoS("Watch close")
+	klog.Flush()
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 2, out.String())
+	for i, msg := range []string{"http: TLS handshake error from 10.0.0.1:4242: EOF", "Watch close"} {
+		var entry map[string]any
+		require.NoError(t, json.Unmarshal([]byte(lines[i]), &entry), lines[i])
+		assert.Equal(t, msg, entry["msg"])
+	}
 }

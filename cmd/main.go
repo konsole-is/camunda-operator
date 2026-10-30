@@ -19,6 +19,7 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -26,8 +27,10 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -99,7 +102,7 @@ func main() {
 	s := bindFlags(flag.CommandLine, os.Getenv)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&s.zapOptions)))
+	setLoggers(zap.New(zap.UseFlagOptions(&s.zapOptions)))
 
 	if err := s.checkGracePeriods(); err != nil {
 		setupLog.Error(err, "Failed to read the grace periods")
@@ -290,11 +293,7 @@ func main() {
 // table "Manager settings" of dist/chart/README.md lists these flags, and
 // TestManagerSettingsTable fails when the two differ.
 func bindFlags(fs *flag.FlagSet, getenv func(string) string) *settings {
-	s := &settings{
-		zapOptions: zap.Options{
-			Development: true,
-		},
-	}
+	s := &settings{}
 
 	fs.StringVar(&s.metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
@@ -344,6 +343,15 @@ func bindFlags(fs *flag.FlagSet, getenv func(string) string) *settings {
 	s.zapOptions.BindFlags(fs)
 
 	return s
+}
+
+// setLoggers makes logger the logger of controller-runtime, klog, slog, and
+// the standard log package. The fleet manager and REQ-LOGS read each line of
+// the manager as JSON, and client-go and net/http write through klog and log.
+func setLoggers(logger logr.Logger) {
+	ctrl.SetLogger(logger)
+	klog.SetLogger(logger)
+	slog.SetDefault(slog.New(logr.ToSlogHandler(logger)))
 }
 
 // podNamespace reads the namespace of the Pod that the manager runs in. It
