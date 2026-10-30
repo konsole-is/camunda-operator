@@ -197,7 +197,10 @@ function SectionPanel({ section }: { section: ClaimSection }) {
       {section.parameters.length === 0 ? (
         <p className="text-sm text-muted">No parameters.</p>
       ) : (
-        <Table aria-label={`${section.sectionLabel} parameters`}>
+        <Table
+          label={`${section.sectionLabel} parameters table`}
+          aria-label={`${section.sectionLabel} parameters`}
+        >
           <TableHeader>
             <TableRow>
               <TableHead>Parameter</TableHead>

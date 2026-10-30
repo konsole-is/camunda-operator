@@ -288,6 +288,15 @@ describe("ClaimTab", () => {
     expect(within(row).getAllByText("Set by your admin")).toHaveLength(2);
   });
 
+  it("lets a keyboard user scroll a wide parameter table", () => {
+    renderTab(MISSING_INPUT);
+    expect(
+      screen
+        .getByRole("region", { name: "Access parameters table" })
+        .getAttribute("tabindex"),
+    ).toBe("0");
+  });
+
   it("says when the claim has no attachments", () => {
     renderTab(MISSING_INPUT);
     const attachments = screen.getByRole("region", { name: "Attachments" });
