@@ -36,7 +36,9 @@ import (
 	"github.com/konsole-is/camunda-operator/internal/observability"
 	"github.com/konsole-is/camunda-operator/pkg/components/claimrequests"
 	"github.com/konsole-is/camunda-operator/pkg/refindex"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/backupschedule"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/camundacluster"
+	"github.com/konsole-is/camunda-operator/pkg/wrappers/camundaoptimize"
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/pluginrequest"
 )
 
@@ -72,7 +74,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if err != nil {
 			return fmt.Errorf("building the component client: %w", err)
 		}
-		r.componentClient = pluginrequest.NewApplyClient(camundacluster.NewApplyClient(uncached))
+		r.componentClient = applyClient(uncached)
 	}
 
 	indexers := map[string]func(*fleetv1alpha1.CamundaClusterClaim, fleetv1alpha1.PluginSelection) []string{
@@ -125,6 +127,14 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Namespace{}, enqueueClaimsInNamespace(cached), builder.OnlyMetadata).
 		Named(controllerName).
 		Complete(r)
+}
+
+// applyClient wraps c so that an apply of each kind that the claim writes
+// sends only the fields that the claim and the outputs set.
+func applyClient(c client.Client) client.Client {
+	return pluginrequest.NewApplyClient(
+		camundacluster.NewApplyClient(camundaoptimize.NewApplyClient(backupschedule.NewApplyClient(c))),
+	)
 }
 
 // distinctNames returns the distinct names that name gives for the items of

@@ -52,6 +52,8 @@ type resolved struct {
 	releaseVersion string
 	// live is nil before the CamundaCluster of the claim exists.
 	live *v1.CamundaCluster
+	// liveOptimize is nil before the CamundaOptimize of the claim exists.
+	liveOptimize *v1.CamundaOptimize
 }
 
 // preCheck reads what the components of claim need and refuses the claim, in
@@ -125,6 +127,15 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		res.live = &live
 	case !apierrors.IsNotFound(err):
 		return res, fmt.Errorf("reading the CamundaCluster of the claim: %w", err)
+	}
+
+	var liveOptimize v1.CamundaOptimize
+	err = r.Get(ctx, client.ObjectKey{Namespace: claim.Namespace, Name: components.OptimizeName(claim.Name)}, &liveOptimize)
+	switch {
+	case err == nil:
+		res.liveOptimize = &liveOptimize
+	case !apierrors.IsNotFound(err):
+		return res, fmt.Errorf("reading the CamundaOptimize of the claim: %w", err)
 	}
 
 	presetRef, releaseRef := components.ChangedReferences(claim, res.live)

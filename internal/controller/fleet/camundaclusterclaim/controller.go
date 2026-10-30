@@ -15,8 +15,10 @@ limitations under the License.
 */
 
 // Package camundaclusterclaim expands a CamundaClusterClaim into one
-// PluginRequest for each selection and, once every request with a slot has
-// its outputs, a CamundaCluster named after the claim. It refuses a claim
+// PluginRequest for each selection, once every request with a slot has its
+// outputs a CamundaCluster named after the claim, and once the cluster is
+// ready the CamundaOptimize and the BackupSchedule that spec.attachments
+// asks for. It refuses a claim
 // that its Environment does not allow, and records the policy of the
 // Environment on the claim before it writes anything. A deleted claim writes
 // its deletion policy on its requests, then deletes what it generated.
@@ -59,8 +61,8 @@ var builtinStorage = components.BuiltinStorage{
 	DatabaseServerSuffix:       pluginstartup.BackingSuffixDatabaseServer,
 }
 
-// Reconciler turns a CamundaClusterClaim into its PluginRequests and its
-// CamundaCluster.
+// Reconciler turns a CamundaClusterClaim into its PluginRequests, its
+// CamundaCluster, and its attachments.
 type Reconciler struct {
 	client.Client
 	// APIReader reads the claim and the namespace without the cache.
@@ -86,7 +88,7 @@ type Reconciler struct {
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginrequests,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=plugins.camunda.io,resources=pluginsections;pluginregistrations,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusters,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaoptimizes;backupschedules,verbs=get;list;watch;delete
+// +kubebuilder:rbac:groups=core.camunda.io,resources=camundaoptimizes;backupschedules,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core.camunda.io,resources=camundaclusterpresets;camundareleases;camundaplatformconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
@@ -96,7 +98,8 @@ type Reconciler struct {
 // precheck adds the finalizer, records status.environment and
 // status.resolvedPolicy, and writes no resource, so no request exists before
 // the policy of the claim does. Later passes apply the requests, then the
-// cluster, and set Ready from RequestsReady and ClusterReady. A deleted claim
+// cluster, then the attachments, and set Ready from RequestsReady,
+// ClusterReady, and AttachmentsReady. A deleted claim
 // reports Ready=False with reason Deleting until nothing that it generated is
 // left, or with reason NotAllowed while a selected registration does not
 // support its deletion policy. Status is written at most once per
@@ -181,6 +184,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		Registrations:     res.registrations,
 		Requests:          res.requests,
 		Live:              res.live,
+		LiveOptimize:      res.liveOptimize,
 		Storage:           builtinStorage,
 	}
 	comps, err := components.Build(in)
@@ -189,7 +193,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 	}
 
 	var reconcileErr error
-	for _, comp := range []*component.Component{comps.Requests, comps.Cluster} {
+	for _, comp := range []*component.Component{comps.Requests, comps.Cluster, comps.Attachments} {
 		if err := comp.Reconcile(ctx, rec); err != nil && reconcileErr == nil {
 			reconcileErr = err
 		}
@@ -201,8 +205,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 
 	// The cluster goes first: on a tie of priority the first component
 	// gives the reason, so a claim that waits for outputs reports
-	// PrerequisiteNotMet with the message of RequestsReady.
-	conditions.Stage(&claim, conditions.Aggregate(&claim, comps.Cluster, comps.Requests))
+	// PrerequisiteNotMet with the message of RequestsReady. The attachments
+	// go last, because they wait for the cluster.
+	conditions.Stage(&claim, conditions.Aggregate(&claim, comps.Cluster, comps.Requests, comps.Attachments))
 	claim.Status.Requests = claimrequests.Statuses(&claim, components.RequestsInput(in))
 	claim.Status.Cluster = nil
 	if res.live != nil && metav1.IsControlledBy(res.live, &claim) {
