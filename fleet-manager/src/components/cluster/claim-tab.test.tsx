@@ -258,6 +258,16 @@ describe("ClaimTab", () => {
     expect(screen.queryByLabelText("Claim YAML")).toBeNull();
   });
 
+  it("lets a keyboard user scroll the YAML", async () => {
+    renderTab(MISSING_INPUT);
+    await userEvent.click(screen.getByRole("button", { name: "Show YAML" }));
+    expect(
+      screen
+        .getByRole("region", { name: "Claim YAML" })
+        .getAttribute("tabindex"),
+    ).toBe("0");
+  });
+
   it("marks the basics as set at creation and each section as chosen at creation", () => {
     renderTab(MISSING_INPUT);
     const basics = screen.getByRole("region", { name: "Basics" });

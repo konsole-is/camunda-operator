@@ -311,8 +311,10 @@ function StoredYaml({ claim }: { claim: Resource<"CamundaClusterClaim"> }) {
       </Button>
       {open && (
         <pre
+          role="region"
           aria-label="Claim YAML"
-          className="w-full overflow-x-auto rounded-md border border-border bg-panel-2 p-3 text-xs text-text"
+          tabIndex={0}
+          className="w-full overflow-x-auto rounded-md border border-border bg-panel-2 p-3 text-xs text-text outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           {storedYaml(claim)}
         </pre>
