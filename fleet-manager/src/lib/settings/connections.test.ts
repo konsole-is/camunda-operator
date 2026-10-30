@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import type { HttpClient } from "isomorphic-git";
@@ -91,6 +92,7 @@ beforeEach(() => {
 afterEach(async () => {
   if (server) await new Promise((resolve) => server!.close(resolve));
   server = undefined;
+  vi.restoreAllMocks();
 });
 
 // These tests start a local Git server. On a busy machine they need more
@@ -349,6 +351,68 @@ describe("testGit", slow, () => {
     expect(await testGit()).toEqual({
       ok: false,
       message: "The Secret git has no key token.",
+    });
+  });
+
+  it("connects with a complete GitHub App Secret", async () => {
+    const base = await serveGit(
+      gitServer(["main"], basic("x-access-token", "ghs_test")),
+    );
+    const url = base + "/fleet.git";
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({ "git.repository": url, "git.credentialsSecretRef": "git" }),
+    );
+    vi.mocked(readSecretValues).mockResolvedValue({
+      appId: "123",
+      installationId: "701",
+      privateKey: generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+        privateKeyEncoding: { type: "pkcs1", format: "pem" },
+        publicKeyEncoding: { type: "spki", format: "pem" },
+      }).privateKey,
+    });
+    // The Git server runs on 127.0.0.1, so it has to answer as GitHub
+    // Enterprise Server. The bot lookup fails, which a test does not need.
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const key = `${init?.method ?? "GET"} ${String(input)}`;
+      if (key === `GET ${base}/api/v3/meta`) {
+        return Response.json({ installed_version: "3.17.0" });
+      }
+      if (key === `POST ${base}/api/v3/app/installations/701/access_tokens`) {
+        return Response.json(
+          {
+            token: "ghs_test",
+            expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+          },
+          { status: 201 },
+        );
+      }
+      throw new Error(`unexpected request ${key}`);
+    });
+
+    expect(await testGit()).toEqual({
+      ok: true,
+      message: `Connected to ${url}.`,
+    });
+  });
+
+  it("a Secret with token keys and App keys gives the message that names both sets", async () => {
+    vi.mocked(getSettings).mockResolvedValue(
+      settings({
+        "git.repository": "https://git.example.com/fleet.git",
+        "git.credentialsSecretRef": "git",
+      }),
+    );
+    vi.mocked(readSecretValues).mockResolvedValue({
+      username: "bot",
+      token: "tok",
+      appId: "123",
+    });
+
+    expect(await testGit()).toEqual({
+      ok: false,
+      message:
+        "The Secret git has keys for a token and keys for a GitHub App. Keep username and token, or appId, installationId, and privateKey.",
     });
   });
 });
