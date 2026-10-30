@@ -147,6 +147,9 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
       databaseServerPresets: [],
       schedules: [],
     },
+    optimizes: [],
+    sections: [],
+    registrations: [],
     ...over,
   };
 }
@@ -828,5 +831,19 @@ describe("Backups tab", () => {
         namespace: "team-a",
       });
     }
+  });
+
+  it("watches the CamundaOptimize objects in the namespace of the cluster", () => {
+    render(view());
+    expect(live.calls).toContainEqual({
+      kind: "CamundaOptimize",
+      opts: { namespace: "team-a" },
+    });
+  });
+
+  it("watches the PluginSections and PluginRegistrations of the whole cluster", () => {
+    render(view());
+    expect(live.calls).toContainEqual({ kind: "PluginSection", opts: {} });
+    expect(live.calls).toContainEqual({ kind: "PluginRegistration", opts: {} });
   });
 });

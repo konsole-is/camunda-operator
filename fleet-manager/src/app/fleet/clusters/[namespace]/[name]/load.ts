@@ -39,6 +39,9 @@ export async function loadClusterPage(
     databaseServers,
     databaseServerPresets,
     schedules,
+    optimizes,
+    sections,
+    registrations,
   ] = await Promise.all([
     get("Namespace", undefined, namespace).catch(() => undefined),
     listOrEmpty("Environment", {}),
@@ -62,6 +65,9 @@ export async function loadClusterPage(
     listOrEmpty("DatabaseServer", inNamespace),
     listOrEmpty("DatabaseServerPreset", {}),
     listOrEmpty("BackupSchedule", inNamespace),
+    listOrEmpty("CamundaOptimize", inNamespace),
+    listOrEmpty("PluginSection", {}),
+    listOrEmpty("PluginRegistration", {}),
   ]);
   return {
     cluster,
@@ -88,6 +94,9 @@ export async function loadClusterPage(
       databaseServerPresets,
       schedules,
     },
+    optimizes,
+    sections,
+    registrations,
   };
 }
 

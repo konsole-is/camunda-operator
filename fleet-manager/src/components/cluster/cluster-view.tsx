@@ -38,6 +38,8 @@ import { TopologyView } from "./topology-view";
  * the cluster by its owner label, and pods holds them. backupStorage holds
  * the objects that the Backups tab follows from the cluster to its backup
  * storage and its schedules. Its databaseServerPresets are cluster-scoped.
+ * optimizes holds every CamundaOptimize of the namespace, and sections and
+ * registrations every PluginSection and PluginRegistration.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -67,6 +69,9 @@ export type ClusterPageData = {
     databaseServerPresets: Resource<"DatabaseServerPreset">[];
     schedules: Resource<"BackupSchedule">[];
   };
+  optimizes: Resource<"CamundaOptimize">[];
+  sections: Resource<"PluginSection">[];
+  registrations: Resource<"PluginRegistration">[];
 };
 
 /**
@@ -186,6 +191,17 @@ export function ClusterView({
     { namespace: ns },
     initial.backupStorage.schedules,
   );
+  const optimizes = useResources(
+    "CamundaOptimize",
+    { namespace: ns },
+    initial.optimizes,
+  );
+  const sections = useResources("PluginSection", {}, initial.sections);
+  const registrations = useResources(
+    "PluginRegistration",
+    {},
+    initial.registrations,
+  );
   const backups = [...backupsES.items, ...backupsRDBMS.items];
   const clock = useClock(now, tab === "backups");
 
@@ -216,6 +232,9 @@ export function ClusterView({
       ["DatabaseServer", databaseServers],
       ["DatabaseServerPreset", databaseServerPresets],
       ["BackupSchedule", schedules],
+      ["CamundaOptimize", optimizes],
+      ["PluginSection", sections],
+      ["PluginRegistration", registrations],
     ] as const
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
