@@ -4,9 +4,23 @@ import { list } from "@/lib/k8s/read";
 import { CLUSTER_LABEL, COMPONENT_LABEL } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/server";
 import { readSecretValues } from "@/lib/secrets/values";
-import type { PartitionHealth, Unavailable } from "./types";
+import { promRange } from "./prometheus";
+import { PARTITION_HEALTH, renderCoreQuery } from "./queries";
+import type {
+  PartitionHealth,
+  PartitionHealthState,
+  Series,
+  Unavailable,
+} from "./types";
 
 const TIMEOUT_MS = 5_000;
+const HEALTH_WINDOW_MS = 300_000;
+const HEALTH_STEP_SECONDS = 30;
+const HEALTH_STATES: Record<number, PartitionHealthState> = {
+  1: "healthy",
+  0: "unhealthy",
+  [-1]: "dead",
+};
 
 /**
  * BrokerAnswer is the answer of GET /actuator/partitions of one broker:
@@ -52,12 +66,69 @@ export function mergePartitions(
 }
 
 /**
+ * withHealth returns partitions with the health that series give. A series
+ * named partition="<n>" sets partition n from its last point: 1 healthy, 0
+ * unhealthy, -1 dead, any other value unknown. A partition without a
+ * series keeps its health.
+ */
+export function withHealth(
+  partitions: readonly PartitionHealth[],
+  series: readonly Series[],
+): PartitionHealth[] {
+  const last = new Map<string, number | undefined>(
+    series.map(({ name, points }) => [name, points.at(-1)?.[1]]),
+  );
+  return partitions.map((p) => {
+    const name = `partition="${p.partition}"`;
+    if (!last.has(name)) return { ...p };
+    const value = last.get(name);
+    return {
+      ...p,
+      health: (value !== undefined && HEALTH_STATES[value]) || "unknown",
+    };
+  });
+}
+
+/**
+ * brokerPartitions returns partitionHealth of cluster with the health of
+ * each partition from zeebe_health over the 5 minutes before now. The
+ * health stays "unknown" when Prometheus is not set or does not answer. It
+ * runs on the server only, and it rejects when partitionHealth or
+ * promRange does.
+ */
+export async function brokerPartitions(
+  cluster: Resource<"CamundaCluster">,
+  now: number,
+): Promise<PartitionHealth[] | Unavailable> {
+  const partitions = await partitionHealth(cluster);
+  if (partitions === "unavailable") return partitions;
+  const pods = [
+    ...new Set(
+      partitions.flatMap((p) => [
+        ...(p.leader ? [p.leader] : []),
+        ...p.followers,
+      ]),
+    ),
+  ];
+  if (pods.length === 0) return partitions;
+  const series = await promRange(
+    renderCoreQuery(PARTITION_HEALTH, cluster.metadata?.namespace ?? "", pods),
+    {
+      start: now - HEALTH_WINDOW_MS,
+      end: now,
+      stepSeconds: HEALTH_STEP_SECONDS,
+    },
+  );
+  return series === "unavailable" ? partitions : withHealth(partitions, series);
+}
+
+/**
  * partitionHealth asks GET /actuator/partitions of each broker pod of
  * cluster, at the pod IP with the scheme, port, and path of
  * status.management.endpoint, and with the basic auth of its Secret when
  * the method is basic. It runs on the server only. Health is "unknown",
- * because the management port does not give it; the metric zeebe_health
- * gives it through promRange. A broker that does not answer in 5 seconds
+ * because the management port does not give it; brokerPartitions adds it.
+ * A broker that does not answer in 5 seconds
  * is left out. It returns "unavailable" when the cluster has no
  * status.management, the auth Secret or one of its keys is missing, no
  * broker pod has an IP, or no broker answers.
