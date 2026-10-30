@@ -20,6 +20,7 @@ const gitResult = (revision: string): WriteResult => ({
       "fleet/team-a/camundaclusterclaims/orders.yaml",
     "Namespace//team-a": "fleet/_cluster/namespaces/team-a.yaml",
   },
+  deleted: {},
 });
 
 const render = () =>

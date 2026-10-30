@@ -28,6 +28,7 @@ const result: WriteResult = {
       "fleet/team-a/camundaclusterclaims/orders.yaml",
     "Environment//prod": "fleet/_cluster/environments/prod.yaml",
   },
+  deleted: {},
 };
 
 // Pushed records result once, as a page does after runChange.
@@ -115,6 +116,7 @@ describe("GitBanner", () => {
       commit: "c0ffee",
       revisions: { "Environment//prod": "def" },
       paths: { "Environment//prod": "fleet/_cluster/environments/prod.yaml" },
+      deleted: {},
     };
     function Viewer() {
       useResource("Environment", ref);

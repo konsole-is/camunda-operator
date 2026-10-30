@@ -59,6 +59,7 @@ describe("toastResultOf", () => {
           commit: "4f1c3a7e9b",
           revisions: {},
           paths: {},
+          deleted: {},
         },
         "x",
       ),
