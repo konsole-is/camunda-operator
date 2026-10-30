@@ -113,9 +113,9 @@ type Remote = {
  * change, or when the branch moved again. The credentials of
  * target.credentialsSecretRef are a username and token, or GitHub App
  * keys, as gitCredentials reads them. They go only to an https://
- * address. The JWT of App keys goes only to the host of the repository,
- * and only when that host is github.com or its /api/v3/meta answers as
- * GitHub Enterprise Server. With App keys, the
+ * address. The JWT of App keys goes only to api.github.com for a
+ * github.com repository, or to the host of the repository when its
+ * /api/v3/meta answers as GitHub Enterprise Server. With App keys, the
  * author of a commit is the bot of the App, or GIT_AUTHOR when GitHub
  * does not give the bot. Otherwise it is GIT_AUTHOR. No error holds a
  * credential or the text of a Git server answer. Changes to one
