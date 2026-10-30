@@ -13,6 +13,8 @@ import {
   OPTIMIZE_UID_LABEL,
   REVISION_ANNOTATION,
   SECTION_LABEL,
+  isDNSLabel,
+  isDNSSubdomain,
   isLabelKey,
   isLabelValue,
   isManaged,
@@ -228,4 +230,25 @@ describe("matchesSelector", () => {
     expect(matchesSelector({ matchLabels: { a: "1" } }, undefined)).toBe(false);
     expect(matchesSelector(undefined, undefined)).toBe(true);
   });
+});
+
+describe("isDNSLabel", () => {
+  it.each(["a", "team-a", "a1", "x".repeat(63)])("accepts %j", (v) =>
+    expect(isDNSLabel(v)).toBe(true),
+  );
+  it.each(["", "  ", "..", ".", "a.b", "A", "-a", "a-", "a/b", "x".repeat(64)])(
+    "refuses %j",
+    (v) => expect(isDNSLabel(v)).toBe(false),
+  );
+});
+
+describe("isDNSSubdomain", () => {
+  it.each(["orders", "orders.v2", "a-b.c-d", "x".repeat(253)])(
+    "accepts %j",
+    (v) => expect(isDNSSubdomain(v)).toBe(true),
+  );
+  it.each(["", " ", "..", ".", "a..b", "Orders", "a/b", "x".repeat(254)])(
+    "refuses %j",
+    (v) => expect(isDNSSubdomain(v)).toBe(false),
+  );
 });

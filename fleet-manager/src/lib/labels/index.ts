@@ -92,6 +92,20 @@ export function isLabelValue(value: string): boolean {
   return value === "" || NAME.test(value);
 }
 
+const DNS_LABEL = "[a-z0-9]([-a-z0-9]*[a-z0-9])?";
+const DNS_LABEL_RE = new RegExp(`^${DNS_LABEL}$`);
+const DNS_SUBDOMAIN_RE = new RegExp(`^${DNS_LABEL}(\\.${DNS_LABEL})*$`);
+
+/** isDNSLabel says whether value is a DNS-1123 label, such as a namespace name. */
+export function isDNSLabel(value: string): boolean {
+  return value.length <= 63 && DNS_LABEL_RE.test(value);
+}
+
+/** isDNSSubdomain says whether value is a DNS-1123 subdomain, such as the name of most objects. */
+export function isDNSSubdomain(value: string): boolean {
+  return value.length <= 253 && DNS_SUBDOMAIN_RE.test(value);
+}
+
 /** LabelSelector is a metav1.LabelSelector. */
 export type LabelSelector = {
   matchLabels?: Record<string, string>;

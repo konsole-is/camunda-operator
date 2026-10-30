@@ -1,3 +1,4 @@
+import { isDNSLabel } from "@/lib/labels";
 import { podUsage } from "@/lib/observe/kube";
 
 // A page polls the live CPU and memory of the pods that a label selector
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams;
   const namespace = params.get("namespace");
-  if (!namespace) return badParameter("namespace");
+  if (!namespace || !isDNSLabel(namespace)) return badParameter("namespace");
   // An empty selector selects every pod of the namespace.
   const selector = params.get("selector")?.trim();
   if (!selector) return badParameter("selector");
@@ -26,5 +27,7 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 function badParameter(name: string): Response {
-  return new Response(`The parameter ${name} is required`, { status: 400 });
+  return new Response(`The parameter ${name} is required and must be valid`, {
+    status: 400,
+  });
 }

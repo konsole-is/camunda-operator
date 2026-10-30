@@ -21,6 +21,15 @@ describe("GET /api/partitions", () => {
   it.each([
     ["no namespace", "name=orders", "namespace"],
     ["no name", "namespace=team-a", "name"],
+    [
+      "a namespace with ..",
+      `namespace=${encodeURIComponent("../../api/v1/namespaces/kube-system")}&name=orders`,
+      "namespace",
+    ],
+    ["the namespace ..", "namespace=..&name=orders", "namespace"],
+    ["a namespace of spaces", "namespace=%20&name=orders", "namespace"],
+    ["the name ..", "namespace=team-a&name=..", "name"],
+    ["a name with a slash", "namespace=team-a&name=a%2Fb", "name"],
   ])("answers 400 for %s and names the parameter", async (_, query, name) => {
     const response = await call(query);
 

@@ -1,4 +1,5 @@
 import { get } from "@/lib/k8s/read";
+import { isDNSLabel, isDNSSubdomain } from "@/lib/labels";
 import { brokerPartitions } from "@/lib/observe/partitions";
 
 // A page polls the partitions of one cluster. The answer is { partitions },
@@ -9,9 +10,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams;
   const namespace = params.get("namespace");
-  if (!namespace) return badParameter("namespace");
+  if (!namespace || !isDNSLabel(namespace)) return badParameter("namespace");
   const name = params.get("name");
-  if (!name) return badParameter("name");
+  if (!name || !isDNSSubdomain(name)) return badParameter("name");
   try {
     const cluster = await get("CamundaCluster", namespace, name);
     if (!cluster) {
@@ -33,5 +34,7 @@ export async function GET(request: Request): Promise<Response> {
 }
 
 function badParameter(name: string): Response {
-  return new Response(`The parameter ${name} is required`, { status: 400 });
+  return new Response(`The parameter ${name} is required and must be valid`, {
+    status: 400,
+  });
 }

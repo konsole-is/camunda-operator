@@ -20,6 +20,13 @@ beforeEach(() => vi.resetAllMocks());
 describe("GET /api/usage", () => {
   it.each([
     ["no namespace", "selector=a%3Db", "namespace"],
+    [
+      "a namespace with ..",
+      `namespace=${encodeURIComponent("../../../../api/v1/namespaces/kube-system/secrets?")}&selector=a%3Db`,
+      "namespace",
+    ],
+    ["the namespace ..", "namespace=..&selector=a%3Db", "namespace"],
+    ["a namespace of spaces", "namespace=%20%20&selector=a%3Db", "namespace"],
     ["no selector", "namespace=n", "selector"],
     ["an empty selector", "namespace=n&selector=", "selector"],
     ["a selector of spaces", "namespace=n&selector=%20%20", "selector"],
@@ -28,6 +35,7 @@ describe("GET /api/usage", () => {
 
     expect(response.status).toBe(400);
     expect(await response.text()).toContain(name);
+    expect(podUsage).not.toHaveBeenCalled();
   });
 
   it.each(["", "%20%20"])(
