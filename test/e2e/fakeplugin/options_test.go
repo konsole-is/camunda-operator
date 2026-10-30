@@ -87,10 +87,71 @@ func TestParseOptionsNamesEachMissingFlag(t *testing.T) {
 
 	require.Error(t, err)
 	for _, flag := range []string{
-		"--service-account-namespace", "--service-account-name",
-		"--access-external-url", "--backup-object-storage-config",
+		"--service-account-namespace", "--service-account-name", "--backup-object-storage-config",
 	} {
 		assert.ErrorContains(t, err, flag)
+	}
+	assert.NotContains(t, err.Error(), "--access-external-url", "access is optional")
+}
+
+func TestParseOptionsWithoutAccessServesBackupStorageOnly(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := parseOptions([]string{
+		"--registration=e2e-echo",
+		"--service-account-namespace=builtin-registrations-echo",
+		"--service-account-name=echo",
+		"--backup-object-storage-config=echo-bucket",
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{pluginstartup.SectionBackupStorage}, cfg.Echo.Sections)
+	assert.Equal(t, []echo.Output{{
+		Key:     pluginstartup.OutputObjectStorageConfig,
+		Value:   "echo-bucket",
+		Section: pluginstartup.SectionBackupStorage,
+	}}, cfg.Echo.Outputs)
+	assert.Empty(t, cfg.Echo.GrantTemplates)
+
+	_, err = echo.New(cfg.Echo)
+	assert.NoError(t, err, "echo accepts the options")
+}
+
+func TestParseOptionsPublishesTheGrantTemplate(t *testing.T) {
+	t.Parallel()
+
+	template := `{"Effect":"Allow","Action":["s3:GetObject"],"Resource":"arn:aws:s3:::{{ .outputs.objectStorageConfig }}/*"}`
+	cfg, err := parseOptions([]string{
+		"--service-account-namespace=builtin-registrations-echo",
+		"--service-account-name=echo",
+		"--backup-object-storage-config=echo-bucket",
+		"--grant-template=" + template,
+	})
+	require.NoError(t, err)
+
+	require.Len(t, cfg.Echo.GrantTemplates, 1)
+	got := cfg.Echo.GrantTemplates[0]
+	assert.Equal(t, "read", got.Name)
+	assert.Equal(t, pluginsv1alpha1.GrantFormatAWSIAMStatement, got.Format)
+	assert.Empty(t, got.RequiresInputs)
+	require.NotNil(t, got.Template)
+	assert.JSONEq(t, template, string(got.Template.Raw))
+
+	_, err = echo.New(cfg.Echo)
+	assert.NoError(t, err, "echo accepts the options")
+}
+
+func TestParseOptionsRefusesAGrantTemplateThatIsNotAJSONObject(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{`not json`, `["s3:GetObject"]`, `null`} {
+		_, err := parseOptions([]string{
+			"--service-account-namespace=ns",
+			"--service-account-name=echo",
+			"--backup-object-storage-config=bucket",
+			"--grant-template=" + value,
+		})
+		assert.ErrorContains(t, err, "--grant-template", "value %q", value)
 	}
 }
 
