@@ -40,7 +40,7 @@ export function KeyValueEditor({
       value,
     })),
   );
-  const errors = entryErrors(entries, format);
+  const errors = keyValueErrors(entries, format);
 
   const update = (changed: Entry[]) => {
     setEntries(changed);
@@ -48,7 +48,7 @@ export function KeyValueEditor({
       Object.fromEntries(
         changed.filter((e) => e.key !== "").map((e) => [e.key, e.value]),
       ),
-      entryErrors(changed, format),
+      keyValueErrors(changed, format),
     );
   };
   const errorAt = (index: number, field: "key" | "value") =>
@@ -131,7 +131,15 @@ export function KeyValueEditor({
   );
 }
 
-function entryErrors(entries: Entry[], format?: "label"): ValidationError[] {
+/**
+ * keyValueErrors returns the errors that KeyValueEditor shows for entries,
+ * with the paths "<row>.key" and "<row>.value". A row with an empty key and
+ * an empty value has none.
+ */
+export function keyValueErrors(
+  entries: readonly { key: string; value: string }[],
+  format?: "label",
+): ValidationError[] {
   const errors: ValidationError[] = [];
   const seen = new Set<string>();
   entries.forEach((entry, index) => {

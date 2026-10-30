@@ -7,6 +7,7 @@ import {
   CLUSTER_LABEL,
   COMPONENT_LABEL,
   ENVIRONMENT_LABEL,
+  MANAGEMENT_CLUSTER_ANNOTATION,
   OPTIMIZE_COMPONENTS,
   OPTIMIZE_UID_LABEL,
   REVISION_ANNOTATION,
@@ -15,6 +16,7 @@ import {
   isLabelValue,
   isManaged,
   labelSelectorString,
+  matchesSelector,
 } from ".";
 import { parseSelector } from "@/lib/k8s/selector";
 
@@ -90,6 +92,11 @@ it.each([
   [COMPONENT_LABEL, "pkg/labels/labels.go", "ComponentKey"],
   [BACKUP_SCHEDULE_LABEL, "pkg/labels/labels.go", "BackupScheduleKey"],
   [OPTIMIZE_UID_LABEL, "pkg/labels/labels.go", "OptimizeUIDKey"],
+  [
+    MANAGEMENT_CLUSTER_ANNOTATION,
+    "pkg/labels/labels.go",
+    "ManagementClusterKey",
+  ],
 ])("%s matches %s %s", (value, file, name) => {
   expect(value).toBe(goConstant(file, name));
 });
@@ -169,5 +176,54 @@ describe("labelSelectorString", () => {
         matchExpressions: [{ key: "a", operator: "Gt", values: ["1"] }],
       }),
     ).toThrow(/Gt/);
+  });
+});
+
+describe("matchesSelector", () => {
+  it.each([
+    [undefined, {}, true],
+    [{}, { a: "1" }, true],
+    [{ matchLabels: { a: "1" } }, { a: "1", b: "2" }, true],
+    [{ matchLabels: { a: "1" } }, { a: "2" }, false],
+    [
+      { matchExpressions: [{ key: "a", operator: "In", values: ["1", "2"] }] },
+      { a: "2" },
+      true,
+    ],
+    [
+      { matchExpressions: [{ key: "a", operator: "In", values: ["1"] }] },
+      {},
+      false,
+    ],
+    [
+      { matchExpressions: [{ key: "a", operator: "NotIn", values: ["1"] }] },
+      {},
+      true,
+    ],
+    [
+      { matchExpressions: [{ key: "a", operator: "NotIn", values: ["1"] }] },
+      { a: "1" },
+      false,
+    ],
+    [{ matchExpressions: [{ key: "a", operator: "Exists" }] }, {}, false],
+    [{ matchExpressions: [{ key: "a", operator: "Exists" }] }, { a: "" }, true],
+    [{ matchExpressions: [{ key: "a", operator: "DoesNotExist" }] }, {}, true],
+    [
+      { matchExpressions: [{ key: "a", operator: "DoesNotExist" }] },
+      { a: "1" },
+      false,
+    ],
+    [
+      { matchExpressions: [{ key: "a", operator: "Gt", values: ["1"] }] },
+      { a: "2" },
+      false,
+    ],
+  ])("selector %j on labels %j is %s", (selector, labels, expected) => {
+    expect(matchesSelector(selector, labels)).toBe(expected);
+  });
+
+  it("treats unset labels as no labels", () => {
+    expect(matchesSelector({ matchLabels: { a: "1" } }, undefined)).toBe(false);
+    expect(matchesSelector(undefined, undefined)).toBe(true);
   });
 });

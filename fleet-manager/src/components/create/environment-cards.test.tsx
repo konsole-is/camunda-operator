@@ -143,6 +143,95 @@ describe("EnvironmentCards", () => {
   });
 });
 
+describe("EnvironmentCards in multiple mode", () => {
+  it("offers a checkbox for each environment, by object name next to the display name", () => {
+    render(
+      <EnvironmentCards
+        multiple
+        environments={[prod, dev]}
+        counts={{}}
+        value={[]}
+        onChange={vi.fn()}
+      />,
+    );
+    const group = screen.getByRole("group", { name: "Environments" });
+    expect(
+      within(group)
+        .getAllByRole("checkbox")
+        .map((c) => c.closest("label")?.textContent),
+    ).toEqual([
+      expect.stringContaining("dev"),
+      expect.stringMatching(/prod.*Production/),
+    ]);
+    expect(screen.queryByRole("radio")).toBeNull();
+  });
+
+  it("checks each environment of value", () => {
+    render(
+      <EnvironmentCards
+        multiple
+        environments={[prod, dev]}
+        counts={{}}
+        value={["prod"]}
+        onChange={vi.fn()}
+      />,
+    );
+    const box = (name: RegExp) =>
+      screen.getByRole("checkbox", { name }) as HTMLInputElement;
+    expect(box(/prod/).checked).toBe(true);
+    expect(box(/dev/).checked).toBe(false);
+  });
+
+  it("adds and removes an environment on a click, in the order of the cards", async () => {
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <EnvironmentCards
+        multiple
+        environments={[prod, dev]}
+        counts={{}}
+        value={["prod"]}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.click(screen.getByRole("checkbox", { name: /dev/ }));
+    expect(onChange).toHaveBeenLastCalledWith(["dev", "prod"]);
+    rerender(
+      <EnvironmentCards
+        multiple
+        environments={[prod, dev]}
+        counts={{}}
+        value={["dev", "prod"]}
+        onChange={onChange}
+      />,
+    );
+    await userEvent.click(screen.getByRole("checkbox", { name: /prod/ }));
+    expect(onChange).toHaveBeenLastCalledWith(["dev"]);
+  });
+
+  it("lets the admin pick an environment that is not ready, and shows its message", async () => {
+    const onChange = vi.fn();
+    const old = environment("old", {
+      ready: { status: "False", message: "x" },
+    });
+    render(
+      <EnvironmentCards
+        multiple
+        environments={[old]}
+        counts={{}}
+        value={[]}
+        onChange={onChange}
+      />,
+    );
+    const box = screen.getByRole("checkbox", {
+      name: /old/,
+    }) as HTMLInputElement;
+    expect(box.disabled).toBe(false);
+    expect(screen.getByText("Not ready: x")).toBeTruthy();
+    await userEvent.click(box);
+    expect(onChange).toHaveBeenCalledWith(["old"]);
+  });
+});
+
 describe("environmentReady", () => {
   it("is ready without a status", () => {
     expect(environmentReady(dev)).toEqual({ ready: true });

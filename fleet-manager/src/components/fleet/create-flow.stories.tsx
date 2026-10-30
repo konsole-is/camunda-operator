@@ -200,6 +200,18 @@ export const createFlowStories: Story[] = [
     ),
   },
   {
+    component: "EnvironmentCards",
+    name: "Several picked",
+    render: () => (
+      <EnvironmentCards
+        multiple
+        environments={[production, development, legacy]}
+        counts={counts}
+        value={["dev", "prod"]}
+      />
+    ),
+  },
+  {
     component: "PresetCards",
     name: "Three presets",
     render: () => (
