@@ -2,7 +2,7 @@ import "server-only";
 import { getJSON, kubeConfig, unlessNotFound } from "@/lib/k8s/client";
 import { objectPath } from "@/lib/k8s/kinds";
 import { inOrder } from "@/lib/serial";
-import { messageOf } from "@/lib/write/errors";
+import { messageOf, staleError } from "@/lib/write/errors";
 import type { KubeObject, WriteResult } from "@/lib/write/types";
 import {
   WRITE_TIMEOUT_MS,
@@ -28,9 +28,24 @@ type ConfigMap = KubeObject & { data?: Record<string, string> };
  * It never changes a ConfigMap that exists. It throws when the API server refuses the read or the create.
  */
 export async function getSettings(): Promise<Settings> {
+  return (await readSettings()).settings;
+}
+
+/**
+ * readSettings returns what getSettings returns, with the resourceVersion of
+ * the ConfigMap. A page passes that version to updateSettings, so that a save
+ * cannot undo a change that the page did not show.
+ */
+export async function readSettings(): Promise<{
+  settings: Settings;
+  resourceVersion: string;
+}> {
   const live =
     (await read()) ?? (await inOrder(SETTINGS_CONFIGMAP, readOrCreate));
-  return settingsFromData(live.data);
+  return {
+    settings: settingsFromData(live.data),
+    resourceVersion: live.metadata.resourceVersion ?? "",
+  };
 }
 
 /**
@@ -38,18 +53,23 @@ export async function getSettings(): Promise<Settings> {
  * ConfigMap, also a key that the fleet manager does not know. An empty
  * string unsets a setting. It returns Invalid without a request for a patch
  * that checkPatch refuses, and Stale when the ConfigMap changed between its
- * read and its write. It never retries. It writes to the API server, also
- * in Git mode.
+ * read and its write. With expectedVersion, it also returns Stale, and
+ * writes nothing, when the ConfigMap no longer has that resourceVersion.
+ * It never retries. It writes to the API server, also in Git mode.
  */
 export async function updateSettings(
   patch: Partial<Settings>,
+  expectedVersion?: string,
 ): Promise<WriteResult> {
   const errors = checkPatch(patch);
   if (errors.length) return { ok: false, errors };
-  return inOrder(SETTINGS_CONFIGMAP, () => writePatch(patch));
+  return inOrder(SETTINGS_CONFIGMAP, () => writePatch(patch, expectedVersion));
 }
 
-async function writePatch(patch: Partial<Settings>): Promise<WriteResult> {
+async function writePatch(
+  patch: Partial<Settings>,
+  expectedVersion: string | undefined,
+): Promise<WriteResult> {
   let live: ConfigMap;
   try {
     live = await readOrCreate();
@@ -60,6 +80,20 @@ async function writePatch(patch: Partial<Settings>): Promise<WriteResult> {
     };
   }
   const object = settingsObject({ ...live.data, ...patch });
+  const version = live.metadata.resourceVersion ?? "";
+  if (expectedVersion !== undefined && expectedVersion !== version) {
+    return {
+      ok: false,
+      errors: [
+        staleError({
+          apiVersion: object.apiVersion,
+          kind: object.kind,
+          namespace: object.metadata.namespace,
+          name: object.metadata.name,
+        }),
+      ],
+    };
+  }
   return directWriter().apply({
     intent: `Change the settings ${Object.keys(patch).join(", ")}`,
     directOnly: true,
@@ -68,8 +102,7 @@ async function writePatch(patch: Partial<Settings>): Promise<WriteResult> {
     force: true,
     apply: [object],
     preconditions: {
-      [refKey({ kind: object.kind, ...object.metadata })]:
-        live.metadata.resourceVersion ?? "",
+      [refKey({ kind: object.kind, ...object.metadata })]: version,
     },
   });
 }

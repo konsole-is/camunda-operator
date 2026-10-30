@@ -151,6 +151,7 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
 };
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
   "settings#getSettings": () => settings.getSettings(),
+  "settings#readSettings": () => settings.readSettings(),
   "settings#updateSettings": () => settings.updateSettings({ "git.path": "x" }),
   "settings#testGit": () => settings.testGit(),
   "settings#testPrometheus": () => settings.testPrometheus(),

@@ -5,7 +5,7 @@ import {
   type V1ConfigMap,
 } from "@kubernetes/client-node";
 import { beforeAll, describe, expect, inject, it } from "vitest";
-import { getSettings, updateSettings } from "@/lib/settings";
+import { getSettings, readSettings, updateSettings } from "@/lib/settings";
 
 // The settings read KUBECONFIG through kubeConfig, on their first call.
 process.env.KUBECONFIG = inject("kubeconfig");
@@ -181,5 +181,39 @@ describe("settings against envtest", () => {
       mode: "direct",
     });
     expect((await readConfigMap()).data?.["git.path"]).toBe("fleet");
+  });
+
+  it("a save with the version of an earlier read is Stale after a hand edit and writes nothing", async () => {
+    await useNewNamespace();
+    const { resourceVersion } = await readSettings();
+    await editByHand({ kubernetesClusterName: "by-hand" });
+
+    const result = await updateSettings(
+      { kubernetesClusterName: "from-page" },
+      resourceVersion,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect((await readConfigMap()).data?.kubernetesClusterName).toBe(
+      "by-hand",
+    );
+  });
+
+  it("a save with the current version writes the patch", async () => {
+    await useNewNamespace();
+    const { resourceVersion } = await readSettings();
+
+    expect(
+      await updateSettings(
+        { kubernetesClusterName: "from-page" },
+        resourceVersion,
+      ),
+    ).toEqual({ ok: true, mode: "direct" });
+    expect((await readConfigMap()).data?.kubernetesClusterName).toBe(
+      "from-page",
+    );
   });
 });
