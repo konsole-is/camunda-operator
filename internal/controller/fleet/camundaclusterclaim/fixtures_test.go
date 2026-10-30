@@ -385,12 +385,23 @@ func setManagement(claim *fleetv1alpha1.CamundaClusterClaim, version string) {
 
 // consumeSanction removes the downgrade annotation from the CamundaCluster
 // of claim with a merge patch, as the operator does once the cluster runs
-// the target. No controller of the suite reconciles a CamundaCluster, so
-// the spec plays its part.
+// the target, until a pass of the claim after the patch leaves it off. No
+// controller of the suite reconciles a CamundaCluster, so the spec plays
+// its part.
 func consumeSanction(claim *fleetv1alpha1.CamundaClusterClaim) {
 	GinkgoHelper()
-	cluster, err := clusterOf(claim)
-	Expect(err).NotTo(HaveOccurred())
 	patch := []byte(`{"metadata":{"annotations":{"` + clustercomponents.AllowVersionDowngradeAnnotation + `":null}}}`)
-	Expect(k8sClient.Patch(ctx, cluster, client.RawPatch(types.MergePatchType, patch))).To(Succeed())
+	// A pass that another event woke can read the cluster before the patch and
+	// write the annotation back, so the patch repeats.
+	Eventually(func(g Gomega) {
+		applies := len(witness.recorded(client.ObjectKeyFromObject(claim)))
+		cluster, err := clusterOf(claim)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(k8sClient.Patch(ctx, cluster, client.RawPatch(types.MergePatchType, patch))).To(Succeed())
+
+		g.Eventually(func() int {
+			return len(witness.recorded(client.ObjectKeyFromObject(claim)))
+		}, timeout, interval).Should(BeNumerically(">", applies))
+		g.Expect(downgradeAnnotation(g, claim)).To(BeEmpty())
+	}, timeout, interval).Should(Succeed())
 }

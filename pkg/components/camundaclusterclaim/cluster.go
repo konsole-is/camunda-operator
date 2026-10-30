@@ -228,10 +228,10 @@ func keepKeys(values map[string]string, owned map[string]any, path ...string) {
 }
 
 // downgradeAnnotations returns the downgrade annotation of the cluster, or
-// nil without a live cluster. A cluster without status.management, such as
-// a suspended one, keeps the annotation that the claim owns in owned: it has
-// no effective version, so the operator would remove a new annotation on
-// each pass.
+// nil without a live cluster. A cluster without status.management that does
+// not refuse the downgrade, such as a suspended one, keeps the annotation
+// that the claim owns in owned: it has no effective version, so the operator
+// would remove a new annotation on each pass.
 func downgradeAnnotations(in Input, owned map[string]any) map[string]string {
 	const key = clustercomponents.AllowVersionDowngradeAnnotation
 	if in.Live == nil {
@@ -246,10 +246,13 @@ func downgradeAnnotations(in Input, owned map[string]any) map[string]string {
 		(refusesDowngrade(in.Live) || management != nil && management.Version != target) {
 		return map[string]string{key: target}
 	}
-	if management != nil {
+	if management != nil && (target == "" || in.Live.Annotations[key] != target) {
 		return nil
 	}
 
+	// The management version moves to the target before the brokers run it,
+	// also when their apply fails. The annotation therefore stays until the
+	// operator removes it.
 	value, ok := in.Live.Annotations[key]
 	if !ok {
 		return nil

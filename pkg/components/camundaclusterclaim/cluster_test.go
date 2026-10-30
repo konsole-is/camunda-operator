@@ -202,6 +202,11 @@ func TestClusterDowngradeAnnotation(t *testing.T) {
 		},
 		{name: "cluster runs the target", field: "8.9.3", release: "8.9.3", live: true, management: managed("8.9.3")},
 		{
+			name: "management reports the target, the claim wrote the annotation", field: "8.9.3", release: "8.9.3",
+			live: true, management: managed("8.9.3"), annotations: map[string]string{key: "8.9.3"}, claimOwns: true,
+			want: map[string]string{key: "8.9.3"},
+		},
+		{
 			name: "field names another version than the release", field: "8.9.3", release: "8.9.9", live: true,
 			management: managed("8.9.9"),
 		},

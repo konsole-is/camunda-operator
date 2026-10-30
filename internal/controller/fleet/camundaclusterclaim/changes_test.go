@@ -184,6 +184,16 @@ var _ = Describe("Changing a cluster claim", func() {
 			downgrade()
 		})
 
+		It("keeps the annotation until the operator removes it", func() {
+			downgrade()
+			setManagement(claim, olderVersion)
+
+			expectNewPass(claim)
+			Consistently(func(g Gomega) {
+				g.Expect(downgradeAnnotation(g, claim)).To(Equal(olderVersion))
+			}, consistently, interval).Should(Succeed())
+		})
+
 		It("does not add the annotation again once the cluster runs the target", func() {
 			downgrade()
 			setManagement(claim, olderVersion)
