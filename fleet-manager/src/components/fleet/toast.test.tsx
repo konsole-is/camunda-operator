@@ -309,6 +309,26 @@ describe("useWriteToast", () => {
     expect(statusOf("b")).toContain("Saved ghi");
   });
 
+  it("an applied toast stays applied when a later save of the same object waits", async () => {
+    page(
+      <>
+        <Page name="a" result={envResult("def")} message="Saved def" />
+        <Page name="b" result={envResult("ghi")} message="Saved ghi" />
+      </>,
+    );
+    fireEvent.click(screen.getByText("Save a"));
+    const s = await connection(envRef);
+    const watch = watchId(envRef);
+    s.emit("snapshot", { watch, kind: "Environment", objects: [env("def")] });
+    await waitFor(() => expect(statusOf("a")).toContain("Saved def"));
+
+    fireEvent.click(screen.getByText("Save b"));
+    await act(async () => {});
+
+    expect(statusOf("b")).toContain("Waiting for GitOps to apply");
+    expect(statusOf("a")).toContain("Saved def");
+  });
+
   it("dismiss clears the toast", () => {
     page(
       <Page

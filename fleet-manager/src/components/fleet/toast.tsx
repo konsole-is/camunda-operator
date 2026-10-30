@@ -53,7 +53,11 @@ export function useWriteToast(): {
   dismiss(): void;
 } {
   const { pushes, record } = useGitPushes();
-  const [last, setLast] = useState<{ result: WriteResult; message: string }>();
+  const [last, setLast] = useState<{
+    result: WriteResult;
+    message: string;
+    applied?: boolean;
+  }>();
   const show = useCallback(
     (result: WriteResult, message: string) => {
       record(result, new Date().toISOString());
@@ -71,10 +75,14 @@ export function useWriteToast(): {
     ...Object.keys(result.revisions),
     ...Object.keys(result.deleted),
   ];
-  const pending = pushes.some((push) => keys.includes(push.key));
-  const toast: ToastResult = pending
-    ? toastResultOf(result, message)
-    : { kind: "applied", message, commit: result.commit };
+  const applied =
+    last.applied || !pushes.some((push) => keys.includes(push.key));
+  // A later save of the same object adds a push with the same key, so the
+  // toast keeps applied once it got there.
+  if (applied && !last.applied) setLast({ ...last, applied: true });
+  const toast: ToastResult = applied
+    ? { kind: "applied", message, commit: result.commit }
+    : toastResultOf(result, message);
   return { toast, show, dismiss };
 }
 
