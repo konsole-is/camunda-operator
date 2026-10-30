@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { type ReactNode, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useGitSync, useResource } from "@/lib/k8s/hooks";
+import { useGitGone, useGitSync, useResource } from "@/lib/k8s/hooks";
 import type { WriteResult } from "@/lib/write/types";
 import { GitBanner } from "./git-banner";
 import { GitPushesProvider, useGitPushes } from "./git-pushes";
@@ -12,7 +12,7 @@ import { FakeEventSource } from "../../../test/fakes/event-source";
 
 vi.mock("@/lib/k8s/hooks", async (importOriginal) => {
   const hooks = await importOriginal<typeof import("@/lib/k8s/hooks")>();
-  return { ...hooks, useGitSync: vi.fn() };
+  return { ...hooks, useGitSync: vi.fn(), useGitGone: vi.fn() };
 });
 
 const result: WriteResult = {
@@ -29,6 +29,17 @@ const result: WriteResult = {
     "Environment//prod": "fleet/_cluster/environments/prod.yaml",
   },
   deleted: {},
+};
+const deleteResult: WriteResult = {
+  ok: true,
+  mode: "git",
+  commit: "d00d",
+  revisions: {},
+  paths: {},
+  deleted: {
+    "CamundaClusterClaim/team-a/orders":
+      "fleet/team-a/camundaclusterclaims/orders.yaml",
+  },
 };
 
 // Pushed records result once, as a page does after runChange.
@@ -50,6 +61,7 @@ const show = (pushed?: WriteResult) =>
 
 beforeEach(() => {
   vi.mocked(useGitSync).mockReturnValue("waiting");
+  vi.mocked(useGitGone).mockReturnValue("waiting");
 });
 afterEach(() => {
   cleanup();
@@ -85,6 +97,35 @@ describe("GitBanner", () => {
     await act(async () => {});
 
     expect(screen.queryByText("Waiting for GitOps to apply")).toBeNull();
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("shows a line for a delete-only change", () => {
+    show(deleteResult);
+
+    expect(screen.getByText("Waiting for GitOps to apply")).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole("status")
+        .some((line) =>
+          line.textContent?.startsWith(
+            "1 delete waiting for GitOps: fleet/team-a/camundaclusterclaims/orders.yaml",
+          ),
+        ),
+    ).toBe(true);
+    expect(useGitGone).toHaveBeenCalledWith({
+      kind: "CamundaClusterClaim",
+      namespace: "team-a",
+      name: "orders",
+    });
+  });
+
+  it("a delete leaves the banner when the object is gone", async () => {
+    vi.mocked(useGitGone).mockReturnValue("applied");
+
+    const { container } = show(deleteResult);
+    await act(async () => {});
+
     expect(container.innerHTML).toBe("");
   });
 

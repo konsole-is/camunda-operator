@@ -92,4 +92,18 @@ export const reviewStories: Story[] = [
       />
     ),
   },
+  {
+    component: "GitWaitingLine",
+    name: "Waiting for a delete",
+    render: () => (
+      <GitWaitingLine
+        pushed={{
+          path: "clusters/team-a/camundaclusterclaims/orders.yaml",
+          pushedAt: "2026-10-18T11:58:00Z",
+          deleted: true,
+        }}
+        now="2026-10-18T12:00:00Z"
+      />
+    ),
+  },
 ];
