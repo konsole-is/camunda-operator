@@ -47,7 +47,7 @@ In Git mode, the page shows the files that a save writes, for a claim and for an
 
 The settings stay in the cluster also in Git mode. A save on the page writes the ConfigMap `fleet-manager-settings` and the fleet manager never pushes it to Git.
 
-The credentials fields list the Secrets of the release namespace by name. A setting can name a Secret that does not exist. The field then keeps the name and marks it `(not found)`. It also shows `The Secret <name> does not exist in namespace <namespace>.` A save keeps that name until you pick another Secret or **None**. To correct it, create the Secret, as [Git credentials](#git-credentials) and [Prometheus credentials](#prometheus-credentials) show.
+The credentials fields list the Secrets of the release namespace by name. A setting can name a Secret that does not exist. The field then keeps the name and marks it `(not found)`. It also shows `The Secret <name> does not exist in namespace <namespace>.` A save keeps that name until you pick another Secret or **None**. To correct it, create the Secret, as [Git credentials](#git-credentials) and [Prometheus credentials](#prometheus-credentials) show. If the page cannot list the Secrets, it shows `Could not list the Secrets of namespace <namespace>: <message>`. The fields then keep each name and do not mark it `(not found)`.
 
 **Test the connection** connects to the Git repository with the saved settings. **Test the query** sends a query to Prometheus with the saved settings. Both buttons show the result, or the error and its cause. The tests use the saved settings, not the values in the fields. So while the page has a change that you did not save, both buttons are off. Save the change to turn the buttons on again.
 
