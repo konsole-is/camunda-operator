@@ -25,9 +25,10 @@ export default async function SettingsPage() {
   const namespace = appNamespace();
   const [read, secretNames, metricsServer, permissions] = await Promise.all([
     readSettings().catch((error: unknown) => ({ error: messageOf(error) })),
-    listSecretRefs(namespace)
-      .then((secrets) => secrets.map((s) => s.name))
-      .catch(() => []),
+    listSecretRefs(namespace).then(
+      (secrets) => secrets.map((s) => s.name),
+      (error: unknown) => ({ error: messageOf(error) }),
+    ),
     metricsServerFound(namespace).then(
       (found) => ({ found }),
       (error: unknown) => ({ error: messageOf(error) }),

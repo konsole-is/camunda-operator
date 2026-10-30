@@ -9,7 +9,8 @@ import {
 /**
  * SecretNameSelect picks a Secret of namespace by name, or None (""). A
  * value that is not in names stays picked, marked as not found, so a save
- * does not drop it.
+ * does not drop it. Without names, the list is not known: the value stays
+ * picked and is not marked.
  */
 export function SecretNameSelect({
   label,
@@ -20,12 +21,13 @@ export function SecretNameSelect({
 }: {
   label: string;
   value: string;
-  names: string[];
+  names?: string[];
   namespace: string;
   onChange: (name: string) => void;
 }) {
   const id = useId();
-  const missing = value !== "" && !names.includes(value);
+  const missing = names !== undefined && value !== "" && !names.includes(value);
+  const unlisted = value !== "" && !(names ?? []).includes(value);
   return (
     <div className="space-y-1">
       <label htmlFor={id} className="text-sm font-medium text-text">
@@ -39,12 +41,12 @@ export function SecretNameSelect({
         onChange={(event) => onChange(event.target.value)}
       >
         <NativeSelectOption value="">None</NativeSelectOption>
-        {missing && (
+        {unlisted && (
           <NativeSelectOption value={value}>
-            {value} (not found)
+            {missing ? `${value} (not found)` : value}
           </NativeSelectOption>
         )}
-        {names.map((name) => (
+        {(names ?? []).map((name) => (
           <NativeSelectOption key={name} value={name}>
             {name}
           </NativeSelectOption>

@@ -43,6 +43,22 @@ describe("SecretNameSelect", () => {
     ).toBeTruthy();
   });
 
+  it("keeps the value and does not call it missing when the list is not known", () => {
+    render(
+      <SecretNameSelect
+        label="Credentials Secret"
+        value="git"
+        namespace="fleet"
+        onChange={() => {}}
+      />,
+    );
+    expect(options()).toEqual(["None", "git"]);
+    expect(
+      (screen.getByLabelText("Credentials Secret") as HTMLSelectElement).value,
+    ).toBe("git");
+    expect(screen.queryByText(/does not exist/)).toBeNull();
+  });
+
   it("gives the picked name to onChange", () => {
     const onChange = vi.fn();
     render(

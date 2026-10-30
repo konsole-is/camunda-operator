@@ -139,6 +139,17 @@ describe("SettingsPage", () => {
     expect(container.textContent).toContain("metrics-server found");
   });
 
+  it("a Secret list that fails shows its error and no Secret as missing", async () => {
+    vi.mocked(listSecretRefs).mockRejectedValue(
+      new Error("secrets is forbidden"),
+    );
+    const { container } = render(await SettingsPage());
+    expect(container.textContent).toContain(
+      "Could not list the Secrets of namespace fleet: secrets is forbidden",
+    );
+    expect(container.textContent).not.toContain("(not found)");
+  });
+
   it("a metrics-server check that fails shows its error", async () => {
     vi.mocked(metricsServerFound).mockRejectedValue(new Error("timeout"));
     const { container } = render(await SettingsPage());
