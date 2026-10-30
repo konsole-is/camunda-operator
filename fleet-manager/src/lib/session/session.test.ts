@@ -345,9 +345,6 @@ describe("locks above a field", () => {
     expect(
       setValue(s, [...ACCESS, f("parameters")], { hostnamePattern: "x" }),
     ).toEqual({ refused: admin });
-    expect(setValue(s, [f("spec")], { ...claim().spec, plugins: [] })).toEqual({
-      refused: admin,
-    });
     expect(resetValue(s, [...ACCESS, f("parameters")])).toEqual({
       refused: admin,
     });
@@ -380,28 +377,73 @@ describe("locks above a field", () => {
     ).toEqual({ refused: admin });
   });
 
-  it("refuses an index step to an appended item that the lock names by the keys of the value", () => {
+  it.each<[string, (s: Session) => SetResult<ClaimObject>]>([
+    [
+      "an index step to another option with the parameter",
+      (s) =>
+        setValue(s, [f("spec"), f("plugins"), { index: 0 }], {
+          section: "access",
+          registration: "other-access",
+          parameters: { hostnamePattern: "h" },
+        }),
+    ],
+    [
+      "an index step to another option without the parameter",
+      (s) =>
+        setValue(s, [f("spec"), f("plugins"), { index: 0 }], {
+          section: "access",
+          registration: "other-access",
+        }),
+    ],
+    [
+      "a set of spec.plugins that swaps the selection",
+      (s) =>
+        setValue(
+          s,
+          [f("spec"), f("plugins")],
+          [{ section: "access", registration: "other-access" }],
+        ),
+    ],
+    ["a reset that deselects the plugin", (s) => resetValue(s, ACCESS)],
+    [
+      "a set of spec that deselects the plugin",
+      (s) => setValue(s, [f("spec")], { ...claim().spec, plugins: [] }),
+    ],
+    [
+      "a change of the keys of the item",
+      (s) =>
+        setValue(
+          s,
+          [f("spec"), f("plugins"), { index: 0 }, f("section")],
+          "other",
+        ),
+    ],
+  ])("accepts %s: the lock goes with its selection", (_, change) => {
+    expect(change(open(claim(), hostLocked))).toHaveProperty("session");
+  });
+
+  it("accepts an append of a selection that the claim does not hold, with a locked parameter", () => {
     const locks: LockProvider = (p) =>
       p ===
       "spec.plugins[section=backup,registration=s3-backup].parameters.bucket"
         ? admin
         : undefined;
-    const s = open(claim(), locks);
     expect(
-      setValue(s, [f("spec"), f("plugins"), { index: 1 }], {
+      setValue(open(claim(), locks), [f("spec"), f("plugins"), { index: 1 }], {
         section: "backup",
         registration: "s3-backup",
         parameters: { bucket: "b" },
       }),
-    ).toEqual({ refused: admin });
+    ).toHaveProperty("session");
   });
 
-  it("refuses an index step that replaces an item with a locked field by another item", () => {
+  it("refuses a duplicate append of an item with a locked field that changes it", () => {
     const s = open(claim(), hostLocked);
     expect(
-      setValue(s, [f("spec"), f("plugins"), { index: 0 }], {
-        section: "backup",
-        registration: "s3-backup",
+      setValue(s, [f("spec"), f("plugins"), { index: 1 }], {
+        section: "access",
+        registration: "gateway-access",
+        parameters: { hostnamePattern: "h" },
       }),
     ).toEqual({ refused: admin });
   });
@@ -431,17 +473,6 @@ describe("locks above a field", () => {
       ).toEqual({ refused: admin });
     },
   );
-
-  it("refuses a change of the keys of an item with a locked field", () => {
-    const s = open(claim(), hostLocked);
-    expect(
-      setValue(
-        s,
-        [f("spec"), f("plugins"), { index: 0 }, f("section")],
-        "other",
-      ),
-    ).toEqual({ refused: admin });
-  });
 
   it("refuses a change below a pending parent that changes a locked field", () => {
     const locks: LockProvider = (p) =>

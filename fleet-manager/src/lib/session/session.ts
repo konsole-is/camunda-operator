@@ -65,9 +65,12 @@ export function openSession<C extends ClaimObject>(input: {
  * setValue sets value at steps. A value equal to the claim value removes
  * the change, and undefined is resetValue. A locked path, or a path below a
  * locked one, refuses, and so does a value that changes a locked field
- * below steps. A change below a pending change goes into that change, and a
- * change above pending changes replaces them. An index in steps names the
- * item of the list in the claim, as in withChanges.
+ * below steps. A lock on a field below an item that has keys (section and
+ * registration, or name) goes with the item: a change that removes the item
+ * or gives it other keys does not refuse. A change below a pending change
+ * goes into that change, and a change above pending changes replaces them.
+ * An index in steps names the item of the list in the claim, as in
+ * withChanges.
  */
 export function setValue<C extends ClaimObject>(
   s: Session<C>,
@@ -108,8 +111,10 @@ export function setValue<C extends ClaimObject>(
  * resetValue removes the claim value at steps, as "Reset to preset" and
  * "Reset to environment" do. When the claim holds no value there, it only
  * drops a pending change. A locked path, a path below a locked one, or a
- * path above a locked field that the claim holds, refuses. An index in steps
- * names the item of the list in the claim, as in withChanges.
+ * path above a locked field that the claim holds, refuses. A lock on a
+ * field below an item that has keys (section and registration, or name)
+ * goes with the item, so a reset of the item does not refuse. An index in
+ * steps names the item of the list in the claim, as in withChanges.
  */
 export function resetValue<C extends ClaimObject>(
   s: Session<C>,
@@ -252,46 +257,29 @@ function lockAt(
   steps: readonly Step[],
   after: unknown,
 ): FieldLock | undefined {
-  const keyedIn = (object: unknown) => rekeyed(object, steps);
-  const before = valueAt(claim, steps);
-  const target = after === undefined ? claim : withValue(claim, steps, after);
+  const target =
+    after === undefined
+      ? without(claim, steps)
+      : withValue(claim, steps, after);
+  const inClaim = rekeyed(claim, steps);
+  const inTarget = rekeyed(target, steps);
   return (
     lockOf(locks, steps) ??
-    [keyedIn(claim), keyedIn(target)]
-      .map(
-        (keyed) =>
-          lockOf(locks, keyed) ?? lockedChange(locks, keyed, before, after),
-      )
-      .find((lock) => lock !== undefined) ??
-    renamedLock(locks, claim, target, steps)
-  );
-}
-
-// renamedLock returns the lock of a field in an item of the claim that the
-// change gives other keys, because the item leaves its old keys.
-function renamedLock(
-  locks: LockProvider,
-  claim: ClaimObject,
-  target: unknown,
-  steps: readonly Step[],
-): FieldLock | undefined {
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    if ("field" in step) continue;
-    const prefix = steps.slice(0, i + 1);
-    const old = valueAt(claim, prefix);
-    if (old === undefined) continue;
-    const index = "index" in step ? step.index : 0;
-    const now = valueAt(target, prefix);
-    if (
-      now !== undefined &&
-      equalJSON(itemStep(old, index), itemStep(now, index))
+    lockOf(locks, inClaim) ??
+    lockOf(locks, inTarget) ??
+    lockedChange(
+      locks,
+      inClaim,
+      valueAt(claim, steps),
+      valueAt(target, inClaim),
+    ) ??
+    lockedChange(
+      locks,
+      inTarget,
+      valueAt(claim, inTarget),
+      valueAt(target, steps),
     )
-      continue;
-    const lock = lockedChange(locks, rekeyed(claim, prefix), old, undefined);
-    if (lock) return lock;
-  }
-  return undefined;
+  );
 }
 
 function lockOf(
@@ -316,6 +304,15 @@ function lockedChange(
   if (equalJSON(before, after)) return undefined;
   const lock = locks(pathFrom("", steps));
   if (lock) return lock;
+  const last = steps.at(-1);
+  if (
+    last !== undefined &&
+    !("field" in last) &&
+    (before === undefined ||
+      after === undefined ||
+      !equalJSON(itemStep(before, 0), itemStep(after, 0)))
+  )
+    return undefined;
   for (const [step, b, a] of childrenOf(before, after)) {
     const found = lockedChange(locks, [...steps, step], b, a);
     if (found) return found;
