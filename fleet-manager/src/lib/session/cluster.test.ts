@@ -366,6 +366,14 @@ describe("validateClusterClaim", () => {
     ]);
   });
 
+  it.each([
+    ["an object", {}],
+    ["a list with null", [null]],
+  ])("does not throw when spec.plugins is %s", (_, plugins) => {
+    const s = set(open(), [f("spec"), f("plugins")], plugins);
+    expect(() => validateClusterClaim(s, ctx())).not.toThrow();
+  });
+
   it("checks a parameter by the additionalProperties schema of its registration", () => {
     const c = ctx();
     c.registrations = [

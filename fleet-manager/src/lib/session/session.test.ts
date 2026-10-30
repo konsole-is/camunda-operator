@@ -363,6 +363,23 @@ describe("locks above a field", () => {
     expect(s.pending.size).toBe(1);
   });
 
+  it("refuses an index step to an item that the lock names by its keys", () => {
+    const s = open(claim(), hostLocked);
+    expect(
+      setValue(
+        s,
+        [
+          f("spec"),
+          f("plugins"),
+          { index: 0 },
+          f("parameters"),
+          f("hostnamePattern"),
+        ],
+        "x",
+      ),
+    ).toEqual({ refused: admin });
+  });
+
   it("refuses a change below a pending parent that changes a locked field", () => {
     const locks: LockProvider = (p) =>
       p === "spec.cluster.zeebe.replicas" ? admin : undefined;
@@ -453,6 +470,46 @@ describe("indexed items", () => {
       (claimAfter(s).spec as { cluster: { extraEnvFrom: unknown } }).cluster
         .extraEnvFrom,
     ).toEqual([{ a: 1 }, { e: 5 }]);
+  });
+
+  it("a reset or a discard of the last field of an appended item leaves no hole", () => {
+    const one = withSpec({ cluster: { extraEnvFrom: [{ a: 1 }] } });
+    let s = ok(setValue(open(one), [...item(1), f("configMapRef")], "m"));
+    s = ok(setValue(s, [...item(2), f("secretRef")], "x"));
+    const list = (session: Session) =>
+      (claimAfter(session).spec as { cluster: { extraEnvFrom: unknown } })
+        .cluster.extraEnvFrom;
+    expect(list(ok(resetValue(s, [...item(1), f("configMapRef")])))).toEqual([
+      { a: 1 },
+      { secretRef: "x" },
+    ]);
+    expect(
+      list(discard(s, "spec.cluster.extraEnvFrom[1].configMapRef")),
+    ).toEqual([{ a: 1 }, { secretRef: "x" }]);
+  });
+
+  it("rebase drops a locked appended item without a hole, and checks the moved items", () => {
+    const one = withSpec({ cluster: { extraEnvFrom: [{ a: 1 }] } });
+    let s = ok(setValue(open(one), item(1), { d: 4 }));
+    s = ok(setValue(s, item(2), { e: 5 }));
+    const next = {
+      ...one,
+      metadata: { ...one.metadata, resourceVersion: "42" },
+    };
+    const rebased = rebase(s, next, (p) =>
+      p === "spec.cluster.extraEnvFrom[1]" ? { reason: "admin" } : undefined,
+    );
+    expect(
+      (claimAfter(rebased).spec as { cluster: { extraEnvFrom: unknown } })
+        .cluster.extraEnvFrom,
+    ).toEqual([{ a: 1 }]);
+    const unlocked = rebase(s, next, (p) =>
+      p === "spec.cluster.extraEnvFrom[2]" ? { reason: "admin" } : undefined,
+    );
+    expect(
+      (claimAfter(unlocked).spec as { cluster: { extraEnvFrom: unknown } })
+        .cluster.extraEnvFrom,
+    ).toEqual([{ a: 1 }, { d: 4 }]);
   });
 
   it("rebase drops an indexed change when its list changed", () => {

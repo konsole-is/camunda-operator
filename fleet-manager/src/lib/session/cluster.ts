@@ -67,7 +67,7 @@ export function validateClusterClaim(
   const spec = (after.spec ?? {}) as Claim["spec"];
   const changed = (field: "presetRef" | "releaseRef") =>
     Boolean(spec[field]) && spec[field] !== s.claim.spec?.[field];
-  const selections = (spec.plugins ?? []) as PluginSelection[];
+  const selections = selectionsOf(after);
   const errors: FieldError[] = [];
 
   for (const row of REFUSED_CLUSTER_FIELDS) {
@@ -148,7 +148,7 @@ function changedParameterErrors(
   policy: ResolvedPolicy | undefined,
 ): FieldError[] {
   const errors: FieldError[] = [];
-  for (const selection of (after.spec?.plugins ?? []) as PluginSelection[]) {
+  for (const selection of selectionsOf(after)) {
     const keys = {
       section: selection.section,
       registration: selection.registration,
@@ -223,7 +223,7 @@ function requestOf(
   ctx: ClusterClaimContext,
   policy: ResolvedPolicy | undefined,
 ): Record<string, unknown> {
-  const selections = (after.spec?.plugins ?? []) as PluginSelection[];
+  const selections = selectionsOf(after);
   const i = selections.findIndex((s) =>
     Object.entries(keys).every(([k, v]) => s[k as keyof PluginSelection] === v),
   );
@@ -276,6 +276,21 @@ function releaseErrors(
 // Date, and the policy library reads no timestamp.
 function generated<T>(value: unknown): T {
   return value as T;
+}
+
+// selectionsOf returns the selections of claim that name a section and a
+// registration. A change can set spec.plugins to any value, and the dry run
+// reports one of the wrong type.
+function selectionsOf(claim: Claim): PluginSelection[] {
+  const plugins: unknown = claim.spec?.plugins;
+  if (!Array.isArray(plugins)) return [];
+  return plugins.filter(
+    (p): p is PluginSelection =>
+      typeof p === "object" &&
+      p !== null &&
+      typeof p.section === "string" &&
+      typeof p.registration === "string",
+  );
 }
 
 // The CRD does not give the parameters of a registration a shape.

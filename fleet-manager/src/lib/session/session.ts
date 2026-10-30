@@ -76,9 +76,7 @@ export function setValue<C extends ClaimObject>(
 ): SetResult<C> {
   if (value === undefined) return resetValue(s, steps);
   const path = pathFrom("", steps);
-  const lock =
-    lockOf(s.locks, steps) ??
-    lockedChange(s.locks, steps, valueAt(s.claim, steps), value);
+  const lock = lockAt(s.locks, s.claim, steps, value);
   if (lock) return { refused: lock };
   const parent = pendingParent(s, steps);
   if (parent)
@@ -118,9 +116,7 @@ export function resetValue<C extends ClaimObject>(
   steps: Step[],
 ): SetResult<C> {
   const path = pathFrom("", steps);
-  const lock =
-    lockOf(s.locks, steps) ??
-    lockedChange(s.locks, steps, valueAt(s.claim, steps), undefined);
+  const lock = lockAt(s.locks, s.claim, steps, undefined);
   if (lock) return { refused: lock };
   const parent = pendingParent(s, steps);
   if (parent) {
@@ -136,7 +132,7 @@ export function resetValue<C extends ClaimObject>(
       : setValue(s, parent.entry.steps, rest);
   }
   if (valueAt(s.claim, steps) === undefined)
-    return { session: closeGap(withEntry(s, steps, undefined), steps) };
+    return { session: compactAppended(withEntry(s, steps, undefined)) };
   return {
     session: withEntry(s, steps, {
       path,
@@ -158,9 +154,7 @@ export function discard<C extends ClaimObject>(
   if (!entry) return s;
   const pending = new Map(s.pending);
   pending.delete(path);
-  return valueAt(s.claim, entry.steps) === undefined
-    ? closeGap({ ...s, pending }, entry.steps)
-    : { ...s, pending };
+  return compactAppended({ ...s, pending });
 }
 
 /** claimAfter returns a copy of the claim with each pending change applied. */
@@ -200,21 +194,55 @@ export function rebase<C extends ClaimObject>(
 ): Session<C> {
   const pending = new Map<FieldPath, PendingChange>();
   for (const [path, entry] of s.pending) {
-    const value = "reset" in entry ? undefined : entry.value;
-    if (
-      lockOf(locks, entry.steps) ??
-      lockedChange(locks, entry.steps, valueAt(claim, entry.steps), value)
-    )
-      continue;
-    if (movedIndex(s.claim, claim, entry.steps)) continue;
     const current = valueAt(claim, entry.steps);
     const changes =
       "reset" in entry
         ? current !== undefined
         : !equalJSON(entry.value, current);
-    if (changes) pending.set(path, entry);
+    if (
+      changes &&
+      !movedIndex(s.claim, claim, entry.steps) &&
+      !lockAt(locks, claim, entry.steps, valueOf(entry))
+    )
+      pending.set(path, entry);
   }
-  return { claim, pending, locks };
+  // Closing a hole moves later appended items, so their locks are checked
+  // again at their new places.
+  let next: Session<C> = { claim, pending, locks };
+  for (;;) {
+    next = compactAppended(next);
+    const locked = [...next.pending].filter(([, e]) =>
+      lockAt(locks, claim, e.steps, valueOf(e)),
+    );
+    if (locked.length === 0) return next;
+    const kept = new Map(next.pending);
+    for (const [path] of locked) kept.delete(path);
+    next = { ...next, pending: kept };
+  }
+}
+
+function valueOf(entry: PendingChange): unknown {
+  return "reset" in entry ? undefined : entry.value;
+}
+
+// lockAt returns the lock that refuses a change at steps to after. A lock
+// can name a list item by its keys while steps name it by its index.
+function lockAt(
+  locks: LockProvider,
+  claim: ClaimObject,
+  steps: readonly Step[],
+  after: unknown,
+): FieldLock | undefined {
+  const keyed = steps.map((step, i) =>
+    "index" in step
+      ? itemStep(valueAt(claim, steps.slice(0, i + 1)), step.index)
+      : step,
+  );
+  return (
+    lockOf(locks, steps) ??
+    lockOf(locks, keyed) ??
+    lockedChange(locks, keyed, valueAt(claim, steps), after)
+  );
 }
 
 function lockOf(
@@ -315,32 +343,39 @@ function withEntry<C extends ClaimObject>(
   return { ...s, pending };
 }
 
-// closeGap moves each pending change at a later index of the list of steps
-// one index down, after the drop of an appended item at steps, so that the
-// list after the change has no hole.
-function closeGap<C extends ClaimObject>(
-  s: Session<C>,
-  steps: readonly Step[],
-): Session<C> {
-  const last = steps.at(-1);
-  if (!last || !("index" in last)) return s;
-  const list = steps.slice(0, -1);
+// compactAppended moves the appended items of each list, at indexes past
+// the end of the list in the claim, to the indexes right after it, so that
+// a dropped item leaves no hole.
+function compactAppended<C extends ClaimObject>(s: Session<C>): Session<C> {
+  const lists = new Map<string, Set<number>>();
+  const appendedAt = (steps: readonly Step[]) =>
+    steps.findIndex(
+      (step, j) =>
+        "index" in step &&
+        valueAt(s.claim, steps.slice(0, j + 1)) === undefined,
+    );
+  for (const entry of s.pending.values()) {
+    const j = appendedAt(entry.steps);
+    if (j < 0) continue;
+    const key = JSON.stringify(entry.steps.slice(0, j));
+    const indexes = lists.get(key) ?? new Set<number>();
+    indexes.add((entry.steps[j] as { index: number }).index);
+    lists.set(key, indexes);
+  }
   const pending = new Map<FieldPath, PendingChange>();
   for (const [key, entry] of s.pending) {
-    const step = entry.steps[list.length];
-    if (
-      !isBelow(entry.steps, list) ||
-      !("index" in step) ||
-      step.index <= last.index
-    ) {
+    const j = appendedAt(entry.steps);
+    if (j < 0) {
       pending.set(key, entry);
       continue;
     }
-    const moved = [
-      ...list,
-      { index: step.index - 1 },
-      ...entry.steps.slice(list.length + 1),
-    ];
+    const list = entry.steps.slice(0, j);
+    const length = valueAt(s.claim, list);
+    const start = Array.isArray(length) ? length.length : 0;
+    const order = [...lists.get(JSON.stringify(list))!].sort((a, b) => a - b);
+    const index =
+      start + order.indexOf((entry.steps[j] as { index: number }).index);
+    const moved = [...list, { index }, ...entry.steps.slice(j + 1)];
     const path = pathFrom("", moved);
     pending.set(path, { ...entry, path, steps: moved });
   }
