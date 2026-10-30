@@ -120,7 +120,7 @@ A GitHub App works for repositories on `github.com` and on GitHub Enterprise Ser
 3. Write down the App ID from the settings page of the App.
 4. Write down the installation ID. It is the number at the end of the address of the installation settings page.
 5. Generate a private key for the App, and download the `.pem` file.
-6. Create the Secret. If the App is on GitHub Enterprise Server, keep the line of `enterpriseHost` and set the host of the server, for example `ghe.example.com`. Otherwise, remove the line:
+6. Create the Secret. If the App is on GitHub Enterprise Server, set `enterpriseHost` to the host of the server, for example `ghe.example.com`. Otherwise, remove the line of `enterpriseHost`:
 
     ```bash
     kubectl -n camunda-operator-system create secret generic fleet-git \
