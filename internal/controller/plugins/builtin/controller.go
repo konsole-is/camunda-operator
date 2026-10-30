@@ -41,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -142,8 +143,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ct
 		return ctrl.Result{}, nil
 	}
 
-	log := logf.FromContext(ctx).WithValues("request", klog.KObj(&request))
-	ctx = logf.IntoContext(ctx, log)
+	log := logf.FromContext(ctx)
 
 	rec := component.ReconcileContext{
 		Client:        r.Client,
@@ -481,6 +481,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 			})),
 		).
 		Named(controllerName).
+		WithLogConstructor(requestLogger(mgr.GetLogger())).
 		Complete(r)
 }
 
@@ -578,4 +579,24 @@ func keyOf(kind string) func(client.Object) string {
 
 func contractKey(kind, namespace, name string) string {
 	return kind + "/" + refindex.NamespacedKey(namespace, name)
+}
+
+// requestLogger returns the logger constructor of the controller. Each line
+// about a request, including the reconcile errors of controller-runtime,
+// carries the key request with its namespace and name.
+func requestLogger(base logr.Logger) func(*reconcile.Request) logr.Logger {
+	log := base.WithValues(
+		"controller", controllerName,
+		"controllerGroup", pluginsv1alpha1.GroupVersion.Group,
+		"controllerKind", "PluginRequest",
+	)
+
+	return func(req *reconcile.Request) logr.Logger {
+		if req == nil {
+			return log
+		}
+
+		ref := klog.KRef(req.Namespace, req.Name)
+		return log.WithValues("PluginRequest", ref, "namespace", req.Namespace, "name", req.Name, "request", ref)
+	}
 }
