@@ -310,19 +310,23 @@ function lockedChange(
   const lock = locks(pathFrom("", steps));
   if (lock) return lock;
   const last = steps.at(-1);
-  if (
-    last !== undefined &&
-    !("field" in last) &&
-    (before === undefined ||
-      after === undefined ||
-      !equalJSON(itemStep(before, 0), itemStep(after, 0)))
-  )
+  if (last !== undefined && !("field" in last) && !sameItem(before, after))
     return undefined;
   for (const [step, b, a] of childrenOf(before, after)) {
     const found = lockedChange(locks, [...steps, step], b, a);
     if (found) return found;
   }
   return undefined;
+}
+
+// sameItem says whether before and after are one list item. An item
+// without keys is the same item when one side is missing, so the locks of
+// its fields still apply.
+function sameItem(before: unknown, after: unknown): boolean {
+  const keyed = (v: unknown) => v !== undefined && "item" in itemStep(v, 0);
+  if (before === undefined) return !keyed(after);
+  if (after === undefined) return !keyed(before);
+  return equalJSON(itemStep(before, 0), itemStep(after, 0));
 }
 
 // childrenOf pairs the children of before and after by their step. A list

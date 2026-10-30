@@ -448,6 +448,21 @@ describe("locks above a field", () => {
     ).toHaveProperty("session");
   });
 
+  it("refuses a removal of an item without keys that holds a locked field", () => {
+    const list = withSpec({
+      cluster: { extraEnvFrom: [{ configMapRef: "m" }] },
+    });
+    const locks: LockProvider = (p) =>
+      p === "spec.cluster.extraEnvFrom[0].configMapRef" ? admin : undefined;
+    const s = open(list, locks);
+    expect(resetValue(s, [...cluster("extraEnvFrom"), { index: 0 }])).toEqual({
+      refused: admin,
+    });
+    expect(setValue(s, cluster("extraEnvFrom"), [])).toEqual({
+      refused: admin,
+    });
+  });
+
   it("refuses a duplicate append of an item with a locked field that changes it", () => {
     const s = open(claim(), hostLocked);
     expect(
