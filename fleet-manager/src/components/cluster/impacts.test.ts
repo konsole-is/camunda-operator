@@ -449,6 +449,43 @@ describe("mergedSpecs", () => {
     expect(after.spec.extraEnv ?? []).toEqual([]);
   });
 
+  it("a reset of the last claim field of a process keeps the fields that the controller fills", () => {
+    const { after } = mergedSpecs(
+      input(reset(cluster("zeebe", "replicas")), {
+        live: live({
+          zeebe: { replicas: 3, storageSize: "32Gi", storageClassName: "fast" },
+        }),
+      }),
+    );
+    expect(after.spec.zeebe?.storageClassName).toBe("fast");
+    expect(after.spec.zeebe?.replicas).toBeUndefined();
+  });
+
+  it("an empty block replaces the block before it", () => {
+    const scheduling = { tolerations: [{ key: "a", operator: "Exists" }] };
+    const i = input(set(cluster("scheduling"), {}), {
+      claim: claim({ scheduling }),
+      live: live({ scheduling }),
+    });
+    expect(mergedSpecs(i).after.spec.scheduling).toEqual({});
+    expect(clusterImpacts(i)).toEqual([
+      "Every process restarts, except the processes that set the field themselves.",
+    ]);
+  });
+
+  it("a new order of a keyed list is a change", () => {
+    const a = { name: "A", value: "1" };
+    const b = { name: "B", value: "$(A)" };
+    const i = input(set(cluster("extraEnv"), [a, b]), {
+      claim: claim({ extraEnv: [b, a] }),
+      live: live({ extraEnv: [b, a] }),
+    });
+    expect(mergedSpecs(i).after.spec.extraEnv).toEqual([a, b]);
+    expect(clusterImpacts(i)).toEqual([
+      "Every process restarts, except the processes that set the field themselves.",
+    ]);
+  });
+
   it("keeps the live release when the claim does not change it", () => {
     const inherits = claim({ gateway: { replicas: 2 } });
     delete (inherits.spec as { releaseRef?: string }).releaseRef;

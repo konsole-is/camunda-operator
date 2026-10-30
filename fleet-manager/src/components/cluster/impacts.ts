@@ -225,16 +225,25 @@ function clusterChanges(input: ClusterChangeInput): StepChange[] {
 
 function diff(was: unknown, is: unknown, steps: Step[] = []): StepChange[] {
   if (equalJSON(was, is)) return [];
-  // A new field names its leaves. A removed one goes as a whole, because a
-  // list item without its keys cannot be found again.
-  const children = childrenOf(was ?? (Array.isArray(is) ? [] : {}), is);
+  // An empty block replaces the block of the preset.
+  if (steps.length > 0 && isObject(is) && Object.keys(is).length === 0)
+    return [{ steps, value: is }];
+  // A removed object goes field by field, so that the fields that the
+  // controller fills stay. A removed list item goes as a whole, because
+  // without its keys it cannot be found again.
+  const last = steps.at(-1);
+  const removed = is === undefined && isObject(was) && last && "field" in last;
+  const children = childrenOf(
+    was ?? (Array.isArray(is) ? [] : {}),
+    removed ? {} : is,
+  );
   if (!children) return [{ steps, value: is }];
   return children.flatMap(([step, w, i]) => diff(w, i, [...steps, step]));
 }
 
 // childrenOf pairs the children of two objects by field, or of two lists
 // whose items all have keys by those keys. It returns undefined for other
-// values.
+// values, and for two lists whose items that stay changed their order.
 function childrenOf(
   was: unknown,
   is: unknown,
@@ -256,6 +265,13 @@ function childrenOf(
     list.map((item, index) => itemStep(item, index)),
   );
   if (steps.flat().some((step) => !("item" in step))) return undefined;
+  // An item of the change goes to the end of the list, so the items that
+  // stay must keep their order.
+  const [before, after] = steps.map((list) =>
+    list.map((step) => JSON.stringify(step)),
+  );
+  const kept = before.filter((key) => after.includes(key));
+  if (!equalJSON(after.slice(0, kept.length), kept)) return undefined;
   was.forEach((item, i) => add(steps[0][i], item, 1));
   is.forEach((item, i) => add(steps[1][i], item, 2));
   return [...pairs.values()];

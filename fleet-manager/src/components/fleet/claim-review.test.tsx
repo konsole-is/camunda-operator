@@ -335,6 +335,51 @@ describe("ClaimReview", () => {
     expect((await confirm("Save")).disabled).toBe(false);
   });
 
+  it("shows a note when the preview keeps a reset field of a list item named by index", async () => {
+    const env = { name: "TZ", value: "UTC" };
+    const withEnv: ClaimObject = {
+      ...claim,
+      spec: { cluster: { zeebe: { replicas: 3 }, extraEnv: [env] } },
+    };
+    const s = openSession({
+      claim: withEnv,
+      resource: { metadata: { labels: { [CLAIM_LABEL]: "orders" } } },
+      locks: () => undefined,
+    })!;
+    const result = resetValue(s, [
+      { field: "spec" },
+      { field: "cluster" },
+      { field: "extraEnv" },
+      { index: 0 },
+      { field: "value" },
+    ]);
+    if (!("session" in result)) throw new Error("refused");
+    fakeWriter.previews = [
+      {
+        objects: [
+          {
+            ref: {
+              apiVersion: claim.apiVersion,
+              kind: claim.kind,
+              namespace: "team-a",
+              name: "orders",
+            },
+            after: withEnv as KubeObject,
+            diff: [],
+          },
+        ],
+        errors: [],
+      },
+    ];
+    review({ session: result.session });
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "Another field manager keeps spec.cluster.extraEnv[0].value, so the reset does not remove it.",
+      ),
+    );
+  });
+
   it("shows no note when the preview removes a reset field", async () => {
     review({ session: session(resetPartitions) });
 

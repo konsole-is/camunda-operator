@@ -3,6 +3,7 @@
 import { CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { objectDiff, type DiffLine } from "@/lib/diff";
+import { itemStep, type Step } from "@/lib/fields";
 import {
   changeOf,
   claimAfter,
@@ -198,15 +199,34 @@ function keptResets(s: Session, preview: Preview): string[] {
   )?.after;
   if (!after) return [];
   return [...s.pending.values()]
-    .filter(
-      (entry) =>
-        "reset" in entry &&
-        // After a reset the index of a list item names the next item.
-        !entry.steps.some((step) => "index" in step) &&
-        valueAt(after, entry.steps) !== undefined,
-    )
+    .filter((entry) => {
+      if (!("reset" in entry)) return false;
+      const steps = keyedSteps(s.claim, entry.steps);
+      return steps !== undefined && valueAt(after, steps) !== undefined;
+    })
     .map(
       (entry) =>
         `Another field manager keeps ${entry.path}, so the reset does not remove it.`,
     );
+}
+
+// keyedSteps names each list item of steps by its keys in claim, because a
+// reset can move the items after it. It returns undefined when an item has
+// no keys.
+function keyedSteps(
+  claim: unknown,
+  steps: readonly Step[],
+): Step[] | undefined {
+  const out: Step[] = [];
+  let at = claim;
+  for (const step of steps) {
+    const next =
+      "index" in step && Array.isArray(at)
+        ? itemStep(at[step.index], step.index)
+        : step;
+    if ("index" in next) return undefined;
+    out.push(next);
+    at = valueAt(at, [step]);
+  }
+  return out;
 }
