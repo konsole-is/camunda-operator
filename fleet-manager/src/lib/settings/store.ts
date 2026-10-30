@@ -54,7 +54,8 @@ export async function readSettings(): Promise<{
  * string unsets a setting. It returns Invalid without a request for a patch
  * that checkPatch refuses, and Stale when the ConfigMap changed between its
  * read and its write. With expectedVersion, it also returns Stale, and
- * writes nothing, when the ConfigMap no longer has that resourceVersion.
+ * writes nothing, when the ConfigMap is gone or no longer has that
+ * resourceVersion.
  * It never retries. It writes to the API server, also in Git mode.
  */
 export async function updateSettings(
@@ -70,17 +71,19 @@ async function writePatch(
   patch: Partial<Settings>,
   expectedVersion: string | undefined,
 ): Promise<WriteResult> {
-  let live: ConfigMap;
+  let live: ConfigMap | undefined;
   try {
-    live = await readOrCreate();
+    // A save of a page that read the settings must not create them again
+    // when someone deleted the ConfigMap since.
+    live = expectedVersion === undefined ? await readOrCreate() : await read();
   } catch (error) {
     return {
       ok: false,
       errors: [{ code: "Unavailable", message: messageOf(error) }],
     };
   }
-  const object = settingsObject({ ...live.data, ...patch });
-  const version = live.metadata.resourceVersion ?? "";
+  const object = settingsObject({ ...live?.data, ...patch });
+  const version = live?.metadata.resourceVersion;
   if (expectedVersion !== undefined && expectedVersion !== version) {
     return {
       ok: false,
@@ -102,7 +105,7 @@ async function writePatch(
     force: true,
     apply: [object],
     preconditions: {
-      [refKey({ kind: object.kind, ...object.metadata })]: version,
+      [refKey({ kind: object.kind, ...object.metadata })]: version ?? "",
     },
   });
 }

@@ -258,6 +258,18 @@ describe("updateSettings with the version that the page read", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
+  it("a deleted ConfigMap gives Stale and is not created again", async () => {
+    vi.mocked(getJSON).mockRejectedValue(
+      new KubernetesRequestError(404, "not found"),
+    );
+
+    expect(await updateSettings({ kubernetesClusterName: "b" }, "7")).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(apply).not.toHaveBeenCalled();
+  });
+
   it("the same version is the precondition of the write", async () => {
     vi.mocked(getJSON).mockResolvedValue(
       configMap({ kubernetesClusterName: "a" }, "7"),
