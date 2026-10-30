@@ -8,7 +8,7 @@ import type { HttpClient } from "isomorphic-git";
 import gitHttp from "isomorphic-git/http/node";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
-import { REVISION_ANNOTATION } from "@/lib/labels";
+import { LAST_APPLIED_ANNOTATION, REVISION_ANNOTATION } from "@/lib/labels";
 import { readSecretValues } from "@/lib/secrets/values";
 import {
   type BareRepository,
@@ -842,6 +842,111 @@ describe("the Git writer", slow, () => {
           }),
         ],
         previewManagers: { [envRef]: "kustomize-controller" },
+      }),
+    );
+  });
+
+  it("dry-runs an object that GitOps applied with client-side apply as a merge patch, with the live revision", async () => {
+    repo = await serveBareRepository();
+    const envRef = refKey({ kind: "Environment", name: "prod" });
+    live.set(envRef, {
+      ...environment("prod"),
+      metadata: {
+        name: "prod",
+        annotations: {
+          [REVISION_ANNOTATION]: "applied",
+          [LAST_APPLIED_ANNOTATION]: JSON.stringify(environment("prod")),
+        },
+      },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [environment("prod")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apply: [
+          expect.objectContaining({
+            metadata: {
+              name: "prod",
+              annotations: { [REVISION_ANNOTATION]: "applied" },
+            },
+          }),
+        ],
+        previewManagers: {},
+        previewMergePatches: [envRef],
+      }),
+    );
+  });
+
+  it("dry-runs an object with a server-side-apply GitOps manager as that manager, also when it has a last applied file", async () => {
+    repo = await serveBareRepository();
+    const envRef = refKey({ kind: "Environment", name: "prod" });
+    live.set(envRef, {
+      ...environment("prod"),
+      metadata: {
+        name: "prod",
+        annotations: {
+          [REVISION_ANNOTATION]: "applied",
+          [LAST_APPLIED_ANNOTATION]: JSON.stringify(environment("prod")),
+        },
+        managedFields: [
+          {
+            manager: "kustomize-controller",
+            operation: "Apply",
+            fieldsV1: {
+              "f:metadata": {
+                "f:annotations": { [`f:${REVISION_ANNOTATION}`]: {} },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [environment("prod")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previewManagers: { [envRef]: "kustomize-controller" },
+        previewMergePatches: [],
+      }),
+    );
+  });
+
+  it("dry-runs a Namespace with a last applied file with server-side apply", async () => {
+    repo = await serveBareRepository();
+    live.set(refKey({ kind: "Namespace", name: "team" }), {
+      ...namespace("team"),
+      metadata: {
+        name: "team",
+        annotations: {
+          [LAST_APPLIED_ANNOTATION]: JSON.stringify(namespace("team")),
+        },
+      },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Change",
+        apply: [namespace("team")],
+      }),
+    );
+
+    expect(directPreview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apply: [namespace("team")],
+        previewManagers: {},
+        previewMergePatches: [],
       }),
     );
   });

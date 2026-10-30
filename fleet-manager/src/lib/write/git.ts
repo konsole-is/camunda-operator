@@ -18,7 +18,13 @@ import { REVISION_ANNOTATION } from "@/lib/labels";
 import { inOrder } from "@/lib/serial";
 import { apiErrorsOf, reasonOf, staleError } from "./errors";
 import { type GitAuthor, gitCredentials } from "./git-auth";
-import { gitBase, gitOpsManager, gitPath, renderObject } from "./git-files";
+import {
+  appliedClientSide,
+  gitBase,
+  gitOpsManager,
+  gitPath,
+  renderObject,
+} from "./git-files";
 import type {
   ApiError,
   Change,
@@ -97,10 +103,11 @@ type Remote = {
  * dry run skips an ExternalSecret and an object in a
  * namespace that the same change creates; the preview shows them as
  * rendered. The dry run of an object that GitOps applied with server-side
- * apply runs as the field manager of GitOps, so it drops each field of
- * GitOps that the change leaves out. After a client-side apply, the dry run
- * keeps these fields. A delete of an object without a file, and a file
- * behind a symbolic link of the repository, are Invalid.
+ * apply runs as the field manager of GitOps. The dry run of a custom
+ * resource that GitOps applied with client-side apply is the merge patch of
+ * kubectl. Both drop each field of GitOps that the change leaves out. Any
+ * other object is dry-run as the app. A delete of an object without a
+ * file, and a file behind a symbolic link of the repository, are Invalid.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
@@ -124,10 +131,11 @@ export function gitWriter(options: GitWriterOptions): Writer {
     if (refusals.length > 0) return { objects: [], errors: refusals };
     const skipped = await notDryRun(change);
     const deletes = change.delete ?? [];
-    const { apply, previewManagers, errors } = await asGitOps(
-      change,
-      change.apply.filter((o) => !skipped.has(o)),
-    );
+    const { apply, previewManagers, previewMergePatches, errors } =
+      await asGitOps(
+        change,
+        change.apply.filter((o) => !skipped.has(o)),
+      );
     // force: GitOps applies the objects under its own field manager, so a
     // dry run without force fails on each field that GitOps set.
     const checked: Change = {
@@ -135,6 +143,7 @@ export function gitWriter(options: GitWriterOptions): Writer {
       force: true,
       apply,
       previewManagers,
+      previewMergePatches,
       delete: deletes.filter((r) => r.kind !== "ExternalSecret"),
     };
     const result =
@@ -174,18 +183,21 @@ export function gitWriter(options: GitWriterOptions): Writer {
     );
   };
 
-  // asGitOps maps each object that GitOps applied with server-side apply to
-  // the field manager of GitOps. Only a dry run as that manager removes the
-  // fields of GitOps that the file leaves out, as the GitOps apply does.
+  // asGitOps marks each object that GitOps applied, so that the dry run
+  // removes the fields of GitOps that the file leaves out, as the GitOps
+  // apply does: after a server-side apply it runs as the field manager of
+  // GitOps, and after a client-side apply as the merge patch of kubectl.
   const asGitOps = async (
     change: Change,
     objects: KubeObject[],
   ): Promise<{
     apply: KubeObject[];
     previewManagers: Record<RefKey, string>;
+    previewMergePatches: RefKey[];
     errors: ApiError[];
   }> => {
     const previewManagers: Record<RefKey, string> = {};
+    const previewMergePatches: RefKey[] = [];
     const apply: KubeObject[] = [];
     const errors: ApiError[] = [];
     for (const object of objects) {
@@ -199,29 +211,17 @@ export function gitWriter(options: GitWriterOptions): Writer {
         continue;
       }
       const manager = gitOpsManager(live);
-      if (manager === undefined) {
+      if (manager !== undefined) {
+        previewManagers[refKey(ref)] = manager;
+      } else if (appliedClientSide(live)) {
+        previewMergePatches.push(refKey(ref));
+      } else {
         apply.push(object);
         continue;
       }
-      previewManagers[refKey(ref)] = manager;
-      // The file carries the annotation, so the dry run must not remove it.
-      const annotations = (object.metadata.annotations ?? {}) as Record<
-        string,
-        string
-      >;
-      const revision =
-        (live!.metadata.annotations as Record<string, string> | undefined)?.[
-          REVISION_ANNOTATION
-        ] ?? "";
-      apply.push({
-        ...object,
-        metadata: {
-          ...object.metadata,
-          annotations: { ...annotations, [REVISION_ANNOTATION]: revision },
-        },
-      });
+      apply.push(withLiveRevision(object, live!));
     }
-    return { apply, previewManagers, errors };
+    return { apply, previewManagers, previewMergePatches, errors };
   };
 
   const staleErrors = async (change: Change): Promise<ApiError[]> => {
@@ -616,4 +616,24 @@ function gitErrorOf(error: unknown, target: GitTarget): ApiError {
 
 function failure(...errors: ApiError[]): WriteResult {
   return { ok: false, errors };
+}
+
+// The file carries the revision annotation, so the dry run must not remove
+// it.
+function withLiveRevision(object: KubeObject, live: KubeObject): KubeObject {
+  const revision = (
+    live.metadata.annotations as Record<string, string> | undefined
+  )?.[REVISION_ANNOTATION];
+  if (revision === undefined) return object;
+  const annotations = (object.metadata.annotations ?? {}) as Record<
+    string,
+    string
+  >;
+  return {
+    ...object,
+    metadata: {
+      ...object.metadata,
+      annotations: { ...annotations, [REVISION_ANNOTATION]: revision },
+    },
+  };
 }

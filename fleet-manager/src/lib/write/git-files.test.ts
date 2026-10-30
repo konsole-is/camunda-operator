@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { REVISION_ANNOTATION } from "@/lib/labels";
+import { LAST_APPLIED_ANNOTATION, REVISION_ANNOTATION } from "@/lib/labels";
 import { APP_FIELD_MANAGER } from "@/lib/merge";
-import { gitOpsManager, renderObject } from "./git-files";
+import { appliedClientSide, gitOpsManager, renderObject } from "./git-files";
 import type { KubeObject } from "./types";
 
 describe("renderObject", () => {
@@ -148,5 +148,59 @@ describe("gitOpsManager", () => {
         ),
       ),
     ).toBe("gitops");
+  });
+});
+
+describe("appliedClientSide", () => {
+  const withLastApplied = (
+    apiVersion: string,
+    kind: string,
+    lastApplied: string,
+  ): KubeObject => ({
+    apiVersion,
+    kind,
+    metadata: {
+      name: "prod",
+      annotations: { [LAST_APPLIED_ANNOTATION]: lastApplied },
+    },
+  });
+  const file = JSON.stringify({ spec: { displayName: "One" } });
+
+  it("is true for a custom resource with a last applied file", () => {
+    expect(
+      appliedClientSide(
+        withLastApplied("fleet.camunda.io/v1alpha1", "Environment", file),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false without a last applied file, and for a missing object", () => {
+    expect(
+      appliedClientSide({
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        metadata: { name: "prod" },
+      }),
+    ).toBe(false);
+    expect(appliedClientSide(undefined)).toBe(false);
+  });
+
+  it("is false for a built-in kind with a last applied file", () => {
+    expect(appliedClientSide(withLastApplied("v1", "Namespace", file))).toBe(
+      false,
+    );
+    expect(
+      appliedClientSide(
+        withLastApplied("gateway.networking.k8s.io/v1", "HTTPRoute", file),
+      ),
+    ).toBe(false);
+  });
+
+  it("is false when the last applied file is not a JSON object", () => {
+    expect(
+      appliedClientSide(
+        withLastApplied("fleet.camunda.io/v1alpha1", "Environment", "{"),
+      ),
+    ).toBe(false);
   });
 });
