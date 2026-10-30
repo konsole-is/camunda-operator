@@ -15,13 +15,13 @@ limitations under the License.
 */
 
 // Package camundaclusterclaim expands a CamundaClusterClaim into one
-// PluginRequest for each selection, once every request with a slot has its
-// outputs a CamundaCluster named after the claim, and once the cluster is
-// ready the CamundaOptimize and the BackupSchedule that spec.attachments
-// asks for. It refuses a claim
-// that its Environment does not allow, and records the policy of the
-// Environment on the claim before it writes anything. A deleted claim writes
-// its deletion policy on its requests, then deletes what it generated.
+// PluginRequest for each selection and, once every request with a slot has
+// its outputs, a CamundaCluster named after the claim. Once the cluster is
+// ready, it also writes the CamundaOptimize and the BackupSchedule that
+// spec.attachments asks for. It refuses a claim that its Environment does
+// not allow, and records the policy of the Environment on the claim before
+// it writes anything. A deleted claim writes its deletion policy on its
+// requests, then deletes what it generated.
 package camundaclusterclaim
 
 import (
