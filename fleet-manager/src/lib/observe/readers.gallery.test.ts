@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { get, list } from "@/lib/k8s/read";
 import { podUsage as realPodUsage, podUsageFrom } from "./kube";
-import { followPodLog as realFollowPodLog } from "./pod-log";
+import { PodLogNotFound, followPodLog as realFollowPodLog } from "./pod-log";
 import {
   OBSERVE_FILE_VARIABLE,
   followPodLog,
@@ -13,7 +13,10 @@ import {
 } from "./readers.gallery";
 
 vi.mock("./kube", () => ({ podUsage: vi.fn(), podUsageFrom: vi.fn() }));
-vi.mock("./pod-log", () => ({ followPodLog: vi.fn() }));
+vi.mock("./pod-log", async (real) => ({
+  ...(await real<typeof import("./pod-log")>()),
+  followPodLog: vi.fn(),
+}));
 vi.mock("@/lib/k8s/read", () => ({ get: vi.fn(), list: vi.fn() }));
 
 let dir = "";
@@ -32,6 +35,9 @@ async function readAll(stream: ReadableStream<string>): Promise<string[]> {
 
 const signal = new AbortController().signal;
 
+const pod = (...containers: string[]) =>
+  ({ spec: { containers: containers.map((name) => ({ name })) } }) as never;
+
 beforeEach(async () => {
   vi.resetAllMocks();
   dir = await mkdtemp(path.join(tmpdir(), "observe-"));
@@ -49,6 +55,7 @@ logs:
     pod: p-0
     lines: [a, b, c]
 `);
+    vi.mocked(get).mockResolvedValue(pod("main"));
     const stream = await followPodLog(
       { namespace: "team-a", pod: "p-0", tailLines: 2 },
       signal,
@@ -63,6 +70,7 @@ logs:
   - { namespace: team-a, pod: p-0, container: main, lines: [main] }
   - { namespace: team-a, pod: p-0, container: side, lines: [side] }
 `);
+    vi.mocked(get).mockResolvedValue(pod("main", "side"));
     const stream = await followPodLog(
       { namespace: "team-a", pod: "p-0", container: "side" },
       signal,
@@ -76,15 +84,59 @@ logs:
   - { namespace: team-a, pod: p-0, container: side, lines: [side] }
   - { namespace: team-a, pod: p-0, container: main, lines: [main] }
 `);
-    vi.mocked(get).mockResolvedValue({
-      spec: { containers: [{ name: "main" }, { name: "side" }] },
-    } as never);
+    vi.mocked(get).mockResolvedValue(pod("main", "side"));
     const stream = await followPodLog(
       { namespace: "team-a", pod: "p-0" },
       signal,
     );
     expect(await readAll(stream)).toEqual(["main"]);
     expect(get).toHaveBeenCalledWith("Pod", "team-a", "p-0");
+  });
+
+  it("does what the real reader does for a pod that observe.yaml names and that does not exist", async () => {
+    await observe(`schemaVersion: 1
+logs:
+  - { namespace: team-a, pod: p-0, lines: [a] }
+`);
+    vi.mocked(get).mockResolvedValue(undefined);
+    vi.mocked(realFollowPodLog).mockRejectedValue(
+      new PodLogNotFound("The pod team-a/p-0 does not exist"),
+    );
+    const req = { namespace: "team-a", pod: "p-0" };
+    await expect(followPodLog(req, signal)).rejects.toBeInstanceOf(
+      PodLogNotFound,
+    );
+    expect(realFollowPodLog).toHaveBeenCalledWith(req, signal);
+  });
+
+  it("reads the lines of an init container of the pod", async () => {
+    await observe(`schemaVersion: 1
+logs:
+  - { namespace: team-a, pod: p-0, container: init, lines: [init] }
+`);
+    vi.mocked(get).mockResolvedValue({
+      spec: {
+        containers: [{ name: "main" }],
+        initContainers: [{ name: "init" }],
+      },
+    } as never);
+    const stream = await followPodLog(
+      { namespace: "team-a", pod: "p-0", container: "init" },
+      signal,
+    );
+    expect(await readAll(stream)).toEqual(["init"]);
+  });
+
+  it("does what the real reader does for a container that the pod does not have", async () => {
+    await observe(`schemaVersion: 1
+logs:
+  - { namespace: team-a, pod: p-0, lines: [a] }
+`);
+    vi.mocked(get).mockResolvedValue(pod("main"));
+    const real = new ReadableStream<string>();
+    vi.mocked(realFollowPodLog).mockResolvedValue(real);
+    const req = { namespace: "team-a", pod: "p-0", container: "gone" };
+    expect(await followPodLog(req, signal)).toBe(real);
   });
 
   it("follows the real log of a pod that observe.yaml does not name", async () => {

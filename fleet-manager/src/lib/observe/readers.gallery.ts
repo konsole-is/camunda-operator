@@ -88,8 +88,11 @@ export async function podUsage(
 
 /**
  * followPodLog is followPodLog of pod-log.ts, with the lines of observe.yaml
- * for a pod that the file names. That stream gives the last tailLines lines
- * and then closes. For another pod it follows the real log.
+ * for a pod that exists and that the file names, when the pod has the
+ * container and the file names that container or no container. That stream
+ * gives the last tailLines lines and then closes. Otherwise it returns what
+ * the real reader returns, such as PodLogNotFound for a pod that does not
+ * exist.
  */
 export async function followPodLog(
   req: PodLogRequest,
@@ -99,15 +102,18 @@ export async function followPodLog(
     (l) => l.namespace === req.namespace && l.pod === req.pod,
   );
   if (!logs?.length) return realFollowPodLog(req, signal);
+  const pod = await get("Pod", req.namespace, req.pod);
   // As in the real reader, no container means the first container of the pod.
-  const container =
-    req.container ??
-    (logs.some((l) => l.container)
-      ? (await get("Pod", req.namespace, req.pod))?.spec?.containers?.[0]?.name
-      : undefined);
-  const log = logs.find(
-    (l) => !l.container || !container || l.container === container,
-  );
+  const container = req.container ?? pod?.spec?.containers?.[0]?.name;
+  const names = [
+    ...(pod?.spec?.containers ?? []),
+    ...(pod?.spec?.initContainers ?? []),
+    ...(pod?.spec?.ephemeralContainers ?? []),
+  ].map((c) => c.name);
+  const log =
+    container && names.includes(container)
+      ? logs.find((l) => !l.container || l.container === container)
+      : undefined;
   if (!log) return realFollowPodLog(req, signal);
   const lines = req.tailLines ? log.lines.slice(-req.tailLines) : log.lines;
   return new ReadableStream<string>({
