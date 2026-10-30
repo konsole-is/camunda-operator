@@ -1,7 +1,7 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import { type ReactNode, useState } from "react";
+import { useEffect, useState } from "react";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import type { Environment } from "@/generated/crds/environment";
@@ -207,17 +207,8 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
   const steps = planeSteps(models, selectorErrors, readErrors);
   const flow = useCreateFlow({ steps, initial: EMPTY_PLANE_DRAFT });
   const namespace = flow.draft.namespace;
-
-  const body = (secrets: SecretRefs) => (
-    <PlaneStepBody
-      current={flow.current}
-      draft={flow.draft}
-      set={flow.set}
-      models={models}
-      secrets={secrets}
-      onSelectorErrors={setSelectorErrors}
-    />
-  );
+  const existing = namespace?.kind === "existing" ? namespace.name : undefined;
+  const [secrets, setSecrets] = useState<SecretRefs>([]);
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -226,6 +217,13 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      {existing !== undefined && (
+        <NamespaceSecrets
+          key={existing}
+          namespace={existing}
+          onChange={setSecrets}
+        />
+      )}
       <WizardStepper
         steps={steps.map((s) => ({
           id: s.id,
@@ -237,31 +235,40 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
         onNext={flow.next}
         onBack={flow.back}
       >
-        {namespace?.kind === "existing" ? (
-          <NamespaceSecrets key={namespace.name} namespace={namespace.name}>
-            {body}
-          </NamespaceSecrets>
-        ) : (
-          body([])
-        )}
+        <PlaneStepBody
+          current={flow.current}
+          draft={flow.draft}
+          set={flow.set}
+          models={models}
+          secrets={existing === undefined ? [] : secrets}
+          onSelectorErrors={setSelectorErrors}
+        />
       </WizardStepper>
     </div>
   );
 }
 
 // NamespaceSecrets follows the Secrets of one namespace, so the flow watches
-// Secrets only once a namespace is chosen, and only that one.
+// Secrets only once a namespace is chosen, and only that one. It renders
+// nothing: a wrapper around the step would remount the step, and with it
+// the namespace picker, when the choice changes.
 function NamespaceSecrets({
   namespace,
-  children,
+  onChange,
 }: {
   namespace: string;
-  children: (secrets: SecretRefs) => ReactNode;
+  onChange: (secrets: SecretRefs) => void;
 }) {
   const { items } = useResources("Secret", { namespace }, []);
-  return children(
-    items.map((s) => ({ name: s.metadata?.name ?? "", keys: s.keys })),
-  );
+  const refs = items.map((s) => ({
+    name: s.metadata?.name ?? "",
+    keys: s.keys,
+  }));
+  const key = JSON.stringify(refs);
+  useEffect(() => {
+    onChange(JSON.parse(key) as SecretRefs);
+  }, [key, onChange]);
+  return null;
 }
 
 // A Resource is plain JSON, so it differs from its model type only in its

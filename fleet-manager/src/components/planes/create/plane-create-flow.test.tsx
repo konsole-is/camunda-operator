@@ -22,7 +22,10 @@ const environment = (name: string, platformConfigRef?: string) => ({
   apiVersion: "fleet.camunda.io/v1alpha1",
   kind: "Environment",
   metadata: { name },
-  spec: platformConfigRef ? { platformConfigRef } : {},
+  spec: {
+    ...(platformConfigRef && { platformConfigRef }),
+    namespaceCreation: { allowed: true },
+  },
 });
 
 const namespace = (name: string, env: string) => ({
@@ -130,6 +133,23 @@ describe("PlaneCreateFlow", () => {
       ),
     ).toBeTruthy();
     expect(next().disabled).toBe(true);
+  });
+
+  it("keeps the new namespace fields when the admin switches from an existing namespace", async () => {
+    render(<PlaneCreateFlow initial={data} />);
+    await fillBasics();
+    const create = screen.getByRole("radio", {
+      name: "Create a namespace",
+    }) as HTMLInputElement;
+    await userEvent.click(create);
+    expect(
+      (
+        screen.getByRole("radio", {
+          name: "Create a namespace",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(screen.getAllByLabelText("Name")).toHaveLength(2);
   });
 
   it.each(["CamundaManagementClusterClaim", "Environment"])(
