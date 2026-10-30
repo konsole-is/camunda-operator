@@ -11,7 +11,8 @@ import { DiffView } from "./diff-view";
 /**
  * ReviewPanel is the last screen before a write: the diff of the object, the
  * list of what the change does, an optional caution, and the confirm button.
- * In Git mode the button reads gitConfirmLabel, "Push to Git" by default,
+ * details shows below the diff, and notices right above the confirm. In Git
+ * mode the button reads gitConfirmLabel, "Push to Git" by default,
  * instead of confirmLabel. danger makes it a danger button. pending blocks
  * it while the write runs.
  */
@@ -19,6 +20,8 @@ export function ReviewPanel({
   lines,
   effects,
   caution,
+  details,
+  notices,
   mode,
   confirmLabel,
   gitConfirmLabel = "Push to Git",
@@ -31,6 +34,8 @@ export function ReviewPanel({
   lines: DiffLine[];
   effects: ReactNode[];
   caution?: ReactNode;
+  details?: ReactNode;
+  notices?: ReactNode;
   mode: WriteMode;
   confirmLabel: string;
   gitConfirmLabel?: string;
@@ -44,6 +49,7 @@ export function ReviewPanel({
   return (
     <section aria-label="Review" className="flex min-w-0 flex-col gap-5">
       <DiffView label={diffLabel} lines={lines} />
+      {details}
       {effects.length > 0 && (
         <div>
           <h3
@@ -75,9 +81,14 @@ export function ReviewPanel({
           <div>{caution}</div>
         </div>
       )}
+      {notices}
       <div className="flex flex-wrap gap-2">
+        {/* pending can end right after the panel shows, as when a preview
+            returns. A fade of the opacity would show the label at half
+            contrast for its duration. */}
         <Button
           variant={danger ? "destructive" : "default"}
+          className="transition-colors"
           disabled={pending}
           onClick={() => onConfirm?.()}
         >
