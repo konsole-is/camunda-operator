@@ -217,19 +217,21 @@ This part changes the claim `my-cluster` of [Create a cluster from a claim](#cre
     kubectl patch camundaclusterclaim my-cluster -n my-cluster-ns --type merge -p '{"spec":{"suspend":false}}'
     ```
 
-6. To add Optimize and a backup schedule, set the attachments of the claim. Use the name of your `ManagementAuthConfig`:
+6. To add Optimize, set the Optimize attachment of the claim. Use the name of your `ManagementAuthConfig`:
 
     ```bash
-    kubectl patch camundaclusterclaim my-cluster -n my-cluster-ns --type merge -p '{"spec":{"attachments":{"optimize":{"managementAuthConfigRef":"my-management-auth"},"backupSchedule":{"schedule":"0 2 * * *"}}}}'
+    kubectl patch camundaclusterclaim my-cluster -n my-cluster-ns --type merge -p '{"spec":{"attachments":{"optimize":{"managementAuthConfigRef":"my-management-auth"}}}}'
     ```
 
-7. Make sure that the claim created both. The command lists `my-cluster-optimize` and `my-cluster-backups`:
+7. Make sure that the claim created it. The command lists `my-cluster-optimize`:
 
     ```bash
-    kubectl get camundaoptimize,backupschedule -n my-cluster-ns
+    kubectl get camundaoptimize -n my-cluster-ns
     ```
 
-    The claim creates them after the cluster is ready. Until then, `AttachmentsReady` of the claim is `False` with reason `PrerequisiteNotMet`.
+    The claim creates it after the cluster is ready. Until then, `AttachmentsReady` of the claim is `False` with reason `PrerequisiteNotMet`.
+
+This claim selects no option of `backup-storage`, so it cannot get a backup schedule. A claim that selects one at creation can set `spec.attachments.backupSchedule` in the same way.
 
 The [CamundaClusterClaim](../crds/camundaclusterclaim.md) page describes [Suspend](../crds/camundaclusterclaim.md#suspend), a move to an older release in [Downgrade](../crds/camundaclusterclaim.md#downgrade), and the fields of each attachment in [Attachments](../crds/camundaclusterclaim.md#attachments).
 

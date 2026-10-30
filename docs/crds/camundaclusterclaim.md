@@ -172,7 +172,7 @@ spec:
   # ... the rest of your claim
 ```
 
-The claim creates the attachments after `ClusterReady` is `True`. When `ClusterReady` turns `False` later, the attachments stay as they are. Each attachment gets these fields:
+The claim creates the attachments when `ClusterReady` is `True` for the first time. After that, the claim applies each change of an attachment at once, also while the cluster is not ready. Each attachment gets these fields:
 
 | Attachment | Name | Fields |
 | --- | --- | --- |
@@ -184,6 +184,8 @@ Each attachment carries the label `fleet.camunda.io/claim` and an owner referenc
 Remove an attachment from the claim to delete it. The claim deletes only an object that has an owner reference to the claim. An object of that name that you created yourself stays.
 
 An object of the name of an attachment that another owner controls stays as it is. `AttachmentsReady` is then `False` with reason `Blocked`, and the message names the owner. When the claim sets the attachment and an object of that name has no controller, the claim takes over the object.
+
+A `BackupSchedule` needs a cluster with `spec.backupStorageRef`, see [BackupSchedule](backupschedule.md). So a claim with a backup schedule must select an option of `backup-storage`, and the selections are fixed at creation.
 
 The cluster needs a version from the release of the claim. When the claim names no release and the `Environment` has no default release, `ClusterReady` is `False`, and its message holds `missing required fields: version`. The claim then creates no attachments.
 
@@ -246,13 +248,13 @@ When the check passes, `Ready` follows three conditions:
 | `ClusterReady` | `Blocked` | Another owner controls a `CamundaCluster` of this name, or an output came in after the check of the claim. The message says which. | For another owner, delete that cluster, or rename the claim. For an output, wait. |
 | `ClusterReady` | `Error` | The API server refused the `CamundaCluster`. The message holds its answer. | Correct the claim. |
 | `ClusterReady` | `Healthy` | The `CamundaCluster` is ready. | Nothing. |
-| `AttachmentsReady` | `PrerequisiteNotMet` | The attachments wait for `ClusterReady`. The message holds the message of `ClusterReady`. | See `ClusterReady`. |
+| `AttachmentsReady` | `PrerequisiteNotMet` | The attachments wait for the first `ClusterReady` `True`. The message holds the message of `ClusterReady`. | See `ClusterReady`. |
 | `AttachmentsReady` | `Creating`, `Updating`, `Failing`, `Degraded`, `Down` | The `CamundaOptimize` or the `BackupSchedule` is not ready. The message holds its `Ready` reason and message. | See [CamundaOptimize](camundaoptimize.md#status) or [BackupSchedule](backupschedule.md#status). |
 | `AttachmentsReady` | `Blocked` | Another owner controls an object of the name of an attachment. Or the `CamundaOptimize` does not exist yet, and the `optimizeUrl` output is missing. The message says which. | For another owner, delete that object, or rename the claim. For the output, wait. |
 | `AttachmentsReady` | `Error` | The API server refused an attachment. The message holds its answer. | Correct the claim. |
 | `AttachmentsReady` | `Healthy` | Each attachment that the claim sets is ready. A claim without attachments is `Healthy` too. | Nothing. |
 
-`Ready` is `True` only when all three are `True`. Otherwise, it takes the reason of the condition that blocks it, and its message starts with `requests:`, `cluster:`, or `attachments:`. While the cluster is not ready, the message of `Ready` can start with `attachments:`. Then read `ClusterReady`, because the attachments wait for it. A claim that waits for an output reports `PrerequisiteNotMet`:
+`Ready` is `True` only when all three are `True`. Otherwise, it takes the reason of the condition that blocks it, and its message starts with `requests:`, `cluster:`, or `attachments:`. Before the cluster is ready for the first time, the message of `Ready` can start with `attachments:`. Then read `ClusterReady`, because the attachments wait for it. A claim that waits for an output reports `PrerequisiteNotMet`:
 
 ```yaml
 status:
