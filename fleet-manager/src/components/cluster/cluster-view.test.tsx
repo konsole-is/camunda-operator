@@ -18,11 +18,24 @@ const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
   calls: [] as { kind: string; opts: unknown }[],
   errors: {} as Record<string, string>,
+  usage: undefined as unknown,
+  partitions: undefined as unknown,
+  observed: [] as { hook: string; args: string[] }[],
 }));
 // The App Router keeps useSearchParams in step with history.replaceState, so
 // the fake reads the URL of the window.
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
+}));
+vi.mock("@/lib/observe/use-observe", () => ({
+  usePodUsage: (...args: string[]) => {
+    live.observed.push({ hook: "usePodUsage", args });
+    return live.usage;
+  },
+  usePartitions: (...args: string[]) => {
+    live.observed.push({ hook: "usePartitions", args });
+    return live.partitions;
+  },
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, opts: unknown, initial: unknown[]) => {
@@ -43,6 +56,9 @@ beforeEach(() => {
   live.objects = {};
   live.calls = [];
   live.errors = {};
+  live.usage = undefined;
+  live.partitions = undefined;
+  live.observed = [];
   window.history.replaceState(null, "", "/fleet/clusters/team-a/orders");
 });
 afterEach(cleanup);
@@ -1003,7 +1019,7 @@ describe("Overview components and conditions", () => {
     ).toBeTruthy();
   });
 
-  it("counts the ages of the conditions on with the clock on the Overview", () => {
+  it("counts the condition ages with the clock on the Overview", () => {
     vi.useFakeTimers({ now: Date.parse(now) });
     try {
       render(
@@ -1027,6 +1043,46 @@ describe("Overview components and conditions", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("the Brokers card shows the partitions with a leader and the Gateway its highest use", () => {
+    live.partitions = [
+      {
+        partition: 1,
+        leader: "orders-zeebe-0",
+        followers: [],
+        health: "unknown",
+      },
+      { partition: 2, followers: [], health: "unknown" },
+    ];
+    live.usage = [
+      {
+        pod: "orders-gateway-0",
+        cpu: { usedCores: 0.25, limitCores: 1 },
+        memory: { usedBytes: 600, limitBytes: 1000 },
+      },
+    ];
+    render(
+      view({
+        initial: data({
+          pods: [brokerPod(0), podOf("orders-gateway-0", "gateway")],
+        }),
+      }),
+    );
+    const number = (card: string, label: string) =>
+      within(
+        within(components()).getByRole("article", { name: card }),
+      ).getByText(label, { selector: "dt" }).nextElementSibling?.textContent;
+    expect(number("Brokers", "Partitions with a leader")).toBe("1/2");
+    expect(number("Gateway", "Highest use")).toBe("60 % memory");
+    expect(live.observed).toContainEqual({
+      hook: "usePodUsage",
+      args: ["team-a", "camunda.io/cluster=orders"],
+    });
+    expect(live.observed).toContainEqual({
+      hook: "usePartitions",
+      args: ["team-a", "orders"],
+    });
   });
 
   it("the claim conditions show in the Claim group", () => {

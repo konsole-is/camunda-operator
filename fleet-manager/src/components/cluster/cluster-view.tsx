@@ -20,6 +20,7 @@ import {
   isManaged,
 } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
+import { usePartitions, usePodUsage } from "@/lib/observe/use-observe";
 import { runningBackup, runningRestore } from "@/lib/policy/backups";
 import { ActionSlot } from "./action-slot";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
@@ -211,6 +212,8 @@ export function ClusterView({
     {},
     initial.registrations,
   );
+  const usage = usePodUsage(ns, initial.podSelector);
+  const partitions = usePartitions(ns, name ?? "");
   const backups = [...backupsES.items, ...backupsRDBMS.items];
   const clock = useClock(
     now,
@@ -287,6 +290,8 @@ export function ClusterView({
     pods: pods.items,
     conditions: clusterConditions,
     optimize,
+    usage,
+    partitions,
   });
   const processConditions: Partial<Record<Process, ConditionLike>> =
     Object.fromEntries(
