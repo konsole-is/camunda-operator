@@ -275,7 +275,7 @@ describe("ClaimTab", () => {
       expect(within(basics).getByText(value)).toBeTruthy();
     }
     expect(within(basics).getAllByText("Set at creation")).toHaveLength(3);
-    const access = screen.getByRole("region", { name: "Access" });
+    const access = screen.getByRole("region", { name: "Access: Gateway" });
     expect(within(access).getByText("Gateway")).toBeTruthy();
     expect(within(access).getByText("Chosen at creation")).toBeTruthy();
   });
@@ -292,18 +292,47 @@ describe("ClaimTab", () => {
 
   it("shows the state and lock of a parameter", () => {
     renderTab(MISSING_INPUT);
-    const table = screen.getByRole("table", { name: "Access parameters" });
+    const table = screen.getByRole("table", {
+      name: "Access: Gateway parameters",
+    });
     const row = within(table).getByRole("row", { name: /^hostname/ });
     expect(within(row).getByText("orders.example.com")).toBeTruthy();
     expect(within(row).getAllByText("Set by your admin")).toHaveLength(2);
     expect(within(row).queryByRole("link")).toBeNull();
   });
 
+  it("names each panel of a section with two options apart", () => {
+    const two = claimWith([]);
+    two.spec.plugins = [
+      { section: "access", registration: "gateway-access" },
+      { section: "access", registration: "ingress-access" },
+    ];
+    two.status!.resolvedPolicy = {
+      parameters: {
+        "gateway-access": { hostname: { value: "a.example.com" } },
+        "ingress-access": { hostname: { value: "b.example.com" } },
+      },
+    };
+    renderTab(two);
+    expect(
+      screen.getByRole("region", { name: "Access: Gateway" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "Access: ingress-access" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("table", { name: "Access: Gateway parameters" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("table", { name: "Access: ingress-access parameters" }),
+    ).toBeTruthy();
+  });
+
   it("lets a keyboard user scroll a wide parameter table", () => {
     renderTab(MISSING_INPUT);
     expect(
       screen
-        .getByRole("region", { name: "Access parameters table" })
+        .getByRole("region", { name: "Access: Gateway parameters table" })
         .getAttribute("tabindex"),
     ).toBe("0");
   });

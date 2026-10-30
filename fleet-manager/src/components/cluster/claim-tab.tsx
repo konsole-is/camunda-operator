@@ -125,9 +125,17 @@ export function ClaimTab({
   );
 }
 
-function Panel({ label, children }: { label: string; children: ReactNode }) {
+function Panel({
+  label,
+  name = label,
+  children,
+}: {
+  label: string;
+  name?: string;
+  children: ReactNode;
+}) {
   return (
-    <section aria-label={label} className={PANEL}>
+    <section aria-label={name} className={PANEL}>
       <h2 className={HEADING}>{label}</h2>
       {children}
     </section>
@@ -182,8 +190,9 @@ function retained(schedule: { completed?: number; failed?: number }) {
 }
 
 function SectionPanel({ section }: { section: ClaimSection }) {
+  const name = `${section.sectionLabel}: ${section.optionLabel}`;
   return (
-    <Panel label={section.sectionLabel}>
+    <Panel label={section.sectionLabel} name={name}>
       <p className="text-sm">
         <span className="font-medium">{section.optionLabel}</span>
         <span className={NOTE}>Chosen at creation</span>
@@ -192,8 +201,8 @@ function SectionPanel({ section }: { section: ClaimSection }) {
         <p className="text-sm text-muted">No parameters.</p>
       ) : (
         <Table
-          label={`${section.sectionLabel} parameters table`}
-          aria-label={`${section.sectionLabel} parameters`}
+          label={`${name} parameters table`}
+          aria-label={`${name} parameters`}
         >
           <TableHeader>
             <TableRow>

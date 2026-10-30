@@ -1233,7 +1233,7 @@ describe("Claim tab", () => {
         }),
       }),
     );
-    const access = screen.getByRole("region", { name: "Access" });
+    const access = screen.getByRole("region", { name: "Access: Gateway" });
     expect(within(access).getByText("Gateway")).toBeTruthy();
   });
 });
