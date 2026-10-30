@@ -92,9 +92,9 @@ export function withHealth(
 /**
  * brokerPartitions returns partitionHealth of cluster with the health of
  * each partition from zeebe_health over the 5 minutes before now. The
- * health stays "unknown" when Prometheus is not set or does not answer. It
- * runs on the server only, and it rejects when partitionHealth or
- * promRange does.
+ * health stays "unknown" when Prometheus is not set, does not answer, or
+ * cannot be read. It runs on the server only, and it rejects when
+ * partitionHealth does.
  */
 export async function brokerPartitions(
   cluster: Resource<"CamundaCluster">,
@@ -102,14 +102,11 @@ export async function brokerPartitions(
 ): Promise<PartitionHealth[] | Unavailable> {
   const partitions = await partitionHealth(cluster);
   if (partitions === "unavailable") return partitions;
-  const pods = [
-    ...new Set(
-      partitions.flatMap((p) => [
-        ...(p.leader ? [p.leader] : []),
-        ...p.followers,
-      ]),
-    ),
-  ];
+  // A broker that does not answer the management API can still report an
+  // unhealthy partition to Prometheus.
+  const pods = (await brokerPods(cluster)).flatMap((p) =>
+    p.metadata?.name ? [p.metadata.name] : [],
+  );
   if (pods.length === 0) return partitions;
   const series = await promRange(
     renderCoreQuery(PARTITION_HEALTH, cluster.metadata?.namespace ?? "", pods),
@@ -118,7 +115,7 @@ export async function brokerPartitions(
       end: now,
       stepSeconds: HEALTH_STEP_SECONDS,
     },
-  );
+  ).catch(() => "unavailable" as const);
   return series === "unavailable" ? partitions : withHealth(partitions, series);
 }
 
@@ -154,10 +151,7 @@ export async function partitionHealth(
       "Basic " + Buffer.from(`${username}:${password}`).toString("base64");
   }
 
-  const pods = await list("Pod", {
-    namespace,
-    labelSelector: `${CLUSTER_LABEL}=${ownerName(cluster.metadata?.name ?? "")},${COMPONENT_LABEL}=zeebe`,
-  });
+  const pods = await brokerPods(cluster);
   const brokers = pods.flatMap((pod) =>
     pod.status?.podIP && pod.metadata?.name
       ? [{ pod: pod.metadata.name, ip: pod.status.podIP }]
@@ -175,6 +169,15 @@ export async function partitionHealth(
   );
   if (answers.length === 0) return "unavailable";
   return mergePartitions(answers, management.partitions);
+}
+
+function brokerPods(
+  cluster: Resource<"CamundaCluster">,
+): Promise<Resource<"Pod">[]> {
+  return list("Pod", {
+    namespace: cluster.metadata?.namespace,
+    labelSelector: `${CLUSTER_LABEL}=${ownerName(cluster.metadata?.name ?? "")},${COMPONENT_LABEL}=zeebe`,
+  });
 }
 
 function brokerURL(endpoint: string, ip: string): URL {

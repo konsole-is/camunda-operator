@@ -390,6 +390,38 @@ describe("brokerPartitions", () => {
     ]);
   });
 
+  it("reads the health of every broker pod, also one that does not answer", async () => {
+    const port = await serve(broker());
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+      // Nothing listens on 127.0.0.2, so the connection is refused.
+      pod("orders-zeebe-1", "127.0.0.2"),
+      pod("orders-zeebe-2"),
+    ] as never);
+    vi.mocked(promRange).mockResolvedValue([]);
+
+    await brokerPartitions(cluster(port), NOW);
+
+    expect(vi.mocked(promRange).mock.calls[0][0]).toContain(
+      'pod=~"orders-zeebe-0|orders-zeebe-1|orders-zeebe-2"',
+    );
+  });
+
+  it("keeps the partitions with unknown health when the Prometheus read rejects", async () => {
+    const port = await serve(broker());
+    vi.mocked(list).mockResolvedValue([
+      pod("orders-zeebe-0", "127.0.0.1"),
+    ] as never);
+    vi.mocked(promRange).mockRejectedValue(
+      new Error("settings are unreadable"),
+    );
+
+    expect(await brokerPartitions(cluster(port), NOW)).toEqual([
+      expect.objectContaining({ partition: 1, health: "unknown" }),
+      expect.objectContaining({ partition: 2, health: "unknown" }),
+    ]);
+  });
+
   it("is unavailable when the management API is", async () => {
     const noManagement = {
       ...cluster(1),

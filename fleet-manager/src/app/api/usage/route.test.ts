@@ -22,6 +22,7 @@ describe("GET /api/usage", () => {
     ["no namespace", "selector=a%3Db", "namespace"],
     ["no selector", "namespace=n", "selector"],
     ["an empty selector", "namespace=n&selector=", "selector"],
+    ["a selector of spaces", "namespace=n&selector=%20%20", "selector"],
   ])("answers 400 for %s and names the parameter", async (_, query, name) => {
     const response = await call(query);
 
@@ -29,10 +30,21 @@ describe("GET /api/usage", () => {
     expect(await response.text()).toContain(name);
   });
 
-  it("an empty selector is refused and lists no pods", async () => {
-    await call("namespace=n&selector=");
+  it.each(["", "%20%20"])(
+    "the empty selector %j is refused and lists no pods",
+    async (selector) => {
+      await call(`namespace=n&selector=${selector}`);
 
-    expect(podUsage).not.toHaveBeenCalled();
+      expect(podUsage).not.toHaveBeenCalled();
+    },
+  );
+
+  it("passes the selector without the spaces around it", async () => {
+    vi.mocked(podUsage).mockResolvedValue([]);
+
+    await call("namespace=n&selector=%20a%3Db%20");
+
+    expect(podUsage).toHaveBeenCalledWith("n", "a=b");
   });
 
   it("answers the usage of the pods that the selector selects", async () => {

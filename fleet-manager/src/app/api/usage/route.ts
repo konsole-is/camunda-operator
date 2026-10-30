@@ -10,7 +10,7 @@ export async function GET(request: Request): Promise<Response> {
   const namespace = params.get("namespace");
   if (!namespace) return badParameter("namespace");
   // An empty selector selects every pod of the namespace.
-  const selector = params.get("selector");
+  const selector = params.get("selector")?.trim();
   if (!selector) return badParameter("selector");
   try {
     return Response.json(
