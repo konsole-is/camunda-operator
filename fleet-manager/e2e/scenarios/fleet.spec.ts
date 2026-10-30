@@ -83,3 +83,26 @@ test("the log stream reads observe.yaml", async ({ page }) => {
     ["end", {}],
   ]);
 });
+
+test("the usage route reads observe.yaml", async ({ page }) => {
+  const selector =
+    "statefulset.kubernetes.io/pod-name=camundacluster-sample-zeebe-0";
+  const response = await page.request.get(
+    `/api/usage?namespace=team-a&selector=${encodeURIComponent(selector)}`,
+  );
+  expect(response.status()).toBe(200);
+  const { usage } = (await response.json()) as {
+    usage: {
+      pod: string;
+      cpu: { usedCores: number };
+      memory: { usedBytes: number };
+    }[];
+  };
+  expect(usage).toEqual([
+    expect.objectContaining({
+      pod: "camundacluster-sample-zeebe-0",
+      cpu: expect.objectContaining({ usedCores: 0.25 }),
+      memory: expect.objectContaining({ usedBytes: 2 ** 30 }),
+    }),
+  ]);
+});
