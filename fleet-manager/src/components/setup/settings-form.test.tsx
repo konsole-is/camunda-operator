@@ -222,6 +222,54 @@ describe("SettingsForm", () => {
     );
   });
 
+  it("a value changed while a save runs stays after the refresh", async () => {
+    let finish: (result: WriteResult) => void = () => {};
+    const p = props({
+      save: vi.fn(
+        () =>
+          new Promise<WriteResult>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    });
+    const { rerender } = render(<SettingsForm {...p} />);
+
+    type("Kubernetes cluster name", "prod-us");
+    save();
+    type("Branch", "release");
+    finish({ ok: true, mode: "direct" });
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    rerender(
+      <SettingsForm
+        {...p}
+        settings={{ ...full, kubernetesClusterName: "prod-us" }}
+        resourceVersion="8"
+      />,
+    );
+
+    expect(field("Kubernetes cluster name").value).toBe("prod-us");
+    expect(field("Branch").value).toBe("release");
+    save();
+    await waitFor(() =>
+      expect(p.save).toHaveBeenLastCalledWith({ "git.branch": "release" }, "8"),
+    );
+  });
+
+  it("a Secret list that failed shows its error and marks no Secret as missing", () => {
+    render(
+      <SettingsForm
+        {...props({ secretNames: { error: "secrets is forbidden" } })}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Could not list the Secrets of namespace fleet: secrets is forbidden",
+      ),
+    ).toBeTruthy();
+    expect(field("Git credentials Secret").value).toBe("git");
+    expect(screen.queryByText(/not found/)).toBeNull();
+  });
+
   it("cannot save without a change", () => {
     render(<SettingsForm {...props()} />);
     expect(saveButton().disabled).toBe(true);

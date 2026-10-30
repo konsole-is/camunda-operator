@@ -25,7 +25,8 @@ export type SettingsFormProps = {
   /** resourceVersion is the version of the ConfigMap that settings come from. */
   resourceVersion: string;
   namespace: string;
-  secretNames: string[];
+  /** secretNames are the Secrets of namespace, or the error of the list. */
+  secretNames: string[] | { error: string };
   layoutKinds: { namespaced: KindInfo; clusterScoped: KindInfo };
   save: (
     patch: Partial<Settings>,
@@ -41,10 +42,11 @@ const SAVE_FIRST = "Save first. The test uses the saved settings.";
 /**
  * SettingsForm shows the settings and saves the keys that the admin
  * changed, with the resourceVersion that the page read. A new
- * resourceVersion resets the form to settings. Git mode is on when
- * git.repository is set; turning it off saves git.repository as "". The
- * connection tests use the saved settings, so they are off while the form
- * has a change.
+ * resourceVersion resets the form to settings, but keeps a value or the
+ * Git mode that the admin changed after a save that succeeded started.
+ * Git mode is on when git.repository is set; turning it off saves
+ * git.repository as "". The connection tests use the saved settings, so
+ * they are off while the form has a change.
  */
 export function SettingsForm({
   settings,
@@ -64,11 +66,26 @@ export function SettingsForm({
   const [toast, setToast] = useState<ToastResult>();
   const [stale, setStale] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [sent, setSent] = useState<{ values: Settings; gitOn: boolean }>();
 
   if (version !== resourceVersion) {
+    const editedSinceSave = (key: SettingKey) =>
+      sent !== undefined && values[key] !== sent.values[key];
     setVersion(resourceVersion);
-    setValues(settings);
-    setGitOn(settings["git.repository"] !== "");
+    setValues(
+      Object.fromEntries(
+        (Object.keys(settings) as SettingKey[]).map((key) => [
+          key,
+          editedSinceSave(key) ? values[key] : settings[key],
+        ]),
+      ) as Settings,
+    );
+    setGitOn(
+      sent !== undefined && gitOn !== sent.gitOn
+        ? gitOn
+        : settings["git.repository"] !== "",
+    );
+    setSent(undefined);
     setFieldErrors({});
     setStale(false);
   }
@@ -91,6 +108,7 @@ export function SettingsForm({
 
   async function submit() {
     setSaving(true);
+    setSent({ values, gitOn });
     try {
       const result = await save(patch, resourceVersion);
       setToast(toastResultOf(result, "Saved the settings."));
@@ -100,6 +118,7 @@ export function SettingsForm({
         router.refresh();
         return;
       }
+      setSent(undefined);
       setFieldErrors(
         Object.fromEntries(
           result.errors
@@ -112,6 +131,8 @@ export function SettingsForm({
       setSaving(false);
     }
   }
+
+  const names = Array.isArray(secretNames) ? secretNames : undefined;
 
   const field = (key: SettingKey, label: string) => ({
     label,
@@ -129,6 +150,12 @@ export function SettingsForm({
         void submit();
       }}
     >
+      {!names && (
+        <p className="text-sm text-warn">
+          Could not list the Secrets of namespace {namespace}:{" "}
+          {(secretNames as { error: string }).error}
+        </p>
+      )}
       <section className="space-y-3">
         <h2 className={HEADING}>Kubernetes cluster</h2>
         <TextField
@@ -176,7 +203,7 @@ export function SettingsForm({
             <GitLayoutPreview path={values["git.path"]} {...layoutKinds} />
             <SecretField
               {...field("git.credentialsSecretRef", "Git credentials Secret")}
-              names={secretNames}
+              names={names}
               namespace={namespace}
             />
             <SelectField
@@ -210,7 +237,7 @@ export function SettingsForm({
             "prometheus.credentialsSecretRef",
             "Prometheus credentials Secret",
           )}
-          names={secretNames}
+          names={names}
           namespace={namespace}
         />
         <TestButton label="Test the query" dirty={dirty} run={testPrometheus} />
@@ -328,7 +355,7 @@ function SelectField(props: FieldProps & { options: [string, string][] }) {
 }
 
 function SecretField(
-  props: FieldProps & { names: string[]; namespace: string },
+  props: FieldProps & { names?: string[]; namespace: string },
 ) {
   return (
     <div className="space-y-1">
