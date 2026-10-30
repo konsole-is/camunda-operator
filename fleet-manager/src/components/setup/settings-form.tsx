@@ -2,7 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { type ReactNode, useId, useState } from "react";
-import { Toast, type ToastResult, toastResultOf } from "@/components/fleet/toast";
+import {
+  Toast,
+  type ToastResult,
+  toastResultOf,
+} from "@/components/fleet/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,7 +27,10 @@ export type SettingsFormProps = {
   namespace: string;
   secretNames: string[];
   layoutKinds: { namespaced: KindInfo; clusterScoped: KindInfo };
-  save: (patch: Partial<Settings>, resourceVersion: string) => Promise<WriteResult>;
+  save: (
+    patch: Partial<Settings>,
+    resourceVersion: string,
+  ) => Promise<WriteResult>;
   testGit: () => Promise<TestResult>;
   testPrometheus: () => Promise<TestResult>;
 };
@@ -124,7 +131,9 @@ export function SettingsForm({
     >
       <section className="space-y-3">
         <h2 className={HEADING}>Kubernetes cluster</h2>
-        <TextField {...field("kubernetesClusterName", "Kubernetes cluster name")} />
+        <TextField
+          {...field("kubernetesClusterName", "Kubernetes cluster name")}
+        />
       </section>
 
       <section className="space-y-3">
@@ -143,8 +152,8 @@ export function SettingsForm({
               Git mode
             </label>
             <p id="git-mode-help" className="text-sm text-muted">
-              The pages push each change to a Git repository, and a GitOps
-              tool applies it. Off, the pages write to the cluster.
+              The pages push each change to a Git repository, and a GitOps tool
+              applies it. Off, the pages write to the cluster.
             </p>
           </div>
         </div>
@@ -157,7 +166,9 @@ export function SettingsForm({
             <TextField
               {...field("git.repository", "Repository")}
               hint={
-                noRepository ? "Set the repository to turn on Git mode." : undefined
+                noRepository
+                  ? "Set the repository to turn on Git mode."
+                  : undefined
               }
             />
             <TextField {...field("git.branch", "Branch")} />
@@ -177,7 +188,11 @@ export function SettingsForm({
               ]}
             />
             <TextField {...field("secretStore.name", "SecretStore name")} />
-            <TestButton label="Test the connection" dirty={dirty} run={testGit} />
+            <TestButton
+              label="Test the connection"
+              dirty={dirty}
+              run={testGit}
+            />
           </div>
         )}
       </section>
@@ -191,7 +206,10 @@ export function SettingsForm({
         )}
         <TextField {...field("prometheus.url", "Prometheus URL")} />
         <SecretField
-          {...field("prometheus.credentialsSecretRef", "Prometheus credentials Secret")}
+          {...field(
+            "prometheus.credentialsSecretRef",
+            "Prometheus credentials Secret",
+          )}
           names={secretNames}
           namespace={namespace}
         />
@@ -199,14 +217,21 @@ export function SettingsForm({
       </section>
 
       <div className="flex flex-wrap items-start gap-3">
-        <Button type="submit" disabled={!dirty || noRepository || badPath || saving}>
+        <Button
+          type="submit"
+          disabled={!dirty || noRepository || badPath || saving}
+        >
           Save
         </Button>
         {toast && (
           <div className="flex flex-wrap items-start gap-2">
             <Toast result={toast} onDismiss={() => setToast(undefined)} />
             {stale && (
-              <Button type="button" variant="outline" onClick={() => router.refresh()}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => router.refresh()}
+              >
                 Reload
               </Button>
             )}
@@ -233,7 +258,10 @@ function FieldFrame({
   error,
   hint,
   children,
-}: Omit<FieldProps, "value" | "onChange"> & { id: string; children: ReactNode }) {
+}: Omit<FieldProps, "value" | "onChange"> & {
+  id: string;
+  children: ReactNode;
+}) {
   return (
     <div className="space-y-1">
       <label htmlFor={id} className="text-sm font-medium text-text">

@@ -5,8 +5,7 @@ import { SecretNameSelect } from "./secret-name-select";
 
 afterEach(cleanup);
 
-const options = () =>
-  screen.getAllByRole("option").map((o) => o.textContent);
+const options = () => screen.getAllByRole("option").map((o) => o.textContent);
 
 describe("SecretNameSelect", () => {
   it("lists None and the Secret names, and nothing else of a Secret", () => {

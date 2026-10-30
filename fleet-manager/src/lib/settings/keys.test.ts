@@ -32,7 +32,9 @@ describe("seed variables", () => {
   it("the chart sets FLEET_SERVICE_NAME to the name of the Service", () => {
     const chart = (file: string) =>
       readFileSync(
-        fileURLToPath(new URL(`../../../deploy/chart/${file}`, import.meta.url)),
+        fileURLToPath(
+          new URL(`../../../deploy/chart/${file}`, import.meta.url),
+        ),
         "utf8",
       );
     expect(chart("deployment.yaml")).toContain(

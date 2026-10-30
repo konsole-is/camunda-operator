@@ -50,12 +50,16 @@ export const settingsPageStories: Story[] = [
   {
     component: "PermissionsTable",
     name: "Rules",
-    render: () => <PermissionsTable permissions={{ rules, incomplete: false }} />,
+    render: () => (
+      <PermissionsTable permissions={{ rules, incomplete: false }} />
+    ),
   },
   {
     component: "PermissionsTable",
     name: "Incomplete",
-    render: () => <PermissionsTable permissions={{ rules, incomplete: true }} />,
+    render: () => (
+      <PermissionsTable permissions={{ rules, incomplete: true }} />
+    ),
   },
   {
     component: "PermissionsTable",

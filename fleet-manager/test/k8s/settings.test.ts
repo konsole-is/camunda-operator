@@ -202,9 +202,7 @@ describe("settings against envtest", () => {
       ok: false,
       errors: [expect.objectContaining({ code: "Stale" })],
     });
-    expect((await readConfigMap()).data?.kubernetesClusterName).toBe(
-      "by-hand",
-    );
+    expect((await readConfigMap()).data?.kubernetesClusterName).toBe("by-hand");
   });
 
   it("a save with the current version writes the patch", async () => {
@@ -235,7 +233,9 @@ describe("settings against envtest", () => {
       verbs: ["*"],
     });
     expect(
-      rules.flatMap((r) => r.resources).filter((r) => r.startsWith("selfsubject")),
+      rules
+        .flatMap((r) => r.resources)
+        .filter((r) => r.startsWith("selfsubject")),
     ).toEqual([]);
   });
 });

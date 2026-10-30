@@ -8,7 +8,11 @@ import { listSecretRefs } from "@/lib/secrets";
 import { appPermissions, readSettings } from "@/lib/settings";
 import { appNamespace, appServiceName } from "@/lib/settings/keys";
 import { messageOf } from "@/lib/write/errors";
-import { saveSettings, testGitConnection, testPrometheusQuery } from "./actions";
+import {
+  saveSettings,
+  testGitConnection,
+  testPrometheusQuery,
+} from "./actions";
 
 // The page reads the cluster on each request. A static prerender would call
 // the API server at build time.
@@ -63,8 +67,8 @@ export default async function SettingsPage() {
       <section className="space-y-3">
         <h2 className={HEADING}>Permissions</h2>
         <p className="max-w-2xl text-sm text-muted">
-          What the fleet manager may do in namespace {namespace}. The chart
-          sets these rules.
+          What the fleet manager may do in namespace {namespace}. The chart sets
+          these rules.
         </p>
         <PermissionsTable permissions={permissions} />
       </section>

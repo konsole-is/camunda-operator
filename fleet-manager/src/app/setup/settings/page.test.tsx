@@ -90,8 +90,11 @@ describe("SettingsPage", () => {
     const { container } = render(await SettingsPage());
     expect(listSecretRefs).toHaveBeenCalledWith("fleet");
     const options = Array.from(
-      (screen.getByLabelText("Prometheus credentials Secret") as HTMLSelectElement)
-        .options,
+      (
+        screen.getByLabelText(
+          "Prometheus credentials Secret",
+        ) as HTMLSelectElement
+      ).options,
     ).map((o) => o.textContent);
     expect(options).toEqual(["None", "prom", "git"]);
     expect(container.textContent).not.toContain("key-name");
@@ -115,7 +118,9 @@ describe("SettingsPage", () => {
   });
 
   it("a settings read that fails shows the error and no form", async () => {
-    vi.mocked(readSettings).mockRejectedValue(new Error("configmaps is forbidden"));
+    vi.mocked(readSettings).mockRejectedValue(
+      new Error("configmaps is forbidden"),
+    );
     render(await SettingsPage());
     expect(
       screen.getByText("Could not read the settings: configmaps is forbidden"),

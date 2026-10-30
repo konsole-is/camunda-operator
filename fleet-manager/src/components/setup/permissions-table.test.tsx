@@ -27,18 +27,22 @@ describe("PermissionsTable", () => {
   it("shows one row per rule with its group, resources, names, and verbs", () => {
     render(<PermissionsTable permissions={permissions} />);
     const core = screen.getByRole("row", { name: /configmaps/ });
-    expect(within(core).getAllByRole("cell").map((c) => c.textContent)).toEqual(
-      ["core", "configmaps", "fleet-manager-settings", "get, update"],
-    );
+    expect(
+      within(core)
+        .getAllByRole("cell")
+        .map((c) => c.textContent),
+    ).toEqual(["core", "configmaps", "fleet-manager-settings", "get, update"]);
     const fleet = screen.getByRole("row", { name: /environments/ });
-    expect(within(fleet).getAllByRole("cell").map((c) => c.textContent)).toEqual(
-      [
-        "fleet.camunda.io",
-        "environments, camundaclusterclaims",
-        "any",
-        "get, list, watch",
-      ],
-    );
+    expect(
+      within(fleet)
+        .getAllByRole("cell")
+        .map((c) => c.textContent),
+    ).toEqual([
+      "fleet.camunda.io",
+      "environments, camundaclusterclaims",
+      "any",
+      "get, list, watch",
+    ]);
   });
 
   it("has no control, so the page cannot change the rules", () => {

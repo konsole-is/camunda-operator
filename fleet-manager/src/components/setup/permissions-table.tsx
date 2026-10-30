@@ -44,8 +44,12 @@ export function PermissionsTable({
                 {rule.apiGroups.map((g) => g || "core").join(", ")}
               </TableCell>
               <TableCell>{rule.resources.join(", ")}</TableCell>
-              <TableCell className={rule.resourceNames.length ? "" : "text-muted"}>
-                {rule.resourceNames.length ? rule.resourceNames.join(", ") : "any"}
+              <TableCell
+                className={rule.resourceNames.length ? "" : "text-muted"}
+              >
+                {rule.resourceNames.length
+                  ? rule.resourceNames.join(", ")
+                  : "any"}
               </TableCell>
               <TableCell>{rule.verbs.join(", ")}</TableCell>
             </TableRow>

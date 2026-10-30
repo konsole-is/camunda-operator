@@ -63,7 +63,8 @@ const field = (label: string) =>
   screen.getByLabelText(label) as HTMLInputElement | HTMLSelectElement;
 const type = (label: string, value: string) =>
   fireEvent.change(field(label), { target: { value } });
-const save = () => fireEvent.click(screen.getByRole("button", { name: "Save" }));
+const save = () =>
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
 const saveButton = () =>
   screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
 const gitMode = () =>
@@ -74,9 +75,7 @@ describe("SettingsForm", () => {
     render(<SettingsForm {...props()} />);
     expect(field("Kubernetes cluster name").value).toBe("prod-eu");
     expect(gitMode().checked).toBe(true);
-    expect(field("Repository").value).toBe(
-      "https://git.example.com/fleet.git",
-    );
+    expect(field("Repository").value).toBe("https://git.example.com/fleet.git");
     expect(field("Branch").value).toBe("main");
     expect(field("Path").value).toBe("clusters/prod");
     expect(field("Git credentials Secret").value).toBe("git");
@@ -143,18 +142,16 @@ describe("SettingsForm", () => {
 
   it("a Stale save shows the message and Reload", async () => {
     const p = props({
-      save: vi.fn(
-        async (): Promise<WriteResult> => ({
-          ok: false,
-          errors: [
-            {
-              code: "Stale",
-              message:
-                "The ConfigMap fleet-manager-settings changed since you opened it.",
-            },
-          ],
-        }),
-      ),
+      save: vi.fn(async (): Promise<WriteResult> => ({
+        ok: false,
+        errors: [
+          {
+            code: "Stale",
+            message:
+              "The ConfigMap fleet-manager-settings changed since you opened it.",
+          },
+        ],
+      })),
     });
     render(<SettingsForm {...p} />);
 
@@ -172,12 +169,10 @@ describe("SettingsForm", () => {
   it("an Invalid error shows at its field", async () => {
     const message = "prometheus.url must be an http:// or https:// address";
     const p = props({
-      save: vi.fn(
-        async (): Promise<WriteResult> => ({
-          ok: false,
-          errors: [{ code: "Invalid", path: "prometheus.url", message }],
-        }),
-      ),
+      save: vi.fn(async (): Promise<WriteResult> => ({
+        ok: false,
+        errors: [{ code: "Invalid", path: "prometheus.url", message }],
+      })),
     });
     render(<SettingsForm {...p} />);
 
@@ -187,7 +182,8 @@ describe("SettingsForm", () => {
     await waitFor(() =>
       expect(field("Prometheus URL").getAttribute("aria-invalid")).toBe("true"),
     );
-    const describedBy = field("Prometheus URL").getAttribute("aria-describedby");
+    const describedBy =
+      field("Prometheus URL").getAttribute("aria-describedby");
     expect(
       describedBy
         ?.split(" ")
@@ -268,9 +264,9 @@ describe("SettingsForm", () => {
     const button = screen.getByRole("button", { name: "Test the connection" });
 
     fireEvent.click(button);
-    expect(
-      (await screen.findByRole("status")).textContent,
-    ).toContain("Connected to https://git.example.com/fleet.git.");
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "Connected to https://git.example.com/fleet.git.",
+    );
 
     fireEvent.click(button);
     expect((await screen.findByRole("alert")).textContent).toContain(
