@@ -48,7 +48,7 @@ To list the requests of one claim:
 kubectl get pluginrequests -n my-cluster-ns -l fleet.camunda.io/claim=orders
 ```
 
-Each resource that a plugin writes for a request carries the labels `plugins.camunda.io/registration` and `plugins.camunda.io/request`.
+Each resource that a plugin writes for a request carries the labels `plugins.camunda.io/registration` and `plugins.camunda.io/request`. A namespaced resource also has an owner reference to the request. A cluster-scoped resource has no owner reference, so its labels are the only link to the request. The request itself has an owner reference to its claim, with `controller: true`.
 
 A cluster-scoped resource, for example a StorageClass, also carries the label `plugins.camunda.io/request-namespace` with the namespace of the request. Two claims with the same name in two namespaces each get their own cluster-scoped resources, and this label tells them apart.
 
@@ -57,6 +57,18 @@ To list the StorageClasses of one request:
 ```bash
 kubectl get storageclasses -l plugins.camunda.io/request=orders-backup-storage,plugins.camunda.io/request-namespace=my-cluster-ns
 ```
+
+## Name
+
+The claim names each request `<claim>-<section>`, for example `orders-backup-storage`. In a section with `selection: Many`, the claim writes one request for each option, and the name is `<claim>-<section>-<registration>`. Use these names to find a request:
+
+```bash
+kubectl get pluginrequest orders-backup-storage -n my-cluster-ns
+```
+
+A name longer than 63 characters is cut to 54 characters. It then ends in `-` and 8 hexadecimal characters of a hash of the full name.
+
+When two selections of a claim give the same request name, the claim is refused. Its `Ready` condition is `False` with reason `NotAllowed`, and the message is `the selections <section>/<registration> and <section>/<registration> get the same request name "<name>"`. The selections of a claim do not change after creation. Delete the claim, and create it again with other options.
 
 ## Target
 
@@ -67,11 +79,15 @@ kubectl get storageclasses -l plugins.camunda.io/request=orders-backup-storage,p
 | [CamundaClusterClaim](camundaclusterclaim.md) `orders` | `CamundaCluster` | `orders-camunda`, the account of every pod of the cluster except the connectors. A section with the slot `connectorsIdentity` targets `orders-connectors`. |
 | [CamundaManagementClusterClaim](camundamanagementclusterclaim.md) `my-plane` | `CamundaManagementCluster` | `my-plane-management`, the account of every workload of the plane. |
 
+Only the request of the section with the slot `workloadIdentity`, the core section `cloud-identity`, gets `target.additionalServiceAccounts`. The list holds the ServiceAccounts of the built-in storage that the claim selects: `<claim>-es-es` for `elasticsearch`, and `<claim>-pg-postgres` for `database-server`. The plugin of `cloud-identity` trusts these accounts too, so that Elasticsearch or PostgreSQL can write to the backup bucket.
+
 A component of a management plane with a `serviceAccount` block of its own does not get this access. See [ServiceAccounts](camundamanagementcluster.md#serviceaccounts).
 
 ## Outputs
 
 `status.outputs` holds the values that the plugin publishes for the request, by output key. Read them only when the condition `OutputsReady` is `True` and its `observedGeneration` equals `metadata.generation`. Before that, the outputs can belong to an older spec.
+
+The outputs hold a value for each output of the section, and no output has an empty value. The built-in registrations of the section `management-database` are the exception: `existing-database-configs` and `management-database-server` publish only the outputs of the components that the parameters name.
 
 ## Deletion
 
@@ -80,7 +96,24 @@ A component of a management plane with a `serviceAccount` block of its own does 
 - `Delete`: the plugin deletes the resources that it wrote for the request.
 - `Orphan`: the plugin keeps the resources. A namespaced resource loses its owner reference to the request and keeps its labels. `status.resources[].onOrphan` says, for each resource, whether it is `Kept` or `Deleted` with this policy.
 
-With both policies, the plugin deletes a route to a Service that no longer exists. The request goes away only after the plugin applies the policy. The claim copies its own deletion policy to the request before it deletes the request.
+With both policies, the plugin deletes a route to a Service that no longer exists.
+
+The plugin adds the finalizer `plugins.camunda.io/cleanup` to the request before it writes the first resource for it. It removes the finalizer after it applied the policy, and the request then goes away. If the plugin is not running, the request stays in `Terminating` with this finalizer. Start the plugin again, and the deletion completes.
+
+A claim gives each of its requests the deletion policy of the claim. This is `spec.deletionPolicy` of the claim, else the deletion default that the claim recorded from its `Environment`, else `Delete`. The claim deletes its requests last, after the other resources that it generated are gone. See [Deletion](camundaclusterclaim.md#deletion) of the claim.
+
+When the policy is `Orphan` and a selected registration does not list `Orphan` in `spec.deletionPolicies`, the claim deletes nothing. Its `Ready` condition is `False` with reason `NotAllowed`:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: NotAllowed
+      message: 'the deletion policy is Orphan, and these registrations do not support it: PluginRegistration "s3-backup-bucket" of section "backup-storage"'
+```
+
+Set `spec.deletionPolicy: Delete` on the claim, or install a version of the plugin that supports `Orphan`.
 
 ## Built-in requests
 
@@ -94,6 +127,8 @@ The operator serves the requests of six [built-in registrations](pluginregistrat
 | `existing-secondary-storage` | `name` (required): a `SecondaryStorageConfig` | none | `secondaryStorageConfig` |
 | `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | none | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set |
 | `management-database-server` | `preset` (required), `version`, `databases` | `storageClassName` | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each listed component |
+
+The operator serves a request only when its label `plugins.camunda.io/registration` and `spec.registration` name the same built-in registration. A request that already holds the finalizer `plugins.camunda.io/cleanup` stays served after a change of the label, so that its deletion completes.
 
 A built-in request waits until its registration is `Ready` at the current generation of the registration. Until then, the operator does not change the status of the request. A deletion does not wait.
 
@@ -256,7 +291,7 @@ status:
       camunda.io/elasticsearch-cluster: orders-es
 ```
 
-The first summary item counts the nodes by their data volumes. While the cluster is not `Ready`, its value is `not Ready (<reason>), <n> nodes` with the `Warning` severity. While the cluster has not yet reported on its current spec, the value is `updating, <n> nodes`, also with `Warning`.
+The first summary item counts the nodes by their data volumes. While the cluster is not `Ready`, its value is `not Ready (<reason>), <n> nodes` with the `Warning` severity, or `not Ready, <n> nodes` when the cluster reports no reason. While the cluster has not yet reported on its current spec, the value is `updating, <n> nodes`, also with `Warning`. Right after the request is created, the value is `waiting`, also with `Warning`.
 
 The storage size only grows. If `overrides.storageSize` is smaller than the size of the cluster, the cluster keeps its size, and the summary has a `Warning` item:
 
@@ -567,8 +602,6 @@ spec:
     kind: CamundaCluster
     name: orders
     serviceAccountName: orders-camunda
-    additionalServiceAccounts:
-      - orders-es
   inputs:
     kmsKey: arn:aws:kms:eu-west-1:111122223333:key/example
   parameters:
