@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -295,8 +296,12 @@ describe("ClaimReview", () => {
     review({ apply });
 
     const button = await confirm("Save");
-    fireEvent.click(button);
-    fireEvent.click(button);
+    // One act holds back the render that disables the button, so the second
+    // click reaches the handler.
+    act(() => {
+      button.click();
+      button.click();
+    });
 
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("saved"),
