@@ -21,16 +21,31 @@ export interface PolicyRule {
   verbs: string[];
 }
 
+// Each chart template is wrapped in WRAPPER, which the page scenarios take as
+// true. Any other condition can drop rules.
+const WRAPPER = "{{- if .Values.fleetManager.enabled }}";
+const CONDITION = /\{\{-?\s*(if|else|range|with)\b/;
+
 /**
  * chartRules returns the rules of the Role or ClusterRole template text. It
- * throws when the rules block holds a template, so that a test never binds
+ * throws when a template can change the rules, so that a test never binds
  * other rules than the chart, and when the text has no rules block. file
  * names the template in the error.
  */
+
 export function chartRules(text: string, file: string): PolicyRule[] {
   const lines = text.split("\n");
   const start = lines.findIndex((line) => line.startsWith("rules:"));
   if (start < 0) throw new Error(`The template ${file} has no rules block`);
+  if (
+    lines
+      .slice(0, start)
+      .some((line) => CONDITION.test(line) && line.trim() !== WRAPPER)
+  ) {
+    throw new Error(
+      `The rules of ${file} hold a template. Read them with helm template instead`,
+    );
+  }
   const rules = lines.slice(start);
   // The templates close their outer if after the rules.
   while (

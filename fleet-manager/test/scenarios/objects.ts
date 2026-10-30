@@ -47,11 +47,11 @@ export function describeObject(o: KubeObject): string {
 }
 
 /**
- * createOrder returns objs in an order that the API server accepts: the
- * Namespaces first, each object after the objects of objs that it names as
- * owners, and the events.k8s.io Events last. Objects that do not depend on
- * each other keep their order. An owner that is not in objs does not hold
- * an object back. It throws on an owner cycle and names its objects.
+ * createOrder returns objs with each object after the objects of objs that
+ * it names as owners, and after its Namespace when that Namespace has a
+ * uid. Apart from that, Namespaces come first and events.k8s.io Events
+ * last. An owner that is not in objs does not hold an object back. It
+ * throws on an owner cycle and names each object that it could not place.
  */
 export function createOrder(objs: readonly KubeObject[]): KubeObject[] {
   const rank = (o: KubeObject) =>
@@ -62,13 +62,23 @@ export function createOrder(objs: readonly KubeObject[]): KubeObject[] {
         : 1;
   const remaining = [0, 1, 2].flatMap((r) => objs.filter((o) => rank(o) === r));
   const uids = new Set(objs.flatMap((o) => o.metadata.uid ?? []));
+  const namespaces = new Map(
+    objs.flatMap((o) =>
+      rank(o) === 0 && o.metadata.uid
+        ? [[o.metadata.name, o.metadata.uid]]
+        : [],
+    ),
+  );
+  const needs = (o: KubeObject) => {
+    const owners = (o.metadata.ownerReferences ?? []).map((ref) => ref.uid);
+    const namespace = namespaces.get(o.metadata.namespace ?? "");
+    return namespace ? [...owners, namespace] : owners;
+  };
   const placed = new Set<string>();
   const order: KubeObject[] = [];
   while (remaining.length > 0) {
     const next = remaining.findIndex((o) =>
-      (o.metadata.ownerReferences ?? []).every(
-        (ref) => !uids.has(ref.uid) || placed.has(ref.uid),
-      ),
+      needs(o).every((uid) => !uids.has(uid) || placed.has(uid)),
     );
     if (next < 0) {
       throw new Error(

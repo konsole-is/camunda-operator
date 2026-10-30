@@ -98,9 +98,11 @@ describe("the users option of startEnvtest", () => {
     await expect(
       startEnvtest({ users: [{ name: "b", groups: ["system:masters"] }] }),
     ).rejects.toThrow(/b.*system:masters/);
-    await expect(
-      startEnvtest({ users: [{ name: "b", groups: ["x,system:masters"] }] }),
-    ).rejects.toThrow(/b.*comma/);
+    for (const group of ["x,system:masters", 'x"', "x\ny"]) {
+      await expect(
+        startEnvtest({ users: [{ name: "b", groups: [group] }] }),
+      ).rejects.toThrow(/b.*tokens.csv/);
+    }
   });
 });
 

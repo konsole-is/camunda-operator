@@ -75,6 +75,25 @@ describe("createOrder", () => {
     expect(names(createOrder([c, a, b]))).toEqual(["c", "a", "b"]);
   });
 
+  it("puts a Namespace with an owner before the objects in it", () => {
+    const owner = {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaRelease",
+      metadata: { name: "owner", uid: "uid-owner" },
+    };
+    const cm = object("ConfigMap", "cm");
+    const ns = {
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: "team-a", uid: "uid-team-a", ...owned("owner") },
+    };
+    expect(names(createOrder([cm, ns, owner]))).toEqual([
+      "owner",
+      "team-a",
+      "cm",
+    ]);
+  });
+
   it("does not hold back an object whose owner is not in the scenario", () => {
     const a = object("ConfigMap", "a", owned("missing"));
     const b = object("ConfigMap", "b");

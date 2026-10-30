@@ -366,9 +366,9 @@ function checkUsers(users: EnvtestUser[]): void {
         `The envtest user ${name} has the group system:masters. Use the admin kubeconfig of envtest instead.`,
       );
     }
-    if (groups.some((g) => g.includes(","))) {
+    if (groups.some((g) => /[,"\r\n]/.test(g))) {
       throw new Error(
-        `A group of the envtest user ${name} has a comma, and tokens.csv reads a comma as the end of a group.`,
+        `A group of the envtest user ${name} has a comma, a quote, or a line break, which tokens.csv cannot hold.`,
       );
     }
     if (name === ADMIN) {
