@@ -24,11 +24,10 @@ export function lastAppliedOf(
 
 /**
  * clientSideApplyPatch returns the JSON merge patch (RFC 7386) that kubectl
- * apply without --server-side sends for a custom resource: body, plus null
- * at each field of the last applied file of live that body leaves out. A
- * list or a value of body replaces the one of live whole. The patch never
- * removes metadata.annotations, and it keeps LAST_APPLIED_ANNOTATION at its
- * live value. It returns undefined when lastAppliedOf(live) is undefined.
+ * apply without --server-side sends for a custom resource. A list or a
+ * value of body replaces the one of live whole. The patch never removes
+ * metadata.annotations, and it keeps LAST_APPLIED_ANNOTATION at its live
+ * value. It returns undefined when lastAppliedOf(live) is undefined.
  */
 export function clientSideApplyPatch(
   live: KubeObject | undefined,
@@ -42,7 +41,7 @@ export function clientSideApplyPatch(
     ...body,
     metadata: { ...body.metadata, annotations: { ...annotationsOf(body) } },
   };
-  const patch = withRemovals(last, next);
+  const patch = withRemovals(last, next, live as JsonMap);
   const metadata = patch.metadata as JsonMap;
   metadata.annotations = {
     ...(metadata.annotations as JsonMap),
@@ -51,18 +50,43 @@ export function clientSideApplyPatch(
   return patch;
 }
 
-function withRemovals(last: JsonMap, next: JsonMap): JsonMap {
-  const patch: JsonMap = { ...next };
-  for (const [key, old] of Object.entries(last)) {
-    const value = next[key];
-    // JSON drops an undefined value, so the field is left out.
-    if (!Object.hasOwn(next, key) || value === undefined) {
-      setOwn(patch, key, null);
-    } else if (isMap(old) && isMap(value)) {
-      setOwn(patch, key, withRemovals(old, value));
+function withRemovals(
+  last: JsonMap | undefined,
+  next: JsonMap,
+  live: JsonMap | undefined,
+): JsonMap {
+  const patch: JsonMap = {};
+  for (const [key, value] of Object.entries(next)) {
+    if (value === undefined) continue;
+    if (value === null) {
+      // kubectl sends no change for a null of body at a field that is null
+      // on live. A null in a merge patch removes the field, so it would
+      // remove a null that live holds.
+      if (fieldOf(live, key) !== null) setOwn(patch, key, null);
+    } else if (isMap(value)) {
+      setOwn(
+        patch,
+        key,
+        withRemovals(mapOf(last, key), value, mapOf(live, key)),
+      );
+    } else {
+      setOwn(patch, key, value);
     }
   }
+  for (const key of Object.keys(last ?? {})) {
+    // JSON drops an undefined value, so the field is left out.
+    if (fieldOf(next, key) === undefined) setOwn(patch, key, null);
+  }
   return patch;
+}
+
+function fieldOf(map: JsonMap | undefined, key: string): unknown {
+  return map !== undefined && Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
+function mapOf(map: JsonMap | undefined, key: string): JsonMap | undefined {
+  const value = fieldOf(map, key);
+  return isMap(value) ? value : undefined;
 }
 
 // A plain assignment of the key __proto__ sets the prototype, not a field.
