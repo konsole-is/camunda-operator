@@ -34,7 +34,12 @@ function claim(clusterSpec: Record<string, unknown> = {}): Claim {
     spec: {
       presetRef: "medium",
       releaseRef: "camunda-8-9-5",
-      cluster: { zeebe: { replicas: 3 }, ...clusterSpec },
+      cluster: {
+        zeebe: { replicas: 3, storageSize: "32Gi" },
+        gateway: { replicas: 2 },
+        operate: { replicas: 1 },
+        ...clusterSpec,
+      },
       plugins: [
         {
           section: "access",
@@ -253,7 +258,11 @@ describe("clusterImpacts", () => {
           live: live({ gateway: { replicas: 2 } }),
         }),
       ),
-    ).toEqual(["Broker pods restart.", "Gateway pods restart."]);
+    ).toEqual([
+      "Broker pods restart.",
+      "Gateway pods restart.",
+      "Applies when Operate runs standalone.",
+    ]);
   });
 
   it("a reset to a smaller preset size cannot shrink the volumes", () => {
@@ -486,6 +495,47 @@ describe("mergedSpecs", () => {
     ]);
   });
 
+  it("a reset of suspend shows the cluster running after", () => {
+    const suspended = claim();
+    (suspended.spec as { suspend?: boolean }).suspend = true;
+    const { before, after } = mergedSpecs(
+      input(reset([f("spec"), f("suspend")]), {
+        claim: suspended,
+        live: live({ suspend: true }),
+      }),
+    );
+    expect(before.spec.suspend).toBe(true);
+    expect(after.spec.suspend).toBeUndefined();
+  });
+
+  it("an empty process block keeps the fields that the controller fills", () => {
+    const { after } = mergedSpecs(
+      input(set(cluster("zeebe"), {}), {
+        live: live({
+          zeebe: { replicas: 3, storageSize: "32Gi", storageClassName: "fast" },
+        }),
+      }),
+    );
+    expect(after.spec.zeebe?.storageClassName).toBe("fast");
+  });
+
+  it("a reset of an empty block gives the block of the preset back", () => {
+    const tolerations = [{ key: "a", operator: "Exists" }];
+    const i = input(reset(cluster("scheduling")), {
+      claim: claim({ scheduling: {} }),
+      live: live({ scheduling: {} }),
+    });
+    i.presets = i.presets.map((p) =>
+      p.metadata?.name === "medium"
+        ? preset("medium", { scheduling: { tolerations } })
+        : p,
+    );
+    expect(mergedSpecs(i).after.spec.scheduling).toEqual({ tolerations });
+    expect(clusterImpacts(i)).toEqual([
+      "Every process restarts, except the processes that set the field themselves.",
+    ]);
+  });
+
   it("keeps the live release when the claim does not change it", () => {
     const inherits = claim({ gateway: { replicas: 2 } });
     delete (inherits.spec as { releaseRef?: string }).releaseRef;
@@ -513,5 +563,13 @@ describe("showsMergedDiff", () => {
     expect(of(set([f("spec"), f("releaseRef")], "camunda-8-10-1"))).toBe(true);
     expect(of(reset(cluster("zeebe", "replicas")))).toBe(true);
     expect(of(set(cluster("zeebe", "replicas"), 5))).toBe(false);
+    expect(
+      of(
+        set([f("spec")], {
+          ...(claim().spec as object),
+          presetRef: "large",
+        }),
+      ),
+    ).toBe(true);
   });
 });

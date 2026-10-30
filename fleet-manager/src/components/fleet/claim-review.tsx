@@ -3,6 +3,7 @@
 import { CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { objectDiff, type DiffLine } from "@/lib/diff";
+import { equalJSON } from "@/lib/policy";
 import { itemStep, type Step } from "@/lib/fields";
 import {
   changeOf,
@@ -198,11 +199,20 @@ function keptResets(s: Session, preview: Preview): string[] {
       o.ref.name === metadata.name,
   )?.after;
   if (!after) return [];
+  const intended = claimAfter(s);
   return [...s.pending.values()]
     .filter((entry) => {
       if (!("reset" in entry)) return false;
       const steps = keyedSteps(s.claim, entry.steps);
-      return steps !== undefined && valueAt(after, steps) !== undefined;
+      if (steps) return valueAt(after, steps) !== undefined;
+      // A list item without keys has no name that stays after the reset,
+      // so its list must read as the session wants it.
+      const list = entry.steps.slice(0, keylessAt(s.claim, entry.steps));
+      const named = keyedSteps(s.claim, list);
+      return (
+        named !== undefined &&
+        !equalJSON(valueAt(after, named), valueAt(intended, named))
+      );
     })
     .map(
       (entry) =>
@@ -229,4 +239,12 @@ function keyedSteps(
     at = valueAt(at, [step]);
   }
   return out;
+}
+
+// keylessAt returns the place of the first step of steps that names a list
+// item without keys in claim.
+function keylessAt(claim: unknown, steps: readonly Step[]): number {
+  let k = 0;
+  while (k < steps.length && keyedSteps(claim, steps.slice(0, k + 1))) k++;
+  return k;
 }

@@ -7,8 +7,8 @@ import { equalJSON } from "@/lib/policy";
 import {
   claimAfter,
   without,
+  valueAt,
   withValue,
-  type PendingChange,
   type Session,
 } from "@/lib/session";
 import { topologyOf, type Process } from "./topology";
@@ -50,29 +50,19 @@ const HOST_FIELDS = new Set(["extraEnv", "extraEnvFrom"]);
 
 /**
  * mergedSpecs returns the merged spec of the cluster before the change and
- * after it. after applies the change of spec.cluster of the claim to the
- * live spec, with the preset and the release of the claim after the change.
+ * after it. after is the cluster that the claim controller makes from the
+ * claim after the change. It takes the fields that the controller sets from
+ * the live cluster.
  */
 export function mergedSpecs(input: ClusterChangeInput): {
   before: Merged<CamundaClusterSpec>;
   after: Merged<CamundaClusterSpec>;
 } {
   const { live } = input;
-  const claim = claimAfter(input.session).spec;
-  let overrides = live.spec;
-  for (const change of clusterChanges(input))
-    overrides =
-      change.value === undefined
-        ? without(overrides, change.steps)
-        : withValue(overrides, change.steps, change.value);
+  const after = clusterAfter(input);
   return {
     before: merged(input, live.spec.presetRef, live.spec.releaseRef, live.spec),
-    after: merged(
-      input,
-      claim.presetRef ?? live.spec.presetRef,
-      releaseAfter(input),
-      overrides,
-    ),
+    after: merged(input, after.presetRef, after.releaseRef, after),
   };
 }
 
@@ -99,11 +89,15 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
   }
 
   if (changed("presetRef"))
-    for (const line of leafChanges(before.spec, after.spec)) lines.add(line);
+    for (const line of leafChanges(
+      { ...before.spec, presetRef: undefined },
+      { ...after.spec, presetRef: undefined },
+    ))
+      lines.add(line);
 
   const boxes = topologyOf(after.spec, []);
   const shrinks = shrinksStorage(before.spec, after.spec);
-  for (const { steps } of cluster) {
+  for (const steps of cluster) {
     const [first, second] = steps;
     if (!("field" in first) || !Object.hasOwn(PROCESS_NAME, first.field))
       continue;
@@ -122,9 +116,7 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
   }
 
   if (
-    cluster.some(
-      ({ steps: [first] }) => "field" in first && CLUSTER_WIDE.has(first.field),
-    )
+    cluster.some(([first]) => "field" in first && CLUSTER_WIDE.has(first.field))
   )
     lines.add(
       "Every process restarts, except the processes that set the field themselves.",
@@ -135,7 +127,7 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
   if (shrinks)
     lines.add("Volumes cannot shrink. The operator keeps the current size.");
 
-  for (const { steps } of diff(was.plugins ?? [], is.plugins ?? [])) {
+  for (const steps of diff(was.plugins ?? [], is.plugins ?? [])) {
     const [selection, parameters] = steps;
     if (
       !selection ||
@@ -168,13 +160,15 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
   return [...lines];
 }
 
-/** showsMergedDiff says whether the review shows the merged diff: a pending presetRef or releaseRef, or a reset. */
+/** showsMergedDiff says whether the review shows the merged diff: a change of presetRef or releaseRef, or a reset. */
 export function showsMergedDiff(s: Session): boolean {
-  const entries = [...s.pending.values()];
+  const ref = (claim: unknown, name: string) =>
+    valueAt(claim, [{ field: "spec" }, { field: name }]);
+  const after = claimAfter(s);
   return (
-    entries.some((e) => "reset" in e) ||
-    top(entries, "presetRef") !== undefined ||
-    top(entries, "releaseRef") !== undefined
+    [...s.pending.values()].some((e) => "reset" in e) ||
+    ref(s.claim, "presetRef") !== ref(after, "presetRef") ||
+    ref(s.claim, "releaseRef") !== ref(after, "releaseRef")
   );
 }
 
@@ -191,16 +185,6 @@ function merged(
   );
 }
 
-// top returns the pending change of the top-level claim field name.
-function top(
-  entries: readonly PendingChange[],
-  name: string,
-): PendingChange | undefined {
-  return entries.find(
-    (e) => e.steps.length === 2 && startsWith(e.steps, ["spec", name]),
-  );
-}
-
 function releaseAfter(input: ClusterChangeInput): string | undefined {
   const was = input.session.claim.spec.releaseRef;
   const is = claimAfter(input.session).spec.releaseRef;
@@ -208,42 +192,63 @@ function releaseAfter(input: ClusterChangeInput): string | undefined {
   return is || input.environment?.spec.releases?.default;
 }
 
-// StepChange is a value that a change sets at steps, or a removal when value
-// is undefined.
-type StepChange = { steps: Step[]; value: unknown };
+// CONTROLLER_FIELDS are the fields of a CamundaCluster that the claim
+// controller fills from outside the claim: the ServiceAccount names, the
+// platform config, and the slot fields (cluster in
+// pkg/components/camundaclusterclaim/cluster.go).
+const CONTROLLER_FIELDS: Step[][] = [
+  ["serviceAccount", "name"],
+  ["serviceAccount", "annotations"],
+  ["connectors", "serviceAccount", "name"],
+  ["connectors", "serviceAccount", "annotations"],
+  ["zeebe", "storageClassName"],
+  ["externalUrl"],
+  ["storageRef"],
+  ["backupStorageRef"],
+  ["platformConfigRef"],
+].map((names) => names.map((field) => ({ field })));
 
-// clusterChanges returns the changes of spec.cluster of the claim, with
-// steps below spec.cluster. A list item is named by its keys, or the list
-// changes as a whole, so that the steps name the same item in the live
-// spec.
-function clusterChanges(input: ClusterChangeInput): StepChange[] {
+function clusterAfter(input: ClusterChangeInput): CamundaClusterSpec {
+  const claim = claimAfter(input.session).spec;
+  let spec: CamundaClusterSpec = structuredClone(claim.cluster ?? {});
+  const fields: [Step[], unknown][] = [
+    [[{ field: "presetRef" }], claim.presetRef],
+    [[{ field: "releaseRef" }], releaseAfter(input)],
+    [[{ field: "suspend" }], claim.suspend],
+    ...CONTROLLER_FIELDS.map((steps): [Step[], unknown] => [
+      steps,
+      valueAt(input.live.spec, steps),
+    ]),
+  ];
+  for (const [steps, value] of fields)
+    spec =
+      value === undefined
+        ? without(spec, steps)
+        : withValue(spec, steps, value);
+  return spec;
+}
+
+// clusterChanges returns the steps below spec.cluster of each field that
+// the change sets or removes.
+function clusterChanges(input: ClusterChangeInput): Step[][] {
   return diff(
     input.session.claim.spec.cluster ?? {},
     claimAfter(input.session).spec.cluster ?? {},
   );
 }
 
-function diff(was: unknown, is: unknown, steps: Step[] = []): StepChange[] {
+function diff(was: unknown, is: unknown, steps: Step[] = []): Step[][] {
   if (equalJSON(was, is)) return [];
-  // An empty block replaces the block of the preset.
-  if (steps.length > 0 && isObject(is) && Object.keys(is).length === 0)
-    return [{ steps, value: is }];
-  // A removed object goes field by field, so that the fields that the
-  // controller fills stay. A removed list item goes as a whole, because
-  // without its keys it cannot be found again.
-  const last = steps.at(-1);
-  const removed = is === undefined && isObject(was) && last && "field" in last;
-  const children = childrenOf(
-    was ?? (Array.isArray(is) ? [] : {}),
-    removed ? {} : is,
-  );
-  if (!children) return [{ steps, value: is }];
+  const empty = (other: unknown) => (Array.isArray(other) ? [] : {});
+  const children = childrenOf(was ?? empty(is), is ?? empty(was));
+  if (!children || children.length === 0) return [steps];
   return children.flatMap(([step, w, i]) => diff(w, i, [...steps, step]));
 }
 
 // childrenOf pairs the children of two objects by field, or of two lists
 // whose items all have keys by those keys. It returns undefined for other
-// values, and for two lists whose items that stay changed their order.
+// values, and for two lists that hold their common keys in a different
+// order.
 function childrenOf(
   was: unknown,
   is: unknown,
@@ -265,13 +270,18 @@ function childrenOf(
     list.map((item, index) => itemStep(item, index)),
   );
   if (steps.flat().some((step) => !("item" in step))) return undefined;
-  // An item of the change goes to the end of the list, so the items that
-  // stay must keep their order.
+  // The order of a list such as extraEnv is part of its value.
   const [before, after] = steps.map((list) =>
     list.map((step) => JSON.stringify(step)),
   );
   const kept = before.filter((key) => after.includes(key));
-  if (!equalJSON(after.slice(0, kept.length), kept)) return undefined;
+  if (
+    !equalJSON(
+      after.filter((key) => before.includes(key)),
+      kept,
+    )
+  )
+    return undefined;
   was.forEach((item, i) => add(steps[0][i], item, 1));
   is.forEach((item, i) => add(steps[1][i], item, 2));
   return [...pairs.values()];
