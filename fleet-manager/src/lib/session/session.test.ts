@@ -437,6 +437,17 @@ describe("locks above a field", () => {
     ).toHaveProperty("session");
   });
 
+  it("accepts an indexed reset of an unlocked item before a locked one", () => {
+    const named = withSpec({
+      cluster: { extraEnv: [{ name: "a" }, { name: "b" }] },
+    });
+    const locks: LockProvider = (p) =>
+      p === "spec.cluster.extraEnv[name=b]" ? admin : undefined;
+    expect(
+      resetValue(open(named, locks), [...cluster("extraEnv"), { index: 0 }]),
+    ).toHaveProperty("session");
+  });
+
   it("refuses a duplicate append of an item with a locked field that changes it", () => {
     const s = open(claim(), hostLocked);
     expect(

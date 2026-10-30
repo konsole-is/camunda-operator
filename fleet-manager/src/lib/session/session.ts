@@ -257,11 +257,16 @@ function lockAt(
   steps: readonly Step[],
   after: unknown,
 ): FieldLock | undefined {
-  const target =
-    after === undefined
-      ? without(claim, steps)
-      : withValue(claim, steps, after);
   const inClaim = rekeyed(claim, steps);
+  // A reset sets no new item, and the list after it moves the next item to
+  // the index of steps.
+  if (after === undefined)
+    return (
+      lockOf(locks, steps) ??
+      lockOf(locks, inClaim) ??
+      lockedChange(locks, inClaim, valueAt(claim, steps), undefined)
+    );
+  const target = withValue(claim, steps, after);
   const inTarget = rekeyed(target, steps);
   return (
     lockOf(locks, steps) ??
