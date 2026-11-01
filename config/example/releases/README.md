@@ -38,10 +38,10 @@ metadata:
   name: camunda-8-9
 spec:
   # renovate: datasource=docker depName=camunda/camunda
-  version: "8.9.23"
+  version: "8.9.26"
   connectors:
     # renovate: datasource=docker depName=camunda/connectors-bundle
-    version: "8.9.14"
+    version: "8.9.17"
   elasticsearch:
     # renovate: datasource=docker depName=docker.elastic.co/elasticsearch/elasticsearch
     version: "9.2.8"
