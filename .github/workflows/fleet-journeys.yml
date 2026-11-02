@@ -64,7 +64,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v5.0.1
         with:
-          version: v4.3.0
+          version: v4.3.1
 
       # The Go module proxy sometimes drops a connection. The retry keeps
       # one dropped download from failing the job.
