@@ -29,7 +29,7 @@ export interface CacheDeps {
   /** retryDelayMs is the first wait before a watch restarts after an error. It doubles up to maxRetryDelayMs. */
   retryDelayMs?: number;
   maxRetryDelayMs?: number;
-  /** timeoutReconnectMs is the most a watch waits to start again after its request times out. */
+  /** timeoutReconnectMs is the most a watch waits to start again after the API server ends it. */
   timeoutReconnectMs?: number;
 }
 
@@ -191,10 +191,10 @@ class KindInformer {
       },
     } as unknown as Watch;
 
-    // The client ends each watch after a request timeout of 30 seconds, also
-    // when nothing changed. ListWatch then waits a delay that doubles up to 30
-    // seconds, and a watch event resets it, so a quiet kind would be
-    // unwatched half of the time. A request error other than 410 Gone goes to
+    // The API server ends each watch after its own timeout, with no error.
+    // ListWatch then waits a delay that doubles up to 30 seconds, and only a
+    // watch event resets it, so a quiet kind would be unwatched for up to 30
+    // seconds after each end. A request error other than 410 Gone goes to
     // onError instead, without this delay.
     const delayFn = (ms: number) =>
       new Promise<void>((resolve) =>
