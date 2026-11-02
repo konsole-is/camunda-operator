@@ -150,7 +150,7 @@ describe("ResourceCache", () => {
     await cache.objects("Environment");
 
     // The client ends each watch after a request timeout, also when nothing
-    // changed. The default delay of ListWatch doubles up to 30 seconds.
+    // changed.
     for (let closes = 1; closes <= 6; closes++) {
       const timeout = Object.assign(new Error("timed out"), {
         name: "TimeoutError",
@@ -265,12 +265,12 @@ describe("ResourceCache", () => {
       timeoutReconnectMs: 50,
     });
     await cache.objects("Environment");
-    const timeout = () =>
-      Object.assign(new Error("timed out"), { name: "TimeoutError" });
-    // The first reconnect of ListWatch does not wait. The second waits.
-    watch.calls[0].done(timeout());
+    // A watch that the API server ends with no error starts again at once
+    // the first time. The next time ListWatch waits. After a timeout of the
+    // client it does not wait.
+    watch.calls[0].done(null);
     await vi.waitFor(() => expect(watch.calls).toHaveLength(2));
-    watch.calls[1].done(timeout());
+    watch.calls[1].done(null);
 
     await cache.stop();
     await new Promise((resolve) => setTimeout(resolve, 120));
