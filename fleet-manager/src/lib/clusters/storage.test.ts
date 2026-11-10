@@ -769,6 +769,85 @@ describe("storageSummary", () => {
     expect(JSON.stringify(summary)).not.toMatch(/arn:aws/);
   });
 
+  it("lists the policy value of an editable parameter that the selection leaves out", () => {
+    const withDefault: StorageData = {
+      ...data,
+      environment: {
+        ...data.environment!,
+        spec: {
+          ...data.environment!.spec,
+          parameters: {
+            "aws-connectors-role": {
+              extraPolicyArns: {
+                claimEditable: true,
+                value: ["arn:aws:iam::aws:policy/AmazonSQSFullAccess"],
+                allowed: [
+                  {
+                    name: "sqs",
+                    label: "SQS access",
+                    value: "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+    const summary = storageSummary(
+      draftWith({
+        "connectors-permissions": [
+          pick("connectors-permissions", "aws-connectors-role"),
+        ],
+      }),
+      withDefault,
+    );
+
+    expect(summary.picks.at(-1)?.values).toEqual([
+      { label: "extraPolicyArns", value: "SQS access" },
+    ]);
+    expect(JSON.stringify(summary)).not.toMatch(/arn:aws/);
+  });
+
+  it("shows a policy value that is no name of the allowed list as Set by your admin", () => {
+    const outside: StorageData = {
+      ...data,
+      environment: {
+        ...data.environment!,
+        spec: {
+          ...data.environment!.spec,
+          parameters: {
+            "aws-connectors-role": {
+              extraPolicyArns: {
+                claimEditable: true,
+                value: "arn:aws:iam::aws:policy/AdministratorAccess",
+                allowed: [
+                  {
+                    name: "sqs",
+                    label: "SQS access",
+                    value: "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+    const summary = storageSummary(
+      draftWith({
+        "connectors-permissions": [
+          pick("connectors-permissions", "aws-connectors-role"),
+        ],
+      }),
+      outside,
+    );
+
+    expect(summary.picks.at(-1)?.values).toEqual([
+      { label: "extraPolicyArns", value: "Set by your admin" },
+    ]);
+  });
+
   it("shows a typed ARN as Set by your admin", () => {
     const summary = summaryOf({
       "connectors-permissions": [

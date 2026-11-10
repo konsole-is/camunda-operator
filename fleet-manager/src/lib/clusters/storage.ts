@@ -252,8 +252,10 @@ const OPTIMIZE_URL_OUTPUT = SLOT_FIELDS.find(
  * after section in the order of storageViews, with the default of a section
  * that the step has not reported yet. The type of a selection that names a
  * SecondaryStorageConfig is the type of that object in the namespace of
- * draft. Each value of a pick shows the labels of the picked names of an
- * allowed list, joined by ", ", and lockedSummary of any other value.
+ * draft. The values of a pick hold each claim-editable parameter with a
+ * value, from the selection, else from the policy. Each value of a pick
+ * shows the labels of the picked names of an allowed list, joined by ", ",
+ * and lockedSummary of any other value.
  */
 export function storageSummary(
   draft: ClusterDraft,
@@ -278,14 +280,7 @@ export function storageSummary(
         registration: selection.registration,
         optionLabel:
           option?.label ?? registration?.spec.label ?? selection.registration,
-        values: Object.entries(selection.parameters ?? {}).map(
-          ([name, value]) =>
-            pickValue(
-              option?.parameters.find((r) => r.name === name),
-              name,
-              value,
-            ),
-        ),
+        values: pickValues(option?.parameters ?? [], selection),
       });
       if (!registration) continue;
       if (slot === "backupStorage") summary.backupStorage = selection;
@@ -307,6 +302,34 @@ export function storageSummary(
   return summary;
 }
 
+// SectionCards leaves out of a selection each parameter that equals its
+// policy value, so the policy value of an editable parameter fills the gap.
+function pickValues(
+  rules: readonly ParameterRule[],
+  selection: PluginSelection,
+): StoragePick["values"] {
+  const set = selection.parameters ?? {};
+  const names = [
+    ...rules
+      .filter(
+        (r) =>
+          r.claimEditable &&
+          (Object.hasOwn(set, r.name) || r.value !== undefined),
+      )
+      .map((r) => r.name),
+    ...Object.keys(set).filter((name) => !rules.some((r) => r.name === name)),
+  ];
+  return names.map((name) => {
+    const rule = rules.find((r) => r.name === name);
+    const value = Object.hasOwn(set, name)
+      ? set[name]
+      : rule?.claimEditable
+        ? rule.value
+        : undefined;
+    return pickValue(rule, name, value);
+  });
+}
+
 function pickValue(
   rule: ParameterRule | undefined,
   name: string,
@@ -316,7 +339,7 @@ function pickValue(
   const allowed = rule?.claimEditable ? rule.allowed : undefined;
   if (!allowed) return { label, value: lockedSummary(value) };
   const labelOf = (picked: unknown) =>
-    allowed.find((c) => c.name === picked)?.label ?? String(picked);
+    allowed.find((c) => c.name === picked)?.label ?? lockedSummary(picked);
   return {
     label,
     value: Array.isArray(value)
