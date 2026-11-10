@@ -15,7 +15,12 @@ const claimOf = (
   ...(requests ? { status: { requests } } : {}),
 });
 
-const section = (name: string, label: string, order?: number) =>
+const section = (
+  name: string,
+  label: string,
+  order?: number,
+  selection: "One" | "Many" = "One",
+) =>
   ({
     apiVersion: "plugins.camunda.io/v1alpha1",
     kind: "PluginSection",
@@ -23,7 +28,7 @@ const section = (name: string, label: string, order?: number) =>
     spec: {
       appliesTo: ["CamundaClusterClaim"],
       label,
-      selection: "One",
+      selection,
       ...(order === undefined ? {} : { order }),
     },
   }) as Resource<"PluginSection">;
@@ -164,7 +169,7 @@ describe("sectionComponents", () => {
           },
         ],
       ),
-      sections: [section("access", "Access", 60)],
+      sections: [section("access", "Access", 60, "Many")],
       requests: [
         request("team-a", "orders-gw", { status: "True", reason: "Ready" }),
         request("team-a", "orders-lb", {
@@ -182,6 +187,39 @@ describe("sectionComponents", () => {
     ).toEqual([
       ["gateway-api", "orders-gw", "True"],
       ["load-balancer", "orders-lb", "False"],
+    ]);
+  });
+
+  it("gives each selection of a Many section an id with its registration", () => {
+    const result = sectionComponents({
+      claim: claimOf([
+        sel("access", "load-balancer"),
+        sel("access", "gateway-api"),
+        sel("secondary-storage", "elasticsearch"),
+      ]),
+      sections: [
+        section("access", "Access", 60, "Many"),
+        section("secondary-storage", "Secondary storage", 50),
+      ],
+      requests: [],
+    });
+    expect(result.map((c) => c.id)).toEqual([
+      "section:secondary-storage",
+      "section:access/gateway-api",
+      "section:access/load-balancer",
+    ]);
+  });
+
+  it("gives a section that is not found the registration in its id only when the claim selects it more than once", () => {
+    const result = sectionComponents({
+      claim: claimOf([sel("gone", "a"), sel("gone", "b"), sel("lost", "c")]),
+      sections: [],
+      requests: [],
+    });
+    expect(result.map((c) => c.id)).toEqual([
+      "section:gone/a",
+      "section:gone/b",
+      "section:lost",
     ]);
   });
 

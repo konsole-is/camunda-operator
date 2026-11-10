@@ -3,7 +3,7 @@ import type { ConditionLike } from "@/components/fleet/status";
 import type { Resource } from "@/lib/k8s/kinds";
 import { byCodeUnit, type PluginSelection } from "@/lib/policy";
 
-/** SectionComponentId is the component id of a section, as the cluster page cards use it. */
+/** SectionComponentId is the component id of a selection of a section, as the cluster page cards use it. */
 export type SectionComponentId = `section:${string}`;
 
 /**
@@ -33,15 +33,25 @@ export type SectionClaim = {
   };
 };
 
-/** sectionComponentId is the component id of the section of that name. */
-export function sectionComponentId(section: string): SectionComponentId {
-  return `section:${section}`;
+/**
+ * sectionComponentId is the component id of a selection. It is
+ * "section:<section>" in a section that holds one selection, and
+ * "section:<section>/<registration>" in a section that holds many.
+ */
+export function sectionComponentId(
+  selection: PluginSelection,
+  many: boolean,
+): SectionComponentId {
+  return many
+    ? `section:${selection.section}/${selection.registration}`
+    : `section:${selection.section}`;
 }
 
 /**
  * sectionComponents returns one component for each selection of claim,
  * sorted by order, then by section name, then by registration. A request
- * counts only when it is in the namespace of the claim.
+ * counts only when it is in the namespace of the claim. A section that is
+ * not found holds many selections when the claim selects it more than once.
  */
 export function sectionComponents({
   claim,
@@ -53,11 +63,15 @@ export function sectionComponents({
   requests: readonly Resource<"PluginRequest">[];
 }): SectionComponent[] {
   const namespace = claim.metadata?.namespace;
-  return (claim.spec.plugins ?? [])
+  const selections = claim.spec.plugins ?? [];
+  return selections
     .map((selection): SectionComponent => {
       const found = sections.find(
         (s) => s.metadata?.name === selection.section,
       );
+      const many = found
+        ? found.spec.selection === "Many"
+        : selections.filter((s) => s.section === selection.section).length > 1;
       const requestName = claim.status?.requests?.find(
         (r) =>
           r.section === selection.section &&
@@ -75,7 +89,7 @@ export function sectionComponents({
         (c) => c.type === "Ready",
       );
       return {
-        id: sectionComponentId(selection.section),
+        id: sectionComponentId(selection, many),
         section: selection.section,
         label: found?.spec.label ?? selection.section,
         order: found ? (found.spec.order ?? 0) : Number.MAX_SAFE_INTEGER,
