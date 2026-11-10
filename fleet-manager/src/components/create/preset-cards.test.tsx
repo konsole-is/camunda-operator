@@ -10,11 +10,12 @@ afterEach(cleanup);
 function preset(
   name: string,
   zeebe?: CamundaClusterPreset["spec"]["cluster"]["zeebe"],
+  annotations?: Record<string, string>,
 ): CamundaClusterPreset {
   return {
     apiVersion: "core.camunda.io/v1",
     kind: "CamundaClusterPreset",
-    metadata: { name },
+    metadata: { name, ...(annotations && { annotations }) },
     spec: { cluster: { ...(zeebe && { zeebe }) } },
   };
 }
@@ -25,6 +26,11 @@ const small = preset("small", {
   resources: { requests: { cpu: "500m", memory: "2Gi" } },
 });
 const large = preset("large");
+const described = preset(
+  "medium",
+  { replicas: 3 },
+  { "kubernetes.io/description": "For production workloads." },
+);
 
 describe("presetFacts", () => {
   it("gives the facts that the preset sets, in order", () => {
@@ -77,5 +83,29 @@ describe("PresetCards", () => {
     );
     await userEvent.click(screen.getByRole("radio", { name: /^large/ }));
     expect(onChange).toHaveBeenCalledWith("large");
+  });
+
+  it("shows the description between the name and the facts", () => {
+    render(<PresetCards presets={[described]} usage={new Map()} />);
+    const card = screen
+      .getByRole("radio", { name: /^medium/ })
+      .closest("label");
+    expect(card?.textContent).toMatch(
+      /^mediumFor production workloads\.Brokers3/,
+    );
+  });
+
+  it("shows no description line for a preset without one", () => {
+    const blank = preset("blank", undefined, {
+      "kubernetes.io/description": " ",
+    });
+    render(<PresetCards presets={[large, blank]} usage={new Map()} />);
+    // Without facts, the text column holds the name and the usage line only.
+    for (const name of ["large", "blank"]) {
+      const column = screen.getByRole("radio", {
+        name: new RegExp(`^${name}`),
+      }).nextElementSibling;
+      expect(column?.children).toHaveLength(2);
+    }
   });
 });

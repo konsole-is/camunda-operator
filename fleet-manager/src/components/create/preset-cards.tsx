@@ -2,6 +2,7 @@
 
 import { useId } from "react";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
+import { presetDescription } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
 /**
@@ -26,8 +27,8 @@ export function presetFacts(
 
 /**
  * PresetCards is the preset choice of the cluster create flow: one card for
- * each preset in the given order, with its facts and the number of clusters
- * that use it (usage, by preset name).
+ * each preset in the given order, with its description, its facts, and the
+ * number of clusters that use it (usage, by preset name).
  */
 export function PresetCards({
   presets,
@@ -49,6 +50,7 @@ export function PresetCards({
           const used = usage.get(name)?.length ?? 0;
           const checked = value === name;
           const facts = presetFacts(preset);
+          const description = presetDescription(preset);
           return (
             <label
               key={name}
@@ -67,6 +69,11 @@ export function PresetCards({
               />
               <span className="flex min-w-0 flex-1 flex-col gap-2">
                 <span className="text-sm font-medium text-text">{name}</span>
+                {description && (
+                  <span className="text-sm break-words text-muted">
+                    {description}
+                  </span>
+                )}
                 {facts.length > 0 && (
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-sm">
                     {facts.map((fact) => (
