@@ -6,7 +6,7 @@ import {
 } from "@kubernetes/client-node";
 import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 import type { KubeObject } from "@/lib/write/types";
-import { directWriter, refKey } from "@/lib/write/writer";
+import { directWriter, readObject, refKey } from "@/lib/write/writer";
 import { createClientSideApplied } from "./client-side-apply";
 
 const kc = new KubeConfig();
@@ -25,6 +25,34 @@ const environmentRef = (name: string) => ({
   apiVersion: "fleet.camunda.io/v1alpha1",
   kind: "Environment",
   name,
+});
+const planeClaim = (
+  namespace: string,
+  name: string,
+  identity = "8.9.0",
+): KubeObject => ({
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaManagementClusterClaim",
+  metadata: { name, namespace },
+  spec: {
+    environments: ["prod"],
+    management: {
+      identityProvider: { oidc: {} },
+      identity: { admin: { claimName: "sub", claimValue: "admin" } },
+    },
+    versions: { identity },
+  },
+});
+const planeClaimRef = (namespace: string, name: string) => ({
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaManagementClusterClaim",
+  namespace,
+  name,
+});
+const newNamespace = (name: string): KubeObject => ({
+  apiVersion: "v1",
+  kind: "Namespace",
+  metadata: { name, labels: { "fleet.camunda.io/environment": "prod" } },
 });
 const live = (name: string) =>
   api.read({
@@ -548,6 +576,141 @@ describe("the direct writer against envtest", () => {
         }),
       ],
     });
+  });
+
+  it("a create of an object that exists fails with Stale, names it, and changes nothing", async () => {
+    await writer.apply({
+      intent: "Create",
+      apply: [environment(name, { displayName: "One" })],
+    });
+    const before = await live(name);
+
+    const result = await writer.apply({
+      intent: "Create again",
+      apply: [environment(name, { displayName: "Two" })],
+      create: [`Environment//${name}`],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Stale",
+          message: expect.stringContaining(`${name} exists already`),
+          ref: environmentRef(name),
+        }),
+      ],
+    });
+    expect((await live(name)).metadata?.resourceVersion).toBe(
+      before.metadata?.resourceVersion,
+    );
+  });
+
+  it("a preview of a create of an object that exists returns the same error", async () => {
+    await writer.apply({
+      intent: "Create",
+      apply: [environment(name, { displayName: "One" })],
+    });
+
+    const preview = await writer.preview({
+      intent: "Create again",
+      apply: [environment(name, { displayName: "Two" })],
+      create: [`Environment//${name}`],
+    });
+
+    expect(preview).toEqual({
+      objects: [],
+      errors: [
+        expect.objectContaining({
+          code: "Stale",
+          message: expect.stringContaining(`${name} exists already`),
+          ref: environmentRef(name),
+        }),
+      ],
+    });
+  });
+
+  it("a new namespace and its claim go in one change, the namespace first", async () => {
+    const ns = `plane-${randomUUID().slice(0, 8)}`;
+
+    const result = await writer.apply({
+      intent: `Create ${ns} with the plane plane-a`,
+      apply: [newNamespace(ns), planeClaim(ns, "plane-a")],
+      create: [
+        `Namespace//${ns}`,
+        `CamundaManagementClusterClaim/${ns}/plane-a`,
+      ],
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    expect(
+      await api.read({
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: { name: ns },
+      }),
+    ).toMatchObject({
+      metadata: { labels: { "fleet.camunda.io/environment": "prod" } },
+    });
+    expect(
+      await api.read({
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaManagementClusterClaim",
+        metadata: { name: "plane-a", namespace: ns },
+      }),
+    ).toMatchObject({ spec: { environments: ["prod"] } });
+  });
+
+  it("a preview of a new namespace and its claim shows the claim as rendered and writes nothing", async () => {
+    const ns = `plane-${randomUUID().slice(0, 8)}`;
+
+    const preview = await writer.preview({
+      intent: `Create ${ns} with the plane plane-a`,
+      apply: [newNamespace(ns), planeClaim(ns, "plane-a")],
+      create: [
+        `Namespace//${ns}`,
+        `CamundaManagementClusterClaim/${ns}/plane-a`,
+      ],
+    });
+
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects).toEqual([
+      expect.objectContaining({
+        ref: { apiVersion: "v1", kind: "Namespace", name: ns },
+        after: expect.objectContaining({
+          metadata: expect.objectContaining({ name: ns }),
+        }),
+      }),
+      expect.objectContaining({
+        ref: planeClaimRef(ns, "plane-a"),
+        after: expect.objectContaining({
+          spec: expect.objectContaining({ environments: ["prod"] }),
+        }),
+      }),
+    ]);
+    expect(preview.objects.map((o) => o.before)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(
+      await readObject(kc, { apiVersion: "v1", kind: "Namespace", name: ns }),
+    ).toBeUndefined();
+  });
+
+  it("a create of a claim in an existing namespace is dry-run, so the API server refuses an invalid claim", async () => {
+    const result = await writer.apply({
+      intent: "Create the plane plane-a",
+      apply: [planeClaim(namespace, "plane-a", "8.9")],
+      create: [`CamundaManagementClusterClaim/${namespace}/plane-a`],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Invalid" })],
+    });
+    expect(
+      await readObject(kc, planeClaimRef(namespace, "plane-a")),
+    ).toBeUndefined();
   });
 
   it("applies a ConfigMap with the field manager fleet-manager, and a stale resourceVersion fails with Stale", async () => {

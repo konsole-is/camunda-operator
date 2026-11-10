@@ -16,7 +16,7 @@ import {
 } from "@/lib/k8s/kinds";
 import { APP_FIELD_MANAGER } from "@/lib/merge";
 import type { Settings } from "@/lib/settings/keys";
-import { apiErrorsOf, staleError } from "./errors";
+import { apiErrorsOf, existsError, staleError } from "./errors";
 import { gitWriter } from "./git";
 import { clientSideApplyPatch } from "./merge-patch";
 import { refKey, refOf } from "./refs";
@@ -113,6 +113,10 @@ export function diffView(
  * the write, a kind that the app may not delete, such as a Namespace, can
  * exist again, with the error of that delete beside Stale.
  *
+ * A create of an object that exists fails with Stale in the dry run. An
+ * object in a namespace that the same change makes is not dry-run, and the
+ * preview shows it as rendered.
+ *
  * A preview of a Secret shows "(hidden)" for each value, and "(changed)"
  * for a value that the change sets to a new one. It holds no annotation.
  */
@@ -187,6 +191,11 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 
     const objects: PreviewObject[] = [];
     const errors: ApiError[] = [];
+    // A Namespace that cannot be read gets that error from its own dry run
+    // below.
+    const fresh = await inNewNamespaces(change.apply, read).catch(
+      () => new Set<KubeObject>(),
+    );
     for (const object of change.apply) {
       const ref = refOf(object);
       const resourceVersion = change.preconditions?.[refKey(ref)];
@@ -198,8 +207,18 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
           errors.push(staleError(ref));
           continue;
         }
+        if (before !== undefined && change.create?.includes(refKey(ref))) {
+          errors.push(existsError(ref));
+          continue;
+        }
         if (typeof before?.metadata.uid === "string") {
           uids.set(refKey(ref), before.metadata.uid);
+        }
+        // The API server refuses a dry run in a namespace that does not
+        // exist yet.
+        if (fresh.has(object)) {
+          objects.push(previewObject(ref, undefined, object));
+          continue;
         }
         const patch = options.mergePatches?.includes(refKey(ref))
           ? clientSideApplyPatch(before, applyBody(object, resourceVersion))
@@ -363,6 +382,29 @@ export function kindInfoOf(kind: string): KindInfo | undefined {
 // pathOf takes a ref that refusalOf accepted.
 function pathOf(ref: ObjectRef): string {
   return objectPath(kindInfoOf(ref.kind)!, ref.namespace, ref.name);
+}
+
+/**
+ * inNewNamespaces returns the objects of apply that sit in a namespace that
+ * a Namespace of apply makes: one that read does not find.
+ */
+export async function inNewNamespaces(
+  apply: readonly KubeObject[],
+  read: (ref: ObjectRef) => Promise<KubeObject | undefined>,
+): Promise<Set<KubeObject>> {
+  const made = new Set<string>();
+  for (const object of apply) {
+    if (object.kind !== "Namespace") continue;
+    if ((await read(refOf(object))) === undefined) {
+      made.add(object.metadata.name);
+    }
+  }
+  return new Set(
+    apply.filter(
+      (o) =>
+        o.metadata.namespace !== undefined && made.has(o.metadata.namespace),
+    ),
+  );
 }
 
 /** refsOf returns the refs of the objects that change applies, then of those it deletes. */
