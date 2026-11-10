@@ -1,4 +1,4 @@
-import type { KubeObject, ObjectRef, RefKey } from "./types";
+import type { Change, KubeObject, ObjectRef, RefKey } from "./types";
 
 /** refKey returns the key of an object in Change.preconditions. */
 export function refKey(ref: {
@@ -18,4 +18,10 @@ export function refOf(object: KubeObject): ObjectRef {
     ...(namespace === undefined ? {} : { namespace }),
     name,
   };
+}
+
+/** createdObjects returns the objects of change.apply whose key change.create lists, in apply order. */
+export function createdObjects(change: Change): KubeObject[] {
+  const create = change.create ?? [];
+  return change.apply.filter((o) => create.includes(refKey(refOf(o))));
 }

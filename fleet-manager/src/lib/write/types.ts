@@ -31,9 +31,10 @@ export type RefKey = `${string}/${string}/${string}`;
  * Change is one save of a page: the objects to apply and the objects to
  * delete. preconditions holds the resourceVersion that the page read for
  * an object. A write of that object fails with Stale when the object
- * changed since. force sends each apply of the change with the force
- * option of server-side apply. A change with directOnly goes to the API
- * in Git mode too.
+ * changed since. create lists objects of apply that must not exist yet. A
+ * write fails with Stale when one exists, and writes nothing. force sends
+ * each apply of the change with the force option of server-side apply. A
+ * change with directOnly goes to the API in Git mode too.
  *
  * The preview of the direct writer applies an object of previewManagers as
  * the field manager that it maps to, unless it sends the object as a merge
@@ -48,6 +49,7 @@ export type Change = {
   apply: KubeObject[];
   delete?: ObjectRef[];
   preconditions?: Record<RefKey, string>;
+  create?: RefKey[];
   force?: boolean;
   directOnly?: boolean;
   previewManagers?: Record<RefKey, string>;
