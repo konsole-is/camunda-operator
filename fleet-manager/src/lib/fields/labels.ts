@@ -44,5 +44,9 @@ export function lockLabel(lock: FieldLock): string {
       return "Not managed by the fleet manager";
     case "admin":
       return "Set by your admin";
+    case "atCreation":
+      return "Set at creation";
+    case "chosenAtCreation":
+      return "Chosen at creation";
   }
 }
