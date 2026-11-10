@@ -1,12 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useId } from "react";
+import { useId, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DiffLine } from "@/lib/diff";
 import type { WriteMode } from "@/lib/write/types";
 import { DiffView } from "./diff-view";
+import { TypedField } from "./typed-confirm";
 
 /**
  * ReviewPanel is the last screen before a write: the diff of the object, the
@@ -14,7 +15,8 @@ import { DiffView } from "./diff-view";
  * details shows below the diff, and notices right above the confirm. In Git
  * mode the button reads gitConfirmLabel, "Push to Git" by default,
  * instead of confirmLabel. danger makes it a danger button. pending blocks
- * it while the write runs.
+ * it while the write runs. With typed, it also stays disabled until the
+ * user types that word exactly.
  */
 export function ReviewPanel({
   lines,
@@ -27,6 +29,7 @@ export function ReviewPanel({
   gitConfirmLabel = "Push to Git",
   danger = false,
   pending = false,
+  typed,
   onConfirm,
   onCancel,
   diffLabel = "Changes to the claim",
@@ -41,11 +44,13 @@ export function ReviewPanel({
   gitConfirmLabel?: string;
   danger?: boolean;
   pending?: boolean;
+  typed?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
   diffLabel?: string;
 }) {
   const effectsId = useId();
+  const [text, setText] = useState("");
   return (
     <section aria-label="Review" className="flex min-w-0 flex-col gap-5">
       <DiffView label={diffLabel} lines={lines} />
@@ -82,6 +87,11 @@ export function ReviewPanel({
         </div>
       )}
       {notices}
+      {typed !== undefined && (
+        <div className="max-w-md">
+          <TypedField name={typed} value={text} onChange={setText} />
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         {/* pending can end right after the panel shows, as when a preview
             returns. A fade of the opacity would show the label at half
@@ -89,7 +99,7 @@ export function ReviewPanel({
         <Button
           variant={danger ? "destructive" : "default"}
           className="transition-colors"
-          disabled={pending}
+          disabled={pending || (typed !== undefined && text !== typed)}
           onClick={() => onConfirm?.()}
         >
           {mode === "git" ? gitConfirmLabel : confirmLabel}
