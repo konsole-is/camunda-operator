@@ -251,7 +251,13 @@ var _ = Describe("Changing a cluster claim", func() {
 				c.Spec.ReleaseRef = olderReleaseName
 				c.Spec.AllowVersionDowngrade = olderVersion
 			})
-			expectNewPass(claim)
+			// A later apply of these changes would make the refusal stale.
+			Eventually(func(g Gomega) {
+				cluster, err := clusterOf(claim)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cluster.Spec.Suspend).To(BeTrue())
+				g.Expect(cluster.Spec.ReleaseRef).To(Equal(olderReleaseName))
+			}, timeout, interval).Should(Succeed())
 
 			By("resuming into the refusal of the operator")
 			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.Suspend = false })
@@ -272,7 +278,17 @@ var _ = Describe("Changing a cluster claim", func() {
 				string(component.AliveFailing),
 				"zeebe: the broker is unhealthy",
 			)
+			// The claim must see the failing brokers before the management
+			// version moves, or an early removal has no pass to happen in.
+			expectNewPass(claim)
+			expectNewPass(claim)
 			setManagement(claim, olderVersion)
+			expectNewPass(claim)
+			expectNewPass(claim)
+			Expect(appliedDowngrades(claim)).To(
+				Equal([]string{"", olderVersion}),
+				"the claim must keep the annotation until the operator spends the sanction",
+			)
 			consumeSanction(claim)
 
 			expectNewPass(claim)
