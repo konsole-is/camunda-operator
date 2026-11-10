@@ -7,16 +7,21 @@ import {
   isLabelValue,
   LAST_APPLIED_ANNOTATION,
 } from "@/lib/labels";
+import { APP_FIELD_MANAGER, child, fieldManagers } from "@/lib/merge";
 import type { ValidationError } from "@/lib/schema";
 import { refKey } from "@/lib/write/refs";
 import type { Change, KubeObject } from "@/lib/write/types";
 
 const API_VERSION = "fleet.camunda.io/v1alpha1";
 const KIND = "Environment";
-const COLOR = /^#[0-9a-fA-F]{6}$/;
 const MAX_REQUIRED_LABEL_KEYS = 16;
 const MAX_FIXED_LABELS = 32;
 const MAX_ALLOWED_RELEASES = 64;
+
+/** isHexColor says whether color is a hex color of six digits, as spec.color of the CRD must be. */
+export function isHexColor(color: string): boolean {
+  return /^#[0-9a-fA-F]{6}$/.test(color);
+}
 
 /** EnvironmentDraft is the form of one environment: its name and the spec as the admin edits it. */
 export type EnvironmentDraft = { name: string; spec: Environment["spec"] };
@@ -85,7 +90,7 @@ export function draftErrors(
   const { spec } = draft;
   if ((spec.displayName ?? "").length > 64)
     add("spec.displayName", "The display name has at most 64 characters.");
-  if (spec.color && !COLOR.test(spec.color))
+  if (spec.color && !isHexColor(spec.color))
     add("spec.color", "The color is a hex color such as #2E7D32.");
   if ((spec.releases?.allowed ?? []).length > MAX_ALLOWED_RELEASES)
     add(
@@ -218,27 +223,57 @@ export function deleteChange(live: Environment): Change {
 }
 
 /**
- * namespaceLabelChange sets the label of environment on namespace and
- * nothing else, while namespace still has its resourceVersion. It goes to
- * the cluster in Git mode too.
+ * namespaceLabelChange sets the label of environment on namespace while
+ * namespace still has its resourceVersion. namespace must carry its
+ * metadata.managedFields. Without them the apply drops the labels and
+ * annotations the app applied before. It goes to the cluster in Git mode
+ * too.
  */
 export function namespaceLabelChange(
   namespace: V1Namespace,
   environment: string,
 ): Change {
   const name = namespace.metadata?.name ?? "";
+  const annotations = ownedEntries(namespace, "annotations");
   return {
     intent: `Add the namespace ${name} to the environment ${environment}`,
     apply: [
       {
         apiVersion: "v1",
         kind: "Namespace",
-        metadata: { name, labels: { [ENVIRONMENT_LABEL]: environment } },
+        metadata: {
+          name,
+          labels: {
+            ...ownedEntries(namespace, "labels"),
+            [ENVIRONMENT_LABEL]: environment,
+          },
+          ...(Object.keys(annotations).length > 0 && { annotations }),
+        },
       },
     ],
     ...preconditionOf("Namespace", name, namespace.metadata?.resourceVersion),
     directOnly: true,
   };
+}
+
+// Server-side apply removes a label or annotation that the app applied
+// before and now leaves out, unless another manager also owns it. The
+// change must hold these entries to keep them. This is why a label that
+// the create flow set stays.
+function ownedEntries(
+  namespace: V1Namespace,
+  field: "labels" | "annotations",
+): Record<string, string> {
+  const applied = (namespace.metadata?.managedFields ?? []).filter(
+    (e) => e.manager === APP_FIELD_MANAGER && e.operation === "Apply",
+  );
+  const owned = fieldManagers({ metadata: { managedFields: applied } });
+  const parent = child("metadata", field);
+  return Object.fromEntries(
+    Object.entries(namespace.metadata?.[field] ?? {}).filter(
+      ([key]) => owned[child(parent, key)] !== undefined,
+    ),
+  );
 }
 
 function preconditionOf(

@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
+  type V1Namespace,
   KubeConfig,
   KubernetesObjectApi,
   PatchStrategy,
 } from "@kubernetes/client-node";
 import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
+import { namespaceLabelChange } from "@/components/setup/environments/draft";
+import { createChangeOf } from "@/lib/write/create";
 import type { KubeObject } from "@/lib/write/types";
 import { directWriter, readObject, refKey } from "@/lib/write/writer";
 import { createClientSideApplied } from "./client-side-apply";
@@ -495,6 +498,69 @@ describe("the direct writer against envtest", () => {
     });
     expect(after.metadata?.labels).toMatchObject({
       team: "a",
+      "fleet.camunda.io/environment": "staging",
+    });
+  });
+
+  it("a namespace that a create made keeps its fixed labels when it joins an environment", async () => {
+    const made = `made-${randomUUID().slice(0, 8)}`;
+    const readNamespace = async () =>
+      (await api.read({
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: { name: made },
+      })) as V1Namespace;
+    expect(
+      await writer.apply(
+        createChangeOf(
+          `Create the claim orders in ${made}`,
+          {
+            apiVersion: "fleet.camunda.io/v1alpha1",
+            kind: "CamundaClusterClaim",
+            metadata: { name: "orders", namespace: made },
+            spec: { presetRef: "small" },
+          },
+          { name: made, labels: { team: "payments" } },
+        ),
+      ),
+    ).toEqual({ ok: true, mode: "direct" });
+
+    expect(
+      await writer.apply(
+        namespaceLabelChange(await readNamespace(), "staging"),
+      ),
+    ).toEqual({ ok: true, mode: "direct" });
+    expect((await readNamespace()).metadata?.labels).toMatchObject({
+      team: "payments",
+      "fleet.camunda.io/environment": "staging",
+    });
+  });
+
+  it("a namespace label change leaves out and keeps a label that another manager owns", async () => {
+    const shared = `shared-${randomUUID().slice(0, 8)}`;
+    await api.create({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: shared, labels: { owner: "ops" } },
+    });
+    const before = (await api.read({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: shared },
+    })) as V1Namespace;
+    const change = namespaceLabelChange(before, "staging");
+    expect(change.apply[0].metadata.labels).toEqual({
+      "fleet.camunda.io/environment": "staging",
+    });
+
+    expect(await writer.apply(change)).toEqual({ ok: true, mode: "direct" });
+    const after = await api.read({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: shared },
+    });
+    expect(after.metadata?.labels).toMatchObject({
+      owner: "ops",
       "fleet.camunda.io/environment": "staging",
     });
   });

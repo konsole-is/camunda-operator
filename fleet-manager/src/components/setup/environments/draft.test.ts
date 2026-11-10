@@ -365,3 +365,54 @@ describe("the changes", () => {
     expect(namespaceLabelChangeSchema.safeParse(change).success).toBe(true);
   });
 });
+
+describe("namespaceLabelChange of a namespace that the app wrote", () => {
+  const ns: V1Namespace = {
+    metadata: {
+      name: "team-a",
+      resourceVersion: "9",
+      labels: {
+        team: "payments",
+        owner: "ops",
+        "fleet.camunda.io/environment": "production",
+      },
+      annotations: { note: "kept", other: "theirs" },
+      managedFields: [
+        {
+          manager: "fleet-manager",
+          operation: "Apply",
+          fieldsV1: {
+            "f:metadata": {
+              "f:labels": {
+                "f:team": {},
+                "f:fleet.camunda.io/environment": {},
+              },
+              "f:annotations": { "f:note": {} },
+            },
+          },
+        },
+        {
+          manager: "kubectl-label",
+          operation: "Update",
+          fieldsV1: {
+            "f:metadata": {
+              "f:labels": { "f:owner": {} },
+              "f:annotations": { "f:other": {} },
+            },
+          },
+        },
+      ],
+    },
+  };
+
+  it("carries the labels and annotations that the app owns, and none of another manager", () => {
+    const change = namespaceLabelChange(ns, "staging");
+    expect(change.apply[0].metadata).toEqual({
+      name: "team-a",
+      labels: { team: "payments", "fleet.camunda.io/environment": "staging" },
+      annotations: { note: "kept" },
+    });
+    expect(change.preconditions).toEqual({ "Namespace//team-a": "9" });
+    expect(namespaceLabelChangeSchema.safeParse(change).success).toBe(true);
+  });
+});
