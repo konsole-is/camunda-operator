@@ -194,7 +194,7 @@ function HistoryBody({
         Prometheus is not configured, so the charts do not show.{" "}
         <Link
           href="/setup/settings"
-          className="text-info underline-offset-2 hover:underline"
+          className="text-info underline underline-offset-2"
         >
           Set the Prometheus URL in Settings
         </Link>

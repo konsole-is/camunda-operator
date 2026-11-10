@@ -22,6 +22,7 @@ import {
 } from "@/app/setup/settings/actions";
 import { GET as healthz } from "@/app/api/healthz/route";
 import { GET as logsRoute } from "@/app/api/logs/route";
+import { GET as metricsRoute } from "@/app/api/metrics/route";
 import { GET as partitionsRoute } from "@/app/api/partitions/route";
 import { GET as usageRoute } from "@/app/api/usage/route";
 import { GET as watchRoute } from "@/app/api/watch/route";
@@ -160,6 +161,14 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
       await usageRoute(
         new Request(
           `http://localhost/api/usage?namespace=${namespace}&selector=app%3Dx`,
+        ),
+      )
+    ).text(),
+  "api/metrics": async () =>
+    (
+      await metricsRoute(
+        new Request(
+          `http://localhost/api/metrics?namespace=${namespace}&cluster=missing&component=zeebe`,
         ),
       )
     ).text(),
