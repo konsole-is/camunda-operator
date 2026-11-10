@@ -35,6 +35,8 @@ export function NamespacesSection({
   const [change, setChange] = useState<Change>();
   const members = labelledNamespaces(environment, sources.namespaces);
   const offered = namespacesToAdd(sources.namespaces);
+  // A namespace can get an environment label after the admin picked it.
+  const selected = offered.includes(picked) ? picked : "";
   const count = (
     claims: readonly { metadata: { namespace?: string } }[],
     ns: string,
@@ -42,7 +44,7 @@ export function NamespacesSection({
 
   function review() {
     const namespace = sources.namespaces.find(
-      (n) => n.metadata?.name === picked,
+      (n) => n.metadata?.name === selected,
     );
     if (namespace) setChange(namespaceLabelChange(namespace, environment));
   }
@@ -112,14 +114,14 @@ export function NamespacesSection({
         <div className="flex flex-wrap items-end gap-2">
           <SelectField
             label="Add a namespace"
-            value={picked}
+            value={selected}
             options={[
               ["", "Pick a namespace"],
               ...offered.map((n) => [n, n] as const),
             ]}
             onChange={setPicked}
           />
-          <Button variant="outline" disabled={picked === ""} onClick={review}>
+          <Button variant="outline" disabled={selected === ""} onClick={review}>
             Add
           </Button>
         </div>

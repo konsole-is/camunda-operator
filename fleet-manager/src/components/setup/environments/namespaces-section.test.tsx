@@ -135,4 +135,48 @@ describe("NamespacesSection", () => {
     ).toBeTruthy();
     expect(screen.queryByLabelText("Add a namespace")).toBeNull();
   });
+
+  it("drops a picked namespace that got an environment label before Add", () => {
+    const sources = environmentFixtures();
+    const view = (s: typeof sources) => (
+      <GitPushesProvider>
+        <EnvironmentEditor
+          sources={{ ...s, errors: [] }}
+          name="production"
+          mode="direct"
+          actions={{
+            previewChange: vi.fn(),
+            applyChange: vi.fn(),
+            previewLabel: vi.fn(),
+            applyLabel: vi.fn(),
+          }}
+        />
+      </GitPushesProvider>
+    );
+    const { rerender } = render(view(sources));
+    fireEvent.change(screen.getByLabelText("Add a namespace"), {
+      target: { value: "sandbox" },
+    });
+    const taken = environmentFixtures();
+    taken.namespaces = taken.namespaces.map((n) =>
+      n.metadata?.name === "sandbox"
+        ? {
+            ...n,
+            metadata: {
+              ...n.metadata,
+              resourceVersion: "8",
+              labels: { "fleet.camunda.io/environment": "staging" },
+            },
+          }
+        : n,
+    );
+    rerender(view(taken));
+    expect(
+      (screen.getByLabelText("Add a namespace") as HTMLSelectElement).value,
+    ).toBe("");
+    expect(screen.getByRole("button", { name: "Add" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
 });
