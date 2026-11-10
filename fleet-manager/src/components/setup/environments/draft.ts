@@ -1,0 +1,239 @@
+import type { V1Namespace } from "@kubernetes/client-node";
+import type { Environment } from "@/generated/crds/environment";
+import {
+  ENVIRONMENT_LABEL,
+  isDNSSubdomain,
+  isLabelKey,
+  isLabelValue,
+  LAST_APPLIED_ANNOTATION,
+} from "@/lib/labels";
+import type { ValidationError } from "@/lib/schema";
+import { refKey } from "@/lib/write/refs";
+import type { Change, KubeObject } from "@/lib/write/types";
+
+const API_VERSION = "fleet.camunda.io/v1alpha1";
+const KIND = "Environment";
+const COLOR = /^#[0-9a-fA-F]{6}$/;
+const MAX_REQUIRED_LABEL_KEYS = 16;
+
+/** EnvironmentDraft is the form of one environment: its name and the spec as the admin edits it. */
+export type EnvironmentDraft = { name: string; spec: Environment["spec"] };
+
+/** draftOf returns the draft of environment, or of a new environment with the deletion policy Delete. */
+export function draftOf(
+  environment: Environment | undefined,
+): EnvironmentDraft {
+  if (!environment) return { name: "", spec: { deletionPolicy: "Delete" } };
+  return {
+    name: environment.metadata.name ?? "",
+    spec: structuredClone(environment.spec),
+  };
+}
+
+/**
+ * specOf drops each empty string, list, and map of the draft spec, and
+ * spec.releases when it has neither allowed nor default. It drops
+ * namespaceCreation.allowed when it is false, because unset means the same.
+ * It keeps sections and parameters as they are.
+ */
+export function specOf(draft: EnvironmentDraft): Environment["spec"] {
+  const { presets, releases, namespaceCreation, ...rest } = structuredClone(
+    draft.spec,
+  );
+  const spec: Environment["spec"] = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (value !== "" && value !== undefined)
+      Object.assign(spec, { [key]: value });
+  }
+  const compactPresets = compact({
+    camundaCluster: presets?.camundaCluster,
+    elasticsearchCluster: presets?.elasticsearchCluster,
+    databaseServer: presets?.databaseServer,
+  });
+  if (compactPresets) spec.presets = compactPresets;
+  const compactReleases = compact({
+    allowed: releases?.allowed,
+    default: releases?.default,
+  });
+  if (compactReleases) spec.releases = compactReleases;
+  const compactCreation = compact({
+    allowed: namespaceCreation?.allowed || undefined,
+    labels: namespaceCreation?.labels,
+    requiredLabelKeys: namespaceCreation?.requiredLabelKeys,
+  });
+  if (compactCreation) spec.namespaceCreation = compactCreation;
+  return spec;
+}
+
+/**
+ * draftErrors returns one error for each rule of the CRD and of the page
+ * that the draft breaks, by path. The name is checked only for a new
+ * environment, against taken, the names of the environments that exist.
+ */
+export function draftErrors(
+  draft: EnvironmentDraft,
+  opts: { isNew: boolean; taken: readonly string[] },
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const add = (path: string, message: string) => errors.push({ path, message });
+  if (opts.isNew) {
+    const message = nameError(draft.name, opts.taken);
+    if (message) add("name", message);
+  }
+  const { spec } = draft;
+  if ((spec.displayName ?? "").length > 64)
+    add("spec.displayName", "The display name has at most 64 characters.");
+  if (spec.color && !COLOR.test(spec.color))
+    add("spec.color", "The color is a hex color such as #2E7D32.");
+  const defaultRelease = spec.releases?.default;
+  if (
+    defaultRelease &&
+    !(spec.releases?.allowed ?? []).includes(defaultRelease)
+  )
+    add(
+      "spec.releases.default",
+      "The default release must be one of the allowed releases.",
+    );
+
+  const labels = spec.namespaceCreation?.labels ?? {};
+  const labelsPath = "spec.namespaceCreation.labels";
+  if (Object.hasOwn(labels, ENVIRONMENT_LABEL))
+    add(labelsPath, ENVIRONMENT_LABEL_MESSAGE);
+  else if (
+    !Object.entries(labels).every(([k, v]) => isLabelKey(k) && isLabelValue(v))
+  )
+    add(labelsPath, "Each fixed label is a valid label.");
+
+  const keys = spec.namespaceCreation?.requiredLabelKeys ?? [];
+  const keysPath = "spec.namespaceCreation.requiredLabelKeys";
+  if (keys.includes(ENVIRONMENT_LABEL))
+    add(keysPath, ENVIRONMENT_LABEL_MESSAGE);
+  else if (!keys.every(isLabelKey))
+    add(keysPath, "A required label key is a valid label key.");
+  if (keys.length > MAX_REQUIRED_LABEL_KEYS)
+    add(keysPath, `At most ${MAX_REQUIRED_LABEL_KEYS} required label keys.`);
+  return errors;
+}
+
+const ENVIRONMENT_LABEL_MESSAGE = `The fleet manager sets ${ENVIRONMENT_LABEL} itself.`;
+
+function nameError(name: string, taken: readonly string[]): string | undefined {
+  if (name === "") return "Give the environment a name.";
+  if (name.length > 63 || !isDNSSubdomain(name))
+    return "The name must be a DNS name of at most 63 characters.";
+  // The route /setup/environments/new is the create form.
+  if (name === "new")
+    return "The name new is kept for the page of a new environment.";
+  if (taken.includes(name)) return "An environment with this name exists.";
+  return undefined;
+}
+
+/** createChange applies a new environment with the spec of specOf. */
+export function createChange(draft: EnvironmentDraft): Change {
+  return {
+    intent: `Create the environment ${draft.name}`,
+    apply: [
+      {
+        apiVersion: API_VERSION,
+        kind: KIND,
+        metadata: { name: draft.name },
+        spec: specOf(draft),
+      },
+    ],
+  };
+}
+
+/**
+ * updateChange applies live with the spec of specOf, with the
+ * resourceVersion of live as its precondition, and with force, so a field
+ * that kubectl apply set changes too. It leaves out the last applied file of
+ * kubectl.
+ */
+export function updateChange(
+  live: Environment,
+  draft: EnvironmentDraft,
+): Change {
+  const name = live.metadata.name ?? "";
+  const { labels, annotations } = live.metadata;
+  const kept = Object.fromEntries(
+    Object.entries(annotations ?? {}).filter(
+      ([key]) => key !== LAST_APPLIED_ANNOTATION,
+    ),
+  );
+  const object: KubeObject = {
+    apiVersion: API_VERSION,
+    kind: KIND,
+    metadata: {
+      name,
+      ...(labels && { labels }),
+      ...(Object.keys(kept).length > 0 && { annotations: kept }),
+    },
+    spec: specOf(draft),
+  };
+  return {
+    intent: `Change the environment ${name}`,
+    apply: [object],
+    ...preconditionOf(KIND, name, live.metadata.resourceVersion),
+    force: true,
+  };
+}
+
+/** deleteChange deletes live when it still has its resourceVersion. */
+export function deleteChange(live: Environment): Change {
+  const name = live.metadata.name ?? "";
+  return {
+    intent: `Delete the environment ${name}`,
+    apply: [],
+    delete: [{ apiVersion: API_VERSION, kind: KIND, name }],
+    ...preconditionOf(KIND, name, live.metadata.resourceVersion),
+  };
+}
+
+/**
+ * namespaceLabelChange sets the label of environment on namespace and
+ * nothing else, while namespace still has its resourceVersion. It goes to
+ * the cluster in Git mode too.
+ */
+export function namespaceLabelChange(
+  namespace: V1Namespace,
+  environment: string,
+): Change {
+  const name = namespace.metadata?.name ?? "";
+  return {
+    intent: `Add the namespace ${name} to the environment ${environment}`,
+    apply: [
+      {
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: { name, labels: { [ENVIRONMENT_LABEL]: environment } },
+      },
+    ],
+    ...preconditionOf("Namespace", name, namespace.metadata?.resourceVersion),
+    directOnly: true,
+  };
+}
+
+function preconditionOf(
+  kind: string,
+  name: string,
+  resourceVersion: string | undefined,
+): Pick<Change, "preconditions"> {
+  return resourceVersion === undefined
+    ? {}
+    : { preconditions: { [refKey({ kind, name })]: resourceVersion } };
+}
+
+// compact returns the entries of object that hold a value that is not
+// empty, or undefined when none does.
+function compact<T extends Record<string, unknown>>(object: T): T | undefined {
+  const entries = Object.entries(object).filter(([, value]) => !isEmpty(value));
+  return entries.length > 0 ? (Object.fromEntries(entries) as T) : undefined;
+}
+
+function isEmpty(value: unknown): boolean {
+  if (value === undefined || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object" && value !== null)
+    return Object.keys(value).length === 0;
+  return false;
+}
