@@ -274,6 +274,39 @@ describe("the Git writer against envtest", () => {
     expect(await repo.log()).toEqual(["Initial commit"]);
   });
 
+  it("a create of a claim that exists in the cluster makes no commit and returns Stale", async () => {
+    const namespace = `team-${randomUUID().slice(0, 8)}`;
+    const orders: KubeObject = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { name: "orders", namespace },
+      spec: { presetRef: "small", releaseRef: "camunda-8-9" },
+    };
+    await api.create({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: namespace },
+    });
+    await api.create(orders);
+
+    const result = await writer.apply({
+      intent: "Create the claim orders",
+      apply: [orders],
+      create: [`CamundaClusterClaim/${namespace}/orders`],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Stale",
+          message: expect.stringContaining("orders exists already"),
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
   it("a new namespace and its claim land in one commit", async () => {
     const namespace = `team-${randomUUID().slice(0, 8)}`;
 
@@ -287,6 +320,10 @@ describe("the Git writer against envtest", () => {
           metadata: { name: "orders", namespace },
           spec: { presetRef: "small", releaseRef: "camunda-8-9" },
         },
+      ],
+      create: [
+        `Namespace//${namespace}`,
+        `CamundaClusterClaim/${namespace}/orders`,
       ],
     });
 
