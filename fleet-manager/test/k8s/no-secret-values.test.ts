@@ -85,6 +85,22 @@ beforeAll(async () => {
     metadata: { name: "leak", namespace },
     stringData: values,
   });
+  await api.create({
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaCluster",
+    metadata: { name: "leak", namespace },
+    spec: { storageRef: "storage", platformConfigRef: "platform" },
+  });
+  await api.create({
+    apiVersion: "v1",
+    kind: "Pod",
+    metadata: {
+      name: "leak-zeebe-0",
+      namespace,
+      labels: { "camunda.io/cluster": "leak", "camunda.io/component": "zeebe" },
+    },
+    spec: { containers: [{ name: "zeebe", image: "camunda/zeebe" }] },
+  });
   process.env.FLEET_NAMESPACE = namespace;
   Object.assign(process.env, {
     FLEET_SETTINGS_GIT_REPOSITORY: `${url}/fleet.git`,
@@ -164,14 +180,17 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
         ),
       )
     ).text(),
-  "api/metrics": async () =>
-    (
-      await metricsRoute(
-        new Request(
-          `http://localhost/api/metrics?namespace=${namespace}&cluster=missing&component=zeebe`,
-        ),
-      )
-    ).text(),
+  // The cluster has a broker pod, so the route asks Prometheus with the
+  // credentials of the Secret and answers with the result.
+  "api/metrics": async () => {
+    const response = await metricsRoute(
+      new Request(
+        `http://localhost/api/metrics?namespace=${namespace}&cluster=leak&component=zeebe`,
+      ),
+    );
+    expect(response.status).toBe(200);
+    return response.text();
+  },
   "api/partitions": async () =>
     (
       await partitionsRoute(

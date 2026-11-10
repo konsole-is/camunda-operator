@@ -3,6 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MetricChartData, MetricsAnswer } from "@/lib/observe/types";
+import { USAGE_UNAVAILABLE } from "@/components/fleet/pod-table";
 import { DetailMetrics, DetailMetricsView } from "./detail-metrics";
 
 const live = vi.hoisted(() => ({
@@ -37,10 +38,12 @@ const chart = (label: string, declaredBy?: string): MetricChartData => ({
   ...(declaredBy && { declaredBy }),
   series: [{ name: "orders-zeebe-0", points: [[1, 2]] }],
 });
+type Answered = Extract<MetricsAnswer, { prometheus: "answered" }>;
+
 const answered = (
   charts: MetricChartData[],
-  errors: Extract<MetricsAnswer, { prometheus: "answered" }>["errors"] = [],
-): MetricsAnswer => ({ prometheus: "answered", charts, errors });
+  errors: Answered["errors"] = [],
+): Answered => ({ prometheus: "answered", charts, errors });
 
 const pods = [pod("orders-zeebe-0"), pod("orders-zeebe-1")];
 const usage = [usageOf("orders-zeebe-0", 0.5), usageOf("orders-zeebe-1", 0.7)];
@@ -83,11 +86,7 @@ describe("DetailMetricsView", () => {
       />,
     );
     expect(screen.queryByRole("region", { name: "Live usage" })).toBeNull();
-    expect(
-      screen.getByText(
-        "Usage is not available. The cluster has no metrics server.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(USAGE_UNAVAILABLE)).toBeTruthy();
     expect(screen.getByRole("figure", { name: /CPU/ })).toBeTruthy();
   });
 
@@ -118,6 +117,39 @@ describe("DetailMetricsView", () => {
     );
     expect(screen.getAllByRole("figure")).toHaveLength(2);
     expect(screen.getByText("Declared by Bucket on RustFS")).toBeTruthy();
+  });
+
+  it("names the version for which the app has no Camunda charts", () => {
+    render(
+      <DetailMetricsView
+        pods={pods}
+        usage={usage}
+        charts={{
+          ...answered([chart("CPU")]),
+          hiddenForVersion: { version: "8.10.0" },
+        }}
+        range="1h"
+      />,
+    );
+    expect(
+      screen.getByText("The app has no Camunda charts for version 8.10.0 yet."),
+    ).toBeTruthy();
+  });
+
+  it("says that the Camunda charts wait for the version of the cluster", () => {
+    render(
+      <DetailMetricsView
+        pods={pods}
+        usage={usage}
+        charts={{ ...answered([]), hiddenForVersion: {} }}
+        range="1h"
+      />,
+    );
+    expect(
+      screen.getByText(
+        "The cluster reports no Camunda version yet, so the Camunda charts do not show.",
+      ),
+    ).toBeTruthy();
   });
 
   it("says so when no metric has data for the range", () => {

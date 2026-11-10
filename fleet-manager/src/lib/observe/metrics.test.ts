@@ -161,12 +161,45 @@ describe("chartsOf", () => {
     expect(
       chartsOf(
         [def("x")],
-        [[{ name: 'partition="1", pod="p"', points: [] }]],
+        [[{ name: 'partition="1", pod="p"', points: [[1, 1]] }]],
         [],
       ),
     ).toMatchObject({
       charts: [{ series: [{ name: 'partition="1", pod="p"' }] }],
     }));
+
+  it.each([
+    ["no points", []],
+    [
+      "only values that are not numbers",
+      [
+        [1, Number.NaN],
+        [2, Infinity],
+      ],
+    ],
+  ] as const)("hides the chart of a query whose series have %s", (_, points) =>
+    expect(
+      chartsOf(
+        [def("CPU")],
+        [[{ name: 'pod="p"', points: [...points] as [number, number][] }]],
+        [],
+      ),
+    ).toMatchObject({ prometheus: "answered", charts: [] }),
+  );
+
+  it("leaves out a series without a point and keeps the others", () =>
+    expect(
+      chartsOf(
+        [def("CPU")],
+        [
+          [
+            { name: 'pod="a"', points: [] },
+            { name: 'pod="b"', points: [[1, 2]] },
+          ],
+        ],
+        [],
+      ),
+    ).toMatchObject({ charts: [{ series: [{ name: "b" }] }] }));
 
   it("keeps the errors", () => {
     const errors = [{ label: "Bad", declaredBy: "R", error: "e" }];
@@ -261,14 +294,39 @@ describe("componentMetrics", () => {
     });
   });
 
-  it("charts only the pod queries of a cluster without a version", async () => {
+  it("charts only the pod queries of a cluster without a version, and says so", async () => {
     objects({ CamundaCluster: cluster() });
     lists({ Pod: [broker(0)] });
 
-    await componentMetrics("team-a", "orders", "zeebe", "1h", NOW);
-
+    expect(
+      await componentMetrics("team-a", "orders", "zeebe", "1h", NOW),
+    ).toMatchObject({ hiddenForVersion: {} });
     expect(vi.mocked(promRange).mock.calls).toHaveLength(3);
   });
+
+  it("names the version for which the Camunda queries are left out", async () => {
+    objects({ CamundaCluster: cluster("8.10.0") });
+    lists({ Pod: [broker(0)] });
+
+    expect(
+      await componentMetrics("team-a", "orders", "zeebe", "1h", NOW),
+    ).toMatchObject({ hiddenForVersion: { version: "8.10.0" } });
+  });
+
+  it.each([
+    ["the brokers of a version in range", "zeebe", "8.9.4"],
+    ["a component without Camunda queries", "gateway", "8.10.0"],
+  ] as const)(
+    "leaves no version note for %s",
+    async (_, component, version) => {
+      objects({ CamundaCluster: cluster(version) });
+      lists({ Pod: [broker(0)] });
+
+      expect(
+        await componentMetrics("team-a", "orders", component, "1h", NOW),
+      ).not.toHaveProperty("hiddenForVersion");
+    },
+  );
 
   it("answers no charts for a component without pods", async () => {
     objects({ CamundaCluster: cluster("8.9.4") });

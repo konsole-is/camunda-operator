@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { formatAxis, formatBytes, formatCores } from "./units";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  formatAxis,
+  formatBytes,
+  formatClock,
+  formatCores,
+  formatDateClock,
+} from "./units";
 
 describe("formatCores", () => {
   it.each([
@@ -33,5 +39,25 @@ describe("formatAxis", () => {
     [0.25, undefined, "0.25"],
   ])("gives %s with the unit %s as %s", (value, unit, text) => {
     expect(formatAxis(value, unit)).toBe(text);
+  });
+});
+
+describe("the chart times", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // The zone has a half-hour offset, so a UTC answer cannot pass.
+  const zone = "Asia/Kolkata";
+  const time = Date.parse("2026-10-18T11:58:30Z");
+
+  it("write the clock of the viewer on the axis", () => {
+    vi.stubEnv("TZ", zone);
+    expect(formatClock(time)).toBe("17:28");
+  });
+
+  it("write the date and the clock of the viewer in the tooltip", () => {
+    vi.stubEnv("TZ", zone);
+    expect(formatDateClock(time)).toBe("2026-10-18 17:28");
   });
 });
