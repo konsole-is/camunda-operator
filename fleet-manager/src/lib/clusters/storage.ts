@@ -3,16 +3,23 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { accessPatterns, defaultAccessPatterns } from "@/lib/claims/hosts";
+import { SLOT_FIELDS } from "@/lib/fields/slots";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
   type BuiltinObjects,
   type DeletionPolicy,
+  type ParameterRule,
   type PluginSelection,
   type SectionView,
+  type Slot,
+  builtinEntry,
   builtinOption,
   byCodeUnit,
   checkDeletionPolicy,
+  lockedSummary,
   offeredSection,
+  resolve,
+  slotOf,
   withMissingInputs,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
@@ -202,4 +209,142 @@ export function deletionChoice(
     alwaysDeleted,
     policy: picked === "Orphan" && !keepAllowed ? "Delete" : picked,
   };
+}
+
+/**
+ * StorageSummary is what the step 2 picks give the later steps.
+ * backupStorage is the selection of the section with slot backupStorage.
+ * secondaryStorageType is the type of the secondary storage selection when
+ * it is known before creation, else undefined. optimizeUrl says that
+ * the access selection gives the Optimize URL. slots are the slots that the
+ * selections fill. picks are the review lines, one for each selection.
+ */
+export type StorageSummary = {
+  backupStorage?: PluginSelection;
+  secondaryStorageType?: "elasticsearch" | "rdbms";
+  optimizeUrl: boolean;
+  slots: Slot[];
+  picks: StoragePick[];
+};
+
+/** StoragePick is one selection as the review shows it: labels only, never a value of an allowed list. */
+export type StoragePick = {
+  section: string;
+  sectionLabel: string;
+  registration: string;
+  optionLabel: string;
+  values: { label: string; value: string }[];
+};
+
+// The output key of the access section that fills the Optimize URL.
+const OPTIMIZE_URL_OUTPUT = SLOT_FIELDS.find(
+  (row) =>
+    row.claimKind === "CamundaClusterClaim" &&
+    row.slot === "externalAccess" &&
+    row.kind === "CamundaOptimize",
+)?.output;
+
+/**
+ * storageSummary returns the summary of the step 2 picks of draft, section
+ * after section in the order of storageViews, with the default of a section
+ * that the step has not reported yet. The type of a selection that names a
+ * SecondaryStorageConfig is the type of that object in the namespace of
+ * draft. Each value of a pick shows the labels of the picked names of an
+ * allowed list, joined by ", ", and lockedSummary of any other value.
+ */
+export function storageSummary(
+  draft: ClusterDraft,
+  data: StorageData,
+): StorageSummary {
+  const summary: StorageSummary = { optimizeUrl: false, slots: [], picks: [] };
+  for (const view of storageViews(draft, data)) {
+    const selections = picksOf(draft, view);
+    const section = data.sections.find((s) => s.metadata.name === view.name);
+    const slot = section && slotOf(section);
+    if (slot && selections.length > 0) summary.slots.push(slot);
+    for (const selection of selections) {
+      const registration = data.registrations.find(
+        (r) => r.metadata.name === selection.registration,
+      );
+      const option = view.options.find(
+        (o) => o.registration === selection.registration,
+      );
+      summary.picks.push({
+        section: view.name,
+        sectionLabel: view.label,
+        registration: selection.registration,
+        optionLabel:
+          option?.label ?? registration?.spec.label ?? selection.registration,
+        values: Object.entries(selection.parameters ?? {}).map(
+          ([name, value]) =>
+            pickValue(
+              option?.parameters.find((r) => r.name === name),
+              name,
+              value,
+            ),
+        ),
+      });
+      if (!registration) continue;
+      if (slot === "backupStorage") summary.backupStorage = selection;
+      if (slot === "secondaryStorage") {
+        summary.secondaryStorageType = storageType(
+          registration,
+          selection,
+          draft,
+          data,
+        );
+      }
+      if (slot === "externalAccess") {
+        summary.optimizeUrl = (registration.spec.outputs ?? []).some(
+          (o) => o.key === OPTIMIZE_URL_OUTPUT,
+        );
+      }
+    }
+  }
+  return summary;
+}
+
+function pickValue(
+  rule: ParameterRule | undefined,
+  name: string,
+  value: unknown,
+): { label: string; value: string } {
+  const label = rule?.label ?? name;
+  const allowed = rule?.claimEditable ? rule.allowed : undefined;
+  if (!allowed) return { label, value: lockedSummary(value) };
+  const labelOf = (picked: unknown) =>
+    allowed.find((c) => c.name === picked)?.label ?? String(picked);
+  return {
+    label,
+    value: Array.isArray(value)
+      ? value.map(labelOf).join(", ")
+      : labelOf(value),
+  };
+}
+
+function storageType(
+  registration: PluginRegistration,
+  selection: PluginSelection,
+  draft: ClusterDraft,
+  data: StorageData,
+): StorageSummary["secondaryStorageType"] {
+  const entry = builtinEntry(registration);
+  if (!entry) return undefined;
+  if (entry.storageType) return entry.storageType;
+  const parameter = Object.entries(entry.lists).find(
+    ([, kind]) => kind === "SecondaryStorageConfig",
+  )?.[0];
+  if (!parameter) return undefined;
+  const result = resolve({
+    environment: data.environment,
+    registrations: [registration],
+    selections: [selection],
+  });
+  if (!("value" in result)) return undefined;
+  const name = result.value.requests?.[0]?.parameters?.[parameter];
+  return data.objects.SecondaryStorageConfig?.find(
+    (c) =>
+      c.metadata?.namespace === draft.namespace?.name &&
+      c.metadata?.name === name,
+  )?.spec.type;
 }
