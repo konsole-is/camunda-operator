@@ -17,6 +17,7 @@ import { reviewStories } from "@/components/fleet/review.stories";
 import { sectionCardsStories } from "@/components/fleet/section-cards.stories";
 import { shellStories } from "@/components/fleet/shell.stories";
 import { statusStories } from "@/components/fleet/status.stories";
+import { environmentStories } from "@/components/setup/environments/environments.stories";
 import { settingsPageStories } from "@/components/setup/settings-page.stories";
 import { uiStories } from "@/components/ui/ui.stories";
 import type { Story } from "./registry";
@@ -43,5 +44,6 @@ export const stories: readonly Story[] = [
   ...backupsStories,
   ...settingsStories,
   ...settingsPageStories,
+  ...environmentStories,
   ...uiStories,
 ];
