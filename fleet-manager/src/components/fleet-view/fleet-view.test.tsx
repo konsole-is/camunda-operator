@@ -15,12 +15,15 @@ const live = vi.hoisted(() => ({
   calls: [] as string[],
   pushes: [] as unknown[],
   settled: [] as string[],
+  fresh: [] as string[],
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => {
     live.calls.push(kind);
     return { items: live.objects[kind] ?? initial };
   },
+  useWatchesFresh: (lists: { kind: string }[]) =>
+    lists.map(({ kind }) => live.fresh.includes(kind)),
 }));
 vi.mock("@/components/fleet/git-pushes", () => ({
   useGitPushes: () => ({
@@ -34,6 +37,7 @@ beforeEach(() => {
   live.calls = [];
   live.pushes = [];
   live.settled = [];
+  live.fresh = [];
 });
 afterEach(cleanup);
 
@@ -585,7 +589,9 @@ describe("FleetViewLive", () => {
       "Could not read CamundaCluster: forbidden",
     );
     expect(screen.queryByText(/No Camunda cluster yet/)).toBeNull();
-    live.objects.CamundaCluster = [];
+    // An empty snapshot can keep the initial list, so only the freshness of
+    // the watch tells that the read now works.
+    live.fresh = ["CamundaCluster"];
     rerender(<FleetViewLive initial={failed} now={NOW} />);
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByText(/No Camunda cluster yet/)).toBeTruthy();

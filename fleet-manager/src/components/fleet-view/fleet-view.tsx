@@ -16,7 +16,8 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useResources } from "@/lib/k8s/hooks";
+import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
+import type { KindName } from "@/lib/k8s/kinds";
 import type { RefKey } from "@/lib/write/types";
 import { ClusterTable, WaitingTable } from "./cluster-table";
 import {
@@ -379,17 +380,16 @@ export function FleetViewLive({
   const requests = useResources("PluginRequest", {}, initial.requests);
   const storage = useResources("SecondaryStorageConfig", {}, initial.storage);
   const optimizes = useResources("CamundaOptimize", {}, initial.optimizes);
-  const initialES = useMemo(
-    () =>
-      initial.backups.filter((b) => b.kind === "LogicalBackupElasticsearch"),
-    [initial.backups],
+  const backupsES = useResources(
+    "LogicalBackupElasticsearch",
+    {},
+    initial.backups.filter((b) => b.kind === "LogicalBackupElasticsearch"),
   );
-  const initialRDBMS = useMemo(
-    () => initial.backups.filter((b) => b.kind === "LogicalBackupRDBMS"),
-    [initial.backups],
+  const backupsRDBMS = useResources(
+    "LogicalBackupRDBMS",
+    {},
+    initial.backups.filter((b) => b.kind === "LogicalBackupRDBMS"),
   );
-  const backupsES = useResources("LogicalBackupElasticsearch", {}, initialES);
-  const backupsRDBMS = useResources("LogicalBackupRDBMS", {}, initialRDBMS);
   const planes = usePlanes(initial.planes);
   const { pushes, settle } = useGitPushes();
   const clock = useClock(now);
@@ -426,19 +426,19 @@ export function FleetViewLive({
     ],
   );
   const watched = [
-    ["CamundaCluster", clusters, initial.clusters],
-    ["CamundaClusterClaim", claims, initial.claims],
-    ["CamundaClusterPreset", presets, initial.presets],
-    ["CamundaRelease", releases, initial.releases],
-    ["PluginSection", sections, initial.sections],
-    ["PluginRegistration", registrations, initial.registrations],
-    ["PluginRequest", requests, initial.requests],
-    ["SecondaryStorageConfig", storage, initial.storage],
-    ["CamundaOptimize", optimizes, initial.optimizes],
-    ["LogicalBackupElasticsearch", backupsES, initialES],
-    ["LogicalBackupRDBMS", backupsRDBMS, initialRDBMS],
-    ["Environment", environments, initial.environments],
-    ["Namespace", namespaces, initial.namespaces],
+    ["CamundaCluster", clusters],
+    ["CamundaClusterClaim", claims],
+    ["CamundaClusterPreset", presets],
+    ["CamundaRelease", releases],
+    ["PluginSection", sections],
+    ["PluginRegistration", registrations],
+    ["PluginRequest", requests],
+    ["SecondaryStorageConfig", storage],
+    ["CamundaOptimize", optimizes],
+    ["LogicalBackupElasticsearch", backupsES],
+    ["LogicalBackupRDBMS", backupsRDBMS],
+    ["Environment", environments],
+    ["Namespace", namespaces],
   ] as const;
   const liveErrors = [
     ...watched
@@ -448,16 +448,12 @@ export function FleetViewLive({
       ),
     ...planes.errors,
   ];
-  // A hook gives back its initial list until the watch sends the first
-  // list, so a failed first read stays until then.
-  const firstErrors = (initial.readErrors ?? []).filter((e) =>
-    watched.some(
-      ([kind, result, items]) =>
-        kind === e.kind &&
-        result.error === undefined &&
-        result.items === items &&
-        !liveErrors.some((l) => l.kind === kind),
-    ),
+  const answered = useAnswered(watched.map(([kind]) => kind));
+  const firstErrors = (initial.readErrors ?? []).filter(
+    (e) =>
+      watched.some(([kind]) => kind === e.kind) &&
+      !answered.has(e.kind) &&
+      !liveErrors.some((l) => l.kind === e.kind),
   );
   const errors = [...liveErrors, ...firstErrors];
 
@@ -471,6 +467,17 @@ export function FleetViewLive({
       onStopWaiting={settle}
     />
   );
+}
+
+// useAnswered gives the kinds whose watch sent a snapshot at least once. A
+// kind stays in it after a reconnect, so a failed first read does not come
+// back then.
+function useAnswered(kinds: readonly KindName[]): ReadonlySet<string> {
+  const fresh = useWatchesFresh(kinds.map((kind) => ({ kind, opts: {} })));
+  const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
+  const added = kinds.filter((kind, i) => fresh[i] && !answered.has(kind));
+  if (added.length > 0) setAnswered(new Set([...answered, ...added]));
+  return answered;
 }
 
 // useClock starts at the time of the server, so that the first render in
