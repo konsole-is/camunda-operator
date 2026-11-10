@@ -254,6 +254,32 @@ describe("environmentImpact", () => {
     ]);
   });
 
+  it("names the claims of the namespaces that already carry the label of a new environment", () => {
+    expect(
+      environmentImpact(
+        undefined,
+        edit({ releases: { allowed: ["8.9.2"], default: "8.9.2" } }),
+        sources({
+          clusterClaims: [
+            clusterClaim("orders"),
+            clusterClaim("pinned", { releaseRef: "8.9.1" }),
+          ],
+        }),
+      ).warnings,
+    ).toEqual([
+      {
+        claim: {
+          kind: "CamundaClusterClaim",
+          namespace: "team-a",
+          name: "orders",
+        },
+        kind: "CamundaRelease",
+        name: "8.9.2",
+        followsDefault: true,
+      },
+    ]);
+  });
+
   it("has no claims and no warnings for a new environment", () => {
     expect(
       environmentImpact(

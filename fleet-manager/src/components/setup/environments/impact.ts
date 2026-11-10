@@ -66,7 +66,8 @@ type Claim = {
 /**
  * environmentImpact compares the edited spec with live for the claims in
  * the namespaces of the environment. A claim without a recorded policy is
- * not counted. A new environment has no claims.
+ * not counted. A new environment (live undefined) covers the claims of the
+ * namespaces that already carry its label.
  */
 export function environmentImpact(
   live: Environment | undefined,
@@ -74,8 +75,13 @@ export function environmentImpact(
   s: EnvironmentSources,
 ): EnvironmentImpact {
   const impact: EnvironmentImpact = { clusters: 0, planes: 0, warnings: [] };
-  if (!live) return impact;
-  const edited: Environment = { ...live, spec: specOf(draft) };
+  const before: Environment = live ?? {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "Environment",
+    metadata: { name: draft.name },
+    spec: {},
+  };
+  const edited: Environment = { ...before, spec: specOf(draft) };
   const namespaces = new Set(labelledNamespaces(draft.name, s.namespaces));
   // The CRD schema gives spec.plugins[].parameters no shape, and Claim
   // reads it as the policy library does.
@@ -92,7 +98,7 @@ export function environmentImpact(
       if (claim.kind === "CamundaClusterClaim") impact.clusters++;
       else impact.planes++;
     }
-    impact.warnings.push(...warningsOf(ref, claim, live, edited));
+    impact.warnings.push(...warningsOf(ref, claim, before, edited));
   }
   return impact;
 }
