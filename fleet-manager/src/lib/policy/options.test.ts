@@ -303,6 +303,62 @@ describe("claimEditable", () => {
     ]);
   });
 
+  it("hides the ARN of a locked role parameter", () => {
+    const existingRole = reg(
+      {
+        sections: ["connectors-permissions"],
+        parameters: {
+          type: "object",
+          required: ["roleArn"],
+          properties: { roleArn: { type: "string" } },
+        },
+      },
+      "aws-connectors-existing-role",
+    );
+    const env: Environment = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "dev" },
+      spec: {
+        parameters: {
+          "aws-connectors-existing-role": {
+            roleArn: { value: "arn:aws:iam::123456789012:role/connectors" },
+          },
+        },
+      },
+    };
+
+    const [rule] = claimEditable(existingRole, env);
+
+    expect(rule).toMatchObject({
+      name: "roleArn",
+      claimEditable: false,
+      summary: "Set by your admin",
+    });
+    expect(JSON.stringify(rule)).not.toContain("arn:");
+  });
+
+  it("shows a locked value by the label of its choice", () => {
+    const [rule] = claimEditable(
+      reg(),
+      envWith({
+        tier: {
+          value: "cold",
+          allowed: [
+            { name: "warm", label: "Warm tier", value: "warm" },
+            { name: "archive", label: "Archive tier", value: "cold" },
+          ],
+        },
+      }),
+    );
+
+    expect(rule).toMatchObject({
+      name: "tier",
+      claimEditable: false,
+      summary: "Archive tier",
+    });
+  });
+
   it("counts parameterValues that is not an object as no values", () => {
     expect(
       claimEditable(
@@ -314,6 +370,27 @@ describe("claimEditable", () => {
 });
 
 describe("lockedSummary", () => {
+  it("shows the label of the choice that holds the value", () => {
+    expect(
+      lockedSummary("{name}.internal.example.com", [
+        { name: "public", label: "Public", value: "{name}.example.com" },
+        {
+          name: "internal",
+          label: "Internal network",
+          value: "{name}.internal.example.com",
+        },
+      ]),
+    ).toBe("Internal network");
+  });
+
+  it("hides an ARN that no choice holds", () => {
+    expect(
+      lockedSummary("arn:aws:iam::123456789012:role/connectors", [
+        { name: "other", label: "Other", value: "arn:aws:iam::1:role/x" },
+      ]),
+    ).toBe("Set by your admin");
+  });
+
   it.each([
     [undefined, "Not set"],
     [null, "Not set"],

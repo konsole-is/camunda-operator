@@ -22,7 +22,7 @@ import type {
  * claim-editable parameter carries its policy value and the names and labels
  * of its choices, and allowedLists when every choice is a list. A value of a
  * choice, or a list of such values, is given as the names of the choices. A
- * locked parameter carries lockedSummary of its value and no value. A
+ * locked parameter carries lockedSummary of its value and choices, and no value. A
  * parameterValues that is not an object counts as no values.
  */
 export function claimEditable(
@@ -74,7 +74,7 @@ export function claimEditable(
       return {
         ...base,
         claimEditable: false,
-        summary: lockedSummary(policy.value),
+        summary: lockedSummary(policy.value, policy.allowed),
       };
     }
     return {
@@ -95,13 +95,23 @@ export function claimEditable(
 }
 
 /**
- * lockedSummary says what a locked value holds without showing it: "Not set"
- * for no value or null, the text of a string, number, or boolean, "No items",
- * "1 item", or "<n> items" for a list, and "No fields", "1 field", or
- * "<n> fields" for an object.
+ * lockedSummary says what a locked value holds: "Not set" for no value or
+ * null, the text of a string, number, or boolean, "No items", "1 item", or
+ * "<n> items" for a list, and "No fields", "1 field", or "<n> fields" for an
+ * object. A value other than null that one of choices holds shows as the
+ * label of that choice. Any other string that starts with "arn:" shows as
+ * "Set by your admin".
  */
-export function lockedSummary(value: unknown): string {
+export function lockedSummary(
+  value: unknown,
+  choices: readonly { name: string; label: string; value?: unknown }[] = [],
+): string {
   if (value === undefined || value === null) return "Not set";
+  const choice = choices.find((c) => equalJSON(c.value, value));
+  if (choice) return choice.label;
+  if (typeof value === "string" && value.startsWith("arn:")) {
+    return "Set by your admin";
+  }
   if (Array.isArray(value)) return count(value.length, "item");
   if (typeof value === "object")
     return count(Object.keys(value).length, "field");
