@@ -21,12 +21,12 @@ In the editor, the section **Namespaces** lists the namespaces of the environmen
 
 The label goes straight to the cluster, also in Git mode. It is not in the Git repository, and the review says so. A new environment has no namespaces yet. Save it first, then add namespaces.
 
-When an environment exists, the operator refuses a new claim in a namespace without the label. The list of environments then shows a banner that names each namespace that holds clusters and has no environment. It also names each namespace whose label names an environment that does not exist.
+When an environment exists, the operator refuses each claim in a namespace without the label. A new cluster is not created there, and an existing claim is not ready and takes no change. The list of environments then shows a banner that names each namespace that holds clusters and has no environment. It also names each namespace whose label names an environment that does not exist.
 
 | Reason in the banner | Meaning | What to do |
 | --- | --- | --- |
-| `NoEnvironment` | The namespace has no label `fleet.camunda.io/environment`. | Add the namespace to an environment. |
-| `UnknownEnvironment` | The label names an environment that does not exist. | Create that environment, or change the label. |
+| `NoEnvironment` | The namespace has no label `fleet.camunda.io/environment`. Its claims take no change. | Add the namespace to an environment. |
+| `UnknownEnvironment` | The label names an environment that does not exist. Its claims take no change. | Create that environment, or change the label. |
 
 ## Platform config, presets, and releases
 
@@ -51,7 +51,7 @@ spec:
   # ... the rest of your environment
 ```
 
-A claim can use only the presets and the releases that the environment allows. The default release is one of the allowed releases. The page refuses a save with another default, and it shows `The default release must be one of the allowed releases.`
+A claim can use only the presets and the releases that the environment allows. An empty list allows none, and the page says so under the list. The default release is one of the allowed releases. The page refuses a save with another default, and it shows `The default release must be one of the allowed releases.`
 
 A claim that names no release uses the default release. A claim that names no platform config uses the platform config of the environment. These two defaults are not part of the recorded policy of a claim (see [Changes apply to new claims only](#changes-apply-to-new-claims-only)). So a change of either default moves such a claim to the new value.
 
@@ -104,8 +104,9 @@ The note also names each claim that the change touches:
 | --- | --- |
 | `orders in team-a uses release 8.9.22, which this change no longer allows.` | The cluster keeps running. A later change of its release must pick an allowed release. The same note exists for a cluster preset. |
 | `orders in team-a names no release and moves to 8.9.23.` | The claim follows the default release, so its cluster moves to the new release. Its brokers restart one at a time. |
+| `orders in team-a names no release, and its cluster refuses the move to 8.9.0 (VersionDowngradeRefused).` | The new default is older than the old default, or skips a minor (`VersionSkipRefused`). The cluster keeps running and takes no further change. |
 | `orders in team-a names no platform config and moves to shared.` | The claim follows the default platform config. |
-| `orders in team-a names no release, and this change removes the default release.` | The claim follows the default release, so its cluster then names no release. The same note exists for the platform config. A management plane without a platform config keeps running, and its claim reports `MissingInput` until it names one. |
+| `orders in team-a names no release, and this change removes the default release.` | The cluster keeps running, but the claim is not ready and its cluster takes no further change. The same note exists for the platform config. A management plane without a platform config keeps running, and its claim reports `MissingInput` and takes no further change. |
 
 **Review** shows the change to the environment before the save. A field manager is a tool that writes the object, such as `kubectl apply` or a GitOps tool. If another field manager set a field that the change leaves out, the field stays. To remove such a field, remove it with the tool that set it. The review names each one: `spec.sections.backup-storage stays, because another field manager set it.`
 
@@ -115,7 +116,9 @@ In Git mode, the save pushes a commit, and the page waits until GitOps applied i
 
 ## Delete an environment
 
-The button **Delete the environment** shows only when no namespace carries the label of the environment, and the fleet manager can read the namespaces. Remove the label from each namespace first, for example with `kubectl label namespace my-cluster-ns fleet.camunda.io/environment-`. The page does not remove a label. Then type the name of the environment and select **Delete the environment**.
+The section **Delete the environment** offers the delete only when no namespace carries the label of the environment. The fleet manager must also be able to read the namespaces. Remove the label from each namespace first, for example with `kubectl label namespace my-cluster-ns fleet.camunda.io/environment-`. The page does not remove a label. Then type the name of the environment and select **Review the delete**. The review shows the dry run of the delete, and **Delete the environment** deletes it.
+
+In Git mode the delete is a commit that removes the file of the environment, and the button reads **Push the delete to Git**. GitOps must prune the Environment to delete it from the cluster.
 
 ## Status
 

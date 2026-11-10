@@ -5,7 +5,7 @@ import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamana
 import type { Environment } from "@/generated/crds/environment";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import type { EnvironmentDraft } from "./draft";
-import { environmentImpact, namespaceImpact } from "./impact";
+import { environmentImpact, namespaceImpact, withoutKept } from "./impact";
 import type { EnvironmentSources } from "./sources";
 
 type Recorded = NonNullable<
@@ -217,6 +217,41 @@ describe("environmentImpact", () => {
     ]);
   });
 
+  it.each([
+    ["8.9.0", "VersionDowngradeRefused"],
+    ["8.11.0", "VersionSkipRefused"],
+  ])(
+    "marks a new default release %s that the cluster refuses as %s",
+    (version, refused) => {
+      const live = environment({
+        releases: { allowed: ["old", "new"], default: "old" },
+      });
+      const releases = [
+        { metadata: { name: "old" }, spec: { version: "8.9.1" } },
+        { metadata: { name: "new" }, spec: { version } },
+      ] as unknown as EnvironmentSources["releases"];
+      expect(
+        environmentImpact(
+          live,
+          edit({ releases: { allowed: ["old", "new"], default: "new" } }),
+          sources({ clusterClaims: [clusterClaim("orders")], releases }),
+        ).warnings,
+      ).toEqual([
+        {
+          claim: {
+            kind: "CamundaClusterClaim",
+            namespace: "team-a",
+            name: "orders",
+          },
+          kind: "CamundaRelease",
+          name: "new",
+          followsDefault: true,
+          refused,
+        },
+      ]);
+    },
+  );
+
   it("lists a claim without a platformConfigRef when the default platform config changes", () => {
     expect(
       environmentImpact(
@@ -404,5 +439,44 @@ describe("namespaceImpact", () => {
         }),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("withoutKept", () => {
+  const orders = {
+    kind: "CamundaClusterClaim" as const,
+    namespace: "team-a",
+    name: "orders",
+  };
+  const impact = {
+    clusters: 1,
+    planes: 0,
+    warnings: [
+      {
+        claim: orders,
+        kind: "CamundaRelease" as const,
+        name: "8.9.1",
+        removed: true as const,
+      },
+      {
+        claim: orders,
+        kind: "CamundaClusterPreset" as const,
+        name: "small",
+        removed: true as const,
+      },
+    ],
+  };
+
+  it("drops a removed warning whose name the saved spec still allows", () => {
+    expect(
+      withoutKept(impact, {
+        releases: { allowed: ["8.9.1", "8.9.2"] },
+        presets: { camundaCluster: ["large"] },
+      }).warnings,
+    ).toEqual([impact.warnings[1]]);
+  });
+
+  it("keeps every warning without a saved spec", () => {
+    expect(withoutKept(impact, undefined)).toEqual(impact);
   });
 });

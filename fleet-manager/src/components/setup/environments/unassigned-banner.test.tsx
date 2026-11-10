@@ -18,10 +18,10 @@ describe("UnassignedBanner", () => {
     );
     const text = screen.getByRole("note").textContent;
     expect(text).toContain(
-      "These namespaces hold clusters and have no environment: legacy, team-x. New clusters in these namespaces are refused (NoEnvironment).",
+      "These namespaces hold clusters and have no environment: legacy, team-x. New clusters in these namespaces are refused, and their claims take no change (NoEnvironment).",
     );
     expect(text).toContain(
-      "These namespaces name an environment that does not exist: old-ns. New clusters in them are refused (UnknownEnvironment).",
+      "These namespaces name an environment that does not exist: old-ns. New clusters in them are refused, and their claims take no change (UnknownEnvironment).",
     );
   });
 

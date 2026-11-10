@@ -2,9 +2,9 @@ import { TriangleAlert } from "lucide-react";
 import type { UnassignedNamespace } from "./rows";
 
 /**
- * UnassignedBanner names the namespaces whose new clusters the claim
- * controller refuses: those without an environment and those whose label
- * names an environment that does not exist. It renders nothing for no
+ * UnassignedBanner names the namespaces whose claims the claim controller
+ * refuses: those without an environment and those whose label names an
+ * environment that does not exist. It renders nothing for no
  * namespace.
  */
 export function UnassignedBanner({
@@ -28,15 +28,15 @@ export function UnassignedBanner({
         {none.length > 0 && (
           <p>
             These namespaces hold clusters and have no environment:{" "}
-            {none.join(", ")}. New clusters in these namespaces are refused
-            (NoEnvironment).
+            {none.join(", ")}. New clusters in these namespaces are refused, and
+            their claims take no change (NoEnvironment).
           </p>
         )}
         {unknown.length > 0 && (
           <p>
             These namespaces name an environment that does not exist:{" "}
-            {unknown.join(", ")}. New clusters in them are refused
-            (UnknownEnvironment).
+            {unknown.join(", ")}. New clusters in them are refused, and their
+            claims take no change (UnknownEnvironment).
           </p>
         )}
       </div>

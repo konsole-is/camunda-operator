@@ -58,12 +58,15 @@ export function warningLine(warning: ReferenceWarning): string {
     return `${claim} uses ${what} ${warning.name}, which this change no longer allows. The cluster keeps running. A later change of its ${field} must pick an allowed one.`;
   }
   if ("cleared" in warning) {
-    if (warning.kind === "CamundaRelease")
-      return `${claim} names no release, and this change removes the default release. Its cluster then names no release.`;
+    const what =
+      warning.kind === "CamundaRelease" ? "release" : "platform config";
+    const removed = `${claim} names no ${what}, and this change removes the default ${what}.`;
     return warning.claim.kind === "CamundaClusterClaim"
-      ? `${claim} names no platform config, and this change removes the default platform config. Its cluster then names no platform config.`
-      : `${claim} names no platform config, and this change removes the default platform config. Its management plane keeps running, and the claim reports MissingInput until it names a platform config.`;
+      ? `${removed} The cluster keeps running, but the claim is not ready and its cluster takes no further change.`
+      : `${removed} Its management plane keeps running, but the claim reports MissingInput and takes no further change.`;
   }
+  if (warning.kind === "CamundaRelease" && warning.refused)
+    return `${claim} names no release, and its cluster refuses the move to ${warning.name} (${warning.refused}). The cluster keeps running and takes no further change.`;
   return warning.kind === "CamundaRelease"
     ? `${claim} names no release and moves to ${warning.name}. Its brokers restart one at a time.`
     : `${claim} names no platform config and moves to ${warning.name}.`;

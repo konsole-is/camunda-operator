@@ -134,12 +134,14 @@ export function SelectField({
  * NameChecklist is a list of checkboxes, one for each name of available and
  * of selected. A selected name that no object has shows "Not found", so the
  * admin can clear it. onChange gets the selected names in code-unit order.
+ * noneText, when given, shows while no name is selected.
  */
 export function NameChecklist({
   legend,
   available,
   selected,
   empty,
+  noneText,
   error,
   onChange,
 }: {
@@ -147,6 +149,7 @@ export function NameChecklist({
   available: readonly string[];
   selected: readonly string[];
   empty: string;
+  noneText?: string;
   error?: string;
   onChange: (selected: string[]) => void;
 }) {
@@ -184,6 +187,9 @@ export function NameChecklist({
           );
         })}
       </ul>
+      {noneText && selected.length === 0 && (
+        <p className="text-sm text-muted">{noneText}</p>
+      )}
       <ErrorText error={error} />
     </fieldset>
   );

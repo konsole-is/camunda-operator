@@ -18,8 +18,12 @@ export type ClaimRef = { kind: ClaimKind; namespace: string; name: string };
  * ReferenceWarning is a claim that an edit touches although it keeps its
  * recorded policy. removed: the edit no longer allows the release or the
  * preset of the claim. followsDefault: the claim names no release or no
- * platform config, so it moves to the new default, name. cleared: the
- * claim names none, and the edit removes the default.
+ * platform config, so it moves to the new default, name. refused is set
+ * when the new default release has a version below the old default
+ * release, or more than one minor above it in the same major. It is
+ * VersionDowngradeRefused or VersionSkipRefused, and it is not set when a
+ * version is missing or not x.y.z. cleared: the claim names none, and the
+ * edit removes the default.
  */
 export type ReferenceWarning =
   | {
@@ -33,6 +37,7 @@ export type ReferenceWarning =
       kind: "CamundaRelease" | "CamundaPlatformConfig";
       name: string;
       followsDefault: true;
+      refused?: "VersionDowngradeRefused" | "VersionSkipRefused";
     }
   | {
       claim: ClaimRef;
@@ -98,7 +103,11 @@ export function environmentImpact(
       if (claim.kind === "CamundaClusterClaim") impact.clusters++;
       else impact.planes++;
     }
-    impact.warnings.push(...warningsOf(ref, claim, before, edited));
+    impact.warnings.push(
+      ...warningsOf(ref, claim, before, edited).map((w) =>
+        refusedMove(w, before.spec.releases?.default, s),
+      ),
+    );
   }
   return impact;
 }
@@ -227,6 +236,55 @@ function defaultWarnings(
     return [{ claim, kind, name: after, followsDefault: true }];
   if (!after && before) return [{ claim, kind, cleared: true }];
   return [];
+}
+
+// The cluster refuses an effective version below the version the brokers
+// run, or more than one minor above it in the same major.
+function refusedMove(
+  warning: ReferenceWarning,
+  previous: string | undefined,
+  s: EnvironmentSources,
+): ReferenceWarning {
+  if (!("followsDefault" in warning) || warning.kind !== "CamundaRelease")
+    return warning;
+  const version = (name: string | undefined) =>
+    parseVersion(
+      s.releases.find((r) => r.metadata.name === name)?.spec.version,
+    );
+  const have = version(previous);
+  const want = version(warning.name);
+  if (!have || !want) return warning;
+  const index = want.findIndex((n, i) => n !== have[i]);
+  if (index >= 0 && want[index] < have[index])
+    return { ...warning, refused: "VersionDowngradeRefused" };
+  if (want[0] === have[0] && want[1] > have[1] + 1)
+    return { ...warning, refused: "VersionSkipRefused" };
+  return warning;
+}
+
+function parseVersion(version: string | undefined): number[] | undefined {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? "");
+  return match ? match.slice(1).map(Number) : undefined;
+}
+
+/**
+ * withoutKept returns impact without each removed warning whose release or
+ * cluster preset kept, the spec that the dry run of the save gives, still
+ * allows. Another field manager keeps such a member. Without kept it
+ * returns impact.
+ */
+export function withoutKept(
+  impact: EnvironmentImpact,
+  kept: Environment["spec"] | undefined,
+): EnvironmentImpact {
+  if (!kept) return impact;
+  const still = (w: ReferenceWarning) =>
+    "removed" in w &&
+    (w.kind === "CamundaRelease"
+      ? (kept.releases?.allowed ?? [])
+      : (kept.presets?.camundaCluster ?? [])
+    ).includes(w.name);
+  return { ...impact, warnings: impact.warnings.filter((w) => !still(w)) };
 }
 
 function presetAllowed(preset: string, environment: Environment): boolean {

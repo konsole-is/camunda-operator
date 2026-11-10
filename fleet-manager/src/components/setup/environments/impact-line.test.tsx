@@ -112,10 +112,35 @@ describe("impactLines of a cleared default", () => {
         ],
       }).slice(1),
     ).toEqual([
-      "orders in team-a names no release, and this change removes the default release. Its cluster then names no release.",
-      "orders in team-a names no platform config, and this change removes the default platform config. Its cluster then names no platform config.",
-      "plane-a in platform names no platform config, and this change removes the default platform config. Its management plane keeps running, and the claim reports MissingInput until it names a platform config.",
+      "orders in team-a names no release, and this change removes the default release. The cluster keeps running, but the claim is not ready and its cluster takes no further change.",
+      "orders in team-a names no platform config, and this change removes the default platform config. The cluster keeps running, but the claim is not ready and its cluster takes no further change.",
+      "plane-a in platform names no platform config, and this change removes the default platform config. Its management plane keeps running, but the claim reports MissingInput and takes no further change.",
     ]);
+  });
+});
+
+describe("impactLines of a default release that the cluster refuses", () => {
+  it.each([
+    ["VersionDowngradeRefused" as const],
+    ["VersionSkipRefused" as const],
+  ])("says that the cluster refuses the move (%s)", (refused) => {
+    expect(
+      impactLines({
+        clusters: 0,
+        planes: 0,
+        warnings: [
+          {
+            claim: orders,
+            kind: "CamundaRelease",
+            name: "8.7.0",
+            followsDefault: true,
+            refused,
+          },
+        ],
+      })[1],
+    ).toBe(
+      `orders in team-a names no release, and its cluster refuses the move to 8.7.0 (${refused}). The cluster keeps running and takes no further change.`,
+    );
   });
 });
 

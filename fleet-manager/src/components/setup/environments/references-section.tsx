@@ -2,7 +2,11 @@
 
 import type { ValidationError } from "@/lib/schema";
 import type { EnvironmentDraft } from "./draft";
-import { EditorSection, NameChecklist, SelectField } from "./form-parts";
+import {
+  EditorSection,
+  NameChecklist,
+  SelectField,
+} from "@/components/setup/form-parts";
 import type { EnvironmentSources } from "./sources";
 
 type Spec = EnvironmentDraft["spec"];
@@ -67,6 +71,7 @@ export function ReferencesSection({
           available={namesOf(sources.clusterPresets)}
           selected={spec.presets?.camundaCluster ?? []}
           empty="No cluster preset exists."
+          noneText="No cluster preset is allowed, so a cluster claim can use none."
           onChange={(list) => presets("camundaCluster", list)}
         />
         <NameChecklist
@@ -90,6 +95,7 @@ export function ReferencesSection({
           available={namesOf(sources.releases)}
           selected={allowed}
           empty="No release exists."
+          noneText="No release is allowed, so a claim can use none."
           error={
             errors.find((e) => e.path === "spec.releases.allowed")?.message
           }
