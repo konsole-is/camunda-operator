@@ -1,7 +1,9 @@
 import { PlaneCreateFlow } from "@/components/planes/create/plane-create-flow";
 import { list } from "@/lib/k8s/read";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
+import { writeMode } from "@/lib/write/writer";
 import { loadBundledData } from "@/startup/bundled-data";
+import { createPlane, previewPlaneCreate } from "./actions";
 
 // The page reads the cache of the server. A static prerender would call the
 // API server at build time.
@@ -25,6 +27,7 @@ export default async function NewPlanePage() {
     databaseServerPresets,
     databaseConfigs,
     images,
+    mode,
   ] = await Promise.all([
     list("Environment").catch(() => []),
     list("Namespace").catch(() => []),
@@ -47,6 +50,7 @@ export default async function NewPlanePage() {
       (bundled) => bundled.imagesTable,
       () => ({ schemaVersion: 1 as const, minors: {} }),
     ),
+    writeMode(),
   ]);
   return (
     <div className="flex flex-col gap-6">
@@ -69,6 +73,9 @@ export default async function NewPlanePage() {
           planes: { clusters: managementClusters, claims, namespaces },
           images,
         }}
+        mode={mode}
+        preview={previewPlaneCreate}
+        create={createPlane}
       />
     </div>
   );

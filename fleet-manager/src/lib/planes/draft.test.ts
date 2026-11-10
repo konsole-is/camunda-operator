@@ -11,6 +11,7 @@ import {
   basicsErrors,
   componentsErrors,
   planeClaimOf,
+  planeCreateChange,
   platformConfigOf,
   servedErrors,
   servedOf,
@@ -673,5 +674,38 @@ describe("planeClaimOf and the storage and access", () => {
     expect(planeClaimOf(ready(), ctx).spec).not.toHaveProperty(
       "managementAuthConfigName",
     );
+  });
+});
+
+describe("planeCreateChange", () => {
+  it("planeCreateChange puts a new namespace with its labels first and lists both in create", () => {
+    const labels = { "fleet.camunda.io/environment": "open", tier: "gold" };
+    const d: PlaneDraft = {
+      ...ready(),
+      environment: "open",
+      namespace: { kind: "new", name: "team-new", labels },
+    };
+    const change = planeCreateChange(d, ctx);
+    expect(change.intent).toBe(
+      "Create the management plane plane-a in team-new",
+    );
+    expect(change.apply).toEqual([
+      {
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: { name: "team-new", labels },
+      },
+      planeClaimOf(d, ctx),
+    ]);
+    expect(change.create).toEqual([
+      "Namespace//team-new",
+      "CamundaManagementClusterClaim/team-new/plane-a",
+    ]);
+  });
+
+  it("planeCreateChange in an existing namespace holds only the claim", () => {
+    const change = planeCreateChange(ready(), ctx);
+    expect(change.apply).toEqual([planeClaimOf(ready(), ctx)]);
+    expect(change.create).toHaveLength(1);
   });
 });

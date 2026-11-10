@@ -1,3 +1,5 @@
+import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { Story } from "@/gallery/registry";
 import {
   CLAIM_LABEL,
@@ -7,6 +9,7 @@ import {
 import { EMPTY_ADMIN } from "@/lib/planes/components";
 import { EMPTY_PLANE_DRAFT, type PlaneDraft } from "@/lib/planes/draft";
 import { PlaneCreateStory } from "./create-story";
+import { PlaneProgressView } from "./plane-progress";
 import type { PlaneCreateData } from "./plane-create-flow";
 
 const environment = (
@@ -340,6 +343,59 @@ const components: PlaneDraft = {
   console: true,
 };
 
+const reviewStorage: PlaneDraft["storage"] = {
+  "management-database": [
+    {
+      section: "management-database",
+      registration: "management-database-server",
+      parameters: { preset: "small" },
+    },
+  ],
+  access: [{ section: "access", registration: "gateway" }],
+};
+
+const progressClaim = {
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaManagementClusterClaim",
+  metadata: { namespace: "platform", name: "plane-a", generation: 1 },
+  spec: {
+    environments: ["production"],
+    management: { identityProvider: { keycloak: {} }, identity: { admin: {} } },
+    versions: { identity: "8.9.10" },
+    plugins: reviewStorage["management-database"],
+  },
+  status: {
+    environment: "production",
+    requests: [
+      {
+        section: "management-database",
+        registration: "management-database-server",
+        name: "plane-a-management-database",
+        outputsReady: "True",
+        ready: "True",
+      },
+    ],
+    conditions: [
+      {
+        type: "Ready",
+        status: "False",
+        reason: "Creating",
+        message:
+          "The CamundaManagementCluster plane-a has not reported Ready yet.",
+        lastTransitionTime: "2026-11-10T00:00:00Z",
+      },
+      {
+        type: "ManagementClusterReady",
+        status: "False",
+        reason: "Creating",
+        message:
+          "The CamundaManagementCluster plane-a has not reported Ready yet.",
+        lastTransitionTime: "2026-11-10T00:00:00Z",
+      },
+    ],
+  },
+} as unknown as CamundaManagementClusterClaim;
+
 /** planeCreateStories are the gallery stories of the plane create flow. */
 export const planeCreateStories: Story[] = [
   {
@@ -507,6 +563,58 @@ export const planeCreateStories: Story[] = [
           ...components,
           storage: { access: [{ section: "access", registration: "gateway" }] },
         }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Review in direct mode",
+    render: () => (
+      <PlaneCreateStory
+        data={data}
+        step="review"
+        initial={{ ...components, storage: reviewStorage }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Review in Git mode",
+    render: () => (
+      <PlaneCreateStory
+        data={data}
+        step="review"
+        mode="git"
+        initial={{
+          ...components,
+          namespace: {
+            kind: "new",
+            name: "team-plane",
+            labels: { [ENVIRONMENT_LABEL]: "production", team: "platform" },
+          },
+          storage: reviewStorage,
+        }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Progress with every row pending",
+    render: () => (
+      <PlaneProgressView
+        name="plane-a"
+        sections={data.sections as unknown as PluginSection[]}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Progress with the databases ready",
+    render: () => (
+      <PlaneProgressView
+        name="plane-a"
+        sections={data.sections as unknown as PluginSection[]}
+        claim={progressClaim}
       />
     ),
   },

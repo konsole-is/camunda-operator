@@ -2,8 +2,15 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlaneCreateData } from "@/components/planes/create/plane-create-flow";
+import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { list } from "@/lib/k8s/read";
+import { fakeWriter } from "../../../../../test/fakes/writer";
 import NewPlanePage, { dynamic } from "./page";
+
+vi.mock("@/lib/write/writer", () => import("../../../../../test/fakes/writer"));
+
+const show = async () =>
+  render(await NewPlanePage(), { wrapper: GitPushesProvider });
 
 const data: Record<string, unknown[]> = {
   Environment: [
@@ -76,14 +83,16 @@ afterEach(() => {
   vi.mocked(list).mockClear();
   failing.kind = "";
   failing.bundled = false;
+  fakeWriter.reset();
 });
 
-const initial = () =>
-  (seen.props as { initial: PlaneCreateData } | undefined)?.initial;
+const props = () =>
+  seen.props as { initial: PlaneCreateData; mode: string } | undefined;
+const initial = () => props()?.initial;
 
 describe("NewPlanePage", () => {
   it("reads the first snapshot of each kind on each request", async () => {
-    render(await NewPlanePage());
+    await show();
     expect(
       vi
         .mocked(list)
@@ -112,7 +121,7 @@ describe("NewPlanePage", () => {
   });
 
   it("reads only the access requests", async () => {
-    render(await NewPlanePage());
+    await show();
     expect(
       vi.mocked(list).mock.calls.find(([kind]) => kind === "PluginRequest"),
     ).toEqual([
@@ -123,18 +132,24 @@ describe("NewPlanePage", () => {
 
   it("a failed read of one kind still shows the flow", async () => {
     failing.kind = "CamundaCluster";
-    render(await NewPlanePage());
+    await show();
     expect(screen.getByRole("radio", { name: /production/ })).toBeTruthy();
   });
 
   it("passes the images table of the bundled data", async () => {
-    render(await NewPlanePage());
+    await show();
     expect(initial()?.images).toEqual(table);
   });
 
   it("passes an empty images table when the table cannot be read", async () => {
     failing.bundled = true;
-    render(await NewPlanePage());
+    await show();
     expect(initial()?.images).toEqual({ schemaVersion: 1, minors: {} });
+  });
+
+  it("passes the mode of writeMode", async () => {
+    fakeWriter.reset("git");
+    await show();
+    expect(props()?.mode).toBe("git");
   });
 });

@@ -1,22 +1,51 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createPlane,
+  previewPlaneCreate,
+} from "@/app/fleet/planes/new/actions";
+import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
+import { fakeWriter } from "../../../../test/fakes/writer";
 import { type PlaneCreateData, PlaneCreateFlow } from "./plane-create-flow";
 
-const watch = vi.hoisted(() => ({ failing: "" }));
+vi.mock("@/lib/write/writer", () => import("../../../../test/fakes/writer"));
+
+const watch = vi.hoisted(() => ({
+  failing: "",
+  added: {} as Record<string, unknown[]>,
+}));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => ({
-    items: initial,
+    items: [...initial, ...(watch.added[kind] ?? [])],
     ...(kind === watch.failing && { error: `${kind} is forbidden` }),
   }),
+  useResource: () => ({}),
+  useGitSync: () => "waiting",
+  useGitGone: () => "waiting",
 }));
 
 afterEach(() => {
   cleanup();
   watch.failing = "";
+  watch.added = {};
+  fakeWriter.reset();
+  vi.restoreAllMocks();
 });
+
+function show(initial: PlaneCreateData = data) {
+  render(
+    <PlaneCreateFlow
+      initial={initial}
+      mode={fakeWriter.mode}
+      preview={previewPlaneCreate}
+      create={createPlane}
+    />,
+    { wrapper: GitPushesProvider },
+  );
+}
 
 const environment = (name: string, platformConfigRef?: string) => ({
   apiVersion: "fleet.camunda.io/v1alpha1",
@@ -157,16 +186,32 @@ async function fillBasics(env = /production/, ns = "platform") {
   );
 }
 
+async function toStorage() {
+  await fillBasics();
+  await userEvent.click(next());
+  await userEvent.click(next());
+  await userEvent.type(screen.getByLabelText("Username"), "admin");
+  await userEvent.click(next());
+}
+
+async function toReview() {
+  await toStorage();
+  await userEvent.click(next());
+}
+
+const create = () =>
+  screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
+
 describe("PlaneCreateFlow", () => {
   it("blocks Next on step 1 until the basics are complete", async () => {
-    render(<PlaneCreateFlow initial={data} />);
+    show();
     expect(next().disabled).toBe(true);
     await fillBasics();
     expect(next().disabled).toBe(false);
   });
 
   it("moves to Environments served and back with the basics kept", async () => {
-    render(<PlaneCreateFlow initial={data} />);
+    show();
     await fillBasics();
     await userEvent.click(next());
     expect(screen.getByRole("group", { name: "Environments" })).toBeTruthy();
@@ -178,7 +223,7 @@ describe("PlaneCreateFlow", () => {
   });
 
   it("lets the served list follow the environment of step 1 until the admin picks", async () => {
-    render(<PlaneCreateFlow initial={data} />);
+    show();
     await fillBasics();
     await userEvent.click(next());
     const box = (name: RegExp) =>
@@ -192,7 +237,7 @@ describe("PlaneCreateFlow", () => {
   });
 
   it("keeps the served list that the admin picked when the environment changes", async () => {
-    render(<PlaneCreateFlow initial={data} />);
+    show();
     await fillBasics();
     await userEvent.click(next());
     const box = (name: RegExp) =>
@@ -206,7 +251,7 @@ describe("PlaneCreateFlow", () => {
   });
 
   it("blocks the step when OIDC was picked and the platform config switches to basic", async () => {
-    render(<PlaneCreateFlow initial={data} />);
+    show();
     await fillBasics();
     const config = screen.getByRole("combobox", { name: "Platform config" });
     await userEvent.selectOptions(config, "oidc-platform");
@@ -224,7 +269,7 @@ describe("PlaneCreateFlow", () => {
   });
 
   it("keeps the new namespace fields when the admin switches from an existing namespace", async () => {
-    render(<PlaneCreateFlow initial={data} />);
+    show();
     await fillBasics();
     const create = screen.getByRole("radio", {
       name: "Create a namespace",
@@ -244,7 +289,7 @@ describe("PlaneCreateFlow", () => {
     "shows a failed read of %s above the steps and blocks step 1",
     async (kind) => {
       watch.failing = kind;
-      render(<PlaneCreateFlow initial={data} />);
+      show();
       expect(screen.getByRole("alert").textContent).toBe(
         `Could not read ${kind}: ${kind} is forbidden`,
       );
@@ -258,7 +303,7 @@ describe("PlaneCreateFlow", () => {
     },
   );
   it("blocks Next on Components and versions until the admin username is set", async () => {
-    render(<PlaneCreateFlow initial={data} />);
+    show();
     await fillBasics();
     await userEvent.click(next());
     await userEvent.click(next());
@@ -272,7 +317,7 @@ describe("PlaneCreateFlow", () => {
   });
 
   it("blocks Next on a Keycloak version of 27.0.0", async () => {
-    render(<PlaneCreateFlow initial={data} />);
+    show();
     await fillBasics();
     await userEvent.click(next());
     await userEvent.click(next());
@@ -285,6 +330,149 @@ describe("PlaneCreateFlow", () => {
       screen.getByText(
         "Keycloak needs a version from 26.0.0 up to, but not including, 27.0.0.",
       ),
+    ).toBeTruthy();
+  });
+  it("blocks Storage and access while the management host is taken", async () => {
+    const taken = {
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginRequest",
+      metadata: { namespace: "team-b", name: "plane-b-access" },
+      spec: {
+        claimRef: { kind: "CamundaManagementClusterClaim", name: "plane-b" },
+        section: "access",
+        registration: "gateway",
+      },
+      status: { outputs: { managementHost: "plane-a.platform.example.com" } },
+    };
+    show({ ...data, accessRequests: [taken] } as unknown as PlaneCreateData);
+    await toStorage();
+    expect(
+      screen.getByText(
+        "The host plane-a.platform.example.com is taken by team-b/plane-b. Choose another name.",
+      ),
+    ).toBeTruthy();
+    expect(next().disabled).toBe(true);
+  });
+
+  it("blocks Storage and access while the contract name exists", async () => {
+    show({
+      ...data,
+      authConfigs: [{ metadata: { name: "plane-a" } }],
+    } as PlaneCreateData);
+    await toStorage();
+    expect(
+      screen.getByText(
+        "A contract plane-a exists already. Enter another name.",
+      ),
+    ).toBeTruthy();
+    expect(next().disabled).toBe(true);
+    await userEvent.type(screen.getByLabelText("Contract name"), "ops");
+    expect(next().disabled).toBe(false);
+  });
+
+  it("Create writes the claim and shows the progress rows", async () => {
+    show();
+    await toReview();
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect(
+      await screen.findByRole("heading", {
+        name: "Creating the management plane plane-a",
+      }),
+    ).toBeTruthy();
+    for (const row of [
+      "Environment and policy",
+      "Databases",
+      "Access",
+      "Management cluster",
+    ]) {
+      expect(screen.getByText(row)).toBeTruthy();
+    }
+    expect(screen.getByRole("status").textContent).toContain(
+      "Created the management plane plane-a.",
+    );
+    expect(fakeWriter.applied).toHaveLength(1);
+    expect(fakeWriter.applied[0].apply.map((o) => o.kind)).toEqual([
+      "CamundaManagementClusterClaim",
+    ]);
+    expect(fakeWriter.applied[0].create).toEqual([
+      "CamundaManagementClusterClaim/platform/plane-a",
+    ]);
+  });
+
+  it("a Stale answer shows the toast, keeps the review, and shows no progress", async () => {
+    fakeWriter.results = [
+      {
+        ok: false,
+        errors: [
+          {
+            code: "Stale",
+            message:
+              "The CamundaManagementClusterClaim plane-a exists already. Pick another name.",
+          },
+        ],
+      },
+    ];
+    show();
+    await toReview();
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "The CamundaManagementClusterClaim plane-a exists already. Pick another name.",
+    );
+    expect(create()).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: /Creating the management plane/ }),
+    ).toBeNull();
+  });
+
+  it("a failed create that made its namespace moves the draft to that namespace, says so, and a second Create writes only the claim", async () => {
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      // The watch now sees the namespace that the write created.
+      watch.added = { Namespace: [namespace("team-new", "production")] };
+      return {
+        ok: false,
+        errors: [{ code: "Invalid", message: "The claim is invalid." }],
+        createdNamespace: "team-new",
+      };
+    });
+    show();
+    await fillBasics();
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Create a namespace" }),
+    );
+    await userEvent.type(screen.getAllByLabelText("Name")[1], "team-new");
+    await userEvent.click(next());
+    await userEvent.click(next());
+    await userEvent.type(screen.getByLabelText("Username"), "admin");
+    await userEvent.click(next());
+    await userEvent.click(next());
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+
+    expect(fakeWriter.applied[0].apply.map((o) => o.kind)).toEqual([
+      "Namespace",
+      "CamundaManagementClusterClaim",
+    ]);
+    expect((await screen.findByRole("note", { name: "" })).textContent).toBe(
+      "The write created the namespace team-new, but not the claim. The namespace stays, and the plane now goes into it as an existing namespace. Fix the cause and create the plane again.",
+    );
+    expect(screen.getByRole("alert").textContent).toContain(
+      "The claim is invalid.",
+    );
+
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect(fakeWriter.applied).toHaveLength(2);
+    expect(fakeWriter.applied[1].apply.map((o) => o.kind)).toEqual([
+      "CamundaManagementClusterClaim",
+    ]);
+    expect(fakeWriter.applied[1].apply[0].metadata.namespace).toBe("team-new");
+    expect(
+      await screen.findByRole("heading", {
+        name: "Creating the management plane plane-a",
+      }),
     ).toBeTruthy();
   });
 });

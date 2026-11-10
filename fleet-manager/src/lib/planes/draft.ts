@@ -16,6 +16,8 @@ import type { LabelSelector } from "@/lib/labels";
 import type { PluginSelection } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ImagesTable } from "@/startup/bundled-data";
+import { createChangeOf } from "@/lib/write/create";
+import type { Change } from "@/lib/write/types";
 import {
   type AdminDraft,
   EMPTY_ADMIN,
@@ -309,6 +311,27 @@ export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
       ...(contract !== undefined && { managementAuthConfigName: contract }),
     },
   };
+}
+
+/**
+ * planeCreateChange returns the create change of draft: the new namespace
+ * with its labels when the draft makes one, then the claim of
+ * planeClaimOf.
+ */
+export function planeCreateChange(
+  draft: PlaneDraft,
+  ctx: PlaneContext,
+): Change {
+  const claim = planeClaimOf(draft, ctx);
+  const { namespace } = claim.metadata;
+  const choice = draft.namespace;
+  return createChangeOf(
+    `Create the management plane ${claim.metadata.name} in ${namespace}`,
+    claim,
+    choice?.kind === "new"
+      ? { name: choice.name, labels: { ...choice.labels } }
+      : undefined,
+  );
 }
 
 // setIn sets value at names under target. Each object on the way exists:

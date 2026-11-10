@@ -3,6 +3,7 @@
 import type { V1Namespace } from "@kubernetes/client-node";
 import { useCallback, useEffect, useState } from "react";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
+import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { DatabaseConfig } from "@/generated/crds/databaseconfig";
@@ -17,6 +18,7 @@ import {
   useCreateFlow,
 } from "@/components/create/use-create-flow";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
+import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import type { Plane, PlaneSources } from "@/components/planes/plane";
 import { type ReadError, usePlanes } from "@/components/planes/planes-table";
@@ -31,13 +33,23 @@ import {
   type PlaneDraft,
   basicsErrors,
   componentsErrors,
+  planeClaimOf,
+  planeCreateChange,
   servedErrors,
 } from "@/lib/planes/draft";
 import { storageErrors } from "@/lib/planes/storage";
 import type { ValidationError } from "@/lib/schema";
+import type {
+  Change,
+  Preview,
+  WriteMode,
+  WriteResult,
+} from "@/lib/write/types";
 import type { ImagesTable } from "@/startup/bundled-data";
 import { ComponentsStep } from "./components-step";
 import { PlaneBasicsStep } from "./plane-basics-step";
+import { PlaneProgress } from "./plane-progress";
+import { PlaneReviewStep } from "./plane-review-step";
 import { ServedStep } from "./served-step";
 import { StorageAccessStep } from "./storage-access-step";
 
@@ -84,7 +96,21 @@ export const PLANE_STEPS: readonly { id: string; label: string }[] = [
   { id: "served", label: "Environments served" },
   { id: "components", label: "Components and versions" },
   { id: "storage", label: "Storage and access" },
+  { id: "review", label: "Review" },
 ];
+
+/**
+ * PlaneReview is what the review step needs to write: the write mode, the
+ * dry run and the create of the server actions, and onWritten for the
+ * result. blocked keeps Create disabled.
+ */
+export type PlaneReview = {
+  mode: WriteMode;
+  preview: (change: Change) => Promise<Preview>;
+  create: (change: Change) => Promise<WriteResult>;
+  onWritten: (result: WriteResult) => void;
+  blocked?: boolean;
+};
 
 /** PlaneModels are the lists that the steps of the plane create flow read. */
 export type PlaneModels = {
@@ -172,11 +198,13 @@ export function planeSteps(
           return servedErrors(draft, ctx, selectorErrors);
         case "components":
           return componentsErrors(draft, ctx);
-        default:
+        case "storage":
           return [
             ...storageFailures.map(message),
             ...storageErrors(draft, ctx, sectionErrors),
           ];
+        default:
+          return [];
       }
     },
   }));
@@ -184,7 +212,7 @@ export function planeSteps(
 
 /**
  * PlaneStepBody renders the step current of the plane create flow. secrets
- * are the Secrets of the namespace of draft.
+ * are the Secrets of the namespace of draft. The review step needs review.
  */
 export function PlaneStepBody({
   current,
@@ -194,6 +222,7 @@ export function PlaneStepBody({
   secrets,
   onSelectorErrors,
   onSectionErrors,
+  review,
 }: {
   current: string;
   draft: PlaneDraft;
@@ -202,8 +231,20 @@ export function PlaneStepBody({
   secrets: SecretRefs;
   onSelectorErrors: (errors: ValidationError[]) => void;
   onSectionErrors: (section: string, errors: ValidationError[]) => void;
+  review?: PlaneReview;
 }) {
   const ctx = planeContextOf(models, draft);
+  if (current === "review" && review) {
+    return (
+      <PlaneReviewStep
+        change={planeCreateChange(draft, ctx)}
+        claim={planeClaimOf(draft, ctx)}
+        draft={draft}
+        ctx={ctx}
+        {...review}
+      />
+    );
+  }
   if (current === "storage") {
     return (
       <StorageAccessStep
@@ -246,9 +287,24 @@ export function PlaneStepBody({
  * PlaneCreateFlow is the plane create wizard. It follows each list of
  * initial live and checks each step against the newest data. The error of
  * each failed watch shows above the steps, and the lists then keep their
- * last items. It writes nothing.
+ * last items. Create of the review writes through create in mode and shows
+ * the result as a toast. Create stays disabled while an earlier step has
+ * errors. After a write, the flow shows the progress of the plane. A
+ * refused write keeps the review. When the refused write created its new
+ * namespace, the draft takes that namespace as an existing one, so the
+ * next Create writes only the claim.
  */
-export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
+export function PlaneCreateFlow({
+  initial,
+  mode,
+  preview,
+  create,
+}: {
+  initial: PlaneCreateData;
+  mode: WriteMode;
+  preview: (change: Change) => Promise<Preview>;
+  create: (change: Change) => Promise<WriteResult>;
+}) {
   const environments = useResources("Environment", {}, initial.environments);
   const namespaces = useResources("Namespace", {}, initial.namespaces);
   const clusters = useResources("CamundaCluster", {}, initial.clusters);
@@ -357,6 +413,47 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
   const namespace = flow.draft.namespace;
   const existing = namespace?.kind === "existing" ? namespace.name : undefined;
   const [secrets, setSecrets] = useState<SecretRefs>([]);
+  const { toast, show, dismiss } = useWriteToast();
+  const [written, setWritten] = useState<CamundaManagementClusterClaim>();
+  const [keptNamespace, setKeptNamespace] = useState<string>();
+  const onWritten = (result: WriteResult) => {
+    const name = flow.draft.name;
+    show(result, `Created the management plane ${name}.`);
+    if (result.ok) {
+      setWritten(
+        planeClaimOf(
+          flow.draft,
+          planeContextOf(models, flow.draft),
+        ) as CamundaManagementClusterClaim,
+      );
+      return;
+    }
+    if (result.createdNamespace !== undefined) {
+      flow.set(["namespace"], {
+        kind: "existing",
+        name: result.createdNamespace,
+      });
+      setKeptNamespace(result.createdNamespace);
+    }
+  };
+  const earlier = steps
+    .filter((s) => s.id !== "review")
+    .some((s) => (flow.errors[s.id] ?? []).length > 0);
+
+  const toastView = toast && (
+    <div className="fixed right-4 bottom-4 z-50">
+      <Toast result={toast} onDismiss={dismiss} />
+    </div>
+  );
+
+  if (written) {
+    return (
+      <div className="flex min-w-0 flex-col gap-4">
+        <PlaneProgress claim={written} sections={models.sections} />
+        {toastView}
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -391,8 +488,18 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
           secrets={existing === undefined ? [] : secrets}
           onSelectorErrors={setSelectorErrors}
           onSectionErrors={onSectionErrors}
+          review={{ mode, preview, create, onWritten, blocked: earlier }}
         />
       </WizardStepper>
+      {keptNamespace !== undefined && (
+        <p
+          role="note"
+          className="rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-text"
+        >
+          {`The write created the namespace ${keptNamespace}, but not the claim. The namespace stays, and the plane now goes into it as an existing namespace. Fix the cause and create the plane again.`}
+        </p>
+      )}
+      {toastView}
     </div>
   );
 }
