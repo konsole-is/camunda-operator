@@ -376,6 +376,32 @@ describe("ClusterCreateFlow", () => {
     expect(screen.getByText("Gateway (Access)")).toBeTruthy();
   });
 
+  it("sets Delete in the draft when a pick refuses Orphan after step 2", async () => {
+    const keeping = {
+      ...internal,
+      spec: { ...internal.spec, deletionPolicies: ["Delete", "Orphan"] },
+    } as Resource<"PluginRegistration">;
+    const initial = data({
+      registrations: [gateway, keeping],
+      accessRequests: [],
+    });
+    const { rerender } = render(<ClusterCreateFlow initial={initial} />);
+    await fillBasics("search");
+    await userEvent.click(next());
+    await userEvent.click(radio(/^Internal/));
+    await userEvent.click(radio(/Keep the resources/));
+    await userEvent.click(next());
+
+    live.objects.PluginRegistration = [gateway, internal];
+    rerender(<ClusterCreateFlow initial={initial} />);
+    live.objects.PluginRegistration = [gateway, keeping];
+    rerender(<ClusterCreateFlow initial={initial} />);
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(radio(/Keep the resources/).disabled).toBe(false);
+    expect(radio(/Delete the resources/).checked).toBe(true);
+  });
+
   it("checks the hosts of the picked access option", async () => {
     const taken =
       "The host c1.team-a.internal.example.com is taken by team-b/x. Choose another name.";

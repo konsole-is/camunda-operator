@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { SectionCards } from "@/components/fleet/section-cards";
@@ -27,9 +27,7 @@ import { DeletionChoiceField } from "./deletion-choice";
  * the hosts and their conflicts. A section with no option and no empty
  * option says "Your admin allows no option here." Each view keeps its
  * object while its content does not change. At the bottom it shows
- * deletion, and onDeletion gets each pick. When deletion.policy differs
- * from the policy of draft, the step also reports deletion.policy through
- * onDeletion, so the draft never keeps a policy that the picks refuse.
+ * deletion, and onDeletion gets each pick.
  */
 export function ClusterStorageStep({
   draft,
@@ -59,10 +57,6 @@ export function ClusterStorageStep({
   onDeletion: (policy: DeletionPolicy) => void;
 }) {
   const selections = draftSelections(draft);
-  const picked = draft.claim.spec.deletionPolicy ?? deletion.defaultPolicy;
-  useEffect(() => {
-    if (deletion.policy !== picked) onDeletion(deletion.policy);
-  });
   return (
     <div className="flex max-w-3xl min-w-0 flex-col gap-8">
       {views.map((view) => {

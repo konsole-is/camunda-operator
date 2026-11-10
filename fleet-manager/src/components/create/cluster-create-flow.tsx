@@ -228,6 +228,15 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
   useEffect(() => {
     for (const name of gone) flow.set(["storage", name], undefined);
   });
+  // A claim must not keep a deletion policy that its picks refuse, also when
+  // a pick or a live object changes after step 2.
+  const deletionPolicy =
+    flow.draft.claim.spec.deletionPolicy ?? deletion.defaultPolicy;
+  useEffect(() => {
+    if (deletion.policy !== deletionPolicy) {
+      flow.set(["claim", "spec", "deletionPolicy"], deletion.policy);
+    }
+  });
   const onSection = (
     name: string,
     selections: PluginSelection[],

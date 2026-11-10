@@ -457,7 +457,7 @@ describe("ClusterStorageStep", () => {
     expect(radio(/No key/).checked).toBe(true);
   });
 
-  it("sets Delete in the draft when a new pick refuses Orphan", async () => {
+  it("disables Keep the resources when a new pick refuses Orphan", async () => {
     const keeping = {
       ...DATA,
       registrations: DATA.registrations.map((r) =>
@@ -482,13 +482,11 @@ describe("ClusterStorageStep", () => {
       />,
     );
     expect(radio(/Keep the resources/).checked).toBe(true);
-    expect(harness.draft().claim.spec.deletionPolicy).toBe("Orphan");
 
     await userEvent.click(radio(/S3 bucket/));
 
     expect(radio(/Keep the resources/).disabled).toBe(true);
     expect(radio(/Delete the resources/).checked).toBe(true);
-    expect(harness.draft().claim.spec.deletionPolicy).toBe("Delete");
     expect(screen.getByText("S3 bucket (Backup storage)")).toBeTruthy();
   });
 
