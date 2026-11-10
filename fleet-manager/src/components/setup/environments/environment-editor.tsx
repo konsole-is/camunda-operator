@@ -1,8 +1,7 @@
 "use client";
 
 import { CircleAlert } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import {
   applyEnvironmentChange,
   applyNamespaceLabel,
@@ -15,13 +14,13 @@ import { StatusChip } from "@/components/fleet/status-chip";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import type { ReadError } from "@/components/planes/planes-table";
+import { EditorSection } from "@/components/setup/form-parts";
+import { useSetupEditor } from "@/components/setup/use-setup-editor";
 import type { FleetEnvironmentConditionType } from "@/generated/conditions";
 import type { Environment } from "@/generated/crds/environment";
 import { environmentReady } from "@/lib/environments";
-import { REVISION_ANNOTATION } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
-import { refKey } from "@/lib/write/refs";
 import type {
   Change,
   Preview,
@@ -39,8 +38,7 @@ import {
   updateChange,
 } from "./draft";
 import { Swatch } from "./environment-name";
-import { EditorSection } from "./form-parts";
-import { environmentImpact } from "./impact";
+import { environmentImpact, withoutKept } from "./impact";
 import { ImpactLine, impactLines } from "./impact-line";
 import { NamespaceCreationSection } from "./namespace-creation-section";
 import { NamespacesSection } from "./namespaces-section";
@@ -60,13 +58,8 @@ export type EnvironmentActions = {
 
 /**
  * EnvironmentEditor edits the environment name of sources, or a new one
- * without name. The draft starts from the live copy and stays while the
- * live copy changes, so a save of a stale draft fails with Stale. Discard
- * loads the live copy. After a push in Git mode the form stays disabled and
- * keeps the draft until sources shows the pushed revision. After a save outside Git
- * mode the form stays disabled and keeps the draft until sources shows a
- * changed copy. After a create, the page moves to the editor of the new
- * environment once it shows in sources.
+ * without name, with the form state of useSetupEditor. A save and a delete
+ * each show a review with a dry run before the write.
  */
 export function EnvironmentEditor({
   sources,
@@ -79,51 +72,22 @@ export function EnvironmentEditor({
   mode: WriteMode;
   actions: EnvironmentActions;
 }): ReactNode {
-  const router = useRouter();
   const isNew = name === undefined;
   const live = isNew
     ? undefined
     : sources.environments.find((e) => e.metadata.name === name);
-  const [base, setBase] = useState<Environment | undefined>(live);
-  const [draft, setDraft] = useState<EnvironmentDraft>(() => draftOf(live));
-  // The sections that keep typed rows remount on a reset.
-  const [generation, setGeneration] = useState(0);
-  const [reviewing, setReviewing] = useState<Change>();
-  const [waiting, setWaiting] = useState<{ revision: string } | "save">();
   const [labelErrors, setLabelErrors] = useState<ValidationError[]>([]);
-  const [created, setCreated] = useState<string>();
-  const [deleting, setDeleting] = useState(false);
+  const editor = useSetupEditor({
+    live,
+    isNew,
+    listed: sources.environments.map((e) => e.metadata.name ?? ""),
+    draftOf,
+    listHref: LIST_HREF,
+    hrefOf,
+    onReset: () => setLabelErrors([]),
+  });
+  const { base, draft, reviewing, locked } = editor;
   const { toast, show, dismiss } = useWriteToast();
-
-  const reset = (to: Environment | undefined) => {
-    setBase(to);
-    setDraft(draftOf(to));
-    setGeneration((g) => g + 1);
-    setReviewing(undefined);
-    setWaiting(undefined);
-    setLabelErrors([]);
-  };
-  // The first list can miss the environment that the page found by name.
-  if (!isNew && live && !base) reset(live);
-  if (
-    typeof waiting === "object" &&
-    live?.metadata.annotations?.[REVISION_ANNOTATION] === waiting.revision
-  )
-    reset(live);
-  if (
-    waiting === "save" &&
-    live &&
-    live.metadata.resourceVersion !== base?.metadata.resourceVersion
-  )
-    reset(live);
-
-  const createdShown =
-    created !== undefined &&
-    sources.environments.some((e) => e.metadata.name === created);
-  useEffect(() => {
-    if (createdShown)
-      router.push(`/setup/environments/${encodeURIComponent(created)}`);
-  }, [createdShown, created, router]);
 
   const errors = draftErrors(draft, {
     isNew,
@@ -136,15 +100,13 @@ export function EnvironmentEditor({
   );
   const members = labelledNamespaces(name ?? "", sources.namespaces);
   const namespacesUnread = sources.errors.some((e) => e.kind === "Namespace");
-  const locked =
-    waiting !== undefined || created !== undefined || reviewing !== undefined;
   const blocked =
     errors[0]?.message ??
     (labelErrors.length > 0
       ? "Correct the fixed labels of a new namespace."
       : undefined);
   const setSpec = (spec: EnvironmentDraft["spec"]) =>
-    setDraft((d) => ({ ...d, spec }));
+    editor.setDraft((d) => ({ ...d, spec }));
 
   if (!isNew && !live && !base) {
     return (
@@ -157,23 +119,7 @@ export function EnvironmentEditor({
   const ready = live && environmentReady(live);
   const condition = live?.status?.conditions?.find((c) => c.type === READY);
   const title = draft.spec.displayName || draft.name || "New environment";
-
-  async function confirmDelete() {
-    if (!live || deleting) return;
-    setDeleting(true);
-    try {
-      const result = await actions
-        .applyChange(deleteChange(live))
-        .catch((error: unknown): WriteResult => ({
-          ok: false,
-          errors: [{ code: "Unavailable", message: String(error) }],
-        }));
-      show(result, `The environment ${name} is deleted.`);
-      if (result.ok) router.push("/setup/environments");
-    } finally {
-      setDeleting(false);
-    }
-  }
+  const deleting = reviewing?.kind === "delete";
 
   return (
     <div className="flex flex-col gap-6">
@@ -216,7 +162,7 @@ export function EnvironmentEditor({
           draft={draft}
           isNew={isNew}
           errors={errors}
-          onName={(n) => setDraft((d) => ({ ...d, name: n }))}
+          onName={(n) => editor.setDraft((d) => ({ ...d, name: n }))}
           onSpec={setSpec}
         />
         <EditorSection title="Namespaces">
@@ -229,7 +175,7 @@ export function EnvironmentEditor({
             show={show}
           />
           <NamespaceCreationSection
-            key={generation}
+            key={editor.generation}
             value={draft.spec.namespaceCreation}
             errors={errors}
             onChange={(namespaceCreation, rowErrors) => {
@@ -252,37 +198,72 @@ export function EnvironmentEditor({
             }
           />
         </EditorSection>
+        {!isNew && live && (
+          <EditorSection title="Delete the environment">
+            {namespacesUnread ? (
+              <p className="text-sm text-muted">
+                Delete is possible when the fleet manager can read the
+                namespaces.
+              </p>
+            ) : members.length > 0 ? (
+              <p className="text-sm text-muted">
+                Delete is possible when no namespace carries the label of this
+                environment.
+              </p>
+            ) : (
+              <TypedConfirm
+                name={name ?? ""}
+                confirmLabel="Review the delete"
+                onConfirm={() =>
+                  editor.review({ change: deleteChange(live), kind: "delete" })
+                }
+              >
+                Claims cannot pick this environment any more. No namespace
+                carries its label.
+              </TypedConfirm>
+            )}
+          </EditorSection>
+        )}
       </fieldset>
       {reviewing ? (
         <section
-          aria-label="Review the environment"
+          aria-label={deleting ? "Review the delete" : "Review the environment"}
           className="rounded-md border border-border bg-panel p-5"
         >
           <ChangeReview
-            change={reviewing}
+            change={reviewing.change}
             mode={mode}
             diffLabel="Changes to the environment"
-            effects={impactLines(impact)}
-            confirmLabel="Save"
-            savedMessage={`The environment ${draft.name} is saved.`}
+            effects={
+              deleting
+                ? [
+                    `The environment ${name} is deleted.`,
+                    ...(mode === "git"
+                      ? [
+                          "In Git mode the delete is a commit that removes the file of the environment. GitOps must prune the Environment to delete it from the cluster.",
+                        ]
+                      : []),
+                  ]
+                : (preview) =>
+                    impactLines(
+                      withoutKept(impact, keptSpec(preview, draft.name)),
+                    )
+            }
+            danger={deleting}
+            confirmLabel={deleting ? "Delete the environment" : "Save"}
+            gitConfirmLabel={deleting ? "Push the delete to Git" : undefined}
+            savedMessage={
+              deleting
+                ? `The environment ${name} is deleted.`
+                : `The environment ${draft.name} is saved.`
+            }
             preview={actions.previewChange}
             apply={actions.applyChange}
             show={(result, message) => {
               show(result, message);
-              if (!result.ok) return;
-              if (isNew) setCreated(draft.name);
-              else {
-                const revision =
-                  result.mode === "git"
-                    ? result.revisions[
-                        refKey({ kind: "Environment", name: draft.name })
-                      ]
-                    : undefined;
-                setWaiting(revision ? { revision } : "save");
-              }
+              editor.written(result, draft.name);
             }}
-            onWritten={() => setReviewing(undefined)}
-            onCancel={() => setReviewing(undefined)}
+            onCancel={editor.cancel}
           />
         </section>
       ) : (
@@ -293,40 +274,16 @@ export function EnvironmentEditor({
             <ChangeBar
               count={count}
               blocked={blocked}
-              onDiscard={() => reset(live)}
+              onDiscard={editor.discard}
               onReview={() => {
                 const change = isNew
                   ? createChange(draft)
                   : base && updateChange(base, draft);
-                if (change) setReviewing(change);
+                if (change) editor.review({ change, kind: "save" });
               }}
             />
           </div>
         )
-      )}
-      {!isNew && live && (
-        <EditorSection title="Delete the environment">
-          {namespacesUnread ? (
-            <p className="text-sm text-muted">
-              Delete is possible when the fleet manager can read the namespaces.
-            </p>
-          ) : members.length > 0 ? (
-            <p className="text-sm text-muted">
-              Delete is possible when no namespace carries the label of this
-              environment.
-            </p>
-          ) : (
-            <TypedConfirm
-              name={name ?? ""}
-              confirmLabel="Delete the environment"
-              pending={deleting}
-              onConfirm={confirmDelete}
-            >
-              Claims cannot pick this environment any more. No namespace carries
-              its label.
-            </TypedConfirm>
-          )}
-        </EditorSection>
       )}
       {toast && (
         <div className="fixed right-4 bottom-4 z-20">
@@ -335,6 +292,24 @@ export function EnvironmentEditor({
       )}
     </div>
   );
+}
+
+const LIST_HREF = "/setup/environments";
+
+function hrefOf(name: string): string {
+  return `${LIST_HREF}/${encodeURIComponent(name)}`;
+}
+
+// keptSpec returns the spec of the environment name in the dry run of a
+// save, the spec as the server keeps it.
+function keptSpec(
+  preview: Preview,
+  name: string,
+): Environment["spec"] | undefined {
+  const after = preview.objects.find(
+    (o) => o.ref.kind === "Environment" && o.ref.name === name,
+  )?.after;
+  return after?.spec as Environment["spec"] | undefined;
 }
 
 /** EnvironmentEditorLive is EnvironmentEditor on the live sources and the server actions of the page. */

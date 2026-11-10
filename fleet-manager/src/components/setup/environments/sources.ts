@@ -17,6 +17,7 @@ import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { useResources } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
+import { SOURCE_KINDS } from "./source-kinds";
 
 /** EnvironmentSources holds every list that the Environments page reads, in all namespaces. */
 export type EnvironmentSources = {
@@ -35,23 +36,6 @@ export type EnvironmentSources = {
   releases: CamundaRelease[];
   platformConfigs: CamundaPlatformConfig[];
 };
-
-const SOURCE_KINDS = {
-  environments: "Environment",
-  namespaces: "Namespace",
-  clusterClaims: "CamundaClusterClaim",
-  planeClaims: "CamundaManagementClusterClaim",
-  clusters: "CamundaCluster",
-  planes: "CamundaManagementCluster",
-  sections: "PluginSection",
-  registrations: "PluginRegistration",
-  requests: "PluginRequest",
-  clusterPresets: "CamundaClusterPreset",
-  elasticsearchPresets: "ElasticsearchClusterPreset",
-  databasePresets: "DatabaseServerPreset",
-  releases: "CamundaRelease",
-  platformConfigs: "CamundaPlatformConfig",
-} as const satisfies Record<keyof EnvironmentSources, KindName>;
 
 /**
  * useEnvironmentSources follows each list of initial live. errors holds the

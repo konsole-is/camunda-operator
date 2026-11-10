@@ -129,7 +129,7 @@ describe("EnvironmentEditor", () => {
       ),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("button", { name: "Delete the environment" }),
+      screen.queryByRole("button", { name: "Review the delete" }),
     ).toBeNull();
     cleanup();
     const sources = environmentFixtures();
@@ -138,7 +138,7 @@ describe("EnvironmentEditor", () => {
     );
     setup({ name: "staging", sources });
     expect(
-      screen.getByRole("button", { name: "Delete the environment" }),
+      screen.getByRole("button", { name: "Review the delete" }),
     ).toBeTruthy();
   });
 
@@ -149,9 +149,13 @@ describe("EnvironmentEditor", () => {
     fireEvent.change(screen.getByLabelText(/to confirm/), {
       target: { value: "production" },
     });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Delete the environment" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Review the delete" }));
+    const confirm = screen.getByRole("button", {
+      name: "Delete the environment",
+    });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    expect(actions.previewChange).toHaveBeenCalledTimes(1);
+    fireEvent.click(confirm);
     await waitFor(() =>
       expect(router.push).toHaveBeenCalledWith("/setup/environments"),
     );
@@ -184,13 +188,13 @@ describe("EnvironmentEditor", () => {
   it("counts the changed fields and blocks Review with the first error", () => {
     setup();
     expect(
-      screen.queryByRole("region", { name: "Pending changes" }),
+      screen.queryByRole("region", { name: "Unsaved changes" }),
     ).toBeNull();
     fireEvent.change(displayName(), { target: { value: "x".repeat(65) } });
     fireEvent.change(screen.getByLabelText("Color"), {
       target: { value: "#000000" },
     });
-    expect(screen.getByText("2 changes")).toBeTruthy();
+    expect(screen.getByText("2 unsaved changes")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
       "disabled",
       true,
@@ -235,7 +239,7 @@ describe("EnvironmentEditor", () => {
     await waitFor(() => expect(displayName().matches(":disabled")).toBe(false));
     expect(displayName().value).toBe("Prod");
     expect(
-      screen.queryByRole("region", { name: "Pending changes" }),
+      screen.queryByRole("region", { name: "Unsaved changes" }),
     ).toBeNull();
   });
 
@@ -307,7 +311,7 @@ describe("EnvironmentEditor", () => {
     await saveDisplayName("Prod");
     await waitFor(() => expect(displayName().matches(":disabled")).toBe(true));
     expect(
-      screen.queryByRole("region", { name: "Pending changes" }),
+      screen.queryByRole("region", { name: "Unsaved changes" }),
     ).toBeNull();
 
     const saved = environmentFixtures();
@@ -335,7 +339,7 @@ describe("EnvironmentEditor", () => {
       ).toBe(true),
     );
     expect(
-      screen.queryByRole("region", { name: "Pending changes" }),
+      screen.queryByRole("region", { name: "Unsaved changes" }),
     ).toBeNull();
   });
 
@@ -421,7 +425,41 @@ describe("EnvironmentEditor", () => {
     rerender(environmentFixtures());
     expect(displayName().value).toBe("Production");
     expect(
-      screen.queryByRole("region", { name: "Pending changes" }),
+      screen.queryByRole("region", { name: "Unsaved changes" }),
     ).toBeNull();
+  });
+
+  it("says in Git mode that the delete is a commit that GitOps must prune", async () => {
+    const sources = environmentFixtures();
+    sources.namespaces = [];
+    setup({ sources, mode: "git" });
+    fireEvent.change(screen.getByLabelText(/to confirm/), {
+      target: { value: "production" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review the delete" }));
+    expect(
+      screen.getByText(
+        "In Git mode the delete is a commit that removes the file of the environment. GitOps must prune the Environment to delete it from the cluster.",
+      ),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Push the delete to Git" }),
+      ).toHaveProperty("disabled", false),
+    );
+  });
+
+  it("keeps the delete off while a save waits", async () => {
+    const sources = environmentFixtures();
+    sources.namespaces = [];
+    setup({ sources });
+    await saveDisplayName("Prod");
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("button", { name: "Review the delete" })
+          .matches(":disabled"),
+      ).toBe(true),
+    );
   });
 });

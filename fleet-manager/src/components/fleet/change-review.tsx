@@ -45,7 +45,8 @@ export function ChangeReview({
   change: Change;
   mode: WriteMode;
   diffLabel: string;
-  effects: ReactNode[];
+  /** effects are the lines of the effects, or a function of the preview that gives them once the preview is in. */
+  effects: ReactNode[] | ((preview: Preview) => ReactNode[]);
   caution?: ReactNode;
   confirmLabel: string;
   gitConfirmLabel?: string;
@@ -147,7 +148,13 @@ export function ChangeReview({
           lines={object.diff}
         />
       ))}
-      effects={effects}
+      effects={
+        typeof effects === "function"
+          ? checked
+            ? effects(checked)
+            : []
+          : effects
+      }
       caution={caution}
       notices={
         <>

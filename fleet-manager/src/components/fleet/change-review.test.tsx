@@ -305,4 +305,23 @@ describe("ChangeReview", () => {
       expect(screen.queryByRole("button", { name: "Back" })).toBeNull(),
     );
   });
+
+  it("takes the effects from the preview when effects is a function", async () => {
+    const effects = vi.fn((p: Preview) => [`${p.objects.length} object`]);
+    render(
+      <ChangeReview
+        change={change}
+        mode="direct"
+        diffLabel="Changes to the environment"
+        effects={effects}
+        confirmLabel="Save"
+        savedMessage="Saved."
+        preview={async () => clean}
+        apply={async () => ({ ok: true, mode: "direct" })}
+        show={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("1 object")).toBeTruthy());
+    expect(effects).toHaveBeenLastCalledWith(clean);
+  });
 });

@@ -1,4 +1,4 @@
-const COLOR = /^#[0-9a-fA-F]{6}$/;
+import { isHexColor } from "./draft";
 
 /**
  * EnvironmentName shows the swatch of color, when it is a hex color, the
@@ -29,7 +29,7 @@ export function EnvironmentName({
 
 /** Swatch is a dot of color, or an empty ring when color is not a hex color. */
 export function Swatch({ color }: { color?: string }) {
-  const valid = color !== undefined && COLOR.test(color);
+  const valid = color !== undefined && isHexColor(color);
   return (
     <span
       aria-hidden

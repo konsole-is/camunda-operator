@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { Change, WriteMode, WriteResult } from "@/lib/write/types";
 import { namespaceLabelChange } from "./draft";
 import type { EnvironmentActions } from "./environment-editor";
-import { SelectField } from "./form-parts";
+import { SelectField } from "@/components/setup/form-parts";
 import { namespaceImpact } from "./impact";
 import { warningLine } from "./impact-line";
 import { labelledNamespaces, namespacesToAdd } from "./rows";

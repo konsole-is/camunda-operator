@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import type { ValidationError } from "@/lib/schema";
 import type { EnvironmentDraft } from "./draft";
-import { ErrorText } from "./form-parts";
+import { ErrorText } from "@/components/setup/form-parts";
 
 type Creation = NonNullable<EnvironmentDraft["spec"]["namespaceCreation"]>;
 

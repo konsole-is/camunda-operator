@@ -3,7 +3,7 @@
 import type { ValidationError } from "@/lib/schema";
 import type { EnvironmentDraft } from "./draft";
 import { Swatch } from "./environment-name";
-import { EditorSection, TextField } from "./form-parts";
+import { EditorSection, TextField } from "@/components/setup/form-parts";
 
 /** BasicsSection edits the name of a new environment, the display name, and the color. */
 export function BasicsSection({
