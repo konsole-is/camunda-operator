@@ -345,7 +345,8 @@ docker-push-conformance: ## Push docker image with plugin-conformance.
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
 PLATFORMS ?= linux/amd64,linux/arm64
 # BUILDX_OUTPUT is where docker-buildx, docker-buildx-cli, docker-buildx-conformance, and docker-buildx-fleet send the image. The release workflow sets it to
-# --load, with one platform in PLATFORMS, to scan the image of each platform before it pushes them.
+# --load, with one platform in PLATFORMS, to scan the image of each platform before it pushes them. Its dry run sets it
+# empty, so the images stay in the buildx cache.
 BUILDX_OUTPUT ?= --push
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
