@@ -120,6 +120,9 @@ export function EnvironmentEditor({
   const condition = live?.status?.conditions?.find((c) => c.type === READY);
   const title = draft.spec.displayName || draft.name || "New environment";
   const deleting = reviewing?.kind === "delete";
+  // A namespace can get the label, or the namespaces can turn unreadable,
+  // after the delete review opened.
+  if (deleting && (members.length > 0 || namespacesUnread)) editor.cancel();
 
   return (
     <div className="flex flex-col gap-6">
@@ -157,7 +160,10 @@ export function EnvironmentEditor({
           The environment {name} was deleted.
         </p>
       )}
-      <fieldset disabled={locked} className="flex min-w-0 flex-col gap-4">
+      <fieldset
+        disabled={locked || (!isNew && !live)}
+        className="flex min-w-0 flex-col gap-4"
+      >
         <BasicsSection
           draft={draft}
           isNew={isNew}

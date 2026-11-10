@@ -462,4 +462,34 @@ describe("EnvironmentEditor", () => {
       ).toBe(true),
     );
   });
+
+  it("closes the delete review when a namespace gets the label of the environment", async () => {
+    const sources = environmentFixtures();
+    sources.namespaces = [];
+    const { rerender } = setup({ sources });
+    fireEvent.change(screen.getByLabelText(/to confirm/), {
+      target: { value: "production" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review the delete" }));
+    expect(
+      screen.getByRole("button", { name: "Delete the environment" }),
+    ).toBeTruthy();
+    rerender(environmentFixtures());
+    expect(
+      screen.queryByRole("button", { name: "Delete the environment" }),
+    ).toBeNull();
+  });
+
+  it("disables the form when the environment was deleted", () => {
+    const { rerender } = setup();
+    rerender({ ...environmentFixtures(), environments: [] });
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The environment production was deleted.",
+    );
+    expect(
+      (screen.getByLabelText("Add a namespace") as HTMLSelectElement).matches(
+        ":disabled",
+      ),
+    ).toBe(true);
+  });
 });
