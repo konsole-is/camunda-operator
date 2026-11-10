@@ -135,7 +135,7 @@ function Name({
   children?: ReactNode;
 }) {
   return (
-    <span className="flex flex-col">
+    <span className="flex min-w-0 flex-col whitespace-normal [overflow-wrap:anywhere]">
       {href ? (
         <Link href={href} className="font-medium text-text hover:text-info">
           {name}

@@ -172,6 +172,11 @@ const fleet: FleetSources = {
       conditions: [{ type: "Ready", status: "True", reason: "Suspended" }],
     }),
     cluster("scratch", "playground", { managed: false }),
+    cluster(
+      "team-orders-processing-eu-west-1",
+      "orders-processing-production-eu-west-1-blue-green-canary",
+      { managed: false },
+    ),
   ],
   claims: [
     claim("team-orders", "orders"),
