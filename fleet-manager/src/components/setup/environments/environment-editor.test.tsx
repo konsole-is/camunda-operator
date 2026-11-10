@@ -410,4 +410,18 @@ describe("EnvironmentEditor", () => {
     await waitFor(() => expect(displayName().matches(":disabled")).toBe(false));
     expect(displayName().value).toBe("Prod");
   });
+
+  it("loads the environment when it arrives after the first render", () => {
+    const { rerender } = setup({
+      sources: { ...environmentFixtures(), environments: [] },
+    });
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The environment production does not exist.",
+    );
+    rerender(environmentFixtures());
+    expect(displayName().value).toBe("Production");
+    expect(
+      screen.queryByRole("region", { name: "Pending changes" }),
+    ).toBeNull();
+  });
 });

@@ -103,6 +103,8 @@ export function EnvironmentEditor({
     setWaiting(undefined);
     setLabelErrors([]);
   };
+  // The first list can miss the environment that the page found by name.
+  if (!isNew && live && !base) reset(live);
   if (
     typeof waiting === "object" &&
     live?.metadata.annotations?.[REVISION_ANNOTATION] === waiting.revision
@@ -292,13 +294,12 @@ export function EnvironmentEditor({
               count={count}
               blocked={blocked}
               onDiscard={() => reset(live)}
-              onReview={() =>
-                setReviewing(
-                  isNew || !base
-                    ? createChange(draft)
-                    : updateChange(base, draft),
-                )
-              }
+              onReview={() => {
+                const change = isNew
+                  ? createChange(draft)
+                  : base && updateChange(base, draft);
+                if (change) setReviewing(change);
+              }}
             />
           </div>
         )
