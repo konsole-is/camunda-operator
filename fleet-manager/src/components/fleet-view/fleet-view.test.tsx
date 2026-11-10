@@ -272,6 +272,31 @@ describe("FleetView", () => {
     expect(clusterNames()).toEqual(["prod/legacy"]);
   });
 
+  it("shows every cluster again when the selected namespace is gone", async () => {
+    const { rerender } = render(view());
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Namespace" }),
+      "dev",
+    );
+    expect(clusterNames()).toEqual(["dev/sandbox"]);
+    rerender(
+      view({
+        sources: {
+          ...fleet,
+          clusters: fleet.clusters.filter(
+            (c) => c.metadata?.namespace !== "dev",
+          ),
+        },
+      }),
+    );
+    expect(clusterNames()).toEqual([
+      "prod/legacy",
+      "prod/orders",
+      "stage/billing",
+      "loose/scratch",
+    ]);
+  });
+
   it("says that no cluster matches the filters", async () => {
     render(view());
     await userEvent.type(

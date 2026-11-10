@@ -169,12 +169,18 @@ function TabContent({
             (e) => environmentTabValue(e.metadata.name ?? "") === tab,
           )?.metadata.name;
   const shownPlanes = planesIn(planes, environment);
+  const namespaces = rowNamespaces([...rows, ...waiting]);
+  // A live update can remove the last row of the selected namespace. The
+  // select then shows All, so the rows must not stay filtered by it.
+  const active = namespaces.includes(filter.namespace)
+    ? filter
+    : { ...filter, namespace: "" };
   const groups = groupRows(
-    filterRows(rows, filter, isReady),
+    filterRows(rows, active, isReady),
     sources.environments,
     tab ?? ALL_TAB,
   );
-  const shownWaiting = filterRows(waiting, filter, () => false);
+  const shownWaiting = filterRows(waiting, active, () => false);
   const empty = rows.length === 0 && waiting.length === 0;
 
   return (
@@ -202,7 +208,7 @@ function TabContent({
             <FilterBar
               filter={filter}
               onFilter={onFilter}
-              namespaces={rowNamespaces([...rows, ...waiting])}
+              namespaces={namespaces}
             />
             {shownWaiting.length > 0 && (
               <WaitingTable rows={shownWaiting} now={now} />
