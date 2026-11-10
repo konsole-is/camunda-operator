@@ -93,6 +93,14 @@ var _ = Describe("CamundaManagementClusterClaim precheck", func() {
 			}, fleetv1alpha1.ReasonNotAllowed, `registration "test-access" is not allowed`,
 		),
 		Entry(
+			"a database server preset that the Environment does not list",
+			func() *fleetv1alpha1.CamundaManagementClusterClaim {
+				environment := planeEnvironment()
+				fixDatabasePreset(environment, "large", "small")
+				return newClaim(newEnvironmentNamespace(environment), environment.Name)
+			}, fleetv1alpha1.ReasonNotAllowed, `DatabaseServerPreset "large" is not in spec.presets.databaseServer`,
+		),
+		Entry(
 			"Orphan with a registration that does not list Orphan",
 			func() *fleetv1alpha1.CamundaManagementClusterClaim {
 				claim := newPlaneClaim()

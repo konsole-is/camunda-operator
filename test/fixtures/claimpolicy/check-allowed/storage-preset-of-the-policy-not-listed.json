@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "name": "A PostgreSQL preset that the policy fixes and the Environment does not list is refused",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "databaseServer": [
+            "small"
+          ]
+        }
+      }
+    },
+    "policy": {
+      "sections": {
+        "secondary-storage": {
+          "allowed": [
+            "elasticsearch",
+            "database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "database-server": {
+          "preset": {
+            "value": "large"
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "database-server"
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "DatabaseServerPreset \"large\" is not in spec.presets.databaseServer of Environment \"dev\""
+    }
+  }
+}

@@ -138,7 +138,51 @@ spec:
   # ... the rest of your environment
 ```
 
-A change of `sections`, `parameters`, or `deletionPolicy` applies to new claims only. An existing claim keeps the policy that it recorded at creation. The releases and the presets are different. A new claim, and a release or preset change of an existing claim, are checked against the current lists.
+`spec.presets` lists the presets that a claim can use, with one list for each preset kind:
+
+- `camundaCluster` holds the presets that `spec.presetRef` of a cluster claim can name.
+- `elasticsearchCluster` holds the presets of the built-in Elasticsearch, the registration `elasticsearch`.
+- `databaseServer` holds the presets of the built-in PostgreSQL, the registrations `database-server` and `management-database-server`.
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: Environment
+metadata:
+  name: production
+spec:
+  presets:
+    camundaCluster:
+      - small
+      - large
+    elasticsearchCluster:
+      - small
+      - large
+    databaseServer:
+      - small
+  parameters:
+    elasticsearch:
+      preset:
+        claimEditable: true
+    database-server:
+      preset:
+        value: small
+  # ... the rest of your environment
+```
+
+A claim that uses a preset outside its list is refused with `NotAllowed`. A list that is empty or not set allows no preset of its kind. So an `Environment` that allows `elasticsearch`, `database-server`, or `management-database-server` needs the list of its preset kind.
+
+The preset of a built-in Elasticsearch or PostgreSQL is its parameter `preset`. In the example above, a claim picks `small` or `large` for `elasticsearch`, and `database-server` always gets `small`. The claim sets the preset when `spec.parameters` makes `preset` claim-editable. Otherwise the `value` of the parameter policy sets it. The list check applies to the claim value and to the policy value. A `value` outside the list refuses each new claim that selects the option, so keep the `value` in the list. A refused claim shows the preset and the list:
+
+```yaml
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: NotAllowed
+      message: 'ElasticsearchClusterPreset "medium" is not in spec.presets.elasticsearchCluster of Environment "production"'
+```
+
+A change of `sections`, `parameters`, or `deletionPolicy` applies to new claims only. An existing claim keeps the policy that it recorded at creation. The releases and the presets are different. A new claim, and a release or preset change of an existing claim, are checked against the current lists. A release or a preset that an existing claim already uses stays allowed when you remove it from its list.
 
 ## Status
 
