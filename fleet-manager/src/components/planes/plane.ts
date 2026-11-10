@@ -179,6 +179,22 @@ function selected(
   return [...names].sort();
 }
 
+/**
+ * planesIn returns the planes of one fleet tab: every plane for undefined,
+ * the planes that serve no environment for null, else the planes that
+ * serve the environment of that name.
+ */
+export function planesIn(
+  planes: readonly Plane[],
+  environment?: string | null,
+): Plane[] {
+  if (environment === undefined) return [...planes];
+  if (environment === null) {
+    return planes.filter((plane) => plane.servedEnvironments.length === 0);
+  }
+  return planes.filter((plane) => servesEnvironment(plane, environment));
+}
+
 /** servesEnvironment says whether plane serves the environment of that name. */
 export function servesEnvironment(plane: Plane, environment: string): boolean {
   return plane.servedEnvironments.includes(environment);

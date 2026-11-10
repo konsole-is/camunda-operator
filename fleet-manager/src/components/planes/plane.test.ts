@@ -3,6 +3,7 @@ import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import {
   formatSelector,
   optimizeLabel,
+  planesIn,
   planesOf,
   servesEnvironment,
 } from "./plane";
@@ -351,5 +352,42 @@ describe("servesEnvironment and optimizeLabel", () => {
     });
     expect(optimizeLabel(oidc)).toBe("0 (OIDC)");
     expect(optimizeLabel(keycloak)).toBe("2");
+  });
+});
+
+describe("planesIn", () => {
+  const planes = planesOf({
+    clusters: [
+      cluster("platform", "legacy", {
+        spec: {
+          namespaceSelector: {
+            matchExpressions: [
+              { key: ENVIRONMENT_LABEL, operator: "DoesNotExist" },
+            ],
+          },
+        },
+      }),
+    ],
+    claims: [
+      claim("platform", "plane-a", ["production"]),
+      claim("platform", "plane-b", ["staging"]),
+    ],
+    namespaces: [
+      ns("team-a", { [ENVIRONMENT_LABEL]: "production" }),
+      ns("team-x", {}),
+    ],
+  });
+  const names = (list: { name: string }[]) => list.map((p) => p.name);
+
+  it("gives every plane without an environment", () => {
+    expect(names(planesIn(planes))).toEqual(["legacy", "plane-a", "plane-b"]);
+  });
+
+  it("gives the planes that serve no environment for null", () => {
+    expect(names(planesIn(planes, null))).toEqual(["legacy"]);
+  });
+
+  it("gives the planes that serve the environment", () => {
+    expect(names(planesIn(planes, "staging"))).toEqual(["plane-b"]);
   });
 });

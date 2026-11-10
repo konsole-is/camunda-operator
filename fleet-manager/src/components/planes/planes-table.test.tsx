@@ -58,7 +58,7 @@ function Harness({
   environment,
   initial,
 }: {
-  environment: string;
+  environment?: string | null;
   initial: PlaneSources;
 }) {
   const { planes } = usePlanes(initial);
@@ -107,6 +107,18 @@ describe("PlanesTable", () => {
     rerender(<Harness environment="staging" initial={initial} />);
     expect(screen.getByRole("link", { name: /plane-a/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /plane-b/ })).toBeTruthy();
+  });
+
+  it("shows every plane without an environment", () => {
+    render(<Harness initial={initial} />);
+    expect(screen.getByRole("link", { name: /plane-a/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /plane-b/ })).toBeTruthy();
+  });
+
+  it("has no search box of its own", () => {
+    render(<Harness environment="production" initial={initial} />);
+    expect(screen.getByRole("link", { name: /plane-a/ })).toBeTruthy();
+    expect(screen.queryByRole("searchbox")).toBeNull();
   });
 
   it("links each plane to its page", () => {

@@ -6,12 +6,7 @@ import { StatusChip } from "@/components/fleet/status-chip";
 import { useResources } from "@/lib/k8s/hooks";
 import { PlaneClusters, PlaneName, PlaneServes } from "./cells";
 import { NotAttachedChip } from "./not-attached-chip";
-import {
-  type Plane,
-  type PlaneSources,
-  planesOf,
-  servesEnvironment,
-} from "./plane";
+import { type Plane, type PlaneSources, planesIn, planesOf } from "./plane";
 
 export type { Plane, PlaneSources } from "./plane";
 
@@ -59,21 +54,23 @@ export function usePlanes(initial: PlaneSources): {
   return { planes, errors };
 }
 
-/** PlanesTable shows the planes that serve environment, or nothing when none does. */
+/**
+ * PlanesTable shows the planes of planesIn(planes, environment), or nothing
+ * when there are none. It has no search box and no filters.
+ */
 export function PlanesTable({
   planes,
   environment,
 }: {
   planes: Plane[];
-  environment: string;
+  environment?: string | null;
 }): ReactNode {
-  const served = planes.filter((plane) =>
-    servesEnvironment(plane, environment),
-  );
+  const served = planesIn(planes, environment);
   if (served.length === 0) return null;
   return (
     <DataTable
       label="Management planes"
+      toolbar={false}
       columns={[
         { key: "plane", label: "Management plane" },
         { key: "status", label: "Status" },
