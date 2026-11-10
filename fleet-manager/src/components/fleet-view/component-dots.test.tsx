@@ -42,11 +42,19 @@ describe("ComponentDots", () => {
   });
 
   it("is one stop of the keyboard for all its dots", async () => {
-    render(<ComponentDots dots={dots} />);
+    render(
+      <>
+        <ComponentDots dots={dots} />
+        <ComponentDots dots={dots.slice(0, 1)} />
+      </>,
+    );
+    const [first, second] = screen.getAllByRole("button", {
+      name: /Components/,
+    });
     await userEvent.tab();
-    expect(document.activeElement).toBe(trigger());
+    expect(document.activeElement).toBe(first);
     await userEvent.tab();
-    expect(document.activeElement).toBe(document.body);
+    expect(document.activeElement).toBe(second);
   });
 
   it("lists each component with its state and message on keyboard focus", async () => {
@@ -84,6 +92,33 @@ describe("ComponentDots", () => {
     await userEvent.hover(trigger());
     await userEvent.hover(screen.getByRole("note"));
     expect(screen.getByRole("note")).toBeTruthy();
+  });
+
+  it("keeps the focus where it is when Escape closes a list that hover opened", async () => {
+    render(
+      <>
+        <input aria-label="Search clusters" />
+        <ComponentDots dots={dots} />
+      </>,
+    );
+    const search = screen.getByRole("textbox", { name: "Search clusters" });
+    search.focus();
+    await userEvent.hover(trigger());
+    expect(screen.getByRole("note")).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(document.activeElement).toBe(search);
+  });
+
+  it("moves the focus into the list on Arrow Down, and back to the dots on Escape", async () => {
+    render(<ComponentDots dots={dots} />);
+    await userEvent.tab();
+    const note = screen.getByRole("note");
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(note);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(document.activeElement).toBe(trigger());
   });
 
   it("starts open with defaultOpen", () => {

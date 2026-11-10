@@ -45,6 +45,12 @@ export function ComponentDots({
       onBlur={(event) => {
         if (!holds(event.relatedTarget as Node | null)) setOpen(false);
       }}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowDown" || event.target !== trigger.current)
+          return;
+        event.preventDefault();
+        note.current?.focus();
+      }}
     >
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
@@ -81,18 +87,20 @@ export function ComponentDots({
           ref={note}
           id={id}
           role="note"
+          tabIndex={0}
           align="start"
           collisionPadding={8}
           onOpenAutoFocus={(event) => event.preventDefault()}
           onCloseAutoFocus={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
-            trigger.current?.focus();
+            if (note.current?.contains(document.activeElement))
+              trigger.current?.focus();
             setOpen(false);
           }}
           // The list sits 4 px from the dots. These strips fill the gap, so
           // the pointer stays on the dots or the list while it crosses.
-          className="w-80 max-w-[calc(100vw-2rem)] gap-1.5 rounded-md border border-border bg-panel-2 p-3 text-xs break-words text-text-2 shadow-lg ring-0 before:absolute before:inset-x-0 before:-top-1 before:h-1 after:absolute after:inset-x-0 after:-bottom-1 after:h-1"
+          className="max-h-(--radix-popover-content-available-height) w-80 max-w-[calc(100vw-2rem)] gap-1.5 overflow-y-auto rounded-md border border-border bg-panel-2 p-3 text-xs break-words text-text-2 shadow-lg ring-0 focus-visible:ring-3 focus-visible:ring-ring/50 before:absolute before:inset-x-0 before:-top-1 before:h-1 after:absolute after:inset-x-0 after:-bottom-1 after:h-1"
         >
           {dots.map((dot) => (
             <span key={dot.id} className="flex items-start gap-2">
