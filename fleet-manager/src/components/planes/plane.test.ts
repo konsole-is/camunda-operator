@@ -444,6 +444,50 @@ describe("planesIn", () => {
     expect(names(planesIn([plane], null))).toEqual(["every"]);
   });
 
+  it("puts a managed plane whose cluster serves a namespace of a deleted Environment on No environment", () => {
+    const [plane] = planesOf({
+      clusters: [
+        cluster("platform", "plane-a", {
+          labels: { [CLAIM_LABEL]: "plane-a" },
+          spec: {
+            identityProvider: { keycloak: {} },
+            namespaceSelector: {
+              matchExpressions: [
+                {
+                  key: ENVIRONMENT_LABEL,
+                  operator: "In",
+                  values: ["production", "staging"],
+                },
+              ],
+            },
+          },
+        }),
+      ],
+      claims: [claim("platform", "plane-a", ["production", "staging"])],
+      namespaces: [
+        ns("team-a", { [ENVIRONMENT_LABEL]: "production" }),
+        ns("team-b", { [ENVIRONMENT_LABEL]: "staging" }),
+      ],
+      environments: [environment("production")],
+    });
+    expect(plane.servedEnvironments).toEqual(["production", "staging"]);
+    expect(names(planesIn([plane], null))).toEqual(["plane-a"]);
+  });
+
+  it("keeps a managed plane off No environment while every namespace that it serves has an Environment", () => {
+    const [plane] = planesOf({
+      clusters: [
+        cluster("platform", "plane-a", {
+          labels: { [CLAIM_LABEL]: "plane-a" },
+        }),
+      ],
+      claims: [claim("platform", "plane-a", ["production"])],
+      namespaces: [ns("team-a", { [ENVIRONMENT_LABEL]: "production" })],
+      environments: [environment("production")],
+    });
+    expect(planesIn([plane], null)).toEqual([]);
+  });
+
   it("serves no namespace while the cluster selector is unset", () => {
     const [plane] = planesOf({
       clusters: [
