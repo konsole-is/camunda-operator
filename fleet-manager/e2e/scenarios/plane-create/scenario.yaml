@@ -1,0 +1,130 @@
+schemaVersion: 1
+description: >-
+  An Environment platform whose management planes use existing
+  DatabaseConfigs, with three DatabaseConfigs in the namespace platform and
+  no access option. The plane create flow writes a plane claim in it. No
+  controller runs while the page test runs.
+seed:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: platform
+      labels:
+        fleet.camunda.io/environment: platform
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaPlatformConfig
+    metadata:
+      name: default-platform
+    spec:
+      auth:
+        method: basic
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaRelease
+    metadata:
+      name: camunda-8-9-0
+    spec:
+      version: "8.9.0"
+  - apiVersion: fleet.camunda.io/v1alpha1
+    kind: Environment
+    metadata:
+      name: platform
+    spec:
+      displayName: Platform
+      platformConfigRef: default-platform
+      releases:
+        allowed: [camunda-8-9-0]
+        default: camunda-8-9-0
+      sections:
+        management-database:
+          required: true
+          allowed: [existing-database-configs]
+          default: existing-database-configs
+      parameters:
+        existing-database-configs:
+          keycloak:
+            claimEditable: true
+          identity:
+            claimEditable: true
+          webModeler:
+            claimEditable: true
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: postgres-admin
+      namespace: platform
+    stringData:
+      username: postgres
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: DatabaseServerConfig
+    metadata:
+      name: postgres
+      namespace: platform
+    spec:
+      engine: postgres
+      host: postgres.platform.svc.cluster.local
+      port: 5432
+      adminCredentialsSecretRef:
+        name: postgres-admin
+        usernameKey: username
+        passwordKey: password
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: keycloak-db
+      namespace: platform
+    stringData:
+      username: keycloak
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: DatabaseConfig
+    metadata:
+      name: keycloak-db
+      namespace: platform
+    spec:
+      serverRef: postgres
+      databaseName: keycloak
+      credentialsSecretRef:
+        name: keycloak-db
+        usernameKey: username
+        passwordKey: password
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: identity-db
+      namespace: platform
+    stringData:
+      username: identity
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: DatabaseConfig
+    metadata:
+      name: identity-db
+      namespace: platform
+    spec:
+      serverRef: postgres
+      databaseName: identity
+      credentialsSecretRef:
+        name: identity-db
+        usernameKey: username
+        passwordKey: password
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: modeler-db
+      namespace: platform
+    stringData:
+      username: modeler
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: DatabaseConfig
+    metadata:
+      name: modeler-db
+      namespace: platform
+    spec:
+      serverRef: postgres
+      databaseName: web_modeler
+      credentialsSecretRef:
+        name: modeler-db
+        usernameKey: username
+        passwordKey: password
