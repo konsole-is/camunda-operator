@@ -15,8 +15,9 @@ export type PodContext = {
 /**
  * podInputs returns the settings of a merged cluster spec that the
  * operator renders into the pod template of process p, through its
- * environment or its config hash. When the results for the
- * spec before and after a change differ, the pods of p restart.
+ * environment, its config hash, or the hash annotation of its service
+ * account. When the results for the spec before and after a change differ,
+ * the pods of p restart.
  */
 export function podInputs(
   spec: CamundaClusterSpec,
@@ -57,6 +58,7 @@ export function podInputs(
         oidc.connectorsClaim && spec.connectors?.enabled === true,
     },
     secret,
+    account: spec.serviceAccount,
     buckets: [spec.backupStorageRef, spec.documentStorageRef],
     backup: backupOf(spec, ctx.storage, p),
   };

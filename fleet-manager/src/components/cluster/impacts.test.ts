@@ -1,11 +1,14 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { openSession, resetValue, setValue, type Session } from "@/lib/session";
 import {
+  SPEC_FIELDS,
   clusterImpacts,
   mergedSpecs,
+  restartsBrokers,
   showsMergedDiff,
   type ClusterChangeInput,
 } from "./impacts";
@@ -623,6 +626,12 @@ describe("clusterImpacts", () => {
       );
     });
 
+    it("the service account restarts every process except the connectors", () => {
+      expect(
+        impacts(set(cluster("serviceAccount", "annotations", "team"), "a")),
+      ).toEqual(EVERY_UNIFIED);
+    });
+
     it("externalUrl restarts them under OIDC only", () => {
       const change = set(cluster("externalUrl"), "https://orders.example");
       const own = selecting(claim(running));
@@ -964,5 +973,237 @@ describe("showsMergedDiff", () => {
         }),
       ),
     ).toBe(true);
+  });
+});
+
+describe("restartsBrokers", () => {
+  const EMBEDDED_GATEWAY = { gateway: { replicas: 2, mode: "Embedded" } };
+  const STANDALONE_OPERATE = { operate: { replicas: 1, mode: "Standalone" } };
+  const over = (spec: Record<string, unknown>) => ({
+    claim: claim(spec),
+    live: live(spec),
+  });
+  const ZEEBE = { replicas: 3, storageSize: "32Gi" };
+  const sectionParameter: Step[] = [
+    f("spec"),
+    f("plugins"),
+    { item: { section: "access", registration: "gateway-access" } },
+    f("parameters"),
+    f("hostnamePattern"),
+  ];
+  const cases: [string, ClusterChangeInput, boolean][] = [
+    [
+      "a release with another Camunda version",
+      input(set([f("spec"), f("releaseRef")], "camunda-8-10-1")),
+      true,
+    ],
+    [
+      "a release with the same Camunda version",
+      input(set([f("spec"), f("releaseRef")], "camunda-8-9-5-images")),
+      true,
+    ],
+    [
+      "a field of the brokers",
+      input(set(cluster("zeebe", "resources"), { limits: { cpu: "2" } })),
+      true,
+    ],
+    [
+      "a broker field outside the pod template",
+      input(set(cluster("zeebe", "storageSize"), "64Gi")),
+      false,
+    ],
+    [
+      "a cluster-wide label",
+      input(set(cluster("podLabels", "team"), "a")),
+      true,
+    ],
+    [
+      "a cluster-wide label that the brokers set themselves",
+      input(
+        set(cluster("podLabels", "team"), "a"),
+        over({ zeebe: { ...ZEEBE, podLabels: { team: "z" } } }),
+      ),
+      false,
+    ],
+    [
+      "cluster-wide scheduling while the brokers set their own",
+      input(
+        set(cluster("scheduling"), { nodeSelector: { pool: "b" } }),
+        over({
+          zeebe: { ...ZEEBE, scheduling: { nodeSelector: { pool: "z" } } },
+        }),
+      ),
+      false,
+    ],
+    [
+      "a cluster-wide environment variable",
+      input(
+        set([...cluster("extraEnv"), { item: { name: "TZ" } }], {
+          name: "TZ",
+          value: "UTC",
+        }),
+      ),
+      true,
+    ],
+    [
+      "a cluster-wide environment variable that the brokers set themselves",
+      input(
+        set([...cluster("extraEnv"), { item: { name: "TZ" } }], {
+          name: "TZ",
+          value: "UTC",
+        }),
+        over({ zeebe: { ...ZEEBE, extraEnv: [{ name: "TZ", value: "CET" }] } }),
+      ),
+      false,
+    ],
+    [
+      "the environment of an app embedded in the brokers",
+      input(
+        set([...cluster("operate", "extraEnv"), { item: { name: "TZ" } }], {
+          name: "TZ",
+          value: "UTC",
+        }),
+        over(EMBEDDED_GATEWAY),
+      ),
+      true,
+    ],
+    // Each mode switch that moves a process into or out of the brokers
+    // restarts them, whatever line the review writes for it.
+    [
+      "a gateway that becomes embedded in the brokers",
+      input(set(cluster("gateway", "mode"), "Embedded")),
+      true,
+    ],
+    [
+      "a gateway that leaves the brokers",
+      input(
+        set(cluster("gateway", "mode"), "Standalone"),
+        over(EMBEDDED_GATEWAY),
+      ),
+      true,
+    ],
+    [
+      "an app that moves into the brokers",
+      input(
+        set(cluster("operate", "mode"), "Embedded"),
+        over({ ...EMBEDDED_GATEWAY, ...STANDALONE_OPERATE }),
+      ),
+      true,
+    ],
+    [
+      "an app that moves out of the brokers",
+      input(
+        set(cluster("operate", "mode"), "Standalone"),
+        over(EMBEDDED_GATEWAY),
+      ),
+      true,
+    ],
+    [
+      "an app that moves into a standalone gateway",
+      input(
+        set(cluster("operate", "mode"), "Embedded"),
+        over(STANDALONE_OPERATE),
+      ),
+      false,
+    ],
+    [
+      "an app that leaves a standalone gateway",
+      input(set(cluster("operate", "mode"), "Standalone")),
+      false,
+    ],
+    [
+      "an Operate-only field",
+      input(
+        set(cluster("operate", "resources"), { limits: { cpu: "2" } }),
+        over(STANDALONE_OPERATE),
+      ),
+      false,
+    ],
+    [
+      "a connectors field",
+      input(set(cluster("connectors", "resources"), { limits: { cpu: "2" } })),
+      false,
+    ],
+    [
+      "the deletion policy",
+      input(set([f("spec"), f("deletionPolicy")], "Orphan")),
+      false,
+    ],
+    [
+      "a backup schedule",
+      input(
+        set(
+          [f("spec"), f("attachments"), f("backupSchedule"), f("schedule")],
+          "0 2 * * *",
+        ),
+      ),
+      false,
+    ],
+    ["a section parameter", input(set(sectionParameter, "b")), true],
+    ["suspend", input(set([f("spec"), f("suspend")], true)), true],
+    [
+      "the service account annotations",
+      input(set(cluster("serviceAccount", "annotations", "team"), "a")),
+      true,
+    ],
+    [
+      "the Camunda version of the cluster",
+      input(set(cluster("version"), "8.9.6")),
+      true,
+    ],
+    [
+      "another secondary storage",
+      input(set(cluster("storageRef"), "other")),
+      true,
+    ],
+  ];
+
+  it.each(cases)("%s: %s", (_, i, expected) => {
+    expect(restartsBrokers(i)).toBe(expected);
+  });
+
+  it("a release that the lists do not hold restarts the brokers", () => {
+    expect(
+      restartsBrokers(
+        input(set([f("spec"), f("releaseRef")], "camunda-8-11-0")),
+      ),
+    ).toBe(true);
+  });
+
+  it("a live preset that the lists do not hold restarts the brokers", () => {
+    expect(
+      restartsBrokers(
+        input(set(cluster("zeebe", "storageSize"), "64Gi"), {
+          live: live({ presetRef: "retired" }),
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is true for every change whose impacts restart the brokers", () => {
+    const restarts = (line: string) =>
+      line === "Broker pods restart." ||
+      line === RESTART_ALL ||
+      line.endsWith("runs in the brokers, which restarts.") ||
+      line === "Every workload goes to zero. The volumes stay.";
+    for (const [name, i] of cases)
+      if (clusterImpacts(i).some(restarts))
+        expect(restartsBrokers(i), name).toBe(true);
+  });
+
+  it("classifies every top-level field of CamundaClusterSpec", () => {
+    const source = readFileSync(
+      new URL("../../generated/crds/camundacluster.ts", import.meta.url),
+      "utf8",
+    );
+    const body = /^export interface CamundaClusterSpec \{\n([\s\S]*?)^\}/m.exec(
+      source,
+    )?.[1];
+    expect(body).toBeDefined();
+    const fields = [...body!.matchAll(/^ {2}(\w+)\??:/gm)]
+      .map((m) => m[1])
+      .sort();
+    expect(fields.length).toBeGreaterThan(20);
+    expect(Object.keys(SPEC_FIELDS).sort()).toEqual(fields);
   });
 });
