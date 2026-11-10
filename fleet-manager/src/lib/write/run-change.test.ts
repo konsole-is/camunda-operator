@@ -399,7 +399,7 @@ const environmentRef = {
   name: "staging",
 };
 const label = (
-  labels: Record<string, string>,
+  labels: Record<string, unknown>,
   extra: { metadata?: object; spec?: object } = {},
 ) => ({
   intent: "Add team-a to staging",
@@ -418,90 +418,156 @@ const STAGING = { "fleet.camunda.io/environment": "staging" };
 
 describe("adminChangeSchema", () => {
   const schema = adminChangeSchema(["Environment"]);
+  const update = {
+    intent: "Save staging",
+    apply: [environmentObject],
+    preconditions: { "Environment//staging": "3" },
+    force: true,
+  };
+  const remove = {
+    intent: "Delete staging",
+    apply: [],
+    delete: [environmentRef],
+    preconditions: { "Environment//staging": "3" },
+  };
+  const create = {
+    intent: "Create staging",
+    apply: [environmentObject],
+    create: ["Environment//staging"],
+  };
+  const preset = {
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaCluster",
+    metadata: { name: "orders", namespace: "team-a" },
+    spec: {},
+  };
+  const clusters = adminChangeSchema(["CamundaCluster"], ["team-a"]);
 
-  it("accepts an apply of a kind of the page with a precondition and force", () =>
-    expect(
-      schema.safeParse({
-        intent: "Save staging",
-        apply: [environmentObject],
-        preconditions: { "Environment//staging": "3" },
-        force: true,
-      }).success,
-    ).toBe(true));
-
-  it("accepts a delete of a kind of the page", () =>
-    expect(
-      schema.safeParse({
-        intent: "Delete staging",
-        apply: [],
-        delete: [environmentRef],
-      }).success,
-    ).toBe(true));
-
-  it("refuses an apply of another kind", () => {
-    const result = schema.safeParse({
-      intent: "x",
-      apply: [
-        environmentObject,
-        { ...environmentObject, kind: "CamundaRelease" },
-      ],
-    });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0].message).toBe(
-      "The change must write only Environment.",
-    );
-  });
-
-  it("refuses a delete of another kind", () =>
-    expect(
-      schema.safeParse({
+  it.each([
+    ["an update with its precondition and force", schema, update],
+    ["a delete with its precondition", schema, remove],
+    ["a create", schema, create],
+    [
+      "a namespaced object in a namespace that the page writes",
+      clusters,
+      {
         intent: "x",
-        apply: [],
+        apply: [preset],
+        preconditions: { "CamundaCluster/team-a/orders": "4" },
+      },
+    ],
+  ])("accepts %s", (_, s, change) =>
+    expect(s.safeParse(change).success).toBe(true),
+  );
+
+  it.each([
+    [
+      "an apply of another kind",
+      schema,
+      {
+        ...update,
+        apply: [{ ...environmentObject, kind: "CamundaRelease" }],
+        preconditions: { "CamundaRelease//staging": "3" },
+      },
+    ],
+    [
+      "a delete of another kind",
+      schema,
+      {
+        ...remove,
         delete: [{ ...environmentRef, kind: "Namespace", apiVersion: "v1" }],
-      }).success,
-    ).toBe(false));
-
-  it("accepts a create of an object of the page", () =>
-    expect(
-      schema.safeParse({
-        intent: "Create staging",
-        apply: [environmentObject],
-        create: ["Environment//staging"],
-      }).success,
-    ).toBe(true));
-
-  it("refuses directOnly", () =>
-    expect(
-      schema.safeParse({
+        preconditions: { "Namespace//staging": "3" },
+      },
+    ],
+    [
+      "another apiVersion of the kind",
+      schema,
+      {
+        ...update,
+        apply: [{ ...environmentObject, apiVersion: "fleet.camunda.io/v1" }],
+      },
+    ],
+    [
+      "a namespace on a cluster-scoped kind",
+      schema,
+      {
+        ...update,
+        apply: [
+          {
+            ...environmentObject,
+            metadata: { name: "staging", namespace: "team-a" },
+          },
+        ],
+        preconditions: { "Environment/team-a/staging": "3" },
+      },
+    ],
+    [
+      "a namespace that the page does not write",
+      clusters,
+      {
         intent: "x",
-        apply: [environmentObject],
-        directOnly: true,
-      }).success,
-    ).toBe(false));
+        apply: [
+          { ...preset, metadata: { name: "orders", namespace: "kube-system" } },
+        ],
+        preconditions: { "CamundaCluster/kube-system/orders": "4" },
+      },
+    ],
+    [
+      "an update without its precondition",
+      schema,
+      { ...update, preconditions: undefined },
+    ],
+    [
+      "a delete without its precondition",
+      schema,
+      { ...remove, preconditions: undefined },
+    ],
+    ["force on a create", schema, { ...create, force: true }],
+    ["force on a delete", schema, { ...remove, force: true }],
+    [
+      "a metadata field outside name, namespace, labels, and annotations",
+      schema,
+      {
+        ...update,
+        apply: [
+          {
+            ...environmentObject,
+            metadata: { name: "staging", finalizers: ["x"] },
+          },
+        ],
+      },
+    ],
+    [
+      "a status",
+      schema,
+      { ...update, apply: [{ ...environmentObject, status: {} }] },
+    ],
+    ["directOnly", schema, { ...update, directOnly: true }],
+  ])("refuses %s", (_, s, change) =>
+    expect(s.safeParse(change).success).toBe(false),
+  );
 });
 
 describe("namespaceLabelChangeSchema", () => {
-  it("accepts one Namespace with only the environment label and directOnly", () =>
+  it("accepts one Namespace with the environment label, the precondition, and directOnly", () =>
     expect(namespaceLabelChangeSchema.safeParse(label(STAGING)).success).toBe(
       true,
     ));
 
-  it("accepts the resourceVersion that the page read", () =>
+  it("accepts the other labels and the annotations that the app owns", () =>
     expect(
       namespaceLabelChangeSchema.safeParse(
-        label(STAGING, { metadata: { resourceVersion: "7" } }),
+        label(
+          { ...STAGING, team: "a" },
+          { metadata: { annotations: { note: "x" }, resourceVersion: "7" } },
+        ),
       ).success,
     ).toBe(true));
 
-  it("refuses another label", () => {
-    const result = namespaceLabelChangeSchema.safeParse(
-      label({ ...STAGING, team: "a" }),
-    );
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0].message).toBe(
-      "The change must set the environment label of one namespace and nothing else.",
-    );
-  });
+  it("refuses a Namespace without the environment label", () =>
+    expect(
+      namespaceLabelChangeSchema.safeParse(label({ team: "a" })).success,
+    ).toBe(false));
 
   it("refuses an empty environment label", () =>
     expect(
@@ -510,17 +576,26 @@ describe("namespaceLabelChangeSchema", () => {
       ).success,
     ).toBe(false));
 
-  it("refuses a Namespace with a spec or annotations", () => {
-    expect(
-      namespaceLabelChangeSchema.safeParse(label(STAGING, { spec: {} }))
-        .success,
-    ).toBe(false);
-    expect(
-      namespaceLabelChangeSchema.safeParse(
-        label(STAGING, { metadata: { annotations: {} } }),
-      ).success,
-    ).toBe(false);
+  it("refuses a field outside the labels and the annotations", () => {
+    const refused = (change: object) => {
+      const result = namespaceLabelChangeSchema.safeParse(change);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0].message).toBe(
+        "The change must write only the labels and annotations of one namespace.",
+      );
+    };
+    refused(label(STAGING, { spec: {} }));
+    refused(label(STAGING, { metadata: { finalizers: ["x"] } }));
+    refused(label(STAGING, { metadata: { labels: { team: 1 } } }));
   });
+
+  it("refuses a change without the resourceVersion that the page read", () =>
+    expect(
+      namespaceLabelChangeSchema.safeParse({
+        ...label(STAGING),
+        preconditions: undefined,
+      }).success,
+    ).toBe(false));
 
   it("refuses an object of another kind", () => {
     const change = label(STAGING);

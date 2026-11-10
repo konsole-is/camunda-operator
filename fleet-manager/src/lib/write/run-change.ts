@@ -1,11 +1,12 @@
 import "server-only";
 import { z } from "zod";
-import type { KindName } from "@/lib/k8s/kinds";
+import { apiVersionOf, KindMap, type KindName } from "@/lib/k8s/kinds";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { refKey, refOf } from "./refs";
 import type {
   ApiError,
   Change,
+  RefKey,
   KubeObject,
   ObjectRef,
   Preview,
@@ -144,57 +145,104 @@ export async function createClaim(input: unknown): Promise<WriteResult> {
 }
 
 /**
- * adminChangeSchema accepts a Change of a Setup page: each object that it
- * applies or deletes has a kind of kinds. It allows deletes, preconditions,
- * create, and force, and refuses directOnly.
+ * adminChangeSchema accepts a Change of a Setup page. It allows deletes,
+ * preconditions, create, and force, under these rules. Each object that it
+ * applies or deletes has a kind of kinds, with the apiVersion of that
+ * kind. An object of a cluster-scoped kind has no namespace, and an object
+ * of a namespaced kind has a namespace of namespaces. Each delete, and each
+ * apply that create does not list, has a precondition. force is allowed
+ * only on a change whose applies are all updates and that deletes nothing.
+ * An applied object holds no status, and its metadata holds only name,
+ * namespace, labels, and annotations. directOnly is refused.
  */
 export function adminChangeSchema(
   kinds: readonly KindName[],
+  namespaces: readonly string[] = [],
 ): z.ZodType<Change> {
-  const allowed: readonly string[] = kinds;
+  const placed = (o: {
+    kind: string;
+    apiVersion: string;
+    namespace?: string;
+  }) => {
+    if (!(kinds as readonly string[]).includes(o.kind)) return false;
+    const info = KindMap[o.kind as KindName];
+    if (o.apiVersion !== apiVersionOf(info)) return false;
+    return info.scope === "Cluster"
+      ? o.namespace === undefined
+      : o.namespace !== undefined && namespaces.includes(o.namespace);
+  };
   return changeSchema.refine(
-    (c) =>
-      [...c.apply, ...(c.delete ?? [])].every((o) =>
-        allowed.includes(o.kind),
-      ) && c.directOnly === undefined,
+    (c) => {
+      const created = c.create ?? [];
+      const guarded = (key: RefKey) => c.preconditions?.[key] !== undefined;
+      return (
+        c.apply.every(
+          (o) =>
+            placed({ ...o, namespace: o.metadata.namespace }) &&
+            o.status === undefined &&
+            onlyKeys(o.metadata, [
+              "name",
+              "namespace",
+              "labels",
+              "annotations",
+            ]) &&
+            (created.includes(refKey(refOf(o))) || guarded(refKey(refOf(o)))),
+        ) &&
+        (c.delete ?? []).every((r) => placed(r) && guarded(refKey(r))) &&
+        (c.force === undefined ||
+          (created.length === 0 && (c.delete ?? []).length === 0)) &&
+        c.directOnly === undefined
+      );
+    },
     { message: `The change must write only ${kinds.join(", ")}.` },
   );
 }
 
 /**
  * namespaceLabelChangeSchema accepts a Change that applies exactly one
- * Namespace that holds only metadata.name and the label ENVIRONMENT_LABEL
- * with a value, with directOnly true, and no delete and no force. The
- * Namespace may carry the resourceVersion that the page read.
+ * Namespace, with a precondition on that Namespace, with directOnly true,
+ * and with no delete and no force. Besides metadata.name, the Namespace
+ * holds only string maps of labels and annotations. The Namespace may
+ * carry the resourceVersion that the page read. The label
+ * ENVIRONMENT_LABEL has a non-empty string value.
  */
 export const namespaceLabelChangeSchema: z.ZodType<Change> =
   changeSchema.refine(
     (c) =>
       c.apply.length === 1 &&
-      onlyEnvironmentLabel(c.apply[0]) &&
+      onlyLabelsAndAnnotations(c.apply[0]) &&
+      c.preconditions?.[refKey(refOf(c.apply[0]))] !== undefined &&
       c.directOnly === true &&
       c.delete === undefined &&
       c.force === undefined,
     {
       message:
-        "The change must set the environment label of one namespace and nothing else.",
+        "The change must write only the labels and annotations of one namespace.",
     },
   );
 
-function onlyEnvironmentLabel(object: KubeObject): boolean {
+function onlyLabelsAndAnnotations(object: KubeObject): boolean {
   const { metadata } = object;
-  const labels = metadata.labels;
+  const labels = metadata.labels ?? {};
   return (
     object.apiVersion === "v1" &&
     object.kind === "Namespace" &&
     onlyKeys(object, ["apiVersion", "kind", "metadata"]) &&
-    onlyKeys(metadata, ["name", "labels", "resourceVersion"]) &&
-    typeof labels === "object" &&
-    labels !== null &&
-    onlyKeys(labels, [ENVIRONMENT_LABEL]) &&
+    onlyKeys(metadata, ["name", "labels", "annotations", "resourceVersion"]) &&
+    isStringMap(labels) &&
+    isStringMap(metadata.annotations ?? {}) &&
     typeof (labels as Record<string, unknown>)[ENVIRONMENT_LABEL] ===
       "string" &&
     (labels as Record<string, string>)[ENVIRONMENT_LABEL] !== ""
+  );
+}
+
+function isStringMap(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((v) => typeof v === "string")
   );
 }
 
