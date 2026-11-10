@@ -223,7 +223,7 @@ Then set `prometheus.credentialsSecretRef` to `fleet-prometheus`. Without the se
 
 ## Metrics of the charts
 
-The **Metrics** tab of a component on the cluster page shows the live CPU and memory of each pod, then charts over the last hour, 6 hours, or 24 hours. The live rows come from metrics-server. The charts come from Prometheus, and each chart reads one metric:
+The **Metrics** tab of a component on the cluster page shows the live CPU and memory of each pod. Below them, it shows charts over the last hour, 6 hours, or 24 hours. The live rows come from metrics-server. The charts come from Prometheus, and each chart reads one metric:
 
 | Chart | Metric | Where Prometheus gets it |
 | --- | --- | --- |
@@ -236,9 +236,9 @@ The **Metrics** tab of a component on the cluster page shows the live CPU and me
 | Requests dropped by backpressure | `zeebe_dropped_request_count_total` | The brokers |
 | Partition health | `zeebe_health` | The brokers |
 
-Each chart has one line for each pod. The Disk used chart has one line for each PersistentVolumeClaim, so a component whose pods have no PersistentVolumeClaim, such as the gateway, has no Disk used chart. Prometheus must keep the labels `namespace` and `pod` on each series, and `namespace` and `persistentvolumeclaim` on the disk series. The kubelet and cAdvisor metrics carry these labels when Prometheus scrapes the kubelet. A `ServiceMonitor` or a `PodMonitor` of the Prometheus Operator adds `namespace` and `pod` to the metrics of the brokers.
+Each chart has one line for each pod. The Disk used chart has one line for each PersistentVolumeClaim. A component whose pods have no PersistentVolumeClaim, such as the gateway, has no Disk used chart. Prometheus must keep the labels `namespace` and `pod` on each series, and `namespace` and `persistentvolumeclaim` on the disk series. The kubelet and cAdvisor metrics carry these labels when Prometheus scrapes the kubelet. A `ServiceMonitor` or a `PodMonitor` of the Prometheus Operator adds `namespace` and `pod` to the metrics of the brokers.
 
-Camunda documents the metrics of the brokers in [Camunda components metrics](https://docs.camunda.io/docs/self-managed/operational-guides/monitoring/metrics/#available-metrics). The fleet manager shows the five charts of the brokers for each Camunda 8.9 patch release, from 8.9.0, because the 8.9 metrics page names these metrics. The version is the one that the cluster reports in `status.management.version`. For another version, for a pre-release, and while the cluster reports no version, the Metrics tab of the brokers shows only CPU, Memory, and Disk used.
+Camunda documents the metrics of the brokers in [Camunda components metrics](https://docs.camunda.io/docs/self-managed/operational-guides/monitoring/metrics/#available-metrics). The fleet manager shows the five charts of the brokers for each Camunda 8.9 patch release. The 8.9 metrics page names these metrics. The version is the one that the cluster reports in `status.management.version`. For another version, a pre-release, or a cluster without a reported version, the Metrics tab of the brokers shows only CPU, Memory, and Disk used.
 
 A chart without data for the range does not show. When no chart has data, the tab shows `No metric has data for this range.` Without `prometheus.url`, the tab shows `Prometheus is not configured, so the charts do not show.` When Prometheus does not answer, the tab shows `Prometheus did not answer. The charts show again when it answers.`
 
