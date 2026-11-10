@@ -441,7 +441,10 @@ describe("adminChangeSchema", () => {
   it("refuses an apply of another kind", () => {
     const result = schema.safeParse({
       intent: "x",
-      apply: [environmentObject, { ...environmentObject, kind: "CamundaRelease" }],
+      apply: [
+        environmentObject,
+        { ...environmentObject, kind: "CamundaRelease" },
+      ],
     });
     expect(result.success).toBe(false);
     expect(result.error?.issues[0].message).toBe(

@@ -457,10 +457,15 @@ describe("the direct writer against envtest", () => {
 
   it("a Namespace apply with only the environment label adds the label and keeps the labels of another manager", async () => {
     const labelled = `label-${randomUUID().slice(0, 8)}`;
-    const created = await api.create({
+    await api.create({
       apiVersion: "v1",
       kind: "Namespace",
       metadata: { name: labelled, labels: { team: "a" } },
+    });
+    const created = await api.read({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: labelled },
     });
 
     const result = await writer.apply({
