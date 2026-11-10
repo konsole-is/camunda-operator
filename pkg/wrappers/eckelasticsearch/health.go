@@ -38,10 +38,19 @@ import (
 // is Ready. A missing or unknown health is Creating only on the first apply,
 // when ECK has simply not formed the cluster yet; on any later reconcile ECK
 // also reports unknown when it loses contact with a formed cluster, so it maps
-// to Failing, mirroring the grace handler's unknown-to-Down.
+// to Failing, mirroring the grace handler's unknown-to-Down. While ECK has
+// not observed the current generation of the spec, the status describes an
+// older spec, so the handler reports Creating on the first apply and Updating
+// otherwise, whatever the health.
 func DefaultConvergingStatusHandler(
 	op concepts.ConvergingOperation, es *esv1.Elasticsearch,
 ) (concepts.AliveStatusWithReason, error) {
+	if status := concepts.StaleGenerationStatus(
+		op, es.Status.ObservedGeneration, es.Generation, "Elasticsearch",
+	); status != nil {
+		return *status, nil
+	}
+
 	switch es.Status.Health {
 	case esv1.ElasticsearchGreenHealth:
 		if es.Status.AvailableNodes > 0 {
@@ -90,11 +99,22 @@ func DefaultConvergingStatusHandler(
 // DefaultGraceStatusHandler grades a cluster that is still not converged
 // after the grace period: green with a Ready Elasticsearch pod is Healthy,
 // yellow is Degraded (some replicas unassigned but serving), and red,
-// unreported health, or green with no Ready pod is Down.
+// unreported health, or green with no Ready pod is Down. Green with a Ready
+// pod is Degraded instead of Healthy while ECK has not observed the current
+// generation of the spec.
 func DefaultGraceStatusHandler(es *esv1.Elasticsearch) (concepts.GraceStatusWithReason, error) {
 	switch es.Status.Health {
 	case esv1.ElasticsearchGreenHealth:
 		if es.Status.AvailableNodes > 0 {
+			if stale := concepts.StaleGenerationStatus(
+				concepts.ConvergingOperationNone, es.Status.ObservedGeneration, es.Generation, "Elasticsearch",
+			); stale != nil {
+				return concepts.GraceStatusWithReason{
+					Status: concepts.GraceStatusDegraded,
+					Reason: stale.Reason,
+				}, nil
+			}
+
 			return concepts.GraceStatusWithReason{
 				Status: concepts.GraceStatusHealthy,
 				Reason: "Elasticsearch reports green health",

@@ -531,10 +531,10 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 
 		expectElasticsearchClusterReady(
 			cluster, metav1.ConditionFalse,
-			// Before ECK reports health, the first reconcile sees Creating and
-			// any later reconcile sees Failing (health unreported past the
-			// first apply). envtest runs no ECK, so both are valid here.
-			SatisfyAny(Equal(string(component.AliveCreating)), Equal(string(component.AliveFailing))),
+			// Before ECK observes the spec, the first reconcile sees Creating
+			// and any later reconcile sees Updating. envtest runs no ECK, so
+			// both are valid here.
+			SatisfyAny(Equal(string(component.AliveCreating)), Equal(string(component.AliveUpdating))),
 			HavePrefix("elasticsearch: "),
 		)
 	})
