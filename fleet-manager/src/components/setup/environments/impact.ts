@@ -1,5 +1,7 @@
 import type { Environment } from "@/generated/crds/environment";
+import { CLAIM_LABEL } from "@/lib/labels";
 import {
+  byCodeUnit,
   type ClaimKind,
   equalJSON,
   type PluginSelection,
@@ -54,6 +56,11 @@ export type EnvironmentImpact = {
   clusters: number;
   planes: number;
   warnings: ReferenceWarning[];
+  /**
+   * unassigned are the namespaces that hold claims and no environment label
+   * when the edit creates the first environment, sorted.
+   */
+  unassigned?: string[];
 };
 
 type Claim = {
@@ -105,11 +112,41 @@ export function environmentImpact(
     }
     impact.warnings.push(
       ...warningsOf(ref, claim, before, edited).map((w) =>
-        refusedMove(w, before.spec.releases?.default, s),
+        refusedMove(w, runningVersion(claim, before, s), s),
       ),
     );
   }
+  if (!live && s.environments.length === 0) {
+    const unassigned = [
+      ...new Set(
+        [...s.clusterClaims, ...s.planeClaims]
+          .map((c) => c.metadata.namespace ?? "")
+          .filter((ns) => !namespaces.has(ns)),
+      ),
+    ].sort(byCodeUnit);
+    if (unassigned.length > 0) impact.unassigned = unassigned;
+  }
   return impact;
+}
+
+// runningVersion returns the version that the cluster of claim reports, or
+// the version of the default release of before when the cluster reports
+// none.
+function runningVersion(
+  claim: Claim,
+  before: Environment | undefined,
+  s: EnvironmentSources,
+): string | undefined {
+  const cluster = s.clusters.find(
+    (c) =>
+      c.metadata?.namespace === claim.metadata.namespace &&
+      c.metadata?.labels?.[CLAIM_LABEL] === claim.metadata.name,
+  );
+  return (
+    cluster?.status?.management?.version ||
+    s.releases.find((r) => r.metadata.name === before?.spec.releases?.default)
+      ?.spec.version
+  );
 }
 
 /**
@@ -132,9 +169,10 @@ export function namespaceImpact(
       namespace,
       name: claim.metadata.name ?? "",
     };
+    const running = runningVersion(claim, undefined, s);
     const release = environment.spec.releases?.default;
     const config = environment.spec.platformConfigRef;
-    return [
+    const warnings: ReferenceWarning[] = [
       ...(claim.kind === "CamundaClusterClaim" &&
       !claim.spec.releaseRef &&
       release
@@ -158,6 +196,7 @@ export function namespaceImpact(
           ]
         : []),
     ];
+    return warnings.map((w) => refusedMove(w, running, s));
   });
 }
 
@@ -242,17 +281,15 @@ function defaultWarnings(
 // run, or more than one minor above it in the same major.
 function refusedMove(
   warning: ReferenceWarning,
-  previous: string | undefined,
+  running: string | undefined,
   s: EnvironmentSources,
 ): ReferenceWarning {
   if (!("followsDefault" in warning) || warning.kind !== "CamundaRelease")
     return warning;
-  const version = (name: string | undefined) =>
-    parseVersion(
-      s.releases.find((r) => r.metadata.name === name)?.spec.version,
-    );
-  const have = version(previous);
-  const want = version(warning.name);
+  const have = parseVersion(running);
+  const want = parseVersion(
+    s.releases.find((r) => r.metadata.name === warning.name)?.spec.version,
+  );
   if (!have || !want) return warning;
   const index = want.findIndex((n, i) => n !== have[i]);
   if (index >= 0 && want[index] < have[index])
@@ -270,7 +307,7 @@ function parseVersion(version: string | undefined): number[] | undefined {
 /**
  * withoutKept returns impact without each removed warning whose release or
  * cluster preset kept, the spec that the dry run of the save gives, still
- * allows. Another field manager keeps such a member. Without kept it
+ * allows, and without each cleared warning whose default kept still has. Another field manager keeps such a member. Without kept it
  * returns impact.
  */
 export function withoutKept(
@@ -278,12 +315,19 @@ export function withoutKept(
   kept: Environment["spec"] | undefined,
 ): EnvironmentImpact {
   if (!kept) return impact;
-  const still = (w: ReferenceWarning) =>
-    "removed" in w &&
-    (w.kind === "CamundaRelease"
-      ? (kept.releases?.allowed ?? [])
-      : (kept.presets?.camundaCluster ?? [])
-    ).includes(w.name);
+  const still = (w: ReferenceWarning) => {
+    if ("cleared" in w)
+      return w.kind === "CamundaRelease"
+        ? Boolean(kept.releases?.default)
+        : Boolean(kept.platformConfigRef);
+    return (
+      "removed" in w &&
+      (w.kind === "CamundaRelease"
+        ? (kept.releases?.allowed ?? [])
+        : (kept.presets?.camundaCluster ?? [])
+      ).includes(w.name)
+    );
+  };
   return { ...impact, warnings: impact.warnings.filter((w) => !still(w)) };
 }
 

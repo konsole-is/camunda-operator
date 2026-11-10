@@ -221,7 +221,7 @@ describe("environmentImpact", () => {
     ["8.9.0", "VersionDowngradeRefused"],
     ["8.11.0", "VersionSkipRefused"],
   ])(
-    "marks a new default release %s that the cluster refuses as %s",
+    "marks a new default release %s that the cluster refuses as %s, by the old default without a reported version",
     (version, refused) => {
       const live = environment({
         releases: { allowed: ["old", "new"], default: "old" },
@@ -251,6 +251,71 @@ describe("environmentImpact", () => {
       ]);
     },
   );
+
+  it("checks a new default release against the version that the cluster reports", () => {
+    const live = environment({
+      releases: { allowed: ["old", "new"], default: "old" },
+    });
+    const releases = [
+      { metadata: { name: "old" }, spec: { version: "8.10.0" } },
+      { metadata: { name: "new" }, spec: { version: "8.11.0" } },
+    ] as unknown as EnvironmentSources["releases"];
+    const clusters = [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "CamundaCluster",
+        metadata: {
+          namespace: "team-a",
+          name: "orders",
+          labels: { "fleet.camunda.io/claim": "orders" },
+        },
+        spec: {},
+        status: { management: { version: "8.9.0" } },
+      },
+    ] as unknown as EnvironmentSources["clusters"];
+    expect(
+      environmentImpact(
+        live,
+        edit({ releases: { allowed: ["old", "new"], default: "new" } }),
+        sources({
+          clusterClaims: [clusterClaim("orders")],
+          releases,
+          clusters,
+        }),
+      ).warnings,
+    ).toMatchObject([{ name: "new", refused: "VersionSkipRefused" }]);
+  });
+
+  it("names the namespaces whose claims a first environment leaves without one", () => {
+    expect(
+      environmentImpact(
+        undefined,
+        edit({}),
+        sources({
+          environments: [],
+          namespaces: [namespace("team-a", "staging"), namespace("legacy")],
+          clusterClaims: [
+            clusterClaim("orders"),
+            clusterClaim("old", {}, undefined, "legacy"),
+          ],
+        }),
+      ).unassigned,
+    ).toEqual(["legacy"]);
+  });
+
+  it("names no namespace when environments exist already", () => {
+    expect(
+      environmentImpact(
+        undefined,
+        edit({}),
+        sources({
+          environments: [environment({})],
+          namespaces: [namespace("legacy")],
+          clusterClaims: [clusterClaim("old", {}, undefined, "legacy")],
+        }),
+      ).unassigned,
+    ).toBeUndefined();
+  });
 
   it("lists a claim without a platformConfigRef when the default platform config changes", () => {
     expect(
@@ -315,12 +380,13 @@ describe("environmentImpact", () => {
     ]);
   });
 
-  it("has no claims and no warnings for a new environment", () => {
+  it("has no claims and no warnings for a new environment beside others", () => {
     expect(
       environmentImpact(
         undefined,
         edit({ releases: { allowed: ["8.9.2"], default: "8.9.2" } }),
         sources({
+          environments: [environment({})],
           namespaces: [],
           clusterClaims: [clusterClaim("orders", {}, DELETE)],
         }),
@@ -474,6 +540,29 @@ describe("withoutKept", () => {
         presets: { camundaCluster: ["large"] },
       }).warnings,
     ).toEqual([impact.warnings[1]]);
+  });
+
+  it("drops a cleared warning whose default the saved spec still has", () => {
+    const cleared = {
+      clusters: 0,
+      planes: 0,
+      warnings: [
+        {
+          claim: orders,
+          kind: "CamundaRelease" as const,
+          cleared: true as const,
+        },
+        {
+          claim: orders,
+          kind: "CamundaPlatformConfig" as const,
+          cleared: true as const,
+        },
+      ],
+    };
+    expect(
+      withoutKept(cleared, { releases: { allowed: ["r"], default: "r" } })
+        .warnings,
+    ).toEqual([cleared.warnings[1]]);
   });
 
   it("keeps every warning without a saved spec", () => {

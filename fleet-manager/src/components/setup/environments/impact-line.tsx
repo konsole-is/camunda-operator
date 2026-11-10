@@ -3,11 +3,19 @@ import type { EnvironmentImpact, ReferenceWarning } from "./impact";
 
 /**
  * impactLines returns the text of impact: the new-claims-only line with the
- * count of the claims that keep their recorded policy, then one line for
- * each warning.
+ * count of the claims that keep their recorded policy, the namespaces that
+ * a first environment leaves without one, then one line for each warning.
  */
 export function impactLines(impact: EnvironmentImpact): string[] {
-  return [countLine(impact), ...impact.warnings.map(warningLine)];
+  return [
+    countLine(impact),
+    ...(impact.unassigned
+      ? [
+          `This is the first environment. The claims in ${impact.unassigned.join(", ")} have no environment label, so they take no change until their namespaces join an environment (NoEnvironment). Their clusters keep running.`,
+        ]
+      : []),
+    ...impact.warnings.map(warningLine),
+  ];
 }
 
 /** ImpactLine shows impactLines as a note above the change bar. */

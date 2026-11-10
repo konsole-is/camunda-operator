@@ -144,6 +144,22 @@ describe("impactLines of a default release that the cluster refuses", () => {
   });
 });
 
+describe("impactLines of a first environment", () => {
+  it("names the namespaces whose claims take no change after it", () => {
+    expect(
+      impactLines({
+        clusters: 0,
+        planes: 0,
+        warnings: [],
+        unassigned: ["legacy", "team-x"],
+      }),
+    ).toEqual([
+      "Changes apply to new claims only.",
+      "This is the first environment. The claims in legacy, team-x have no environment label, so they take no change until their namespaces join an environment (NoEnvironment). Their clusters keep running.",
+    ]);
+  });
+});
+
 describe("ImpactLine", () => {
   it("shows the count and each warning", () => {
     render(
