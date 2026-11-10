@@ -20,9 +20,11 @@ import { ReviewPanel } from "./review-panel";
  * object under diffLabel and each other object as its own diff, the effects,
  * the caution, the errors of the preview, and a note for each field that the
  * preview keeps although the change leaves it out. The confirm stays disabled
- * until the preview is clean. A confirm sends one write. An ok write goes to
- * show with savedMessage, then onWritten. A refused write shows its errors,
- * and the confirm stays disabled unless the API server did not answer.
+ * until the preview is clean. The confirm also stays disabled when every
+ * previewed object is unchanged. A confirm sends one write, and Back is
+ * hidden while it runs. An ok write goes to show with savedMessage, then
+ * onWritten. A refused write shows its errors, and the confirm stays
+ * disabled unless the API server did not answer.
  */
 export function ChangeReview({
   change,
@@ -89,9 +91,15 @@ export function ChangeReview({
 
   const checked = previewed?.change === change ? previewed.result : undefined;
   const writeErrors = refused?.change === change ? refused.errors : [];
+  const changesNothing =
+    checked !== undefined &&
+    checked.errors.length === 0 &&
+    checked.objects.length > 0 &&
+    checked.objects.every((o) => o.diff.every((line) => line.op === "same"));
   const blocked =
     !checked ||
     checked.errors.length > 0 ||
+    changesNothing ||
     writeErrors.some((e) => e.code !== "Unavailable");
   const alerts = [...(checked?.errors ?? []), ...writeErrors].map(textOf);
   const kept = (checked?.objects ?? []).flatMap((object) => {
@@ -148,6 +156,9 @@ export function ChangeReview({
               Checking the change with the API server.
             </p>
           )}
+          {changesNothing && (
+            <p className="text-sm text-muted">The change writes nothing.</p>
+          )}
           {kept.length > 0 && (
             <div role="note" aria-label="Kept fields">
               <ul className="flex flex-col gap-1 text-sm text-text-2">
@@ -183,7 +194,7 @@ export function ChangeReview({
       danger={danger}
       pending={writing || blocked}
       onConfirm={confirm}
-      onCancel={onCancel}
+      onCancel={writing ? undefined : onCancel}
     />
   );
 }

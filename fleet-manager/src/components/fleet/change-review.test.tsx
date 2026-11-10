@@ -122,9 +122,10 @@ function setup({
 } = {}) {
   const props = {
     preview: vi.fn(async () => preview),
-    apply: vi.fn(async () => result),
+    apply: vi.fn<(change: Change) => Promise<WriteResult>>(async () => result),
     show: vi.fn(),
     onWritten: vi.fn(),
+    onCancel: vi.fn(),
   };
   render(
     <ChangeReview
@@ -273,6 +274,35 @@ describe("ChangeReview", () => {
       expect(
         screen.getByRole("figure", { name: "Changes to Namespace team-a" }),
       ).toBeTruthy(),
+    );
+  });
+
+  it("keeps the confirm disabled when the preview changes nothing", async () => {
+    setup({
+      preview: {
+        objects: [
+          {
+            ...clean.objects[0],
+            diff: [{ op: "same", text: "spec:" }],
+          },
+        ],
+        errors: [],
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByText("The change writes nothing.")).toBeTruthy(),
+    );
+    expect(confirm()).toHaveProperty("disabled", true);
+  });
+
+  it("offers Back while the preview runs, and hides it while the write runs", async () => {
+    const { apply } = setup();
+    expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    apply.mockImplementation(() => new Promise<WriteResult>(() => {}));
+    fireEvent.click(confirm());
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Back" })).toBeNull(),
     );
   });
 });
