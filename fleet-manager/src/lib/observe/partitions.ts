@@ -5,7 +5,7 @@ import { CLUSTER_LABEL, COMPONENT_LABEL } from "@/lib/labels";
 import { ownerName } from "@/lib/labels/server";
 import { readSecretValues } from "@/lib/secrets/values";
 import { promRange } from "./prometheus";
-import { PARTITION_HEALTH, renderCoreQuery } from "./queries";
+import { PARTITION_HEALTH, inVersionRange, renderCoreQuery } from "./queries";
 import type {
   PartitionHealth,
   PartitionHealthState,
@@ -98,7 +98,8 @@ export function withHealth(
  * brokerPartitions returns partitionHealth of cluster with the health of
  * each partition from zeebe_health over the 5 minutes before now. The
  * health stays "unknown" when Prometheus is not set, does not answer, or
- * cannot be read. It runs on the server only, and it rejects when
+ * cannot be read, and when the Camunda version of the cluster is outside
+ * the versions of PARTITION_HEALTH; then it asks no Prometheus. It runs on the server only, and it rejects when
  * partitionHealth does.
  */
 export async function brokerPartitions(
@@ -107,6 +108,14 @@ export async function brokerPartitions(
 ): Promise<PartitionHealth[] | Unavailable> {
   const partitions = await partitionHealth(cluster);
   if (partitions === "unavailable") return partitions;
+  if (
+    !inVersionRange(
+      cluster.status?.management?.version,
+      PARTITION_HEALTH.versions,
+    )
+  ) {
+    return partitions;
+  }
   // A broker that does not answer the management API can still report an
   // unhealthy partition to Prometheus.
   const pods = (await brokerPods(cluster)).flatMap((p) =>
