@@ -7,7 +7,8 @@ import { ACCESS_SECTION } from "@/lib/labels";
 import {
   type ClaimKind,
   isObject,
-  parameterPolicies,
+  type PluginSelection,
+  resolve,
   sectionOptions,
 } from "@/lib/policy";
 
@@ -53,13 +54,12 @@ export function renderHosts(
 
 /**
  * defaultAccessPatterns returns the host patterns of the default option of
- * the access section for a claim of claimKind under environment, by
- * parameter, with only the patterns that have a value. It returns undefined
- * when no access section applies to claimKind, when the section has no
- * default option, or when the policy of the default registration is
- * malformed. A create flow shows these hosts before the admin picks an
- * access option, so the step that picks the option must check its hosts
- * again.
+ * the access section for a claim of claimKind under environment, as
+ * accessPatterns gives them. It returns undefined when no access section
+ * applies to claimKind, when the section has no default option, or when the
+ * policy of the default registration is malformed. A create flow shows these
+ * hosts before the user picks an access option, so the step that picks the
+ * option checks its hosts again with accessPatterns.
  */
 export function defaultAccessPatterns(
   sections: readonly PluginSection[],
@@ -78,17 +78,41 @@ export function defaultAccessPatterns(
   const registration = registrations.find(
     (r) => r.metadata.name === option?.registration,
   );
-  if (!registration) return undefined;
-  const result = parameterPolicies(registration, environment);
+  return registration && accessPatterns(registration, environment);
+}
+
+/**
+ * accessPatterns returns the host patterns that registration gives a claim
+ * under environment, by parameter, with only the patterns that have a
+ * value: the policy value, replaced by the value of selection for a
+ * claim-editable parameter. A name of an allowed list becomes the value of
+ * that choice. It returns undefined when the policy of registration is
+ * malformed.
+ */
+export function accessPatterns(
+  registration: PluginRegistration,
+  environment: Environment | undefined,
+  selection?: PluginSelection,
+): Record<string, unknown> | undefined {
+  const result = resolve({
+    environment,
+    registrations: [registration],
+    selections: [
+      {
+        section: ACCESS_SECTION,
+        registration: registration.metadata.name ?? "",
+        ...(selection?.parameters && { parameters: selection.parameters }),
+      },
+    ],
+  });
   if (!("value" in result)) return undefined;
+  const parameters = result.value.requests?.[0]?.parameters ?? {};
   const patterns: Record<string, unknown> = {};
   for (const parameter of HOST_PATTERN_PARAMETERS) {
-    const policy = Object.hasOwn(result.value, parameter)
-      ? result.value[parameter]
+    const value = Object.hasOwn(parameters, parameter)
+      ? parameters[parameter]
       : undefined;
-    if (policy?.value !== undefined && policy.value !== null) {
-      patterns[parameter] = policy.value;
-    }
+    if (value !== undefined && value !== null) patterns[parameter] = value;
   }
   return patterns;
 }
