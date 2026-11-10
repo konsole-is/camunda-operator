@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -16,7 +17,8 @@ import {
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { pathFrom, type ClusterField, type Step } from "@/lib/fields";
-import type { KubeObject } from "@/lib/write/types";
+import type { Resource } from "@/lib/k8s/kinds";
+import type { KubeObject, WriteResult } from "@/lib/write/types";
 import { FakeEventSource } from "../../../../test/fakes/event-source";
 import {
   claim,
@@ -25,7 +27,11 @@ import {
 } from "../../../../test/fakes/slot-context";
 import { fakeWriter } from "../../../../test/fakes/writer";
 import type { ClusterSlotContext } from "../slots";
-import { ClusterEditProvider, useClusterEdit } from "./cluster-edit";
+import {
+  type ClaimActions,
+  ClusterEditProvider,
+  useClusterEdit,
+} from "./cluster-edit";
 
 vi.mock("@/lib/write/writer", () => import("../../../../test/fakes/writer"));
 
@@ -37,6 +43,7 @@ const replicas: Step[] = [
   { field: "replicas" },
 ];
 const releaseRef: Step[] = [{ field: "spec" }, { field: "releaseRef" }];
+const presetRef: Step[] = [{ field: "spec" }, { field: "presetRef" }];
 const PRECONDITION = "CamundaClusterClaim/team-a/orders";
 
 // Probe is an editor: it changes the claim only through useClusterEdit.
@@ -64,6 +71,7 @@ function Probe() {
       <button onClick={() => edit.set(releaseRef, "missing")}>
         Missing release
       </button>
+      <button onClick={() => edit.set(presetRef, "large")}>Large preset</button>
       <button
         onClick={() => {
           edit.set(suspend, true);
@@ -87,23 +95,34 @@ function Probe() {
   );
 }
 
-function Page({ context }: { context: ClusterSlotContext }) {
+const serverActions: ClaimActions = {
+  preview: previewClaimChange,
+  apply: applyClaimChange,
+};
+
+function Page({
+  context,
+  actions,
+}: {
+  context: ClusterSlotContext;
+  actions: ClaimActions;
+}) {
   return (
-    <ClusterEditProvider
-      context={context}
-      actions={{ preview: previewClaimChange, apply: applyClaimChange }}
-    >
+    <ClusterEditProvider context={context} actions={actions}>
       <Probe />
     </ClusterEditProvider>
   );
 }
 
-function page(context: ClusterSlotContext = slotContext()) {
+function page(
+  context: ClusterSlotContext = slotContext(),
+  actions: ClaimActions = serverActions,
+) {
   const client = new QueryClient();
   const tree = (c: ClusterSlotContext) => (
     <QueryClientProvider client={client}>
       <GitPushesProvider>
-        <Page context={c} />
+        <Page context={c} actions={actions} />
       </GitPushesProvider>
     </QueryClientProvider>
   );
@@ -320,6 +339,71 @@ describe("ClusterEditProvider", () => {
       }),
     );
     expect(dialog()).toBeTruthy();
+  });
+
+  it("a claim update that makes the change invalid closes the review and blocks it", async () => {
+    const environment = (presets: string[]) =>
+      ({
+        kind: "Environment",
+        metadata: { name: "prod" },
+        spec: { presets: { camundaCluster: presets } },
+      }) as unknown as Resource<"Environment">;
+    const presets = ["medium", "large"].map(
+      (name) =>
+        ({
+          kind: "CamundaClusterPreset",
+          metadata: { name },
+          spec: { cluster: {} },
+        }) as unknown as Resource<"CamundaClusterPreset">,
+    );
+    const { update } = page(
+      slotContext({ presets, environment: environment(["medium", "large"]) }),
+    );
+    click("Large preset");
+    openReview();
+    expect(dialog()).toBeTruthy();
+
+    update(slotContext({ presets, environment: environment(["medium"]) }));
+
+    await waitFor(() => expect(dialog()).toBeNull());
+    expect(
+      within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(true);
+    expect(fakeWriter.applied).toEqual([]);
+  });
+
+  it("a claim update that arrives before the save returns is kept", async () => {
+    let resolve: (result: WriteResult) => void = () => {};
+    const actions: ClaimActions = {
+      preview: previewClaimChange,
+      apply: (change) =>
+        applyClaimChange(change).then(
+          (result) =>
+            new Promise<WriteResult>((r) => {
+              resolve = () => r(result);
+            }),
+        ),
+    };
+    const { update } = page(slotContext(), actions);
+    click("Suspend");
+    openReview();
+    await confirm("Save");
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+
+    update(slotContext({ claim: claim("42", { suspend: true }) }));
+    await act(async () => resolve({ ok: true, mode: "direct" }));
+
+    await waitFor(() => expect(dialog()).toBeNull());
+    expect(text("Pending 0")).toBeTruthy();
+    click("Scale");
+    openReview();
+    await confirm("Save");
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+    await act(async () => resolve({ ok: true, mode: "direct" }));
+    expect(fakeWriter.applied[1].preconditions).toEqual({
+      [PRECONDITION]: "42",
+    });
   });
 
   it("a refused write keeps the pending changes and gives the field error", async () => {

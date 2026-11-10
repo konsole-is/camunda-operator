@@ -183,6 +183,7 @@ export function ClusterEditProvider({
 
   const session = edit.session;
   const pending = session?.pending.size ?? 0;
+  const invalid = validationOf(edit.session, context);
   const errors = errorsOf(edit, context);
   const value: ClusterEdit = {
     session,
@@ -195,7 +196,11 @@ export function ClusterEditProvider({
     errors,
   };
 
-  const reviewing = edit.reviewing && session !== undefined && pending > 0;
+  const reviewing =
+    edit.reviewing &&
+    session !== undefined &&
+    pending > 0 &&
+    invalid.length === 0;
   const close = () => update({ ...stateRef.current, reviewing: false });
   const off =
     context.writeMode === undefined &&
@@ -241,18 +246,15 @@ export function ClusterEditProvider({
                   update({ ...stateRef.current, refused: { session, fields } })
                 }
                 onCancel={close}
-                onWritten={() =>
+                onWritten={() => {
+                  const current = stateRef.current;
                   update({
-                    ...stateRef.current,
-                    session: {
-                      claim: claimAfter(session),
-                      pending: new Map(),
-                      locks,
-                    },
+                    ...current,
+                    session: written(current.session, session, locks),
                     refused: undefined,
                     reviewing: false,
-                  })
-                }
+                  });
+                }}
               />
             )}
           </DialogContent>
@@ -321,8 +323,33 @@ function open(
   return openSession({ claim, resource: context.cluster, locks });
 }
 
+// written returns the session after an ok write of saved. A claim update
+// can arrive before the write returns, and then current is already on the
+// newer claim.
+function written(
+  current: Session<ClusterClaim> | undefined,
+  saved: Session<ClusterClaim>,
+  locks: LockProvider,
+): Session<ClusterClaim> | undefined {
+  if (!current) return undefined;
+  const version = (s: Session<ClusterClaim>) =>
+    s.claim.metadata.resourceVersion;
+  if (version(current) !== version(saved)) return current;
+  return rebase(current, claimAfter(saved), locks);
+}
+
 function errorsOf(edit: Edit, context: ClusterSlotContext): FieldError[] {
   const s = edit.session;
+  return [
+    ...validationOf(s, context),
+    ...(s && edit.refused?.session === s ? edit.refused.fields : []),
+  ];
+}
+
+function validationOf(
+  s: Session<ClusterClaim> | undefined,
+  context: ClusterSlotContext,
+): FieldError[] {
   if (!s || s.pending.size === 0) return [];
   return [
     ...validateClusterClaim(s, {
@@ -333,7 +360,6 @@ function errorsOf(edit: Edit, context: ClusterSlotContext): FieldError[] {
       cluster: context.cluster,
       backups: context.backups,
     }),
-    ...(edit.refused?.session === s ? edit.refused.fields : []),
   ];
 }
 
