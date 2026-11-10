@@ -376,8 +376,9 @@ the `MODULES` variable, and `test` has one line for each module. The root
 on-disk copy.
 
 **Releasing:** follow [`RELEASING.md`](RELEASING.md). Run the **Prepare release**
-workflow first. It pins the api module version in the root `go.mod`, and the
-release workflow fails if that pin does not match the tag.
+workflow first. It pins the api and conformance modules in the root `go.mod`
+and the api module in `conformance/go.mod`, and the release workflow fails if
+a pin does not match the tag.
 
 ### Publish Container Images
 
