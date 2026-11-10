@@ -31,7 +31,8 @@ export type NotAttached = {
 /**
  * Plane is one row of the management plane tables. components starts with
  * "Identity". serves holds the environments of the claim, or the selector
- * text when the plane has no claim. servedEnvironments is sorted and
+ * text when the plane has no claim, with noClusterSelector when it has no
+ * cluster selector. servedEnvironments is sorted and
  * distinct. servesNoEnvironment is true when the CamundaManagementCluster
  * of a plane serves a namespace that belongs to no Environment. ready is
  * undefined while no CamundaManagementCluster exists.
@@ -43,7 +44,8 @@ export type Plane = {
   managed: boolean;
   mode?: IdentityMode;
   components: string[];
-  serves: { environments: string[] } | { selector: string };
+  serves:
+    { environments: string[] } | { selector: string; noClusterSelector?: true };
   servedEnvironments: string[];
   servesNoEnvironment?: boolean;
   attached: number;
@@ -105,6 +107,9 @@ export function planesOf(sources: PlaneSources): Plane[] {
         : {
             serves: {
               selector: formatSelector(cluster.spec.namespaceSelector),
+              ...(cluster.spec.clusterSelector
+                ? {}
+                : { noClusterSelector: true as const }),
             },
             ...selected(cluster.spec, sources),
           }),

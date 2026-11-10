@@ -506,6 +506,10 @@ describe("planesIn", () => {
       environments: [environment("production")],
     });
     expect(plane.servedEnvironments).toEqual([]);
+    expect(plane.serves).toEqual({
+      selector: "Every namespace",
+      noClusterSelector: true,
+    });
     expect(planesIn([plane], null)).toEqual([]);
     expect(planesIn([plane], "production")).toEqual([]);
   });
