@@ -190,7 +190,11 @@ function TabContent({
           Management planes
         </h2>
         {shownPlanes.length > 0 ? (
-          <PlanesTable planes={planes} environment={environment} />
+          <PlanesTable
+            planes={planes}
+            environment={environment}
+            toolbar={false}
+          />
         ) : (
           <p className="text-sm text-muted">
             {environment === undefined
@@ -221,7 +225,6 @@ function TabContent({
                   key={group.environment ?? group.label ?? "all"}
                   group={group}
                   filtered={rows.some((r) => inGroup(r, group))}
-                  now={now}
                 />
               ))
             )}
@@ -237,20 +240,11 @@ function inGroup(row: ClusterRow, group: RowGroup): boolean {
   return row.environment === group.environment;
 }
 
-function Group({
-  group,
-  filtered,
-  now,
-}: {
-  group: RowGroup;
-  filtered: boolean;
-  now: string;
-}) {
+function Group({ group, filtered }: { group: RowGroup; filtered: boolean }) {
   const table = (
     <ClusterTable
       label={group.label ?? "Clusters"}
       rows={group.rows}
-      now={now}
       emptyText={filtered ? NO_MATCH : "No cluster in this environment yet."}
     />
   );
@@ -402,7 +396,6 @@ export function FleetViewLive({
       [
         ["CamundaCluster", clusters],
         ["CamundaClusterClaim", claims],
-        ["Environment", environments],
         ["CamundaClusterPreset", presets],
         ["CamundaRelease", releases],
         ["PluginSection", sections],

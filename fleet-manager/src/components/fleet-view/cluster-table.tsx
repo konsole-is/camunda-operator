@@ -32,7 +32,6 @@ export function ClusterTable({
 }: {
   label: string;
   rows: ClusterRow[];
-  now: string;
   emptyText?: string;
 }): ReactNode {
   return (

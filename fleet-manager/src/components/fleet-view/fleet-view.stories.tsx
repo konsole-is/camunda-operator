@@ -236,6 +236,7 @@ const planes = planesOf({
     } as never,
   ],
   namespaces: fleet.namespaces,
+  environments: fleet.environments,
 });
 
 const pushes: PendingPush[] = [
@@ -302,11 +303,7 @@ export const fleetViewStories: Story[] = [
     component: "ClusterTable",
     name: "Mixed states",
     render: () => (
-      <ClusterTable
-        label="Production"
-        rows={clusterRows(fleet, NOW)}
-        now={NOW}
-      />
+      <ClusterTable label="Production" rows={clusterRows(fleet, NOW)} />
     ),
   },
 ];

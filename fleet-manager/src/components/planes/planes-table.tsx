@@ -14,7 +14,7 @@ export type { Plane, PlaneSources } from "./plane";
 export type ReadError = { kind: string; message: string };
 
 /**
- * usePlanes follows the three lists of initial live and returns their
+ * usePlanes follows the four lists of initial live and returns their
  * planes. errors holds the error of each failed watch. The planes then
  * keep the last lists, which can be out of date.
  */
@@ -33,20 +33,23 @@ export function usePlanes(initial: PlaneSources): {
     initial.claims,
   );
   const namespaces = useResources("Namespace", {}, initial.namespaces);
+  const environments = useResources("Environment", {}, initial.environments);
   const planes = useMemo(
     () =>
       planesOf({
         clusters: clusters.items,
         claims: claims.items,
         namespaces: namespaces.items,
+        environments: environments.items,
       }),
-    [clusters.items, claims.items, namespaces.items],
+    [clusters.items, claims.items, namespaces.items, environments.items],
   );
   const errors = (
     [
       ["CamundaManagementCluster", clusters],
       ["CamundaManagementClusterClaim", claims],
       ["Namespace", namespaces],
+      ["Environment", environments],
     ] as const
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
@@ -56,21 +59,23 @@ export function usePlanes(initial: PlaneSources): {
 
 /**
  * PlanesTable shows the planes of planesIn(planes, environment), or nothing
- * when there are none. It has no search box and no filters.
+ * when there are none. With toolbar false it has no search box.
  */
 export function PlanesTable({
   planes,
   environment,
+  toolbar = true,
 }: {
   planes: Plane[];
   environment?: string | null;
+  toolbar?: boolean;
 }): ReactNode {
   const served = planesIn(planes, environment);
   if (served.length === 0) return null;
   return (
     <DataTable
       label="Management planes"
-      toolbar={false}
+      toolbar={toolbar}
       columns={[
         { key: "plane", label: "Management plane" },
         { key: "status", label: "Status" },

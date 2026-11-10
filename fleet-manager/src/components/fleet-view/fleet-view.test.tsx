@@ -156,6 +156,7 @@ const planeSources = {
     managementClaim("plane-b", ["staging"]),
   ],
   namespaces: fleet.namespaces,
+  environments: fleet.environments,
 };
 const planes: Plane[] = planesOf(planeSources);
 

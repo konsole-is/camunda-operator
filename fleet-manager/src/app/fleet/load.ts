@@ -59,6 +59,7 @@ export async function loadFleetPage(): Promise<FleetPageData> {
       clusters: managementClusters,
       claims: managementClaims,
       namespaces,
+      environments,
     },
   };
 }

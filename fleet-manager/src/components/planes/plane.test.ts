@@ -25,7 +25,7 @@ function cluster(
     apiVersion: "core.camunda.io/v1",
     kind: "CamundaManagementCluster",
     metadata: { namespace, name, labels },
-    spec: { identityProvider: { keycloak: {} }, ...spec },
+    spec: { identityProvider: { keycloak: {} }, clusterSelector: {}, ...spec },
     status,
   } as never;
 }
@@ -41,6 +41,15 @@ function claim(
     kind: "CamundaManagementClusterClaim",
     metadata: { namespace, name },
     spec: { environments, management },
+  } as never;
+}
+
+function environment(name: string) {
+  return {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "Environment",
+    metadata: { name },
+    spec: {},
   } as never;
 }
 
@@ -95,6 +104,7 @@ describe("planesOf", () => {
       ],
       claims: [claim("platform", "plane-a", ["production", "staging"])],
       namespaces: [],
+      environments: [],
     });
     expect(plane).toEqual({
       id: "cluster/platform/plane-a",
@@ -144,6 +154,7 @@ describe("planesOf", () => {
       ],
       claims: [],
       namespaces: [],
+      environments: [],
     });
     expect(plane.mode).toBe(mode);
   });
@@ -155,6 +166,7 @@ describe("planesOf", () => {
       ],
       claims: [],
       namespaces: [],
+      environments: [],
     });
     expect(plane.mode).toBeUndefined();
   });
@@ -164,6 +176,7 @@ describe("planesOf", () => {
       clusters: [cluster("platform", "plane-a")],
       claims: [],
       namespaces: [],
+      environments: [],
     });
     expect(plane.components).toEqual(["Identity"]);
   });
@@ -178,6 +191,7 @@ describe("planesOf", () => {
         }),
       ],
       namespaces: [],
+      environments: [],
     });
     expect(planes).toEqual([
       expect.objectContaining({
@@ -208,6 +222,7 @@ describe("planesOf", () => {
       ],
       claims: [claim("platform", "plane-a", ["production"])],
       namespaces: [],
+      environments: [],
     });
     expect(planes.map((p) => [p.namespace, p.name, p.serves])).toEqual([
       ["platform", "plane-a", { environments: ["production"] }],
@@ -220,6 +235,7 @@ describe("planesOf", () => {
       clusters: [cluster("platform", "plane-a")],
       claims: [claim("platform", "plane-a", ["production"])],
       namespaces: [],
+      environments: [],
     });
     expect(planes).toHaveLength(2);
     expect(new Set(planes.map((p) => p.id)).size).toBe(2);
@@ -234,6 +250,7 @@ describe("planesOf", () => {
       ],
       claims: [],
       namespaces: [],
+      environments: [],
     });
     expect(plane.managed).toBe(true);
     expect(plane.serves).toEqual({ selector: "Every namespace" });
@@ -263,6 +280,7 @@ describe("planesOf", () => {
         ns("team-b", { [ENVIRONMENT_LABEL]: "staging" }),
         ns("tools", {}),
       ],
+      environments: [environment("production"), environment("staging")],
     });
     expect(plane.managed).toBe(false);
     expect(plane.serves).toEqual({
@@ -281,6 +299,7 @@ describe("planesOf", () => {
         ns("team-c", { [ENVIRONMENT_LABEL]: "production" }),
         ns("tools", {}),
       ],
+      environments: [environment("production"), environment("staging")],
     });
     expect(plane.serves).toEqual({ selector: "Every namespace" });
     expect(plane.servedEnvironments).toEqual(["production", "staging"]);
@@ -291,6 +310,7 @@ describe("planesOf", () => {
       clusters: [cluster("b", "x"), cluster("a", "z")],
       claims: [claim("a", "y", ["production"])],
       namespaces: [],
+      environments: [],
     });
     expect(planes.map((p) => `${p.namespace}/${p.name}`)).toEqual([
       "a/y",
@@ -329,6 +349,7 @@ describe("servesEnvironment and optimizeLabel", () => {
       clusters: [],
       claims: [claim("platform", "plane-a", ["production", "staging"])],
       namespaces: [],
+      environments: [],
     });
     expect(servesEnvironment(plane, "production")).toBe(true);
     expect(servesEnvironment(plane, "staging")).toBe(true);
@@ -350,6 +371,7 @@ describe("servesEnvironment and optimizeLabel", () => {
       ],
       claims: [],
       namespaces: [],
+      environments: [],
     });
     expect(optimizeLabel(oidc)).toBe("0 (OIDC)");
     expect(optimizeLabel(keycloak)).toBe("2");
@@ -377,6 +399,7 @@ describe("planesIn", () => {
       ns("team-a", { [ENVIRONMENT_LABEL]: "production" }),
       ns("team-x", {}),
     ],
+    environments: [environment("production"), environment("staging")],
   });
   const names = (list: { name: string }[]) => list.map((p) => p.name);
 
@@ -400,9 +423,47 @@ describe("planesIn", () => {
         ns("team-a", { [ENVIRONMENT_LABEL]: "production" }),
         ns("team-x", {}),
       ],
+      environments: [environment("production"), environment("staging")],
     });
     expect(names(planesIn([every], "production"))).toEqual(["every"]);
     expect(names(planesIn([every], null))).toEqual(["every"]);
+  });
+
+  it("puts a namespace whose label names no Environment with the namespaces without an environment", () => {
+    const [plane] = planesOf({
+      clusters: [cluster("platform", "every")],
+      claims: [],
+      namespaces: [
+        ns("team-a", { [ENVIRONMENT_LABEL]: "production" }),
+        ns("team-g", { [ENVIRONMENT_LABEL]: "ghost" }),
+        ns("team-e", { [ENVIRONMENT_LABEL]: "" }),
+      ],
+      environments: [environment("production")],
+    });
+    expect(plane.servedEnvironments).toEqual(["production"]);
+    expect(names(planesIn([plane], null))).toEqual(["every"]);
+  });
+
+  it("serves no namespace while the cluster selector is unset", () => {
+    const [plane] = planesOf({
+      clusters: [
+        cluster("platform", "idle", {
+          spec: {
+            identityProvider: { keycloak: {} },
+            clusterSelector: undefined,
+          },
+        }),
+      ],
+      claims: [],
+      namespaces: [
+        ns("team-a", { [ENVIRONMENT_LABEL]: "production" }),
+        ns("team-x", {}),
+      ],
+      environments: [environment("production")],
+    });
+    expect(plane.servedEnvironments).toEqual([]);
+    expect(planesIn([plane], null)).toEqual([]);
+    expect(planesIn([plane], "production")).toEqual([]);
   });
 
   it("leaves out a plane that selects no namespace for null", () => {
@@ -414,6 +475,7 @@ describe("planesIn", () => {
       ],
       claims: [],
       namespaces: [ns("team-x", {})],
+      environments: [],
     });
     expect(planesIn([none], null)).toEqual([]);
   });

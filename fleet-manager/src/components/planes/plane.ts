@@ -1,14 +1,14 @@
 // This module runs in the browser and on the server. It imports only the
-// isomorphic labels module and types.
+// isomorphic labels and policy modules and types.
 import type { ConditionLike } from "@/components/fleet/status";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
   CLAIM_LABEL,
-  ENVIRONMENT_LABEL,
   isManaged,
   type LabelSelector,
   matchesSelector,
 } from "@/lib/labels";
+import { environmentNameOf } from "@/lib/policy";
 
 export type IdentityMode = "Keycloak" | "External Keycloak" | "OIDC";
 
@@ -17,6 +17,7 @@ export type PlaneSources = {
   clusters: Resource<"CamundaManagementCluster">[];
   claims: Resource<"CamundaManagementClusterClaim">[];
   namespaces: Resource<"Namespace">[];
+  environments: Resource<"Environment">[];
 };
 
 /** NotAttached is an orchestration cluster that a plane does not serve, and why. */
@@ -31,8 +32,8 @@ export type NotAttached = {
  * Plane is one row of the management plane tables. components starts with
  * "Identity". serves holds the environments of the claim, or the selector
  * text when the plane has no claim. servedEnvironments is sorted and
- * distinct. servesNoEnvironment is true when the selector of a plane
- * without a claim picks a namespace without ENVIRONMENT_LABEL. ready is
+ * distinct. servesNoEnvironment is true when a plane without a claim
+ * serves a namespace that belongs to no Environment. ready is
  * undefined while no CamundaManagementCluster exists.
  */
 export type Plane = {
@@ -66,8 +67,10 @@ type Settings = {
  * planesOf returns one plane for each CamundaManagementCluster, and one for
  * each claim that no CamundaManagementCluster of its namespace names with
  * CLAIM_LABEL, sorted by namespace and name. A labelled cluster whose claim
- * is not in claims stays managed and serves its selector. Namespaces decide
- * the servedEnvironments of a plane without a claim.
+ * is not in claims stays managed and serves its selector. Namespaces and
+ * Environments decide the servedEnvironments of a plane without a claim.
+ * While spec.clusterSelector is unset, a plane without a claim has no
+ * servedEnvironments, and servesNoEnvironment is false.
  */
 export function planesOf(sources: PlaneSources): Plane[] {
   const claims = new Map(
@@ -99,18 +102,7 @@ export function planesOf(sources: PlaneSources): Plane[] {
             serves: {
               selector: formatSelector(cluster.spec.namespaceSelector),
             },
-            servedEnvironments: selected(
-              cluster.spec.namespaceSelector,
-              sources.namespaces,
-            ),
-            servesNoEnvironment: sources.namespaces.some(
-              (n) =>
-                !n.metadata?.labels?.[ENVIRONMENT_LABEL] &&
-                matchesSelector(
-                  cluster.spec.namespaceSelector,
-                  n.metadata?.labels,
-                ),
-            ),
+            ...selected(cluster.spec, sources),
           }),
       attached: rows.filter((r) => r.attached).length,
       notAttached: rows
@@ -177,18 +169,25 @@ function environments(
 }
 
 function selected(
-  selector: LabelSelector | undefined,
-  namespaces: Resource<"Namespace">[],
-): string[] {
+  spec: {
+    clusterSelector?: LabelSelector;
+    namespaceSelector?: LabelSelector;
+  },
+  sources: PlaneSources,
+): Pick<Plane, "servedEnvironments" | "servesNoEnvironment"> {
   const names = new Set<string>();
-  for (const namespace of namespaces) {
-    const labels = namespace.metadata?.labels;
-    const environment = labels?.[ENVIRONMENT_LABEL];
-    if (environment !== undefined && matchesSelector(selector, labels)) {
-      names.add(environment);
+  let none = false;
+  // The operator selects no cluster while clusterSelector is unset.
+  if (spec.clusterSelector) {
+    for (const namespace of sources.namespaces) {
+      if (!matchesSelector(spec.namespaceSelector, namespace.metadata?.labels))
+        continue;
+      const environment = environmentNameOf(namespace, sources.environments);
+      if (environment === undefined) none = true;
+      else names.add(environment);
     }
   }
-  return [...names].sort();
+  return { servedEnvironments: [...names].sort(), servesNoEnvironment: none };
 }
 
 /**

@@ -37,7 +37,7 @@ The table **Management planes** lists the management planes of the selected tab:
 
 - On **All**, and on a page without tabs, it lists every management plane.
 - On the tab of an environment, it lists the planes that serve that environment. A plane serves the environments that its claim names, as [CamundaManagementClusterClaim](../crds/camundamanagementclusterclaim.md) shows.
-- On **No environment**, it lists the planes that serve a namespace without the label.
+- On **No environment**, it lists the planes that serve a namespace that belongs to no environment.
 
 When the tab has no plane, the page says "No management plane serves this environment." When no plane exists at all, it says "No management plane yet." on **All**.
 
