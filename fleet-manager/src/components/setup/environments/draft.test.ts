@@ -210,6 +210,42 @@ describe("draftErrors", () => {
     ]);
   });
 
+  it("refuses a required label key that is set twice", () => {
+    expect(
+      draftErrors(
+        draft({ namespaceCreation: { requiredLabelKeys: ["team", "team"] } }),
+        NEW,
+      ),
+    ).toEqual([
+      {
+        path: "spec.namespaceCreation.requiredLabelKeys",
+        message: "Each required label key is used once.",
+      },
+    ]);
+  });
+
+  it("refuses more than 32 fixed labels", () => {
+    const labels = Object.fromEntries(
+      Array.from({ length: 33 }, (_, i) => [`key-${i}`, "x"]),
+    );
+    expect(draftErrors(draft({ namespaceCreation: { labels } }), NEW)).toEqual([
+      {
+        path: "spec.namespaceCreation.labels",
+        message: "At most 32 fixed labels.",
+      },
+    ]);
+  });
+
+  it("refuses more than 64 allowed releases", () => {
+    const allowed = Array.from({ length: 65 }, (_, i) => `r-${i}`);
+    expect(draftErrors(draft({ releases: { allowed } }), NEW)).toEqual([
+      {
+        path: "spec.releases.allowed",
+        message: "At most 64 allowed releases.",
+      },
+    ]);
+  });
+
   it("refuses more than 16 required label keys", () => {
     const keys = Array.from({ length: 17 }, (_, i) => `key-${i}`);
     expect(

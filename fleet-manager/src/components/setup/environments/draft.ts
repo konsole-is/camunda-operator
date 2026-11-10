@@ -15,6 +15,8 @@ const API_VERSION = "fleet.camunda.io/v1alpha1";
 const KIND = "Environment";
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 const MAX_REQUIRED_LABEL_KEYS = 16;
+const MAX_FIXED_LABELS = 32;
+const MAX_ALLOWED_RELEASES = 64;
 
 /** EnvironmentDraft is the form of one environment: its name and the spec as the admin edits it. */
 export type EnvironmentDraft = { name: string; spec: Environment["spec"] };
@@ -85,6 +87,11 @@ export function draftErrors(
     add("spec.displayName", "The display name has at most 64 characters.");
   if (spec.color && !COLOR.test(spec.color))
     add("spec.color", "The color is a hex color such as #2E7D32.");
+  if ((spec.releases?.allowed ?? []).length > MAX_ALLOWED_RELEASES)
+    add(
+      "spec.releases.allowed",
+      `At most ${MAX_ALLOWED_RELEASES} allowed releases.`,
+    );
   const defaultRelease = spec.releases?.default;
   if (
     defaultRelease &&
@@ -103,6 +110,8 @@ export function draftErrors(
     !Object.entries(labels).every(([k, v]) => isLabelKey(k) && isLabelValue(v))
   )
     add(labelsPath, "Each fixed label is a valid label.");
+  if (Object.keys(labels).length > MAX_FIXED_LABELS)
+    add(labelsPath, `At most ${MAX_FIXED_LABELS} fixed labels.`);
 
   const keys = spec.namespaceCreation?.requiredLabelKeys ?? [];
   const keysPath = "spec.namespaceCreation.requiredLabelKeys";
@@ -110,6 +119,8 @@ export function draftErrors(
     add(keysPath, ENVIRONMENT_LABEL_MESSAGE);
   else if (!keys.every(isLabelKey))
     add(keysPath, "A required label key is a valid label key.");
+  if (new Set(keys).size < keys.length)
+    add(keysPath, "Each required label key is used once.");
   if (keys.length > MAX_REQUIRED_LABEL_KEYS)
     add(keysPath, `At most ${MAX_REQUIRED_LABEL_KEYS} required label keys.`);
   return errors;

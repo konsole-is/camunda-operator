@@ -126,4 +126,14 @@ describe("ReferencesSection", () => {
       platformConfigRef: "shared",
     });
   });
+
+  it("shows the error of too many allowed releases beside the list", () => {
+    const sources = environmentFixtures();
+    sources.environments[0].spec.releases = {
+      allowed: Array.from({ length: 65 }, (_, i) => `r-${i}`),
+    };
+    renderEditor("production", sources);
+    const list = screen.getByRole("group", { name: "Allowed releases" });
+    expect(list.textContent).toContain("At most 64 allowed releases.");
+  });
 });

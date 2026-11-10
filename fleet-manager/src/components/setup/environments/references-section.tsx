@@ -90,6 +90,9 @@ export function ReferencesSection({
           available={namesOf(sources.releases)}
           selected={allowed}
           empty="No release exists."
+          error={
+            errors.find((e) => e.path === "spec.releases.allowed")?.message
+          }
           onChange={(list) => releases({ allowed: list })}
         />
         <SelectField

@@ -140,12 +140,14 @@ export function NameChecklist({
   available,
   selected,
   empty,
+  error,
   onChange,
 }: {
   legend: string;
   available: readonly string[];
   selected: readonly string[];
   empty: string;
+  error?: string;
   onChange: (selected: string[]) => void;
 }) {
   const names = [...new Set([...available, ...selected])].sort(byCodeUnit);
@@ -182,6 +184,7 @@ export function NameChecklist({
           );
         })}
       </ul>
+      <ErrorText error={error} />
     </fieldset>
   );
 }
