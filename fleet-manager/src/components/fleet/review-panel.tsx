@@ -12,7 +12,7 @@ import { TypedField } from "./typed-confirm";
 /**
  * ReviewPanel is the last screen before a write: the diff of the object, the
  * list of what the change does, an optional caution, and the confirm button.
- * details shows below the diff, and notices right above the confirm. In Git
+ * details shows below the diff, and notices above the confirm. In Git
  * mode the button reads gitConfirmLabel, "Push to Git" by default,
  * instead of confirmLabel. danger makes it a danger button. pending blocks
  * it while the write runs. With typed, it also stays disabled until the
