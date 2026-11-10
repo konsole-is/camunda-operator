@@ -69,6 +69,21 @@ export const BACKUP_SCHEDULE_LABEL = "camunda.io/backup-schedule";
  */
 export const MANAGEMENT_CLUSTER_ANNOTATION = "camunda.io/management-cluster";
 
+/**
+ * DESCRIPTION_ANNOTATION holds a short text that says what an object is
+ * for. It is a well-known Kubernetes annotation. The operator does not read it.
+ */
+export const DESCRIPTION_ANNOTATION = "kubernetes.io/description";
+
+/** presetDescription gives the trimmed DESCRIPTION_ANNOTATION of preset, or undefined when it is missing or blank. */
+export function presetDescription(preset: {
+  metadata?: { annotations?: Record<string, string> };
+}): string | undefined {
+  const description =
+    preset.metadata?.annotations?.[DESCRIPTION_ANNOTATION]?.trim();
+  return description || undefined;
+}
+
 /** isManaged says whether a claim made the object: it carries CLAIM_LABEL with a value. */
 export function isManaged(object: {
   metadata?: { labels?: Record<string, string> };
