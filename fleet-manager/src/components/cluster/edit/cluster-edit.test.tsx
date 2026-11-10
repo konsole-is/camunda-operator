@@ -134,9 +134,12 @@ function Page({
 function Dropper() {
   const { pushes, settle } = useGitPushes();
   return (
-    <button onClick={() => pushes.forEach((p) => settle(p.key))}>
-      Drop pushes
-    </button>
+    <>
+      <p>Pushes {pushes.length}</p>
+      <button onClick={() => pushes.forEach((p) => settle(p.key))}>
+        Drop pushes
+      </button>
+    </>
   );
 }
 
@@ -446,6 +449,10 @@ describe("ClusterEditProvider", () => {
       within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
         .disabled,
     ).toBe(false);
+    await waitFor(() => expect(text("Pushes 0")).toBeTruthy());
+    expect(screen.getByRole("status").textContent).not.toContain(
+      "Waiting for GitOps",
+    );
   });
 
   it("in Git mode, a push that the page stops following returns to the live claim and says so", async () => {

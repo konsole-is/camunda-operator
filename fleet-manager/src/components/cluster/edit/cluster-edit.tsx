@@ -106,7 +106,9 @@ type Pushed = {
 // rebased on. refused holds the field errors of a refused preview or write
 // of one session. note is the refusal of the last write, with the session
 // that the write sent. dropped says that the page stopped following a push
-// that GitOps did not apply.
+// that GitOps did not apply. superseded is the key of a push that the claim
+// left for another revision. The tab still follows it until the effect
+// settles it.
 type Edit = {
   seen?: string;
   seenPush?: string;
@@ -116,6 +118,7 @@ type Edit = {
   pushed?: Pushed;
   note?: { session?: Session<ClusterClaim>; text: string };
   dropped?: boolean;
+  superseded?: RefKey;
 };
 
 /**
@@ -140,7 +143,7 @@ export function ClusterEditProvider({
   children: ReactNode;
 }): ReactNode {
   const { toast, show, dismiss } = useWriteToast();
-  const { pushes } = useGitPushes();
+  const { pushes, settle } = useGitPushes();
   const contextRef = useRef(context);
   const [locks] = useState(() => followingLocks(context.fields));
   const live = liveClaim(context);
@@ -206,6 +209,13 @@ export function ClusterEditProvider({
     stateRef.current = next;
     setState(next);
   }, []);
+  // SettleWrite settles a push only on its exact revision. A push that the
+  // claim left for another revision never gets it, so settle it here.
+  useEffect(() => {
+    if (!edit.superseded) return;
+    settle(edit.superseded);
+    update({ ...stateRef.current, superseded: undefined });
+  }, [edit.superseded, settle, update]);
   // The review stays open while a write runs, so that no change can start
   // before the write returns.
   const apply = useCallback(
@@ -464,8 +474,9 @@ function syncedEdit(
   let next = edit;
   if (pushed) {
     const liveRevision = live?.metadata?.annotations?.[REVISION_ANNOTATION];
-    if (liveRevision === pushed.revision || liveRevision !== pushed.before)
-      next = { ...next, pushed: undefined };
+    if (liveRevision === pushed.revision) next = { ...next, pushed: undefined };
+    else if (liveRevision !== pushed.before)
+      next = { ...next, pushed: undefined, superseded: pushed.key };
     else if (!following(pushed) && !pushed.applied)
       next = { ...next, pushed: undefined, dropped: true };
   }
