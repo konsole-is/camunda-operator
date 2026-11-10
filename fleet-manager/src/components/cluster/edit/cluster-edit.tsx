@@ -6,17 +6,21 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { ChangeBar } from "@/components/fleet/change-bar";
 import { ClaimReview } from "@/components/fleet/claim-review";
+import { useGitPushes } from "@/components/fleet/git-pushes";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { objectDiff } from "@/lib/diff";
 import type { ClusterField, FieldLock, Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
-import { isManaged } from "@/lib/labels";
+import { useGitSync } from "@/lib/k8s/hooks";
+import { isManaged, REVISION_ANNOTATION } from "@/lib/labels";
+import { equalJSON } from "@/lib/policy";
 import {
   claimAfter,
   clusterLocks,
@@ -25,14 +29,18 @@ import {
   resetValue,
   setValue,
   validateClusterClaim,
+  type ClusterClaimContext,
   type FieldError,
+  type PendingChange,
   type LockProvider,
   type Session,
   type SetResult,
 } from "@/lib/session";
+import { refKey } from "@/lib/write/refs";
 import type {
   Change,
   Preview,
+  RefKey,
   WriteMode,
   WriteResult,
 } from "@/lib/write/types";
@@ -75,14 +83,37 @@ export type ClusterEdit = {
 
 const ClusterEditContext = createContext<ClusterEdit | undefined>(undefined);
 
-// Edit is the state of the host. seen is the resourceVersion of the claim
-// that session was last opened or rebased on. refused holds the field
-// errors of a refused preview or write of one session.
+const WAITING_FOR_GITOPS = "Waiting for GitOps to apply your last change.";
+const PUSH_DROPPED =
+  "GitOps did not apply your last change. The page shows the live claim again.";
+const STALE_WRITE =
+  "The claim changed while the save ran. Review the change and save again.";
+
+// Pushed is the claim spec of a push of this page that GitOps has not
+// applied yet. applied is set once the watch of the push sees its revision,
+// which can come before the claim of the page shows it.
+type Pushed = {
+  key: RefKey;
+  revision: string;
+  spec: ClusterClaim["spec"];
+  applied?: boolean;
+};
+
+// Edit is the state of the host. seen is the resourceVersion of the claim,
+// and seenPush the revision of the push, that session was last opened or
+// rebased on. refused holds the field errors of a refused preview or write
+// of one session. note is the refusal of the last write, with the session
+// that the write sent. dropped says that the page stopped following a push
+// that GitOps did not apply.
 type Edit = {
   seen?: string;
+  seenPush?: string;
   session?: Session<ClusterClaim>;
   refused?: { session: Session<ClusterClaim>; fields: FieldError[] };
   reviewing: boolean;
+  pushed?: Pushed;
+  note?: { session?: Session<ClusterClaim>; text: string };
+  dropped?: boolean;
 };
 
 /**
@@ -91,8 +122,11 @@ type Edit = {
  * session on each new resourceVersion of the claim. It shows the change bar
  * while a change is pending, the review in a dialog, and the toast of the
  * last write. After an ok write the session goes on from the written claim
- * with no pending change, until the next claim update rebases it. It never
- * writes on its own: only the confirm of the review writes.
+ * with no pending change, until the next claim update rebases it. In Git
+ * mode the session keeps the pushed claim spec, and Review waits, until the
+ * claim shows the push or the push is dropped. It never writes on its own:
+ * only the confirm of the review writes. It needs a GitPushesProvider above
+ * it.
  */
 export function ClusterEditProvider({
   context,
@@ -104,60 +138,62 @@ export function ClusterEditProvider({
   children: ReactNode;
 }): ReactNode {
   const { toast, show, dismiss } = useWriteToast();
+  const { pushes } = useGitPushes();
   const contextRef = useRef(context);
   const [locks] = useState(() => followingLocks(context.fields));
   const live = liveClaim(context);
   const version = live?.metadata?.resourceVersion;
 
-  // The review stays open while a write runs, so that no change can start
-  // before the write returns.
   const [writing, setWriting] = useState(false);
-  const apply = useCallback(
-    async (change: Change) => {
-      setWriting(true);
-      try {
-        return await actions.apply(change);
-      } finally {
-        setWriting(false);
-      }
-    },
-    [actions],
-  );
   const [state, setState] = useState<Edit>(() => ({
     seen: version,
     session: open(context, live, locks),
     reviewing: false,
   }));
-  let edit = state;
-  if (version !== state.seen) {
-    edit = {
-      ...state,
-      seen: version,
-      session:
-        state.session && live && version
-          ? {
-              ...rebase(state.session, live, clusterLocks(context.fields)),
-              locks,
-            }
-          : open(context, live, locks),
-    };
-    setState(edit);
-  }
+  const synced = syncedEdit(state, {
+    context,
+    live,
+    locks,
+    following: (p) =>
+      pushes.some(
+        (q) => q.key === p.key && "revision" in q && q.revision === p.revision,
+      ),
+  });
+  const { environment, sections, registrations, releases, cluster, backups } =
+    context;
+  const invalid = useMemo(
+    () =>
+      validationOf(synced.session, {
+        environment,
+        sections,
+        registrations,
+        releases,
+        cluster,
+        backups,
+      }),
+    [
+      synced.session,
+      environment,
+      sections,
+      registrations,
+      releases,
+      cluster,
+      backups,
+    ],
+  );
   const reviewing =
-    edit.reviewing &&
-    edit.session !== undefined &&
-    (writing ||
-      (edit.session.pending.size > 0 &&
-        validationOf(edit.session, context).length === 0));
+    synced.reviewing &&
+    synced.session !== undefined &&
+    (writing || (synced.session.pending.size > 0 && invalid.length === 0));
   // A review that an update closed opens again only on a click of Review.
-  if (edit.reviewing && !reviewing) {
-    edit = { ...edit, reviewing: false };
-    setState(edit);
-  }
+  const edit =
+    synced.reviewing && !reviewing ? { ...synced, reviewing: false } : synced;
+  if (edit !== state) setState(edit);
 
   // Handlers read and write the latest state through stateRef, so that two
   // calls in one handler build on each other.
   const stateRef = useRef(edit);
+  const lastResult = useRef<WriteResult | undefined>(undefined);
   useEffect(() => {
     contextRef.current = context;
     stateRef.current = edit;
@@ -168,6 +204,28 @@ export function ClusterEditProvider({
     stateRef.current = next;
     setState(next);
   }, []);
+  // The review stays open while a write runs, so that no change can start
+  // before the write returns.
+  const apply = useCallback(
+    async (change: Change) => {
+      const sent = stateRef.current.session;
+      update({ ...stateRef.current, note: undefined, dropped: false });
+      setWriting(true);
+      try {
+        const result = await actions.apply(change);
+        lastResult.current = result;
+        if (!result.ok)
+          update({
+            ...stateRef.current,
+            note: { session: sent, text: refusalOf(result) },
+          });
+        return result;
+      } finally {
+        setWriting(false);
+      }
+    },
+    [actions, update],
+  );
   const change = useCallback(
     (
       apply: (s: Session<ClusterClaim>) => SetResult<ClusterClaim>,
@@ -201,14 +259,19 @@ export function ClusterEditProvider({
   const review = useCallback(() => {
     const current = stateRef.current;
     const s = current.session;
-    if (!s || s.pending.size === 0) return;
+    if (!s || s.pending.size === 0 || current.pushed) return;
     if (errorsOf(current, contextRef.current).length > 0) return;
     update({ ...current, reviewing: true });
   }, [update]);
 
   const session = edit.session;
   const pending = session?.pending.size ?? 0;
-  const errors = errorsOf(edit, context);
+  const errors = [
+    ...invalid,
+    ...(session && edit.refused?.session === session
+      ? edit.refused.fields
+      : []),
+  ];
   const value: ClusterEdit = {
     session,
     set,
@@ -221,12 +284,15 @@ export function ClusterEditProvider({
   };
 
   const close = () => {
-    if (!writing) update({ ...stateRef.current, reviewing: false });
+    if (!writing)
+      update({ ...stateRef.current, reviewing: false, note: undefined });
   };
   const off =
     context.writeMode === undefined &&
     isManaged(context.cluster) &&
     context.claim !== undefined;
+  const note =
+    edit.note && edit.note.session !== session ? edit.note.text : undefined;
 
   return (
     <ClusterEditContext.Provider value={value}>
@@ -235,6 +301,25 @@ export function ClusterEditProvider({
           Changes are off: the fleet manager could not read its settings.
         </p>
       )}
+      {edit.dropped && (
+        <p role="status" className="text-sm text-warn">
+          {PUSH_DROPPED}
+        </p>
+      )}
+      {edit.pushed && !edit.pushed.applied && live && (
+        <FollowPush
+          claim={live}
+          revision={edit.pushed.revision}
+          onApplied={() => {
+            const current = stateRef.current;
+            if (current.pushed)
+              update({
+                ...current,
+                pushed: { ...current.pushed, applied: true },
+              });
+          }}
+        />
+      )}
       {children}
       {(pending > 0 || toast) && (
         <div className="sticky bottom-4 z-30 flex flex-col items-end gap-2">
@@ -242,6 +327,7 @@ export function ClusterEditProvider({
           <div className="w-full">
             <ChangeBar
               count={pending}
+              blocked={edit.pushed ? WAITING_FOR_GITOPS : undefined}
               errors={errors}
               onDiscard={discard}
               onReview={review}
@@ -256,6 +342,14 @@ export function ClusterEditProvider({
             className="max-h-[85vh] overflow-y-auto sm:max-w-3xl"
           >
             <DialogTitle>Review the change</DialogTitle>
+            {note && (
+              <p
+                role="status"
+                className="rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-text"
+              >
+                {note}
+              </p>
+            )}
             {reviewing && (
               <ReviewOf
                 context={context}
@@ -269,11 +363,14 @@ export function ClusterEditProvider({
                 onCancel={writing ? undefined : close}
                 onWritten={() => {
                   const current = stateRef.current;
+                  const next = pushedOf(lastResult.current, session);
                   update({
                     ...current,
-                    session: written(current.session, session, locks),
+                    session: written(current.session, session, next?.spec),
                     refused: undefined,
                     reviewing: false,
+                    pushed: next,
+                    seenPush: next?.revision,
                   });
                 }}
               />
@@ -344,19 +441,121 @@ function open(
   return openSession({ claim, resource: context.cluster, locks });
 }
 
+function syncedEdit(
+  edit: Edit,
+  page: {
+    context: ClusterSlotContext;
+    live: ClusterClaim | undefined;
+    locks: LockProvider;
+    following: (p: Pushed) => boolean;
+  },
+): Edit {
+  const { context, live, locks, following } = page;
+  const version = live?.metadata?.resourceVersion;
+  const pushed = edit.pushed;
+  let next = edit;
+  if (pushed) {
+    const liveRevision = live?.metadata?.annotations?.[REVISION_ANNOTATION];
+    if (liveRevision === pushed.revision) next = { ...next, pushed: undefined };
+    else if (!following(pushed) && !pushed.applied)
+      next = { ...next, pushed: undefined, dropped: true };
+  }
+  const pushRevision = next.pushed?.revision;
+  if (version === next.seen && pushRevision === next.seenPush) return next;
+  const base = live && next.pushed ? { ...live, spec: next.pushed.spec } : live;
+  return {
+    ...next,
+    seen: version,
+    seenPush: pushRevision,
+    session:
+      next.session && base && version
+        ? {
+            ...rebase(next.session, base, clusterLocks(context.fields)),
+            locks,
+          }
+        : open(context, base, locks),
+  };
+}
+
+// FollowPush calls onApplied once the watch of claim sees the revision of
+// the push. The Git waiting line of the page settles on the same watch.
+function FollowPush({
+  claim,
+  revision,
+  onApplied,
+}: {
+  claim: ClusterClaim;
+  revision: string;
+  onApplied: () => void;
+}) {
+  const { namespace, name } = claim.metadata ?? {};
+  const sync = useGitSync(
+    { kind: "CamundaClusterClaim", namespace, name: name ?? "" },
+    revision,
+  );
+  const onAppliedRef = useRef(onApplied);
+  useEffect(() => {
+    onAppliedRef.current = onApplied;
+  });
+  useEffect(() => {
+    if (sync === "applied") onAppliedRef.current();
+  }, [sync]);
+  return null;
+}
+
+// pushedOf returns the push of the claim of saved in result, or undefined
+// for a direct write.
+function pushedOf(
+  result: WriteResult | undefined,
+  saved: Session<ClusterClaim>,
+): Pushed | undefined {
+  if (!result?.ok || result.mode !== "git") return undefined;
+  const { kind, metadata } = saved.claim;
+  const key = refKey({
+    kind,
+    namespace: metadata.namespace,
+    name: metadata.name ?? "",
+  });
+  const revision = result.revisions[key];
+  return revision === undefined
+    ? undefined
+    : { key, revision, spec: claimAfter(saved).spec };
+}
+
+function refusalOf(result: WriteResult): string {
+  if (result.ok) return "";
+  return result.errors.some((e) => e.code === "Stale")
+    ? STALE_WRITE
+    : result.errors.map((e) => e.message).join(" ");
+}
+
 // written returns the session after an ok write of saved. A claim update
 // can arrive before the write returns, and then current is already on the
-// newer claim.
+// newer claim. pushedSpec is the spec of a Git push, which the claim of the
+// cluster does not show yet.
 function written(
   current: Session<ClusterClaim> | undefined,
   saved: Session<ClusterClaim>,
-  locks: LockProvider,
+  pushedSpec: ClusterClaim["spec"] | undefined,
 ): Session<ClusterClaim> | undefined {
   if (!current) return undefined;
   const version = (s: Session<ClusterClaim>) =>
     s.claim.metadata.resourceVersion;
-  if (version(current) !== version(saved)) return current;
-  return rebase(current, claimAfter(saved), locks);
+  const pending = new Map(current.pending);
+  for (const [path, entry] of current.pending)
+    if (sameEntry(entry, saved.pending.get(path))) pending.delete(path);
+  const claim =
+    version(current) !== version(saved) ? current.claim : claimAfter(saved);
+  return rebase(
+    { ...current, pending },
+    pushedSpec ? { ...claim, spec: pushedSpec } : claim,
+  );
+}
+
+function sameEntry(a: PendingChange, b: PendingChange | undefined): boolean {
+  if (b === undefined) return false;
+  if ("reset" in a || "reset" in b) return "reset" in a && "reset" in b;
+  return equalJSON(a.value, b.value);
 }
 
 function errorsOf(edit: Edit, context: ClusterSlotContext): FieldError[] {
@@ -369,19 +568,10 @@ function errorsOf(edit: Edit, context: ClusterSlotContext): FieldError[] {
 
 function validationOf(
   s: Session<ClusterClaim> | undefined,
-  context: ClusterSlotContext,
+  ctx: ClusterClaimContext,
 ): FieldError[] {
   if (!s || s.pending.size === 0) return [];
-  return [
-    ...validateClusterClaim(s, {
-      environment: context.environment,
-      sections: context.sections,
-      registrations: context.registrations,
-      releases: context.releases,
-      cluster: context.cluster,
-      backups: context.backups,
-    }),
-  ];
+  return validateClusterClaim(s, ctx);
 }
 
 // FollowingLocks is one LockProvider for the life of the page. follow
@@ -393,12 +583,13 @@ type FollowingLocks = LockProvider & {
 
 function followingLocks(initial: readonly ClusterField[]): FollowingLocks {
   let fields = initial;
-  let provider = clusterLocks(initial);
-  const locks = ((path) => provider(path)) as FollowingLocks;
+  let provider: LockProvider | undefined;
+  const locks = ((path) =>
+    (provider ??= clusterLocks(fields))(path)) as FollowingLocks;
   locks.follow = (next) => {
     if (next === fields) return;
     fields = next;
-    provider = clusterLocks(next);
+    provider = undefined;
   };
   return locks;
 }

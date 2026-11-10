@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createHash } from "node:crypto";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -15,9 +16,11 @@ import {
   applyClaimChange,
   previewClaimChange,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
-import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import { GitPushesProvider, useGitPushes } from "@/components/fleet/git-pushes";
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import { pathFrom, type ClusterField, type Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
+import { STALE_CLAIM_MESSAGE, valueAt } from "@/lib/session";
 import type { KubeObject, WriteResult } from "@/lib/write/types";
 import { FakeEventSource } from "../../../../test/fakes/event-source";
 import {
@@ -44,6 +47,11 @@ const replicas: Step[] = [
 ];
 const releaseRef: Step[] = [{ field: "spec" }, { field: "releaseRef" }];
 const presetRef: Step[] = [{ field: "spec" }, { field: "presetRef" }];
+const schedule: Step[] = [
+  { field: "spec" },
+  { field: "attachments" },
+  { field: "backupSchedule" },
+];
 const PRECONDITION = "CamundaClusterClaim/team-a/orders";
 
 // Probe is an editor: it changes the claim only through useClusterEdit.
@@ -55,6 +63,8 @@ function Probe() {
       <p>Session {edit.session ? "open" : "none"}</p>
       <p>Pending {edit.pending}</p>
       <p>Refusal {refusal ?? "none"}</p>
+      <p>Replicas {String(valueAt(edit.session?.claim, replicas))}</p>
+      <p>Suspended {String(valueAt(edit.session?.claim, suspend) ?? false)}</p>
       <ul aria-label="Field errors">
         {edit.errors.map((e, i) => (
           <li key={i}>
@@ -67,6 +77,10 @@ function Probe() {
       </button>
       <button onClick={() => setRefusal(edit.set(replicas, 5)?.reason)}>
         Scale
+      </button>
+      <button onClick={() => edit.set(replicas, 3)}>Scale back</button>
+      <button onClick={() => edit.set(schedule, { cron: "0 1 * * *" })}>
+        Attach schedule
       </button>
       <button onClick={() => edit.set(releaseRef, "missing")}>
         Missing release
@@ -110,8 +124,37 @@ function Page({
   return (
     <ClusterEditProvider context={context} actions={actions}>
       <Probe />
+      <Dropper />
     </ClusterEditProvider>
   );
+}
+
+// Dropper stops following every pending Git push of the tab, as when the
+// push never reaches the cluster.
+function Dropper() {
+  const { pushes, settle } = useGitPushes();
+  return (
+    <button onClick={() => pushes.forEach((p) => settle(p.key))}>
+      Drop pushes
+    </button>
+  );
+}
+
+// appliedClaim is the claim at resourceVersion with spec, as GitOps applies
+// the first push of fakeWriter: it carries the revision of that push.
+function appliedClaim(resourceVersion: string, spec: object) {
+  const pushed = fakeWriter.applied[0].apply[0];
+  const revision = createHash("sha1")
+    .update(JSON.stringify(pushed))
+    .digest("hex");
+  const c = claim(resourceVersion, spec);
+  return {
+    ...c,
+    metadata: {
+      ...c.metadata,
+      annotations: { [REVISION_ANNOTATION]: revision },
+    },
+  };
 }
 
 function page(
@@ -318,7 +361,7 @@ describe("ClusterEditProvider", () => {
     );
   });
 
-  it("in Git mode, a second save before GitOps applies keeps the first change", async () => {
+  it("in Git mode, the session goes on from the pushed claim", async () => {
     fakeWriter.reset("git");
     page(slotContext({ writeMode: "git" }));
     click("Suspend");
@@ -326,9 +369,84 @@ describe("ClusterEditProvider", () => {
     await confirm("Push to Git");
     await waitFor(() => expect(dialog()).toBeNull());
 
+    expect(text("Suspended true")).toBeTruthy();
+    click("Scale");
+    expect(text("Pending 1")).toBeTruthy();
+  });
+
+  it("in Git mode, a status update while the push waits keeps the pushed claim and a change back to the live value", async () => {
+    fakeWriter.reset("git");
+    const { update } = page(slotContext({ writeMode: "git" }));
     click("Scale");
     openReview();
     await confirm("Push to Git");
+    await waitFor(() => expect(dialog()).toBeNull());
+    click("Scale back");
+    expect(text("Pending 1")).toBeTruthy();
+
+    update(slotContext({ writeMode: "git", claim: claim("42") }));
+
+    expect(text("Pending 1")).toBeTruthy();
+    expect(text("Replicas 5")).toBeTruthy();
+  });
+
+  it("in Git mode, Review waits until GitOps applies the push", async () => {
+    fakeWriter.reset("git");
+    const { update } = page(slotContext({ writeMode: "git" }));
+    click("Scale");
+    openReview();
+    await confirm("Push to Git");
+    await waitFor(() => expect(dialog()).toBeNull());
+    click("Suspend");
+
+    const review = () =>
+      within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" });
+    expect(review().disabled).toBe(true);
+    expect(
+      within(bar()!).getByText("Waiting for GitOps to apply your last change."),
+    ).toBeTruthy();
+
+    update(
+      slotContext({
+        writeMode: "git",
+        claim: appliedClaim("43", { cluster: { zeebe: { replicas: 5 } } }),
+      }),
+    );
+
+    expect(review().disabled).toBe(false);
+    expect(text("Pending 1")).toBeTruthy();
+    expect(text("Replicas 5")).toBeTruthy();
+  });
+
+  it("in Git mode, a push that the page stops following returns to the live claim and says so", async () => {
+    fakeWriter.reset("git");
+    page(slotContext({ writeMode: "git" }));
+    click("Scale");
+    openReview();
+    await confirm("Push to Git");
+    await waitFor(() => expect(dialog()).toBeNull());
+    expect(text("Replicas 5")).toBeTruthy();
+
+    click("Drop pushes");
+
+    expect(
+      screen.getByText(
+        "GitOps did not apply your last change. The page shows the live claim again.",
+      ),
+    ).toBeTruthy();
+    expect(text("Replicas 3")).toBeTruthy();
+  });
+
+  it("in direct mode, a second save before the claim update goes on from the written claim", async () => {
+    page();
+    click("Suspend");
+    openReview();
+    await confirm("Save");
+    await waitFor(() => expect(dialog()).toBeNull());
+
+    click("Scale");
+    openReview();
+    await confirm("Save");
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
 
     const second = fakeWriter.applied[1];
@@ -340,6 +458,127 @@ describe("ClusterEditProvider", () => {
     expect(spec.suspend).toBe(true);
     expect(spec.cluster.zeebe.replicas).toBe(5);
     expect(second.preconditions).toEqual({ [PRECONDITION]: "41" });
+  });
+
+  it("a claim update that changes a field with a pending change keeps the pending value and shows the new live value before it", async () => {
+    const { update } = page();
+    click("Scale");
+    update(
+      slotContext({
+        claim: claim("42", { cluster: { zeebe: { replicas: 4 } } }),
+      }),
+    );
+
+    expect(text("Pending 1")).toBeTruthy();
+    openReview();
+    const diff = within(dialog()!).getByRole("figure", {
+      name: "Changes to the claim",
+    });
+    expect(diff.querySelector("del")?.textContent).toContain("replicas: 4");
+    expect(diff.querySelector("ins")?.textContent).toContain("replicas: 5");
+  });
+
+  it.each(["before", "after"] as const)(
+    "an ok save leaves no pending change for a value that the server defaulted, with the claim update %s the save returns",
+    async (order) => {
+      const { actions, resolve } = delayedActions();
+      const { update } = page(slotContext(), actions);
+      click("Attach schedule");
+      openReview();
+      await confirm("Save");
+      await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+      const delivered = slotContext({
+        claim: claim("42", {
+          attachments: {
+            backupSchedule: { cron: "0 1 * * *", keepCompleted: 3 },
+          },
+        }),
+      });
+
+      if (order === "before") update(delivered);
+      await act(async () => resolve());
+      if (order === "after") update(delivered);
+
+      await waitFor(() => expect(dialog()).toBeNull());
+      expect(text("Pending 0")).toBeTruthy();
+    },
+  );
+
+  it("a Stale write shows the claim text and blocks Save until the claim updates", async () => {
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Stale", message: "x" }] },
+    ];
+    const { update } = page();
+    click("Scale");
+    openReview();
+    await confirm("Save");
+
+    await waitFor(() =>
+      expect(within(dialog()!).getByRole("alert").textContent).toContain(
+        STALE_CLAIM_MESSAGE,
+      ),
+    );
+    const save = () =>
+      within(dialog()!).getByRole<HTMLButtonElement>("button", {
+        name: "Save",
+      });
+    expect(save().disabled).toBe(true);
+
+    update(slotContext({ claim: claim("42") }));
+
+    await waitFor(() => expect(save().disabled).toBe(false));
+    expect(
+      within(dialog()!).getByText(
+        "The claim changed while the save ran. Review the change and save again.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a Conflict write shows the message of the writer and keeps it after the claim updates", async () => {
+    const message =
+      "clusters/team-a/orders.yaml holds a save that GitOps has not applied yet.";
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Conflict", message }] },
+    ];
+    const { update } = page();
+    click("Scale");
+    openReview();
+    await confirm("Save");
+    await waitFor(() =>
+      expect(within(dialog()!).getByRole("alert").textContent).toContain(
+        message,
+      ),
+    );
+    const save = within(dialog()!).getByRole<HTMLButtonElement>("button", {
+      name: "Save",
+    });
+    expect(save.disabled).toBe(false);
+
+    update(slotContext({ claim: claim("42") }));
+
+    await waitFor(() => expect(fakeWriter.previewed).toHaveLength(2));
+    expect(within(dialog()!).getByText(message)).toBeTruthy();
+  });
+
+  it("a claim update during the write keeps the refusal of the write in the review", async () => {
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Stale", message: "x" }] },
+    ];
+    const { actions, resolve } = delayedActions();
+    const { update } = page(slotContext(), actions);
+    click("Scale");
+    openReview();
+    await confirm("Save");
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+
+    update(slotContext({ claim: claim("42") }));
+    await act(async () => resolve());
+
+    expect(
+      within(dialog()!).getByText(
+        "The claim changed while the save ran. Review the change and save again.",
+      ),
+    ).toBeTruthy();
   });
 
   it("a claim update during the review previews again with the new resourceVersion", async () => {
