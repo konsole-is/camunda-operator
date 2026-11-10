@@ -29,6 +29,23 @@ graph LR
     CC -.->|platformConfigRef| PFC[CamundaPlatformConfig]
 ```
 
+## Description
+
+The annotation `kubernetes.io/description` holds a short text that says what the preset is for. The [fleet manager](../fleet-manager/install.md) shows this text on the card of the preset when a user creates a cluster. A preset without the annotation gets a card without a description.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: CamundaClusterPreset
+metadata:
+  name: medium
+  annotations:
+    kubernetes.io/description: "For production workloads with three brokers and replication."
+spec:
+  # ... the rest of your preset
+```
+
+The operator does not read the annotation. A change to it changes no cluster.
+
 ## Merge rules
 
 The cluster starts from `spec.cluster` of the preset. The [CamundaRelease](camundarelease.md) of `releaseRef` merges over it, and the cluster spec merges over both. Each field merges as the table says. The instance-bound fields always come from the cluster.
@@ -54,7 +71,7 @@ Each cluster reads the Secret of `auth.clientSecretRef` in its own namespace. Ev
 
 ## Changes
 
-When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` is the exception: it rolls no pods. A `passwordRotation` there rotates the admin password of each cluster, see [Authentication](camundacluster.md#authentication).
+When you edit the spec of a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` rolls no pods, and a change under `connectors.serviceAccount` rolls only the connectors pods. A `passwordRotation` under `auth.basic` rotates the admin password of each cluster, see [Authentication](camundacluster.md#authentication).
 
 A preset can lower `zeebe.storageSize`. A cluster that already applied a larger size keeps its volumes and records the Warning event `StorageShrinkIgnored`. A larger size grows the volumes of every cluster in place, if the storage class allows volume expansion. See [Operations: Grow storage](../guides/operations.md#grow-storage).
 

@@ -5,7 +5,7 @@ import { PresetCards } from "@/components/create/preset-cards";
 import type { Story } from "@/gallery/registry";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
-import { ENVIRONMENT_LABEL } from "@/lib/labels";
+import { DESCRIPTION_ANNOTATION, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { NamespacePicker } from "./namespace-picker";
 import { WizardStepper } from "./wizard-stepper";
 
@@ -90,10 +90,16 @@ const preset = (
   partitions: number,
   cpu: string,
   memory: string,
+  description?: string,
 ): CamundaClusterPreset => ({
   apiVersion: "core.camunda.io/v1",
   kind: "CamundaClusterPreset",
-  metadata: { name },
+  metadata: {
+    name,
+    ...(description && {
+      annotations: { [DESCRIPTION_ANNOTATION]: description },
+    }),
+  },
   spec: {
     cluster: {
       zeebe: { replicas, partitions, resources: { requests: { cpu, memory } } },
@@ -101,8 +107,22 @@ const preset = (
   },
 });
 const presets = [
-  preset("small", 1, 1, "500m", "1Gi"),
-  preset("medium", 3, 3, "1", "4Gi"),
+  preset(
+    "small",
+    1,
+    1,
+    "500m",
+    "1Gi",
+    "For tests and demos. One broker, no replication.",
+  ),
+  preset(
+    "medium",
+    3,
+    3,
+    "1",
+    "4Gi",
+    "For production workloads with three brokers and replication.",
+  ),
   preset("large", 5, 12, "4", "16Gi"),
 ];
 const usage = {
