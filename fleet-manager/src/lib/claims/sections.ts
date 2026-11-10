@@ -3,7 +3,7 @@ import type { ConditionLike } from "@/components/fleet/status";
 import type { Resource } from "@/lib/k8s/kinds";
 import { byCodeUnit, type PluginSelection } from "@/lib/policy";
 
-/** SectionComponentId is the component id of a selection of a section, as the cluster page cards use it. */
+/** SectionComponentId is the component id of a selection of a section. */
 export type SectionComponentId = `section:${string}`;
 
 /**
