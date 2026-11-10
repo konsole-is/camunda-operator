@@ -5,7 +5,7 @@ import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamana
 import type { Environment } from "@/generated/crds/environment";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import type { EnvironmentDraft } from "./draft";
-import { environmentImpact } from "./impact";
+import { environmentImpact, namespaceImpact } from "./impact";
 import type { EnvironmentSources } from "./sources";
 
 type Recorded = NonNullable<
@@ -317,5 +317,66 @@ describe("environmentImpact", () => {
         cleared: true,
       },
     ]);
+  });
+});
+
+describe("namespaceImpact", () => {
+  const target = environment({
+    releases: { allowed: ["8.9.2"], default: "8.9.2" },
+    platformConfigRef: "shared",
+  });
+
+  it("names each claim of the namespace that takes a default of the environment", () => {
+    expect(
+      namespaceImpact(
+        "team-b",
+        target,
+        sources({
+          clusterClaims: [
+            clusterClaim("orders", {}, undefined, "team-b"),
+            clusterClaim(
+              "pinned",
+              { releaseRef: "8.9.1", platformConfigRef: "own" },
+              undefined,
+              "team-b",
+            ),
+            clusterClaim("elsewhere", {}, undefined, "team-a"),
+          ],
+        }),
+      ),
+    ).toEqual([
+      {
+        claim: {
+          kind: "CamundaClusterClaim",
+          namespace: "team-b",
+          name: "orders",
+        },
+        kind: "CamundaRelease",
+        name: "8.9.2",
+        followsDefault: true,
+      },
+      {
+        claim: {
+          kind: "CamundaClusterClaim",
+          namespace: "team-b",
+          name: "orders",
+        },
+        kind: "CamundaPlatformConfig",
+        name: "shared",
+        followsDefault: true,
+      },
+    ]);
+  });
+
+  it("names nothing for an environment without defaults", () => {
+    expect(
+      namespaceImpact(
+        "team-b",
+        environment({}),
+        sources({
+          clusterClaims: [clusterClaim("orders", {}, undefined, "team-b")],
+        }),
+      ),
+    ).toEqual([]);
   });
 });

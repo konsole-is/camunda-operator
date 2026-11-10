@@ -17,7 +17,7 @@ metadata:
     fleet.camunda.io/environment: production
 ```
 
-In the editor, the section **Namespaces** lists the namespaces of the environment and their claims. To add a namespace, pick it in **Add a namespace** and select **Add**. The list offers only namespaces without an environment label. The review shows the label change, and **Add the namespace** writes it.
+In the editor, the section **Namespaces** lists the namespaces of the environment and their claims. To add a namespace, pick it in **Add a namespace** and select **Add**. The list offers only namespaces without an environment label. The review shows the label change, and **Add the namespace** writes it. The review also names each claim of the namespace that names no release or no platform config, and so moves to the default of the environment.
 
 The label goes straight to the cluster, also in Git mode. It is not in the Git repository, and the review says so. A new environment has no namespaces yet. Save it first, then add namespaces.
 

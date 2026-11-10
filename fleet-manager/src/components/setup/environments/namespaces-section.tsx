@@ -7,6 +7,8 @@ import type { Change, WriteMode, WriteResult } from "@/lib/write/types";
 import { namespaceLabelChange } from "./draft";
 import type { EnvironmentActions } from "./environment-editor";
 import { SelectField } from "./form-parts";
+import { namespaceImpact } from "./impact";
+import { warningLine } from "./impact-line";
 import { labelledNamespaces, namespacesToAdd } from "./rows";
 import type { EnvironmentSources } from "./sources";
 
@@ -34,6 +36,9 @@ export function NamespacesSection({
   const [picked, setPicked] = useState("");
   const [change, setChange] = useState<Change>();
   const members = labelledNamespaces(environment, sources.namespaces);
+  const target = sources.environments.find(
+    (e) => e.metadata.name === environment,
+  );
   const offered = namespacesToAdd(sources.namespaces);
   // A namespace can get an environment label after the admin picked it.
   const selected = offered.includes(picked) ? picked : "";
@@ -88,6 +93,9 @@ export function NamespacesSection({
           effects={[
             `New claims in ${picked} follow the policy of ${environment}.`,
             `Claims that exist in ${picked} keep the policy they recorded.`,
+            ...(target
+              ? namespaceImpact(picked, target, sources).map(warningLine)
+              : []),
             ...(mode === "git"
               ? [
                   "The label goes straight to the cluster, also in Git mode. It is not in the Git repository.",

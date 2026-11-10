@@ -97,6 +97,55 @@ export function environmentImpact(
   return impact;
 }
 
+/**
+ * namespaceImpact returns a followsDefault warning for each claim in
+ * namespace that names no release or no platform config while environment
+ * has a default for it: the label of environment moves such a claim to that
+ * default.
+ */
+export function namespaceImpact(
+  namespace: string,
+  environment: Environment,
+  s: EnvironmentSources,
+): ReferenceWarning[] {
+  const claims = (
+    [...s.clusterClaims, ...s.planeClaims] as unknown as Claim[]
+  ).filter((c) => c.metadata.namespace === namespace);
+  return claims.flatMap((claim): ReferenceWarning[] => {
+    const ref: ClaimRef = {
+      kind: claim.kind,
+      namespace,
+      name: claim.metadata.name ?? "",
+    };
+    const release = environment.spec.releases?.default;
+    const config = environment.spec.platformConfigRef;
+    return [
+      ...(claim.kind === "CamundaClusterClaim" &&
+      !claim.spec.releaseRef &&
+      release
+        ? [
+            {
+              claim: ref,
+              kind: "CamundaRelease" as const,
+              name: release,
+              followsDefault: true as const,
+            },
+          ]
+        : []),
+      ...(!claim.spec.platformConfigRef && config
+        ? [
+            {
+              claim: ref,
+              kind: "CamundaPlatformConfig" as const,
+              name: config,
+              followsDefault: true as const,
+            },
+          ]
+        : []),
+    ];
+  });
+}
+
 function policyDiffers(
   claim: Claim,
   edited: Environment,

@@ -26,7 +26,11 @@ vi.mock("@/lib/k8s/hooks", () => ({
   useGitGone: () => "waiting",
 }));
 
-function renderEditor(name: string | undefined, mode: WriteMode = "direct") {
+function renderEditor(
+  name: string | undefined,
+  mode: WriteMode = "direct",
+  sources = environmentFixtures(),
+) {
   const actions = {
     previewChange: vi.fn(async () => ({ objects: [], errors: [] })),
     applyChange: vi.fn(async () => ({
@@ -42,7 +46,7 @@ function renderEditor(name: string | undefined, mode: WriteMode = "direct") {
   render(
     <GitPushesProvider>
       <EnvironmentEditor
-        sources={{ ...environmentFixtures(), errors: [] }}
+        sources={{ ...sources, errors: [] }}
         name={name}
         mode={mode}
         actions={actions}
@@ -177,6 +181,24 @@ describe("NamespacesSection", () => {
     expect(screen.getByRole("button", { name: "Add" })).toHaveProperty(
       "disabled",
       true,
+    );
+  });
+
+  it("names the claims of the namespace that take the defaults of the environment", () => {
+    const sources = environmentFixtures();
+    sources.clusterClaims.push({
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { namespace: "legacy", name: "old-orders" },
+      spec: { presetRef: "small" },
+    });
+    renderEditor("production", "direct", sources);
+    addNamespace("legacy");
+    expect(document.body.textContent).toContain(
+      "old-orders in legacy names no release and moves to 8.9.23. Its brokers restart one at a time.",
+    );
+    expect(document.body.textContent).toContain(
+      "old-orders in legacy names no platform config and moves to shared.",
     );
   });
 });

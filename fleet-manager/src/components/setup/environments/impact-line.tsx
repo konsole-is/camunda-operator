@@ -47,7 +47,8 @@ function countLine({ clusters, planes }: EnvironmentImpact): string {
   return `${first} ${parts.join(" and ")} ${one ? "keeps the policy it" : "keep the policy they"} recorded at creation.`;
 }
 
-function warningLine(warning: ReferenceWarning): string {
+/** warningLine returns the text of one warning, as impactLines writes it. */
+export function warningLine(warning: ReferenceWarning): string {
   const claim = `${warning.claim.name} in ${warning.claim.namespace}`;
   if ("removed" in warning) {
     const [what, field] =
