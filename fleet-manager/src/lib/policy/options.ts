@@ -117,7 +117,7 @@ export function lockedSummary(value: unknown): string {
  * they are the allowed registrations in the order of allowed, and the Default
  * is its default. A registration that is missing, does not serve the section,
  * or is not Accepted=True and Ready=True, is left out: offeredSection shows
- * the accepted ones that are not ready. An option has no choices when its
+ * the accepted ones that serve the section. An option has no choices when its
  * registration lists none, or when its choice parameter ("preset" if the
  * schema has it, else "name") is claim-editable and the Environment gives it
  * an allowed list. That list is then in parameters. disabledReason stays

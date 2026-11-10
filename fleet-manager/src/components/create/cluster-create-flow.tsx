@@ -41,8 +41,6 @@ import { type CreateStep, useCreateFlow } from "./use-create-flow";
 /**
  * ClusterCreateData is the first snapshot of the create cluster page, from
  * every namespace. accessRequests are the requests of the access section.
- * The presets and storage configs are the objects that the options of step 2
- * list.
  */
 export type ClusterCreateData = {
   environments: Resource<"Environment">[];
@@ -66,10 +64,9 @@ const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
 
 /**
  * ClusterCreateFlow is the create cluster wizard. It follows initial live
- * and checks steps 1 and 2 against the newest data. The hosts of both steps
- * are those of the picked access option once step 2 showed it, else those
- * of the default option. The picks of a section that goes away leave the
- * draft. Steps 3 to 5 hold no fields yet, and the flow writes nothing.
+ * and checks steps 1 and 2 against the newest data. The picks of a section
+ * that goes away leave the draft. Steps 3 to 5 hold no fields yet, and the
+ * flow writes nothing.
  */
 export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
   const live = {
