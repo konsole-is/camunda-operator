@@ -68,7 +68,6 @@ function Probe() {
       <button onClick={() => setRefusal(edit.set(replicas, 5)?.reason)}>
         Scale
       </button>
-      <button onClick={() => edit.set(replicas, 3)}>Scale back</button>
       <button onClick={() => edit.set(releaseRef, "missing")}>
         Missing release
       </button>
@@ -414,29 +413,24 @@ describe("ClusterEditProvider", () => {
     });
   });
 
-  it("a change made while the save runs stays pending against the saved claim", async () => {
+  it("the review stays open while the save runs", async () => {
     const { actions, resolve } = delayedActions();
     page(slotContext(), actions);
     click("Scale");
     openReview();
     await confirm("Save");
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
-    fireEvent.click(within(dialog()!).getByRole("button", { name: "Back" }));
-    click("Scale back");
+
+    expect(
+      within(dialog()!).queryByRole("button", { name: "Back" }),
+    ).toBeNull();
+    fireEvent.keyDown(dialog()!, { key: "Escape" });
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Close" }));
+    expect(dialog()).toBeTruthy();
 
     await act(async () => resolve());
-
-    expect(text("Pending 1")).toBeTruthy();
-    openReview();
-    await confirm("Save");
-    await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
-    await act(async () => resolve());
-    const spec = (
-      fakeWriter.applied[1].apply[0] as KubeObject & {
-        spec: { cluster: { zeebe: { replicas: number } } };
-      }
-    ).spec;
-    expect(spec.cluster.zeebe.replicas).toBe(3);
+    await waitFor(() => expect(dialog()).toBeNull());
+    expect(text("Pending 0")).toBeTruthy();
   });
 
   it("a review that closes on a claim update does not open again on the next change", async () => {

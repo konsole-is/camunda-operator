@@ -25,7 +25,6 @@ import {
   resetValue,
   setValue,
   validateClusterClaim,
-  valueAt,
   type FieldError,
   type LockProvider,
   type Session,
@@ -110,6 +109,20 @@ export function ClusterEditProvider({
   const live = liveClaim(context);
   const version = live?.metadata?.resourceVersion;
 
+  // The review stays open while a write runs, so that no change can start
+  // before the write returns.
+  const [writing, setWriting] = useState(false);
+  const apply = useCallback(
+    async (change: Change) => {
+      setWriting(true);
+      try {
+        return await actions.apply(change);
+      } finally {
+        setWriting(false);
+      }
+    },
+    [actions],
+  );
   const [state, setState] = useState<Edit>(() => ({
     seen: version,
     session: open(context, live, locks),
@@ -133,8 +146,9 @@ export function ClusterEditProvider({
   const reviewing =
     edit.reviewing &&
     edit.session !== undefined &&
-    edit.session.pending.size > 0 &&
-    validationOf(edit.session, context).length === 0;
+    (writing ||
+      (edit.session.pending.size > 0 &&
+        validationOf(edit.session, context).length === 0));
   // A review that an update closed opens again only on a click of Review.
   if (edit.reviewing && !reviewing) {
     edit = { ...edit, reviewing: false };
@@ -206,7 +220,9 @@ export function ClusterEditProvider({
     errors,
   };
 
-  const close = () => update({ ...stateRef.current, reviewing: false });
+  const close = () => {
+    if (!writing) update({ ...stateRef.current, reviewing: false });
+  };
   const off =
     context.writeMode === undefined &&
     isManaged(context.cluster) &&
@@ -245,12 +261,12 @@ export function ClusterEditProvider({
                 context={context}
                 session={session}
                 mode={context.writeMode}
-                actions={actions}
+                actions={{ preview: actions.preview, apply }}
                 show={show}
                 onRefused={(fields) =>
                   update({ ...stateRef.current, refused: { session, fields } })
                 }
-                onCancel={close}
+                onCancel={writing ? undefined : close}
                 onWritten={() => {
                   const current = stateRef.current;
                   update({
@@ -292,7 +308,7 @@ function ReviewOf({
   actions: ClaimActions;
   show: (result: WriteResult, message: string) => void;
   onRefused: (fields: FieldError[]) => void;
-  onCancel: () => void;
+  onCancel?: () => void;
   onWritten: () => void;
 }) {
   const input = changeInputOf(context, session);
@@ -330,8 +346,7 @@ function open(
 
 // written returns the session after an ok write of saved. A claim update
 // can arrive before the write returns, and then current is already on the
-// newer claim. A change made while the write ran stays pending against the
-// written claim.
+// newer claim.
 function written(
   current: Session<ClusterClaim> | undefined,
   saved: Session<ClusterClaim>,
@@ -341,20 +356,7 @@ function written(
   const version = (s: Session<ClusterClaim>) =>
     s.claim.metadata.resourceVersion;
   if (version(current) !== version(saved)) return current;
-  const wanted = claimAfter(current);
-  let next: Session<ClusterClaim> = {
-    claim: claimAfter(saved),
-    pending: new Map(),
-    locks,
-  };
-  for (const { steps } of [
-    ...saved.pending.values(),
-    ...current.pending.values(),
-  ]) {
-    const result = setValue(next, steps, valueAt(wanted, steps));
-    if ("session" in result) next = result.session;
-  }
-  return next;
+  return rebase(current, claimAfter(saved), locks);
 }
 
 function errorsOf(edit: Edit, context: ClusterSlotContext): FieldError[] {
