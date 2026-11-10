@@ -65,6 +65,12 @@ describe("ComponentDots", () => {
     expect(document.activeElement).toBe(trigger());
   });
 
+  it("does not announce a dialog for its list", () => {
+    render(<ComponentDots dots={dots} />);
+    expect(trigger().getAttribute("aria-haspopup")).toBeNull();
+    expect(trigger().getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("lists the components on hover and closes when the pointer leaves", async () => {
     render(<ComponentDots dots={dots} />);
     await userEvent.hover(trigger());

@@ -53,6 +53,9 @@ export function ComponentDots({
             type="button"
             aria-label={`Components: ${dots.map(stateOf).join(", ")}`}
             aria-controls={id}
+            // PopoverTrigger sets aria-haspopup="dialog", and the list is a
+            // note.
+            aria-haspopup={undefined}
             onClick={(event) => {
               event.preventDefault();
               setOpen(true);
