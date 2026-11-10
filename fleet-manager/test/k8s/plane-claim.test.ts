@@ -46,13 +46,40 @@ const ctx: PlaneContext = {
       },
     },
   }),
+  sections: [],
+  registrations: [],
+  accessRequests: [],
+  authConfigs: [],
+  planeClaims: [],
 };
+
+const url = (path: string) => `https://management.example.com${path}`;
 
 const base = (name: string): PlaneDraft => ({
   ...EMPTY_PLANE_DRAFT,
   environment: "prod",
   name,
   namespace: { kind: "existing", name: namespace },
+  storage: {
+    "management-database": [
+      {
+        section: "management-database",
+        registration: "existing-database-configs",
+        parameters: {
+          keycloak: "kc-db",
+          identity: "id-db",
+          webModeler: "wm-db",
+        },
+      },
+    ],
+  },
+  urls: {
+    keycloak: url("/auth"),
+    identity: url("/identity"),
+    console: url("/console"),
+    webModeler: url("/modeler"),
+    webModelerWebsockets: url("/modeler-ws"),
+  },
 });
 
 const drafts: [string, PlaneDraft][] = [

@@ -1,5 +1,6 @@
 import { PlaneCreateFlow } from "@/components/planes/create/plane-create-flow";
 import { list } from "@/lib/k8s/read";
+import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
 import { loadBundledData } from "@/startup/bundled-data";
 
 // The page reads the cache of the server. A static prerender would call the
@@ -17,6 +18,12 @@ export default async function NewPlanePage() {
     releases,
     managementClusters,
     claims,
+    sections,
+    registrations,
+    accessRequests,
+    authConfigs,
+    databaseServerPresets,
+    databaseConfigs,
     images,
   ] = await Promise.all([
     list("Environment").catch(() => []),
@@ -26,6 +33,14 @@ export default async function NewPlanePage() {
     list("CamundaRelease").catch(() => []),
     list("CamundaManagementCluster").catch(() => []),
     list("CamundaManagementClusterClaim").catch(() => []),
+    list("PluginSection").catch(() => []),
+    list("PluginRegistration").catch(() => []),
+    list("PluginRequest", {
+      labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
+    }).catch(() => []),
+    list("ManagementAuthConfig").catch(() => []),
+    list("DatabaseServerPreset").catch(() => []),
+    list("DatabaseConfig").catch(() => []),
     // The server checked both files at start. A table that cannot be read
     // now prefills no version.
     loadBundledData().then(
@@ -45,6 +60,12 @@ export default async function NewPlanePage() {
           clusters,
           platformConfigs,
           releases,
+          sections,
+          registrations,
+          accessRequests,
+          authConfigs,
+          databaseServerPresets,
+          databaseConfigs,
           planes: { clusters: managementClusters, claims, namespaces },
           images,
         }}

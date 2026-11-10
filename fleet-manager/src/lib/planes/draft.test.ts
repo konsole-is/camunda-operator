@@ -98,6 +98,11 @@ const ctx: PlaneContext = {
     } as CamundaRelease,
   ],
   images,
+  sections: [],
+  registrations: [],
+  accessRequests: [],
+  authConfigs: [],
+  planeClaims: [],
 };
 
 const ready = (): PlaneDraft => ({
@@ -556,5 +561,117 @@ describe("planeClaimOf and the components", () => {
       planeClaimOf({ ...ready(), versions: { identity: "8.9.11" } }, ctx).spec
         .versions.identity,
     ).toBe("8.9.11");
+  });
+});
+
+describe("planeClaimOf and the storage and access", () => {
+  const database = {
+    section: "management-database",
+    registration: "management-database-server",
+    parameters: { preset: "small" },
+  };
+  const access = { section: "access", registration: "gateway" };
+  const urls = {
+    keycloak: "https://m.example.com/auth",
+    identity: "https://m.example.com/identity",
+    console: "https://m.example.com/console",
+  };
+
+  it("writes the selections of the draft", () => {
+    expect(
+      planeClaimOf(
+        {
+          ...ready(),
+          storage: { [database.section]: [database], access: [access] },
+        },
+        ctx,
+      ).spec.plugins,
+    ).toEqual([database, access]);
+    expect(planeClaimOf(ready(), ctx).spec).not.toHaveProperty("plugins");
+  });
+
+  it("writes no external URL with an access selection", () => {
+    const management = planeClaimOf(
+      {
+        ...ready(),
+        console: true,
+        storage: { db: [database], access: [access] },
+        urls,
+      },
+      ctx,
+    ).spec.management;
+    expect(management.identityProvider).toEqual({ keycloak: {} });
+    expect(management.identity).not.toHaveProperty("externalUrl");
+    expect(management.console).toEqual({});
+  });
+
+  it("writes each typed URL without one, and keeps them across an access round trip", () => {
+    const d: PlaneDraft = {
+      ...ready(),
+      console: true,
+      storage: { db: [database] },
+      urls: { ...urls, webModeler: "https://m.example.com/modeler" },
+    };
+    const management = planeClaimOf(d, ctx).spec.management;
+    expect(management.identityProvider).toEqual({
+      keycloak: { externalUrl: "https://m.example.com/auth" },
+    });
+    expect(management.identity.externalUrl).toBe(
+      "https://m.example.com/identity",
+    );
+    expect(management.console).toEqual({
+      externalUrl: "https://m.example.com/console",
+    });
+    expect(management).not.toHaveProperty("webModeler");
+    const withAccess: PlaneDraft = {
+      ...d,
+      storage: { db: [database], access: [access] },
+    };
+    expect(planeClaimOf(withAccess, ctx).spec.management.console).toEqual({});
+    const back: PlaneDraft = {
+      ...withAccess,
+      storage: { db: [database], access: [] },
+    };
+    expect(planeClaimOf(back, ctx).spec.management).toEqual(management);
+  });
+
+  it("leaves out the database config of an app that does not run", () => {
+    const d: PlaneDraft = {
+      ...ready(),
+      mode: "oidc",
+      storage: {
+        "management-database": [
+          {
+            section: "management-database",
+            registration: "existing-database-configs",
+            parameters: {
+              keycloak: "kc-db",
+              identity: "id-db",
+              webModeler: "wm",
+            },
+          },
+        ],
+      },
+    };
+    expect(planeClaimOf(d, ctx).spec.plugins).toEqual([
+      {
+        section: "management-database",
+        registration: "existing-database-configs",
+        parameters: { identity: "id-db" },
+      },
+    ]);
+  });
+
+  it("writes managementAuthConfigName only when it differs from the claim name", () => {
+    expect(
+      planeClaimOf({ ...ready(), contractName: "ops" }, ctx).spec
+        .managementAuthConfigName,
+    ).toBe("ops");
+    expect(
+      planeClaimOf({ ...ready(), contractName: "plane-a" }, ctx).spec,
+    ).not.toHaveProperty("managementAuthConfigName");
+    expect(planeClaimOf(ready(), ctx).spec).not.toHaveProperty(
+      "managementAuthConfigName",
+    );
   });
 });

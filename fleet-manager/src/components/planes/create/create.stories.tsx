@@ -24,7 +24,99 @@ const environment = (
     ...(platformConfigRef && { platformConfigRef }),
     releases: { allowed: ["camunda-8-9-23"], default: "camunda-8-9-23" },
     namespaceCreation: { allowed: true, requiredLabelKeys: ["team"] },
+    sections: {
+      "management-database": {
+        required: true,
+        allowed: ["existing-database-configs", "management-database-server"],
+        default: "management-database-server",
+      },
+      access: { allowed: ["gateway"] },
+    },
+    presets: { databaseServer: ["small", "large"] },
+    parameters: {
+      "management-database-server": { preset: { claimEditable: true } },
+      "existing-database-configs": {
+        keycloak: { claimEditable: true },
+        identity: { claimEditable: true },
+        webModeler: { claimEditable: true },
+      },
+    },
   },
+});
+
+const pluginSection = (
+  name: string,
+  label: string,
+  description: string,
+  slot: string,
+  order: number,
+  emptyOptionLabel?: string,
+) => ({
+  apiVersion: "plugins.camunda.io/v1alpha1",
+  kind: "PluginSection",
+  metadata: { name },
+  spec: {
+    appliesTo: ["CamundaManagementClusterClaim"],
+    label,
+    description,
+    selection: "One",
+    slot,
+    order,
+    ...(emptyOptionLabel && { emptyOptionLabel }),
+  },
+});
+
+const registration = (
+  name: string,
+  label: string,
+  description: string,
+  spec: object,
+) => ({
+  apiVersion: "plugins.camunda.io/v1alpha1",
+  kind: "PluginRegistration",
+  metadata: { name },
+  spec: {
+    mode: "Optional",
+    label,
+    description,
+    deletionPolicies: ["Delete"],
+    serviceAccount: { name, namespace: "plugins" },
+    ...spec,
+  },
+  status: {
+    conditions: ["Accepted", "Ready"].map((type) => ({
+      type,
+      status: "True",
+      reason: "Ready",
+      message: "",
+      lastTransitionTime: "2026-11-10T00:00:00Z",
+    })),
+  },
+});
+
+const builtin = { name: "camunda-operator", version: "0.0.0" };
+const databaseApp = (title: string) => ({
+  type: "string",
+  minLength: 1,
+  title,
+});
+
+const databaseServerPreset = (
+  name: string,
+  instances: number,
+  storageSize: string,
+) => ({
+  apiVersion: "core.camunda.io/v1",
+  kind: "DatabaseServerPreset",
+  metadata: { name },
+  spec: { server: { instances, storageSize } },
+});
+
+const databaseConfig = (name: string) => ({
+  apiVersion: "core.camunda.io/v1",
+  kind: "DatabaseConfig",
+  metadata: { namespace: "platform", name },
+  spec: {},
 });
 
 const namespace = (name: string, env?: string) => ({
@@ -125,6 +217,87 @@ const data = {
       },
     },
   },
+  sections: [
+    pluginSection(
+      "management-database",
+      "Databases",
+      "The databases of Keycloak, Management Identity, and Web Modeler.",
+      "managementDatabases",
+      80,
+    ),
+    pluginSection(
+      "access",
+      "Access",
+      "How users and clients reach the cluster or the management plane from outside.",
+      "externalAccess",
+      60,
+      "No access from outside",
+    ),
+  ],
+  registrations: [
+    registration(
+      "management-database-server",
+      "New PostgreSQL server",
+      "Runs a PostgreSQL server with one database for each component of the management plane.",
+      {
+        sections: ["management-database"],
+        controller: builtin,
+        parameters: {
+          type: "object",
+          required: ["preset"],
+          properties: {
+            preset: { type: "string", minLength: 1, title: "Preset" },
+            databases: { type: "array", items: { type: "string" } },
+          },
+        },
+      },
+    ),
+    registration(
+      "existing-database-configs",
+      "Existing databases",
+      "Uses DatabaseConfigs that are already in the namespace, one for each component.",
+      {
+        sections: ["management-database"],
+        controller: builtin,
+        parameters: {
+          type: "object",
+          properties: {
+            keycloak: databaseApp("Keycloak"),
+            identity: databaseApp("Management Identity"),
+            webModeler: databaseApp("Web Modeler"),
+          },
+        },
+      },
+    ),
+    registration(
+      "gateway",
+      "Gateway",
+      "Routes the plane through the shared Gateway.",
+      {
+        sections: ["access"],
+        parameterValues: {
+          managementHostnamePattern: "{name}.mgmt.example.com",
+        },
+      },
+    ),
+  ],
+  accessRequests: [],
+  authConfigs: [
+    {
+      apiVersion: "core.camunda.io/v1",
+      kind: "ManagementAuthConfig",
+      metadata: { name: "plane-legacy" },
+    },
+  ],
+  databaseServerPresets: [
+    databaseServerPreset("small", 1, "10Gi"),
+    databaseServerPreset("large", 3, "100Gi"),
+  ],
+  databaseConfigs: [
+    databaseConfig("keycloak-db"),
+    databaseConfig("identity-db"),
+    databaseConfig("modeler-db"),
+  ],
   planes: {
     clusters: [
       {
@@ -260,6 +433,80 @@ export const planeCreateStories: Story[] = [
         data={data}
         step="components"
         initial={{ ...components, versions: { keycloak: "26.7.0" } }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Storage and access with no access from outside",
+    render: () => (
+      <PlaneCreateStory
+        data={data}
+        step="storage"
+        initial={{
+          ...components,
+          urls: { keycloak: "https://management.example.com/auth" },
+        }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Storage and access with an access option",
+    render: () => (
+      <PlaneCreateStory
+        data={data}
+        step="storage"
+        initial={{
+          ...components,
+          storage: {
+            "management-database": [
+              {
+                section: "management-database",
+                registration: "existing-database-configs",
+                parameters: {
+                  keycloak: "keycloak-db",
+                  identity: "identity-db",
+                },
+              },
+            ],
+            access: [{ section: "access", registration: "gateway" }],
+          },
+        }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Storage and access with a taken host",
+    render: () => (
+      <PlaneCreateStory
+        data={{
+          ...data,
+          accessRequests: [
+            {
+              apiVersion: "plugins.camunda.io/v1alpha1",
+              kind: "PluginRequest",
+              metadata: { namespace: "ops", name: "plane-b-access" },
+              spec: {
+                claimRef: {
+                  kind: "CamundaManagementClusterClaim",
+                  name: "plane-b",
+                },
+                section: "access",
+                registration: "gateway",
+              },
+              status: {
+                outputs: { managementHost: "plane-a.mgmt.example.com" },
+              },
+            },
+          ] as unknown as PlaneCreateData["accessRequests"],
+        }}
+        step="storage"
+        initial={{
+          ...components,
+          storage: { access: [{ section: "access", registration: "gateway" }] },
+        }}
       />
     ),
   },

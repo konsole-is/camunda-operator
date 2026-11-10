@@ -20,6 +20,12 @@ const data: Record<string, unknown[]> = {
   CamundaRelease: [],
   CamundaManagementCluster: [],
   CamundaManagementClusterClaim: [],
+  PluginSection: [],
+  PluginRegistration: [],
+  PluginRequest: [],
+  ManagementAuthConfig: [],
+  DatabaseServerPreset: [],
+  DatabaseConfig: [],
 };
 
 const table = {
@@ -89,14 +95,30 @@ describe("NewPlanePage", () => {
       "CamundaManagementClusterClaim",
       "CamundaPlatformConfig",
       "CamundaRelease",
+      "DatabaseConfig",
+      "DatabaseServerPreset",
       "Environment",
+      "ManagementAuthConfig",
       "Namespace",
+      "PluginRegistration",
+      "PluginRequest",
+      "PluginSection",
     ]);
     expect(
       screen.getByRole("heading", { name: "New management plane" }),
     ).toBeTruthy();
     expect(screen.getByRole("radio", { name: /production/ })).toBeTruthy();
     expect(dynamic).toBe("force-dynamic");
+  });
+
+  it("reads only the access requests", async () => {
+    render(await NewPlanePage());
+    expect(
+      vi.mocked(list).mock.calls.find(([kind]) => kind === "PluginRequest"),
+    ).toEqual([
+      "PluginRequest",
+      { labelSelector: "plugins.camunda.io/section=access" },
+    ]);
   });
 
   it("a failed read of one kind still shows the flow", async () => {

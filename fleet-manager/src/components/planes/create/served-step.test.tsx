@@ -68,6 +68,11 @@ const ctx: PlaneContext = {
   namespaces: [],
   releases: [],
   images: { schemaVersion: 1, minors: {} },
+  sections: [],
+  registrations: [],
+  accessRequests: [],
+  authConfigs: [],
+  planeClaims: [],
 };
 
 const namespaces = [

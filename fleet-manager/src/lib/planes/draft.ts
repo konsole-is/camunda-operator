@@ -1,12 +1,19 @@
 // This module runs in the browser and on the server.
 import type { NamespaceChoice } from "@/components/fleet/namespace-picker";
-import type { CamundaManagementClusterClaimSpec } from "@/generated/crds/camundamanagementclusterclaim";
+import type {
+  CamundaManagementClusterClaim,
+  CamundaManagementClusterClaimSpec,
+} from "@/generated/crds/camundamanagementclusterclaim";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import { claimNameErrors } from "@/lib/claims/names";
 import { environmentReady } from "@/lib/environments";
 import type { LabelSelector } from "@/lib/labels";
+import type { PluginSelection } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ImagesTable } from "@/startup/bundled-data";
 import {
@@ -24,6 +31,8 @@ import {
   authMethod,
   externalKeycloakErrors,
 } from "./identity";
+import { accessSelection, planeSelections, runningSelection } from "./storage";
+import { type PlaneUrlId, planeUrlFields } from "./urls";
 import {
   type PlaneVersions,
   type VersionPrefill,
@@ -38,7 +47,10 @@ import {
  * object name of the Environment of step 1. platformConfig is the pick of
  * the admin; undefined keeps the default of the environment. served is the
  * pick of step 2; undefined serves the environment of step 1. versions
- * holds only the versions that the admin typed.
+ * holds only the versions that the admin typed. storage holds the
+ * selections of the database and access sections, by section name, once
+ * step 4 showed the section. urls are the URLs typed
+ * for "No access from outside". contractName "" means the claim name.
  */
 export type PlaneDraft = {
   environment?: string;
@@ -54,6 +66,9 @@ export type PlaneDraft = {
   webModeler: boolean;
   mail: MailDraft;
   versions: PlaneVersions;
+  storage: Record<string, PluginSelection[]>;
+  urls: Partial<Record<PlaneUrlId, string>>;
+  contractName: string;
 };
 
 /** EMPTY_PLANE_DRAFT is the draft that the flow starts from. */
@@ -66,6 +81,9 @@ export const EMPTY_PLANE_DRAFT: PlaneDraft = {
   webModeler: false,
   mail: EMPTY_MAIL,
   versions: {},
+  storage: {},
+  urls: {},
+  contractName: "",
 };
 
 /**
@@ -73,7 +91,9 @@ export const EMPTY_PLANE_DRAFT: PlaneDraft = {
  * takenNames are the names of the plane claims and CamundaManagementClusters
  * in the namespace of the draft. namespaces are the live namespaces, each
  * with the name of its Environment. images is the images table of the
- * fleet manager.
+ * fleet manager. accessRequests are the requests of the access section,
+ * and planeClaims the plane claims, both of every namespace. authConfigs
+ * are the names of the ManagementAuthConfigs.
  */
 export type PlaneContext = {
   environments: readonly Environment[];
@@ -82,6 +102,11 @@ export type PlaneContext = {
   namespaces: readonly { name: string; environment?: string }[];
   releases: readonly CamundaRelease[];
   images: ImagesTable;
+  sections: readonly PluginSection[];
+  registrations: readonly PluginRegistration[];
+  accessRequests: readonly PluginRequest[];
+  authConfigs: readonly string[];
+  planeClaims: readonly CamundaManagementClusterClaim[];
 };
 
 /** PlaneClaim is the CamundaManagementClusterClaim that the plane create flow writes. It always has a clusterSelector. */
@@ -233,7 +258,11 @@ export function componentsErrors(
  * platformConfigRef is set only when the pick differs from the platform
  * config of the environment. The admin holds only the fields of the mode.
  * Console, Web Modeler, and their versions are set only while they run,
- * and versions.keycloak only in Keycloak mode.
+ * and versions.keycloak only in Keycloak mode. Without an access
+ * selection, each typed URL of a running app is set. A selection of
+ * existing-database-configs names no DatabaseConfig of an app that does
+ * not run. managementAuthConfigName is set only when it differs from the
+ * claim name.
  */
 export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
   const own = environmentOf(draft, ctx)?.spec.platformConfigRef;
@@ -242,6 +271,26 @@ export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
       ? draft.platformConfig
       : undefined;
   const versions = planeVersions(draft, ctx);
+  const running = runningOf(draft);
+  const plugins = planeSelections(draft).map((p) =>
+    runningSelection(p, running),
+  );
+  const contract =
+    draft.contractName !== "" && draft.contractName !== draft.name
+      ? draft.contractName
+      : undefined;
+  const management: Management = {
+    identityProvider: identityProviderOf(draft),
+    identity: { admin: adminOf(draft) },
+    ...(draft.console && { console: {} }),
+    ...(draft.webModeler && { webModeler: { mail: mailOf(draft.mail) } }),
+  };
+  if (!accessSelection(draft)) {
+    for (const field of planeUrlFields(running)) {
+      const url = draft.urls[field.id];
+      if (url) setIn(management, field.names, url);
+    }
+  }
   return {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "CamundaManagementClusterClaim",
@@ -254,15 +303,23 @@ export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
           ? {}
           : { matchLabels: { ...draft.clusterLabels } },
       ...(ref !== undefined && { platformConfigRef: ref }),
-      management: {
-        identityProvider: identityProviderOf(draft),
-        identity: { admin: adminOf(draft) },
-        ...(draft.console && { console: {} }),
-        ...(draft.webModeler && { webModeler: { mail: mailOf(draft.mail) } }),
-      },
+      management,
       versions: { ...versions, identity: versions.identity ?? "" },
+      ...(plugins.length > 0 && { plugins }),
+      ...(contract !== undefined && { managementAuthConfigName: contract }),
     },
   };
+}
+
+// setIn sets value at names under target. Each object on the way exists:
+// planeUrlFields gives only the fields of running apps, whose objects
+// planeClaimOf writes.
+function setIn(target: object, names: readonly string[], value: string) {
+  let at = target as Record<string, unknown>;
+  for (const name of names.slice(0, -1)) {
+    at = at[name] as Record<string, unknown>;
+  }
+  at[names.at(-1)!] = value;
 }
 
 type Management = CamundaManagementClusterClaimSpec["management"];

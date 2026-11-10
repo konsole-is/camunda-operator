@@ -44,6 +44,11 @@ const ctx: PlaneContext = {
       },
     },
   },
+  sections: [],
+  registrations: [],
+  accessRequests: [],
+  authConfigs: [],
+  planeClaims: [],
 };
 
 const keycloak: PlaneDraft = {

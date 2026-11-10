@@ -1,11 +1,16 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
+import type { DatabaseConfig } from "@/generated/crds/databaseconfig";
+import type { DatabaseServerPreset } from "@/generated/crds/databaseserverpreset";
 import type { Environment } from "@/generated/crds/environment";
+import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
+import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
   type CreateStep,
   type DraftPath,
@@ -16,7 +21,8 @@ import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import type { Plane, PlaneSources } from "@/components/planes/plane";
 import { type ReadError, usePlanes } from "@/components/planes/planes-table";
 import { namesIn } from "@/lib/claims/names";
-import { environmentOf } from "@/lib/policy";
+import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
+import { type BuiltinObjects, environmentOf } from "@/lib/policy";
 import { useResources } from "@/lib/k8s/hooks";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
@@ -27,16 +33,19 @@ import {
   componentsErrors,
   servedErrors,
 } from "@/lib/planes/draft";
+import { storageErrors } from "@/lib/planes/storage";
 import type { ValidationError } from "@/lib/schema";
 import type { ImagesTable } from "@/startup/bundled-data";
 import { ComponentsStep } from "./components-step";
 import { PlaneBasicsStep } from "./plane-basics-step";
 import { ServedStep } from "./served-step";
+import { StorageAccessStep } from "./storage-access-step";
 
 /**
  * PlaneCreateData is the first snapshot of the new plane page, from every
- * namespace. planes are the lists of planesOf. images is the images table
- * of the fleet manager.
+ * namespace. planes are the lists of planesOf. accessRequests are the
+ * requests of the access section. images is the images table of the fleet
+ * manager.
  */
 export type PlaneCreateData = {
   environments: Resource<"Environment">[];
@@ -44,15 +53,37 @@ export type PlaneCreateData = {
   clusters: Resource<"CamundaCluster">[];
   platformConfigs: Resource<"CamundaPlatformConfig">[];
   releases: Resource<"CamundaRelease">[];
+  sections: Resource<"PluginSection">[];
+  registrations: Resource<"PluginRegistration">[];
+  accessRequests: Resource<"PluginRequest">[];
+  authConfigs: Resource<"ManagementAuthConfig">[];
+  databaseServerPresets: Resource<"DatabaseServerPreset">[];
+  databaseConfigs: Resource<"DatabaseConfig">[];
   planes: PlaneSources;
   images: ImagesTable;
 };
+
+const ACCESS_REQUESTS = {
+  labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
+};
+
+// STORAGE_KINDS are the kinds that only the storage step reads. A failed
+// read of one of them blocks that step.
+const STORAGE_KINDS: readonly string[] = [
+  "PluginSection",
+  "PluginRegistration",
+  "PluginRequest",
+  "ManagementAuthConfig",
+  "DatabaseServerPreset",
+  "DatabaseConfig",
+];
 
 /** PLANE_STEPS are the steps of the plane create flow that exist so far, in order. */
 export const PLANE_STEPS: readonly { id: string; label: string }[] = [
   { id: "basics", label: "Basics" },
   { id: "served", label: "Environments served" },
   { id: "components", label: "Components and versions" },
+  { id: "storage", label: "Storage and access" },
 ];
 
 /** PlaneModels are the lists that the steps of the plane create flow read. */
@@ -62,6 +93,11 @@ export type PlaneModels = {
   clusters: CamundaCluster[];
   platformConfigs: CamundaPlatformConfig[];
   releases: CamundaRelease[];
+  sections: PluginSection[];
+  registrations: PluginRegistration[];
+  accessRequests: PluginRequest[];
+  authConfigs: string[];
+  objects: BuiltinObjects;
   planes: Plane[];
   sources: PlaneSources;
   images: ImagesTable;
@@ -94,19 +130,35 @@ export function planeContextOf(
     })),
     releases: models.releases,
     images: models.images,
+    sections: models.sections,
+    registrations: models.registrations,
+    accessRequests: models.accessRequests,
+    authConfigs: models.authConfigs,
+    planeClaims: modelsOf(models.sources.claims),
   };
 }
 
 /**
  * planeSteps returns PLANE_STEPS with the check of each step.
- * selectorErrors are the errors of the cluster labels. failures are the
- * lists that cannot be read, and each blocks step 1.
+ * selectorErrors are the errors of the cluster labels, and sectionErrors
+ * those of the sections of the storage step. failures are the lists that
+ * cannot be read. A list that only the storage step reads blocks that
+ * step, and any other list blocks step 1.
  */
 export function planeSteps(
   models: PlaneModels,
   selectorErrors: readonly ValidationError[],
   failures: readonly ReadError[] = [],
+  sectionErrors: readonly ValidationError[] = [],
 ): CreateStep<PlaneDraft>[] {
+  const message = (f: ReadError) =>
+    `The fleet manager could not read the ${f.kind} objects: ${f.message}`;
+  const storageFailures = failures.filter((f) =>
+    STORAGE_KINDS.includes(f.kind),
+  );
+  const basicsFailures = failures.filter(
+    (f) => !STORAGE_KINDS.includes(f.kind),
+  );
   return PLANE_STEPS.map((step) => ({
     ...step,
     check: (draft: PlaneDraft) => {
@@ -115,17 +167,16 @@ export function planeSteps(
         case "basics":
           // A list that cannot be read would let a taken name, or a rule of
           // an Environment, pass unseen.
-          return [
-            ...failures.map(
-              (f) =>
-                `The fleet manager could not read the ${f.kind} objects: ${f.message}`,
-            ),
-            ...basicsErrors(draft, ctx),
-          ];
+          return [...basicsFailures.map(message), ...basicsErrors(draft, ctx)];
         case "served":
           return servedErrors(draft, ctx, selectorErrors);
-        default:
+        case "components":
           return componentsErrors(draft, ctx);
+        default:
+          return [
+            ...storageFailures.map(message),
+            ...storageErrors(draft, ctx, sectionErrors),
+          ];
       }
     },
   }));
@@ -142,6 +193,7 @@ export function PlaneStepBody({
   models,
   secrets,
   onSelectorErrors,
+  onSectionErrors,
 }: {
   current: string;
   draft: PlaneDraft;
@@ -149,8 +201,20 @@ export function PlaneStepBody({
   models: PlaneModels;
   secrets: SecretRefs;
   onSelectorErrors: (errors: ValidationError[]) => void;
+  onSectionErrors: (section: string, errors: ValidationError[]) => void;
 }) {
   const ctx = planeContextOf(models, draft);
+  if (current === "storage") {
+    return (
+      <StorageAccessStep
+        draft={draft}
+        set={set}
+        ctx={ctx}
+        objects={models.objects}
+        onSectionErrors={onSectionErrors}
+      />
+    );
+  }
   if (current === "components") {
     return (
       <ComponentsStep draft={draft} set={set} ctx={ctx} secrets={secrets} />
@@ -194,6 +258,32 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
     initial.platformConfigs,
   );
   const releases = useResources("CamundaRelease", {}, initial.releases);
+  const sections = useResources("PluginSection", {}, initial.sections);
+  const registrations = useResources(
+    "PluginRegistration",
+    {},
+    initial.registrations,
+  );
+  const accessRequests = useResources(
+    "PluginRequest",
+    ACCESS_REQUESTS,
+    initial.accessRequests,
+  );
+  const authConfigs = useResources(
+    "ManagementAuthConfig",
+    {},
+    initial.authConfigs,
+  );
+  const presets = useResources(
+    "DatabaseServerPreset",
+    {},
+    initial.databaseServerPresets,
+  );
+  const databaseConfigs = useResources(
+    "DatabaseConfig",
+    {},
+    initial.databaseConfigs,
+  );
   const planes = usePlanes(initial.planes);
   const managementClusters = useResources(
     "CamundaManagementCluster",
@@ -212,6 +302,12 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
         ["CamundaCluster", clusters],
         ["CamundaPlatformConfig", platformConfigs],
         ["CamundaRelease", releases],
+        ["PluginSection", sections],
+        ["PluginRegistration", registrations],
+        ["PluginRequest", accessRequests],
+        ["ManagementAuthConfig", authConfigs],
+        ["DatabaseServerPreset", presets],
+        ["DatabaseConfig", databaseConfigs],
       ] as const
     ).flatMap(([kind, result]) =>
       result.error ? [{ kind, message: result.error }] : [],
@@ -224,6 +320,14 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
     clusters: modelsOf<CamundaCluster>(clusters.items),
     platformConfigs: modelsOf<CamundaPlatformConfig>(platformConfigs.items),
     releases: modelsOf<CamundaRelease>(releases.items),
+    sections: modelsOf<PluginSection>(sections.items),
+    registrations: modelsOf<PluginRegistration>(registrations.items),
+    accessRequests: modelsOf<PluginRequest>(accessRequests.items),
+    authConfigs: authConfigs.items.map((c) => c.metadata?.name ?? ""),
+    objects: {
+      DatabaseServerPreset: modelsOf<DatabaseServerPreset>(presets.items),
+      DatabaseConfig: modelsOf<DatabaseConfig>(databaseConfigs.items),
+    },
     planes: planes.planes,
     sources: {
       clusters: managementClusters.items,
@@ -233,7 +337,22 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
     images: initial.images,
   };
   const [selectorErrors, setSelectorErrors] = useState<ValidationError[]>([]);
-  const steps = planeSteps(models, selectorErrors, readErrors);
+  // The errors that each section of the storage step last reported, by
+  // section name.
+  const [sectionErrors, setSectionErrors] = useState<
+    Record<string, ValidationError[]>
+  >({});
+  const onSectionErrors = useCallback(
+    (section: string, errors: ValidationError[]) =>
+      setSectionErrors((current) => ({ ...current, [section]: errors })),
+    [],
+  );
+  const steps = planeSteps(
+    models,
+    selectorErrors,
+    readErrors,
+    Object.values(sectionErrors).flat(),
+  );
   const flow = useCreateFlow({ steps, initial: EMPTY_PLANE_DRAFT });
   const namespace = flow.draft.namespace;
   const existing = namespace?.kind === "existing" ? namespace.name : undefined;
@@ -271,6 +390,7 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
           models={models}
           secrets={existing === undefined ? [] : secrets}
           onSelectorErrors={setSelectorErrors}
+          onSectionErrors={onSectionErrors}
         />
       </WizardStepper>
     </div>
