@@ -2,7 +2,10 @@ import type { V1Namespace } from "@kubernetes/client-node";
 import { BasicsStory } from "@/components/create/basics-story";
 import { EnvironmentCards } from "@/components/create/environment-cards";
 import { PresetCards } from "@/components/create/preset-cards";
-import { StorageStory } from "@/components/create/storage-story";
+import {
+  DeletionChoiceStory,
+  StorageStory,
+} from "@/components/create/storage-story";
 import type { Story } from "@/gallery/registry";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchclusterpreset";
@@ -570,6 +573,26 @@ export const createFlowStories: Story[] = [
           ],
         }}
         initial={storageDraft}
+      />
+    ),
+  },
+  {
+    component: "DeletionChoiceField",
+    name: "Deletion choice with Keep refused",
+    render: () => (
+      <DeletionChoiceStory
+        choice={{
+          defaultPolicy: "Orphan",
+          keepAllowed: false,
+          alwaysDeleted: [
+            {
+              section: "backup-storage",
+              label: "Archive bucket (Backup storage)",
+            },
+            { section: "access", label: "Gateway (Access)" },
+          ],
+          policy: "Delete",
+        }}
       />
     ),
   },

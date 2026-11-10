@@ -463,7 +463,10 @@ describe("ClusterStorageStep", () => {
       registrations: DATA.registrations.map((r) =>
         r.metadata.name === "s3"
           ? r
-          : { ...r, spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] } },
+          : {
+              ...r,
+              spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] },
+            },
       ) as PluginRegistration[],
     };
     render(

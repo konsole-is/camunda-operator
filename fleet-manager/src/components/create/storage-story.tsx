@@ -7,6 +7,7 @@ import type { PluginSection } from "@/generated/crds/pluginsection";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import { CLUSTER_STEPS, type ClusterDraft } from "@/lib/clusters/draft";
 import {
+  type DeletionChoice,
   type StorageData,
   deletionChoice,
   storageErrors,
@@ -15,6 +16,7 @@ import {
 import type { BuiltinObjects } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { ClusterStorageStep } from "./cluster-storage-step";
+import { DeletionChoiceField } from "./deletion-choice";
 import { useCreateFlow } from "./use-create-flow";
 
 /**
@@ -73,5 +75,21 @@ export function StorageStory({
         }
       />
     </WizardStepper>
+  );
+}
+
+/**
+ * DeletionChoiceStory shows the deletion choice of step 2 in the gallery.
+ * It owns the pick, so a story passes only choice.
+ */
+export function DeletionChoiceStory({ choice }: { choice: DeletionChoice }) {
+  const [policy, setPolicy] = useState(choice.policy);
+  return (
+    <div className="max-w-3xl">
+      <DeletionChoiceField
+        choice={{ ...choice, policy }}
+        onChange={setPolicy}
+      />
+    </div>
   );
 }

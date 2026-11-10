@@ -41,7 +41,9 @@ describe("DeletionChoiceField", () => {
     expect(radio(/Keep the resources/).disabled).toBe(true);
     expect(radio(/Delete the resources/).disabled).toBe(false);
     const item = screen.getByText(/Ephemeral bucket \(Backup storage\)/);
-    expect(within(item.closest("li")!).getByText("Always deleted")).toBeTruthy();
+    expect(
+      within(item.closest("li")!).getByText("Always deleted"),
+    ).toBeTruthy();
   });
 
   it("enables Keep the resources when every option can keep", () => {

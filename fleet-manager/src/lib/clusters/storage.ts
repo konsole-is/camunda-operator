@@ -191,7 +191,10 @@ export function deletionChoice(
     const registration = data.registrations.find(
       (r) => r.metadata.name === s.registration,
     );
-    if (!registration || registration.spec.deletionPolicies.includes("Orphan")) {
+    if (
+      !registration ||
+      registration.spec.deletionPolicies.includes("Orphan")
+    ) {
       return [];
     }
     const view = views.find((v) => v.name === s.section);

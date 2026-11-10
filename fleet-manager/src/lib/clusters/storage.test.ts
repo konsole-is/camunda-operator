@@ -515,9 +515,9 @@ describe("deletionChoice", () => {
   });
 
   it("takes Delete as the default of an Environment that sets none", () => {
-    expect(
-      deletionChoice(picking("s3"), withEnvironment()).defaultPolicy,
-    ).toBe("Delete");
+    expect(deletionChoice(picking("s3"), withEnvironment()).defaultPolicy).toBe(
+      "Delete",
+    );
   });
 
   it("takes the deletion default of the Environment", () => {
@@ -528,8 +528,7 @@ describe("deletionChoice", () => {
 
   it("takes the pick of the draft over the default", () => {
     expect(
-      deletionChoice(picking("s3", "Delete"), withEnvironment("Orphan"))
-        .policy,
+      deletionChoice(picking("s3", "Delete"), withEnvironment("Orphan")).policy,
     ).toBe("Delete");
   });
 
@@ -733,9 +732,9 @@ describe("storageSummary", () => {
   });
 
   it("says that an access option gives the Optimize URL when it lists that output", () => {
-    expect(
-      summaryOf({ access: [pick("access", "gateway")] }).optimizeUrl,
-    ).toBe(true);
+    expect(summaryOf({ access: [pick("access", "gateway")] }).optimizeUrl).toBe(
+      true,
+    );
     expect(
       summaryOf({ access: [pick("access", "internal")] }).optimizeUrl,
     ).toBe(false);
