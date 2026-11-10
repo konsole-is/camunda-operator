@@ -33,6 +33,8 @@ const EXAMPLE_HOST = "https://management.example.com";
 // and the operator does not.
 const DOT_SEGMENT = /^[^?#]*\/[.][.]?([/?#]|$)/;
 
+const RAW_URL = /^(https?):\/\/[^/?#]+(.*)$/i;
+
 /**
  * planeUrlFields returns the URL fields of the running apps, from the
  * externalAccess rows of SLOT_FIELDS for the plane claim, in their order.
@@ -95,19 +97,19 @@ export function urlErrors(
 function urlError(value: string, field: PlaneUrlField): string | undefined {
   const name = `The ${field.label} URL`;
   if (value === "") return `Enter the ${field.label} URL.`;
-  const url = URL.canParse(value) ? new URL(value) : undefined;
-  if (
-    !url ||
-    (url.protocol !== "http:" && url.protocol !== "https:") ||
-    url.hostname === ""
-  ) {
+  // The CRD checks the text as typed. The URL parser of the browser
+  // repairs and normalizes it, so it can accept text that the CRD refuses.
+  const raw = RAW_URL.exec(value);
+  if (!raw || !URL.canParse(value) || new URL(value).hostname === "") {
     return `${name} must be an http or https URL.`;
   }
+  const scheme = raw[1].toLowerCase();
+  const path = raw[2].split(/[?#]/)[0];
   if (field.id === "keycloak") {
     if (value.includes("?") || value.includes("#")) {
       return `${name} must carry no query and no fragment.`;
     }
-    return url.pathname === "/auth"
+    return path === "/auth"
       ? undefined
       : `${name} must end in /auth, for example ${EXAMPLE_HOST}/auth.`;
   }
@@ -118,8 +120,8 @@ function urlError(value: string, field: PlaneUrlField): string | undefined {
   if (DOT_SEGMENT.test(value)) {
     return `${name} must carry no . or .. path segment.`;
   }
-  if (field.id === "identity" && url.protocol === "http:") {
-    return url.pathname === "/"
+  if (field.id === "identity" && scheme === "http") {
+    return path === "" || path === "/"
       ? undefined
       : `${name} needs https when it has a path.`;
   }

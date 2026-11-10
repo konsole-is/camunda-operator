@@ -83,6 +83,21 @@ describe("urlErrors", () => {
     ],
     [
       "keycloak",
+      "https:management.example.com/auth",
+      "The Keycloak URL must be an http or https URL.",
+    ],
+    [
+      "console",
+      "https:/management.example.com/console",
+      "The Console URL must be an http or https URL.",
+    ],
+    [
+      "keycloak",
+      `${base}/a/../auth`,
+      "The Keycloak URL must end in /auth, for example https://management.example.com/auth.",
+    ],
+    [
+      "keycloak",
       `${base}/auth?x=1`,
       "The Keycloak URL must carry no query and no fragment.",
     ],
