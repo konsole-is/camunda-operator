@@ -12,15 +12,16 @@ import {
 import { ChangeBar } from "@/components/fleet/change-bar";
 import { ChangeReview } from "@/components/fleet/change-review";
 import { StatusChip } from "@/components/fleet/status-chip";
-import { useGitPushes } from "@/components/fleet/git-pushes";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import type { ReadError } from "@/components/planes/planes-table";
 import type { FleetEnvironmentConditionType } from "@/generated/conditions";
 import type { Environment } from "@/generated/crds/environment";
 import { environmentReady } from "@/lib/environments";
+import { REVISION_ANNOTATION } from "@/lib/labels";
 import { equalJSON } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
+import { refKey } from "@/lib/write/refs";
 import type {
   Change,
   Preview,
@@ -62,7 +63,7 @@ export type EnvironmentActions = {
  * without name. The draft starts from the live copy and stays while the
  * live copy changes, so a save of a stale draft fails with Stale. Discard
  * loads the live copy. After a push in Git mode the form stays disabled and
- * keeps the draft until GitOps applied the push. After a save outside Git
+ * keeps the draft until sources shows the pushed revision. After a save outside Git
  * mode the form stays disabled and keeps the draft until sources shows a
  * changed copy. After a create, the page moves to the editor of the new
  * environment once it shows in sources.
@@ -88,14 +89,11 @@ export function EnvironmentEditor({
   // The sections that keep typed rows remount on a reset.
   const [generation, setGeneration] = useState(0);
   const [reviewing, setReviewing] = useState<Change>();
-  const [waiting, setWaiting] = useState<
-    { push: readonly string[] } | "save"
-  >();
+  const [waiting, setWaiting] = useState<{ revision: string } | "save">();
   const [labelErrors, setLabelErrors] = useState<ValidationError[]>([]);
   const [created, setCreated] = useState<string>();
   const [deleting, setDeleting] = useState(false);
   const { toast, show, dismiss } = useWriteToast();
-  const { pushes } = useGitPushes();
 
   const reset = (to: Environment | undefined) => {
     setBase(to);
@@ -105,10 +103,11 @@ export function EnvironmentEditor({
     setWaiting(undefined);
     setLabelErrors([]);
   };
-  const pushing =
+  if (
     typeof waiting === "object" &&
-    pushes.some((p) => waiting.push.includes(p.key));
-  if (typeof waiting === "object" && !pushing) reset(live);
+    live?.metadata.annotations?.[REVISION_ANNOTATION] === waiting.revision
+  )
+    reset(live);
   if (
     waiting === "save" &&
     live &&
@@ -270,14 +269,15 @@ export function EnvironmentEditor({
               show(result, message);
               if (!result.ok) return;
               if (isNew) setCreated(draft.name);
-              else if (result.mode === "git")
-                setWaiting({
-                  push: [
-                    ...Object.keys(result.revisions),
-                    ...Object.keys(result.deleted),
-                  ],
-                });
-              else setWaiting("save");
+              else {
+                const revision =
+                  result.mode === "git"
+                    ? result.revisions[
+                        refKey({ kind: "Environment", name: draft.name })
+                      ]
+                    : undefined;
+                setWaiting(revision ? { revision } : "save");
+              }
             }}
             onWritten={() => setReviewing(undefined)}
             onCancel={() => setReviewing(undefined)}

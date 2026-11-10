@@ -228,6 +228,9 @@ describe("EnvironmentEditor", () => {
     const applied = environmentFixtures();
     applied.environments[0].spec.displayName = "Prod";
     applied.environments[0].metadata.resourceVersion = "13";
+    applied.environments[0].metadata.annotations = {
+      "fleet.camunda.io/revision": "abc",
+    };
     rerender(applied);
     await waitFor(() => expect(displayName().matches(":disabled")).toBe(false));
     expect(displayName().value).toBe("Prod");
@@ -347,6 +350,9 @@ describe("EnvironmentEditor", () => {
     const applied = environmentFixtures();
     applied.environments[0].spec.displayName = "Prod";
     applied.environments[0].metadata.resourceVersion = "13";
+    applied.environments[0].metadata.annotations = {
+      "fleet.camunda.io/revision": "abc",
+    };
     rerender(applied);
     await waitFor(() => expect(displayName().matches(":disabled")).toBe(false));
   });
@@ -378,5 +384,30 @@ describe("EnvironmentEditor", () => {
       "disabled",
       false,
     );
+  });
+
+  it("stays locked when the push settles before the list shows the pushed revision", async () => {
+    const { rerender } = setup({ mode: "git", result: PUSHED });
+    await saveDisplayName("Prod", "Push to Git");
+    await waitFor(() =>
+      expect(screen.getByText("Waiting for GitOps to apply")).toBeTruthy(),
+    );
+    sync.state = "applied";
+    rerender(environmentFixtures());
+    await waitFor(() =>
+      expect(screen.queryByText("Waiting for GitOps to apply")).toBeNull(),
+    );
+    expect(displayName().matches(":disabled")).toBe(true);
+    expect(displayName().value).toBe("Prod");
+
+    const applied = environmentFixtures();
+    applied.environments[0].spec.displayName = "Prod";
+    applied.environments[0].metadata.resourceVersion = "13";
+    applied.environments[0].metadata.annotations = {
+      "fleet.camunda.io/revision": "abc",
+    };
+    rerender(applied);
+    await waitFor(() => expect(displayName().matches(":disabled")).toBe(false));
+    expect(displayName().value).toBe("Prod");
   });
 });
