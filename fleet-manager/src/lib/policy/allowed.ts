@@ -1,5 +1,7 @@
 import type { Environment } from "@/generated/crds/environment";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import { BUILTIN_OPTIONS } from "./builtins";
 import {
   byCodeUnit,
   decodeObject,
@@ -11,6 +13,7 @@ import {
 } from "./json";
 import {
   hasValue,
+  requestParameters,
   type ParameterPolicies,
   type ParameterPolicy,
   type ResolvedPolicy,
@@ -27,7 +30,7 @@ import type {
  * Environment of the namespace. kind is the kind of the claim. A section of
  * the policy that is not in sections applies to every claim kind. policy is
  * the snapshot of the claim. presetRef and releaseRef are absent for a plane
- * claim.
+ * claim. requests are the live PluginRequests of the claim.
  */
 export type AllowedInput = (
   | { kind?: undefined; sections?: undefined }
@@ -38,15 +41,28 @@ export type AllowedInput = (
   presetRef?: string;
   releaseRef?: string;
   selections?: PluginSelection[];
+  requests?: readonly PluginRequest[];
 };
+
+// The Environment list of each preset kind of a built-in registration.
+const PRESET_LISTS = {
+  ElasticsearchClusterPreset: "elasticsearchCluster",
+  DatabaseServerPreset: "databaseServer",
+} as const;
 
 /**
  * checkAllowed refuses with NotAllowed the first value of a claim that its
  * policy does not allow, by the rule of CheckAllowed of pkg/claimpolicy, in
- * this order: the preset, the release, each selection in claim order in a
+ * this order: the preset, the preset of each built-in storage selection in
+ * claim order, the release, each selection in claim order in a
  * section whose appliesTo does not list kind, each registration in claim
  * order, each required section that applies to kind and has no selection in
  * name order, and each parameter.
+ * The preset of a built-in storage selection is the preset parameter of its
+ * request, and it must be in spec.presets.elasticsearchCluster or
+ * spec.presets.databaseServer, by the kind of the preset. A preset that the
+ * request in requests of the same section and registration already carries
+ * passes. An empty list allows no preset.
  * Without an Environment, every preset and release passes. The registrations
  * and the parameters are checked against the snapshot. A key that is not
  * claim-editable passes only with the value of the snapshot, and a null
@@ -71,6 +87,13 @@ export function checkAllowed(
         `CamundaClusterPreset "${input.presetRef}" is not in spec.presets.camundaCluster of Environment "${env}"`,
       );
     }
+    const refused = checkStoragePresets(
+      environment,
+      policy,
+      selections,
+      input.requests ?? [],
+    );
+    if (refused) return refused;
     if (input.releaseRef && !releaseAllowed(input.releaseRef, environment)) {
       return notAllowed(
         `CamundaRelease "${input.releaseRef}" is not in spec.releases.allowed of Environment "${env}"`,
@@ -141,6 +164,50 @@ function appliesTo(
 ): boolean {
   const found = sections.find((s) => s.metadata.name === section);
   return !found || (kind !== undefined && found.spec.appliesTo.includes(kind));
+}
+
+function checkStoragePresets(
+  environment: Environment,
+  policy: ResolvedPolicy,
+  selections: readonly PluginSelection[],
+  requests: readonly PluginRequest[],
+): { refusal: Refusal } | { error: string } | undefined {
+  for (const s of selections) {
+    const kind = own(BUILTIN_OPTIONS, s.registration)?.lists.preset;
+    if (
+      kind !== "ElasticsearchClusterPreset" &&
+      kind !== "DatabaseServerPreset"
+    )
+      continue;
+    const parameters = requestParameters(
+      s,
+      own(policy.parameters ?? {}, s.registration) ?? {},
+    );
+    if (!("value" in parameters)) return parameters;
+    const preset = presetOf(parameters.value);
+    const list = PRESET_LISTS[kind];
+    if (
+      preset === undefined ||
+      (environment.spec.presets?.[list] ?? []).includes(preset) ||
+      requests.some(
+        (r) =>
+          r.spec.section === s.section &&
+          r.spec.registration === s.registration &&
+          presetOf(r.spec.parameters) === preset,
+      )
+    )
+      continue;
+    return notAllowed(
+      `${kind} "${preset}" is not in spec.presets.${list} of Environment "${environment.metadata.name ?? ""}"`,
+    );
+  }
+  return undefined;
+}
+
+// A preset that is not a name is left to the parameter schema of the
+// registration.
+function presetOf(parameters: unknown): string | undefined {
+  return nameOf(decodeObject(parameters)?.preset);
 }
 
 function checkParameters(
