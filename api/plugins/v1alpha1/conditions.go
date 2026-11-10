@@ -57,6 +57,10 @@ const (
 	// ReasonInvalidParameters means that the parameters of the request do
 	// not pass the schema or the rules of its registration.
 	ReasonInvalidParameters = "InvalidParameters"
+	// ReasonMissingInput means that a required input of the registration has
+	// no value in spec.inputs of the request. OutputsReady and Ready are both
+	// False, and the message names the input.
+	ReasonMissingInput = "MissingInput"
 	// ReasonOverCeiling means that the fragment of a Grant asks for more than
 	// the ceiling of the identity extension allows.
 	ReasonOverCeiling = "OverCeiling"
