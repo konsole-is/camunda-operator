@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
+import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
+import { parseImagesTable } from "@/startup/bundled-data";
+import { EMPTY_ADMIN, EMPTY_MAIL } from "./components";
 import {
   EMPTY_PLANE_DRAFT,
   type PlaneContext,
   type PlaneDraft,
   basicsErrors,
+  componentsErrors,
   planeClaimOf,
   platformConfigOf,
   servedErrors,
@@ -23,9 +27,27 @@ const environment = (
     ...extra,
   }) as Environment;
 
+const images = parseImagesTable({
+  schemaVersion: 1,
+  minors: {
+    "8.9": {
+      identity: { version: "8.9.10" },
+      console: { version: "8.9.122" },
+      "web-modeler-restapi": { version: "8.9.11" },
+      "web-modeler-websockets": { version: "8.9.9" },
+      keycloak: { tagPrefix: "quay-optimized-", version: "26.6.4" },
+    },
+  },
+});
+
 const ctx: PlaneContext = {
   environments: [
-    environment("production", "default-platform"),
+    environment("production", "default-platform", {
+      spec: {
+        platformConfigRef: "default-platform",
+        releases: { default: "camunda-8-9-23" },
+      },
+    }),
     environment("staging", "default-platform"),
     environment("bare"),
     environment("dangling", "gone"),
@@ -69,6 +91,13 @@ const ctx: PlaneContext = {
     },
   ] as unknown as CamundaPlatformConfig[],
   takenNames: ["taken"],
+  releases: [
+    {
+      metadata: { name: "camunda-8-9-23" },
+      spec: { version: "8.9.23" },
+    } as CamundaRelease,
+  ],
+  images,
 };
 
 const ready = (): PlaneDraft => ({
@@ -77,6 +106,7 @@ const ready = (): PlaneDraft => ({
   name: "plane-a",
   namespace: { kind: "existing", name: "platform" },
   mode: "keycloak",
+  admin: { ...EMPTY_ADMIN, username: "admin" },
 });
 
 describe("EMPTY_PLANE_DRAFT", () => {
@@ -401,5 +431,130 @@ describe("planeClaimOf", () => {
         caBundleSecretRef: { name: "kc-ca", key: "ca.crt" },
       },
     });
+  });
+});
+
+describe("componentsErrors", () => {
+  it("passes a Keycloak draft with a username and the prefilled versions", () => {
+    expect(componentsErrors(ready(), ctx)).toEqual([]);
+  });
+
+  it("checks no mail while Web Modeler is off", () => {
+    expect(
+      componentsErrors({ ...ready(), mail: { ...EMPTY_MAIL } }, ctx),
+    ).toEqual([]);
+  });
+
+  it("gives the admin errors, then the mail errors, then the version errors", () => {
+    const d: PlaneDraft = {
+      ...ready(),
+      admin: EMPTY_ADMIN,
+      webModeler: true,
+      versions: { keycloak: "27.0.0" },
+    };
+    expect(componentsErrors(d, ctx)).toEqual([
+      "Enter the username of the first administrator.",
+      "Web Modeler needs the email of the first administrator.",
+      "Enter the SMTP host.",
+      "Enter the address that Web Modeler sends from.",
+      "Keycloak needs a version from 26.0.0 up to, but not including, 27.0.0.",
+    ]);
+  });
+
+  it("asks for each version when the served environment has no default release", () => {
+    expect(componentsErrors({ ...ready(), served: ["staging"] }, ctx)).toEqual([
+      "Enter the Management Identity version.",
+      "Enter the Keycloak version.",
+    ]);
+  });
+});
+
+describe("planeClaimOf and the components", () => {
+  const admin = {
+    username: "admin",
+    email: "a@b.c",
+    password: { name: "pw", key: "p" },
+    claimName: "sub",
+    claimValue: "42",
+  };
+
+  it("writes claimName and claimValue in OIDC mode, and no username, email, or password", () => {
+    const d: PlaneDraft = { ...ready(), mode: "oidc", admin };
+    expect(planeClaimOf(d, ctx).spec.management.identity).toEqual({
+      admin: { claimName: "sub", claimValue: "42" },
+    });
+  });
+
+  it("writes username, email, and the password Secret in Keycloak mode, and no claim", () => {
+    expect(
+      planeClaimOf({ ...ready(), admin }, ctx).spec.management.identity,
+    ).toEqual({
+      admin: {
+        username: "admin",
+        email: "a@b.c",
+        passwordSecretRef: { name: "pw", key: "p" },
+      },
+    });
+    expect(planeClaimOf(ready(), ctx).spec.management.identity).toEqual({
+      admin: { username: "admin" },
+    });
+  });
+
+  it("writes console {} and its version only when Console is on", () => {
+    const on = planeClaimOf({ ...ready(), console: true }, ctx).spec;
+    expect(on.management.console).toEqual({});
+    expect(on.versions.console).toBe("8.9.122");
+    const off = planeClaimOf(
+      { ...ready(), versions: { console: "8.9.1" } },
+      ctx,
+    ).spec;
+    expect(off.management).not.toHaveProperty("console");
+    expect(off.versions).not.toHaveProperty("console");
+  });
+
+  it("writes webModeler with mail and its version only when Web Modeler is on", () => {
+    const d: PlaneDraft = {
+      ...ready(),
+      webModeler: true,
+      mail: {
+        smtpHost: "smtp.example.com",
+        smtpPort: 25,
+        fromAddress: "modeler@example.com",
+        fromName: "",
+        tls: false,
+        credentialsSecret: "smtp",
+      },
+    };
+    const spec = planeClaimOf(d, ctx).spec;
+    expect(spec.management.webModeler).toEqual({
+      mail: {
+        smtpHost: "smtp.example.com",
+        smtpPort: 25,
+        fromAddress: "modeler@example.com",
+        tls: false,
+        credentialsSecretRef: { name: "smtp" },
+      },
+    });
+    expect(spec.versions.webModeler).toBe("8.9.11");
+    const off = planeClaimOf({ ...d, webModeler: false }, ctx).spec;
+    expect(off.management).not.toHaveProperty("webModeler");
+    expect(off.versions).not.toHaveProperty("webModeler");
+  });
+
+  it("writes versions.keycloak only in Keycloak mode", () => {
+    expect(planeClaimOf(ready(), ctx).spec.versions.keycloak).toBe("26.6.4");
+    expect(
+      planeClaimOf({ ...ready(), mode: "oidc" }, ctx).spec.versions,
+    ).not.toHaveProperty("keycloak");
+  });
+
+  it("writes the prefilled versions of the default release minor, and a typed version over it", () => {
+    expect(
+      planeClaimOf({ ...ready(), console: true }, ctx).spec.versions,
+    ).toEqual({ identity: "8.9.10", console: "8.9.122", keycloak: "26.6.4" });
+    expect(
+      planeClaimOf({ ...ready(), versions: { identity: "8.9.11" } }, ctx).spec
+        .versions.identity,
+    ).toBe("8.9.11");
   });
 });

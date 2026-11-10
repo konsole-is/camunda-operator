@@ -51,7 +51,9 @@ const data = {
       spec: { auth: { method: "oidc", oidc: { issuerUrl: "https://idp" } } },
     },
   ],
+  releases: [],
   planes: { clusters: [], claims: [], namespaces: [] },
+  images: { schemaVersion: 1, minors: {} },
 } as unknown as PlaneCreateData;
 
 const next = () =>

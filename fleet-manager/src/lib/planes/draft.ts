@@ -2,23 +2,43 @@
 import type { NamespaceChoice } from "@/components/fleet/namespace-picker";
 import type { CamundaManagementClusterClaimSpec } from "@/generated/crds/camundamanagementclusterclaim";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
+import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import { claimNameErrors } from "@/lib/claims/names";
 import { environmentReady } from "@/lib/environments";
 import type { LabelSelector } from "@/lib/labels";
 import type { ValidationError } from "@/lib/schema";
+import type { ImagesTable } from "@/startup/bundled-data";
+import {
+  type AdminDraft,
+  EMPTY_ADMIN,
+  EMPTY_MAIL,
+  type MailDraft,
+  adminErrors,
+  mailErrors,
+  runningOf,
+} from "./components";
 import {
   type ExternalKeycloakDraft,
   type IdentityModeId,
   authMethod,
   externalKeycloakErrors,
 } from "./identity";
+import {
+  type PlaneVersions,
+  type VersionPrefill,
+  defaultRelease,
+  versionErrors,
+  versionPrefill,
+  versionsOf,
+} from "./versions";
 
 /**
  * PlaneDraft is the draft of the plane create flow. environment is the
  * object name of the Environment of step 1. platformConfig is the pick of
  * the admin; undefined keeps the default of the environment. served is the
- * pick of step 2; undefined serves the environment of step 1.
+ * pick of step 2; undefined serves the environment of step 1. versions
+ * holds only the versions that the admin typed.
  */
 export type PlaneDraft = {
   environment?: string;
@@ -29,6 +49,11 @@ export type PlaneDraft = {
   externalKeycloak: ExternalKeycloakDraft;
   served?: string[];
   clusterLabels: Record<string, string>;
+  admin: AdminDraft;
+  console: boolean;
+  webModeler: boolean;
+  mail: MailDraft;
+  versions: PlaneVersions;
 };
 
 /** EMPTY_PLANE_DRAFT is the draft that the flow starts from. */
@@ -36,34 +61,35 @@ export const EMPTY_PLANE_DRAFT: PlaneDraft = {
   name: "",
   externalKeycloak: { url: "", realm: "camunda-platform", adminSecret: "" },
   clusterLabels: {},
+  admin: EMPTY_ADMIN,
+  console: false,
+  webModeler: false,
+  mail: EMPTY_MAIL,
+  versions: {},
 };
 
 /**
  * PlaneContext is the live data that the steps check a draft against.
  * takenNames are the names of the plane claims and CamundaManagementClusters
  * in the namespace of the draft. namespaces are the live namespaces, each
- * with the name of its Environment.
+ * with the name of its Environment. images is the images table of the
+ * fleet manager.
  */
 export type PlaneContext = {
   environments: readonly Environment[];
   platformConfigs: readonly CamundaPlatformConfig[];
   takenNames: readonly string[];
   namespaces: readonly { name: string; environment?: string }[];
+  releases: readonly CamundaRelease[];
+  images: ImagesTable;
 };
 
-/** PlaneClaimBasics is the part of a CamundaManagementClusterClaim that steps 1 and 2 decide. */
-export type PlaneClaimBasics = {
+/** PlaneClaim is the CamundaManagementClusterClaim that the plane create flow writes. It always has a clusterSelector. */
+export type PlaneClaim = {
   apiVersion: "fleet.camunda.io/v1alpha1";
   kind: "CamundaManagementClusterClaim";
   metadata: { name: string; namespace: string };
-  spec: {
-    environments: string[];
-    clusterSelector: LabelSelector;
-    platformConfigRef?: string;
-    management: {
-      identityProvider: CamundaManagementClusterClaimSpec["management"]["identityProvider"];
-    };
-  };
+  spec: CamundaManagementClusterClaimSpec & { clusterSelector: LabelSelector };
 };
 
 /** NO_ENVIRONMENT is the message of step 1 while no Environment exists. A plane cannot be made then. */
@@ -160,39 +186,115 @@ export function servedErrors(
 }
 
 /**
- * planeClaimOf returns the claim of draft as far as steps 1 and 2 decide
- * it. clusterSelector is never unset: an unset selector selects no cluster,
- * so no cluster labels give {}. platformConfigRef is set only when the
- * pick differs from the platform config of the environment.
+ * planePrefill is the prefill of the versions of draft: versionPrefill of
+ * the default release of the first environment of servedOf(draft).
  */
-export function planeClaimOf(
+export function planePrefill(
   draft: PlaneDraft,
   ctx: PlaneContext,
-): PlaneClaimBasics {
+): VersionPrefill | undefined {
+  return versionPrefill(ctx.images, planeRelease(draft, ctx));
+}
+
+/** planeRelease is the default release of the first environment that draft serves. */
+export function planeRelease(
+  draft: PlaneDraft,
+  ctx: PlaneContext,
+): CamundaRelease | undefined {
+  return defaultRelease(servedOf(draft), ctx.environments, ctx.releases);
+}
+
+/** planeVersions returns the version of each app that the plane of draft runs: the typed one, else the prefill. */
+export function planeVersions(
+  draft: PlaneDraft,
+  ctx: PlaneContext,
+): PlaneVersions {
+  return versionsOf(draft.versions, planePrefill(draft, ctx), runningOf(draft));
+}
+
+/**
+ * componentsErrors returns the errors of step 3: the admin fields of the
+ * mode, the mail while Web Modeler is on, then the errors of planeVersions.
+ */
+export function componentsErrors(
+  draft: PlaneDraft,
+  ctx: PlaneContext,
+): string[] {
+  return [
+    ...adminErrors(draft),
+    ...(draft.webModeler ? mailErrors(draft.mail) : []),
+    ...versionErrors(planeVersions(draft, ctx), runningOf(draft)),
+  ];
+}
+
+/**
+ * planeClaimOf returns the claim of draft. clusterSelector is never unset:
+ * an unset selector selects no cluster, so no cluster labels give {}.
+ * platformConfigRef is set only when the pick differs from the platform
+ * config of the environment. The admin holds only the fields of the mode.
+ * Console, Web Modeler, and their versions are set only while they run,
+ * and versions.keycloak only in Keycloak mode.
+ */
+export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
   const own = environmentOf(draft, ctx)?.spec.platformConfigRef;
   const ref =
     draft.platformConfig !== undefined && draft.platformConfig !== own
       ? draft.platformConfig
       : undefined;
+  const versions = planeVersions(draft, ctx);
   return {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "CamundaManagementClusterClaim",
     metadata: { name: draft.name, namespace: draft.namespace?.name ?? "" },
     spec: {
-      environments: servedOf(draft),
+      // The CRD needs one environment or more; the served step checks it.
+      environments: servedOf(draft) as [string, ...string[]],
       clusterSelector:
         Object.keys(draft.clusterLabels).length === 0
           ? {}
           : { matchLabels: { ...draft.clusterLabels } },
       ...(ref !== undefined && { platformConfigRef: ref }),
-      management: { identityProvider: identityProviderOf(draft) },
+      management: {
+        identityProvider: identityProviderOf(draft),
+        identity: { admin: adminOf(draft) },
+        ...(draft.console && { console: {} }),
+        ...(draft.webModeler && { webModeler: { mail: mailOf(draft.mail) } }),
+      },
+      versions: { ...versions, identity: versions.identity ?? "" },
     },
   };
 }
 
-function identityProviderOf(
-  draft: PlaneDraft,
-): PlaneClaimBasics["spec"]["management"]["identityProvider"] {
+type Management = CamundaManagementClusterClaimSpec["management"];
+
+function adminOf(draft: PlaneDraft): Management["identity"]["admin"] {
+  const { admin } = draft;
+  if (draft.mode === "oidc") {
+    return { claimName: admin.claimName, claimValue: admin.claimValue };
+  }
+  return {
+    username: admin.username,
+    ...(admin.email !== "" && { email: admin.email }),
+    ...(admin.password && { passwordSecretRef: { ...admin.password } }),
+  };
+}
+
+function mailOf(
+  mail: MailDraft,
+): NonNullable<Management["webModeler"]>["mail"] {
+  return {
+    smtpHost: mail.smtpHost,
+    smtpPort: mail.smtpPort,
+    fromAddress: mail.fromAddress,
+    ...(mail.fromName !== "" && { fromName: mail.fromName }),
+    tls: mail.tls,
+    ...(mail.credentialsSecret !== "" && {
+      credentialsSecretRef: { name: mail.credentialsSecret },
+    }),
+  };
+}
+
+function identityProviderOf(draft: PlaneDraft): Management["identityProvider"] {
   switch (draft.mode) {
     case "keycloak":
       return { keycloak: {} };

@@ -52,6 +52,8 @@ const ctx: PlaneContext = {
     { name: "team-a", environment: "production" },
     { name: "team-b", environment: "staging" },
   ],
+  releases: [],
+  images: { schemaVersion: 1, minors: {} },
 };
 
 const namespaces = [

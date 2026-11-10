@@ -21,6 +21,7 @@ const environment = (
     displayName,
     color,
     ...(platformConfigRef && { platformConfigRef }),
+    releases: { allowed: ["camunda-8-9-23"], default: "camunda-8-9-23" },
     namespaceCreation: { allowed: true, requiredLabelKeys: ["team"] },
   },
 });
@@ -97,6 +98,32 @@ const data = {
       },
     },
   ],
+  releases: [
+    {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaRelease",
+      metadata: { name: "camunda-8-9-23" },
+      spec: { version: "8.9.23" },
+    },
+  ],
+  images: {
+    schemaVersion: 1,
+    minors: {
+      "8.9": {
+        identity: { repository: "camunda/identity", version: "8.9.10" },
+        console: { repository: "camunda/console", version: "8.9.122" },
+        "web-modeler-restapi": {
+          repository: "camunda/web-modeler-restapi",
+          version: "8.9.11",
+        },
+        keycloak: {
+          repository: "camunda/keycloak",
+          tagPrefix: "quay-optimized-",
+          version: "26.6.4",
+        },
+      },
+    },
+  },
   planes: {
     clusters: [
       {

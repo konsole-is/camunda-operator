@@ -4,6 +4,7 @@ import type { V1Namespace } from "@kubernetes/client-node";
 import { useEffect, useState } from "react";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
+import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import {
   type CreateStep,
@@ -26,16 +27,23 @@ import {
   servedErrors,
 } from "@/lib/planes/draft";
 import type { ValidationError } from "@/lib/schema";
+import type { ImagesTable } from "@/startup/bundled-data";
 import { PlaneBasicsStep } from "./plane-basics-step";
 import { ServedStep } from "./served-step";
 
-/** PlaneCreateData is the first snapshot of the new plane page, from every namespace. planes are the lists of planesOf. */
+/**
+ * PlaneCreateData is the first snapshot of the new plane page, from every
+ * namespace. planes are the lists of planesOf. images is the images table
+ * of the fleet manager.
+ */
 export type PlaneCreateData = {
   environments: Resource<"Environment">[];
   namespaces: Resource<"Namespace">[];
   clusters: Resource<"CamundaCluster">[];
   platformConfigs: Resource<"CamundaPlatformConfig">[];
+  releases: Resource<"CamundaRelease">[];
   planes: PlaneSources;
+  images: ImagesTable;
 };
 
 /** PLANE_STEPS are the steps of the plane create flow that exist so far, in order. */
@@ -50,8 +58,10 @@ export type PlaneModels = {
   namespaces: V1Namespace[];
   clusters: CamundaCluster[];
   platformConfigs: CamundaPlatformConfig[];
+  releases: CamundaRelease[];
   planes: Plane[];
   sources: PlaneSources;
+  images: ImagesTable;
 };
 
 /**
@@ -79,6 +89,8 @@ export function planeContextOf(
       environment: environmentOf(ns, models.environments).environment?.metadata
         .name,
     })),
+    releases: models.releases,
+    images: models.images,
   };
 }
 
@@ -168,6 +180,7 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
     {},
     initial.platformConfigs,
   );
+  const releases = useResources("CamundaRelease", {}, initial.releases);
   const planes = usePlanes(initial.planes);
   const managementClusters = useResources(
     "CamundaManagementCluster",
@@ -185,6 +198,7 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
         ["Environment", environments],
         ["CamundaCluster", clusters],
         ["CamundaPlatformConfig", platformConfigs],
+        ["CamundaRelease", releases],
       ] as const
     ).flatMap(([kind, result]) =>
       result.error ? [{ kind, message: result.error }] : [],
@@ -196,12 +210,14 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
     namespaces: modelsOf<V1Namespace>(namespaces.items),
     clusters: modelsOf<CamundaCluster>(clusters.items),
     platformConfigs: modelsOf<CamundaPlatformConfig>(platformConfigs.items),
+    releases: modelsOf<CamundaRelease>(releases.items),
     planes: planes.planes,
     sources: {
       clusters: managementClusters.items,
       claims: claims.items,
       namespaces: namespaces.items,
     },
+    images: initial.images,
   };
   const [selectorErrors, setSelectorErrors] = useState<ValidationError[]>([]);
   const steps = planeSteps(models, selectorErrors, readErrors);

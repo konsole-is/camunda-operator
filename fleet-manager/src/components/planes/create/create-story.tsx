@@ -32,8 +32,10 @@ export function PlaneCreateStory({
     namespaces: data.namespaces as PlaneModels["namespaces"],
     clusters: data.clusters as PlaneModels["clusters"],
     platformConfigs: data.platformConfigs as PlaneModels["platformConfigs"],
+    releases: data.releases as PlaneModels["releases"],
     planes: planesOf(data.planes),
     sources: data.planes,
+    images: data.images,
   };
   const [selectorErrors, setSelectorErrors] = useState<ValidationError[]>([]);
   const steps = planeSteps(models, selectorErrors);

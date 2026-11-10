@@ -1,5 +1,6 @@
 import { PlaneCreateFlow } from "@/components/planes/create/plane-create-flow";
 import { list } from "@/lib/k8s/read";
+import { loadBundledData } from "@/startup/bundled-data";
 
 // The page reads the cache of the server. A static prerender would call the
 // API server at build time.
@@ -13,15 +14,24 @@ export default async function NewPlanePage() {
     namespaces,
     clusters,
     platformConfigs,
+    releases,
     managementClusters,
     claims,
+    images,
   ] = await Promise.all([
     list("Environment").catch(() => []),
     list("Namespace").catch(() => []),
     list("CamundaCluster").catch(() => []),
     list("CamundaPlatformConfig").catch(() => []),
+    list("CamundaRelease").catch(() => []),
     list("CamundaManagementCluster").catch(() => []),
     list("CamundaManagementClusterClaim").catch(() => []),
+    // The server checked both files at start. A table that cannot be read
+    // now prefills no version.
+    loadBundledData().then(
+      (bundled) => bundled.imagesTable,
+      () => ({ schemaVersion: 1 as const, minors: {} }),
+    ),
   ]);
   return (
     <div className="flex flex-col gap-6">
@@ -34,7 +44,9 @@ export default async function NewPlanePage() {
           namespaces,
           clusters,
           platformConfigs,
+          releases,
           planes: { clusters: managementClusters, claims, namespaces },
+          images,
         }}
       />
     </div>
