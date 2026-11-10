@@ -60,8 +60,8 @@ const degraded: PartitionHealth[] = [
 const start = Date.parse("2026-10-30T11:00:00Z");
 const GiB = 1024 ** 3;
 
-// wave gives one series for each broker, 30 points 2 minutes apart.
-function wave(base: number, swing: number): Series[] {
+// sine gives one series for each broker, 30 points 2 minutes apart.
+function sine(base: number, swing: number): Series[] {
   return brokers.map((p, n) => ({
     name: p.metadata.name,
     points: Array.from({ length: 30 }, (_, i): [number, number] => [
@@ -78,12 +78,12 @@ const brokerUsage = [
 ];
 
 const brokerCharts: MetricChartData[] = [
-  { label: "CPU", unit: "cores", source: "", series: wave(0.8, 0.2) },
+  { label: "CPU", unit: "cores", source: "", series: sine(0.8, 0.2) },
   {
     label: "Disk used",
     unit: "bytes",
     source: "",
-    series: wave(12 * GiB, 0.4 * GiB).map((s) => ({
+    series: sine(12 * GiB, 0.4 * GiB).map((s) => ({
       ...s,
       name: `data-${s.name}`,
     })),
@@ -92,7 +92,7 @@ const brokerCharts: MetricChartData[] = [
     label: "Process instances activated",
     unit: "instances/s",
     source: "",
-    series: wave(40, 12),
+    series: sine(40, 12),
   },
 ];
 
@@ -236,7 +236,7 @@ export const detailStories: Story[] = [
               unit: "req/s",
               source: "rustfs-bucket",
               declaredBy: "Bucket on RustFS",
-              series: wave(120, 30)
+              series: sine(120, 30)
                 .slice(0, 1)
                 .map((s) => ({
                   ...s,
