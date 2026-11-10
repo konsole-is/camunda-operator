@@ -25,83 +25,117 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// esWithHealth returns a fixture reporting the given health.
-func esWithHealth(health esv1.ElasticsearchHealth) *esv1.Elasticsearch {
+// esWithHealth returns a fixture that reports health and the given number
+// of Ready pods.
+func esWithHealth(health esv1.ElasticsearchHealth, readyPods int32) *esv1.Elasticsearch {
 	es := testObject()
 	es.Status.Health = health
+	es.Status.AvailableNodes = readyPods
 	return es
 }
 
 func TestDefaultConvergingStatusHandler(t *testing.T) {
 	t.Parallel()
 
+	threeNodes := func(es *esv1.Elasticsearch) {
+		es.Spec.NodeSets = []esv1.NodeSet{{Name: "default", Count: 3}}
+	}
+
 	tests := []struct {
-		name   string
-		op     concepts.ConvergingOperation
-		health esv1.ElasticsearchHealth
-		want   concepts.AliveConvergingStatus
+		name      string
+		op        concepts.ConvergingOperation
+		health    esv1.ElasticsearchHealth
+		readyPods int32
+		fixture   func(*esv1.Elasticsearch)
+		want      concepts.AliveConvergingStatus
 	}{
 		{
-			"green is healthy",
-			concepts.ConvergingOperationNone, esv1.ElasticsearchGreenHealth,
-			concepts.AliveConvergingStatusHealthy,
+			name: "green with a Ready pod is healthy",
+			op:   concepts.ConvergingOperationNone, health: esv1.ElasticsearchGreenHealth, readyPods: 1,
+			want: concepts.AliveConvergingStatusHealthy,
 		},
 		{
-			"green stays healthy while updating",
-			concepts.ConvergingOperationUpdated, esv1.ElasticsearchGreenHealth,
-			concepts.AliveConvergingStatusHealthy,
+			name: "green stays healthy while updating",
+			op:   concepts.ConvergingOperationUpdated, health: esv1.ElasticsearchGreenHealth, readyPods: 1,
+			want: concepts.AliveConvergingStatusHealthy,
 		},
 		{
-			"yellow on create is creating",
-			concepts.ConvergingOperationCreated, esv1.ElasticsearchYellowHealth,
-			concepts.AliveConvergingStatusCreating,
+			name: "green with one of three pods Ready is healthy",
+			op:   concepts.ConvergingOperationNone, health: esv1.ElasticsearchGreenHealth, readyPods: 1,
+			fixture: threeNodes,
+			want:    concepts.AliveConvergingStatusHealthy,
 		},
 		{
-			"yellow on update is updating",
-			concepts.ConvergingOperationUpdated, esv1.ElasticsearchYellowHealth,
-			concepts.AliveConvergingStatusUpdating,
+			name: "green with no Ready pod on create is creating",
+			op:   concepts.ConvergingOperationCreated, health: esv1.ElasticsearchGreenHealth, readyPods: 0,
+			want: concepts.AliveConvergingStatusCreating,
 		},
 		{
-			"yellow with no change is updating",
-			concepts.ConvergingOperationNone, esv1.ElasticsearchYellowHealth,
-			concepts.AliveConvergingStatusUpdating,
+			name: "green with no Ready pod is updating",
+			op:   concepts.ConvergingOperationNone, health: esv1.ElasticsearchGreenHealth, readyPods: 0,
+			want: concepts.AliveConvergingStatusUpdating,
 		},
 		{
-			"red is failing",
-			concepts.ConvergingOperationNone, esv1.ElasticsearchRedHealth,
-			concepts.AliveConvergingStatusFailing,
+			name: "green with no Ready pod on update is updating",
+			op:   concepts.ConvergingOperationUpdated, health: esv1.ElasticsearchGreenHealth, readyPods: 0,
+			want: concepts.AliveConvergingStatusUpdating,
 		},
 		{
-			"unknown health on first apply is creating",
-			concepts.ConvergingOperationCreated, esv1.ElasticsearchUnknownHealth,
-			concepts.AliveConvergingStatusCreating,
+			name: "yellow on create is creating",
+			op:   concepts.ConvergingOperationCreated, health: esv1.ElasticsearchYellowHealth, readyPods: 1,
+			want: concepts.AliveConvergingStatusCreating,
 		},
 		{
-			"unknown health on a formed cluster is failing",
-			concepts.ConvergingOperationNone, esv1.ElasticsearchUnknownHealth,
-			concepts.AliveConvergingStatusFailing,
+			name: "yellow on update is updating",
+			op:   concepts.ConvergingOperationUpdated, health: esv1.ElasticsearchYellowHealth, readyPods: 1,
+			want: concepts.AliveConvergingStatusUpdating,
 		},
 		{
-			"unknown health on update is failing",
-			concepts.ConvergingOperationUpdated, esv1.ElasticsearchUnknownHealth,
-			concepts.AliveConvergingStatusFailing,
+			name: "yellow with no change is updating",
+			op:   concepts.ConvergingOperationNone, health: esv1.ElasticsearchYellowHealth, readyPods: 1,
+			want: concepts.AliveConvergingStatusUpdating,
 		},
 		{
-			"unreported health on first apply is creating",
-			concepts.ConvergingOperationCreated, "",
-			concepts.AliveConvergingStatusCreating,
+			name: "red is failing",
+			op:   concepts.ConvergingOperationNone, health: esv1.ElasticsearchRedHealth, readyPods: 1,
+			want: concepts.AliveConvergingStatusFailing,
 		},
 		{
-			"unreported health past first apply is failing",
-			concepts.ConvergingOperationNone, "",
-			concepts.AliveConvergingStatusFailing,
+			name: "unknown health on first apply is creating",
+			op:   concepts.ConvergingOperationCreated, health: esv1.ElasticsearchUnknownHealth, readyPods: 1,
+			want: concepts.AliveConvergingStatusCreating,
+		},
+		{
+			name: "unknown health on a formed cluster is failing",
+			op:   concepts.ConvergingOperationNone, health: esv1.ElasticsearchUnknownHealth, readyPods: 1,
+			want: concepts.AliveConvergingStatusFailing,
+		},
+		{
+			name: "unknown health on update is failing",
+			op:   concepts.ConvergingOperationUpdated, health: esv1.ElasticsearchUnknownHealth, readyPods: 1,
+			want: concepts.AliveConvergingStatusFailing,
+		},
+		{
+			name: "unreported health on first apply is creating",
+			op:   concepts.ConvergingOperationCreated, health: "", readyPods: 1,
+			want: concepts.AliveConvergingStatusCreating,
+		},
+		{
+			name: "unreported health past first apply is failing",
+			op:   concepts.ConvergingOperationNone, health: "", readyPods: 1,
+			want: concepts.AliveConvergingStatusFailing,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := DefaultConvergingStatusHandler(tt.op, esWithHealth(tt.health))
+			es := esWithHealth(tt.health, tt.readyPods)
+			if tt.fixture != nil {
+				tt.fixture(es)
+			}
+
+			got, err := DefaultConvergingStatusHandler(tt.op, es)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got.Status)
 			assert.NotEmpty(t, got.Reason)
@@ -109,30 +143,50 @@ func TestDefaultConvergingStatusHandler(t *testing.T) {
 	}
 }
 
+func TestDefaultConvergingStatusHandlerNamesTheMissingReadyPod(t *testing.T) {
+	t.Parallel()
+
+	got, err := DefaultConvergingStatusHandler(
+		concepts.ConvergingOperationNone, esWithHealth(esv1.ElasticsearchGreenHealth, 0),
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "Elasticsearch reports green health, and no Elasticsearch pod is Ready yet", got.Reason)
+}
+
 func TestDefaultGraceStatusHandler(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		health esv1.ElasticsearchHealth
-		want   concepts.GraceStatus
+		name      string
+		health    esv1.ElasticsearchHealth
+		readyPods int32
+		want      concepts.GraceStatus
 	}{
-		{"green is healthy", esv1.ElasticsearchGreenHealth, concepts.GraceStatusHealthy},
-		{"yellow is degraded", esv1.ElasticsearchYellowHealth, concepts.GraceStatusDegraded},
-		{"red is down", esv1.ElasticsearchRedHealth, concepts.GraceStatusDown},
-		{"unknown health is down", esv1.ElasticsearchUnknownHealth, concepts.GraceStatusDown},
-		{"unreported health is down", "", concepts.GraceStatusDown},
+		{"green with a Ready pod is healthy", esv1.ElasticsearchGreenHealth, 1, concepts.GraceStatusHealthy},
+		{"green with no Ready pod is down", esv1.ElasticsearchGreenHealth, 0, concepts.GraceStatusDown},
+		{"yellow is degraded", esv1.ElasticsearchYellowHealth, 1, concepts.GraceStatusDegraded},
+		{"red is down", esv1.ElasticsearchRedHealth, 1, concepts.GraceStatusDown},
+		{"unknown health is down", esv1.ElasticsearchUnknownHealth, 1, concepts.GraceStatusDown},
+		{"unreported health is down", "", 1, concepts.GraceStatusDown},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := DefaultGraceStatusHandler(esWithHealth(tt.health))
+			got, err := DefaultGraceStatusHandler(esWithHealth(tt.health, tt.readyPods))
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got.Status)
 			assert.NotEmpty(t, got.Reason)
 		})
 	}
+}
+
+func TestDefaultGraceStatusHandlerNamesTheMissingReadyPod(t *testing.T) {
+	t.Parallel()
+
+	got, err := DefaultGraceStatusHandler(esWithHealth(esv1.ElasticsearchGreenHealth, 0))
+	require.NoError(t, err)
+	assert.Equal(t, "Elasticsearch reports green health, and no Elasticsearch pod is Ready", got.Reason)
 }
 
 func TestDefaultSuspendMutationHandlerSetsRetainingDeletePolicy(t *testing.T) {
