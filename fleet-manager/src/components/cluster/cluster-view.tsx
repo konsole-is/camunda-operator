@@ -21,6 +21,7 @@ import {
   isManaged,
 } from "@/lib/labels";
 import { clusterFields } from "@/lib/fields";
+import type { WriteMode } from "@/lib/write/types";
 import { mergeCluster } from "@/lib/merge";
 import { usePartitions, usePodUsage } from "@/lib/observe/use-observe";
 import { runningBackup, runningRestore } from "@/lib/policy/backups";
@@ -45,7 +46,8 @@ import {
   componentSettings,
   operatorVersionOf,
 } from "./settings";
-import type { ActionSlots } from "./slots";
+import type { ClaimActions } from "./edit/cluster-edit";
+import type { ActionSlots, ClusterSlotContext } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
 import { type Process, topologyOf } from "./topology";
 import { TopologyView } from "./topology-view";
@@ -58,8 +60,9 @@ import { TopologyView } from "./topology-view";
  * the objects that the Backups tab follows from the cluster to its backup
  * storage and its schedules. Its databaseServerPresets are cluster-scoped.
  * optimizes holds every CamundaOptimize of the namespace, and sections and
- * registrations every PluginSection and PluginRegistration. fieldDocs holds
- * the help of the settings fields by field key.
+ * registrations every PluginSection and PluginRegistration.
+ * platformConfigs and managementAuthConfigs are cluster-scoped. fieldDocs
+ * holds the help of the settings fields by field key.
  */
 export type ClusterPageData = {
   cluster: Resource<"CamundaCluster">;
@@ -92,6 +95,8 @@ export type ClusterPageData = {
   optimizes: Resource<"CamundaOptimize">[];
   sections: Resource<"PluginSection">[];
   registrations: Resource<"PluginRegistration">[];
+  platformConfigs: Resource<"CamundaPlatformConfig">[];
+  managementAuthConfigs: Resource<"ManagementAuthConfig">[];
   fieldDocs: Record<string, FieldDoc>;
 };
 
@@ -101,20 +106,26 @@ export type ClusterPageData = {
  * click on a tab replaces that parameter. The component query parameter
  * opens the detail of a used component, or of an app embedded in one, on
  * the Overview tab, in place of the cards. slots fill the action slots of a
- * managed cluster, and an unmanaged cluster ignores them. pushedClaim is the
- * claim file that the fleet manager pushed in Git mode. When the cluster is
- * deleted, the page says so and shows nothing else.
+ * managed cluster, and an unmanaged cluster ignores them. A render function
+ * of slots gets the slot context of the page. A filled cluster.claim.editor
+ * slot shows in place of the read view of the claim. writeMode is the write
+ * mode of the fleet manager, undefined when the page could not read it.
+ * pushedClaim is the claim file that the fleet manager pushed in Git mode.
+ * When the cluster is deleted, the page says so and shows nothing else.
  */
 export function ClusterView({
   initial,
   now,
   slots,
   pushedClaim,
+  writeMode,
 }: {
   initial: ClusterPageData;
   now: string;
   slots?: ActionSlots;
   pushedClaim?: PushedObject;
+  writeMode?: WriteMode;
+  claimActions?: ClaimActions;
 }) {
   const { namespace, name } = initial.cluster.metadata ?? {};
   const ns = namespace ?? "";
@@ -235,6 +246,16 @@ export function ClusterView({
     {},
     initial.registrations,
   );
+  const platformConfigs = useResources(
+    "CamundaPlatformConfig",
+    {},
+    initial.platformConfigs,
+  );
+  const managementAuthConfigs = useResources(
+    "ManagementAuthConfig",
+    {},
+    initial.managementAuthConfigs,
+  );
   useEffect(() => {
     const selector = focusNext.current;
     if (!selector) return;
@@ -279,6 +300,8 @@ export function ClusterView({
       ["CamundaOptimize", optimizes],
       ["PluginSection", sections],
       ["PluginRegistration", registrations],
+      ["CamundaPlatformConfig", platformConfigs],
+      ["ManagementAuthConfig", managementAuthConfigs],
     ] as const
   ).flatMap(([kind, result]) =>
     result.error ? [{ kind, message: result.error }] : [],
@@ -302,14 +325,18 @@ export function ClusterView({
 
   const environmentName =
     namespaceObject.item?.metadata?.labels?.[ENVIRONMENT_LABEL];
+  const environmentObject =
+    environmentName === undefined
+      ? undefined
+      : environments.items.find((e) => e.metadata?.name === environmentName);
   const environment =
     environmentName === undefined
       ? undefined
-      : (environments.items.find((e) => e.metadata?.name === environmentName)
-          ?.spec?.displayName ?? environmentName);
-  const storageType = storage.items.find(
+      : (environmentObject?.spec?.displayName ?? environmentName);
+  const storageObject = storage.items.find(
     (s) => s.metadata?.name === live.spec.storageRef,
-  )?.spec.type;
+  );
+  const storageType = storageObject?.spec.type;
   const ready = live.status?.conditions?.find((c) => c.type === "Ready") as
     ConditionLike | undefined;
   const clusterConditions = conditionRows(live.status?.conditions);
@@ -334,6 +361,29 @@ export function ClusterView({
     ...restoresRDBMS.items,
     ...restoresPITR.items,
   ];
+  const backupStorage = backupStorageOf({
+    cluster: live,
+    spec: merged.spec,
+    storage: storage.items,
+    objectStorage: objectStorage.items,
+    databaseConfigs: databaseConfigs.items,
+    databaseServerConfigs: databaseServerConfigs.items,
+    databaseServers: databaseServers.items,
+    databaseServerPresets: databaseServerPresets.items,
+    schedules: schedules.items,
+    now: clock,
+  });
+  const fields = clusterFields(
+    clusterFieldsInputOf({
+      cluster: live,
+      merged,
+      claim,
+      sections: sections.items,
+      registrations: registrations.items,
+      optimize,
+      schedules: schedules.items,
+    }),
+  );
 
   const selectTab = (value: string) => {
     const next = clusterTabOf(value);
@@ -352,10 +402,38 @@ export function ClusterView({
     window.history.replaceState(null, "", overviewHref(id));
   };
   const openId = componentOf(component, cards);
+  const context: ClusterSlotContext = {
+    cluster: live,
+    claim,
+    merged,
+    environment: environmentObject,
+    environments: environments.items,
+    presets: presets.items,
+    releases: releases.items,
+    platformConfigs: platformConfigs.items,
+    managementAuthConfigs: managementAuthConfigs.items,
+    sections: sections.items,
+    registrations: registrations.items,
+    storage: storageObject,
+    backups,
+    restores,
+    backupStorage,
+    schedules: schedules.items,
+    optimize,
+    fields,
+    writeMode,
+    openId,
+    now: clock,
+  };
   const slot = (
     slotName: Parameters<typeof ActionSlot>[0]["name"],
   ): ReactNode => (
-    <ActionSlot name={slotName} slots={slots} managed={managed} />
+    <ActionSlot
+      name={slotName}
+      slots={slots}
+      managed={managed}
+      context={context}
+    />
   );
 
   return (
@@ -423,21 +501,7 @@ export function ClusterView({
                 settings={
                   <div className="flex flex-col gap-4">
                     <ComponentSettings
-                      groups={componentSettings(
-                        clusterFields(
-                          clusterFieldsInputOf({
-                            cluster: live,
-                            merged,
-                            claim,
-                            sections: sections.items,
-                            registrations: registrations.items,
-                            optimize,
-                            schedules: schedules.items,
-                          }),
-                        ),
-                        openId,
-                        merged.spec,
-                      )}
+                      groups={componentSettings(fields, openId, merged.spec)}
                       docs={initial.fieldDocs}
                       operatorVersion={operatorVersionOf(registrations.items)}
                       cluster={{ namespace: ns, name: name ?? "" }}
@@ -476,18 +540,7 @@ export function ClusterView({
         </TabsContent>
         <TabsContent value="backups">
           <BackupsTab
-            storage={backupStorageOf({
-              cluster: live,
-              spec: merged.spec,
-              storage: storage.items,
-              objectStorage: objectStorage.items,
-              databaseConfigs: databaseConfigs.items,
-              databaseServerConfigs: databaseServerConfigs.items,
-              databaseServers: databaseServers.items,
-              databaseServerPresets: databaseServerPresets.items,
-              schedules: schedules.items,
-              now: clock,
-            })}
+            storage={backupStorage}
             backups={backupRowsOf(live, backups, clock)}
             restores={restoreRowsOf(live, restores)}
             actions={slot("cluster.backups.actions")}
@@ -504,25 +557,29 @@ export function ClusterView({
           />
         </TabsContent>
         <TabsContent value="claim">
-          <div className="flex flex-col gap-6">
-            {claim ? (
-              <ClaimTab
-                view={claimView({
-                  claim,
-                  cluster: live,
-                  merged,
-                  environments: environments.items,
-                  sections: sections.items,
-                  registrations: registrations.items,
-                })}
-                stored={claim}
-                now={clock}
-              />
-            ) : (
-              <NoClaim managed={managed} name={claimName} />
-            )}
-            {slot("cluster.claim.editor")}
-          </div>
+          {managed && claim && slots?.["cluster.claim.editor"] !== undefined ? (
+            slot("cluster.claim.editor")
+          ) : (
+            <div className="flex flex-col gap-6">
+              {claim ? (
+                <ClaimTab
+                  view={claimView({
+                    claim,
+                    cluster: live,
+                    merged,
+                    environments: environments.items,
+                    sections: sections.items,
+                    registrations: registrations.items,
+                  })}
+                  stored={claim}
+                  now={clock}
+                />
+              ) : (
+                <NoClaim managed={managed} name={claimName} />
+              )}
+              {slot("cluster.claim.editor")}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

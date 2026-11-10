@@ -52,6 +52,8 @@ export async function loadClusterPage(
     optimizes,
     sections,
     registrations,
+    platformConfigs,
+    managementAuthConfigs,
   ] = await Promise.all([
     get("Namespace", undefined, namespace).catch(() => undefined),
     listOrEmpty("Environment", {}),
@@ -78,6 +80,8 @@ export async function loadClusterPage(
     listOrEmpty("CamundaOptimize", inNamespace),
     listOrEmpty("PluginSection", {}),
     listOrEmpty("PluginRegistration", {}),
+    listOrEmpty("CamundaPlatformConfig", {}),
+    listOrEmpty("ManagementAuthConfig", {}),
   ]);
   const claimName = cluster.metadata?.labels?.[CLAIM_LABEL];
   const fields = clusterFields(
@@ -124,6 +128,8 @@ export async function loadClusterPage(
     optimizes,
     sections,
     registrations,
+    platformConfigs,
+    managementAuthConfigs,
     fieldDocs: fieldDocsOf(fields),
   };
 }

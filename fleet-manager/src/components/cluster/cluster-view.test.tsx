@@ -12,7 +12,11 @@ import {
   REVISION_ANNOTATION,
 } from "@/lib/labels";
 import { type ClusterPageData, ClusterView } from "./cluster-view";
-import { ACTION_SLOTS, type ActionSlots } from "./slots";
+import {
+  ACTION_SLOTS,
+  type ActionSlots,
+  type ClusterSlotContext,
+} from "./slots";
 
 const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
@@ -167,6 +171,8 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     optimizes: [],
     sections: [],
     registrations: [],
+    platformConfigs: [],
+    managementAuthConfigs: [],
     fieldDocs: {},
     ...over,
   };
@@ -238,6 +244,18 @@ describe("ClusterView", () => {
       expect(container.querySelector("[data-action-slot]")).toBeNull();
       expect(screen.queryByRole("button", { name: /^Slot / })).toBeNull();
     }
+  });
+
+  it("watches the platform configs and the management auth configs of every namespace", () => {
+    render(view());
+    expect(live.calls).toContainEqual({
+      kind: "CamundaPlatformConfig",
+      opts: {},
+    });
+    expect(live.calls).toContainEqual({
+      kind: "ManagementAuthConfig",
+      opts: {},
+    });
   });
 
   it("a managed cluster mounts the nodes of the slots", () => {
@@ -1194,20 +1212,77 @@ describe("Endpoints tab", () => {
   });
 });
 
+describe("slot context", () => {
+  it("gives a render function the live claim, the merged spec, the write mode, and the open component", () => {
+    let seen: ClusterSlotContext | undefined;
+    window.history.replaceState(null, "", "?tab=overview&component=zeebe");
+    render(
+      view({
+        writeMode: "git",
+        slots: {
+          "cluster.header.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      }),
+    );
+    expect(seen?.cluster.metadata?.name).toBe("orders");
+    expect(seen?.claim?.metadata?.name).toBe("orders");
+    expect(seen?.merged.spec.presetRef).toBe("medium");
+    expect(seen?.writeMode).toBe("git");
+    expect(seen?.openId).toBe("zeebe");
+    expect(seen?.now).toBe(now);
+  });
+
+  it("gives the environment of the namespace and the storage of spec.storageRef", () => {
+    let seen: ClusterSlotContext | undefined;
+    const storage = (name: string) =>
+      ({
+        kind: "SecondaryStorageConfig",
+        metadata: { namespace: "team-a", name },
+        spec: { type: "elasticsearch" },
+      }) as unknown as Resource<"SecondaryStorageConfig">;
+    render(
+      view({
+        initial: data({
+          cluster: cluster({ spec: { storageRef: "search" } }),
+          storage: [storage("other"), storage("search")],
+        }),
+        slots: {
+          "cluster.header.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      }),
+    );
+    expect(seen?.environment?.metadata?.name).toBe("prod");
+    expect(seen?.storage?.metadata?.name).toBe("search");
+    expect(seen?.writeMode).toBeUndefined();
+    expect(seen?.openId).toBeUndefined();
+  });
+});
+
 describe("Claim tab", () => {
   const editor: ActionSlots = { "cluster.claim.editor": <p>editor</p> };
 
-  it("renders the read view beside the claim editor slot", () => {
+  it("a filled claim editor slot shows in place of the read view", async () => {
+    render(
+      view({ slots: { "cluster.claim.editor": () => <p>Claim editor</p> } }),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Claim" }));
+    expect(screen.getByText("Claim editor")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Basics" })).toBeNull();
+  });
+
+  it("an empty claim editor slot keeps the read view", () => {
     window.history.replaceState(null, "", "?tab=claim");
-    const { container } = render(view({ slots: editor }));
-    expect(screen.getAllByText("Set at creation").length).toBeGreaterThan(0);
-    const slot = container.querySelector(
-      '[data-action-slot="cluster.claim.editor"]',
-    );
-    expect(slot?.textContent).toBe("editor");
-    expect(screen.getByRole("region", { name: "Basics" }).contains(slot)).toBe(
-      false,
-    );
+    const { container } = render(view());
+    expect(screen.getByRole("region", { name: "Basics" })).toBeTruthy();
+    expect(
+      container.querySelector('[data-action-slot="cluster.claim.editor"]'),
+    ).not.toBeNull();
   });
 
   it("says that the claim is missing and keeps the editor slot", () => {
