@@ -53,7 +53,7 @@ The credentials fields list the Secrets of the release namespace by name. A sett
 
 **Save** writes only the settings that you changed. If someone changed the ConfigMap after you opened the page, the save writes nothing. It shows `The ConfigMap fleet-manager-settings changed since you opened it.` Select **Reload** to get the current settings, then make your change again.
 
-When `prometheus.url` is not set, the page shows `Charts do not show. Everything else works.` The pages then show no charts of metrics. Set **Prometheus URL** to show the charts.
+When `prometheus.url` is not set, the page shows `Charts do not show. Everything else works.` The **Metrics** tab of a component then shows no charts. Set **Prometheus URL** to show the charts. [Metrics of the charts](#metrics-of-the-charts) lists the metrics that Prometheus must hold.
 
 Below the settings, the page shows if metrics-server serves the live CPU and memory of the pods. With `metrics-server found`, the pages show the live CPU and memory. With `metrics-server not found`, the pages hide them.
 
@@ -220,6 +220,27 @@ kubectl -n camunda-operator-system create secret generic fleet-prometheus \
 ```
 
 Then set `prometheus.credentialsSecretRef` to `fleet-prometheus`. Without the setting, the fleet manager sends no credentials to Prometheus.
+
+## Metrics of the charts
+
+The **Metrics** tab of a component on the cluster page shows the live CPU and memory of each pod, then charts over the last hour, 6 hours, or 24 hours. The live rows come from metrics-server. The charts come from Prometheus, and each chart reads one metric:
+
+| Chart | Metric | Where Prometheus gets it |
+| --- | --- | --- |
+| CPU | `container_cpu_usage_seconds_total` | The [cAdvisor metrics](https://github.com/google/cadvisor/blob/master/docs/storage/prometheus.md) of the kubelet |
+| Memory | `container_memory_working_set_bytes` | The [cAdvisor metrics](https://github.com/google/cadvisor/blob/master/docs/storage/prometheus.md) of the kubelet |
+| Disk used | `kubelet_volume_stats_used_bytes` | The [kubelet metrics](https://kubernetes.io/docs/reference/instrumentation/metrics/), for each PersistentVolumeClaim of the pods |
+| Process instances activated | `zeebe_element_instance_events_total` | The brokers |
+| Records processed | `zeebe_stream_processor_records_total` | The brokers |
+| Records exported | `zeebe_exporter_events_total` | The brokers |
+| Requests dropped by backpressure | `zeebe_dropped_request_count_total` | The brokers |
+| Partition health | `zeebe_health` | The brokers |
+
+Each chart has one line for each pod. The Disk used chart has one line for each PersistentVolumeClaim, so a component whose pods have no PersistentVolumeClaim, such as the gateway, has no Disk used chart. Prometheus must keep the labels `namespace` and `pod` on each series, and `namespace` and `persistentvolumeclaim` on the disk series. The kubelet and cAdvisor metrics carry these labels when Prometheus scrapes the kubelet. A `ServiceMonitor` or a `PodMonitor` of the Prometheus Operator adds `namespace` and `pod` to the metrics of the brokers.
+
+Camunda documents the metrics of the brokers in [Camunda components metrics](https://docs.camunda.io/docs/self-managed/operational-guides/monitoring/metrics/#available-metrics). The fleet manager shows the five charts of the brokers for each Camunda 8.9 patch release, from 8.9.0, because the 8.9 metrics page names these metrics. The version is the one that the cluster reports in `status.management.version`. For another version, for a pre-release, and while the cluster reports no version, the Metrics tab of the brokers shows only CPU, Memory, and Disk used.
+
+A chart without data for the range does not show. When no chart has data, the tab shows `No metric has data for this range.` Without `prometheus.url`, the tab shows `Prometheus is not configured, so the charts do not show.` When Prometheus does not answer, the tab shows `Prometheus did not answer. The charts show again when it answers.`
 
 ## Secret values
 
