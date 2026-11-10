@@ -56,6 +56,13 @@ function warningLine(warning: ReferenceWarning): string {
         : ["cluster preset", "preset"];
     return `${claim} uses ${what} ${warning.name}, which this change no longer allows. The cluster keeps running. A later change of its ${field} must pick an allowed one.`;
   }
+  if ("cleared" in warning) {
+    if (warning.kind === "CamundaRelease")
+      return `${claim} names no release, and this change removes the default release. Its cluster then names no release.`;
+    return warning.claim.kind === "CamundaClusterClaim"
+      ? `${claim} names no platform config, and this change removes the default platform config. Its cluster then names no platform config.`
+      : `${claim} names no platform config, and this change removes the default platform config. Its management plane keeps running, and the claim reports MissingInput until it names a platform config.`;
+  }
   return warning.kind === "CamundaRelease"
     ? `${claim} names no release and moves to ${warning.name}. Its brokers restart one at a time.`
     : `${claim} names no platform config and moves to ${warning.name}.`;

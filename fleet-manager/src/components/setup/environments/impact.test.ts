@@ -266,4 +266,56 @@ describe("environmentImpact", () => {
       ),
     ).toEqual({ clusters: 0, planes: 0, warnings: [] });
   });
+
+  it("lists a claim without a releaseRef when the edit clears the default release", () => {
+    expect(
+      environmentImpact(
+        environment({ releases: { allowed: ["8.9.1"], default: "8.9.1" } }),
+        edit({ releases: { allowed: ["8.9.1"] } }),
+        sources({ clusterClaims: [clusterClaim("orders")] }),
+      ).warnings,
+    ).toEqual([
+      {
+        claim: {
+          kind: "CamundaClusterClaim",
+          namespace: "team-a",
+          name: "orders",
+        },
+        kind: "CamundaRelease",
+        cleared: true,
+      },
+    ]);
+  });
+
+  it("lists each claim without a platformConfigRef when the edit clears the default platform config", () => {
+    expect(
+      environmentImpact(
+        environment({ platformConfigRef: "shared" }),
+        edit({}),
+        sources({
+          clusterClaims: [clusterClaim("orders")],
+          planeClaims: [planeClaim("plane")],
+        }),
+      ).warnings,
+    ).toEqual([
+      {
+        claim: {
+          kind: "CamundaClusterClaim",
+          namespace: "team-a",
+          name: "orders",
+        },
+        kind: "CamundaPlatformConfig",
+        cleared: true,
+      },
+      {
+        claim: {
+          kind: "CamundaManagementClusterClaim",
+          namespace: "team-a",
+          name: "plane",
+        },
+        kind: "CamundaPlatformConfig",
+        cleared: true,
+      },
+    ]);
+  });
 });

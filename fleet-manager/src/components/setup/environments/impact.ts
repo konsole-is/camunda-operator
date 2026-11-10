@@ -18,7 +18,8 @@ export type ClaimRef = { kind: ClaimKind; namespace: string; name: string };
  * ReferenceWarning is a claim that an edit touches although it keeps its
  * recorded policy. removed: the edit no longer allows the release or the
  * preset of the claim. followsDefault: the claim names no release or no
- * platform config, so it moves to the new default, name.
+ * platform config, so it moves to the new default, name. cleared: the
+ * claim names none, and the edit removes the default.
  */
 export type ReferenceWarning =
   | {
@@ -29,15 +30,14 @@ export type ReferenceWarning =
     }
   | {
       claim: ClaimRef;
-      kind: "CamundaRelease";
+      kind: "CamundaRelease" | "CamundaPlatformConfig";
       name: string;
       followsDefault: true;
     }
   | {
       claim: ClaimRef;
-      kind: "CamundaPlatformConfig";
-      name: string;
-      followsDefault: true;
+      kind: "CamundaRelease" | "CamundaPlatformConfig";
+      cleared: true;
     };
 
 /**
@@ -132,14 +132,14 @@ function warningsOf(
           removed: true,
         });
     } else {
-      const next = edited.spec.releases?.default;
-      if (next && next !== live.spec.releases?.default)
-        warnings.push({
-          claim: ref,
-          kind: "CamundaRelease",
-          name: next,
-          followsDefault: true,
-        });
+      warnings.push(
+        ...defaultWarnings(
+          ref,
+          "CamundaRelease",
+          live.spec.releases?.default,
+          edited.spec.releases?.default,
+        ),
+      );
     }
     const preset = claim.spec.presetRef;
     if (preset && presetAllowed(preset, live) && !presetAllowed(preset, edited))
@@ -150,19 +150,28 @@ function warningsOf(
         removed: true,
       });
   }
-  const config = edited.spec.platformConfigRef;
-  if (
-    !claim.spec.platformConfigRef &&
-    config &&
-    config !== live.spec.platformConfigRef
-  )
-    warnings.push({
-      claim: ref,
-      kind: "CamundaPlatformConfig",
-      name: config,
-      followsDefault: true,
-    });
+  if (!claim.spec.platformConfigRef)
+    warnings.push(
+      ...defaultWarnings(
+        ref,
+        "CamundaPlatformConfig",
+        live.spec.platformConfigRef,
+        edited.spec.platformConfigRef,
+      ),
+    );
   return warnings;
+}
+
+function defaultWarnings(
+  claim: ClaimRef,
+  kind: "CamundaRelease" | "CamundaPlatformConfig",
+  before: string | undefined,
+  after: string | undefined,
+): ReferenceWarning[] {
+  if (after && after !== before)
+    return [{ claim, kind, name: after, followsDefault: true }];
+  if (!after && before) return [{ claim, kind, cleared: true }];
+  return [];
 }
 
 function presetAllowed(preset: string, environment: Environment): boolean {

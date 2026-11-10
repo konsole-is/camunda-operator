@@ -91,6 +91,34 @@ describe("impactLines", () => {
   });
 });
 
+describe("impactLines of a cleared default", () => {
+  it("names the claims that lose their default", () => {
+    expect(
+      impactLines({
+        clusters: 0,
+        planes: 0,
+        warnings: [
+          { claim: orders, kind: "CamundaRelease", cleared: true },
+          { claim: orders, kind: "CamundaPlatformConfig", cleared: true },
+          {
+            claim: {
+              kind: "CamundaManagementClusterClaim",
+              namespace: "platform",
+              name: "plane-a",
+            },
+            kind: "CamundaPlatformConfig",
+            cleared: true,
+          },
+        ],
+      }).slice(1),
+    ).toEqual([
+      "orders in team-a names no release, and this change removes the default release. Its cluster then names no release.",
+      "orders in team-a names no platform config, and this change removes the default platform config. Its cluster then names no platform config.",
+      "plane-a in platform names no platform config, and this change removes the default platform config. Its management plane keeps running, and the claim reports MissingInput until it names a platform config.",
+    ]);
+  });
+});
+
 describe("ImpactLine", () => {
   it("shows the count and each warning", () => {
     render(
