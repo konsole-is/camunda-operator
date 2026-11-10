@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
@@ -229,10 +229,11 @@ const START: ClusterDraft = {
   claim: { metadata: { name: "c1" }, spec: { presetRef: "small" } },
 };
 
-/** harness holds what the last render of Harness saw. */
+/** last holds the draft and the step errors of the last render of Harness. */
+const last = { draft: START, errors: [] as string[] };
 const harness = {
-  draft: (): ClusterDraft => START,
-  errors: (): string[] => [],
+  draft: () => last.draft,
+  errors: () => last.errors,
 };
 
 function Harness({
@@ -250,8 +251,11 @@ function Harness({
     Record<string, ValidationError[]>
   >({});
   const views = storageViews(flow.draft, data);
-  harness.draft = () => flow.draft;
-  harness.errors = () => storageErrors(flow.draft, views, cardErrors, []);
+  const errors = storageErrors(flow.draft, views, cardErrors, []);
+  useEffect(() => {
+    last.draft = flow.draft;
+    last.errors = errors;
+  });
   return (
     <ClusterStorageStep
       draft={flow.draft}
