@@ -57,6 +57,22 @@ describe("keptPaths", () => {
       ),
     ).toEqual(["spec.color", "spec.releases"]));
 
+  it("names a list that keeps a member the change leaves out", () =>
+    expect(
+      keptPaths(
+        { ...base, spec: { releases: { allowed: ["r2"] } } },
+        { ...base, spec: { releases: { allowed: ["r1", "r2"] } } },
+      ),
+    ).toEqual(["spec.releases.allowed"]));
+
+  it("names no list that holds only the members of the change", () =>
+    expect(
+      keptPaths(
+        { ...base, spec: { releases: { allowed: ["r2", "r1"] } } },
+        { ...base, spec: { releases: { allowed: ["r1", "r2"] } } },
+      ),
+    ).toEqual([]));
+
   it("names nothing outside spec, and nothing without a preview", () => {
     expect(
       keptPaths(

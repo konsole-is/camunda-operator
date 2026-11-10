@@ -2,7 +2,7 @@
 
 import { CircleAlert } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { byCodeUnit, isObject } from "@/lib/policy";
+import { byCodeUnit, equalJSON, isObject } from "@/lib/policy";
 import type {
   ApiError,
   Change,
@@ -190,7 +190,9 @@ export function ChangeReview({
 
 /**
  * keptPaths returns the path of each field under spec that after holds and
- * applied does not, in code-unit order, as "spec.sections.backup-storage".
+ * applied does not, in code-unit order, as "spec.sections.backup-storage",
+ * and the path of each list in which after keeps a member that applied
+ * leaves out.
  * Another field manager owns such a field, so the save keeps it. A field
  * whose parent applied also leaves out is named once, by the parent.
  */
@@ -203,6 +205,12 @@ export function keptPaths(
 }
 
 function missingIn(sent: unknown, kept: unknown, path: string): string[] {
+  if (Array.isArray(kept)) {
+    const members = Array.isArray(sent) ? sent : [];
+    return kept.some((item) => !members.some((m) => equalJSON(m, item)))
+      ? [path]
+      : [];
+  }
   if (!isObject(kept)) return [];
   const object = isObject(sent) ? sent : {};
   return Object.entries(kept).flatMap(([key, value]) =>
