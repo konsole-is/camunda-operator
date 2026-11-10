@@ -26,8 +26,7 @@ import { DeletionChoiceField } from "./deletion-choice";
  * built-in option, with the presets of context, and under the access cards
  * the hosts and their conflicts. A section with no option and no empty
  * option says "Your admin allows no option here." Each view keeps its
- * object while its content does not change. At the bottom it shows
- * deletion, and onDeletion gets each pick.
+ * object while its content does not change. onDeletion gets each pick.
  */
 export function ClusterStorageStep({
   draft,
