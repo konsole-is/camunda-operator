@@ -47,7 +47,9 @@ function prod(
     metadata: { name: "prod" },
     spec: {
       displayName: "Production",
-      sections: { access: { allowed: ["gateway"], default: "gateway" } },
+      sections: {
+        access: { allowed: ["gateway", "internal"], default: "gateway" },
+      },
       presets: { camundaCluster: ["small"] },
       ...(namespaceCreation && { namespaceCreation }),
     },
@@ -63,6 +65,21 @@ const accessSection: Resource<"PluginSection"> = {
     appliesTo: ["CamundaClusterClaim"],
     label: "Access",
     selection: "One",
+    order: 60,
+    emptyOptionLabel: "No access from outside",
+  },
+};
+
+const backupSection: Resource<"PluginSection"> = {
+  apiVersion: "plugins.camunda.io/v1alpha1",
+  kind: "PluginSection",
+  metadata: { name: "backup-storage" },
+  spec: {
+    appliesTo: ["CamundaClusterClaim"],
+    label: "Backup storage",
+    selection: "One",
+    order: 40,
+    emptyOptionLabel: "No backups",
   },
 };
 
@@ -88,6 +105,36 @@ const gateway: Resource<"PluginRegistration"> = {
     })),
   },
 };
+
+const internal: Resource<"PluginRegistration"> = {
+  ...gateway,
+  metadata: { name: "internal" },
+  spec: {
+    ...gateway.spec,
+    label: "Internal",
+    parameterValues: {
+      hostnamePattern: "{name}.{namespace}.internal.example.com",
+    },
+  },
+};
+
+function accessRequest(
+  namespace: string,
+  claim: string,
+  url: string,
+): Resource<"PluginRequest"> {
+  return {
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRequest",
+    metadata: { namespace, name: `${claim}-access` },
+    spec: {
+      claimRef: { kind: "CamundaClusterClaim", name: claim },
+      registration: "gateway",
+      section: "access",
+    },
+    status: { outputs: { externalUrl: url } },
+  } as unknown as Resource<"PluginRequest">;
+}
 
 const billingAccess = {
   apiVersion: "plugins.camunda.io/v1alpha1",
@@ -118,11 +165,18 @@ function data(over: Partial<ClusterCreateData> = {}): ClusterCreateData {
       },
     ],
     sections: [accessSection],
-    registrations: [gateway],
+    registrations: [gateway, internal],
     accessRequests: [billingAccess],
+    elasticsearchPresets: [],
+    databaseServerPresets: [],
+    secondaryStorageConfigs: [],
+    objectStorageConfigs: [],
     ...over,
   };
 }
+
+const radio = (name: RegExp) =>
+  screen.getByRole("radio", { name }) as HTMLInputElement;
 
 const next = () =>
   screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
@@ -267,11 +321,7 @@ describe("ClusterCreateFlow", () => {
     );
     await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
     await userEvent.click(next());
-    expect(
-      screen.getByText(
-        "This step comes in a later version of the fleet manager.",
-      ),
-    ).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
     await userEvent.click(
       screen.getByRole("button", { name: /Environment and name/ }),
     );
@@ -291,5 +341,146 @@ describe("ClusterCreateFlow", () => {
         .checked,
     ).toBe(true);
     expect(next().disabled).toBe(false);
+  });
+
+  it("shows the sections of step 2 after step 1", async () => {
+    render(
+      <ClusterCreateFlow
+        initial={data({ sections: [accessSection, backupSection] })}
+      />,
+    );
+    await fillBasics("search");
+    await userEvent.click(next());
+
+    const legends = screen
+      .getAllByRole("group")
+      .map((g) => g.querySelector("legend")?.textContent);
+    expect(legends).toEqual(
+      expect.arrayContaining(["Backup storage", "Access"]),
+    );
+    expect(radio(/^Gateway/).checked).toBe(true);
+  });
+
+  it("checks the hosts of the picked access option", async () => {
+    const taken =
+      "The host c1.team-a.internal.example.com is taken by team-b/x. Choose another name.";
+    const requests = [
+      accessRequest("team-b", "x", "https://c1.team-a.internal.example.com"),
+    ];
+    const { rerender } = render(
+      <ClusterCreateFlow initial={data({ accessRequests: requests })} />,
+    );
+    await fillBasics("c1");
+    await userEvent.click(next());
+
+    await userEvent.click(radio(/^Internal/));
+    expect(screen.getAllByText(taken).length).toBeGreaterThan(0);
+    expect(next().disabled).toBe(true);
+
+    await userEvent.click(radio(/No access from outside/));
+    expect(screen.queryByText(taken)).toBeNull();
+    expect(next().disabled).toBe(false);
+
+    live.objects.PluginRequest = [
+      ...requests,
+      accessRequest("team-c", "y", "https://c1.team-a.example.com"),
+    ];
+    rerender(
+      <ClusterCreateFlow initial={data({ accessRequests: requests })} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByText(/is taken by/)).toBeNull();
+    expect(next().disabled).toBe(false);
+  });
+
+  it("blocks step 1 on the taken host of the default option before step 2", async () => {
+    render(
+      <ClusterCreateFlow
+        initial={data({
+          accessRequests: [
+            accessRequest("team-c", "y", "https://c1.team-a.example.com"),
+          ],
+        })}
+      />,
+    );
+    await fillBasics("c1");
+
+    expect(next().disabled).toBe(true);
+  });
+
+  it("keeps the step 2 picks after Back and Next", async () => {
+    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
+    await fillBasics("search");
+    await userEvent.click(next());
+    await userEvent.click(radio(/No access from outside/));
+
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(next());
+
+    expect(radio(/No access from outside/).checked).toBe(true);
+    expect(radio(/^Gateway/).checked).toBe(false);
+  });
+
+  it("clears the step 2 picks when the environment changes", async () => {
+    const staging = {
+      ...prod(),
+      metadata: { name: "staging" },
+      spec: { ...prod().spec, displayName: "Staging" },
+    };
+    render(
+      <ClusterCreateFlow
+        initial={data({ environments: [prod(), staging], accessRequests: [] })}
+      />,
+    );
+    await fillBasics("search");
+    await userEvent.click(next());
+    await userEvent.click(radio(/No access from outside/));
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    await userEvent.click(screen.getByRole("radio", { name: /Staging/ }));
+    await userEvent.click(screen.getByRole("radio", { name: /Production/ }));
+    await userEvent.selectOptions(screen.getByRole("combobox"), "team-a");
+    await userEvent.click(next());
+
+    expect(radio(/^Gateway/).checked).toBe(true);
+  });
+
+  it("blocks step 2 when a storage config list cannot be read", async () => {
+    live.errors.SecondaryStorageConfig = "forbidden";
+    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
+    await fillBasics("search");
+    expect(next().disabled).toBe(false);
+
+    await userEvent.click(next());
+
+    expect(
+      screen.getAllByText(
+        "The fleet manager could not read the SecondaryStorageConfig objects: forbidden",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(next().disabled).toBe(true);
+  });
+
+  it("preselects the Default registration without an Environment", async () => {
+    const fallback = {
+      ...gateway,
+      spec: { ...gateway.spec, mode: "Default" as const },
+    };
+    render(
+      <ClusterCreateFlow
+        initial={data({
+          environments: [],
+          registrations: [fallback, internal],
+          accessRequests: [],
+        })}
+      />,
+    );
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "c1");
+    await userEvent.selectOptions(screen.getByRole("combobox"), "team-a");
+    await userEvent.click(screen.getByRole("radio", { name: /^small/ }));
+    await userEvent.click(next());
+
+    expect(radio(/^Gateway/).checked).toBe(true);
+    expect(radio(/^Internal/).checked).toBe(false);
   });
 });

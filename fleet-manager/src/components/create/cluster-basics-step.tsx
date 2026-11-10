@@ -23,9 +23,9 @@ import type { DraftPath } from "./use-create-flow";
  * (only while an Environment exists), the name, the namespace, and the
  * preset. presets are the presets that the picked environment offers.
  * nameErrors are the errors of the name and of its hosts. A new environment
- * clears the namespace, and the preset when the new environment does not
- * offer it. Each part restores its value from draft when the step mounts
- * again.
+ * clears the namespace, the step 2 picks, and the preset when the new
+ * environment does not offer it. Each part restores its value from draft
+ * when the step mounts again.
  */
 export function ClusterBasicsStep({
   draft,
@@ -65,6 +65,7 @@ export function ClusterBasicsStep({
     if (name === draft.environment) return;
     set(["environment"], name);
     set(["namespace"], undefined);
+    set(["storage"], undefined);
     const next = environments.find((e) => e.metadata.name === name);
     if (
       presetRef &&

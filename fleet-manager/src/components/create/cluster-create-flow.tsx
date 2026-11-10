@@ -2,24 +2,25 @@
 
 import type { V1Namespace } from "@kubernetes/client-node";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
+import { useState } from "react";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
+import type { DatabaseServerPreset } from "@/generated/crds/databaseserverpreset";
+import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
+import type { ObjectStorageConfig } from "@/generated/crds/objectstorageconfig";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import { useResources } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import type { ListOptions } from "@/lib/k8s/read";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
-import {
-  defaultAccessPatterns,
-  hostConflicts,
-  renderHosts,
-  takenHosts,
-} from "@/lib/claims/hosts";
+import { hostConflicts, renderHosts, takenHosts } from "@/lib/claims/hosts";
 import { claimNameErrors, namesIn } from "@/lib/claims/names";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
-import { environmentOf } from "@/lib/policy";
+import { environmentOf, type PluginSelection } from "@/lib/policy";
+import type { ValidationError } from "@/lib/schema";
 import { environmentCounts, presetUsage } from "@/lib/usage";
 import {
   CLUSTER_STEPS,
@@ -27,10 +28,22 @@ import {
   basicsErrors,
   offeredPresets,
 } from "@/lib/clusters/draft";
+import {
+  type StorageData,
+  draftAccessPatterns,
+  storageErrors,
+  storageViews,
+} from "@/lib/clusters/storage";
 import { ClusterBasicsStep } from "./cluster-basics-step";
+import { ClusterStorageStep } from "./cluster-storage-step";
 import { type CreateStep, useCreateFlow } from "./use-create-flow";
 
-/** ClusterCreateData is the first snapshot of the create cluster page, from every namespace. accessRequests are the requests of the access section. */
+/**
+ * ClusterCreateData is the first snapshot of the create cluster page, from
+ * every namespace. accessRequests are the requests of the access section.
+ * The presets and storage configs are the objects that the options of step 2
+ * list.
+ */
 export type ClusterCreateData = {
   environments: Resource<"Environment">[];
   namespaces: Resource<"Namespace">[];
@@ -40,6 +53,10 @@ export type ClusterCreateData = {
   sections: Resource<"PluginSection">[];
   registrations: Resource<"PluginRegistration">[];
   accessRequests: Resource<"PluginRequest">[];
+  elasticsearchPresets: Resource<"ElasticsearchClusterPreset">[];
+  databaseServerPresets: Resource<"DatabaseServerPreset">[];
+  secondaryStorageConfigs: Resource<"SecondaryStorageConfig">[];
+  objectStorageConfigs: Resource<"ObjectStorageConfig">[];
 };
 
 const EVERYWHERE = {};
@@ -49,8 +66,10 @@ const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
 
 /**
  * ClusterCreateFlow is the create cluster wizard. It follows initial live
- * and checks step 1 against the newest data. Steps 2 to 5 hold no fields
- * yet, and the flow writes nothing.
+ * and checks steps 1 and 2 against the newest data. The hosts of both steps
+ * are those of the picked access option once step 2 showed it, else those
+ * of the default option. Steps 3 to 5 hold no fields yet, and the flow
+ * writes nothing.
  */
 export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
   const live = {
@@ -71,11 +90,54 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
       initial.accessRequests,
     ),
   };
+  const sources = {
+    ElasticsearchClusterPreset: useLive(
+      "ElasticsearchClusterPreset",
+      EVERYWHERE,
+      initial.elasticsearchPresets,
+    ),
+    DatabaseServerPreset: useLive(
+      "DatabaseServerPreset",
+      EVERYWHERE,
+      initial.databaseServerPresets,
+    ),
+    SecondaryStorageConfig: useLive(
+      "SecondaryStorageConfig",
+      EVERYWHERE,
+      initial.secondaryStorageConfigs,
+    ),
+    ObjectStorageConfig: useLive(
+      "ObjectStorageConfig",
+      EVERYWHERE,
+      initial.objectStorageConfigs,
+    ),
+  };
   // A list that cannot be read would let a taken name or host, or a rule of
-  // an Environment, pass unseen, so it blocks the step.
+  // an Environment, pass unseen, so it blocks the step that reads it.
   const failures = Object.values(live).flatMap((l) =>
     l.failure ? [l.failure] : [],
   );
+  const storageFailures = Object.values(sources).flatMap((l) =>
+    l.failure ? [l.failure] : [],
+  );
+  const objects = {
+    ElasticsearchClusterPreset: models<ElasticsearchClusterPreset>(
+      sources.ElasticsearchClusterPreset.items,
+    ),
+    DatabaseServerPreset: models<DatabaseServerPreset>(
+      sources.DatabaseServerPreset.items,
+    ),
+    SecondaryStorageConfig: models<SecondaryStorageConfig>(
+      sources.SecondaryStorageConfig.items,
+    ),
+    ObjectStorageConfig: models<ObjectStorageConfig>(
+      sources.ObjectStorageConfig.items,
+    ),
+  };
+  // The errors that each section of step 2 last reported, by section name.
+  const [cardErrors, setCardErrors] = useState<
+    Record<string, ValidationError[]>
+  >({});
   const environments = models<Environment>(live.environments.items);
   const namespaces = models<V1Namespace>(live.namespaces.items);
   const claims = live.claims.items;
@@ -95,6 +157,8 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
     const environment = environments.find(
       (e) => e.metadata.name === draft.environment,
     );
+    const data: StorageData = { environment, sections, registrations, objects };
+    const views = storageViews(draft, data);
     const presets = offeredPresets(allPresets, environment);
     const name = draft.claim.metadata.name;
     const namespace = draft.namespace?.name ?? "";
@@ -102,42 +166,50 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
       draft.namespace?.kind === "existing"
         ? namesIn(namespace, claims, clusters)
         : [];
-    const patterns = defaultAccessPatterns(
-      sections,
-      registrations,
-      environment,
-      "CamundaClusterClaim",
-    );
+    const patterns = draftAccessPatterns(draft, data);
     const hosts =
       patterns && draft.namespace && claimNameErrors(name, []).length === 0
         ? renderHosts(patterns, name, namespace)
         : [];
     const conflicts = hostConflicts(hosts, takenHosts(accessRequests));
-    return { presets, takenNames, hosts, conflicts };
+    return { views, presets, takenNames, hosts, conflicts };
   };
 
+  const checks: Record<string, CreateStep<ClusterDraft>["check"]> = {
+    basics: (draft) => {
+      const { presets, takenNames, conflicts } = derive(draft);
+      return [
+        ...failures,
+        ...basicsErrors(draft, {
+          environments,
+          namespaces: namespaceEnvironments,
+          takenNames,
+          conflicts,
+          presets: presets.map((p) => p.metadata.name ?? ""),
+        }),
+      ];
+    },
+    storage: (draft) => {
+      const { views, conflicts } = derive(draft);
+      return [
+        ...storageFailures,
+        ...storageErrors(draft, views, cardErrors, conflicts),
+      ];
+    },
+  };
   const steps: CreateStep<ClusterDraft>[] = CLUSTER_STEPS.map((step) =>
-    step.id === "basics"
-      ? {
-          ...step,
-          check: (draft) => {
-            const { presets, takenNames, conflicts } = derive(draft);
-            return [
-              ...failures,
-              ...basicsErrors(draft, {
-                environments,
-                namespaces: namespaceEnvironments,
-                takenNames,
-                conflicts,
-                presets: presets.map((p) => p.metadata.name ?? ""),
-              }),
-            ];
-          },
-        }
-      : step,
+    Object.hasOwn(checks, step.id) ? { ...step, check: checks[step.id] } : step,
   );
   const flow = useCreateFlow({ steps, initial: INITIAL });
-  const { presets, takenNames, hosts, conflicts } = derive(flow.draft);
+  const { views, presets, takenNames, hosts, conflicts } = derive(flow.draft);
+  const onSection = (
+    name: string,
+    selections: PluginSelection[],
+    errors: ValidationError[],
+  ) => {
+    flow.set(["storage", name], selections);
+    setCardErrors((current) => ({ ...current, [name]: errors }));
+  };
 
   return (
     <WizardStepper
@@ -165,6 +237,16 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
             ...conflicts,
           ]}
           hosts={hosts}
+        />
+      ) : flow.current === "storage" ? (
+        <ClusterStorageStep
+          draft={flow.draft}
+          views={views}
+          registrations={registrations}
+          sections={sections}
+          hosts={hosts}
+          conflicts={conflicts}
+          onSection={onSection}
         />
       ) : (
         <p className="text-sm text-muted">
