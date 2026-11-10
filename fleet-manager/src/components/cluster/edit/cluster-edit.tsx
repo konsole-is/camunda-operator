@@ -25,6 +25,7 @@ import {
   resetValue,
   setValue,
   validateClusterClaim,
+  valueAt,
   type FieldError,
   type LockProvider,
   type Session,
@@ -129,6 +130,16 @@ export function ClusterEditProvider({
     };
     setState(edit);
   }
+  const reviewing =
+    edit.reviewing &&
+    edit.session !== undefined &&
+    edit.session.pending.size > 0 &&
+    validationOf(edit.session, context).length === 0;
+  // A review that an update closed opens again only on a click of Review.
+  if (edit.reviewing && !reviewing) {
+    edit = { ...edit, reviewing: false };
+    setState(edit);
+  }
 
   // Handlers read and write the latest state through stateRef, so that two
   // calls in one handler build on each other.
@@ -183,7 +194,6 @@ export function ClusterEditProvider({
 
   const session = edit.session;
   const pending = session?.pending.size ?? 0;
-  const invalid = validationOf(edit.session, context);
   const errors = errorsOf(edit, context);
   const value: ClusterEdit = {
     session,
@@ -196,11 +206,6 @@ export function ClusterEditProvider({
     errors,
   };
 
-  const reviewing =
-    edit.reviewing &&
-    session !== undefined &&
-    pending > 0 &&
-    invalid.length === 0;
   const close = () => update({ ...stateRef.current, reviewing: false });
   const off =
     context.writeMode === undefined &&
@@ -325,7 +330,8 @@ function open(
 
 // written returns the session after an ok write of saved. A claim update
 // can arrive before the write returns, and then current is already on the
-// newer claim.
+// newer claim. A change made while the write ran stays pending against the
+// written claim.
 function written(
   current: Session<ClusterClaim> | undefined,
   saved: Session<ClusterClaim>,
@@ -335,7 +341,20 @@ function written(
   const version = (s: Session<ClusterClaim>) =>
     s.claim.metadata.resourceVersion;
   if (version(current) !== version(saved)) return current;
-  return rebase(current, claimAfter(saved), locks);
+  const wanted = claimAfter(current);
+  let next: Session<ClusterClaim> = {
+    claim: claimAfter(saved),
+    pending: new Map(),
+    locks,
+  };
+  for (const { steps } of [
+    ...saved.pending.values(),
+    ...current.pending.values(),
+  ]) {
+    const result = setValue(next, steps, valueAt(wanted, steps));
+    if ("session" in result) next = result.session;
+  }
+  return next;
 }
 
 function errorsOf(edit: Edit, context: ClusterSlotContext): FieldError[] {

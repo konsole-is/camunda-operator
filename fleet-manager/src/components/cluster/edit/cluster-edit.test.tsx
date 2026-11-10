@@ -68,6 +68,7 @@ function Probe() {
       <button onClick={() => setRefusal(edit.set(replicas, 5)?.reason)}>
         Scale
       </button>
+      <button onClick={() => edit.set(replicas, 3)}>Scale back</button>
       <button onClick={() => edit.set(releaseRef, "missing")}>
         Missing release
       </button>
@@ -131,6 +132,23 @@ function page(
     ...result,
     update: (c: ClusterSlotContext) => result.rerender(tree(c)),
   };
+}
+
+// delayedActions holds each write until resolve is called, so that a test
+// can change the page while a save runs.
+function delayedActions() {
+  let release: () => void = () => {};
+  const actions: ClaimActions = {
+    preview: previewClaimChange,
+    apply: (change) =>
+      applyClaimChange(change).then(
+        (result) =>
+          new Promise<WriteResult>((r) => {
+            release = () => r(result);
+          }),
+      ),
+  };
+  return { actions, resolve: () => release() };
 }
 
 const click = (name: string) =>
@@ -374,17 +392,7 @@ describe("ClusterEditProvider", () => {
   });
 
   it("a claim update that arrives before the save returns is kept", async () => {
-    let resolve: (result: WriteResult) => void = () => {};
-    const actions: ClaimActions = {
-      preview: previewClaimChange,
-      apply: (change) =>
-        applyClaimChange(change).then(
-          (result) =>
-            new Promise<WriteResult>((r) => {
-              resolve = () => r(result);
-            }),
-        ),
-    };
+    const { actions, resolve } = delayedActions();
     const { update } = page(slotContext(), actions);
     click("Suspend");
     openReview();
@@ -392,7 +400,7 @@ describe("ClusterEditProvider", () => {
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
 
     update(slotContext({ claim: claim("42", { suspend: true }) }));
-    await act(async () => resolve({ ok: true, mode: "direct" }));
+    await act(async () => resolve());
 
     await waitFor(() => expect(dialog()).toBeNull());
     expect(text("Pending 0")).toBeTruthy();
@@ -400,10 +408,49 @@ describe("ClusterEditProvider", () => {
     openReview();
     await confirm("Save");
     await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
-    await act(async () => resolve({ ok: true, mode: "direct" }));
+    await act(async () => resolve());
     expect(fakeWriter.applied[1].preconditions).toEqual({
       [PRECONDITION]: "42",
     });
+  });
+
+  it("a change made while the save runs stays pending against the saved claim", async () => {
+    const { actions, resolve } = delayedActions();
+    page(slotContext(), actions);
+    click("Scale");
+    openReview();
+    await confirm("Save");
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Back" }));
+    click("Scale back");
+
+    await act(async () => resolve());
+
+    expect(text("Pending 1")).toBeTruthy();
+    openReview();
+    await confirm("Save");
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(2));
+    await act(async () => resolve());
+    const spec = (
+      fakeWriter.applied[1].apply[0] as KubeObject & {
+        spec: { cluster: { zeebe: { replicas: number } } };
+      }
+    ).spec;
+    expect(spec.cluster.zeebe.replicas).toBe(3);
+  });
+
+  it("a review that closes on a claim update does not open again on the next change", async () => {
+    const { update } = page();
+    click("Suspend");
+    openReview();
+    expect(dialog()).toBeTruthy();
+
+    update(slotContext({ claim: claim("42", { suspend: true }) }));
+    await waitFor(() => expect(dialog()).toBeNull());
+    click("Scale");
+
+    expect(text("Pending 1")).toBeTruthy();
+    expect(dialog()).toBeNull();
   });
 
   it("a refused write keeps the pending changes and gives the field error", async () => {
