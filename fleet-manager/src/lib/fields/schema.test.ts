@@ -38,7 +38,11 @@ describe("componentFieldPaths", () => {
     ])
       expect(cluster).not.toContain(p);
     expect(cluster).toEqual(
-      expect.arrayContaining(["extraEnv", "podLabels", "scheduling.tolerations"]),
+      expect.arrayContaining([
+        "extraEnv",
+        "podLabels",
+        "scheduling.tolerations",
+      ]),
     );
     expect(cluster.some((p) => p.startsWith("zeebe."))).toBe(false);
   });
