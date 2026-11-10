@@ -9,10 +9,10 @@ export type SectionComponentId = `section:${string}`;
 /**
  * SectionComponent is one section of a claim that has a selection. label is
  * the PluginSection label, or the section name when the section is not
- * found. order is spec.order of the section, and a missing section sorts
- * last. request is the PluginRequest that status.requests of the claim
- * names for the section and the registration of the selection, and
- * condition its Ready condition.
+ * found. order is spec.order of the section, or 0 when it has none, and a
+ * missing section sorts last. request is the PluginRequest that
+ * status.requests of the claim names for the section and the registration
+ * of the selection, and condition its Ready condition.
  */
 export type SectionComponent = {
   id: SectionComponentId;
@@ -78,7 +78,7 @@ export function sectionComponents({
         id: sectionComponentId(selection.section),
         section: selection.section,
         label: found?.spec.label ?? selection.section,
-        order: found?.spec.order ?? Number.MAX_SAFE_INTEGER,
+        order: found ? (found.spec.order ?? 0) : Number.MAX_SAFE_INTEGER,
         selection,
         ...(request ? { request } : {}),
         ...(condition ? { condition } : {}),

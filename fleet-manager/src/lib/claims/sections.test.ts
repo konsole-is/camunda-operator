@@ -99,6 +99,22 @@ describe("sectionComponents", () => {
     ]);
   });
 
+  it("gives a section without an order the order 0", () => {
+    const result = sectionComponents({
+      claim: claimOf([sel("access"), sel("identity"), sel("gone")]),
+      sections: [
+        section("access", "Access", 10),
+        section("identity", "Identity"),
+      ],
+      requests: [],
+    });
+    expect(result.map((c) => [c.section, c.order])).toEqual([
+      ["identity", 0],
+      ["access", 10],
+      ["gone", Number.MAX_SAFE_INTEGER],
+    ]);
+  });
+
   it("sorts sections of the same order by name", () => {
     const result = sectionComponents({
       claim: claimOf([sel("b"), sel("a")]),
