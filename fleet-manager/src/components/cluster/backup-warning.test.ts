@@ -96,6 +96,11 @@ function release(name: string, version: string): Resource<"CamundaRelease"> {
   } as unknown as Resource<"CamundaRelease">;
 }
 
+const both =
+  (...changes: ((s: Session<Claim>) => Session<Claim>)[]) =>
+  (s: Session<Claim>) =>
+    changes.reduce((at, c) => c(at), s);
+
 const set =
   (steps: Step[], value: unknown) =>
   (s: Session<Claim>): Session<Claim> => {
@@ -105,18 +110,27 @@ const set =
   };
 
 const HEAD =
-  "CAUTION: Wait until backup nightly finishes. This change rolls the brokers, and a roll fails a running backup.";
-const AT_ONCE = "The backup fails at once.";
-const WAITS =
-  "The backup waits 10 minutes for the change to be undone, then fails.";
+  "CAUTION: Wait until backup nightly finishes. This change can restart the brokers, which can fail a running backup.";
+const SUSPEND_HEAD =
+  "CAUTION: Wait until backup nightly finishes. This change suspends the cluster, which can fail a running backup.";
+const MOVED =
+  "The backup fails at once if the change gives Zeebe another configuration or Camunda version.";
+const ROLLOUT =
+  "The backup waits up to 10 minutes for the rollout to finish. It fails if the rollout takes longer, or if Zeebe then runs another configuration or Camunda version.";
+const RESUME =
+  "The backup waits 10 minutes for the cluster to resume, then fails.";
 const AFTER =
   "A backup that starts after the change waits until the rollout is done.";
+const AFTER_SUSPEND =
+  "A backup that starts after the change waits until the cluster resumes.";
 const GITOPS =
-  "GitOps applies the change later. If a backup runs then, it fails.";
+  "GitOps applies the change later. If a backup runs then, it can fail.";
 const STILL =
   "Backup nightly is running. This change does not roll the brokers, so it does not affect the backup.";
 const FINAL =
   "Backup nightly is running. The backup of its Zeebe partitions is finished. A roll of the brokers does not affect the backup.";
+const PARKS =
+  "Backup nightly is running. The backup waits until the cluster resumes.";
 const ANYWAY = {
   label: "Change anyway",
   gitLabel: "Push anyway",
@@ -125,12 +139,13 @@ const ANYWAY = {
 
 type Expect = (mode: WriteMode) => BackupWarning;
 const caution =
-  (line: string): Expect =>
+  (line: string, head = HEAD, after = AFTER): Expect =>
   (mode) => ({
     kind: "caution",
-    lines: [HEAD, line, AFTER, ...(mode === "git" ? [GITOPS] : [])],
+    lines: [head, line, after, ...(mode === "git" ? [GITOPS] : [])],
     confirm: ANYWAY,
   });
+const suspended = caution(RESUME, SUSPEND_HEAD, AFTER_SUSPEND);
 const note =
   (text: string): Expect =>
   () => ({ kind: "note", note: text });
@@ -148,61 +163,70 @@ const rdbms = (status: object): RollBackupLike => ({
   kind: "LogicalBackupRDBMS",
 });
 
-// Each row: the backup, its result when the change rolls Zeebe, and its
-// result when it does not.
-const BACKUPS: [string, RollBackupLike[], Expect, Expect][] = [
-  ["no backup", [], none, none],
-  ["a pending backup", [es({ phase: "Pending" })], none, none],
+type Effect = "rolls" | "keeps" | "suspends";
+
+// Each row: the backup, and its result for a change that rolls Zeebe, one
+// that does not, and one that suspends the cluster.
+const BACKUPS: [string, RollBackupLike[], Record<Effect, Expect>][] = [
+  ["no backup", [], { rolls: none, keeps: none, suspends: none }],
+  [
+    "a pending backup",
+    [es({ phase: "Pending" })],
+    { rolls: none, keeps: none, suspends: none },
+  ],
   [
     "a running Elasticsearch backup",
     [es({ phase: "Running", runtime: { state: "InProgress" } })],
-    caution(AT_ONCE),
-    note(STILL),
+    { rolls: caution(MOVED), keeps: note(STILL), suspends: note(PARKS) },
   ],
   [
     "an Elasticsearch backup with its partitions backed up",
     [es({ phase: "Running", runtime: { state: "Completed" } })],
-    note(FINAL),
-    note(STILL),
+    { rolls: note(FINAL), keeps: note(STILL), suspends: note(PARKS) },
   ],
   [
     "a running PostgreSQL backup",
     [rdbms({ phase: "Running" })],
-    caution(WAITS),
-    note(STILL),
+    { rolls: caution(ROLLOUT), keeps: note(STILL), suspends: suspended },
   ],
   [
     "a PostgreSQL backup with its Zeebe backup id",
     [rdbms({ phase: "Running", zeebeBackupId: 7 })],
-    caution(AT_ONCE),
-    note(STILL),
+    { rolls: caution(MOVED), keeps: note(STILL), suspends: suspended },
   ],
 ];
 
 const EMBEDDED_GATEWAY = { gateway: { replicas: 2, mode: "Embedded" } };
+const SECTION: Step[] = [
+  f("spec"),
+  f("plugins"),
+  { item: { section: "access", registration: "gateway-access" } },
+  f("parameters"),
+  f("hostnamePattern"),
+];
 // Each row: the change, the cluster spec of the claim and the live cluster
-// before it, the step and the value, and whether it rolls Zeebe.
-const CHANGES: [string, Record<string, unknown>, Step[], unknown, boolean][] = [
+// before it, the step and the value, and what it does to Zeebe.
+const CHANGES: [string, Record<string, unknown>, Step[], unknown, Effect][] = [
   [
     "the Camunda version",
     {},
     [f("spec"), f("releaseRef")],
     "camunda-8-10-1",
-    true,
+    "rolls",
   ],
   [
     "a zeebe field",
     {},
     cluster("zeebe", "resources"),
     { limits: { cpu: "2" } },
-    true,
+    "rolls",
   ],
   [
     "a cluster-wide field",
     {},
     cluster("scheduling"),
     { nodeSelector: { pool: "b" } },
-    true,
+    "rolls",
   ],
   [
     "a cluster-wide field that the brokers set themselves",
@@ -215,42 +239,46 @@ const CHANGES: [string, Record<string, unknown>, Step[], unknown, boolean][] = [
     },
     cluster("scheduling"),
     { nodeSelector: { pool: "b" } },
-    false,
+    "keeps",
   ],
-  ["the gateway mode", {}, cluster("gateway", "mode"), "Embedded", true],
+  ["the gateway mode", {}, cluster("gateway", "mode"), "Embedded", "rolls"],
   [
     "an app moving into the brokers",
     { ...EMBEDDED_GATEWAY, operate: { mode: "Standalone" } },
     cluster("operate", "mode"),
     "Embedded",
-    true,
+    "rolls",
   ],
   [
     "an app moving out of the brokers",
     EMBEDDED_GATEWAY,
     cluster("operate", "mode"),
     "Standalone",
-    true,
+    "rolls",
   ],
   [
     "an Operate-only field",
     { operate: { mode: "Standalone" } },
     cluster("operate", "resources"),
     { limits: { cpu: "2" } },
-    false,
+    "keeps",
   ],
   [
     "the deletion policy",
     {},
     [f("spec"), f("deletionPolicy")],
     "Orphan",
-    false,
+    "keeps",
   ],
+  ["a new secondary storage", {}, cluster("storageRef"), "other", "rolls"],
+  ["a new backup bucket", {}, cluster("backupStorageRef"), "other", "rolls"],
+  ["a section parameter", {}, SECTION, "b", "rolls"],
+  ["suspend", {}, [f("spec"), f("suspend")], true, "suspends"],
 ];
 
 describe("backupWarning", () => {
-  const rows = CHANGES.flatMap(([change, base, steps, value, rolls]) =>
-    BACKUPS.flatMap(([backup, list, ifRolls, ifNot]) =>
+  const rows = CHANGES.flatMap(([change, base, steps, value, effect]) =>
+    BACKUPS.flatMap(([backup, list, results]) =>
       (["direct", "git"] as const).map(
         (mode) =>
           [
@@ -261,7 +289,7 @@ describe("backupWarning", () => {
             steps,
             value,
             list,
-            (rolls ? ifRolls : ifNot)(mode),
+            results[effect](mode),
           ] as const,
       ),
     ),
@@ -276,45 +304,22 @@ describe("backupWarning", () => {
     },
   );
 
-  it("keeps the caution for a section change after the partition backup is final", () => {
+  it("treats a suspend with a roll as a roll for Elasticsearch, and as a suspend for PostgreSQL", () => {
     const i = input(
       {},
-      set(
-        [
-          f("spec"),
-          f("plugins"),
-          { item: { section: "access", registration: "gateway-access" } },
-          f("parameters"),
-          f("hostnamePattern"),
-        ],
-        "b",
+      both(
+        set([f("spec"), f("suspend")], true),
+        set(cluster("zeebe", "resources"), { limits: { cpu: "2" } }),
       ),
     );
-    expect(
-      backupWarning(
-        i,
-        [es({ phase: "Running", runtime: { state: "Completed" } })],
-        "direct",
-      ),
-    ).toEqual(caution(AT_ONCE)("direct"));
+    const running = { phase: "Running", runtime: { state: "InProgress" } };
+    expect(backupWarning(i, [es(running)], "direct")).toEqual(
+      caution(MOVED)("direct"),
+    );
+    expect(backupWarning(i, [rdbms({ phase: "Running" })], "direct")).toEqual(
+      suspended("direct"),
+    );
   });
-
-  it.each([
-    ["storageRef", "other-storage"],
-    ["backupStorageRef", "other-bucket"],
-  ])(
-    "keeps the caution for a new %s after the partition backup is final",
-    (field, value) => {
-      const i = input({}, set(cluster(field), value));
-      expect(
-        backupWarning(
-          i,
-          [es({ phase: "Running", runtime: { state: "Completed" } })],
-          "direct",
-        ),
-      ).toEqual(caution(AT_ONCE)("direct"));
-    },
-  );
 
   it("names the backup that runs", () => {
     const list = [
@@ -329,7 +334,7 @@ describe("backupWarning", () => {
       "direct",
     );
     expect(w.kind === "caution" && w.lines[0]).toBe(
-      "CAUTION: Wait until backup manual-1 finishes. This change rolls the brokers, and a roll fails a running backup.",
+      "CAUTION: Wait until backup manual-1 finishes. This change can restart the brokers, which can fail a running backup.",
     );
   });
 });

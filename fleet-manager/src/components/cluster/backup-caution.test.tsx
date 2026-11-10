@@ -118,7 +118,7 @@ describe("backupReview", () => {
         "CAUTION: Wait until backup nightly finishes.",
       );
       expect(note.textContent).toContain(
-        "The backup waits 10 minutes for the change to be undone, then fails.",
+        "The backup waits up to 10 minutes for the rollout to finish.",
       );
       expect(
         note.textContent?.includes("GitOps applies the change later."),
