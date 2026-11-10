@@ -121,6 +121,41 @@ describe("ComponentDots", () => {
     expect(document.activeElement).toBe(trigger());
   });
 
+  it("moves the focus on from the dots when Tab leaves the list", async () => {
+    render(
+      <>
+        <ComponentDots dots={dots} />
+        <ComponentDots dots={dots.slice(0, 1)} />
+      </>,
+    );
+    const [first, second] = screen.getAllByRole("button", {
+      name: /Components/,
+    });
+    await userEvent.tab();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).toBe(screen.getByRole("note"));
+    await userEvent.tab();
+    expect(document.activeElement).toBe(second);
+    expect(first).toBeTruthy();
+  });
+
+  it("moves the focus back before the dots when Shift+Tab leaves the list", async () => {
+    render(
+      <>
+        <input aria-label="Before" />
+        <ComponentDots dots={dots} />
+      </>,
+    );
+    await userEvent.tab();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(trigger());
+    await userEvent.keyboard("{ArrowDown}");
+    await userEvent.tab({ shift: true });
+    expect(document.activeElement).toBe(
+      screen.getByRole("textbox", { name: "Before" }),
+    );
+  });
+
   it("starts open with defaultOpen", () => {
     render(<ComponentDots dots={dots} defaultOpen />);
     expect(screen.getByRole("note")).toBeTruthy();

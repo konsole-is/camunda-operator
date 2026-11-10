@@ -92,6 +92,11 @@ export function ComponentDots({
           collisionPadding={8}
           onOpenAutoFocus={(event) => event.preventDefault()}
           onCloseAutoFocus={(event) => event.preventDefault()}
+          // The list is in a portal at the end of the page. Tab from the
+          // list goes on from the dots, not from the end of the page.
+          onKeyDown={(event) => {
+            if (event.key === "Tab") trigger.current?.focus();
+          }}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
             if (note.current?.contains(document.activeElement))
