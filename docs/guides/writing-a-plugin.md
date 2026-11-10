@@ -293,7 +293,7 @@ The binary prints one line for each check, `PASS`, `FAIL`, or `SKIP`, and writes
 | --- | --- |
 | `0` | No check failed. |
 | `1` | At least one check failed. |
-| `2` | The run could not start, the report could not be written, or the cleanup at the end failed. |
+| `2` | The run did not start, the binary did not write the report, or the cleanup at the end failed. |
 
 ### Run the suite in GitHub Actions
 

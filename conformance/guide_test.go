@@ -36,13 +36,15 @@ func TestPluginGuideListsEveryCheckOfTheRegistry(t *testing.T) {
 	require.NoError(t, err)
 
 	row := regexp.MustCompile("(?m)^\\| `([A-Z]+(?:-[A-Z]+)+)` \\| (.+) \\| (Yes|No) \\|$")
-	var got []string
-	for _, m := range row.FindAllStringSubmatch(string(page), -1) {
+	rows := row.FindAllStringSubmatch(string(page), -1)
+	got := make([]string, 0, len(rows))
+	for _, m := range rows {
 		got = append(got, m[1]+" | "+strings.ReplaceAll(m[2], "`", "")+" | "+m[3])
 	}
 
-	var want []string
-	for _, c := range conformance.Checks() {
+	checks := conformance.Checks()
+	want := make([]string, 0, len(checks))
+	for _, c := range checks {
 		skippable := "No"
 		if c.Skippable {
 			skippable = "Yes"
