@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   GitWaitingLine,
   type PushedObject,
@@ -267,7 +267,10 @@ export function ClusterView({
   }, [component]);
   const usage = usePodUsage(ns, initial.podSelector);
   const partitions = usePartitions(ns, name ?? "");
-  const backups = [...backupsES.items, ...backupsRDBMS.items];
+  const backups = useMemo(
+    () => [...backupsES.items, ...backupsRDBMS.items],
+    [backupsES.items, backupsRDBMS.items],
+  );
   const clock = useClock(
     now,
     tab === "backups" || tab === "overview" || tab === "claim",
