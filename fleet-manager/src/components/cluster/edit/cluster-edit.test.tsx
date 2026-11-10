@@ -455,6 +455,45 @@ describe("ClusterEditProvider", () => {
     );
   });
 
+  it.each([
+    ["moves to a new revision", "a later revision", false],
+    ["changes without a new revision", undefined, true],
+  ] as const)(
+    "in Git mode, a claim that %s while the push runs decides the wait from the revision before the push",
+    async (_, revision, waits) => {
+      fakeWriter.reset("git");
+      const { actions, resolve } = delayedActions();
+      const { update } = page(slotContext({ writeMode: "git" }), actions);
+      click("Scale");
+      openReview();
+      await confirm("Push to Git");
+      await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+
+      const moved = claim("42");
+      update(
+        slotContext({
+          writeMode: "git",
+          claim: {
+            ...moved,
+            metadata: {
+              ...moved.metadata,
+              annotations: revision ? { [REVISION_ANNOTATION]: revision } : {},
+            },
+          },
+        }),
+      );
+      await act(async () => resolve());
+      await waitFor(() => expect(dialog()).toBeNull());
+      click("Suspend");
+
+      expect(
+        within(bar()!).getByRole<HTMLButtonElement>("button", {
+          name: "Review",
+        }).disabled,
+      ).toBe(waits);
+    },
+  );
+
   it("in Git mode, a push that the page stops following returns to the live claim and says so", async () => {
     fakeWriter.reset("git");
     page(slotContext({ writeMode: "git" }));

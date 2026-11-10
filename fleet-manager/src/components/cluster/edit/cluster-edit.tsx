@@ -198,7 +198,9 @@ export function ClusterEditProvider({
   // Handlers read and write the latest state through stateRef, so that two
   // calls in one handler build on each other.
   const stateRef = useRef(edit);
-  const lastResult = useRef<WriteResult | undefined>(undefined);
+  const lastWrite = useRef<
+    { result: WriteResult; before: string | undefined } | undefined
+  >(undefined);
   useEffect(() => {
     contextRef.current = context;
     stateRef.current = edit;
@@ -221,11 +223,13 @@ export function ClusterEditProvider({
   const apply = useCallback(
     async (change: Change) => {
       const sent = stateRef.current.session;
+      const before =
+        contextRef.current.claim?.metadata?.annotations?.[REVISION_ANNOTATION];
       update({ ...stateRef.current, note: undefined, dropped: false });
       setWriting(true);
       try {
         const result = await actions.apply(change);
-        lastResult.current = result;
+        lastWrite.current = { result, before };
         if (!result.ok)
           update({
             ...stateRef.current,
@@ -376,11 +380,9 @@ export function ClusterEditProvider({
                 onWritten={() => {
                   const current = stateRef.current;
                   const next = pushedOf(
-                    lastResult.current,
+                    lastWrite.current?.result,
                     session,
-                    contextRef.current.claim?.metadata?.annotations?.[
-                      REVISION_ANNOTATION
-                    ],
+                    lastWrite.current?.before,
                   );
                   update({
                     ...current,
