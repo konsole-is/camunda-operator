@@ -28,8 +28,7 @@ export type StorageData = {
  * storageViews returns the sections of step 2: those that apply to a
  * cluster claim, by spec.order and then by name, each from offeredSection,
  * with builtinOption in the namespace of draft, then withMissingInputs over
- * the picks of draft. A section that draft.storage does not hold yet counts
- * its enabled default option as picked, as SectionCards preselects it.
+ * the picks of draft.
  */
 export function storageViews(
   draft: ClusterDraft,
@@ -67,6 +66,8 @@ export function storageViews(
   );
 }
 
+// A section that draft.storage does not hold yet counts its enabled default
+// option as picked, as SectionCards preselects it.
 function picksOf(draft: ClusterDraft, view: SectionView): PluginSelection[] {
   if (Object.hasOwn(draft.storage ?? {}, view.name)) {
     return draft.storage![view.name];
@@ -85,10 +86,8 @@ function picksOf(draft: ClusterDraft, view: SectionView): PluginSelection[] {
  * <label>"), a required section without a selection ("Choose an option for
  * <label>"), and a card error other than the required one ("Fix the <label>
  * settings"), at most one of each per section. Then a pick of a section
- * that views no longer hold ("Choose another option for <section name>"),
- * then conflicts. cardErrors are the errors that SectionCards reported, by
- * section name. A section that draft.storage does not hold yet counts its
- * enabled default option as picked.
+ * that views no longer hold, then conflicts. cardErrors are the errors that
+ * SectionCards reported, by section name.
  */
 export function storageErrors(
   draft: ClusterDraft,
