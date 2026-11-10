@@ -19,7 +19,7 @@ const COLUMN_WIDTHS =
   "md:[&_table]:table-fixed md:[&_th:nth-child(1)]:w-[24%] md:[&_th:nth-child(2)]:w-[22%] md:[&_th:nth-child(3)]:w-[14%] md:[&_th:nth-child(4)]:w-[22%]";
 
 // The cells of a fixed column break a long name, which has no spaces.
-const WRAP = "min-w-0 whitespace-normal [overflow-wrap:anywhere]";
+const WRAP = "min-w-0 whitespace-normal break-words";
 
 const CLUSTER_COLUMNS = [
   { key: "cluster", label: "Cluster" },
