@@ -90,12 +90,14 @@ const STALE_WRITE =
   "The claim changed while the save ran. Review the change and save again.";
 
 // Pushed is the claim spec of a push of this page that GitOps has not
-// applied yet. applied is set once the watch of the push sees its revision,
+// applied yet. before is the revision of the live claim when the push
+// left. applied is set once the watch of the push sees its revision,
 // which can come before the claim of the page shows it.
 type Pushed = {
   key: RefKey;
   revision: string;
   spec: ClusterClaim["spec"];
+  before?: string;
   applied?: boolean;
 };
 
@@ -363,7 +365,13 @@ export function ClusterEditProvider({
                 onCancel={writing ? undefined : close}
                 onWritten={() => {
                   const current = stateRef.current;
-                  const next = pushedOf(lastResult.current, session);
+                  const next = pushedOf(
+                    lastResult.current,
+                    session,
+                    contextRef.current.claim?.metadata?.annotations?.[
+                      REVISION_ANNOTATION
+                    ],
+                  );
                   update({
                     ...current,
                     session: written(current.session, session, next?.spec),
@@ -456,7 +464,8 @@ function syncedEdit(
   let next = edit;
   if (pushed) {
     const liveRevision = live?.metadata?.annotations?.[REVISION_ANNOTATION];
-    if (liveRevision === pushed.revision) next = { ...next, pushed: undefined };
+    if (liveRevision === pushed.revision || liveRevision !== pushed.before)
+      next = { ...next, pushed: undefined };
     else if (!following(pushed) && !pushed.applied)
       next = { ...next, pushed: undefined, dropped: true };
   }
@@ -508,6 +517,7 @@ function FollowPush({
 function pushedOf(
   result: WriteResult | undefined,
   saved: Session<ClusterClaim>,
+  before: string | undefined,
 ): Pushed | undefined {
   if (!result?.ok || result.mode !== "git") return undefined;
   const { kind, metadata } = saved.claim;
@@ -519,7 +529,7 @@ function pushedOf(
   const revision = result.revisions[key];
   return revision === undefined
     ? undefined
-    : { key, revision, spec: claimAfter(saved).spec };
+    : { key, revision, spec: claimAfter(saved).spec, before };
 }
 
 function refusalOf(result: WriteResult): string {

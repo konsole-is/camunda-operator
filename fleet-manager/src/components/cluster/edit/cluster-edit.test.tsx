@@ -418,6 +418,36 @@ describe("ClusterEditProvider", () => {
     expect(text("Replicas 5")).toBeTruthy();
   });
 
+  it("in Git mode, a claim that GitOps moved past the push ends the wait", async () => {
+    fakeWriter.reset("git");
+    const { update } = page(slotContext({ writeMode: "git" }));
+    click("Scale");
+    openReview();
+    await confirm("Push to Git");
+    await waitFor(() => expect(dialog()).toBeNull());
+    click("Suspend");
+
+    const later = claim("44", { cluster: { zeebe: { replicas: 7 } } });
+    update(
+      slotContext({
+        writeMode: "git",
+        claim: {
+          ...later,
+          metadata: {
+            ...later.metadata,
+            annotations: { [REVISION_ANNOTATION]: "a later revision" },
+          },
+        },
+      }),
+    );
+
+    expect(text("Replicas 7")).toBeTruthy();
+    expect(
+      within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(false);
+  });
+
   it("in Git mode, a push that the page stops following returns to the live claim and says so", async () => {
     fakeWriter.reset("git");
     page(slotContext({ writeMode: "git" }));
