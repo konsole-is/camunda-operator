@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { componentMetrics, requestMetrics } from "@/lib/observe/metrics";
+import type { MetricsAnswer } from "@/lib/observe/types";
 import { GET } from "./route";
 
 vi.mock("@/lib/observe/metrics", async (importOriginal) => ({
@@ -92,7 +93,11 @@ describe("GET /api/metrics", () => {
   });
 
   it("answers the charts of a request over the range", async () => {
-    const metrics = { prometheus: "answered", charts: [], errors: [] } as const;
+    const metrics: MetricsAnswer = {
+      prometheus: "answered",
+      charts: [],
+      errors: [],
+    };
     vi.mocked(requestMetrics).mockResolvedValue(metrics);
 
     const response = await call(
