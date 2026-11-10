@@ -10,10 +10,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { GitCommitHorizontal } from "lucide-react";
 import { ChangeBar } from "@/components/fleet/change-bar";
 import { ClaimReview } from "@/components/fleet/claim-review";
 import { useGitPushes } from "@/components/fleet/git-pushes";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { objectDiff } from "@/lib/diff";
 import type { ClusterField, FieldLock, Step } from "@/lib/fields";
@@ -44,7 +46,8 @@ import type {
   WriteMode,
   WriteResult,
 } from "@/lib/write/types";
-import { clusterImpacts, mergedSpecs, showsMergedDiff } from "../impacts";
+import { backupReview } from "../backup-caution";
+import { mergedSpecs, showsMergedDiff } from "../impacts";
 import type { ClusterSlotContext } from "../slots";
 import { changeInputOf } from "./change-input";
 
@@ -84,6 +87,7 @@ export type ClusterEdit = {
 const ClusterEditContext = createContext<ClusterEdit | undefined>(undefined);
 
 const WAITING_FOR_GITOPS = "Waiting for GitOps to apply your last change.";
+const WAITING_ON_LIVE = `${WAITING_FOR_GITOPS} The page shows the live claim until GitOps applies it.`;
 const PUSH_DROPPED =
   "GitOps did not apply your last change. The page shows the live claim again.";
 const STALE_WRITE =
@@ -106,9 +110,9 @@ type Pushed = {
 // rebased on. refused holds the field errors of a refused preview or write
 // of one session. note is the refusal of the last write, with the session
 // that the write sent. dropped says that the page stopped following a push
-// that GitOps did not apply. superseded is the key of a push that the claim
-// left for another revision. The tab still follows it until the effect
-// settles it.
+// that GitOps did not apply. ended is the key of a push that this page
+// stopped following, because the claim shows its revision or left for
+// another. The tab still follows it until the effect settles it.
 type Edit = {
   seen?: string;
   seenPush?: string;
@@ -118,7 +122,7 @@ type Edit = {
   pushed?: Pushed;
   note?: { session?: Session<ClusterClaim>; text: string };
   dropped?: boolean;
-  superseded?: RefKey;
+  ended?: RefKey;
 };
 
 /**
@@ -192,18 +196,45 @@ export function ClusterEditProvider({
     (writing || (synced.session.pending.size > 0 && invalid.length === 0));
   // A review that an update closed opens again only on a click of Review.
   const edit =
-    synced.reviewing && !reviewing ? { ...synced, reviewing: false } : synced;
+    synced.reviewing && !reviewing
+      ? { ...synced, reviewing: false, note: undefined }
+      : synced;
   if (edit !== state) setState(edit);
+
+  const claimKey = context.claim?.metadata?.name
+    ? refKey({
+        kind: "CamundaClusterClaim",
+        namespace: context.claim.metadata.namespace,
+        name: context.claim.metadata.name,
+      })
+    : undefined;
+  // The pushes outlive the page, so a push of an earlier visit waits here
+  // too, without its spec.
+  const waiting = edit.pushed
+    ? WAITING_FOR_GITOPS
+    : pushes.some(
+          (p) =>
+            p.key === claimKey &&
+            !(
+              "revision" in p &&
+              p.revision ===
+                context.claim?.metadata?.annotations?.[REVISION_ANNOTATION]
+            ),
+        )
+      ? WAITING_ON_LIVE
+      : undefined;
 
   // Handlers read and write the latest state through stateRef, so that two
   // calls in one handler build on each other.
   const stateRef = useRef(edit);
+  const waitingRef = useRef(waiting);
   const lastWrite = useRef<
     { result: WriteResult; before: string | undefined } | undefined
   >(undefined);
   useEffect(() => {
     contextRef.current = context;
     stateRef.current = edit;
+    waitingRef.current = waiting;
     locks.follow(context.fields);
   });
 
@@ -211,13 +242,14 @@ export function ClusterEditProvider({
     stateRef.current = next;
     setState(next);
   }, []);
-  // SettleWrite settles a push only on its exact revision. A push that the
-  // claim left for another revision never gets it, so settle it here.
+  // SettleWrite settles a push only when its watch sees the exact revision.
+  // A push that the claim left for another revision never gets it, so settle
+  // it here.
   useEffect(() => {
-    if (!edit.superseded) return;
-    settle(edit.superseded);
-    update({ ...stateRef.current, superseded: undefined });
-  }, [edit.superseded, settle, update]);
+    if (!edit.ended) return;
+    settle(edit.ended);
+    update({ ...stateRef.current, ended: undefined });
+  }, [edit.ended, settle, update]);
   // The review stays open while a write runs, so that no change can start
   // before the write returns.
   const apply = useCallback(
@@ -275,19 +307,19 @@ export function ClusterEditProvider({
   const review = useCallback(() => {
     const current = stateRef.current;
     const s = current.session;
-    if (!s || s.pending.size === 0 || current.pushed) return;
-    if (errorsOf(current, contextRef.current).length > 0) return;
+    if (!s || s.pending.size === 0 || waitingRef.current) return;
+    if (errorsOf(current, validationOf(s, contextRef.current)).length > 0)
+      return;
     update({ ...current, reviewing: true });
   }, [update]);
+  const stopWaiting = () => {
+    if (claimKey) settle(claimKey);
+    update({ ...stateRef.current, pushed: undefined, dropped: true });
+  };
 
   const session = edit.session;
   const pending = session?.pending.size ?? 0;
-  const errors = [
-    ...invalid,
-    ...(session && edit.refused?.session === session
-      ? edit.refused.fields
-      : []),
-  ];
+  const errors = errorsOf(edit, invalid);
   const value: ClusterEdit = {
     session,
     set,
@@ -337,13 +369,25 @@ export function ClusterEditProvider({
         />
       )}
       {children}
-      {(pending > 0 || toast) && (
+      {(pending > 0 || toast || waiting) && (
         <div className="sticky bottom-4 z-30 flex flex-col items-end gap-2">
           {toast && <Toast result={toast} onDismiss={dismiss} />}
+          {waiting && (
+            <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-info/40 bg-panel px-4 py-2 text-sm text-text-2 shadow-lg">
+              <GitCommitHorizontal
+                aria-hidden
+                className="size-4 shrink-0 text-info"
+              />
+              <p className="min-w-0 flex-1">{waiting}</p>
+              <Button variant="outline" size="sm" onClick={stopWaiting}>
+                Stop waiting
+              </Button>
+            </div>
+          )}
           <div className="w-full">
             <ChangeBar
               count={pending}
-              blocked={edit.pushed ? WAITING_FOR_GITOPS : undefined}
+              blocked={waiting}
               errors={errors}
               onDiscard={discard}
               onReview={review}
@@ -373,6 +417,10 @@ export function ClusterEditProvider({
                 mode={context.writeMode}
                 actions={{ preview: actions.preview, apply }}
                 show={show}
+                onOpenBackups={() => {
+                  close();
+                  window.history.replaceState(null, "", "?tab=backups");
+                }}
                 onRefused={(fields) =>
                   update({ ...stateRef.current, refused: { session, fields } })
                 }
@@ -418,12 +466,14 @@ function ReviewOf({
   onRefused,
   onCancel,
   onWritten,
+  onOpenBackups,
 }: {
   context: ClusterSlotContext;
   session: Session<ClusterClaim>;
   mode: WriteMode;
   actions: ClaimActions;
   show: (result: WriteResult, message: string) => void;
+  onOpenBackups: () => void;
   onRefused: (fields: FieldError[]) => void;
   onCancel?: () => void;
   onWritten: () => void;
@@ -432,10 +482,13 @@ function ReviewOf({
   const merged = showsMergedDiff(session) ? mergedSpecs(input) : undefined;
   return (
     <ClaimReview
+      {...backupReview(input, context.backups, mode, {
+        backupsHref: "?tab=backups",
+        onOpenBackups,
+      })}
       session={session}
       mode={mode}
       intent={`Change the claim ${session.claim.metadata.name}`}
-      impacts={clusterImpacts(input)}
       mergedLines={merged && objectDiff(merged.before.spec, merged.after.spec)}
       preview={actions.preview}
       apply={actions.apply}
@@ -476,9 +529,8 @@ function syncedEdit(
   let next = edit;
   if (pushed) {
     const liveRevision = live?.metadata?.annotations?.[REVISION_ANNOTATION];
-    if (liveRevision === pushed.revision) next = { ...next, pushed: undefined };
-    else if (liveRevision !== pushed.before)
-      next = { ...next, pushed: undefined, superseded: pushed.key };
+    if (liveRevision === pushed.revision || liveRevision !== pushed.before)
+      next = { ...next, pushed: undefined, ended: pushed.key };
     else if (!following(pushed) && !pushed.applied)
       next = { ...next, pushed: undefined, dropped: true };
   }
@@ -581,10 +633,10 @@ function sameEntry(a: PendingChange, b: PendingChange | undefined): boolean {
   return equalJSON(a.value, b.value);
 }
 
-function errorsOf(edit: Edit, context: ClusterSlotContext): FieldError[] {
+function errorsOf(edit: Edit, invalid: FieldError[]): FieldError[] {
   const s = edit.session;
   return [
-    ...validationOf(s, context),
+    ...invalid,
     ...(s && edit.refused?.session === s ? edit.refused.fields : []),
   ];
 }

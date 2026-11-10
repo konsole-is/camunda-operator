@@ -29,6 +29,7 @@ import {
   slotContext,
 } from "../../../../test/fakes/slot-context";
 import { fakeWriter } from "../../../../test/fakes/writer";
+import type { BackupObject } from "../backups";
 import type { ClusterSlotContext } from "../slots";
 import {
   type ClaimActions,
@@ -44,6 +45,12 @@ const replicas: Step[] = [
   { field: "cluster" },
   { field: "zeebe" },
   { field: "replicas" },
+];
+const partitions: Step[] = [
+  { field: "spec" },
+  { field: "cluster" },
+  { field: "zeebe" },
+  { field: "partitions" },
 ];
 const releaseRef: Step[] = [{ field: "spec" }, { field: "releaseRef" }];
 const presetRef: Step[] = [{ field: "spec" }, { field: "presetRef" }];
@@ -79,6 +86,7 @@ function Probe() {
         Scale
       </button>
       <button onClick={() => edit.set(replicas, 3)}>Scale back</button>
+      <button onClick={() => edit.set(partitions, 3)}>Partition</button>
       <button onClick={() => edit.set(schedule, { cron: "0 1 * * *" })}>
         Attach schedule
       </button>
@@ -165,17 +173,28 @@ function page(
   actions: ClaimActions = serverActions,
 ) {
   const client = new QueryClient();
+  let host = 0;
+  let last = context;
   const tree = (c: ClusterSlotContext) => (
     <QueryClientProvider client={client}>
       <GitPushesProvider>
-        <Page context={c} actions={actions} />
+        <Page key={host} context={c} actions={actions} />
       </GitPushesProvider>
     </QueryClientProvider>
   );
   const result = render(tree(context));
   return {
     ...result,
-    update: (c: ClusterSlotContext) => result.rerender(tree(c)),
+    update: (c: ClusterSlotContext) => {
+      last = c;
+      result.rerender(tree(c));
+    },
+    // remount mounts a new host in the same tab, as when the user leaves
+    // the cluster page and comes back.
+    remount: () => {
+      host++;
+      result.rerender(tree(last));
+    },
   };
 }
 
@@ -388,6 +407,7 @@ describe("ClusterEditProvider", () => {
     expect(text("Pending 1")).toBeTruthy();
 
     update(slotContext({ writeMode: "git", claim: claim("42") }));
+    update(slotContext({ writeMode: "git", claim: claim("43") }));
 
     expect(text("Pending 1")).toBeTruthy();
     expect(text("Replicas 5")).toBeTruthy();
@@ -502,6 +522,7 @@ describe("ClusterEditProvider", () => {
     await confirm("Push to Git");
     await waitFor(() => expect(dialog()).toBeNull());
     expect(text("Replicas 5")).toBeTruthy();
+    click("Partition");
 
     click("Drop pushes");
 
@@ -511,9 +532,85 @@ describe("ClusterEditProvider", () => {
       ),
     ).toBeTruthy();
     expect(text("Replicas 3")).toBeTruthy();
+    expect(text("Pending 1")).toBeTruthy();
   });
 
-  it("in direct mode, a second save before the claim update goes on from the written claim", async () => {
+  it("in Git mode, a push that GitOps never applies, as after a revert of the file, ends on Stop waiting", async () => {
+    fakeWriter.reset("git");
+    const { update } = page(slotContext({ writeMode: "git" }));
+    click("Scale");
+    openReview();
+    await confirm("Push to Git");
+    await waitFor(() => expect(dialog()).toBeNull());
+    click("Partition");
+    // The claim keeps the revision that it had before the push.
+    update(slotContext({ writeMode: "git", claim: claim("42") }));
+    const review = () =>
+      within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" });
+    expect(review().disabled).toBe(true);
+
+    click("Stop waiting");
+
+    expect(review().disabled).toBe(false);
+    expect(
+      screen.getByText(
+        "GitOps did not apply your last change. The page shows the live claim again.",
+      ),
+    ).toBeTruthy();
+    expect(text("Replicas 3")).toBeTruthy();
+    expect(text("Pushes 0")).toBeTruthy();
+  });
+
+  it("in Git mode, a new host of a claim with a waiting push blocks Review and shows the live claim", async () => {
+    fakeWriter.reset("git");
+    const { remount } = page(slotContext({ writeMode: "git" }));
+    click("Scale");
+    openReview();
+    await confirm("Push to Git");
+    await waitFor(() => expect(dialog()).toBeNull());
+
+    remount();
+    click("Partition");
+
+    expect(text("Replicas 3")).toBeTruthy();
+    expect(
+      within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(true);
+    expect(
+      within(bar()!).getByText(
+        "Waiting for GitOps to apply your last change. The page shows the live claim until GitOps applies it.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("in Git mode, a push of a new host that the Git writer refuses shows the message of the writer", async () => {
+    fakeWriter.reset("git");
+    const message =
+      "team-a/camundaclusterclaim/orders.yaml holds a save that GitOps has not applied yet.";
+    const { remount } = page(slotContext({ writeMode: "git" }));
+    click("Scale");
+    openReview();
+    await confirm("Push to Git");
+    await waitFor(() => expect(dialog()).toBeNull());
+    remount();
+    click("Stop waiting");
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Conflict", message }] },
+    ];
+
+    click("Partition");
+    openReview();
+    await confirm("Push to Git");
+
+    await waitFor(() =>
+      expect(within(dialog()!).getByRole("alert").textContent).toContain(
+        message,
+      ),
+    );
+  });
+
+  it("in direct mode, a second save before the claim update sends both changes with the resourceVersion that the page read", async () => {
     page();
     click("Suspend");
     openReview();
@@ -534,6 +631,82 @@ describe("ClusterEditProvider", () => {
     expect(spec.suspend).toBe(true);
     expect(spec.cluster.zeebe.replicas).toBe(5);
     expect(second.preconditions).toEqual({ [PRECONDITION]: "41" });
+  });
+
+  it("in direct mode, a second save that is Stale before the claim update saves again after it", async () => {
+    const { update } = page();
+    click("Suspend");
+    openReview();
+    await confirm("Save");
+    await waitFor(() => expect(dialog()).toBeNull());
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Stale", message: "x" }] },
+    ];
+    click("Scale");
+    openReview();
+    await confirm("Save");
+    await waitFor(() =>
+      expect(within(dialog()!).getByRole("alert").textContent).toContain(
+        STALE_CLAIM_MESSAGE,
+      ),
+    );
+
+    update(slotContext({ claim: claim("42", { suspend: true }) }));
+    await confirm("Save");
+
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(3));
+    expect(fakeWriter.applied[2].preconditions).toEqual({
+      [PRECONDITION]: "42",
+    });
+  });
+
+  it("the note of a refused write ends with a review that a claim update closed", async () => {
+    fakeWriter.results = [
+      { ok: false, errors: [{ code: "Conflict", message: "Refused." }] },
+    ];
+    const { update } = page();
+    click("Scale");
+    openReview();
+    await confirm("Save");
+    await waitFor(() =>
+      expect(within(dialog()!).getByRole("alert").textContent).toContain(
+        "Refused.",
+      ),
+    );
+
+    update(
+      slotContext({
+        claim: claim("42", { cluster: { zeebe: { replicas: 5 } } }),
+      }),
+    );
+    await waitFor(() => expect(dialog()).toBeNull());
+    click("Scale back");
+    openReview();
+
+    expect(within(dialog()!).queryByText("Refused.")).toBeNull();
+  });
+
+  it("a change that restarts the brokers during a running backup shows the caution and Change anyway", async () => {
+    const backup = {
+      kind: "LogicalBackupRDBMS",
+      metadata: { namespace: "team-a", name: "nightly" },
+      spec: { clusterRef: { name: "orders" } },
+      status: { phase: "Running" },
+    } as unknown as BackupObject;
+    page(slotContext({ backups: [backup] }));
+    click("Scale");
+    openReview();
+
+    expect(
+      within(dialog()!).getByRole("note", { name: "Caution" }).textContent,
+    ).toContain("Wait until backup nightly finishes.");
+    await waitFor(() =>
+      expect(
+        within(dialog()!)
+          .getByRole("button", { name: "Change anyway" })
+          .getAttribute("data-variant"),
+      ).toBe("destructive"),
+    );
   });
 
   it("a claim update that changes a field with a pending change keeps the pending value and shows the new live value before it", async () => {
