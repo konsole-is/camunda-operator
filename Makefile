@@ -708,7 +708,7 @@ fleet-build: fleet-install ## Build the fleet manager with next build.
 fleet-generate: fleet-install ## Generate fleet-manager/src/generated from the CRDs and the condition types of api/.
 	mkdir -p $(FLEET_DIR)/src/generated
 	go run ./hack/tsconditions -api api -out $(FLEET_DIR)/src/generated/conditions.ts
-	go run ./hack/tsfielddocs -crds config/crd/bases -out $(FLEET_DIR)/src/generated/fielddocs.ts
+	go run ./hack/tsfielddocs -crds config/crd/bases -out $(FLEET_DIR)/src/generated/fielddocs.ts -schema-out $(FLEET_DIR)/src/generated/fieldschema.ts
 	$(FLEET_PNPM) run generate
 
 .PHONY: fleet-scenarios
