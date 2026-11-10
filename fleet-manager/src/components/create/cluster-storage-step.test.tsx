@@ -17,7 +17,9 @@ import {
 } from "@/lib/clusters/draft";
 import {
   type StorageData,
+  deletionChoice,
   storageErrors,
+  storageSummary,
   storageViews,
 } from "@/lib/clusters/storage";
 import type { ValidationError } from "@/lib/schema";
@@ -269,6 +271,10 @@ function Harness({
         flow.set(["storage", name], selections);
         setCardErrors((current) => ({ ...current, [name]: errors }));
       }}
+      deletion={deletionChoice(flow.draft, data)}
+      onDeletion={(policy) =>
+        flow.set(["claim", "spec", "deletionPolicy"], policy)
+      }
     />
   );
 }
@@ -449,5 +455,72 @@ describe("ClusterStorageStep", () => {
       screen.getAllByText("Your admin allows no option here."),
     ).toHaveLength(1);
     expect(radio(/No key/).checked).toBe(true);
+  });
+
+  it("sets Delete in the draft when a new pick refuses Orphan", async () => {
+    const keeping = {
+      ...DATA,
+      registrations: DATA.registrations.map((r) =>
+        r.metadata.name === "s3"
+          ? r
+          : { ...r, spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] } },
+      ) as PluginRegistration[],
+    };
+    render(
+      <Harness
+        data={keeping}
+        initial={{
+          ...START,
+          claim: {
+            ...START.claim,
+            spec: { ...START.claim.spec, deletionPolicy: "Orphan" },
+          },
+        }}
+      />,
+    );
+    expect(radio(/Keep the resources/).checked).toBe(true);
+    expect(harness.draft().claim.spec.deletionPolicy).toBe("Orphan");
+
+    await userEvent.click(radio(/S3 bucket/));
+
+    expect(radio(/Keep the resources/).disabled).toBe(true);
+    expect(radio(/Delete the resources/).checked).toBe(true);
+    expect(harness.draft().claim.spec.deletionPolicy).toBe("Delete");
+    expect(screen.getByText("S3 bucket (Backup storage)")).toBeTruthy();
+  });
+
+  it("keeps the deletion pick of the user", async () => {
+    const keeping = {
+      ...DATA,
+      registrations: DATA.registrations.map((r) => ({
+        ...r,
+        spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] },
+      })) as PluginRegistration[],
+    };
+    render(<Harness data={keeping} />);
+    expect(radio(/Delete the resources/).checked).toBe(true);
+
+    await userEvent.click(radio(/Keep the resources/));
+
+    expect(radio(/Keep the resources/).checked).toBe(true);
+    expect(harness.draft().claim.spec.deletionPolicy).toBe("Orphan");
+  });
+
+  it("lists the picked labels in the summary for the review, without an ARN", async () => {
+    render(<Harness />);
+    await userEvent.click(radio(/Role for each cluster/));
+    const group = screen.getByRole("group", { name: "extraPolicyArns" });
+    await userEvent.click(
+      within(group).getByRole("checkbox", { name: "SQS access" }),
+    );
+
+    const summary = storageSummary(harness.draft(), DATA);
+    expect(summary.picks).toContainEqual(
+      expect.objectContaining({
+        registration: "aws-connectors-role",
+        values: [{ label: "extraPolicyArns", value: "SQS access" }],
+      }),
+    );
+    expect(JSON.stringify(summary)).not.toMatch(/arn:aws/);
   });
 });

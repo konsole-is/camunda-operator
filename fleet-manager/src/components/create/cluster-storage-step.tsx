@@ -1,19 +1,22 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { SectionCards } from "@/components/fleet/section-cards";
 import type { RenderedHost } from "@/lib/claims/hosts";
 import { type ClusterDraft, draftSelections } from "@/lib/clusters/draft";
+import type { DeletionChoice } from "@/lib/clusters/storage";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
   type BuiltinContext,
+  type DeletionPolicy,
   type PluginSelection,
   type SectionView,
   bucketNote,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
+import { DeletionChoiceField } from "./deletion-choice";
 
 /**
  * ClusterStorageStep is step 2 of the cluster create flow: one SectionCards
@@ -23,7 +26,10 @@ import type { ValidationError } from "@/lib/schema";
  * built-in option, with the presets of context, and under the access cards
  * the hosts and their conflicts. A section with no option and no empty
  * option says "Your admin allows no option here." Each view keeps its
- * object while its content does not change.
+ * object while its content does not change. At the bottom it shows
+ * deletion, and onDeletion gets each pick. When deletion.policy differs
+ * from the policy of draft, the step also reports deletion.policy through
+ * onDeletion, so the draft never keeps a policy that the picks refuse.
  */
 export function ClusterStorageStep({
   draft,
@@ -34,6 +40,8 @@ export function ClusterStorageStep({
   hosts,
   conflicts,
   onSection,
+  deletion,
+  onDeletion,
 }: {
   draft: ClusterDraft;
   views: readonly SectionView[];
@@ -47,8 +55,14 @@ export function ClusterStorageStep({
     selections: PluginSelection[],
     errors: ValidationError[],
   ) => void;
+  deletion: DeletionChoice;
+  onDeletion: (policy: DeletionPolicy) => void;
 }) {
   const selections = draftSelections(draft);
+  const picked = draft.claim.spec.deletionPolicy ?? deletion.defaultPolicy;
+  useEffect(() => {
+    if (deletion.policy !== picked) onDeletion(deletion.policy);
+  });
   return (
     <div className="flex max-w-3xl min-w-0 flex-col gap-8">
       {views.map((view) => {
@@ -75,6 +89,7 @@ export function ClusterStorageStep({
           />
         );
       })}
+      <DeletionChoiceField choice={deletion} onChange={onDeletion} />
     </div>
   );
 }

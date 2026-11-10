@@ -8,6 +8,7 @@ import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import { CLUSTER_STEPS, type ClusterDraft } from "@/lib/clusters/draft";
 import {
   type StorageData,
+  deletionChoice,
   storageErrors,
   storageViews,
 } from "@/lib/clusters/storage";
@@ -66,6 +67,10 @@ export function StorageStory({
           flow.set(["storage", name], selections);
           setCardErrors((current) => ({ ...current, [name]: errors }));
         }}
+        deletion={deletionChoice(flow.draft, data)}
+        onDeletion={(policy) =>
+          flow.set(["claim", "spec", "deletionPolicy"], policy)
+        }
       />
     </WizardStepper>
   );
