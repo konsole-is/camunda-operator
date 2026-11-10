@@ -105,7 +105,7 @@ export function ClusterEditProvider({
 }): ReactNode {
   const { toast, show, dismiss } = useWriteToast();
   const contextRef = useRef(context);
-  const [locks] = useState(() => latestLocks(() => contextRef.current.fields));
+  const [locks] = useState(() => followingLocks(context.fields));
   const live = liveClaim(context);
   const version = live?.metadata?.resourceVersion;
 
@@ -136,6 +136,7 @@ export function ClusterEditProvider({
   useEffect(() => {
     contextRef.current = context;
     stateRef.current = edit;
+    locks.follow(context.fields);
   });
 
   const update = useCallback((next: Edit) => {
@@ -336,18 +337,21 @@ function errorsOf(edit: Edit, context: ClusterSlotContext): FieldError[] {
   ];
 }
 
-// latestLocks is one LockProvider for the life of the page. It asks
-// clusterLocks of the fields that fields returns at each call, so that a
-// lock that appears later applies to the next change.
-function latestLocks(fields: () => readonly ClusterField[]): LockProvider {
-  let seen: readonly ClusterField[] | undefined;
-  let provider: LockProvider = () => undefined;
-  return (path) => {
-    const current = fields();
-    if (current !== seen) {
-      seen = current;
-      provider = clusterLocks(current);
-    }
-    return provider(path);
+// FollowingLocks is one LockProvider for the life of the page. follow
+// gives it the fields of a newer render, so that a lock that appears later
+// applies to the next change.
+type FollowingLocks = LockProvider & {
+  follow(fields: readonly ClusterField[]): void;
+};
+
+function followingLocks(initial: readonly ClusterField[]): FollowingLocks {
+  let fields = initial;
+  let provider = clusterLocks(initial);
+  const locks = ((path) => provider(path)) as FollowingLocks;
+  locks.follow = (next) => {
+    if (next === fields) return;
+    fields = next;
+    provider = clusterLocks(next);
   };
+  return locks;
 }
