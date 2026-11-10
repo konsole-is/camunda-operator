@@ -659,6 +659,19 @@ describe("clusterImpacts", () => {
       ).toEqual(EVERY_UNIFIED);
     });
 
+    it.each([true, false])(
+      "a service account with create %s that changes it restarts them",
+      (create) => {
+        const own = { serviceAccount: { name: "own", create } };
+        expect(
+          impacts(set(cluster("serviceAccount", "create"), !create), {
+            claim: claim({ ...running, ...own }),
+            live: own,
+          }),
+        ).toEqual(EVERY_UNIFIED);
+      },
+    );
+
     it("externalUrl restarts them under OIDC only", () => {
       const change = set(cluster("externalUrl"), "https://orders.example");
       const own = selecting(claim(running));

@@ -72,6 +72,7 @@ function accountOf(spec: CamundaClusterSpec): unknown {
   if (!account) return undefined;
   return {
     name: account.name,
+    creates: account.create !== false,
     annotations: account.create === false ? undefined : account.annotations,
     azure: Object.hasOwn(
       account.annotations ?? {},
