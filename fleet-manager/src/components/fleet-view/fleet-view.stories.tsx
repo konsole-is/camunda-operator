@@ -175,7 +175,10 @@ const fleet: FleetSources = {
     cluster(
       "team-orders-processing-eu-west-1",
       "orders-processing-production-eu-west-1-blue-green-canary",
-      { managed: false },
+      {
+        managed: false,
+        spec: { presetRef: "high-availability-production-eu-west-1-large" },
+      },
     ),
   ],
   claims: [

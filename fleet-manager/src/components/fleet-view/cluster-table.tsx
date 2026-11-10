@@ -16,6 +16,9 @@ const CHIP =
 const COLUMN_WIDTHS =
   "md:[&_table]:table-fixed md:[&_th:nth-child(1)]:w-[24%] md:[&_th:nth-child(2)]:w-[22%] md:[&_th:nth-child(3)]:w-[14%] md:[&_th:nth-child(4)]:w-[22%]";
 
+// The cells of a fixed column break a long name, which has no spaces.
+const WRAP = "min-w-0 whitespace-normal [overflow-wrap:anywhere]";
+
 const CLUSTER_COLUMNS = [
   { key: "cluster", label: "Cluster" },
   { key: "status", label: "Status" },
@@ -56,7 +59,7 @@ export function ClusterTable({
             ),
             status: <StatusChip condition={row.ready} readyReason />,
             version: (
-              <span className="flex flex-col">
+              <span className={cn("flex flex-col", WRAP)}>
                 <span className="text-text-2">{row.version ?? "-"}</span>
                 {row.preset && (
                   <span className="text-xs text-muted">{row.preset}</span>
@@ -135,7 +138,7 @@ function Name({
   children?: ReactNode;
 }) {
   return (
-    <span className="flex min-w-0 flex-col whitespace-normal [overflow-wrap:anywhere]">
+    <span className={cn("flex flex-col", WRAP)}>
       {href ? (
         <Link href={href} className="font-medium text-text hover:text-info">
           {name}
