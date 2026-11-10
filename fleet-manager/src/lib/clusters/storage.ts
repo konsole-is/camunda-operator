@@ -6,6 +6,7 @@ import { accessPatterns, defaultAccessPatterns } from "@/lib/claims/hosts";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
   type BuiltinObjects,
+  type PluginSelection,
   type SectionView,
   builtinOption,
   byCodeUnit,
@@ -13,7 +14,7 @@ import {
   withMissingInputs,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
-import { type ClusterDraft, draftSelections } from "./draft";
+import type { ClusterDraft } from "./draft";
 
 /** StorageData is the live data that step 2 reads. objects are the source kinds of builtinOption, in every namespace. */
 export type StorageData = {
@@ -27,19 +28,19 @@ export type StorageData = {
  * storageViews returns the sections of step 2: those that apply to a
  * cluster claim, by spec.order and then by name, each from offeredSection,
  * with builtinOption in the namespace of draft, then withMissingInputs over
- * draftSelections.
+ * the picks of draft. A section that draft.storage does not hold yet counts
+ * its enabled default option as picked, as SectionCards preselects it.
  */
 export function storageViews(
   draft: ClusterDraft,
   data: StorageData,
 ): SectionView[] {
-  const selections = draftSelections(draft);
   const context = {
     environment: data.environment,
     ...(draft.namespace && { namespace: draft.namespace.name }),
     objects: data.objects,
   };
-  return data.sections
+  const views = data.sections
     .filter((s) => s.spec.appliesTo.includes("CamundaClusterClaim"))
     .sort(
       (a, b) =>
@@ -53,18 +54,29 @@ export function storageViews(
         data.environment,
         "CamundaClusterClaim",
       );
-      return withMissingInputs(
-        {
-          ...view,
-          options: view.options.map((o) =>
-            builtinOption(o, data.registrations, context),
-          ),
-        },
-        selections,
-        data.registrations,
-        data.sections,
-      );
+      return {
+        ...view,
+        options: view.options.map((o) =>
+          builtinOption(o, data.registrations, context),
+        ),
+      };
     });
+  const selections = views.flatMap((view) => picksOf(draft, view));
+  return views.map((view) =>
+    withMissingInputs(view, selections, data.registrations, data.sections),
+  );
+}
+
+function picksOf(draft: ClusterDraft, view: SectionView): PluginSelection[] {
+  if (Object.hasOwn(draft.storage ?? {}, view.name)) {
+    return draft.storage![view.name];
+  }
+  const preselected = view.options.find(
+    (o) => o.isDefault && !o.disabledReason,
+  );
+  return preselected
+    ? [{ section: view.name, registration: preselected.registration }]
+    : [];
 }
 
 /**
@@ -72,10 +84,11 @@ export function storageViews(
  * selection whose option is gone or disabled ("Choose another option for
  * <label>"), a required section without a selection ("Choose an option for
  * <label>"), and a card error other than the required one ("Fix the <label>
- * settings"), at most one of each per section. Then conflicts. cardErrors
- * are the errors that SectionCards reported, by section name. A section
- * that draft.storage does not hold yet counts its enabled default option as
- * picked, as SectionCards preselects it.
+ * settings"), at most one of each per section. Then a pick of a section
+ * that views no longer hold ("Choose another option for <section name>"),
+ * then conflicts. cardErrors are the errors that SectionCards reported, by
+ * section name. A section that draft.storage does not hold yet counts its
+ * enabled default option as picked.
  */
 export function storageErrors(
   draft: ClusterDraft,
@@ -85,14 +98,7 @@ export function storageErrors(
 ): string[] {
   const errors: string[] = [];
   for (const view of views) {
-    const preselected = view.options.find(
-      (o) => o.isDefault && !o.disabledReason,
-    );
-    const selections = Object.hasOwn(draft.storage ?? {}, view.name)
-      ? draft.storage![view.name]
-      : preselected
-        ? [{ section: view.name, registration: preselected.registration }]
-        : [];
+    const selections = picksOf(draft, view);
     const unusable = selections.some((s) => {
       const option = view.options.find(
         (o) => o.registration === s.registration,
@@ -108,6 +114,11 @@ export function storageErrors(
       : [];
     if (fieldErrors.some((e) => e.path !== view.name)) {
       errors.push(`Fix the ${view.label} settings`);
+    }
+  }
+  for (const [name, selections] of Object.entries(draft.storage ?? {})) {
+    if (selections.length > 0 && !views.some((v) => v.name === name)) {
+      errors.push(`Choose another option for ${name}`);
     }
   }
   return [...errors, ...conflicts];

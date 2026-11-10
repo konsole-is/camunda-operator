@@ -400,6 +400,34 @@ describe("ClusterStorageStep", () => {
     expect(radio(/New Elasticsearch cluster/).checked).toBe(true);
   });
 
+  it("preselects a default that needs the default of another section on the first visit", () => {
+    const sections = ENV.spec.sections!;
+    render(
+      <Harness
+        data={{
+          ...DATA,
+          environment: {
+            ...ENV,
+            spec: {
+              ...ENV.spec,
+              sections: {
+                ...sections,
+                "encryption-key": { allowed: ["kms"], default: "kms" },
+                "volume-encryption": { allowed: ["ebs"], default: "ebs" },
+              },
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(radio(/KMS key/).checked).toBe(true);
+    expect(radio(/EBS/).checked).toBe(true);
+    expect(draftSelections(harness.draft()).map((s) => s.registration)).toEqual(
+      expect.arrayContaining(["kms", "ebs"]),
+    );
+  });
+
   it("says that the admin allows no option in a section without options", () => {
     render(
       <Harness

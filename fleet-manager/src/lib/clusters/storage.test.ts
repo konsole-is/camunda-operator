@@ -160,6 +160,35 @@ describe("storageViews", () => {
     ).toBeUndefined();
   });
 
+  it("enables a default whose input section has an enabled default that the step has not reported yet", () => {
+    const defaults = {
+      ...DATA,
+      environment: {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        metadata: { name: "prod" },
+        spec: {
+          sections: {
+            "encryption-key": { allowed: ["kms"], default: "kms" },
+            "volume-encryption": { allowed: ["ebs"], default: "ebs" },
+          },
+        },
+      } satisfies Environment,
+    };
+
+    expect(
+      viewNamed(draftWith(), "volume-encryption", defaults).options[0]
+        .disabledReason,
+    ).toBeUndefined();
+    expect(
+      viewNamed(
+        draftWith({ "encryption-key": [] }),
+        "volume-encryption",
+        defaults,
+      ).options[0].disabledReason,
+    ).toBe("Needs an encryption key");
+  });
+
   it("decorates a built-in option in the namespace of the draft", () => {
     const [option] = viewNamed(draftWith(), "secondary-storage").options;
 
@@ -318,6 +347,21 @@ describe("storageErrors", () => {
         ],
       }),
     ).toEqual(["Choose an option for Secondary storage"]);
+  });
+
+  it("asks for another option for a pick of a section that step 2 no longer shows", () => {
+    expect(
+      errorsOf(
+        draftWith({
+          "secondary-storage": [],
+          gone: [{ section: "gone", registration: "x" }],
+          "also-gone": [],
+        }),
+      ),
+    ).toEqual([
+      "Choose an option for Secondary storage",
+      "Choose another option for gone",
+    ]);
   });
 
   it("appends the host conflicts", () => {
