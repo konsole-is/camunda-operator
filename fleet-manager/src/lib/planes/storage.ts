@@ -14,6 +14,7 @@ import {
   type SectionView,
   builtinOption,
   offeredSection,
+  resolve,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { runningOf } from "./components";
@@ -164,8 +165,10 @@ export function runningSelection(
 }
 
 /**
- * databaseConfigErrors returns one error for each DatabaseConfig that two
- * running apps share in an existing-database-configs selection.
+ * databaseConfigErrors returns the errors of an existing-database-configs
+ * selection: one for each running app without a DatabaseConfig, and one
+ * for each DatabaseConfig that two running apps share. selection holds the
+ * names that the claim gets, policy values included.
  */
 export function databaseConfigErrors(
   selection: PluginSelection | undefined,
@@ -174,17 +177,70 @@ export function databaseConfigErrors(
   if (selection?.registration !== EXISTING_DATABASE_CONFIGS) return [];
   const parameters = runningSelection(selection, running).parameters ?? {};
   const apps = new Map<string, string[]>();
+  const missing: string[] = [];
   for (const app of DATABASE_APPS) {
+    if (!runs(app, running)) continue;
     const name = parameters[app];
-    if (typeof name !== "string" || name === "") continue;
+    if (typeof name !== "string" || name === "") {
+      missing.push(`Pick a DatabaseConfig for ${VERSION_LABEL[app]}.`);
+      continue;
+    }
     apps.set(name, [...(apps.get(name) ?? []), VERSION_LABEL[app]]);
   }
-  return [...apps]
-    .filter(([, labels]) => labels.length > 1)
-    .map(
-      ([name, labels]) =>
-        `Pick a different DatabaseConfig for each app. ${listOf(labels)} ${labels.length > 2 ? "all" : "both"} use ${name}.`,
-    );
+  return [
+    ...missing,
+    ...[...apps]
+      .filter(([, labels]) => labels.length > 1)
+      .map(
+        ([name, labels]) =>
+          `Pick a different DatabaseConfig for each app. ${listOf(labels)} ${labels.length > 2 ? "all" : "both"} use ${name}.`,
+      ),
+  ];
+}
+
+// effectiveSelection returns selection with the parameters that the claim
+// gets: SectionCards leaves out a value that equals the policy value.
+function effectiveSelection(
+  selection: PluginSelection,
+  draft: PlaneDraft,
+  ctx: PlaneContext,
+): PluginSelection {
+  const registration = ctx.registrations.find(
+    (r) => r.metadata.name === selection.registration,
+  );
+  if (!registration) return selection;
+  const result = resolve({
+    environment: ctx.environments.find(
+      (e) => e.metadata.name === draft.environment,
+    ),
+    registrations: [registration],
+    selections: [selection],
+  });
+  const parameters =
+    "value" in result ? result.value.requests?.[0]?.parameters : undefined;
+  return parameters ? { ...selection, parameters } : selection;
+}
+
+// The database section is never required here: storageErrors asks for its
+// option in its own words.
+function selectionErrors(
+  draft: PlaneDraft,
+  views: PlaneSectionViews,
+): string[] {
+  return [views.databases, views.access].flatMap((view) => {
+    if (!view) return [];
+    const picked = draft.storage[view.name] ?? [];
+    const unusable = picked.some((s) => {
+      const option = view.options.find(
+        (o) => o.registration === s.registration,
+      );
+      return !option || option.disabledReason !== undefined;
+    });
+    if (unusable) return [`Choose another option for ${view.label}.`];
+    return view.required && picked.length === 0 && view !== views.databases
+      ? [`Choose an option for ${view.label}.`]
+      : [];
+  });
 }
 
 /** contractNameOf is the name of the ManagementAuthConfig of the draft: the typed name, else the claim name. */
@@ -229,18 +285,20 @@ export function contractNameErrors(
 
 /**
  * storageErrors returns the errors of step 4. sectionErrors are the errors
- * that SectionCards reported. Its error for a required section without a
- * selection counts as no database option.
+ * that SectionCards reported, and views the sections of planeSectionViews.
+ * A section of views whose selected option is missing or disabled, or an
+ * access section that is required and has no selection, blocks the step.
  */
 export function storageErrors(
   draft: PlaneDraft,
   ctx: PlaneContext,
   sectionErrors: readonly ValidationError[],
+  views: PlaneSectionViews,
 ): string[] {
   const running = runningOf(draft);
   const databases = databaseSection(ctx.sections);
   const sectionNames = ctx.sections.map((s) => s.metadata.name);
-  const errors: string[] = [];
+  const errors: string[] = selectionErrors(draft, views);
   if (sectionErrors.some((e) => !sectionNames.includes(e.path))) {
     errors.push("Fix the fields of the databases and access options.");
   }
@@ -259,7 +317,12 @@ export function storageErrors(
   } else {
     errors.push(...urlErrors(draft.urls, planeUrlFields(running)));
   }
-  errors.push(...databaseConfigErrors(database, running));
+  errors.push(
+    ...databaseConfigErrors(
+      database && effectiveSelection(database, draft, ctx),
+      running,
+    ),
+  );
   errors.push(...contractNameErrors(draft, ctx));
   return errors;
 }

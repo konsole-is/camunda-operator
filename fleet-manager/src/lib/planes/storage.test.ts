@@ -141,10 +141,10 @@ describe("databaseConfigErrors", () => {
 
   it("ignores the name of an app that does not run", () => {
     expect(
-      databaseConfigErrors(configs({ keycloak: "db", identity: "db" }), {
-        ...all,
-        keycloak: false,
-      }),
+      databaseConfigErrors(
+        configs({ keycloak: "db", identity: "db", webModeler: "modeler" }),
+        { ...all, keycloak: false },
+      ),
     ).toEqual([]);
   });
 
@@ -155,6 +155,17 @@ describe("databaseConfigErrors", () => {
         all,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("databaseConfigErrors and missing names", () => {
+  it("asks for the DatabaseConfig of each app that runs", () => {
+    expect(
+      databaseConfigErrors(configs({ identity: "id-db" }), {
+        ...all,
+        webModeler: false,
+      }),
+    ).toEqual(["Pick a DatabaseConfig for Keycloak."]);
   });
 });
 
@@ -230,25 +241,28 @@ describe("contractNameErrors", () => {
 
 describe("storageErrors", () => {
   it("passes a draft with a database option, its URLs, and a free contract", () => {
-    expect(storageErrors(draft(), ctx, [])).toEqual([]);
+    expect(storageErrors(draft(), ctx, [], {})).toEqual([]);
   });
 
   it("asks for a database option", () => {
-    expect(storageErrors(draft({ storage: {} }), ctx, [])).toEqual([
+    expect(storageErrors(draft({ storage: {} }), ctx, [], {})).toEqual([
       "Pick a database option.",
     ]);
   });
 
   it("asks to fix the fields of the options that SectionCards reported", () => {
     expect(
-      storageErrors(draft(), ctx, [
-        { path: "existing-database-configs/identity", message: "required" },
-      ]),
+      storageErrors(
+        draft(),
+        ctx,
+        [{ path: "existing-database-configs/identity", message: "required" }],
+        {},
+      ),
     ).toEqual(["Fix the fields of the databases and access options."]);
   });
 
   it("asks for the URLs without an access selection", () => {
-    expect(storageErrors(draft({ urls: {} }), ctx, [])).toEqual([
+    expect(storageErrors(draft({ urls: {} }), ctx, [], {})).toEqual([
       "Enter the Keycloak URL.",
       "Enter the Management Identity URL.",
     ]);
@@ -269,6 +283,7 @@ describe("storageErrors", () => {
           ],
         },
         [],
+        {},
       ),
     ).toEqual([
       "The host plane-a.platform.example.com is taken by team-b/plane-b. Choose another name.",
@@ -285,7 +300,7 @@ describe("storageErrors", () => {
       "https://plane-a.platform.example.com",
     );
     expect(
-      storageErrors(withAccess, { ...ctx, accessRequests: [cluster] }, []),
+      storageErrors(withAccess, { ...ctx, accessRequests: [cluster] }, [], {}),
     ).toEqual([
       "The host plane-a.platform.example.com is taken by team-c/orders. Choose another name.",
     ]);
@@ -298,9 +313,91 @@ describe("storageErrors", () => {
       },
       contractName: "ops",
     });
-    expect(storageErrors(d, { ...ctx, authConfigs: ["ops"] }, [])).toEqual([
+    expect(storageErrors(d, { ...ctx, authConfigs: ["ops"] }, [], {})).toEqual([
       "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use db.",
       "A contract ops exists already. Enter another name.",
+    ]);
+  });
+
+  it("checks the DatabaseConfig names that the policy gives, not only the picked ones", () => {
+    const existing = {
+      metadata: { name: "existing-database-configs" },
+      spec: {
+        sections: ["management-database"],
+        mode: "Optional",
+        label: "Existing databases",
+        deletionPolicies: ["Delete"],
+        serviceAccount: { name: "x", namespace: "plugins" },
+      },
+    } as PluginRegistration;
+    const environment = {
+      metadata: { name: "production" },
+      spec: {
+        parameters: {
+          "existing-database-configs": {
+            keycloak: { claimEditable: true, value: "kc-db" },
+            identity: { claimEditable: true, value: "id-db" },
+          },
+        },
+      },
+    } as unknown as Environment;
+    const d = draft({
+      storage: { "management-database": [configs({ identity: "kc-db" })] },
+    });
+    expect(
+      storageErrors(
+        d,
+        {
+          ...ctx,
+          environments: [environment],
+          registrations: [gateway, existing],
+        },
+        [],
+        {},
+      ),
+    ).toEqual([
+      "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use kc-db.",
+    ]);
+  });
+
+  it("asks for an option of a required section that has none", () => {
+    const access = {
+      name: "access",
+      label: "Access",
+      selection: "One" as const,
+      required: true,
+      options: [],
+    };
+    expect(storageErrors(draft(), ctx, [], { access })).toEqual([
+      "Choose an option for Access.",
+    ]);
+  });
+
+  it("refuses a selection whose option the policy no longer offers, or disables", () => {
+    const databases = {
+      name: "management-database",
+      label: "Databases",
+      selection: "One" as const,
+      required: true,
+      options: [],
+    };
+    expect(storageErrors(draft(), ctx, [], { databases })).toEqual([
+      "Choose another option for Databases.",
+    ]);
+    const disabled = {
+      ...databases,
+      options: [
+        {
+          registration: "management-database-server",
+          label: "New PostgreSQL server",
+          isDefault: true,
+          disabledReason: "Unavailable right now",
+          parameters: [],
+        },
+      ],
+    };
+    expect(storageErrors(draft(), ctx, [], { databases: disabled })).toEqual([
+      "Choose another option for Databases.",
     ]);
   });
 });

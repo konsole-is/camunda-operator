@@ -37,7 +37,7 @@ import {
   planeCreateChange,
   servedErrors,
 } from "@/lib/planes/draft";
-import { storageErrors } from "@/lib/planes/storage";
+import { planeSectionViews, storageErrors } from "@/lib/planes/storage";
 import type { ValidationError } from "@/lib/schema";
 import type {
   Change,
@@ -201,7 +201,12 @@ export function planeSteps(
         case "storage":
           return [
             ...storageFailures.map(message),
-            ...storageErrors(draft, ctx, sectionErrors),
+            ...storageErrors(
+              draft,
+              ctx,
+              sectionErrors,
+              planeSectionViews(draft, ctx, models.objects),
+            ),
           ];
         default:
           return [];

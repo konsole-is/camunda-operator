@@ -17,7 +17,7 @@ import {
   type PlaneContext,
   type PlaneDraft,
 } from "@/lib/planes/draft";
-import { storageErrors } from "@/lib/planes/storage";
+import { planeSectionViews, storageErrors } from "@/lib/planes/storage";
 import type { ValidationError } from "@/lib/schema";
 import { StorageAccessStep } from "./storage-access-step";
 
@@ -196,11 +196,14 @@ function Harness({
         }
       />
       <ul aria-label="Step errors">
-        {storageErrors(flow.draft, ctx, Object.values(errors).flat()).map(
-          (e) => (
-            <li key={e}>{e}</li>
-          ),
-        )}
+        {storageErrors(
+          flow.draft,
+          ctx,
+          Object.values(errors).flat(),
+          planeSectionViews(flow.draft, ctx, objects),
+        ).map((e) => (
+          <li key={e}>{e}</li>
+        ))}
       </ul>
     </>
   );
