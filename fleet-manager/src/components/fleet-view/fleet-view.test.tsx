@@ -298,6 +298,22 @@ describe("FleetView", () => {
     ]);
   });
 
+  it("starts again at the first page when a filter changes", async () => {
+    const many = sources({
+      clusters: Array.from({ length: 30 }, (_, i) =>
+        cluster("team-a", `c${String(i).padStart(2, "0")}`),
+      ),
+    });
+    render(view({ sources: many, planes: [] }));
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(clusterNames()).toContain("team-a/c29");
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search clusters" }),
+      "c",
+    );
+    expect(clusterNames()).toContain("team-a/c00");
+  });
+
   it("says that no cluster matches the filters", async () => {
     render(view());
     await userEvent.type(

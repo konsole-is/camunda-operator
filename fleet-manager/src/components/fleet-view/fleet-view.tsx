@@ -222,7 +222,9 @@ function TabContent({
             ) : (
               groups.map((group) => (
                 <Group
-                  key={group.environment ?? group.label ?? "all"}
+                  // A new key on each change of the filters starts the
+                  // table again at its first page.
+                  key={`${group.environment ?? group.label ?? "all"}|${active.search}|${active.namespace}|${active.status}`}
                   group={group}
                   filtered={rows.some((r) => inGroup(r, group))}
                 />
