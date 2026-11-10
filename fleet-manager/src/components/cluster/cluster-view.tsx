@@ -46,7 +46,7 @@ import {
   componentSettings,
   operatorVersionOf,
 } from "./settings";
-import type { ClaimActions } from "./edit/cluster-edit";
+import { type ClaimActions, ClusterEditProvider } from "./edit/cluster-edit";
 import type { ActionSlots, ClusterSlotContext } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
 import { type Process, topologyOf } from "./topology";
@@ -110,7 +110,8 @@ export type ClusterPageData = {
  * of slots gets the slot context of the page. A filled cluster.claim.editor
  * slot shows in place of the read view of the claim. writeMode is the write
  * mode of the fleet manager, undefined when the page could not read it.
- * pushedClaim is the claim file that the fleet manager pushed in Git mode.
+ * claimActions turn on the edit host of a managed cluster, which the slots
+ * reach through useClusterEdit. pushedClaim is the claim file that the fleet manager pushed in Git mode.
  * When the cluster is deleted, the page says so and shows nothing else.
  */
 export function ClusterView({
@@ -119,6 +120,7 @@ export function ClusterView({
   slots,
   pushedClaim,
   writeMode,
+  claimActions,
 }: {
   initial: ClusterPageData;
   now: string;
@@ -436,7 +438,7 @@ export function ClusterView({
     />
   );
 
-  return (
+  const content = (
     <div className="flex flex-col gap-4">
       {errors.map((e) => (
         <p key={e.kind} role="alert" className="text-sm text-bad">
@@ -583,6 +585,13 @@ export function ClusterView({
         </TabsContent>
       </Tabs>
     </div>
+  );
+  return managed && claimActions ? (
+    <ClusterEditProvider context={context} actions={claimActions}>
+      {content}
+    </ClusterEditProvider>
+  ) : (
+    content
   );
 }
 

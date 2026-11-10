@@ -258,6 +258,20 @@ describe("ClusterView", () => {
     });
   });
 
+  it("an unmanaged cluster gets no edit host, also with claim actions", () => {
+    const claimActions = { preview: vi.fn(), apply: vi.fn() };
+    render(
+      view({
+        initial: data({ cluster: cluster({ labels: {} }) }),
+        claimActions,
+      }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Unsaved changes" }),
+    ).toBeNull();
+    expect(screen.queryByText(/^Changes are off/)).toBeNull();
+  });
+
   it("a managed cluster mounts the nodes of the slots", () => {
     render(view({ slots: filled }));
     expect(
