@@ -61,6 +61,18 @@ describe("loadFleetPage", () => {
     ]);
   });
 
+  it("names each kind whose read failed", async () => {
+    k8s.failing = "CamundaCluster";
+    const data = await loadFleetPage();
+    expect(data.readErrors).toEqual([
+      { kind: "CamundaCluster", message: "CamundaCluster is forbidden" },
+    ]);
+  });
+
+  it("names no kind when every read works", async () => {
+    expect((await loadFleetPage()).readErrors).toEqual([]);
+  });
+
   it("joins both backup kinds", async () => {
     const data = await loadFleetPage();
     expect(data.backups.map((b) => b.kind).sort()).toEqual([

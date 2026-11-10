@@ -40,8 +40,14 @@ import type { ReadError } from "@/components/planes/planes-table";
 
 export type { ReadError };
 
-/** FleetPageData is the first snapshot of the fleet page. */
-export type FleetPageData = FleetSources & { planes: PlaneSources };
+/**
+ * FleetPageData is the first snapshot of the fleet page. readErrors holds
+ * the kinds whose first read failed.
+ */
+export type FleetPageData = FleetSources & {
+  planes: PlaneSources;
+  readErrors?: ReadError[];
+};
 
 const NOW_INTERVAL_MS = 30_000;
 const NO_MATCH = "No cluster matches the search and the filters.";
@@ -236,6 +242,7 @@ function TabContent({
             />
             {shownWaiting.length > 0 && (
               <WaitingTable
+                key={`${active.search}|${active.namespace}|${active.status}`}
                 rows={shownWaiting}
                 now={now}
                 onStopWaiting={onStopWaiting}
@@ -372,16 +379,17 @@ export function FleetViewLive({
   const requests = useResources("PluginRequest", {}, initial.requests);
   const storage = useResources("SecondaryStorageConfig", {}, initial.storage);
   const optimizes = useResources("CamundaOptimize", {}, initial.optimizes);
-  const backupsES = useResources(
-    "LogicalBackupElasticsearch",
-    {},
-    initial.backups.filter((b) => b.kind === "LogicalBackupElasticsearch"),
+  const initialES = useMemo(
+    () =>
+      initial.backups.filter((b) => b.kind === "LogicalBackupElasticsearch"),
+    [initial.backups],
   );
-  const backupsRDBMS = useResources(
-    "LogicalBackupRDBMS",
-    {},
-    initial.backups.filter((b) => b.kind === "LogicalBackupRDBMS"),
+  const initialRDBMS = useMemo(
+    () => initial.backups.filter((b) => b.kind === "LogicalBackupRDBMS"),
+    [initial.backups],
   );
+  const backupsES = useResources("LogicalBackupElasticsearch", {}, initialES);
+  const backupsRDBMS = useResources("LogicalBackupRDBMS", {}, initialRDBMS);
   const planes = usePlanes(initial.planes);
   const { pushes, settle } = useGitPushes();
   const clock = useClock(now);
@@ -417,26 +425,41 @@ export function FleetViewLive({
       backupsRDBMS.items,
     ],
   );
-  const errors = [
-    ...(
-      [
-        ["CamundaCluster", clusters],
-        ["CamundaClusterClaim", claims],
-        ["CamundaClusterPreset", presets],
-        ["CamundaRelease", releases],
-        ["PluginSection", sections],
-        ["PluginRegistration", registrations],
-        ["PluginRequest", requests],
-        ["SecondaryStorageConfig", storage],
-        ["CamundaOptimize", optimizes],
-        ["LogicalBackupElasticsearch", backupsES],
-        ["LogicalBackupRDBMS", backupsRDBMS],
-      ] as const
-    ).flatMap(([kind, result]) =>
-      result.error ? [{ kind, message: result.error }] : [],
-    ),
+  const watched = [
+    ["CamundaCluster", clusters, initial.clusters],
+    ["CamundaClusterClaim", claims, initial.claims],
+    ["CamundaClusterPreset", presets, initial.presets],
+    ["CamundaRelease", releases, initial.releases],
+    ["PluginSection", sections, initial.sections],
+    ["PluginRegistration", registrations, initial.registrations],
+    ["PluginRequest", requests, initial.requests],
+    ["SecondaryStorageConfig", storage, initial.storage],
+    ["CamundaOptimize", optimizes, initial.optimizes],
+    ["LogicalBackupElasticsearch", backupsES, initialES],
+    ["LogicalBackupRDBMS", backupsRDBMS, initialRDBMS],
+    ["Environment", environments, initial.environments],
+    ["Namespace", namespaces, initial.namespaces],
+  ] as const;
+  const liveErrors = [
+    ...watched
+      .filter(([kind]) => kind !== "Environment" && kind !== "Namespace")
+      .flatMap(([kind, result]) =>
+        result.error ? [{ kind, message: result.error }] : [],
+      ),
     ...planes.errors,
   ];
+  // A hook gives back its initial list until the watch sends the first
+  // list, so a failed first read stays until then.
+  const firstErrors = (initial.readErrors ?? []).filter((e) =>
+    watched.some(
+      ([kind, result, items]) =>
+        kind === e.kind &&
+        result.error === undefined &&
+        result.items === items &&
+        !liveErrors.some((l) => l.kind === kind),
+    ),
+  );
+  const errors = [...liveErrors, ...firstErrors];
 
   return (
     <FleetView

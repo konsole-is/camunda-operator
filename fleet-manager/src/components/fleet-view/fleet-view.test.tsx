@@ -320,6 +320,24 @@ describe("FleetView", () => {
     expect(clusterNames()).toContain("team-a/c00");
   });
 
+  it("starts the waiting table again at its first page when a filter changes", async () => {
+    const pushes = Array.from({ length: 30 }, (_, i) =>
+      push("team-x", `p${String(i).padStart(2, "0")}`),
+    );
+    render(view({ sources: sources(), planes: [], pushes }));
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    const waiting = () =>
+      within(screen.getByRole("region", { name: "Waiting for GitOps" }))
+        .getAllByRole("row")
+        .map((r) => r.textContent ?? "");
+    expect(waiting().some((t) => t.includes("p29"))).toBe(true);
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: "Search clusters" }),
+      "p",
+    );
+    expect(waiting().some((t) => t.includes("p00"))).toBe(true);
+  });
+
   it("says that no cluster matches the filters", async () => {
     render(view());
     await userEvent.type(
@@ -556,6 +574,23 @@ const KINDS = [
 const initial: FleetPageData = { ...fleet, planes: planeSources };
 
 describe("FleetViewLive", () => {
+  it("shows a failed first read until the watch gives the list", () => {
+    const failed: FleetPageData = {
+      ...sources(),
+      planes: { clusters: [], claims: [], namespaces: [], environments: [] },
+      readErrors: [{ kind: "CamundaCluster", message: "forbidden" }],
+    };
+    const { rerender } = render(<FleetViewLive initial={failed} now={NOW} />);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read CamundaCluster: forbidden",
+    );
+    expect(screen.queryByText(/No Camunda cluster yet/)).toBeNull();
+    live.objects.CamundaCluster = [];
+    rerender(<FleetViewLive initial={failed} now={NOW} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText(/No Camunda cluster yet/)).toBeTruthy();
+  });
+
   it("stops waiting for a push of this browser tab", async () => {
     live.pushes = [push("team-x", "returns")];
     render(<FleetViewLive initial={initial} now={NOW} />);
