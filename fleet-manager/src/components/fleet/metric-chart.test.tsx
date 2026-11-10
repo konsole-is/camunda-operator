@@ -17,4 +17,16 @@ describe("MetricChart", () => {
     render(<MetricChart title="Exported records" series={[]} />);
     expect(screen.getByText("No data for this range")).toBeTruthy();
   });
+
+  it("shows the note under the title", () => {
+    render(
+      <MetricChart
+        title="Requests"
+        note="Declared by Bucket on RustFS"
+        series={[]}
+      />,
+    );
+    const figure = screen.getByRole("figure", { name: /Requests/ });
+    expect(figure.textContent).toContain("Declared by Bucket on RustFS");
+  });
 });

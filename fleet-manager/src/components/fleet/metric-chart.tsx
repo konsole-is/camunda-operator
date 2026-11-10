@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import {
   CartesianGrid,
   Line,
@@ -16,28 +17,35 @@ const COLORS = ["var(--info)", "var(--accent)", "var(--ok)", "var(--warn)"];
 /**
  * MetricChart draws Prometheus range series as lines. It renders nothing
  * for "unavailable", so a page without Prometheus hides the chart. A range
- * without points says "No data for this range".
+ * without points says "No data for this range". note shows under the title.
  */
 export function MetricChart({
   title,
   unit,
+  note,
   series,
 }: {
   title: string;
   unit?: string;
+  note?: string;
   series: Series[] | Unavailable;
 }) {
+  const captionId = useId();
   if (series === "unavailable") return null;
   const empty = series.every((s) => s.points.length === 0);
   const rows = toRows(series);
   return (
-    <figure className="flex min-w-0 flex-col gap-2 rounded-md border border-border bg-panel p-3">
-      <figcaption className="text-sm font-medium text-text">
+    <figure
+      aria-labelledby={captionId}
+      className="flex min-w-0 flex-col gap-2 rounded-md border border-border bg-panel p-3"
+    >
+      <figcaption id={captionId} className="text-sm font-medium text-text">
         {title}
         {unit && (
           <span className="ml-1 font-normal text-muted">{`(${unit})`}</span>
         )}
       </figcaption>
+      {note && <p className="-mt-1 text-xs text-muted">{note}</p>}
       {empty ? (
         <p className="py-8 text-center text-sm text-muted">
           No data for this range

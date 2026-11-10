@@ -1,6 +1,11 @@
 import type { Story } from "@/gallery/registry";
-import type { PartitionHealth } from "@/lib/observe/types";
+import type {
+  MetricChartData,
+  PartitionHealth,
+  Series,
+} from "@/lib/observe/types";
 import { ComponentDetailView } from "./component-detail";
+import { DetailMetricsView } from "./detail-metrics";
 import { PartitionTable } from "./partition-table";
 
 const now = "2026-10-30T12:00:00Z";
@@ -52,7 +57,46 @@ const degraded: PartitionHealth[] = [
   },
 ];
 
-/** detailStories show the component detail and its partition table. */
+const start = Date.parse("2026-10-30T11:00:00Z");
+const GiB = 1024 ** 3;
+
+// wave gives one series for each broker, 30 points 2 minutes apart.
+function wave(base: number, swing: number): Series[] {
+  return brokers.map((p, n) => ({
+    name: p.metadata.name,
+    points: Array.from({ length: 30 }, (_, i): [number, number] => [
+      start + i * 120_000,
+      base * (1 + n * 0.15) + swing * Math.sin((i + n * 3) / 4),
+    ]),
+  }));
+}
+
+const brokerUsage = [
+  usage("orders-zeebe-0", 0.8, 2.6),
+  usage("orders-zeebe-1", 1.1, 3.1),
+  usage("orders-zeebe-2", 0.4, 1.4),
+];
+
+const brokerCharts: MetricChartData[] = [
+  { label: "CPU", unit: "cores", source: "", series: wave(0.8, 0.2) },
+  {
+    label: "Disk used",
+    unit: "bytes",
+    source: "",
+    series: wave(12 * GiB, 0.4 * GiB).map((s) => ({
+      ...s,
+      name: `data-${s.name}`,
+    })),
+  },
+  {
+    label: "Process instances activated",
+    unit: "instances/s",
+    source: "",
+    series: wave(40, 12),
+  },
+];
+
+/** detailStories show the component detail, its partition table, and its Metrics tab. */
 export const detailStories: Story[] = [
   {
     component: "ComponentDetail",
@@ -134,6 +178,79 @@ export const detailStories: Story[] = [
     render: () => (
       <PartitionTable
         partitions={degraded.map((p) => ({ ...p, health: "unknown" }))}
+      />
+    ),
+  },
+  {
+    component: "DetailMetrics",
+    name: "Charts of the brokers",
+    render: () => (
+      <DetailMetricsView
+        pods={brokers}
+        usage={brokerUsage}
+        charts={{ prometheus: "answered", charts: brokerCharts, errors: [] }}
+        range="1h"
+      />
+    ),
+  },
+  {
+    component: "DetailMetrics",
+    name: "Prometheus not configured",
+    render: () => (
+      <DetailMetricsView
+        pods={brokers}
+        usage={brokerUsage}
+        charts={{ prometheus: "notConfigured" }}
+        range="1h"
+      />
+    ),
+  },
+  {
+    component: "DetailMetrics",
+    name: "No metrics server",
+    render: () => (
+      <DetailMetricsView
+        pods={brokers}
+        usage="unavailable"
+        charts={{
+          prometheus: "answered",
+          charts: brokerCharts.slice(0, 1),
+          errors: [],
+        }}
+        range="6h"
+      />
+    ),
+  },
+  {
+    component: "DetailMetrics",
+    name: "A request query that does not render",
+    render: () => (
+      <DetailMetricsView
+        pods={[pod("rustfs-0", "pool-a-1")]}
+        usage={[usage("rustfs-0", 0.2, 0.6)]}
+        charts={{
+          prometheus: "answered",
+          charts: [
+            {
+              label: "Requests",
+              unit: "req/s",
+              source: "rustfs-bucket",
+              declaredBy: "Bucket on RustFS",
+              series: wave(120, 30).slice(0, 1).map((s) => ({
+                ...s,
+                name: "rustfs-0",
+              })),
+            },
+          ],
+          errors: [
+            {
+              label: "Latency",
+              declaredBy: "Bucket on RustFS",
+              error: 'output "bucket" has no value',
+            },
+          ],
+        }}
+        range="1h"
       />
     ),
   },
