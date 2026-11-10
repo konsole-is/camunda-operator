@@ -108,9 +108,7 @@ describe("allowedIn", () => {
     ]));
 
   it("names none for an environment without spec.releases", () =>
-    expect(allowedIn([env("lab", {})], "CamundaRelease", "8.9.1")).toEqual(
-      [],
-    ));
+    expect(allowedIn([env("lab", {})], "CamundaRelease", "8.9.1")).toEqual([]));
 
   it("names none for an empty name", () =>
     expect(
@@ -129,9 +127,10 @@ describe("defaultIn", () => {
     ]));
 
   it("names the environments whose platform config is the config, sorted", () =>
-    expect(defaultIn(environments, "CamundaPlatformConfig", "shared")).toEqual(
-      ["production", "staging"],
-    ));
+    expect(defaultIn(environments, "CamundaPlatformConfig", "shared")).toEqual([
+      "production",
+      "staging",
+    ]));
 
   it("names none for an empty default", () =>
     expect(defaultIn(environments, "CamundaRelease", "")).toEqual([]));
