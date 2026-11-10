@@ -118,12 +118,34 @@ claimpolicy-fixtures: ## Write the result of each case under test/fixtures/claim
 tidy: ## Run go mod tidy in every module.
 	@for m in $(MODULES); do (cd $$m && go mod tidy) || exit 1; done
 
-# API_VERSION is the api module version that consumers of the root module get.
-# The release workflow checks that it equals the release tag with a v prefix.
+# The release pins. Consumers of a module ignore its replace directives and
+# fetch the required versions, so the root module and the conformance module
+# must require the modules of the same release. The release workflow runs
+# check-release-pins with the version of its tag.
 .PHONY: api-version
-api-version: ## Pin the api module version in the root go.mod: make api-version VERSION=X.Y.Z
+api-version: ## Pin the api module in the root go.mod and in conformance/go.mod: make api-version VERSION=X.Y.Z
 	@test -n "$(VERSION)" || { echo "usage: make api-version VERSION=X.Y.Z" >&2; exit 1; }
 	go mod edit -require=github.com/konsole-is/camunda-operator/api@v$(VERSION)
+	go -C conformance mod edit -require=github.com/konsole-is/camunda-operator/api@v$(VERSION)
+
+.PHONY: conformance-version
+conformance-version: ## Pin the conformance module in the root go.mod: make conformance-version VERSION=X.Y.Z
+	@test -n "$(VERSION)" || { echo "usage: make conformance-version VERSION=X.Y.Z" >&2; exit 1; }
+	go mod edit -require=github.com/konsole-is/camunda-operator/conformance@v$(VERSION)
+
+.PHONY: check-release-pins
+check-release-pins: ## Check that go.mod and conformance/go.mod pin the modules of a release: make check-release-pins VERSION=X.Y.Z
+	@test -n "$(VERSION)" || { echo "usage: make check-release-pins VERSION=X.Y.Z" >&2; exit 1; }
+	@status=0; \
+	for pin in .:github.com/konsole-is/camunda-operator/api \
+		conformance:github.com/konsole-is/camunda-operator/api \
+		.:github.com/konsole-is/camunda-operator/conformance; do \
+		dir=$${pin%%:*}; module=$${pin#*:}; \
+		have=$$(go -C $$dir list -m -f '{{.Version}}' $$module) || exit 1; \
+		if [ "$$have" != "v$(VERSION)" ]; then \
+			echo "$$dir/go.mod requires $$module $$have, the release needs v$(VERSION)." >&2; status=1; \
+		fi; \
+	done; exit $$status
 
 .PHONY: fmt
 fmt: golangci-lint ## Format code: callsplit, then the formatters configured in .golangci.yml.
