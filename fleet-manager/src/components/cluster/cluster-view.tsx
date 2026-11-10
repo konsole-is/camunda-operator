@@ -107,12 +107,13 @@ export type ClusterPageData = {
  * opens the detail of a used component, or of an app embedded in one, on
  * the Overview tab, in place of the cards. slots fill the action slots of a
  * managed cluster, and an unmanaged cluster ignores them. A render function
- * of slots gets the slot context of the page. A filled cluster.claim.editor
- * slot shows in place of the read view of the claim. writeMode is the write
- * mode of the fleet manager, undefined when the page could not read it.
- * claimActions turn on the edit host of a managed cluster, which the slots
- * reach through useClusterEdit. pushedClaim is the claim file that the fleet manager pushed in Git mode.
- * When the cluster is deleted, the page says so and shows nothing else.
+ * of slots gets the slot context of the page. For a managed cluster with a
+ * claim, a filled cluster.claim.editor slot shows in place of the read view
+ * of the claim. writeMode is the write mode of the fleet manager, undefined
+ * when the page could not read it. claimActions turn on the edit host of a
+ * managed cluster, which the slots reach through useClusterEdit. pushedClaim
+ * is the claim file that the fleet manager pushed in Git mode. When the
+ * cluster is deleted, the page says so and shows nothing else.
  */
 export function ClusterView({
   initial,
