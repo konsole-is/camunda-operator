@@ -38,6 +38,7 @@ const (
 	LabelExample                   = "example"
 	LabelBuiltinRegistrations      = "builtin-registrations"
 	LabelBuiltinRegistrationsOrder = "builtin-registrations-order"
+	LabelPlaneClaim                = "plane-claim"
 )
 
 // AllLabels is every label above. A name outside it names no flow, and both
@@ -56,6 +57,7 @@ var AllLabels = []string{
 	LabelExample,
 	LabelBuiltinRegistrations,
 	LabelBuiltinRegistrationsOrder,
+	LabelPlaneClaim,
 }
 
 // LabelFilter turns a comma-separated list of Ginkgo labels into a label

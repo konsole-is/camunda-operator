@@ -15,12 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # Five jobs per supported Camunda minor: one for each storage backend
+      # Six jobs per supported Camunda minor: one for each storage backend
       # of the orchestration cluster, one for the management plane, one for
-      # the example inventories, and one for the plugin order check. All five
-      # name the same file test/e2e/matrix/<minor>.env, which holds the image
-      # versions of the minor, and each holds the Ginkgo label filter that
-      # selects its flows. Adopting a new minor adds the file and five entries.
+      # the example inventories, one for the plugin order check, and one for
+      # the plane claim. All six name the same file
+      # test/e2e/matrix/<minor>.env, which holds the image versions of the
+      # minor, and each holds the Ginkgo label filter that selects its flows.
+      # Adopting a new minor adds the file and six entries.
       #
       # The split keeps one storage operator off each of the first three jobs.
       # One kind node carries a whole job. eckInstallSkip and cnpgInstallSkip
@@ -38,6 +39,11 @@ jobs:
       # The plugin order job runs one flow. Its check scales the operator
       # manager to zero, so no other flow of the suite may run in its cluster.
       # It needs neither storage operator.
+      #
+      # The plane claim job runs one flow: a CamundaManagementClusterClaim on
+      # its built-in database server, which runs on CloudNativePG. The flow
+      # starts a whole plane on the node, so it does not share a node with the
+      # postgres job.
       #
       # Every label of the suite belongs to exactly one entry. The test
       # TestWorkflowJobsClaimEveryLabel in test/utils reads this file and
@@ -69,6 +75,11 @@ jobs:
             labels: "builtin-registrations-order"
             eckInstallSkip: "true"
             cnpgInstallSkip: "true"
+          - minor: "8.9"
+            suffix: " plane claim"
+            labels: "plane-claim"
+            eckInstallSkip: "true"
+            cnpgInstallSkip: "false"
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
