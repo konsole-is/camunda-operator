@@ -5,9 +5,11 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { ReadError } from "@/components/planes/planes-table";
 import type { WriteMode, WriteResult } from "@/lib/write/types";
 import {
   EnvironmentEditor,
@@ -46,11 +48,13 @@ function setup({
   mode = "direct",
   sources = environmentFixtures(),
   result = { ok: true, mode: "direct" },
+  errors = [],
 }: {
   name?: string;
   mode?: WriteMode;
   sources?: EnvironmentSources;
   result?: WriteResult;
+  errors?: ReadError[];
 } = {}) {
   const actions = {
     previewChange: vi.fn<EnvironmentActions["previewChange"]>(async () => ({
@@ -67,7 +71,7 @@ function setup({
   const view = (s: EnvironmentSources) => (
     <GitPushesProvider>
       <EnvironmentEditor
-        sources={{ ...s, errors: [] }}
+        sources={{ ...s, errors }}
         name={name === "" ? undefined : name}
         mode={mode}
         actions={actions}
@@ -275,5 +279,103 @@ describe("EnvironmentEditor", () => {
     expect(
       screen.getAllByText("An environment with this name exists.").length,
     ).toBeGreaterThan(0);
+  });
+
+  it("offers no Delete while the namespaces cannot be read", () => {
+    const sources = environmentFixtures();
+    sources.namespaces = [];
+    setup({
+      sources,
+      errors: [{ kind: "Namespace", message: "namespaces is forbidden" }],
+    });
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read the namespaces.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Delete the environment" }),
+    ).toBeNull();
+  });
+
+  it("keeps the form disabled after a direct save until the saved copy arrives", async () => {
+    const { rerender } = setup();
+    await saveDisplayName("Prod");
+    await waitFor(() => expect(displayName().matches(":disabled")).toBe(true));
+    expect(
+      screen.queryByRole("region", { name: "Pending changes" }),
+    ).toBeNull();
+
+    const saved = environmentFixtures();
+    saved.environments[0].spec.displayName = "Prod";
+    saved.environments[0].metadata.resourceVersion = "13";
+    rerender(saved);
+    await waitFor(() => expect(displayName().matches(":disabled")).toBe(false));
+    expect(displayName().value).toBe("Prod");
+  });
+
+  it("keeps the form disabled after a create until the page moves to the new environment", async () => {
+    setup({ name: "" });
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "lab" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const save = screen.getByRole("button", { name: "Save" });
+    await waitFor(() => expect(save).toHaveProperty("disabled", false));
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("Name") as HTMLInputElement).matches(
+          ":disabled",
+        ),
+      ).toBe(true),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Pending changes" }),
+    ).toBeNull();
+  });
+
+  it("unlocks the form when GitOps applied the push, also after the toast was dismissed", async () => {
+    const { rerender } = setup({ mode: "git", result: PUSHED });
+    await saveDisplayName("Prod", "Push to Git");
+    await waitFor(() =>
+      expect(screen.getByText("Waiting for GitOps to apply")).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    sync.state = "applied";
+    const applied = environmentFixtures();
+    applied.environments[0].spec.displayName = "Prod";
+    applied.environments[0].metadata.resourceVersion = "13";
+    rerender(applied);
+    await waitFor(() => expect(displayName().matches(":disabled")).toBe(false));
+  });
+
+  it("blocks Review while a fixed label row has an error", () => {
+    setup();
+    const labels = screen.getByRole("group", {
+      name: "Fixed labels of a new namespace",
+    });
+    const add = () =>
+      fireEvent.click(
+        within(labels).getByRole("button", { name: "Add an entry" }),
+      );
+    add();
+    add();
+    const keys = within(labels).getAllByLabelText("Key");
+    const values = within(labels).getAllByLabelText("Value");
+    fireEvent.change(keys[0], { target: { value: "team" } });
+    fireEvent.change(values[0], { target: { value: "a" } });
+    fireEvent.change(keys[1], { target: { value: "team" } });
+    fireEvent.change(values[1], { target: { value: "b" } });
+    expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    fireEvent.change(displayName(), { target: { value: "Prod" } });
+    expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
+      "disabled",
+      false,
+    );
   });
 });

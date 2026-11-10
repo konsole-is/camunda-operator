@@ -105,6 +105,7 @@ The note also names each claim that the change touches:
 | `orders in team-a uses release 8.9.22, which this change no longer allows.` | The cluster keeps running. A later change of its release must pick an allowed release. The same note exists for a cluster preset. |
 | `orders in team-a names no release and moves to 8.9.23.` | The claim follows the default release, so its cluster moves to the new release. Its brokers restart one at a time. |
 | `orders in team-a names no platform config and moves to shared.` | The claim follows the default platform config. |
+| `orders in team-a names no release, and this change removes the default release.` | The claim follows the default release, so its cluster then names no release. The same note exists for the platform config. A management plane without a platform config keeps running, and its claim reports `MissingInput` until it names one. |
 
 **Review** shows the change to the environment before the save. A field manager is a tool that writes the object, such as `kubectl apply` or a GitOps tool. If another field manager set a field that the change leaves out, the field stays. To remove such a field, remove it with the tool that set it. The review names each one: `spec.sections.backup-storage stays, because another field manager set it.`
 
@@ -114,7 +115,7 @@ In Git mode, the save pushes a commit, and the page waits until GitOps applied i
 
 ## Delete an environment
 
-The section **Delete the environment** shows only when no namespace carries the label of the environment. Remove the label from each namespace first, for example with `kubectl label namespace my-cluster-ns fleet.camunda.io/environment-`. The page does not remove a label. Then type the name of the environment and select **Delete the environment**.
+The button **Delete the environment** shows only when no namespace carries the label of the environment, and the fleet manager can read the namespaces. Remove the label from each namespace first, for example with `kubectl label namespace my-cluster-ns fleet.camunda.io/environment-`. The page does not remove a label. Then type the name of the environment and select **Delete the environment**.
 
 ## Status
 

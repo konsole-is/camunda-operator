@@ -17,8 +17,10 @@ const MAX_KEYS = 16;
 /**
  * NamespaceCreationSection edits whether the create flow can create a
  * namespace, its fixed labels, and its required label keys. The
- * environment label never shows in either list. The section keeps the rows
- * that the admin types, so a parent remounts it to discard them.
+ * environment label never shows in either list. onChange gets the errors
+ * of the fixed label rows too, such as a key that two rows set, which the
+ * value cannot hold. The section keeps the rows that the admin types, so a
+ * parent remounts it to discard them.
  */
 export function NamespaceCreationSection({
   value = {},
@@ -27,7 +29,7 @@ export function NamespaceCreationSection({
 }: {
   value?: Creation;
   errors: readonly ValidationError[];
-  onChange: (value: Creation) => void;
+  onChange: (value: Creation, rowErrors: ValidationError[]) => void;
 }) {
   const [keys, setKeys] = useState(() =>
     (value.requiredLabelKeys ?? [])
@@ -35,15 +37,19 @@ export function NamespaceCreationSection({
       .map((key, id) => ({ id, key })),
   );
   const next = useRef(keys.length);
+  const labelRowErrors = useRef<ValidationError[]>([]);
   const shownLabels = Object.fromEntries(
     Object.entries(value.labels ?? {}).filter(([k]) => k !== ENVIRONMENT_LABEL),
   );
   const updateKeys = (rows: typeof keys) => {
     setKeys(rows);
-    onChange({
-      ...value,
-      requiredLabelKeys: rows.map((r) => r.key.trim()).filter(Boolean),
-    });
+    onChange(
+      {
+        ...value,
+        requiredLabelKeys: rows.map((r) => r.key.trim()).filter(Boolean),
+      },
+      labelRowErrors.current,
+    );
   };
   const errorAt = (path: string) =>
     errors.find((e) => e.path === `spec.namespaceCreation.${path}`)?.message;
@@ -56,7 +62,10 @@ export function NamespaceCreationSection({
           className="size-4 accent-accent"
           checked={value.allowed ?? false}
           onChange={(event) =>
-            onChange({ ...value, allowed: event.target.checked })
+            onChange(
+              { ...value, allowed: event.target.checked },
+              labelRowErrors.current,
+            )
           }
         />
         The create flow can create a namespace
@@ -66,7 +75,10 @@ export function NamespaceCreationSection({
           label="Fixed labels of a new namespace"
           defaultValue={shownLabels}
           format="label"
-          onChange={(labels) => onChange({ ...value, labels })}
+          onChange={(labels, rowErrors) => {
+            labelRowErrors.current = rowErrors;
+            onChange({ ...value, labels }, rowErrors);
+          }}
         />
         <ErrorText error={errorAt("labels")} />
       </div>

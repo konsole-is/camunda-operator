@@ -12,6 +12,7 @@ import {
 import { ChangeBar } from "@/components/fleet/change-bar";
 import { ChangeReview } from "@/components/fleet/change-review";
 import { StatusChip } from "@/components/fleet/status-chip";
+import { useGitPushes } from "@/components/fleet/git-pushes";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import type { ReadError } from "@/components/planes/planes-table";
@@ -19,6 +20,7 @@ import type { FleetEnvironmentConditionType } from "@/generated/conditions";
 import type { Environment } from "@/generated/crds/environment";
 import { environmentReady } from "@/lib/environments";
 import { equalJSON } from "@/lib/policy";
+import type { ValidationError } from "@/lib/schema";
 import type {
   Change,
   Preview,
@@ -60,8 +62,10 @@ export type EnvironmentActions = {
  * without name. The draft starts from the live copy and stays while the
  * live copy changes, so a save of a stale draft fails with Stale. Discard
  * loads the live copy. After a push in Git mode the form stays disabled and
- * keeps the draft until GitOps applied the push. After a create, the page
- * moves to the editor of the new environment once it shows in sources.
+ * keeps the draft until GitOps applied the push. After a save outside Git
+ * mode the form stays disabled and keeps the draft until sources shows a
+ * changed copy. After a create, the page moves to the editor of the new
+ * environment once it shows in sources.
  */
 export function EnvironmentEditor({
   sources,
@@ -84,10 +88,14 @@ export function EnvironmentEditor({
   // The sections that keep typed rows remount on a reset.
   const [generation, setGeneration] = useState(0);
   const [reviewing, setReviewing] = useState<Change>();
-  const [waiting, setWaiting] = useState<"push" | "save">();
+  const [waiting, setWaiting] = useState<
+    { push: readonly string[] } | "save"
+  >();
+  const [labelErrors, setLabelErrors] = useState<ValidationError[]>([]);
   const [created, setCreated] = useState<string>();
   const [deleting, setDeleting] = useState(false);
   const { toast, show, dismiss } = useWriteToast();
+  const { pushes } = useGitPushes();
 
   const reset = (to: Environment | undefined) => {
     setBase(to);
@@ -95,8 +103,12 @@ export function EnvironmentEditor({
     setGeneration((g) => g + 1);
     setReviewing(undefined);
     setWaiting(undefined);
+    setLabelErrors([]);
   };
-  if (waiting === "push" && toast?.kind === "applied") reset(live);
+  const pushing =
+    typeof waiting === "object" &&
+    pushes.some((p) => waiting.push.includes(p.key));
+  if (typeof waiting === "object" && !pushing) reset(live);
   if (
     waiting === "save" &&
     live &&
@@ -122,6 +134,14 @@ export function EnvironmentEditor({
     [base, draft, sources],
   );
   const members = labelledNamespaces(name ?? "", sources.namespaces);
+  const namespacesUnread = sources.errors.some((e) => e.kind === "Namespace");
+  const locked =
+    waiting !== undefined || created !== undefined || reviewing !== undefined;
+  const blocked =
+    errors[0]?.message ??
+    (labelErrors.length > 0
+      ? "Correct the fixed labels of a new namespace."
+      : undefined);
   const setSpec = (spec: EnvironmentDraft["spec"]) =>
     setDraft((d) => ({ ...d, spec }));
 
@@ -190,10 +210,7 @@ export function EnvironmentEditor({
           The environment {name} was deleted.
         </p>
       )}
-      <fieldset
-        disabled={waiting === "push" || reviewing !== undefined}
-        className="flex min-w-0 flex-col gap-4"
-      >
+      <fieldset disabled={locked} className="flex min-w-0 flex-col gap-4">
         <BasicsSection
           draft={draft}
           isNew={isNew}
@@ -214,9 +231,10 @@ export function EnvironmentEditor({
             key={generation}
             value={draft.spec.namespaceCreation}
             errors={errors}
-            onChange={(namespaceCreation) =>
-              setSpec({ ...draft.spec, namespaceCreation })
-            }
+            onChange={(namespaceCreation, rowErrors) => {
+              setSpec({ ...draft.spec, namespaceCreation });
+              setLabelErrors(rowErrors);
+            }}
           />
         </EditorSection>
         <ReferencesSection
@@ -252,7 +270,14 @@ export function EnvironmentEditor({
               show(result, message);
               if (!result.ok) return;
               if (isNew) setCreated(draft.name);
-              else setWaiting(result.mode === "git" ? "push" : "save");
+              else if (result.mode === "git")
+                setWaiting({
+                  push: [
+                    ...Object.keys(result.revisions),
+                    ...Object.keys(result.deleted),
+                  ],
+                });
+              else setWaiting("save");
             }}
             onWritten={() => setReviewing(undefined)}
             onCancel={() => setReviewing(undefined)}
@@ -260,12 +285,12 @@ export function EnvironmentEditor({
         </section>
       ) : (
         count > 0 &&
-        waiting !== "push" && (
+        !locked && (
           <div className="flex flex-col gap-3">
             <ImpactLine impact={impact} />
             <ChangeBar
               count={count}
-              blocked={errors[0]?.message}
+              blocked={blocked}
               onDiscard={() => reset(live)}
               onReview={() =>
                 setReviewing(
@@ -280,7 +305,11 @@ export function EnvironmentEditor({
       )}
       {!isNew && live && (
         <EditorSection title="Delete the environment">
-          {members.length > 0 ? (
+          {namespacesUnread ? (
+            <p className="text-sm text-muted">
+              Delete is possible when the fleet manager can read the namespaces.
+            </p>
+          ) : members.length > 0 ? (
             <p className="text-sm text-muted">
               Delete is possible when no namespace carries the label of this
               environment.
