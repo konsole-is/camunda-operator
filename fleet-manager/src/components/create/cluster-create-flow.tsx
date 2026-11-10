@@ -2,7 +2,7 @@
 
 import type { V1Namespace } from "@kubernetes/client-node";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { DatabaseServerPreset } from "@/generated/crds/databaseserverpreset";
 import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchclusterpreset";
@@ -68,8 +68,8 @@ const INITIAL: ClusterDraft = { claim: { metadata: { name: "" }, spec: {} } };
  * ClusterCreateFlow is the create cluster wizard. It follows initial live
  * and checks steps 1 and 2 against the newest data. The hosts of both steps
  * are those of the picked access option once step 2 showed it, else those
- * of the default option. Steps 3 to 5 hold no fields yet, and the flow
- * writes nothing.
+ * of the default option. The picks of a section that goes away leave the
+ * draft. Steps 3 to 5 hold no fields yet, and the flow writes nothing.
  */
 export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
   const live = {
@@ -117,9 +117,13 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
   const failures = Object.values(live).flatMap((l) =>
     l.failure ? [l.failure] : [],
   );
-  const storageFailures = Object.values(sources).flatMap((l) =>
-    l.failure ? [l.failure] : [],
-  );
+  const storageFailures = [
+    live.environments,
+    live.sections,
+    live.registrations,
+    live.accessRequests,
+    ...Object.values(sources),
+  ].flatMap((l) => (l.failure ? [l.failure] : []));
   const objects = {
     ElasticsearchClusterPreset: models<ElasticsearchClusterPreset>(
       sources.ElasticsearchClusterPreset.items,
@@ -202,6 +206,13 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
   );
   const flow = useCreateFlow({ steps, initial: INITIAL });
   const { views, presets, takenNames, hosts, conflicts } = derive(flow.draft);
+  // A claim must not select a section that step 2 no longer shows.
+  const gone = Object.keys(flow.draft.storage ?? {}).filter(
+    (name) => !views.some((v) => v.name === name),
+  );
+  useEffect(() => {
+    for (const name of gone) flow.set(["storage", name], undefined);
+  });
   const onSection = (
     name: string,
     selections: PluginSelection[],

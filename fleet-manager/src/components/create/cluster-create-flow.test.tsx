@@ -483,4 +483,66 @@ describe("ClusterCreateFlow", () => {
     expect(radio(/^Gateway/).checked).toBe(true);
     expect(radio(/^Internal/).checked).toBe(false);
   });
+
+  it("blocks step 2 when a list that both steps read cannot be read", async () => {
+    render(<ClusterCreateFlow initial={data({ accessRequests: [] })} />);
+    await fillBasics("search");
+    await userEvent.click(next());
+    expect(next().disabled).toBe(false);
+
+    live.errors.PluginRegistration = "forbidden";
+    await userEvent.click(radio(/No access from outside/));
+
+    expect(
+      screen.getAllByText(
+        "The fleet manager could not read the PluginRegistration objects: forbidden",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(next().disabled).toBe(true);
+  });
+
+  it("drops the pick of a section that goes away", async () => {
+    const initial = data({
+      sections: [accessSection, backupSection],
+      environments: [
+        {
+          ...prod(),
+          spec: {
+            ...prod().spec,
+            sections: {
+              ...prod().spec.sections,
+              "backup-storage": { allowed: ["internal"], required: true },
+            },
+          },
+        },
+      ],
+      registrations: [
+        gateway,
+        {
+          ...internal,
+          spec: {
+            ...internal.spec,
+            sections: ["access", "backup-storage"],
+          },
+        },
+      ],
+      accessRequests: [],
+    });
+    const { rerender } = render(<ClusterCreateFlow initial={initial} />);
+    await fillBasics("search");
+    await userEvent.click(next());
+    await userEvent.click(
+      within(screen.getByRole("group", { name: /Backup storage/ })).getByRole(
+        "radio",
+        { name: /^Internal/ },
+      ),
+    );
+    expect(next().disabled).toBe(false);
+
+    live.objects.PluginSection = [accessSection];
+    rerender(<ClusterCreateFlow initial={initial} />);
+
+    expect(screen.queryByText(/Choose another option/)).toBeNull();
+    expect(next().disabled).toBe(false);
+  });
 });
