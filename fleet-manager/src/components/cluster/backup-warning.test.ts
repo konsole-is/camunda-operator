@@ -321,6 +321,16 @@ describe("backupWarning", () => {
     );
   });
 
+  it("finds a suspend inside a pending change of the whole spec", () => {
+    const i = input({}, (session) =>
+      set([f("spec")], { ...session.claim.spec, suspend: true })(session),
+    );
+    const running = { phase: "Running", runtime: { state: "InProgress" } };
+    expect(backupWarning(i, [es(running)], "direct")).toEqual(
+      note(PARKS)("direct"),
+    );
+  });
+
   it("names the backup that runs", () => {
     const list = [
       {

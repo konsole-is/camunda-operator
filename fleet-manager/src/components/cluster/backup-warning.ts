@@ -1,6 +1,6 @@
 import type { ReviewConfirm } from "@/components/fleet/claim-review";
 import { rollSensitiveBackup, type RollBackupLike } from "@/lib/policy/backups";
-import { claimAfter, discard } from "@/lib/session";
+import { claimAfter, resetValue, setValue } from "@/lib/session";
 import type { WriteMode } from "@/lib/write/types";
 import {
   mergedSpecs,
@@ -43,11 +43,7 @@ export function backupWarning(
   if (!backup) return { kind: "none" };
   const running = `Backup ${backup.name} is running.`;
   const suspends = suspendsCluster(input);
-  const rolls = rollsZeebe(
-    suspends
-      ? { ...input, session: discard(input.session, "spec.suspend") }
-      : input,
-  );
+  const rolls = rollsZeebe(suspends ? withoutSuspend(input) : input);
   if (!suspends && !rolls)
     return {
       kind: "note",
@@ -100,4 +96,16 @@ function suspendsCluster(input: ClusterChangeInput): boolean {
     claimAfter(input.session).spec.suspend === true &&
     input.session.claim.spec.suspend !== true
   );
+}
+
+// withoutSuspend is input with suspend at its value in the claim. setValue
+// and resetValue also take it out of a pending change of the whole spec.
+function withoutSuspend(input: ClusterChangeInput): ClusterChangeInput {
+  const steps = [{ field: "spec" }, { field: "suspend" }];
+  const own = input.session.claim.spec.suspend;
+  const result =
+    own === undefined
+      ? resetValue(input.session, steps)
+      : setValue(input.session, steps, own);
+  return "session" in result ? { ...input, session: result.session } : input;
 }
