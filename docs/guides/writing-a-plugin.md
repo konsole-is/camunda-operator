@@ -103,7 +103,7 @@ A claim that selects the option writes a [PluginRequest](../crds/pluginrequest.m
 
 1. The finalizer `plugins.camunda.io/cleanup`, before the first object for the request.
 2. `status.outputs`, with a value for each output of the section, and the condition `OutputsReady=True`. The `observedGeneration` of the condition is the current generation of the request.
-3. The condition `Ready`, when the resources of the request are ready.
+3. The condition `Ready`, when the resources of the request are ready. When `status.podSelector` is set, at least one pod that it selects is Running and Ready by then.
 
 The status of a ready request, as `kubectl get pluginrequest orders-backup-storage -n my-cluster-ns -o yaml` prints it:
 
@@ -138,7 +138,7 @@ status:
       onOrphan: Kept
 ```
 
-Four reasons of `Ready` have a fixed meaning. Use them only for that meaning:
+Five reasons of `Ready` have a fixed meaning. Use them only for that meaning:
 
 | Reason | When to set it |
 | --- | --- |
@@ -146,6 +146,7 @@ Four reasons of `Ready` have a fixed meaning. Use them only for that meaning:
 | `WaitingForGrants` | No grant of the request has `Ready=False`, and a grant does not have `Ready=True` yet. |
 | `WaitingForEndpoints` | A request of the section `access` waits for the endpoints in the status of its target. `OutputsReady` stays `True`. |
 | `InvalidParameters` | The parameters do not pass the schema or the rules of the registration. The message names each field that fails. |
+| `MissingInput` | A required input of the registration has no value in `spec.inputs`. Set `OutputsReady` to `False` with the same reason, and write nothing for the request. The message names the input. |
 
 For any other state, choose your own reason. Record an event on the request for each external action, for example a bucket that the controller created.
 
@@ -234,6 +235,170 @@ The controller also logs the message `Set Ready of PluginRequest` each time the 
 The fleet manager shows the logs of a request from these lines. The conformance check `REQ-LOGS` reads the log of the controller pods. It fails when a line is not JSON. It also fails when no line carries the `request` key for a request.
 
 A controller built with pluginkit writes these lines for you.
+
+## Run the conformance suite
+
+The conformance suite checks that a plugin keeps the rules of this guide. Each release `vX.Y.Z` of the operator publishes the suite in three forms:
+
+- The Go module `github.com/konsole-is/camunda-operator/conformance`, at the Go tag `conformance/vX.Y.Z`.
+- The binaries `plugin-conformance-<os>-<arch>`, as assets of the release, for `linux-amd64`, `linux-arm64`, `darwin-amd64`, and `darwin-arm64`.
+- The image `ghcr.io/konsole-is/camunda-operator-plugin-conformance:X.Y.Z`.
+
+Use the suite of the operator release that your plugin builds against.
+
+### What the cluster needs
+
+The suite runs against a cluster that has these parts:
+
+- The operator chart of the same release. It installs the plugin kinds, the operator, and the grant admission policy.
+- The chart of your plugin.
+- The registration of your plugin, with `Accepted=True` and `Ready=True`. The suite reads the registration one time, when it starts. Wait for both conditions before you start the suite.
+
+The suite creates the namespace of the run and writes one request for each case into it. At the end, it deletes the requests and the namespace.
+
+### Run the binary
+
+Write a config file, for example `conformance.yaml`:
+
+```yaml
+registration: s3-backup-bucket
+namespace: conformance-s3-backup-bucket
+timeouts:
+  outputsReady: 2m
+  ready: 5m
+  deletion: 90s
+cases:
+  - name: default
+    inputs:
+      bucket-region: eu-west-1
+    parameters:
+      retentionDays: 30
+    target:
+      kind: CamundaCluster
+      name: orders
+      serviceAccountName: orders-camunda
+```
+
+`registration` is the name of your registration. Each case is one request, with the inputs, the parameters, and the target that a claim gives it. A case without `deletionPolicy` runs one time for each deletion policy of the registration. The `timeouts` are optional. Without them, the suite waits 5 minutes for `OutputsReady`, 10 minutes for `Ready`, and 5 minutes for each deletion.
+
+Run the binary against the cluster of your kubeconfig:
+
+```bash
+plugin-conformance --config conformance.yaml --report plugin-conformance-report.xml
+```
+
+The binary prints one line for each check, `PASS`, `FAIL`, or `SKIP`, and writes a JUnit report. Its exit code tells the result of the run:
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | No check failed. |
+| `1` | At least one check failed. |
+| `2` | The run could not start, the report could not be written, or the cleanup at the end failed. |
+
+### Run the suite in GitHub Actions
+
+This job creates a kind cluster, installs the operator and the plugin, and runs the binary of the release `v0.3.0`. It reads the config file `conformance.yaml` from the root of your repository. `OPERATOR_VERSION` is the release version without the `v`.
+
+```yaml
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    env:
+      OPERATOR_VERSION: 0.3.0
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: v4.3.1
+
+      - name: Create a kind cluster
+        run: |
+          curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+          kind create cluster --image kindest/node:v1.37.0 --wait 120s
+
+      - name: Install the operator
+        run: |
+          helm install camunda-operator oci://ghcr.io/konsole-is/charts/camunda-operator \
+            --version "${OPERATOR_VERSION}" \
+            --namespace camunda-operator-system --create-namespace --wait
+
+      - name: Install the plugin
+        run: |
+          helm install s3-backup-bucket ./charts/s3-backup-bucket \
+            --namespace camunda-plugins --create-namespace --wait
+
+      - name: Wait for the registration
+        run: |
+          kubectl wait pluginregistration/s3-backup-bucket --for=create --timeout=120s
+          kubectl wait pluginregistration/s3-backup-bucket --for=condition=Accepted --timeout=120s
+          kubectl wait pluginregistration/s3-backup-bucket --for=condition=Ready --timeout=120s
+
+      - name: Run the conformance suite
+        run: |
+          curl -fsSLo plugin-conformance \
+            "https://github.com/konsole-is/camunda-operator/releases/download/v${OPERATOR_VERSION}/plugin-conformance-linux-amd64"
+          chmod +x plugin-conformance
+          ./plugin-conformance --config conformance.yaml --report plugin-conformance-report.xml
+
+      - name: Keep the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-conformance-report
+          path: plugin-conformance-report.xml
+```
+
+The plugin writes its registration after it starts, so the first `kubectl wait` waits until the registration exists. A failed check fails the job, because the binary exits with `1`.
+
+### Skip a check
+
+A run can skip only a check that has `Yes` in the column "Skippable" of [The checks](#the-checks). Each skip needs a reason, and the report shows it. Add the skips to the config file:
+
+```yaml
+skip:
+  - id: REQ-LOGS
+    reason: the controller writes plain text logs
+```
+
+If the config skips a check that a run cannot skip, the run does not start, and the exit code is `2`.
+
+### The checks
+
+The suite runs the checks in this order:
+
+| Check | What it checks | Skippable |
+| --- | --- | --- |
+| `REG-ACCEPTED` | The registration has Accepted=True and Ready=True. | No |
+| `REG-SCHEMA` | `spec.parameters` is a valid OpenAPI v3 schema, and the parameters of every case pass it. | No |
+| `REG-OUTPUTS` | `spec.outputs` covers every output of each section in `spec.sections`. | No |
+| `REG-INPUTS` | Each input names `<section>/<output>` of an installed section. | No |
+| `REG-GRANTS` | Each grant template has a supported format and uses only the placeholders of the contract. | No |
+| `REG-TEMPLATES` | Each default of an `x-fleet-template` parameter uses only the placeholders of the contract. | No |
+| `REG-DELETION` | `spec.deletionPolicies` holds Delete. | No |
+| `REG-RBAC` | The ServiceAccount of the registration has the verb serve on the registration name. | No |
+| `REG-METRICS` | Each metric query uses only the placeholders of the contract and `.pods`. | No |
+| `REQ-FINALIZER` | The request gets the finalizer `plugins.camunda.io/cleanup` before any object that the plugin writes for it. | No |
+| `REQ-OUTPUTS-READY` | The request gets OutputsReady=True for its current generation within the OutputsReady timeout. | No |
+| `REQ-OUTPUTS` | `status.outputs` has exactly the output keys of the registration, and each value is not empty. | No |
+| `REQ-READY` | Within the Ready timeout, the request gets Ready=True, or Ready=False with the reason GrantRejected or WaitingForGrants. Ready=True fails the check while a Grant has a Ready condition and another Grant does not have Ready=True. The reason GrantRejected needs a Grant with Ready=False. The reason WaitingForGrants needs a Grant without Ready=True, and no Grant with Ready=False. | No |
+| `REQ-LABELS` | Each object of the request carries both writer labels. A cluster-scoped object also carries `plugins.camunda.io/request-namespace` with the namespace of the request, and a namespaced object has an owner reference to the request. | No |
+| `REQ-RESOURCES` | `status.resources` lists each object of the request, and each row has kind, name, and `onOrphan`. | No |
+| `REQ-EVENTS` | The request has at least one event for each row of `status.resources`. | No |
+| `REQ-DISPLAY` | The `summary`, `summaryTime`, `links`, and `podSelector` of the request status are complete and valid. | No |
+| `REQ-LOGS` | The controller pods log JSON lines, and a line carries the key request with the name of each request. | Yes |
+| `REQ-ACCEPTED-KEPT` | The registration keeps the Accepted condition of the registry controller while the plugin serves requests. | No |
+| `GRANT-MATCH` | Each grant template whose required inputs have values has one Grant of the request. The Grant has the labels, the owner, the format, and the fragment of the filled-in template. | No |
+| `GRANT-REQUIRES` | A grant template with a required input without a value has no Grant. | No |
+| `GRANT-ADMISSION` | The API server refuses a Grant of the registration from a requester without the verb serve on it. It skips itself when the Grant admission policy is not installed. | Yes |
+| `GRANT-READY` | A request is not Ready=True while one of its Grants has no Ready condition. It gets Ready=True within the Ready timeout after the suite sets Ready=True on its Grants. | Yes |
+| `ORDER-REGISTRATION-FIRST` | The suite scales the plugin Deployment to zero, deletes the registration, and creates a request. The plugin must write its registration again with Ready=True when it starts, before the request gets a finalizer or an output. | Yes |
+| `DELETE-DELETE` | With the deletion policy Delete, the request is gone within the Deletion timeout, and so is each of its objects. | No |
+| `DELETE-ORPHAN` | With the deletion policy Orphan, each row with `onOrphan` Kept stays, with both writer labels and no owner reference to the request. Each row with `onOrphan` Deleted is gone. | No |
+| `DELETE-ROUTES` | For the access section, a route to a Service that is gone is deleted under both deletion policies. | No |
+
+To run the suite from `go test`, see the [README of the conformance module](https://github.com/konsole-is/camunda-operator/blob/main/conformance/README.md).
 
 ## Related
 
