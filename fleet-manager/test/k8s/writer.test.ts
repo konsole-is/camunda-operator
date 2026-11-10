@@ -697,6 +697,45 @@ describe("the direct writer against envtest", () => {
     ).toBeUndefined();
   });
 
+  it("a claim that fails after its new namespace was created names the namespace, and a save into that namespace then succeeds", async () => {
+    const ns = `plane-${randomUUID().slice(0, 8)}`;
+
+    const result = await writer.apply({
+      intent: `Create ${ns} with the plane plane-a`,
+      apply: [newNamespace(ns), planeClaim(ns, "plane-a", "8.9")],
+      create: [
+        `Namespace//${ns}`,
+        `CamundaManagementClusterClaim/${ns}/plane-a`,
+      ],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      createdNamespace: ns,
+      errors: [
+        expect.objectContaining({
+          code: "Invalid",
+          message: expect.stringContaining(
+            `The fleet manager created the namespace ${ns}, but not the CamundaManagementClusterClaim plane-a.`,
+          ),
+          ref: planeClaimRef(ns, "plane-a"),
+        }),
+      ],
+    });
+    expect(
+      await readObject(kc, { apiVersion: "v1", kind: "Namespace", name: ns }),
+    ).toBeDefined();
+    expect(await readObject(kc, planeClaimRef(ns, "plane-a"))).toBeUndefined();
+
+    expect(
+      await writer.apply({
+        intent: "Create the plane plane-a",
+        apply: [planeClaim(ns, "plane-a")],
+        create: [`CamundaManagementClusterClaim/${ns}/plane-a`],
+      }),
+    ).toEqual({ ok: true, mode: "direct" });
+  });
+
   it("a create of a claim in an existing namespace is dry-run, so the API server refuses an invalid claim", async () => {
     const result = await writer.apply({
       intent: "Create the plane plane-a",

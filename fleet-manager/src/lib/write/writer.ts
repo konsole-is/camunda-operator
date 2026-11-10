@@ -115,7 +115,9 @@ export function diffView(
  *
  * A create of an object that exists fails with Stale in the dry run. An
  * object in a namespace that the same change makes is not dry-run, and the
- * preview shows it as rendered.
+ * preview shows it as rendered. When such an object fails after apply made
+ * its namespace, the namespace stays, and the result names it in
+ * createdNamespace.
  *
  * A preview of a Secret shows "(hidden)" for each value, and "(changed)"
  * for a value that the change sets to a new one. It holds no annotation.
@@ -184,10 +186,14 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       managers?: Record<RefKey, string>;
       mergePatches?: RefKey[];
     } = {},
-  ): Promise<Preview & { uids: Map<RefKey, string> }> => {
+  ): Promise<
+    Preview & { uids: Map<RefKey, string>; fresh: Set<KubeObject> }
+  > => {
     const uids = new Map<RefKey, string>();
     const refusals = refsOf(change).flatMap(refusalOf);
-    if (refusals.length > 0) return { objects: [], errors: refusals, uids };
+    if (refusals.length > 0) {
+      return { objects: [], errors: refusals, uids, fresh: new Set() };
+    }
 
     const objects: PreviewObject[] = [];
     const errors: ApiError[] = [];
@@ -255,7 +261,7 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         errors.push(...apiErrorsOf(error, ref, resourceVersion !== undefined));
       }
     }
-    return { objects, errors, uids };
+    return { objects, errors, uids, fresh };
   };
 
   const preview = async (change: Change): Promise<Preview> => {
@@ -267,9 +273,11 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   };
 
   const apply = async (change: Change): Promise<WriteResult> => {
-    const { errors, uids } = await dryRun(change);
+    const { errors, uids, fresh } = await dryRun(change);
     if (errors.length > 0) return { ok: false, errors };
 
+    const newNamespaces = new Set([...fresh].map((o) => o.metadata.namespace));
+    const created = new Set<string>();
     for (const object of change.apply) {
       const ref = refOf(object);
       const resourceVersion = change.preconditions?.[refKey(ref)];
@@ -290,11 +298,19 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
         ) {
           return { ok: false, errors: await undoCreate(ref, uid) };
         }
+        if (object.kind === "Namespace" && newNamespaces.has(ref.name)) {
+          created.add(ref.name);
+        }
       } catch (error) {
-        return {
-          ok: false,
-          errors: apiErrorsOf(error, ref, resourceVersion !== undefined),
-        };
+        const failed = apiErrorsOf(error, ref, resourceVersion !== undefined);
+        if (ref.namespace !== undefined && created.has(ref.namespace)) {
+          return {
+            ok: false,
+            createdNamespace: ref.namespace,
+            errors: failed.map((e) => inCreatedNamespace(e, ref)),
+          };
+        }
+        return { ok: false, errors: failed };
       }
     }
     for (const ref of change.delete ?? []) {
@@ -315,6 +331,14 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   };
 
   return { mode: "direct", preview, apply };
+}
+
+// The app never deletes a namespace on its own, so the namespace stays.
+function inCreatedNamespace(error: ApiError, ref: ObjectRef): ApiError {
+  return {
+    ...error,
+    message: `The fleet manager created the namespace ${ref.namespace}, but not the ${ref.kind} ${ref.name}. You can save again into the namespace ${ref.namespace}. ${error.message}`,
+  };
 }
 
 /**

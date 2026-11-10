@@ -94,7 +94,10 @@ export type Preview = { objects: PreviewObject[]; errors: ApiError[] };
  * WriteResult is the result of a write. In Git mode, revisions maps each
  * pushed object to its revision hash, and paths maps it to its file in the
  * repository. deleted maps each deleted object to the file that the commit
- * removed. A deleted object is not in revisions or paths.
+ * removed. A deleted object is not in revisions or paths. createdNamespace
+ * names the namespace of the object that failed, when that namespace was
+ * missing as the write began and the write applied it before the object.
+ * The namespace stays.
  */
 export type WriteResult =
   | { ok: true; mode: "direct" }
@@ -106,7 +109,7 @@ export type WriteResult =
       paths: Record<RefKey, string>;
       deleted: Record<RefKey, string>;
     }
-  | { ok: false; errors: ApiError[] };
+  | { ok: false; errors: ApiError[]; createdNamespace?: string };
 
 /** Writer saves a Change. preview writes nothing. */
 export interface Writer {
