@@ -71,7 +71,7 @@ Each cluster reads the Secret of `auth.clientSecretRef` in its own namespace. Ev
 
 ## Changes
 
-When you edit the spec of a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` is the exception: it rolls no pods. A `passwordRotation` there rotates the admin password of each cluster, see [Authentication](camundacluster.md#authentication).
+When you edit the spec of a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` rolls no pods, and a change under `connectors.serviceAccount` rolls only the connectors pods. A `passwordRotation` under `auth.basic` rotates the admin password of each cluster, see [Authentication](camundacluster.md#authentication).
 
 A preset can lower `zeebe.storageSize`. A cluster that already applied a larger size keeps its volumes and records the Warning event `StorageShrinkIgnored`. A larger size grows the volumes of every cluster in place, if the storage class allows volume expansion. See [Operations: Grow storage](../guides/operations.md#grow-storage).
 
