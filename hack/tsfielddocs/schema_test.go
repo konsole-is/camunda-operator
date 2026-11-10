@@ -341,7 +341,10 @@ export type FieldSchemas = Record<SchemaRoot, Partial<Record<string, FieldSchema
 /** FullSchemaName names a field that the YAML editor checks against its whole CRD schema. */
 export type FullSchemaName = "extraEnvFrom" | "nodeAffinity" | "podAffinity";
 
-/** FullSchemas holds the CRD schema of each FullSchemaName, without descriptions. Every field of that name has this schema. */
+/**
+ * FullSchemas holds the CRD schema of each FullSchemaName, without
+ * descriptions. Every field of that name has this schema.
+ */
 export type FullSchemas = Record<FullSchemaName, Record<string, unknown>>;
 
 export const fieldSchemas: FieldSchemas = {
