@@ -149,13 +149,15 @@ export function ChangeReview({
             </p>
           )}
           {kept.length > 0 && (
-            <ul role="note" className="flex flex-col gap-1 text-sm text-text-2">
-              {kept.map((path) => (
-                <li key={path}>
-                  {path} stays, because another field manager set it.
-                </li>
-              ))}
-            </ul>
+            <div role="note" aria-label="Kept fields">
+              <ul className="flex flex-col gap-1 text-sm text-text-2">
+                {kept.map((path) => (
+                  <li key={path}>
+                    {path} stays, because another field manager set it.
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {alerts.length > 0 && (
             <div
