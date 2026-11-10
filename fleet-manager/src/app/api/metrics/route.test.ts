@@ -38,7 +38,11 @@ describe("GET /api/metrics", () => {
       "namespace=n&cluster=o&component=zeebe&request=r",
       "request",
     ],
-    ["a component and a request", "namespace=n&component=zeebe&request=r", "request"],
+    [
+      "a component and a request",
+      "namespace=n&component=zeebe&request=r",
+      "request",
+    ],
     ["neither a cluster nor a request", "namespace=n", "cluster"],
     ["a request name with a slash", "namespace=n&request=a%2Fb", "request"],
     ["an unknown range", "namespace=n&request=r&range=7d", "range"],
@@ -109,10 +113,14 @@ describe("GET /api/metrics", () => {
   it("answers 404 for a cluster that does not exist", async () => {
     vi.mocked(componentMetrics).mockResolvedValue(undefined);
 
-    const response = await call("namespace=team-a&cluster=gone&component=zeebe");
+    const response = await call(
+      "namespace=team-a&cluster=gone&component=zeebe",
+    );
 
     expect(response.status).toBe(404);
-    expect(await response.text()).toBe("The cluster team-a/gone does not exist");
+    expect(await response.text()).toBe(
+      "The cluster team-a/gone does not exist",
+    );
   });
 
   it("answers 404 for a request that does not exist", async () => {
@@ -121,11 +129,15 @@ describe("GET /api/metrics", () => {
     const response = await call("namespace=team-a&request=gone");
 
     expect(response.status).toBe(404);
-    expect(await response.text()).toBe("The request team-a/gone does not exist");
+    expect(await response.text()).toBe(
+      "The request team-a/gone does not exist",
+    );
   });
 
   it("answers 502 with a fixed text when the read fails", async () => {
-    vi.mocked(componentMetrics).mockRejectedValue(new Error("secret token xyz"));
+    vi.mocked(componentMetrics).mockRejectedValue(
+      new Error("secret token xyz"),
+    );
 
     const response = await call(
       "namespace=team-a&cluster=orders&component=zeebe",

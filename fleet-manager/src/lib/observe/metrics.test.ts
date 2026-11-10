@@ -33,14 +33,21 @@ const broker = (n: number) =>
     metadata: { name: `orders-zeebe-${n}` },
     spec: {
       volumes: [
-        { name: "data", persistentVolumeClaim: { claimName: `data-orders-zeebe-${n}` } },
+        {
+          name: "data",
+          persistentVolumeClaim: { claimName: `data-orders-zeebe-${n}` },
+        },
         { name: "config", configMap: { name: "orders-zeebe" } },
       ],
     },
   }) as unknown as Resource<"Pod">;
 
 const request = {
-  metadata: { name: "orders-backup-storage", namespace: "team-a", generation: 1 },
+  metadata: {
+    name: "orders-backup-storage",
+    namespace: "team-a",
+    generation: 1,
+  },
   spec: {
     registration: "rustfs-bucket",
     claimRef: { name: "orders" },
@@ -48,7 +55,9 @@ const request = {
   },
   status: {
     outputs: { bucket: "b-1" },
-    conditions: [{ type: "OutputsReady", status: "True", observedGeneration: 1 }],
+    conditions: [
+      { type: "OutputsReady", status: "True", observedGeneration: 1 },
+    ],
   },
 } as unknown as Resource<"PluginRequest">;
 
@@ -125,7 +134,9 @@ describe("chartsOf", () => {
     }));
 
   it("hides the chart of a query without a series", () =>
-    expect(chartsOf([def("CPU"), def("Disk used")], [one, []], [])).toMatchObject({
+    expect(
+      chartsOf([def("CPU"), def("Disk used")], [one, []], []),
+    ).toMatchObject({
       charts: [{ label: "CPU" }],
     }));
 
@@ -175,9 +186,9 @@ describe("podVolumes", () => {
     ]));
 
   it("is empty for pods without a claim", () =>
-    expect(podVolumes([{ metadata: { name: "p" } } as Resource<"Pod">])).toEqual(
-      [],
-    ));
+    expect(
+      podVolumes([{ metadata: { name: "p" } } as Resource<"Pod">]),
+    ).toEqual([]));
 });
 
 describe("componentMetrics", () => {
@@ -205,7 +216,13 @@ describe("componentMetrics", () => {
     objects({ CamundaCluster: cluster("8.9.4") });
     lists({ Pod: [broker(0), broker(1)] });
 
-    const answer = await componentMetrics("team-a", "orders", "zeebe", "6h", NOW);
+    const answer = await componentMetrics(
+      "team-a",
+      "orders",
+      "zeebe",
+      "6h",
+      NOW,
+    );
 
     expect(list).toHaveBeenCalledWith("Pod", {
       namespace: "team-a",
@@ -267,13 +284,18 @@ describe("componentMetrics", () => {
     objects({ CamundaCluster: cluster("8.9.4") });
     lists({
       CamundaOptimize: [
-        { metadata: { name: "o", uid: "u-1" }, spec: { clusterRef: { name: "orders" } } },
+        {
+          metadata: { name: "o", uid: "u-1" },
+          spec: { clusterRef: { name: "orders" } },
+        },
       ],
     });
 
     await componentMetrics("team-a", "orders", "optimize", "1h", NOW);
 
-    expect(list).toHaveBeenCalledWith("CamundaOptimize", { namespace: "team-a" });
+    expect(list).toHaveBeenCalledWith("CamundaOptimize", {
+      namespace: "team-a",
+    });
     expect(list).toHaveBeenCalledWith("Pod", {
       namespace: "team-a",
       labelSelector:
@@ -285,7 +307,10 @@ describe("componentMetrics", () => {
     objects({ CamundaCluster: cluster("8.9.4") });
     lists({
       CamundaOptimize: [
-        { metadata: { name: "o", uid: "u-1" }, spec: { clusterRef: { name: "other" } } },
+        {
+          metadata: { name: "o", uid: "u-1" },
+          spec: { clusterRef: { name: "other" } },
+        },
       ],
       Pod: [broker(0)],
     });
@@ -303,10 +328,23 @@ describe("requestMetrics", () => {
   it("charts the pod queries of the request pods and the queries of its registration", async () => {
     objects({ PluginRequest: request, PluginRegistration: registration });
 
-    const answer = await requestMetrics("team-a", "orders-backup-storage", "1h", NOW);
+    const answer = await requestMetrics(
+      "team-a",
+      "orders-backup-storage",
+      "1h",
+      NOW,
+    );
 
-    expect(get).toHaveBeenCalledWith("PluginRequest", "team-a", "orders-backup-storage");
-    expect(get).toHaveBeenCalledWith("PluginRegistration", undefined, "rustfs-bucket");
+    expect(get).toHaveBeenCalledWith(
+      "PluginRequest",
+      "team-a",
+      "orders-backup-storage",
+    );
+    expect(get).toHaveBeenCalledWith(
+      "PluginRegistration",
+      undefined,
+      "rustfs-bucket",
+    );
     expect(answer).toMatchObject({
       prometheus: "answered",
       charts: [
@@ -379,8 +417,6 @@ describe("requestMetrics", () => {
   it("is undefined for a request that does not exist", async () => {
     objects({ PluginRegistration: registration });
 
-    expect(
-      await requestMetrics("team-a", "gone", "1h", NOW),
-    ).toBeUndefined();
+    expect(await requestMetrics("team-a", "gone", "1h", NOW)).toBeUndefined();
   });
 });

@@ -130,9 +130,7 @@ describe("DetailMetricsView", () => {
       />,
     );
     expect(screen.getByText("No metric has data for this range.")).toBeTruthy();
-    expect(
-      screen.queryByText(/Prometheus is not configured/),
-    ).toBeNull();
+    expect(screen.queryByText(/Prometheus is not configured/)).toBeNull();
   });
 
   it("says so when Prometheus did not answer", () => {
@@ -157,7 +155,12 @@ describe("DetailMetricsView", () => {
     ["failed", "Could not load the charts."],
   ] as const)("says so while the charts are %s", (charts, text) => {
     render(
-      <DetailMetricsView pods={pods} usage={usage} charts={charts} range="1h" />,
+      <DetailMetricsView
+        pods={pods}
+        usage={usage}
+        charts={charts}
+        range="1h"
+      />,
     );
     expect(screen.getByText(text)).toBeTruthy();
   });

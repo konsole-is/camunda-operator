@@ -236,10 +236,12 @@ export const detailStories: Story[] = [
               unit: "req/s",
               source: "rustfs-bucket",
               declaredBy: "Bucket on RustFS",
-              series: wave(120, 30).slice(0, 1).map((s) => ({
-                ...s,
-                name: "rustfs-0",
-              })),
+              series: wave(120, 30)
+                .slice(0, 1)
+                .map((s) => ({
+                  ...s,
+                  name: "rustfs-0",
+                })),
             },
           ],
           errors: [

@@ -39,7 +39,12 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const metrics =
       name !== null
-        ? await requestMetrics(namespace, name, range as MetricsRange, Date.now())
+        ? await requestMetrics(
+            namespace,
+            name,
+            range as MetricsRange,
+            Date.now(),
+          )
         : await componentMetrics(
             namespace,
             cluster!,

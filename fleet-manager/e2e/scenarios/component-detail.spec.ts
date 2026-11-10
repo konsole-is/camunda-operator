@@ -14,7 +14,9 @@ test("the Metrics tab of the brokers shows the live usage and a chart that the s
 }) => {
   scenario.prometheus.respond((url) =>
     url.pathname === "/api/v1/query_range" &&
-    url.searchParams.get("query")?.includes("zeebe_element_instance_events_total")
+    url.searchParams
+      .get("query")
+      ?.includes("zeebe_element_instance_events_total")
       ? {
           status: "success",
           data: {

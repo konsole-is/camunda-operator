@@ -86,8 +86,7 @@ export type MetricsRange = "1h" | "6h" | "24h";
  * parameter.
  */
 export type MetricsRef =
-  | { cluster: string; component: MetricsComponent }
-  | { request: string };
+  { cluster: string; component: MetricsComponent } | { request: string };
 
 /**
  * MetricChartData is one chart that has data. It has at least one series.

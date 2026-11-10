@@ -134,7 +134,8 @@ describe("useMetrics", () => {
     );
 
     renderHook(
-      () => useMetrics("team-a", { cluster: "orders", component: "zeebe" }, "6h"),
+      () =>
+        useMetrics("team-a", { cluster: "orders", component: "zeebe" }, "6h"),
       { wrapper },
     );
 
@@ -203,10 +204,9 @@ describe("useMetrics", () => {
   it("asks nothing without a ref", async () => {
     const fetchMock = stubFetch(async () => Response.json({}));
 
-    const { result } = renderHook(
-      () => useMetrics("team-a", undefined, "1h"),
-      { wrapper },
-    );
+    const { result } = renderHook(() => useMetrics("team-a", undefined, "1h"), {
+      wrapper,
+    });
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(fetchMock).not.toHaveBeenCalled();
