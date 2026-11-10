@@ -41,10 +41,11 @@ jobs:
       # It needs neither storage operator.
       #
       # The two claim jobs each run one flow: a claim on its built-in
-      # options. The cluster claim runs Elasticsearch through ECK, and the
-      # plane claim runs its database server through CloudNativePG. Each
-      # flow starts a whole cluster or plane on the node, so neither shares a
-      # node with a storage job.
+      # options. The cluster claim runs Elasticsearch through ECK. The
+      # elasticsearch job already runs near the memory limit of its node, so
+      # the cluster claim does not join it. The plane claim runs its
+      # database server through CloudNativePG. It starts a whole plane on the
+      # node, so it does not share a node with the postgres job.
       #
       # Every label of the suite belongs to exactly one entry. The test
       # TestWorkflowJobsClaimEveryLabel in test/utils reads this file and
