@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useId, useState } from "react";
 import { MetricChart } from "@/components/fleet/metric-chart";
-import type { PodLike } from "@/components/fleet/pod-table";
+import { type PodLike, USAGE_UNAVAILABLE } from "@/components/fleet/pod-table";
 import { UsageBars } from "@/components/fleet/usage-bars";
 import {
   NativeSelect,
@@ -104,9 +104,7 @@ function LiveUsage({
         Live usage
       </h3>
       {usage === "unavailable" ? (
-        <p className="text-sm text-muted">
-          Usage is not available. The cluster has no metrics server.
-        </p>
+        <p className="text-sm text-muted">{USAGE_UNAVAILABLE}</p>
       ) : (
         <Table label="Live usage">
           <TableHeader>

@@ -75,7 +75,11 @@ const brokerUsage = [
   usage("orders-zeebe-0", 0.8, 2.6),
   usage("orders-zeebe-1", 1.1, 3.1),
   usage("orders-zeebe-2", 0.4, 1.4),
-];
+].map((u) => ({
+  ...u,
+  cpu: { ...u.cpu, requestCores: 1 },
+  memory: { ...u.memory, requestBytes: 2 * GiB },
+}));
 
 const brokerCharts: MetricChartData[] = [
   { label: "CPU", unit: "cores", source: "", series: sine(0.8, 0.2) },
