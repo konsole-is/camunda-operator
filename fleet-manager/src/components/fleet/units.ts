@@ -31,6 +31,22 @@ export function formatAxis(value: number, unit?: string): string {
   return COMPACT.format(value);
 }
 
+/** formatClock writes a time in ms as "17:28", in the time zone of the viewer. */
+export function formatClock(ms: number): string {
+  const t = new Date(ms);
+  return `${pad(t.getHours())}:${pad(t.getMinutes())}`;
+}
+
+/** formatDateClock writes a time in ms as "2026-10-18 17:28", in the time zone of the viewer. */
+export function formatDateClock(ms: number): string {
+  const t = new Date(ms);
+  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${formatClock(ms)}`;
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
 function round(value: number): string {
   return String(Math.round(value * 10) / 10);
 }

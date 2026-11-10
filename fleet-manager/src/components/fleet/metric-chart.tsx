@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import type { Series, Unavailable } from "@/lib/observe/types";
-import { formatAxis } from "./units";
+import { formatAxis, formatClock, formatDateClock } from "./units";
 
 const COLORS = ["var(--info)", "var(--accent)", "var(--ok)", "var(--warn)"];
 
@@ -68,9 +68,7 @@ export function MetricChart({
                 type="number"
                 scale="time"
                 domain={["dataMin", "dataMax"]}
-                tickFormatter={(t: number) =>
-                  new Date(t).toISOString().slice(11, 16)
-                }
+                tickFormatter={(t: number) => formatClock(t)}
                 stroke="var(--muted)"
                 fontSize={11}
               />
@@ -86,9 +84,8 @@ export function MetricChart({
                   border: "1px solid var(--border)",
                   color: "var(--text)",
                 }}
-                labelFormatter={(t) =>
-                  new Date(Number(t)).toISOString().slice(11, 19)
-                }
+                labelFormatter={(t) => formatDateClock(Number(t))}
+                formatter={(value) => formatAxis(Number(value), unit)}
               />
               {series.map((s, i) => (
                 <Line
