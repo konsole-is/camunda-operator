@@ -66,7 +66,7 @@ The dots show the components of the cluster in this order:
 3. For a cluster of a claim, one dot for each section in which the claim selects an option. An example is `Secondary storage (New Elasticsearch cluster)`.
 4. For a cluster that is not managed, one dot for the secondary storage that `spec.storageRef` names, such as `Secondary storage (Elasticsearch)`.
 
-The color of a dot is the `Ready` state of its component. Green is ready, red is not ready, and yellow is unknown. Disabled Connectors, and Optimize for a cluster without a `CamundaOptimize`, show a grey dot. A component that has no status yet also shows a grey dot. When you hold the pointer on a dot, it names the component, its state, and the message of its condition.
+The color of a dot is the `Ready` state of its component. Green is ready, red is not ready, and yellow is unknown. Disabled Connectors, and Optimize for a cluster without a `CamundaOptimize`, show a grey dot. A component that has no status yet also shows a grey dot. Hold the pointer on the dots, or move the keyboard focus to them, to see a list of the components. The list gives the state of each component and the message of its condition.
 
 ## Filters
 

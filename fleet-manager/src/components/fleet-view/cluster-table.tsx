@@ -2,11 +2,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { age } from "@/components/fleet/age";
 import { DataTable } from "@/components/fleet/data-table";
-import { CHIP_TONE, describeReady } from "@/components/fleet/status";
+import { CHIP_TONE } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
-import { StatusDot } from "@/components/fleet/status-dot";
 import { cn } from "@/lib/utils";
-import type { ClusterRow, ComponentDot, WaitingRow } from "./model";
+import { ComponentDots } from "./component-dots";
+import type { ClusterRow, WaitingRow } from "./model";
 
 const CHIP =
   "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap";
@@ -64,7 +64,7 @@ export function ClusterTable({
                 )}
               </span>
             ),
-            components: <Dots dots={row.components} />,
+            components: <ComponentDots dots={row.components} />,
             backup: row.lastBackup ? (
               <span className="flex flex-col gap-1">
                 <span
@@ -148,38 +148,4 @@ function Name({
       {children}
     </span>
   );
-}
-
-// The dot gets no message of its own, so that the hover text of its list
-// item, which also names the component, is the one that shows.
-function Dots({ dots }: { dots: ComponentDot[] }) {
-  if (dots.length === 0) return <span className="text-muted">-</span>;
-  return (
-    <ul className="flex max-w-56 flex-wrap items-center gap-1.5">
-      {dots.map((dot) => (
-        <li key={dot.id} title={hoverText(dot)} className="flex p-0.5">
-          <StatusDot
-            label={dot.label}
-            condition={
-              dot.condition && {
-                status: dot.condition.status,
-                reason: dot.condition.reason,
-              }
-            }
-            off={!dot.used}
-          />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function hoverText(dot: ComponentDot): string {
-  if (!dot.used) return `${dot.label}: Not used`;
-  const ready = describeReady(dot.condition);
-  const state = ready.reason ? `${ready.label} (${ready.reason})` : ready.label;
-  const message = dot.condition?.message;
-  return message
-    ? `${dot.label}: ${state}. ${message}`
-    : `${dot.label}: ${state}`;
 }

@@ -4,6 +4,7 @@ import type { Story } from "@/gallery/registry";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { ClusterTable } from "./cluster-table";
+import { ComponentDots } from "./component-dots";
 import { FleetView } from "./fleet-view";
 import { type FleetSources, clusterRows } from "./model";
 
@@ -283,6 +284,18 @@ export const fleetViewStories: Story[] = [
     name: "Empty fleet",
     render: () => (
       <FleetView sources={empty} planes={[]} pushes={[]} now={NOW} />
+    ),
+  },
+  {
+    component: "ComponentDots",
+    name: "Open",
+    render: () => (
+      <ComponentDots
+        dots={
+          clusterRows(fleet, NOW).find((r) => r.name === "returns")!.components
+        }
+        defaultOpen
+      />
     ),
   },
   {

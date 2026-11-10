@@ -102,23 +102,13 @@ describe("ClusterTable", () => {
     expect(cells("billing")).toBe("-small");
   });
 
-  it("shows a dot for each component and a grey dot for a component that is not used", () => {
+  it("shows the component dots of a cluster", () => {
     render(
       <ClusterTable
         label="Production"
         rows={[
           row("orders", {
             components: [
-              {
-                id: "zeebe",
-                label: "Brokers",
-                used: true,
-                condition: {
-                  status: "False",
-                  reason: "PodsNotReady",
-                  message: "2 of 3 brokers are ready",
-                },
-              },
               { id: "connectors", label: "Connectors", used: false },
             ],
           }),
@@ -126,15 +116,11 @@ describe("ClusterTable", () => {
         now={NOW}
       />,
     );
-    const brokers = screen.getByRole("img", {
-      name: "Brokers: Not ready (PodsNotReady)",
-    });
     expect(
-      screen.getByRole("img", { name: "Connectors: Not used" }),
+      within(rowOf("orders")).getByRole("img", {
+        name: "Connectors: Not used",
+      }),
     ).toBeTruthy();
-    expect(brokers.closest("[title]")?.getAttribute("title")).toBe(
-      "Brokers: Not ready (PodsNotReady). 2 of 3 brokers are ready",
-    );
   });
 
   it("shows the phase and the start of the newest backup", () => {
