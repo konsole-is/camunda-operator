@@ -73,6 +73,13 @@ describe("ComponentDots", () => {
     expect(screen.queryByRole("note")).toBeNull();
   });
 
+  it("keeps the list open while the pointer moves from the dots into the list", async () => {
+    render(<ComponentDots dots={dots} />);
+    await userEvent.hover(trigger());
+    await userEvent.hover(screen.getByRole("note"));
+    expect(screen.getByRole("note")).toBeTruthy();
+  });
+
   it("starts open with defaultOpen", () => {
     render(<ComponentDots dots={dots} defaultOpen />);
     expect(screen.getByRole("note")).toBeTruthy();

@@ -87,7 +87,9 @@ export function ComponentDots({
             trigger.current?.focus();
             setOpen(false);
           }}
-          className="w-80 max-w-[calc(100vw-2rem)] gap-1.5 rounded-md border border-border bg-panel-2 p-3 text-xs break-words text-text-2 shadow-lg ring-0"
+          // The list sits 4 px from the dots. These strips fill the gap, so
+          // the pointer stays on the dots or the list while it crosses.
+          className="w-80 max-w-[calc(100vw-2rem)] gap-1.5 rounded-md border border-border bg-panel-2 p-3 text-xs break-words text-text-2 shadow-lg ring-0 before:absolute before:inset-x-0 before:-top-1 before:h-1 after:absolute after:inset-x-0 after:-bottom-1 after:h-1"
         >
           {dots.map((dot) => (
             <span key={dot.id} className="flex items-start gap-2">
