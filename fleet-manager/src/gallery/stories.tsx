@@ -1,3 +1,4 @@
+import { backupReviewStories } from "@/components/cluster/backup-review.stories";
 import { backupsStories } from "@/components/cluster/backups.stories";
 import { cardsStories } from "@/components/cluster/cards.stories";
 import { clusterStories } from "@/components/cluster/cluster.stories";
@@ -27,6 +28,7 @@ export const stories: readonly Story[] = [
   ...statusStories,
   ...lockedFieldStories,
   ...reviewStories,
+  ...backupReviewStories,
   ...confirmStories,
   ...helpStories,
   ...dataTableStories,

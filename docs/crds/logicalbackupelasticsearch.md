@@ -54,7 +54,7 @@ If the management API or Elasticsearch is unreachable during a step, the backup 
 
 A backup on a cluster that is still rolling out waits in `Pending` with reason `Progressing` before it starts. It also waits while Zeebe runs another Elasticsearch endpoint or snapshot repository than the `SecondaryStorageConfig` of the cluster declares. The same applies to another bucket than the `ObjectStorageConfig` declares, and to another Camunda version than `status.management.version` of the cluster. The backup starts when Zeebe runs what the contracts and the cluster declare.
 
-Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value.
+Do not change the storage or the backup bucket of the cluster before the backup of the Zeebe partitions completes. The backup fails, and the message names the recorded and the current value. After that part completes, a change of the storage or the bucket does not affect the backup.
 
 Do not change the configuration of Zeebe after the backup started. If Zeebe rolls to another configuration before the operator sees the backup of the Zeebe partitions complete, the step fails at once. The backup then ends as `Failed`, even if Camunda later reports that part as complete. The message names the recorded and the current config hash.
 

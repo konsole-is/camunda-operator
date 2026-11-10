@@ -25,6 +25,18 @@ import { DiffView } from "./diff-view";
 import { ReviewPanel } from "./review-panel";
 
 /**
+ * ReviewConfirm changes the confirm of ClaimReview. label is the button in
+ * direct mode, "Save" by default, and gitLabel in Git mode, "Push to Git" by
+ * default. typed is a word that the user types before the confirm enables.
+ */
+export type ReviewConfirm = {
+  label?: string;
+  gitLabel?: string;
+  danger?: boolean;
+  typed?: string;
+};
+
+/**
  * ClaimReview is the review of the pending changes of a session: the diff
  * of the claim, the merged diff of the cluster when mergedLines is given,
  * the impacts, the caution, and the confirm. It previews the change of the session once
@@ -40,6 +52,7 @@ export function ClaimReview<C extends ClaimObject>({
   intent,
   impacts,
   caution,
+  confirm: confirmProps,
   mergedLines,
   preview,
   apply,
@@ -55,6 +68,7 @@ export function ClaimReview<C extends ClaimObject>({
   impacts: string[];
   /** caution is a warning about the change, such as a backup that it makes fail. */
   caution?: ReactNode;
+  confirm?: ReviewConfirm;
   mergedLines?: DiffLine[];
   preview: (change: Change) => Promise<Preview>;
   apply: (change: Change) => Promise<WriteResult>;
@@ -173,7 +187,10 @@ export function ClaimReview<C extends ClaimObject>({
         )
       }
       mode={mode}
-      confirmLabel="Save"
+      confirmLabel={confirmProps?.label ?? "Save"}
+      gitConfirmLabel={confirmProps?.gitLabel}
+      danger={confirmProps?.danger}
+      typed={confirmProps?.typed}
       pending={writing || blocked}
       onConfirm={confirm}
       onCancel={onCancel}
