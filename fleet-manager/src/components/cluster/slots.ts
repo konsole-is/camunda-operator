@@ -53,7 +53,10 @@ export type ClusterSlotContext = {
   now: string;
 };
 
-/** ActionSlotFill is what fills one slot: a node, or a render function over the slot context. */
+/**
+ * ActionSlotFill is what fills one slot: a node, or a render function over
+ * the slot context. A render function returns an element and calls no hook.
+ */
 export type ActionSlotFill =
   ReactNode | ((context: ClusterSlotContext) => ReactNode);
 
