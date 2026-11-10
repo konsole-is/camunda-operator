@@ -35,7 +35,8 @@ const (
 // Database holds the names of the database of one component.
 type Database struct {
 	Component Component
-	// Title names the component in the descriptions of the plugin contract.
+	// Title names the component in the descriptions of the plugin contract
+	// and in the parameter titles of the built-in registrations.
 	Title string
 	// Output is the output key that holds the name of the DatabaseConfig.
 	Output string

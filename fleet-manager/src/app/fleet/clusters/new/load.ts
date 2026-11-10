@@ -19,6 +19,10 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     sections,
     registrations,
     accessRequests,
+    elasticsearchPresets,
+    databaseServerPresets,
+    secondaryStorageConfigs,
+    objectStorageConfigs,
   ] = await Promise.all([
     listOrEmpty("Environment", {}),
     listOrEmpty("Namespace", {}),
@@ -30,6 +34,10 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     listOrEmpty("PluginRequest", {
       labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
     }),
+    listOrEmpty("ElasticsearchClusterPreset", {}),
+    listOrEmpty("DatabaseServerPreset", {}),
+    listOrEmpty("SecondaryStorageConfig", {}),
+    listOrEmpty("ObjectStorageConfig", {}),
   ]);
   return {
     environments,
@@ -40,6 +48,10 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     sections,
     registrations,
     accessRequests,
+    elasticsearchPresets,
+    databaseServerPresets,
+    secondaryStorageConfigs,
+    objectStorageConfigs,
   };
 }
 

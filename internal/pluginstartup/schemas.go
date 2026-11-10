@@ -32,10 +32,11 @@ const (
   "type": "object",
   "required": ["preset", "releaseRef"],
   "properties": {
-    "preset": {"type": "string", "minLength": 1, "description": "The name of the ElasticsearchClusterPreset that the Elasticsearch cluster starts from."},
-    "releaseRef": {"type": "string", "minLength": 1, "description": "The name of the CamundaRelease that gives the Elasticsearch version. The claim controller sets it to the release of the claim."},
+    "preset": {"type": "string", "minLength": 1, "title": "Preset", "description": "The name of the ElasticsearchClusterPreset that the Elasticsearch cluster starts from."},
+    "releaseRef": {"type": "string", "minLength": 1, "title": "Release", "description": "The name of the CamundaRelease that gives the Elasticsearch version. The claim controller sets it to the release of the claim."},
     "overrides": {
       "type": "object",
+      "title": "Overrides",
       "description": "The values that replace the values of the preset.",
       "properties": {
         "replicas": {"type": "integer", "format": "int32", "minimum": 1, "description": "The number of Elasticsearch nodes."},
@@ -52,10 +53,11 @@ const (
   "type": "object",
   "required": ["preset", "releaseRef"],
   "properties": {
-    "preset": {"type": "string", "minLength": 1, "description": "The name of the DatabaseServerPreset that the PostgreSQL server starts from."},
-    "releaseRef": {"type": "string", "minLength": 1, "description": "The name of the CamundaRelease that gives the PostgreSQL major version. The claim controller sets it to the release of the claim."},
+    "preset": {"type": "string", "minLength": 1, "title": "Preset", "description": "The name of the DatabaseServerPreset that the PostgreSQL server starts from."},
+    "releaseRef": {"type": "string", "minLength": 1, "title": "Release", "description": "The name of the CamundaRelease that gives the PostgreSQL major version. The claim controller sets it to the release of the claim."},
     "overrides": {
       "type": "object",
+      "title": "Overrides",
       "description": "The values that replace the values of the preset.",
       "properties": {
         "instances": {"type": "integer", "format": "int32", "minimum": 1, "description": "The number of PostgreSQL instances."},
@@ -72,7 +74,7 @@ const (
   "type": "object",
   "required": ["name"],
   "properties": {
-    "name": {"type": "string", "minLength": 1, "description": "The name of a SecondaryStorageConfig in the namespace of the claim."}
+    "name": {"type": "string", "minLength": 1, "title": "Name", "description": "The name of a SecondaryStorageConfig in the namespace of the claim."}
   }
 }`
 
@@ -80,7 +82,7 @@ const (
   "type": "object",
   "required": ["name"],
   "properties": {
-    "name": {"type": "string", "minLength": 1, "description": "The name of an ObjectStorageConfig in the namespace of the claim."}
+    "name": {"type": "string", "minLength": 1, "title": "Name", "description": "The name of an ObjectStorageConfig in the namespace of the claim."}
   }
 }`
 )
@@ -92,10 +94,11 @@ var (
   "type": "object",
   "required": ["preset"],
   "properties": {
-    "preset": {"type": "string", "minLength": 1, "description": "The name of the DatabaseServerPreset that the PostgreSQL server starts from."},
-    "version": {"type": "string", "pattern": "^\\d+$", "default": "` + ManagementDatabaseServerVersion + `", "description": "The PostgreSQL major version of the server, for example 17."},
+    "preset": {"type": "string", "minLength": 1, "title": "Preset", "description": "The name of the DatabaseServerPreset that the PostgreSQL server starts from."},
+    "version": {"type": "string", "title": "PostgreSQL version", "pattern": "^\\d+$", "default": "` + ManagementDatabaseServerVersion + `", "description": "The PostgreSQL major version of the server, for example 17."},
     "databases": {
       "type": "array",
+      "title": "Databases",
       "description": "The components that get a database. The management plane claim sets it.",
       "items": {"type": "string", "enum": ` + managementDatabaseEnum() + `}
     }
@@ -128,8 +131,9 @@ func existingDatabaseConfigsProperties() string {
 	properties := make([]string, 0, len(planedatabases.All))
 	for _, d := range planedatabases.All {
 		properties = append(properties, fmt.Sprintf(
-			`    %q: {"type": "string", "minLength": 1, "description": %q}`,
+			`    %q: {"type": "string", "minLength": 1, "title": %q, "description": %q}`,
 			string(d.Component),
+			d.Title,
 			d.OutputDescription(),
 		))
 	}

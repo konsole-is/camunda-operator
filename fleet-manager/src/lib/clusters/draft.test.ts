@@ -5,6 +5,8 @@ import {
   type BasicsContext,
   type ClusterDraft,
   basicsErrors,
+  clusterClaimOf,
+  draftSelections,
   offeredPresets,
   pickerEnvironment,
   syncedNamespace,
@@ -369,5 +371,159 @@ describe("syncedNamespace", () => {
   it("returns an existing namespace as it is", () => {
     const choice = { kind: "existing" as const, name: "team-a" };
     expect(syncedNamespace(choice, creating)).toBe(choice);
+  });
+});
+
+function draftWith(
+  spec: ClusterDraft["claim"]["spec"],
+  storage?: ClusterDraft["storage"],
+): ClusterDraft {
+  return {
+    environment: "prod",
+    namespace: { kind: "existing", name: "team-a" },
+    claim: { metadata: { name: "orders" }, spec },
+    ...(storage && { storage }),
+  };
+}
+
+describe("draftSelections", () => {
+  it("gives the selections section after section, in the order the step reported them", () => {
+    expect(
+      draftSelections(
+        draftWith(
+          {},
+          {
+            access: [{ section: "access", registration: "gateway" }],
+            "volume-encryption": [],
+            "connectors-permissions": [
+              { section: "connectors-permissions", registration: "a" },
+              { section: "connectors-permissions", registration: "b" },
+            ],
+          },
+        ),
+      ),
+    ).toEqual([
+      { section: "access", registration: "gateway" },
+      { section: "connectors-permissions", registration: "a" },
+      { section: "connectors-permissions", registration: "b" },
+    ]);
+  });
+
+  it("gives no selections before step 2 reported any", () => {
+    expect(draftSelections(draftWith({}))).toEqual([]);
+  });
+});
+
+describe("clusterClaimOf", () => {
+  const env = environment("prod", {
+    releases: { allowed: ["r1", "r2"], default: "r1" },
+    platformConfigRef: "pc",
+  });
+
+  it("writes the default release when the draft picks none", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env).spec.releaseRef,
+    ).toBe("r1");
+  });
+
+  it("writes the picked release also when it is the default", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small", releaseRef: "r1" }), env)
+        .spec.releaseRef,
+    ).toBe("r1");
+  });
+
+  it("writes the picked release that is not the default", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small", releaseRef: "r2" }), env)
+        .spec.releaseRef,
+    ).toBe("r2");
+  });
+
+  it("writes no platform config when the pick is the environment default", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", platformConfigRef: "pc" }),
+        env,
+      ).spec,
+    ).not.toHaveProperty("platformConfigRef");
+  });
+
+  it("writes no platform config when the draft picks none", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env).spec,
+    ).not.toHaveProperty("platformConfigRef");
+  });
+
+  it("writes a platform config that differs from the environment default", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", platformConfigRef: "other" }),
+        env,
+      ).spec.platformConfigRef,
+    ).toBe("other");
+  });
+
+  it("writes no release without an Environment and without a pick", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), undefined).spec,
+    ).not.toHaveProperty("releaseRef");
+  });
+
+  it("writes the step 2 selections with their names, never a value", () => {
+    const claim = clusterClaimOf(
+      draftWith(
+        { presetRef: "small" },
+        {
+          "connectors-permissions": [
+            {
+              section: "connectors-permissions",
+              registration: "aws-connectors-role",
+              parameters: { extraPolicyArns: ["sqs"] },
+            },
+          ],
+        },
+      ),
+      env,
+    );
+
+    expect(claim.spec.plugins).toEqual([
+      {
+        section: "connectors-permissions",
+        registration: "aws-connectors-role",
+        parameters: { extraPolicyArns: ["sqs"] },
+      },
+    ]);
+    expect(JSON.stringify(claim)).not.toContain("arn:");
+  });
+
+  it("leaves plugins out when no section has a selection", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }, { access: [] }), env)
+        .spec,
+    ).not.toHaveProperty("plugins");
+  });
+
+  it("copies the cluster and the attachments that the draft sets", () => {
+    const spec = clusterClaimOf(
+      draftWith({
+        presetRef: "small",
+        cluster: { zeebe: { replicas: 3 } },
+        attachments: { optimize: {} },
+      } as ClusterDraft["claim"]["spec"]),
+      env,
+    ).spec;
+
+    expect(spec.cluster).toEqual({ zeebe: { replicas: 3 } });
+    expect(spec.attachments).toEqual({ optimize: {} });
+  });
+
+  it("names the claim and its namespace", () => {
+    expect(clusterClaimOf(draftWith({ presetRef: "small" }), env)).toEqual({
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { name: "orders", namespace: "team-a" },
+      spec: { presetRef: "small", releaseRef: "r1" },
+    });
   });
 });
