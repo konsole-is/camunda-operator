@@ -1,5 +1,7 @@
 import "server-only";
 import { z } from "zod";
+import type { KindName } from "@/lib/k8s/kinds";
+import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { refKey, refOf } from "./refs";
 import type {
   ApiError,
@@ -139,6 +141,65 @@ export const createChangeSchema: z.ZodType<Change> = changeSchema.refine(
 /** createClaim writes a create change: runChange with createChangeSchema. */
 export async function createClaim(input: unknown): Promise<WriteResult> {
   return runChange(input, createChangeSchema);
+}
+
+/**
+ * adminChangeSchema accepts a Change of a Setup page: each object that it
+ * applies or deletes has a kind of kinds. It allows deletes, preconditions,
+ * and force, and refuses directOnly.
+ */
+export function adminChangeSchema(
+  kinds: readonly KindName[],
+): z.ZodType<Change> {
+  const allowed: readonly string[] = kinds;
+  return changeSchema.refine(
+    (c) =>
+      [...c.apply, ...(c.delete ?? [])].every((o) =>
+        allowed.includes(o.kind),
+      ) && c.directOnly === undefined,
+    { message: `The change must write only ${kinds.join(", ")}.` },
+  );
+}
+
+/**
+ * namespaceLabelChangeSchema accepts a Change that applies exactly one
+ * Namespace that holds only metadata.name and the label ENVIRONMENT_LABEL
+ * with a value, with directOnly true, and no delete and no force. The
+ * Namespace may carry the resourceVersion that the page read.
+ */
+export const namespaceLabelChangeSchema: z.ZodType<Change> =
+  changeSchema.refine(
+    (c) =>
+      c.apply.length === 1 &&
+      onlyEnvironmentLabel(c.apply[0]) &&
+      c.directOnly === true &&
+      c.delete === undefined &&
+      c.force === undefined,
+    {
+      message:
+        "The change must set the environment label of one namespace and nothing else.",
+    },
+  );
+
+function onlyEnvironmentLabel(object: KubeObject): boolean {
+  const { metadata } = object;
+  const labels = metadata.labels;
+  return (
+    object.apiVersion === "v1" &&
+    object.kind === "Namespace" &&
+    onlyKeys(object, ["apiVersion", "kind", "metadata"]) &&
+    onlyKeys(metadata, ["name", "labels", "resourceVersion"]) &&
+    typeof labels === "object" &&
+    labels !== null &&
+    onlyKeys(labels, [ENVIRONMENT_LABEL]) &&
+    typeof (labels as Record<string, unknown>)[ENVIRONMENT_LABEL] ===
+      "string" &&
+    (labels as Record<string, string>)[ENVIRONMENT_LABEL] !== ""
+  );
+}
+
+function onlyKeys(object: object, keys: readonly string[]): boolean {
+  return Object.keys(object).every((key) => keys.includes(key));
 }
 
 /**

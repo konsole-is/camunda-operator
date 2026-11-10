@@ -455,6 +455,45 @@ describe("the direct writer against envtest", () => {
     });
   });
 
+  it("a Namespace apply with only the environment label adds the label and keeps the labels of another manager", async () => {
+    const labelled = `label-${randomUUID().slice(0, 8)}`;
+    const created = await api.create({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: labelled, labels: { team: "a" } },
+    });
+
+    const result = await writer.apply({
+      intent: `Add ${labelled} to staging`,
+      apply: [
+        {
+          apiVersion: "v1",
+          kind: "Namespace",
+          metadata: {
+            name: labelled,
+            labels: { "fleet.camunda.io/environment": "staging" },
+          },
+        },
+      ],
+      preconditions: {
+        [refKey({ kind: "Namespace", name: labelled })]:
+          created.metadata!.resourceVersion!,
+      },
+      directOnly: true,
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    const after = await api.read({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: labelled },
+    });
+    expect(after.metadata?.labels).toMatchObject({
+      team: "a",
+      "fleet.camunda.io/environment": "staging",
+    });
+  });
+
   it("an apply with a precondition for a deleted object fails with Stale and creates nothing", async () => {
     await writer.apply({
       intent: "Create",
