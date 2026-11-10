@@ -6,10 +6,12 @@ import { accessPatterns, defaultAccessPatterns } from "@/lib/claims/hosts";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
   type BuiltinObjects,
+  type DeletionPolicy,
   type PluginSelection,
   type SectionView,
   builtinOption,
   byCodeUnit,
+  checkDeletionPolicy,
   offeredSection,
   withMissingInputs,
 } from "@/lib/policy";
@@ -146,4 +148,58 @@ export function draftAccessPatterns(
     (r) => r.metadata.name === picked?.registration,
   );
   return registration && accessPatterns(registration, data.environment, picked);
+}
+
+/**
+ * DeletionChoice is the deletion choice of step 2. defaultPolicy is
+ * spec.deletionPolicy of the Environment, Delete when unset or without an
+ * Environment. keepAllowed is false when checkDeletionPolicy refuses Orphan
+ * for the selections. alwaysDeleted lists each selection whose registration
+ * does not list Orphan, as "<option label> (<section label>)". policy is
+ * the pick of the draft, else the default, and Delete when that is Orphan
+ * and keepAllowed is false.
+ */
+export type DeletionChoice = {
+  defaultPolicy: DeletionPolicy;
+  keepAllowed: boolean;
+  alwaysDeleted: { section: string; label: string }[];
+  policy: DeletionPolicy;
+};
+
+/**
+ * deletionChoice returns the deletion choice of draft. The selections are
+ * those of the sections that storageViews shows, with the default of a
+ * section that the step has not reported yet.
+ */
+export function deletionChoice(
+  draft: ClusterDraft,
+  data: StorageData,
+): DeletionChoice {
+  const defaultPolicy = data.environment?.spec.deletionPolicy || "Delete";
+  const views = storageViews(draft, data);
+  const selections = views.flatMap((view) => picksOf(draft, view));
+  const keepAllowed =
+    "value" in checkDeletionPolicy("Orphan", selections, data.registrations);
+  const alwaysDeleted = selections.flatMap((s) => {
+    const registration = data.registrations.find(
+      (r) => r.metadata.name === s.registration,
+    );
+    if (!registration || registration.spec.deletionPolicies.includes("Orphan")) {
+      return [];
+    }
+    const view = views.find((v) => v.name === s.section);
+    const option =
+      view?.options.find((o) => o.registration === s.registration)?.label ??
+      registration.spec.label;
+    return [
+      { section: s.section, label: `${option} (${view?.label ?? s.section})` },
+    ];
+  });
+  const picked = draft.claim.spec.deletionPolicy ?? defaultPolicy;
+  return {
+    defaultPolicy,
+    keepAllowed,
+    alwaysDeleted,
+    policy: picked === "Orphan" && !keepAllowed ? "Delete" : picked,
+  };
 }

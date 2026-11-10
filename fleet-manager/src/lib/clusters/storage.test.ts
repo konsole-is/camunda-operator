@@ -9,6 +9,7 @@ import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageco
 import type { ClusterDraft } from "./draft";
 import {
   type StorageData,
+  deletionChoice,
   draftAccessPatterns,
   storageErrors,
   storageViews,
@@ -419,5 +420,127 @@ describe("draftAccessPatterns", () => {
         DATA,
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("deletionChoice", () => {
+  const keeping = (name: string, sections: string[]) =>
+    registration(name, { sections, deletionPolicies: ["Delete", "Orphan"] });
+  const data: StorageData = {
+    environment: undefined,
+    sections: SECTIONS,
+    registrations: [
+      keeping("s3", ["backup-storage"]),
+      registration("ephemeral", {
+        sections: ["backup-storage"],
+        label: "Ephemeral bucket",
+      }),
+      keeping("internal", ["access"]),
+    ],
+    objects: {},
+  };
+  const withEnvironment = (
+    deletionPolicy?: "Delete" | "Orphan",
+    backupDefault?: string,
+  ): StorageData => ({
+    ...data,
+    environment: {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "prod" },
+      spec: {
+        sections: {
+          "backup-storage": {
+            allowed: ["s3", "ephemeral"],
+            ...(backupDefault && { default: backupDefault }),
+          },
+          access: { allowed: ["internal"] },
+        },
+        ...(deletionPolicy && { deletionPolicy }),
+      },
+    } satisfies Environment,
+  });
+  const picking = (
+    backup: string,
+    policy?: "Delete" | "Orphan",
+  ): ClusterDraft => ({
+    ...draftWith({
+      "backup-storage": [{ section: "backup-storage", registration: backup }],
+      access: [{ section: "access", registration: "internal" }],
+    }),
+    ...(policy && {
+      claim: {
+        metadata: { name: "c1" },
+        spec: { presetRef: "small", deletionPolicy: policy },
+      },
+    }),
+  });
+
+  it("does not offer Keep when checkDeletionPolicy refuses Orphan", () => {
+    const choice = deletionChoice(picking("ephemeral"), data);
+
+    expect(choice.keepAllowed).toBe(false);
+    expect(choice.alwaysDeleted).toEqual([
+      { section: "backup-storage", label: "Ephemeral bucket (Backup storage)" },
+    ]);
+  });
+
+  it("offers Keep when every registration supports Orphan", () => {
+    const choice = deletionChoice(picking("s3"), data);
+
+    expect(choice.keepAllowed).toBe(true);
+    expect(choice.alwaysDeleted).toEqual([]);
+  });
+
+  it("does not offer Keep for a default that the step has not reported yet", () => {
+    expect(
+      deletionChoice(draftWith(), withEnvironment(undefined, "ephemeral"))
+        .keepAllowed,
+    ).toBe(false);
+  });
+
+  it("offers Keep for the picked empty option", () => {
+    expect(
+      deletionChoice(draftWith({ "backup-storage": [], access: [] }), data)
+        .keepAllowed,
+    ).toBe(true);
+  });
+
+  it("takes Delete as the default without an Environment", () => {
+    expect(deletionChoice(picking("s3"), data)).toMatchObject({
+      defaultPolicy: "Delete",
+      policy: "Delete",
+    });
+  });
+
+  it("takes Delete as the default of an Environment that sets none", () => {
+    expect(
+      deletionChoice(picking("s3"), withEnvironment()).defaultPolicy,
+    ).toBe("Delete");
+  });
+
+  it("takes the deletion default of the Environment", () => {
+    expect(
+      deletionChoice(picking("s3"), withEnvironment("Orphan")),
+    ).toMatchObject({ defaultPolicy: "Orphan", policy: "Orphan" });
+  });
+
+  it("takes the pick of the draft over the default", () => {
+    expect(
+      deletionChoice(picking("s3", "Delete"), withEnvironment("Orphan"))
+        .policy,
+    ).toBe("Delete");
+  });
+
+  it("falls back to Delete when the default keeps and a pick cannot", () => {
+    expect(
+      deletionChoice(picking("ephemeral"), withEnvironment("Orphan")),
+    ).toMatchObject({ defaultPolicy: "Orphan", policy: "Delete" });
+  });
+
+  it("falls back to Delete when the draft keeps and a pick cannot", () => {
+    expect(deletionChoice(picking("ephemeral", "Orphan"), data).policy).toBe(
+      "Delete",
+    );
   });
 });

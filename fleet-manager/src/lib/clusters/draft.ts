@@ -163,7 +163,8 @@ export function draftSelections(draft: ClusterDraft): PluginSelection[] {
  * of environment. platformConfigRef is set only when the pick differs from
  * spec.platformConfigRef of environment. plugins are draftSelections, left
  * out when empty. cluster and attachments are copied when the draft sets
- * them.
+ * them. deletionPolicy is set only when the pick differs from the deletion
+ * default of environment, which is Delete when unset.
  */
 export function clusterClaimOf(
   draft: ClusterDraft,
@@ -174,6 +175,10 @@ export function clusterClaimOf(
   const platformConfigRef =
     spec.platformConfigRef !== environment?.spec.platformConfigRef
       ? spec.platformConfigRef
+      : undefined;
+  const deletionPolicy =
+    spec.deletionPolicy !== (environment?.spec.deletionPolicy || "Delete")
+      ? spec.deletionPolicy
       : undefined;
   const plugins = draftSelections(draft);
   return {
@@ -187,6 +192,7 @@ export function clusterClaimOf(
       presetRef: spec.presetRef ?? "",
       ...(releaseRef !== undefined && { releaseRef }),
       ...(platformConfigRef !== undefined && { platformConfigRef }),
+      ...(deletionPolicy !== undefined && { deletionPolicy }),
       ...(spec.cluster && { cluster: spec.cluster }),
       ...(spec.attachments && { attachments: spec.attachments }),
       ...(plugins.length > 0 && { plugins }),

@@ -518,6 +518,41 @@ describe("clusterClaimOf", () => {
     expect(spec.attachments).toEqual({ optimize: {} });
   });
 
+  it("writes Delete when the default keeps and a pick cannot", () => {
+    const keeps = environment("prod", { deletionPolicy: "Orphan" });
+
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", deletionPolicy: "Delete" }),
+        keeps,
+      ).spec.deletionPolicy,
+    ).toBe("Delete");
+  });
+
+  it("writes no deletion policy when the pick is the default", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", deletionPolicy: "Delete" }),
+        undefined,
+      ).spec,
+    ).not.toHaveProperty("deletionPolicy");
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", deletionPolicy: "Orphan" }),
+        environment("prod", { deletionPolicy: "Orphan" }),
+      ).spec,
+    ).not.toHaveProperty("deletionPolicy");
+  });
+
+  it("writes Orphan when the default deletes", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", deletionPolicy: "Orphan" }),
+        env,
+      ).spec.deletionPolicy,
+    ).toBe("Orphan");
+  });
+
   it("names the claim and its namespace", () => {
     expect(clusterClaimOf(draftWith({ presetRef: "small" }), env)).toEqual({
       apiVersion: "fleet.camunda.io/v1alpha1",
