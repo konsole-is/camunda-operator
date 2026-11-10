@@ -119,7 +119,7 @@ export const SPEC_FIELDS = {
   documentStorageRef: "brokers",
   backup: "brokers",
   suspend: "brokers",
-  connectors: "others",
+  connectors: "brokers",
   monitoring: "outside",
   pause: "outside",
 } as const satisfies Record<keyof CamundaClusterSpec, FieldReach>;
@@ -152,10 +152,10 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
 
 /**
  * restartsBrokers says whether the change restarts the broker pods. It is
- * the decision of the impact lines that restart the brokers, such as
- * "Broker pods restart.". It is true also when the review cannot decide: for
- * a change of a section, a preset or a release that the input does not hold,
- * or a new Camunda version or secondary storage of the cluster.
+ * true exactly when an impact line of the change says that the brokers
+ * restart or can restart. It is true also when the review cannot decide: for
+ * a change of a section, or a preset or a release that the input does not
+ * hold.
  */
 export function restartsBrokers(input: ClusterChangeInput): boolean {
   return impactsOf(input).brokers;
@@ -173,17 +173,19 @@ function impactsOf(input: ClusterChangeInput): {
   const changed = (name: keyof typeof was) => !equalJSON(was[name], is[name]);
   const cluster = clusterChanges(input);
   const lines = new Set<string>();
-  let brokers = undecided(input, before.spec, after.spec);
+  let brokers = false;
   const restart = (p: Process) => {
     lines.add(`${PROCESS_NAME[p]} pods restart.`);
     if (p === "zeebe") brokers = true;
   };
 
   // The config hash of every process takes the name and the generation of
-  // the preset, the release, and the platform config of the cluster.
-  const restartsAll = (
-    ["presetRef", "releaseRef", "platformConfigRef"] as const
-  ).some((name) => changed(name) && refs[name] !== live.spec[name]);
+  // the release, the platform config, and the storage of the cluster, and
+  // the name and the fingerprint of the preset.
+  const restartsAll =
+    (["presetRef", "releaseRef", "platformConfigRef"] as const).some(
+      (name) => changed(name) && refs[name] !== live.spec[name],
+    ) || before.spec.storageRef !== after.spec.storageRef;
   if (restartsAll) {
     lines.add(RESTART_ALL);
     brokers = true;
@@ -217,14 +219,19 @@ function impactsOf(input: ClusterChangeInput): {
     else applies.push(`Applies when ${PROCESS_NAME[process]} runs standalone.`);
   }
 
+  // A new version changes the image of every process except the connectors,
+  // which take connectors.version.
+  const newImage = (process: Process) =>
+    process !== "connectors" && before.spec.version !== after.spec.version;
   if (!restartsAll)
     for (const { process } of boxes)
       if (
         had.has(process) &&
-        !equalJSON(
-          podInputs(before.spec, input, process),
-          podInputs(after.spec, input, process),
-        )
+        (newImage(process) ||
+          !equalJSON(
+            podInputs(before.spec, input, process),
+            podInputs(after.spec, input, process),
+          ))
       )
         restart(process);
   for (const line of applies) lines.add(line);
@@ -232,11 +239,11 @@ function impactsOf(input: ClusterChangeInput): {
   if (
     cluster.some(([first]) => "field" in first && CLUSTER_WIDE.has(first.field))
   ) {
+    if (!equalJSON(brokerPod(before.spec), brokerPod(after.spec)))
+      restart("zeebe");
     lines.add(
       "Every process restarts, except the processes that set the field themselves.",
     );
-    if (!equalJSON(brokerPod(before.spec), brokerPod(after.spec)))
-      brokers = true;
   }
 
   const modes = modeLines(input, before.spec, after.spec);
@@ -278,18 +285,19 @@ function impactsOf(input: ClusterChangeInput): {
   )
     lines.add("Nothing restarts.");
 
+  if (!brokers && undecided(input)) {
+    lines.add("Broker pods can restart.");
+    brokers = true;
+  }
+
   return { lines: [...lines], brokers };
 }
 
-// undecided says whether the change can restart the brokers in a way that
-// the impact lines do not show. A preset or a release that the input does
-// not hold makes the merged specs wrong. A section fills slot fields of the
-// cluster only after its outputs change.
-function undecided(
-  input: ClusterChangeInput,
-  before: CamundaClusterSpec,
-  after: CamundaClusterSpec,
-): boolean {
+// undecided says whether the review cannot tell if the change restarts the
+// brokers. A preset or a release that the input does not hold makes the
+// merged specs wrong. A section fills slot fields of the cluster only after
+// its outputs change.
+function undecided(input: ClusterChangeInput): boolean {
   const refs = clusterAfter(input);
   const held = (
     list: readonly { metadata?: { name?: string } }[],
@@ -307,15 +315,9 @@ function undecided(
   const keys = new Set([...Object.keys(was), ...Object.keys(is)]);
   if ([...keys].some((k) => !CLAIM_KEYS.has(k) && !equalJSON(was[k], is[k])))
     return true;
-  if (
-    clusterChanges(input).some(
-      ([first]) =>
-        !("field" in first) || !Object.hasOwn(SPEC_FIELDS, first.field),
-    )
-  )
-    return true;
-  return (
-    before.version !== after.version || before.storageRef !== after.storageRef
+  return clusterChanges(input).some(
+    ([first]) =>
+      !("field" in first) || !Object.hasOwn(SPEC_FIELDS, first.field),
   );
 }
 

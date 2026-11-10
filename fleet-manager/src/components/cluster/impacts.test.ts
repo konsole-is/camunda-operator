@@ -328,6 +328,7 @@ describe("clusterImpacts", () => {
         ),
       ),
     ).toEqual([
+      "Broker pods restart.",
       "Every process restarts, except the processes that set the field themselves.",
     ]);
   });
@@ -358,6 +359,7 @@ describe("clusterImpacts", () => {
     expect(
       clusterImpacts(input(set(cluster("podAnnotations", "team"), "a"))),
     ).toEqual([
+      "Broker pods restart.",
       "Every process restarts, except the processes that set the field themselves.",
     ]);
   });
@@ -626,6 +628,16 @@ describe("clusterImpacts", () => {
       );
     });
 
+    it("a new Camunda version restarts every process except the connectors", () => {
+      expect(impacts(set(cluster("version"), "8.9.6"))).toEqual(EVERY_UNIFIED);
+    });
+
+    it("a new secondary storage restarts every process", () => {
+      expect(impacts(set(cluster("storageRef"), "other"))).toEqual([
+        RESTART_ALL,
+      ]);
+    });
+
     it("the service account restarts every process except the connectors", () => {
       expect(
         impacts(set(cluster("serviceAccount", "annotations", "team"), "a")),
@@ -773,7 +785,10 @@ describe("clusterImpacts", () => {
           ),
         ),
       ),
-    ).toEqual(["The Access option applies the new value."]);
+    ).toEqual([
+      "The Access option applies the new value.",
+      "Broker pods can restart.",
+    ]);
   });
 
   it("a deletion policy restarts nothing", () => {
@@ -886,6 +901,7 @@ describe("mergedSpecs", () => {
     });
     expect(mergedSpecs(i).after.spec.scheduling).toEqual({});
     expect(clusterImpacts(i)).toEqual([
+      "Broker pods restart.",
       "Every process restarts, except the processes that set the field themselves.",
     ]);
   });
@@ -899,6 +915,7 @@ describe("mergedSpecs", () => {
     });
     expect(mergedSpecs(i).after.spec.extraEnv).toEqual([a, b]);
     expect(clusterImpacts(i)).toEqual([
+      "Broker pods restart.",
       "Every process restarts, except the processes that set the field themselves.",
     ]);
   });
@@ -941,6 +958,7 @@ describe("mergedSpecs", () => {
     );
     expect(mergedSpecs(i).after.spec.scheduling).toEqual({ tolerations });
     expect(clusterImpacts(i)).toEqual([
+      "Broker pods restart.",
       "Every process restarts, except the processes that set the field themselves.",
     ]);
   });
@@ -1225,15 +1243,41 @@ describe("restartsBrokers", () => {
     ).toBe(true);
   });
 
-  it("is true for every change whose impacts restart the brokers", () => {
+  it("is true exactly for the changes whose impacts restart the brokers", () => {
     const restarts = (line: string) =>
       line === "Broker pods restart." ||
+      line === "Broker pods can restart." ||
       line === RESTART_ALL ||
       line.endsWith("runs in the brokers, which restarts.") ||
       line === "Every workload goes to zero. The volumes stay.";
-    for (const [name, i] of cases)
-      if (clusterImpacts(i).some(restarts))
-        expect(restartsBrokers(i), name).toBe(true);
+    for (const [name, i] of [
+      ...cases,
+      [
+        "a release that the lists do not hold",
+        input(set([f("spec"), f("releaseRef")], "camunda-8-11-0")),
+      ] as const,
+    ])
+      expect(restartsBrokers(i), name).toBe(clusterImpacts(i).some(restarts));
+  });
+
+  it("is false for a change of each field that cannot restart the brokers", () => {
+    const values: Record<string, unknown> = {
+      monitoring: { serviceMonitor: { enabled: true } },
+      pause: true,
+    };
+    const fields = Object.entries(SPEC_FIELDS)
+      .filter(([, reach]) => reach !== "brokers")
+      .map(([field]) => field);
+    expect(fields.sort()).toEqual(Object.keys(values).sort());
+    for (const field of fields)
+      expect(
+        restartsBrokers(input(set(cluster(field), values[field]))),
+        field,
+      ).toBe(false);
+  });
+
+  it("classifies the connectors as a field that can restart the brokers", () => {
+    expect(SPEC_FIELDS.connectors).toBe("brokers");
   });
 
   it("classifies every top-level field of CamundaClusterSpec", () => {
