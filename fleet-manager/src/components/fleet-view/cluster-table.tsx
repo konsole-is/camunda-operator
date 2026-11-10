@@ -2,9 +2,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { age } from "@/components/fleet/age";
 import { DataTable } from "@/components/fleet/data-table";
+import { Button } from "@/components/ui/button";
 import { CHIP_TONE } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { cn } from "@/lib/utils";
+import type { RefKey } from "@/lib/write/types";
 import { ComponentDots } from "./component-dots";
 import type { ClusterRow, WaitingRow } from "./model";
 
@@ -88,13 +90,18 @@ export function ClusterTable({
   );
 }
 
-/** WaitingTable lists the claims that wait for GitOps, with their file and the age of the push. */
+/**
+ * WaitingTable lists the claims that wait for GitOps, with their file and the
+ * age of the push. Stop waiting gives the key of the push to onStopWaiting.
+ */
 export function WaitingTable({
   rows,
   now,
+  onStopWaiting,
 }: {
   rows: WaitingRow[];
   now: string;
+  onStopWaiting?: (key: RefKey) => void;
 }): ReactNode {
   return (
     <DataTable
@@ -105,6 +112,7 @@ export function WaitingTable({
         { key: "status", label: "Status" },
         { key: "file", label: "File" },
         { key: "pushed", label: "Pushed" },
+        { key: "stop", label: "" },
       ]}
       rows={rows.map((row) => ({
         id: row.id,
@@ -119,6 +127,15 @@ export function WaitingTable({
           file: <code className="font-mono text-xs break-all">{row.path}</code>,
           pushed: (
             <span className="whitespace-nowrap">{`${age(row.pushedAt, now)} ago`}</span>
+          ),
+          stop: (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onStopWaiting?.(row.key)}
+            >
+              Stop waiting
+            </Button>
           ),
         },
       }))}

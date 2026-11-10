@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PendingPush } from "@/components/fleet/git-pushes";
@@ -13,6 +14,7 @@ const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
   calls: [] as string[],
   pushes: [] as unknown[],
+  settled: [] as string[],
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => {
@@ -21,13 +23,17 @@ vi.mock("@/lib/k8s/hooks", () => ({
   },
 }));
 vi.mock("@/components/fleet/git-pushes", () => ({
-  useGitPushes: () => ({ pushes: live.pushes }),
+  useGitPushes: () => ({
+    pushes: live.pushes,
+    settle: (key: string) => live.settled.push(key),
+  }),
 }));
 
 beforeEach(() => {
   live.objects = {};
   live.calls = [];
   live.pushes = [];
+  live.settled = [];
 });
 afterEach(cleanup);
 
@@ -419,6 +425,79 @@ describe("FleetView", () => {
     ).toBeNull();
   });
 
+  it("removes a waiting row and its namespace on Stop waiting", async () => {
+    function Harness() {
+      const [pushes, setPushes] = useState([push("team-x", "returns")]);
+      return view({
+        pushes,
+        onStopWaiting: (key) =>
+          setPushes((old) => old.filter((p) => p.key !== key)),
+      });
+    }
+    render(<Harness />);
+    const namespaces = () =>
+      within(screen.getByRole("combobox", { name: "Namespace" }))
+        .getAllByRole("option")
+        .map((o) => o.textContent);
+    expect(namespaces()).toContain("team-x");
+    await userEvent.click(screen.getByRole("button", { name: "Stop waiting" }));
+    expect(
+      screen.queryByRole("region", { name: "Waiting for GitOps" }),
+    ).toBeNull();
+    expect(namespaces()).not.toContain("team-x");
+  });
+
+  it("lists the namespaces of the selected tab and of the waiting rows", async () => {
+    render(view({ pushes: [push("team-x", "returns")] }));
+    await userEvent.click(screen.getByRole("tab", { name: /Production/ }));
+    expect(
+      within(screen.getByRole("combobox", { name: "Namespace" }))
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["All", "prod", "team-x"]);
+  });
+
+  it("does not say that the fleet is empty when the clusters cannot be read", () => {
+    render(
+      view({
+        sources: sources(),
+        planes: [],
+        errors: [{ kind: "CamundaCluster", message: "forbidden" }],
+      }),
+    );
+    expect(screen.getByRole("alert").textContent).toContain("CamundaCluster");
+    expect(screen.queryByText(/No Camunda cluster yet/)).toBeNull();
+  });
+
+  it("does not say that the fleet is empty when the claims cannot be read", () => {
+    render(
+      view({
+        sources: sources(),
+        planes: [],
+        errors: [{ kind: "CamundaClusterClaim", message: "forbidden" }],
+      }),
+    );
+    expect(screen.queryByText(/No Camunda cluster yet/)).toBeNull();
+  });
+
+  it("gives a tab its full label as a hover text", () => {
+    const long =
+      "Production in the European Union, west region, blue and green";
+    render(
+      view({
+        sources: {
+          ...fleet,
+          environments: [environment("production", long)],
+        },
+      }),
+    );
+    expect(
+      screen
+        .getByRole("tab", { name: new RegExp(long) })
+        .querySelector(`[title="${long}"]`),
+    ).toBeTruthy();
+  });
+
   it("adds no Git banner of its own", () => {
     render(view({ pushes: [push("team-x", "returns")] }));
     expect(screen.queryByText("Waiting for GitOps to apply")).toBeNull();
@@ -477,6 +556,13 @@ const KINDS = [
 const initial: FleetPageData = { ...fleet, planes: planeSources };
 
 describe("FleetViewLive", () => {
+  it("stops waiting for a push of this browser tab", async () => {
+    live.pushes = [push("team-x", "returns")];
+    render(<FleetViewLive initial={initial} now={NOW} />);
+    await userEvent.click(screen.getByRole("button", { name: "Stop waiting" }));
+    expect(live.settled).toEqual(["CamundaClusterClaim/team-x/returns"]);
+  });
+
   it("follows the lists of the fleet view and never pods, logs, or events", () => {
     render(<FleetViewLive initial={initial} now={NOW} />);
     expect(new Set(live.calls)).toEqual(new Set(KINDS));

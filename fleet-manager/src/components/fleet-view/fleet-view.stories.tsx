@@ -271,6 +271,33 @@ export const fleetViewStories: Story[] = [
   },
   {
     component: "FleetView",
+    name: "Long environment names",
+    render: () => (
+      <FleetView
+        sources={{
+          ...fleet,
+          environments: [
+            environment(
+              "production",
+              "Production in the European Union, west region, blue and green",
+              "#3dd68c",
+            ),
+            environment(
+              "staging",
+              "Staging for the payments and the orders teams, shared cluster",
+              "#ffc14d",
+            ),
+            environment("development", "Development", "#5b9bff"),
+          ],
+        }}
+        planes={planes}
+        pushes={[]}
+        now={NOW}
+      />
+    ),
+  },
+  {
+    component: "FleetView",
     name: "No environments",
     render: () => (
       <FleetView

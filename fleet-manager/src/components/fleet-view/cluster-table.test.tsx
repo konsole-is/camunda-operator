@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BackupRow } from "@/components/cluster/backups";
 import { ClusterTable, WaitingTable } from "./cluster-table";
 import type { ClusterRow } from "./model";
@@ -154,6 +155,7 @@ describe("WaitingTable", () => {
         rows={[
           {
             id: "push/CamundaClusterClaim/team-x/returns",
+            key: "CamundaClusterClaim/team-x/returns",
             namespace: "team-x",
             name: "returns",
             path: "clusters/team-x/returns.yaml",
@@ -165,7 +167,7 @@ describe("WaitingTable", () => {
     );
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
-    ).toEqual(["Cluster", "Status", "File", "Pushed"]);
+    ).toEqual(["Cluster", "Status", "File", "Pushed", ""]);
     const cells = within(rowOf("returns"))
       .getAllByRole("cell")
       .map((c) => c.textContent);
@@ -174,6 +176,31 @@ describe("WaitingTable", () => {
       "Waiting for GitOps",
       "clusters/team-x/returns.yaml",
       "2m ago",
+      "Stop waiting",
     ]);
+  });
+
+  it("gives the key of the push to onStopWaiting", async () => {
+    const onStopWaiting = vi.fn();
+    render(
+      <WaitingTable
+        rows={[
+          {
+            id: "push/CamundaClusterClaim/team-x/returns",
+            key: "CamundaClusterClaim/team-x/returns",
+            namespace: "team-x",
+            name: "returns",
+            path: "clusters/team-x/returns.yaml",
+            pushedAt: "2026-11-10T11:58:00Z",
+          },
+        ]}
+        now={NOW}
+        onStopWaiting={onStopWaiting}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Stop waiting" }));
+    expect(onStopWaiting).toHaveBeenCalledWith(
+      "CamundaClusterClaim/team-x/returns",
+    );
   });
 });

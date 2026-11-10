@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResources } from "@/lib/k8s/hooks";
+import type { RefKey } from "@/lib/write/types";
 import { ClusterTable, WaitingTable } from "./cluster-table";
 import {
   ALL_TAB,
@@ -49,6 +50,10 @@ const EMPTY_FLEET =
 
 const isReady = (row: ClusterRow) => row.ready?.status === "True";
 
+// A failed read of one of these kinds leaves the fleet without rows, so the
+// page does not say that the fleet is empty.
+const UNREAD_EMPTY = ["CamundaCluster", "CamundaClusterClaim"];
+
 /** FleetView is the fleet page on the given lists. It fetches nothing. */
 export function FleetView({
   sources,
@@ -56,12 +61,14 @@ export function FleetView({
   pushes,
   errors = [],
   now,
+  onStopWaiting,
 }: {
   sources: FleetSources;
   planes: Plane[];
   pushes: PendingPush[];
   errors?: ReadError[];
   now: string;
+  onStopWaiting?: (key: RefKey) => void;
 }): ReactNode {
   const [tab, setTab] = useState(ALL_TAB);
   const [filter, setFilter] = useState<RowFilter>({
@@ -84,6 +91,8 @@ export function FleetView({
       filter={filter}
       onFilter={setFilter}
       now={now}
+      unread={errors.some((e) => UNREAD_EMPTY.includes(e.kind))}
+      onStopWaiting={onStopWaiting}
     />
   );
 
@@ -111,7 +120,7 @@ export function FleetView({
               <TabsTrigger
                 key={t.value}
                 value={t.value}
-                className="flex-none px-2.5"
+                className="max-w-full min-w-0 flex-none px-2.5"
               >
                 {t.color && (
                   <span
@@ -121,7 +130,9 @@ export function FleetView({
                     style={{ backgroundColor: t.color }}
                   />
                 )}
-                <span>{t.label}</span>
+                <span title={t.label} className="truncate">
+                  {t.label}
+                </span>
                 <span className="text-xs text-muted tabular-nums">
                   {t.count}
                 </span>
@@ -150,6 +161,8 @@ function TabContent({
   filter,
   onFilter,
   now,
+  unread,
+  onStopWaiting,
 }: {
   tab?: string;
   rows: ClusterRow[];
@@ -159,6 +172,8 @@ function TabContent({
   filter: RowFilter;
   onFilter: (filter: RowFilter) => void;
   now: string;
+  unread: boolean;
+  onStopWaiting?: (key: RefKey) => void;
 }) {
   const environment =
     tab === undefined || tab === ALL_TAB
@@ -169,7 +184,12 @@ function TabContent({
             (e) => environmentTabValue(e.metadata.name ?? "") === tab,
           )?.metadata.name;
   const shownPlanes = planesIn(planes, environment);
-  const namespaces = rowNamespaces([...rows, ...waiting]);
+  const namespaces = rowNamespaces([
+    ...groupRows(rows, sources.environments, tab ?? ALL_TAB).flatMap(
+      (g) => g.rows,
+    ),
+    ...waiting,
+  ]);
   // A live update can remove the last row of the selected namespace. The
   // select then shows All, so the rows must not stay filtered by it.
   const active = namespaces.includes(filter.namespace)
@@ -181,7 +201,7 @@ function TabContent({
     tab ?? ALL_TAB,
   );
   const shownWaiting = filterRows(waiting, active, () => false);
-  const empty = rows.length === 0 && waiting.length === 0;
+  const empty = rows.length === 0 && waiting.length === 0 && !unread;
 
   return (
     <div className="flex flex-col gap-8">
@@ -215,7 +235,11 @@ function TabContent({
               namespaces={namespaces}
             />
             {shownWaiting.length > 0 && (
-              <WaitingTable rows={shownWaiting} now={now} />
+              <WaitingTable
+                rows={shownWaiting}
+                now={now}
+                onStopWaiting={onStopWaiting}
+              />
             )}
             {groups.length === 0 ? (
               <p className="text-sm text-muted">{NO_MATCH}</p>
@@ -359,7 +383,7 @@ export function FleetViewLive({
     initial.backups.filter((b) => b.kind === "LogicalBackupRDBMS"),
   );
   const planes = usePlanes(initial.planes);
-  const { pushes } = useGitPushes();
+  const { pushes, settle } = useGitPushes();
   const clock = useClock(now);
 
   const sources: FleetSources = useMemo(
@@ -421,6 +445,7 @@ export function FleetViewLive({
       pushes={pushes}
       errors={errors}
       now={clock}
+      onStopWaiting={settle}
     />
   );
 }

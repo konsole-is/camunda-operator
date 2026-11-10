@@ -531,6 +531,41 @@ describe("clusterRows", () => {
     expect(row.environment).toBeUndefined();
   });
 
+  it("gives each dot of a Many section the id of its section component", () => {
+    const [row] = clusterRows(
+      sources({
+        clusters: [cluster("team-a", "orders", { claim: "orders" })],
+        claims: [
+          claim("team-a", "orders", {
+            plugins: [
+              { section: "access", registration: "gateway-api" },
+              { section: "access", registration: "load-balancer" },
+            ],
+          }),
+        ],
+        sections: [
+          {
+            kind: "PluginSection",
+            metadata: { name: "access" },
+            spec: {
+              appliesTo: ["CamundaClusterClaim"],
+              label: "Access",
+              order: 60,
+              selection: "Many",
+            },
+          } as Resource<"PluginSection">,
+        ],
+      }),
+      NOW,
+    );
+    const ids = row.components.slice(-2).map((d) => d.id);
+    expect(ids).toEqual([
+      "section:access/gateway-api",
+      "section:access/load-balancer",
+    ]);
+    expect(ids).toEqual(row.sections.map((s) => s.id));
+  });
+
   it("gives the row of a managed cluster the section components of its claim", () => {
     const [row] = clusterRows(
       sources({
@@ -656,6 +691,7 @@ describe("waitingRows", () => {
     ).toEqual([
       {
         id: "push/CamundaClusterClaim/team-x/returns",
+        key: "CamundaClusterClaim/team-x/returns",
         namespace: "team-x",
         name: "returns",
         path: "clusters/team-x/returns.yaml",

@@ -14,6 +14,7 @@ import {
   sectionComponents,
 } from "@/lib/claims/sections";
 import type { Resource } from "@/lib/k8s/kinds";
+import type { RefKey } from "@/lib/write/types";
 import { CLAIM_LABEL, isManaged } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
 import { byCodeUnit, environmentNameOf } from "@/lib/policy";
@@ -67,6 +68,7 @@ export type ClusterRow = {
 /** WaitingRow is a claim that the fleet manager pushed to Git and that the cluster does not show yet. */
 export type WaitingRow = {
   id: string;
+  key: RefKey;
   namespace: string;
   name: string;
   path: string;
@@ -242,6 +244,7 @@ export function waitingRows(
     )
     .map((push) => ({
       id: `push/${push.key}`,
+      key: push.key,
       namespace: push.ref.namespace ?? "",
       name: push.ref.name,
       path: push.path,
