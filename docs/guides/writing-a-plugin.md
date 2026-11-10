@@ -256,6 +256,8 @@ The suite runs against a cluster that has these parts:
 
 The suite creates the namespace of the run and writes one request for each case into it. At the end, it deletes the requests and the namespace.
 
+Run the suite on a cluster of its own, such as the kind cluster of the job below. The check `ORDER-REGISTRATION-FIRST` scales the Deployment of the plugin to zero and deletes its registration. While it runs, the plugin serves no other request on that cluster. For the same reason, run one suite at a time against a plugin.
+
 ### Run the binary
 
 Write a config file, for example `conformance.yaml`:
