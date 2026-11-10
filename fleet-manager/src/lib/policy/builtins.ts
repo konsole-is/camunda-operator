@@ -8,6 +8,7 @@ import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageconfig";
 import { BUILTIN_CONTROLLER } from "@/lib/labels";
 import { byCodeUnit, own } from "./json";
+import { resolve } from "./resolve";
 import type { OptionView, ParameterRule, PluginSelection } from "./types";
 
 /** BuiltinSource is a kind whose objects a parameter of a built-in registration names. */
@@ -187,8 +188,8 @@ export function builtinOption(
   };
 }
 
-// With an Environment, a claim can use only the presets that it lists, as
-// checkAllowed decides.
+// With an Environment, the cards show the preset list of the Environment for
+// the kind.
 function presetItems<P extends { metadata: { name?: string } }>(
   presets: readonly P[],
   listed: readonly string[] | undefined,
@@ -236,25 +237,73 @@ function factsOf(facts: [string, unknown][]): Fact[] {
 
 /**
  * bucketNote returns the bucket line of a built-in registration that has a
- * bucket entry: "<label>: From <section label>" when selections hold a
- * selection in the section that its input reads, else "<label>: <none>".
- * It returns undefined for any other registration.
+ * bucket entry: "<label>: From <section label>" when the cluster or server
+ * writes to the bucket of the section that its input reads, "<label>: From
+ * the preset" when it writes to the bucket of its preset, else "<label>:
+ * <none>". The preset is the one that the selection of registration in
+ * selections resolves to under context.environment, read from
+ * context.objects. It returns undefined for any other registration, and
+ * when the line depends on a preset that is not known.
  */
 export function bucketNote(
   registration: PluginRegistration,
   selections: readonly PluginSelection[],
   sections: readonly PluginSection[],
+  context: BuiltinContext,
 ): string | undefined {
-  const bucket = builtinEntry(registration)?.bucket;
-  if (!bucket) return undefined;
+  const entry = builtinEntry(registration);
+  const bucket = entry?.bucket;
+  if (!entry || !bucket) return undefined;
   const from = registration.spec.inputs?.find(
     (i) => i.name === bucket.input,
   )?.from;
   const section = from?.split("/")[0];
-  if (section === undefined || !selections.some((s) => s.section === section)) {
-    return `${bucket.label}: ${bucket.none}`;
-  }
   const label =
     sections.find((s) => s.metadata.name === section)?.spec.label ?? section;
-  return `${bucket.label}: From ${label}`;
+  const fromSection = `${bucket.label}: From ${label}`;
+  const fromPreset = `${bucket.label}: From the preset`;
+  const none = `${bucket.label}: ${bucket.none}`;
+  const picked =
+    section !== undefined && selections.some((s) => s.section === section);
+  const name = presetOf(registration, selections, context.environment);
+
+  if (own(entry.lists, "preset") === "ElasticsearchClusterPreset") {
+    // The bucket input replaces the snapshot bucket of the preset.
+    if (picked) return fromSection;
+    const preset = context.objects.ElasticsearchClusterPreset?.find(
+      (p) => p.metadata.name === name,
+    );
+    if (!preset) return undefined;
+    return preset.spec.cluster.snapshotStorageRef ? fromPreset : none;
+  }
+  const preset = context.objects.DatabaseServerPreset?.find(
+    (p) => p.metadata.name === name,
+  );
+  if (!preset) return undefined;
+  // The PostgreSQL adapter takes the retention of the archive from the
+  // preset, and does not use the bucket input when the preset has none.
+  if (!preset.spec.server.archive) return none;
+  return picked ? fromSection : fromPreset;
+}
+
+function presetOf(
+  registration: PluginRegistration,
+  selections: readonly PluginSelection[],
+  environment: Environment | undefined,
+): unknown {
+  const name = registration.metadata.name ?? "";
+  const selection = selections.find((s) => s.registration === name);
+  const result = resolve({
+    environment,
+    registrations: [registration],
+    selections: [
+      {
+        section: selection?.section ?? registration.spec.sections[0] ?? "",
+        registration: name,
+        ...(selection?.parameters && { parameters: selection.parameters }),
+      },
+    ],
+  });
+  if (!("value" in result)) return undefined;
+  return result.value.requests?.[0]?.parameters?.preset;
 }

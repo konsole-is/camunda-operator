@@ -59,6 +59,7 @@ export function StorageStory({
         views={storageViews(flow.draft, data)}
         registrations={registrations}
         sections={sections}
+        context={{ environment, objects }}
         hosts={[]}
         conflicts={[]}
         onSection={(name, selections, errors) => {

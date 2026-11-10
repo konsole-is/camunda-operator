@@ -418,38 +418,129 @@ describe("builtinOption", () => {
 });
 
 describe("bucketNote", () => {
-  it("says From Backup storage when backup storage has a selection", () => {
+  const BUCKET = [{ section: "backup-storage", registration: "s3" }];
+  const objects = {
+    ElasticsearchClusterPreset: [
+      esPreset("with-snapshots", { snapshotStorageRef: "preset-bucket" }),
+      esPreset("no-snapshots", { replicas: 1 }),
+    ],
+    DatabaseServerPreset: [
+      dbPreset("with-archive", {
+        archive: { objectStorageRef: "preset-bucket", retentionPeriodDays: 7 },
+      }),
+      dbPreset("no-archive", { instances: 1 }),
+    ],
+  };
+  const locked = (registration: string, preset: string): BuiltinContext => ({
+    environment: environment({
+      parameters: { [registration]: { preset: { value: preset } } },
+    }),
+    objects,
+  });
+  const es = builtin("elasticsearch");
+  const pg = builtin("database-server");
+
+  it.each([
+    ["with-snapshots", BUCKET, "Snapshots: From Backup storage"],
+    ["no-snapshots", BUCKET, "Snapshots: From Backup storage"],
+    ["with-snapshots", [], "Snapshots: From the preset"],
+    ["no-snapshots", [], "Snapshots: No snapshots"],
+  ])(
+    "says the snapshot bucket of Elasticsearch with preset %s and backup storage %j",
+    (preset, selections, note) => {
+      expect(
+        bucketNote(es, selections, SECTIONS, locked("elasticsearch", preset)),
+      ).toBe(note);
+    },
+  );
+
+  it.each([
+    ["with-archive", BUCKET, "Archive: From Backup storage"],
+    ["no-archive", BUCKET, "Archive: No archive"],
+    ["with-archive", [], "Archive: From the preset"],
+    ["no-archive", [], "Archive: No archive"],
+  ])(
+    "says the archive bucket of PostgreSQL with preset %s and backup storage %j",
+    (preset, selections, note) => {
+      expect(
+        bucketNote(pg, selections, SECTIONS, locked("database-server", preset)),
+      ).toBe(note);
+    },
+  );
+
+  it("says From Backup storage for Elasticsearch whose preset is not known", () => {
     expect(
-      bucketNote(
-        builtin("elasticsearch"),
-        [{ section: "backup-storage", registration: "s3" }],
-        SECTIONS,
-      ),
+      bucketNote(es, BUCKET, SECTIONS, { environment: undefined, objects }),
     ).toBe("Snapshots: From Backup storage");
   });
 
-  it("says No snapshots without one", () => {
-    expect(bucketNote(builtin("elasticsearch"), [], SECTIONS)).toBe(
-      "Snapshots: No snapshots",
+  it.each([
+    ["Elasticsearch without backup storage", es, []],
+    ["PostgreSQL without backup storage", pg, []],
+    ["PostgreSQL with backup storage", pg, BUCKET],
+  ])(
+    "gives no line for %s while the preset is not known",
+    (_, registration, selections) => {
+      expect(
+        bucketNote(registration, selections, SECTIONS, {
+          environment: undefined,
+          objects,
+        }),
+      ).toBeUndefined();
+    },
+  );
+
+  it("gives no line for a preset that does not exist", () => {
+    expect(
+      bucketNote(pg, [], SECTIONS, locked("database-server", "gone")),
+    ).toBeUndefined();
+  });
+
+  it("reads the preset that the claim picks when the preset is claim-editable", () => {
+    const context = {
+      environment: environment({
+        parameters: {
+          "database-server": {
+            preset: { claimEditable: true, value: "no-archive" },
+          },
+        },
+      }),
+      objects,
+    };
+    const picked = {
+      section: "secondary-storage",
+      registration: "database-server",
+      parameters: { preset: "with-archive" },
+    };
+
+    expect(bucketNote(pg, [picked], SECTIONS, context)).toBe(
+      "Archive: From the preset",
     );
   });
 
-  it("says No archive for PostgreSQL without one, and From Backup storage with one", () => {
-    const pg = builtin("database-server");
+  it("ignores the pick of a locked preset", () => {
+    const picked = {
+      section: "secondary-storage",
+      registration: "database-server",
+      parameters: { preset: "with-archive" },
+    };
 
-    expect(bucketNote(pg, [], SECTIONS)).toBe("Archive: No archive");
     expect(
       bucketNote(
         pg,
-        [{ section: "backup-storage", registration: "s3" }],
+        [picked],
         SECTIONS,
+        locked("database-server", "no-archive"),
       ),
-    ).toBe("Archive: From Backup storage");
+    ).toBe("Archive: No archive");
   });
 
   it("gives nothing for a registration without a bucket entry", () => {
     expect(
-      bucketNote(builtin("existing-secondary-storage"), [], SECTIONS),
+      bucketNote(builtin("existing-secondary-storage"), [], SECTIONS, {
+        environment: undefined,
+        objects,
+      }),
     ).toBeUndefined();
   });
 
@@ -459,8 +550,9 @@ describe("bucketNote", () => {
         builtin("elasticsearch", {
           controller: { name: "someone-else", version: "1.0.0" },
         }),
-        [],
+        BUCKET,
         SECTIONS,
+        locked("elasticsearch", "with-snapshots"),
       ),
     ).toBeUndefined();
   });

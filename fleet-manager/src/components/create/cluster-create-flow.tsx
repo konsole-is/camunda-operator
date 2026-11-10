@@ -173,7 +173,7 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
         ? renderHosts(patterns, name, namespace)
         : [];
     const conflicts = hostConflicts(hosts, takenHosts(accessRequests));
-    return { views, presets, takenNames, hosts, conflicts };
+    return { environment, views, presets, takenNames, hosts, conflicts };
   };
 
   const checks: Record<string, CreateStep<ClusterDraft>["check"]> = {
@@ -202,7 +202,9 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
     Object.hasOwn(checks, step.id) ? { ...step, check: checks[step.id] } : step,
   );
   const flow = useCreateFlow({ steps, initial: INITIAL });
-  const { views, presets, takenNames, hosts, conflicts } = derive(flow.draft);
+  const { environment, views, presets, takenNames, hosts, conflicts } = derive(
+    flow.draft,
+  );
   // A claim must not select a section that step 2 no longer shows.
   const gone = Object.keys(flow.draft.storage ?? {}).filter(
     (name) => !views.some((v) => v.name === name),
@@ -252,6 +254,7 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
           views={views}
           registrations={registrations}
           sections={sections}
+          context={{ environment, objects }}
           hosts={hosts}
           conflicts={conflicts}
           onSection={onSection}

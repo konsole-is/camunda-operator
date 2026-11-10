@@ -8,6 +8,7 @@ import type { RenderedHost } from "@/lib/claims/hosts";
 import { type ClusterDraft, draftSelections } from "@/lib/clusters/draft";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
+  type BuiltinContext,
   type PluginSelection,
   type SectionView,
   bucketNote,
@@ -19,16 +20,17 @@ import type { ValidationError } from "@/lib/schema";
  * for each view, in order. A section that the step showed before restores
  * its selections from draft.storage; any other preselects its default.
  * Under the cards of a section it shows the bucket line of each picked
- * built-in option, and under the access cards the hosts and their
- * conflicts. A section with no option and no empty option says "Your admin
- * allows no option here." Each view keeps its object while its content does
- * not change.
+ * built-in option, with the presets of context, and under the access cards
+ * the hosts and their conflicts. A section with no option and no empty
+ * option says "Your admin allows no option here." Each view keeps its
+ * object while its content does not change.
  */
 export function ClusterStorageStep({
   draft,
   views,
   registrations,
   sections,
+  context,
   hosts,
   conflicts,
   onSection,
@@ -37,6 +39,7 @@ export function ClusterStorageStep({
   views: readonly SectionView[];
   registrations: readonly PluginRegistration[];
   sections: readonly PluginSection[];
+  context: BuiltinContext;
   hosts: readonly RenderedHost[];
   conflicts: readonly string[];
   onSection: (
@@ -56,7 +59,8 @@ export function ClusterStorageStep({
             (r) => r.metadata.name === s.registration,
           );
           const note =
-            registration && bucketNote(registration, selections, sections);
+            registration &&
+            bucketNote(registration, selections, sections, context);
           return note ? [note] : [];
         });
         return (

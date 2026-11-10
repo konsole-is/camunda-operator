@@ -262,6 +262,7 @@ function Harness({
       views={views}
       registrations={data.registrations}
       sections={data.sections}
+      context={{ environment: data.environment, objects: data.objects }}
       hosts={[]}
       conflicts={[]}
       onSection={(name, selections, errors) => {
@@ -343,6 +344,11 @@ describe("ClusterStorageStep", () => {
     expect(within(presets).getByText("small")).toBeTruthy();
     expect(within(presets).getByText("large")).toBeTruthy();
     expect(within(presets).getAllByText("Nodes")).toHaveLength(2);
+    expect(screen.queryByText(/^Snapshots:/)).toBeNull();
+
+    await userEvent.click(
+      within(presets).getByRole("radio", { name: /^small/ }),
+    );
     expect(screen.getByText("Snapshots: No snapshots")).toBeTruthy();
 
     await userEvent.click(radio(/S3 bucket/));
