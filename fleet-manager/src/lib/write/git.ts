@@ -16,7 +16,7 @@ import gitHttp from "isomorphic-git/http/node";
 import { parse } from "yaml";
 import { REVISION_ANNOTATION, isDNSLabel, isDNSSubdomain } from "@/lib/labels";
 import { inOrder } from "@/lib/serial";
-import { apiErrorsOf, reasonOf, staleError } from "./errors";
+import { apiErrorsOf, existsError, reasonOf, staleError } from "./errors";
 import { type GitAuthor, gitCredentials } from "./git-auth";
 import {
   appliedClientSide,
@@ -36,7 +36,9 @@ import type {
   WriteResult,
   Writer,
 } from "./types";
+import { createdObjects } from "./refs";
 import {
+  inNewNamespaces,
   kindInfoOf,
   previewObject,
   refKey,
@@ -99,7 +101,9 @@ type Remote = {
  * apply makes no commit when the fleet manager does not write a ref, a
  * Secret is in the change (Invalid), an object with a precondition changed
  * or was deleted in the cluster (Stale) or has a file that GitOps has not
- * applied yet (Conflict), or the dry run against the cluster fails. The
+ * applied yet (Conflict), an object of create exists in the cluster or has
+ * a file in the repository (Stale), or the dry run against the cluster
+ * fails. The
  * dry run skips an ExternalSecret and an object in a namespace that the
  * same change creates. The preview shows them as rendered. The dry run of
  * an object that GitOps applied with server-side apply, or of a custom
@@ -166,22 +170,11 @@ export function gitWriter(options: GitWriterOptions): Writer {
   // notDryRun returns the objects that the API server cannot dry-run: an
   // ExternalSecret, which the app may not write, and an object in a
   // namespace that only this change creates.
-  const notDryRun = async (change: Change): Promise<Set<KubeObject>> => {
-    const created = new Set<string>();
-    for (const object of change.apply) {
-      if (object.kind !== "Namespace") continue;
-      const exists = await read(refOf(object));
-      if (exists === undefined) created.add(object.metadata.name);
-    }
-    return new Set(
-      change.apply.filter(
-        (o) =>
-          o.kind === "ExternalSecret" ||
-          (o.metadata.namespace !== undefined &&
-            created.has(o.metadata.namespace)),
-      ),
-    );
-  };
+  const notDryRun = async (change: Change): Promise<Set<KubeObject>> =>
+    new Set([
+      ...change.apply.filter((o) => o.kind === "ExternalSecret"),
+      ...(await inNewNamespaces(change.apply, read)),
+    ]);
 
   // asGitOps marks each object that GitOps applied with server-side apply,
   // and each custom resource that GitOps applied with client-side apply, so
@@ -240,6 +233,19 @@ export function gitWriter(options: GitWriterOptions): Writer {
     return errors;
   };
 
+  const existErrors = async (change: Change): Promise<ApiError[]> => {
+    const errors: ApiError[] = [];
+    for (const object of createdObjects(change)) {
+      const ref = refOf(object);
+      try {
+        if ((await read(ref)) !== undefined) errors.push(existsError(ref));
+      } catch (error) {
+        errors.push(...apiErrorsOf(error, ref, false));
+      }
+    }
+    return errors;
+  };
+
   const apply = async (change: Change): Promise<WriteResult> => {
     if (change.directOnly) return direct.apply(change);
     return inOrder(`git ${target.url} ${target.branch}`, async () => {
@@ -247,6 +253,8 @@ export function gitWriter(options: GitWriterOptions): Writer {
       if (refusals.length > 0) return { ok: false, errors: refusals };
       const stale = await staleErrors(change);
       if (stale.length > 0) return { ok: false, errors: stale };
+      const existing = await existErrors(change);
+      if (existing.length > 0) return { ok: false, errors: existing };
       const { errors } = await preview(change);
       if (errors.length > 0) return { ok: false, errors };
       return commitChange(change);
@@ -325,6 +333,29 @@ export function gitWriter(options: GitWriterOptions): Writer {
     return errors;
   };
 
+  // A file of create can be in the repository while GitOps has not applied
+  // it yet, so the object is not in the cluster.
+  const takenErrors = async (
+    dir: string,
+    base: string,
+    change: Change,
+  ): Promise<ApiError[]> => {
+    const errors: ApiError[] = [];
+    for (const object of createdObjects(change)) {
+      const ref = refOf(object);
+      const file = gitPath(base, kindInfoOf(ref.kind)!, ref);
+      // writeFiles refuses a file behind a link.
+      if (await throughLink(dir, file)) continue;
+      if (!(await exists(path.join(dir, file)))) continue;
+      errors.push({
+        code: "Stale",
+        message: `${file} in ${target.url} already holds the ${ref.kind} ${ref.name}. Pick another name.`,
+        ref,
+      });
+    }
+    return errors;
+  };
+
   const pushChange = async (
     remote: Remote,
     base: string,
@@ -350,6 +381,8 @@ export function gitWriter(options: GitWriterOptions): Writer {
     const cloned = await git.resolveRef({ fs, dir, ref: "HEAD" });
     const pending = await pendingErrors(dir, base, change);
     if (pending.length > 0) return failure(...pending);
+    const taken = await takenErrors(dir, base, change);
+    if (taken.length > 0) return failure(...taken);
 
     const written = await writeFiles(dir, base, change);
     if (!written.ok) return failure(...written.errors);
