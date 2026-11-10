@@ -237,6 +237,29 @@ describe("storageErrors", () => {
     ]);
   });
 
+  it("counts the default of a required section that the step has not reported yet", () => {
+    const withDefault = {
+      ...data,
+      environment: {
+        ...required,
+        spec: {
+          sections: {
+            "secondary-storage": {
+              allowed: ["existing-secondary-storage"],
+              default: "existing-secondary-storage",
+              required: true,
+            },
+          },
+        },
+      },
+    };
+    const draft = draftWith();
+
+    expect(
+      storageErrors(draft, storageViews(draft, withDefault), {}, []),
+    ).toEqual([]);
+  });
+
   it("asks for another option when the picked one is disabled now", () => {
     const draft = draftWith({
       "secondary-storage": [

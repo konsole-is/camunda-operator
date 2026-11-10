@@ -73,7 +73,9 @@ export function storageViews(
  * <label>"), a required section without a selection ("Choose an option for
  * <label>"), and a card error other than the required one ("Fix the <label>
  * settings"), at most one of each per section. Then conflicts. cardErrors
- * are the errors that SectionCards reported, by section name.
+ * are the errors that SectionCards reported, by section name. A section
+ * that draft.storage does not hold yet counts its enabled default option as
+ * picked, as SectionCards preselects it.
  */
 export function storageErrors(
   draft: ClusterDraft,
@@ -83,9 +85,14 @@ export function storageErrors(
 ): string[] {
   const errors: string[] = [];
   for (const view of views) {
+    const preselected = view.options.find(
+      (o) => o.isDefault && !o.disabledReason,
+    );
     const selections = Object.hasOwn(draft.storage ?? {}, view.name)
       ? draft.storage![view.name]
-      : [];
+      : preselected
+        ? [{ section: view.name, registration: preselected.registration }]
+        : [];
     const unusable = selections.some((s) => {
       const option = view.options.find(
         (o) => o.registration === s.registration,
