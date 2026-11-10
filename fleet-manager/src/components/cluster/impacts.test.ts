@@ -1094,6 +1094,11 @@ describe("restartsBrokers", () => {
       false,
     ],
     [
+      "a cluster-wide label that the operator sets itself",
+      input(set(cluster("podLabels", "camunda.io/component"), "custom")),
+      false,
+    ],
+    [
       "a cluster-wide label with the name of a hash annotation",
       input(set(cluster("podLabels", "camunda.io/config-hash"), "a")),
       true,

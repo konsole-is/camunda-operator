@@ -77,10 +77,16 @@ const CLAIM_KEYS = new Set([
   "allowVersionDowngrade",
 ]);
 
-// The operator keeps neither annotation of the user on a pod template.
+// The operator keeps none of these keys of the user on a pod template.
 const OPERATOR_ANNOTATIONS = [
   "camunda.io/config-hash",
   "camunda.io/service-account-hash",
+];
+const OPERATOR_LABELS = [
+  "camunda.io/cluster",
+  "camunda.io/cluster-uid",
+  "camunda.io/component",
+  "camunda.io/storage-claim",
 ];
 
 /**
@@ -350,9 +356,14 @@ function brokerPod(spec: CamundaClusterSpec): unknown {
     ...zeebe.podAnnotations,
   };
   for (const key of OPERATOR_ANNOTATIONS) delete annotations[key];
+  const labels: Record<string, string> = {
+    ...spec.podLabels,
+    ...zeebe.podLabels,
+  };
+  for (const key of OPERATOR_LABELS) delete labels[key];
   return {
     scheduling: spec.zeebe?.scheduling ?? spec.scheduling,
-    podLabels: { ...spec.podLabels, ...zeebe.podLabels },
+    podLabels: labels,
     podAnnotations: annotations,
     extraEnv: [...env.values()],
     extraEnvFrom: [
