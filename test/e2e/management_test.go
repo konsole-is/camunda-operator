@@ -1616,12 +1616,12 @@ func oidcManagementClientSecret() *corev1.Secret {
 }
 
 // oidcIssuerURL is the issuer of the realm that testdata/keycloak.yaml serves
-// in namespace.
-func oidcIssuerURL(namespace string) string {
-	return fmt.Sprintf("http://keycloak.%s.svc:8080/realms/%s", namespace, ccOIDCRealm)
+// in realmNamespace.
+func oidcIssuerURL(realmNamespace string) string {
+	return fmt.Sprintf("http://keycloak.%s.svc:8080/realms/%s", realmNamespace, ccOIDCRealm)
 }
 
-// oidcManagementPlatformConfig returns the platform config name of a
+// oidcManagementPlatformConfig returns the platform config, named name, of a
 // management plane in the oidc mode: the realm of testdata/keycloak.yaml in
 // realmNamespace, and the client of every component that authenticates
 // through it.

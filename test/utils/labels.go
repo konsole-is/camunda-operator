@@ -38,6 +38,7 @@ const (
 	LabelExample                   = "example"
 	LabelBuiltinRegistrations      = "builtin-registrations"
 	LabelBuiltinRegistrationsOrder = "builtin-registrations-order"
+	LabelClusterClaim              = "cluster-claim"
 	LabelPlaneClaim                = "plane-claim"
 )
 
@@ -57,6 +58,7 @@ var AllLabels = []string{
 	LabelExample,
 	LabelBuiltinRegistrations,
 	LabelBuiltinRegistrationsOrder,
+	LabelClusterClaim,
 	LabelPlaneClaim,
 }
 
