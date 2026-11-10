@@ -343,18 +343,15 @@ function brokerPod(spec: CamundaClusterSpec): unknown {
     ...sources.flatMap((s) => s.extraEnv ?? []),
   ])
     env.set(e.name, e);
-  const meta = (
-    cluster: Record<string, string> | undefined,
-    own: Record<string, string> | undefined,
-  ) => {
-    const merged: Record<string, string> = { ...cluster, ...own };
-    for (const key of OPERATOR_ANNOTATIONS) delete merged[key];
-    return merged;
+  const annotations: Record<string, string> = {
+    ...spec.podAnnotations,
+    ...zeebe.podAnnotations,
   };
+  for (const key of OPERATOR_ANNOTATIONS) delete annotations[key];
   return {
     scheduling: spec.zeebe?.scheduling ?? spec.scheduling,
-    podLabels: meta(spec.podLabels, zeebe.podLabels),
-    podAnnotations: meta(spec.podAnnotations, zeebe.podAnnotations),
+    podLabels: { ...spec.podLabels, ...zeebe.podLabels },
+    podAnnotations: annotations,
     extraEnv: [...env.values()],
     extraEnvFrom: [
       ...(spec.extraEnvFrom ?? []),

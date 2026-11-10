@@ -632,6 +632,33 @@ describe("clusterImpacts", () => {
       ).toEqual(EVERY_UNIFIED);
     });
 
+    it("the annotations of a service account that the user creates restart nothing", () => {
+      const own = { serviceAccount: { name: "own", create: false } };
+      const over = { claim: claim({ ...running, ...own }), live: own };
+      expect(
+        impacts(
+          set(
+            cluster("serviceAccount", "annotations", "example.com/team"),
+            "a",
+          ),
+          over,
+        ),
+      ).toEqual([]);
+      expect(
+        impacts(
+          set(
+            cluster(
+              "serviceAccount",
+              "annotations",
+              "azure.workload.identity/client-id",
+            ),
+            "id",
+          ),
+          over,
+        ),
+      ).toEqual(EVERY_UNIFIED);
+    });
+
     it("externalUrl restarts them under OIDC only", () => {
       const change = set(cluster("externalUrl"), "https://orders.example");
       const own = selecting(claim(running));
@@ -1034,6 +1061,11 @@ describe("restartsBrokers", () => {
         }),
       ),
       false,
+    ],
+    [
+      "a cluster-wide label with the name of a hash annotation",
+      input(set(cluster("podLabels", "camunda.io/config-hash"), "a")),
+      true,
     ],
     [
       "a cluster-wide environment variable",
