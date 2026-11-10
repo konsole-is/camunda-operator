@@ -143,7 +143,7 @@ jobs:
       # --camunda-operator-cli-image. FLEET_IMG is the image of the chart value
       # fleetManager.enabled. CONFORMANCE_IMG is the image of
       # plugin-conformance. Without an output, a dry run builds the images
-      # into the buildx cache only.
+      # and discards them.
       - name: Derive the version from the tag
         run: |
           num='(0|[1-9][0-9]*)'
@@ -172,7 +172,11 @@ jobs:
       - name: Check the module pins
         run: |
           if ! make check-release-pins VERSION="${VERSION}"; then
-            echo "Delete this release and its tag ${TAG}, run the Prepare release workflow with ${TAG}, merge its pull request, then publish the release again." >&2
+            if [[ "${DRY_RUN}" == true ]]; then
+              echo "Dry run: this ref does not pin the modules at ${TAG}. This is expected on a ref where the Prepare release workflow did not pin ${TAG}." >&2
+            else
+              echo "Delete this release and its tag ${TAG}, run the Prepare release workflow with ${TAG}, merge its pull request, then publish the release again." >&2
+            fi
             exit 1
           fi
 
