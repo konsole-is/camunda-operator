@@ -108,12 +108,20 @@ export type ChartError = { label: string; declaredBy: string; error: string };
  * MetricsAnswer is the answer of the charts of a MetricsRef. "notConfigured"
  * means that the app has no Prometheus URL, and "unavailable" that
  * Prometheus answered no query. An answer leaves out the chart of a query
- * without a series.
+ * without a finite point. hiddenForVersion is set when a Camunda query of
+ * the component does not apply to the Camunda version of the cluster, or
+ * the cluster reports none. Its version is set only when the cluster
+ * reports one.
  */
 export type MetricsAnswer =
   | { prometheus: "notConfigured" }
   | { prometheus: "unavailable" }
-  | { prometheus: "answered"; charts: MetricChartData[]; errors: ChartError[] };
+  | {
+      prometheus: "answered";
+      charts: MetricChartData[];
+      errors: ChartError[];
+      hiddenForVersion?: { version?: string };
+    };
 
 /**
  * PartitionHealthState is the zeebe_health value of a partition. It is

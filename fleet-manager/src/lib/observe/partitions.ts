@@ -99,8 +99,8 @@ export function withHealth(
  * each partition from zeebe_health over the 5 minutes before now. The
  * health stays "unknown" when Prometheus is not set, does not answer, or
  * cannot be read, and when the Camunda version of the cluster is outside
- * the versions of PARTITION_HEALTH; then it asks no Prometheus. It runs on the server only, and it rejects when
- * partitionHealth does.
+ * the versions of PARTITION_HEALTH. It runs on the server only, and it
+ * rejects when partitionHealth does.
  */
 export async function brokerPartitions(
   cluster: Resource<"CamundaCluster">,

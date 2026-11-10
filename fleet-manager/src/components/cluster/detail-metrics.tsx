@@ -206,8 +206,16 @@ function HistoryBody({
       </p>
     );
   }
+  const version = charts.hiddenForVersion;
   return (
     <div className="flex flex-col gap-4">
+      {version && (
+        <p className="text-sm text-muted">
+          {version.version
+            ? `The app has no Camunda charts for version ${version.version} yet.`
+            : "The cluster reports no Camunda version yet, so the Camunda charts do not show."}
+        </p>
+      )}
       {charts.charts.length === 0 ? (
         <p className="text-sm text-muted">No metric has data for this range.</p>
       ) : (

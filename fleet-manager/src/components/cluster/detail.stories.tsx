@@ -211,6 +211,23 @@ export const detailStories: Story[] = [
   },
   {
     component: "DetailMetrics",
+    name: "No Camunda charts for the version",
+    render: () => (
+      <DetailMetricsView
+        pods={brokers}
+        usage={brokerUsage}
+        charts={{
+          prometheus: "answered",
+          charts: brokerCharts.slice(0, 2),
+          errors: [],
+          hiddenForVersion: { version: "8.10.0" },
+        }}
+        range="1h"
+      />
+    ),
+  },
+  {
+    component: "DetailMetrics",
     name: "No metrics server",
     render: () => (
       <DetailMetricsView

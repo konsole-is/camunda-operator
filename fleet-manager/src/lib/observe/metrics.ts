@@ -10,6 +10,8 @@ import { promRange } from "./prometheus";
 import {
   POD_QUERIES,
   coreMetricDefs,
+  coreQueries,
+  inVersionRange,
   queriesFor,
   registrationQueries,
 } from "./queries";
@@ -58,8 +60,9 @@ export function podVolumes(pods: readonly Resource<"Pod">[]): string[] {
 /**
  * chartsOf returns the answer of defs, where answers[i] is the Prometheus
  * answer of defs[i]. It is "unavailable" when there is a def and no answer
- * is a list of series. Otherwise each def with at least one series gives a
- * chart, in the order of defs. A series named by one label, such as
+ * is a list of series. Otherwise each def with at least one series that
+ * has a finite point gives a chart, in the order of defs, without its
+ * series that have none. A series named by one label, such as
  * pod="orders-zeebe-0", takes the value of that label as its name.
  */
 export function chartsOf(
@@ -71,8 +74,14 @@ export function chartsOf(
     return { prometheus: "unavailable" };
   }
   const charts = defs.flatMap((def, i) => {
-    const series = answers[i];
-    if (series === "unavailable" || !series?.length) return [];
+    const answer = answers[i];
+    const series =
+      answer === "unavailable"
+        ? []
+        : (answer ?? []).filter((s) =>
+            s.points.some(([, value]) => Number.isFinite(value)),
+          );
+    if (series.length === 0) return [];
     return [
       {
         label: def.label,
@@ -128,12 +137,18 @@ export async function componentMetrics(
       optimizeUid,
     ),
   });
-  const defs = coreMetricDefs(
-    queriesFor(component, live.status?.management?.version),
-    namespace,
-    { pods: podNames(pods), volumes: podVolumes(pods) },
+  const version = live.status?.management?.version;
+  const defs = coreMetricDefs(queriesFor(component, version), namespace, {
+    pods: podNames(pods),
+    volumes: podVolumes(pods),
+  });
+  const result = await answer(defs, [], range, now);
+  const hidden = coreQueries[component].some(
+    (q) => !inVersionRange(version, q.versions),
   );
-  return answer(defs, [], range, now);
+  return result.prometheus === "answered" && hidden
+    ? { ...result, hiddenForVersion: version ? { version } : {} }
+    : result;
 }
 
 /**
