@@ -26,8 +26,10 @@ The page shows the color only when it is a hex color with three or six digits, s
 The tab **No environment** holds the clusters in a namespace that belongs to no environment. The page has this tab only while such a cluster exists. A namespace without the label belongs to no environment. A namespace whose label names an `Environment` that does not exist also belongs to no environment. To move a cluster into an environment, give its namespace the label with the name of the `Environment`:
 
 ```bash
-kubectl label namespace team-orders fleet.camunda.io/environment=production
+kubectl label --overwrite namespace team-orders fleet.camunda.io/environment=production
 ```
+
+`--overwrite` replaces a label that names another environment.
 
 When no `Environment` exists, the page has no tabs. It shows one table of every cluster.
 
