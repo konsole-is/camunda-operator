@@ -94,6 +94,7 @@ nav:
   - Fleet manager:
       - Install the fleet manager: fleet-manager/install.md
       - Fleet manager settings: fleet-manager/settings.md
+      - Environments: fleet-manager/environments.md
   - Guides:
       - Presets: guides/presets.md
       - Secondary storage: guides/secondary-storage.md
