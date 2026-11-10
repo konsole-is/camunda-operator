@@ -539,12 +539,22 @@ var _ = Describe("ElasticsearchCluster controller", func() {
 		)
 	})
 
-	It("mirrors the Elasticsearch component onto Ready as ECK health transitions", func() {
+	It("mirrors the Elasticsearch component onto Ready as ECK health and pod readiness change", func() {
 		preset := createElasticsearchClusterPreset(smallClusterSpec())
 		cluster := validElasticsearchCluster()
 		cluster.Spec.PresetRef = preset.Name
 		createElasticsearchCluster(cluster)
 		fetchOwnedElasticsearch(cluster)
+
+		updateECKStatus(cluster, func(es *esv1.Elasticsearch) {
+			es.Status.Health = esv1.ElasticsearchGreenHealth
+			es.Status.AvailableNodes = 0
+		})
+		expectElasticsearchClusterReady(
+			cluster, metav1.ConditionFalse,
+			SatisfyAny(Equal(string(component.AliveCreating)), Equal(string(component.AliveUpdating))),
+			Equal("elasticsearch: Elasticsearch reports green health, and no Elasticsearch pod is Ready yet"),
+		)
 
 		updateECKStatus(cluster, func(es *esv1.Elasticsearch) {
 			es.Status.Health = esv1.ElasticsearchGreenHealth

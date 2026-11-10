@@ -30,20 +30,34 @@ import (
 // these implementations take their place.
 
 // DefaultConvergingStatusHandler maps ECK's reported cluster health to the
-// component convergence state: green is Healthy, yellow is still converging
-// (Creating on first apply, Updating otherwise), and red is Failing. A
-// missing or unknown health is Creating only on the first apply, when ECK has
-// simply not formed the cluster yet; on any later reconcile ECK also reports
-// unknown when it loses contact with a formed cluster, so it maps to Failing,
-// mirroring the grace handler's unknown-to-Down.
+// component convergence state: green is Healthy while at least one
+// Elasticsearch pod is Ready, yellow is still converging (Creating on first
+// apply, Updating otherwise), and red is Failing. Green with no Ready pod is
+// converging too, because ECK reads the health from a Running pod that is not
+// Ready yet, and the HTTP Service of the cluster has no endpoint until a pod
+// is Ready. A missing or unknown health is Creating only on the first apply,
+// when ECK has simply not formed the cluster yet; on any later reconcile ECK
+// also reports unknown when it loses contact with a formed cluster, so it maps
+// to Failing, mirroring the grace handler's unknown-to-Down.
 func DefaultConvergingStatusHandler(
 	op concepts.ConvergingOperation, es *esv1.Elasticsearch,
 ) (concepts.AliveStatusWithReason, error) {
 	switch es.Status.Health {
 	case esv1.ElasticsearchGreenHealth:
+		if es.Status.AvailableNodes > 0 {
+			return concepts.AliveStatusWithReason{
+				Status: concepts.AliveConvergingStatusHealthy,
+				Reason: "Elasticsearch reports green health",
+			}, nil
+		}
+
+		status := concepts.AliveConvergingStatusUpdating
+		if op == concepts.ConvergingOperationCreated {
+			status = concepts.AliveConvergingStatusCreating
+		}
 		return concepts.AliveStatusWithReason{
-			Status: concepts.AliveConvergingStatusHealthy,
-			Reason: "Elasticsearch reports green health",
+			Status: status,
+			Reason: "Elasticsearch reports green health, and no Elasticsearch pod is Ready yet",
 		}, nil
 	case esv1.ElasticsearchYellowHealth:
 		status := concepts.AliveConvergingStatusUpdating
@@ -74,14 +88,22 @@ func DefaultConvergingStatusHandler(
 }
 
 // DefaultGraceStatusHandler grades a cluster that is still not converged
-// after the grace period: green is Healthy, yellow is Degraded (some replicas
-// unassigned but serving), and red or unreported health is Down.
+// after the grace period: green with a Ready Elasticsearch pod is Healthy,
+// yellow is Degraded (some replicas unassigned but serving), and red,
+// unreported health, or green with no Ready pod is Down.
 func DefaultGraceStatusHandler(es *esv1.Elasticsearch) (concepts.GraceStatusWithReason, error) {
 	switch es.Status.Health {
 	case esv1.ElasticsearchGreenHealth:
+		if es.Status.AvailableNodes > 0 {
+			return concepts.GraceStatusWithReason{
+				Status: concepts.GraceStatusHealthy,
+				Reason: "Elasticsearch reports green health",
+			}, nil
+		}
+
 		return concepts.GraceStatusWithReason{
-			Status: concepts.GraceStatusHealthy,
-			Reason: "Elasticsearch reports green health",
+			Status: concepts.GraceStatusDown,
+			Reason: "Elasticsearch reports green health, and no Elasticsearch pod is Ready",
 		}, nil
 	case esv1.ElasticsearchYellowHealth:
 		return concepts.GraceStatusWithReason{
