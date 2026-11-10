@@ -31,7 +31,9 @@ export type NotAttached = {
  * Plane is one row of the management plane tables. components starts with
  * "Identity". serves holds the environments of the claim, or the selector
  * text when the plane has no claim. servedEnvironments is sorted and
- * distinct. ready is undefined while no CamundaManagementCluster exists.
+ * distinct. servesNoEnvironment is true when the selector of a plane
+ * without a claim picks a namespace without ENVIRONMENT_LABEL. ready is
+ * undefined while no CamundaManagementCluster exists.
  */
 export type Plane = {
   id: string;
@@ -42,6 +44,7 @@ export type Plane = {
   components: string[];
   serves: { environments: string[] } | { selector: string };
   servedEnvironments: string[];
+  servesNoEnvironment?: boolean;
   attached: number;
   notAttached: NotAttached[];
   optimize: number;
@@ -100,6 +103,14 @@ export function planesOf(sources: PlaneSources): Plane[] {
               cluster.spec.namespaceSelector,
               sources.namespaces,
             ),
+            servesNoEnvironment: sources.namespaces.some(
+              (n) =>
+                !n.metadata?.labels?.[ENVIRONMENT_LABEL] &&
+                matchesSelector(
+                  cluster.spec.namespaceSelector,
+                  n.metadata?.labels,
+                ),
+            ),
           }),
       attached: rows.filter((r) => r.attached).length,
       notAttached: rows
@@ -157,10 +168,11 @@ function settings(spec: Settings): Pick<Plane, "mode" | "components"> {
 
 function environments(
   names: string[],
-): Pick<Plane, "serves" | "servedEnvironments"> {
+): Pick<Plane, "serves" | "servedEnvironments" | "servesNoEnvironment"> {
   return {
     serves: { environments: names },
     servedEnvironments: [...new Set(names)].sort(),
+    servesNoEnvironment: false,
   };
 }
 
@@ -181,8 +193,8 @@ function selected(
 
 /**
  * planesIn returns the planes of one fleet tab: every plane for undefined,
- * the planes that serve no environment for null, else the planes that
- * serve the environment of that name.
+ * the planes with servesNoEnvironment for null, else the planes that serve
+ * the environment of that name.
  */
 export function planesIn(
   planes: readonly Plane[],
@@ -190,7 +202,7 @@ export function planesIn(
 ): Plane[] {
   if (environment === undefined) return [...planes];
   if (environment === null) {
-    return planes.filter((plane) => plane.servedEnvironments.length === 0);
+    return planes.filter((plane) => plane.servesNoEnvironment === true);
   }
   return planes.filter((plane) => servesEnvironment(plane, environment));
 }

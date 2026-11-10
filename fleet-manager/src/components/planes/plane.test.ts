@@ -105,6 +105,7 @@ describe("planesOf", () => {
       components: ["Identity", "Console", "Web Modeler"],
       serves: { environments: ["production", "staging"] },
       servedEnvironments: ["production", "staging"],
+      servesNoEnvironment: false,
       attached: 1,
       notAttached: [
         {
@@ -389,5 +390,31 @@ describe("planesIn", () => {
 
   it("gives the planes that serve the environment", () => {
     expect(names(planesIn(planes, "staging"))).toEqual(["plane-b"]);
+  });
+
+  it("gives a plane that serves an environment and a namespace without one on both tabs", () => {
+    const [every] = planesOf({
+      clusters: [cluster("platform", "every")],
+      claims: [],
+      namespaces: [
+        ns("team-a", { [ENVIRONMENT_LABEL]: "production" }),
+        ns("team-x", {}),
+      ],
+    });
+    expect(names(planesIn([every], "production"))).toEqual(["every"]);
+    expect(names(planesIn([every], null))).toEqual(["every"]);
+  });
+
+  it("leaves out a plane that selects no namespace for null", () => {
+    const [none] = planesOf({
+      clusters: [
+        cluster("platform", "none", {
+          spec: { namespaceSelector: { matchLabels: { team: "nobody" } } },
+        }),
+      ],
+      claims: [],
+      namespaces: [ns("team-x", {})],
+    });
+    expect(planesIn([none], null)).toEqual([]);
   });
 });
