@@ -293,6 +293,18 @@ describe("the changes", () => {
     expect(change.intent).toBe("Change the environment staging");
   });
 
+  it("updateChange sends allowed false when the edit turns namespace creation off", () => {
+    const on: Environment = {
+      ...live,
+      spec: { ...live.spec, namespaceCreation: { allowed: true } },
+    };
+    const off = draftOf(on);
+    off.spec.namespaceCreation = { allowed: false };
+    expect(updateChange(on, off).apply[0].spec).toMatchObject({
+      namespaceCreation: { allowed: false },
+    });
+  });
+
   it("updateChange leaves out the last applied file of kubectl", () => {
     const applied: Environment = {
       ...live,

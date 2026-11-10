@@ -161,8 +161,9 @@ export function createChange(draft: EnvironmentDraft): Change {
 /**
  * updateChange applies live with the spec of specOf, with the
  * resourceVersion of live as its precondition, and with force, so a field
- * that kubectl apply set changes too. It leaves out the last applied file of
- * kubectl.
+ * that kubectl apply set changes too. When the edit turns namespace
+ * creation off, the spec holds namespaceCreation.allowed false. It leaves
+ * out the last applied file of kubectl.
  */
 export function updateChange(
   live: Environment,
@@ -183,7 +184,7 @@ export function updateChange(
       ...(labels && { labels }),
       ...(Object.keys(kept).length > 0 && { annotations: kept }),
     },
-    spec: specOf(draft),
+    spec: updatedSpec(live, draft),
   };
   return {
     intent: `Change the environment ${name}`,
@@ -191,6 +192,18 @@ export function updateChange(
     ...preconditionOf(KIND, name, live.metadata.resourceVersion),
     force: true,
   };
+}
+
+// Another field manager can own namespaceCreation.allowed, and a save that
+// leaves the field out keeps it true.
+function updatedSpec(
+  live: Environment,
+  draft: EnvironmentDraft,
+): Environment["spec"] {
+  const spec = specOf(draft);
+  if (live.spec.namespaceCreation?.allowed && !spec.namespaceCreation?.allowed)
+    spec.namespaceCreation = { ...spec.namespaceCreation, allowed: false };
+  return spec;
 }
 
 /** deleteChange deletes live when it still has its resourceVersion. */
