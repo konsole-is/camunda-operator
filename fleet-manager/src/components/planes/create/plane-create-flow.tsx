@@ -24,10 +24,12 @@ import {
   type PlaneContext,
   type PlaneDraft,
   basicsErrors,
+  componentsErrors,
   servedErrors,
 } from "@/lib/planes/draft";
 import type { ValidationError } from "@/lib/schema";
 import type { ImagesTable } from "@/startup/bundled-data";
+import { ComponentsStep } from "./components-step";
 import { PlaneBasicsStep } from "./plane-basics-step";
 import { ServedStep } from "./served-step";
 
@@ -50,6 +52,7 @@ export type PlaneCreateData = {
 export const PLANE_STEPS: readonly { id: string; label: string }[] = [
   { id: "basics", label: "Basics" },
   { id: "served", label: "Environments served" },
+  { id: "components", label: "Components and versions" },
 ];
 
 /** PlaneModels are the lists that the steps of the plane create flow read. */
@@ -108,17 +111,22 @@ export function planeSteps(
     ...step,
     check: (draft: PlaneDraft) => {
       const ctx = planeContextOf(models, draft);
-      // A list that cannot be read would let a taken name, or a rule of an
-      // Environment, pass unseen.
-      return step.id === "basics"
-        ? [
+      switch (step.id) {
+        case "basics":
+          // A list that cannot be read would let a taken name, or a rule of
+          // an Environment, pass unseen.
+          return [
             ...failures.map(
               (f) =>
                 `The fleet manager could not read the ${f.kind} objects: ${f.message}`,
             ),
             ...basicsErrors(draft, ctx),
-          ]
-        : servedErrors(draft, ctx, selectorErrors);
+          ];
+        case "served":
+          return servedErrors(draft, ctx, selectorErrors);
+        default:
+          return componentsErrors(draft, ctx);
+      }
     },
   }));
 }
@@ -143,6 +151,11 @@ export function PlaneStepBody({
   onSelectorErrors: (errors: ValidationError[]) => void;
 }) {
   const ctx = planeContextOf(models, draft);
+  if (current === "components") {
+    return (
+      <ComponentsStep draft={draft} set={set} ctx={ctx} secrets={secrets} />
+    );
+  }
   return current === "served" ? (
     <ServedStep
       draft={draft}

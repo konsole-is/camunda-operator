@@ -7,6 +7,7 @@ import { planesOf } from "@/components/planes/plane";
 import type { PlaneDraft } from "@/lib/planes/draft";
 import type { ValidationError } from "@/lib/schema";
 import {
+  PLANE_STEPS,
   type PlaneCreateData,
   type PlaneModels,
   PlaneStepBody,
@@ -25,7 +26,7 @@ export function PlaneCreateStory({
 }: {
   data: PlaneCreateData;
   initial: PlaneDraft;
-  step?: "basics" | "served";
+  step?: (typeof PLANE_STEPS)[number]["id"];
 }) {
   const models: PlaneModels = {
     environments: data.environments as PlaneModels["environments"],

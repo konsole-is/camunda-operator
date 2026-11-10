@@ -24,6 +24,7 @@ const environment = (name: string, platformConfigRef?: string) => ({
   metadata: { name },
   spec: {
     ...(platformConfigRef && { platformConfigRef }),
+    releases: { default: "camunda-8-9-23" },
     namespaceCreation: { allowed: true },
   },
 });
@@ -51,9 +52,26 @@ const data = {
       spec: { auth: { method: "oidc", oidc: { issuerUrl: "https://idp" } } },
     },
   ],
-  releases: [],
+  releases: [
+    {
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaRelease",
+      metadata: { name: "camunda-8-9-23" },
+      spec: { version: "8.9.23" },
+    },
+  ],
   planes: { clusters: [], claims: [], namespaces: [] },
-  images: { schemaVersion: 1, minors: {} },
+  images: {
+    schemaVersion: 1,
+    minors: {
+      "8.9": {
+        identity: { version: "8.9.10" },
+        console: { version: "8.9.122" },
+        "web-modeler-restapi": { version: "8.9.11" },
+        keycloak: { tagPrefix: "quay-optimized-", version: "26.6.4" },
+      },
+    },
+  },
 } as unknown as PlaneCreateData;
 
 const next = () =>
@@ -84,7 +102,7 @@ describe("PlaneCreateFlow", () => {
     await fillBasics();
     await userEvent.click(next());
     expect(screen.getByRole("group", { name: "Environments" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Next" })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: /Basics/ }));
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
       "plane-a",

@@ -4,6 +4,7 @@ import {
   ENVIRONMENT_LABEL,
   MANAGEMENT_CLUSTER_ANNOTATION,
 } from "@/lib/labels";
+import { EMPTY_ADMIN } from "@/lib/planes/components";
 import { EMPTY_PLANE_DRAFT, type PlaneDraft } from "@/lib/planes/draft";
 import { PlaneCreateStory } from "./create-story";
 import type { PlaneCreateData } from "./plane-create-flow";
@@ -160,6 +161,12 @@ const basics: PlaneDraft = {
   mode: "keycloak",
 };
 
+const components: PlaneDraft = {
+  ...basics,
+  admin: { ...EMPTY_ADMIN, username: "admin", email: "admin@example.com" },
+  console: true,
+};
+
 /** planeCreateStories are the gallery stories of the plane create flow. */
 export const planeCreateStories: Story[] = [
   {
@@ -216,6 +223,44 @@ export const planeCreateStories: Story[] = [
     name: "Keycloak mode preview",
     render: () => (
       <PlaneCreateStory data={data} step="served" initial={basics} />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Components and versions in Keycloak mode",
+    render: () => (
+      <PlaneCreateStory
+        data={data}
+        step="components"
+        initial={{ ...components, webModeler: true }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Components and versions in OIDC mode",
+    render: () => (
+      <PlaneCreateStory
+        data={data}
+        step="components"
+        initial={{
+          ...components,
+          platformConfig: "sso",
+          mode: "oidc",
+          admin: { ...EMPTY_ADMIN, claimName: "sub" },
+        }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
+    name: "Keycloak version with a warning",
+    render: () => (
+      <PlaneCreateStory
+        data={data}
+        step="components"
+        initial={{ ...components, versions: { keycloak: "26.7.0" } }}
+      />
     ),
   },
 ];
