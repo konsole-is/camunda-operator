@@ -114,7 +114,7 @@ export function componentDots(
   if (claim) {
     const sections = sectionsOf(claim, sources).map(
       (component): ComponentDot => ({
-        id: component.id,
+        id: `${component.id}/${component.selection.registration}`,
         label: `${component.label} (${registrationLabel(component.selection.registration, sources.registrations)})`,
         used: true,
         ...(component.condition ? { condition: component.condition } : {}),

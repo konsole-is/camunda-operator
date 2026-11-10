@@ -11,7 +11,8 @@ export type SectionComponentId = `section:${string}`;
  * the PluginSection label, or the section name when the section is not
  * found. order is spec.order of the section, and a missing section sorts
  * last. request is the PluginRequest that status.requests of the claim
- * names for the section, and condition its Ready condition.
+ * names for the section and the registration of the selection, and
+ * condition its Ready condition.
  */
 export type SectionComponent = {
   id: SectionComponentId;
@@ -27,7 +28,9 @@ export type SectionComponent = {
 export type SectionClaim = {
   metadata?: { namespace?: string };
   spec: { plugins?: PluginSelection[] };
-  status?: { requests?: { section: string; name: string }[] };
+  status?: {
+    requests?: { section: string; registration: string; name: string }[];
+  };
 };
 
 /** sectionComponentId is the component id of the section of that name. */
@@ -37,8 +40,8 @@ export function sectionComponentId(section: string): SectionComponentId {
 
 /**
  * sectionComponents returns one component for each selection of claim,
- * sorted by order, then by section name. A request counts only when it is
- * in the namespace of the claim.
+ * sorted by order, then by section name, then by registration. A request
+ * counts only when it is in the namespace of the claim.
  */
 export function sectionComponents({
   claim,
@@ -56,7 +59,9 @@ export function sectionComponents({
         (s) => s.metadata?.name === selection.section,
       );
       const requestName = claim.status?.requests?.find(
-        (r) => r.section === selection.section,
+        (r) =>
+          r.section === selection.section &&
+          r.registration === selection.registration,
       )?.name;
       const request =
         requestName === undefined
@@ -79,5 +84,10 @@ export function sectionComponents({
         ...(condition ? { condition } : {}),
       };
     })
-    .sort((a, b) => a.order - b.order || byCodeUnit(a.section, b.section));
+    .sort(
+      (a, b) =>
+        a.order - b.order ||
+        byCodeUnit(a.section, b.section) ||
+        byCodeUnit(a.selection.registration, b.selection.registration),
+    );
 }

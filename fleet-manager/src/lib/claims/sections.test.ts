@@ -8,7 +8,7 @@ const sel = (section: string, registration = `${section}-option`) =>
 
 const claimOf = (
   plugins: PluginSelection[],
-  requests?: { section: string; name: string }[],
+  requests?: { section: string; registration: string; name: string }[],
 ): SectionClaim => ({
   metadata: { namespace: "team-a" },
   spec: { plugins },
@@ -112,7 +112,13 @@ describe("sectionComponents", () => {
     const [component] = sectionComponents({
       claim: claimOf(
         [sel("secondary-storage")],
-        [{ section: "secondary-storage", name: "orders-es" }],
+        [
+          {
+            section: "secondary-storage",
+            registration: "secondary-storage-option",
+            name: "orders-es",
+          },
+        ],
       ),
       sections: [section("secondary-storage", "Secondary storage", 50)],
       requests: [
@@ -129,11 +135,51 @@ describe("sectionComponents", () => {
     });
   });
 
+  it("takes the request of each selection of a Many section by its registration", () => {
+    const result = sectionComponents({
+      claim: claimOf(
+        [sel("access", "gateway-api"), sel("access", "load-balancer")],
+        [
+          { section: "access", registration: "gateway-api", name: "orders-gw" },
+          {
+            section: "access",
+            registration: "load-balancer",
+            name: "orders-lb",
+          },
+        ],
+      ),
+      sections: [section("access", "Access", 60)],
+      requests: [
+        request("team-a", "orders-gw", { status: "True", reason: "Ready" }),
+        request("team-a", "orders-lb", {
+          status: "False",
+          reason: "GrantRejected",
+        }),
+      ],
+    });
+    expect(
+      result.map((c) => [
+        c.selection.registration,
+        c.request?.metadata?.name,
+        c.condition?.status,
+      ]),
+    ).toEqual([
+      ["gateway-api", "orders-gw", "True"],
+      ["load-balancer", "orders-lb", "False"],
+    ]);
+  });
+
   it("ignores a request of the same name in another namespace", () => {
     const [component] = sectionComponents({
       claim: claimOf(
         [sel("secondary-storage")],
-        [{ section: "secondary-storage", name: "orders-es" }],
+        [
+          {
+            section: "secondary-storage",
+            registration: "secondary-storage-option",
+            name: "orders-es",
+          },
+        ],
       ),
       sections: [section("secondary-storage", "Secondary storage", 50)],
       requests: [
