@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatCores } from "./units";
+import { formatAxis, formatBytes, formatCores } from "./units";
 
 describe("formatCores", () => {
   it.each([
@@ -20,5 +20,16 @@ describe("formatBytes", () => {
     [300 * 2 ** 20, "300 MiB"],
   ])("gives %s bytes as %s", (bytes, text) => {
     expect(formatBytes(bytes)).toBe(text);
+  });
+});
+
+describe("formatAxis", () => {
+  it.each([
+    [12 * 2 ** 30, "bytes", "12 GiB"],
+    [0.5, "cores", "500m"],
+    [1500, "instances/s", "1.5K"],
+    [0.25, undefined, "0.25"],
+  ])("gives %s with the unit %s as %s", (value, unit, text) => {
+    expect(formatAxis(value, unit)).toBe(text);
   });
 });

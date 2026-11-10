@@ -11,6 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import type { Series, Unavailable } from "@/lib/observe/types";
+import { formatAxis } from "./units";
 
 const COLORS = ["var(--info)", "var(--accent)", "var(--ok)", "var(--warn)"];
 
@@ -73,7 +74,12 @@ export function MetricChart({
                 stroke="var(--muted)"
                 fontSize={11}
               />
-              <YAxis stroke="var(--muted)" fontSize={11} width={40} />
+              <YAxis
+                stroke="var(--muted)"
+                fontSize={11}
+                width={56}
+                tickFormatter={(v: number) => formatAxis(v, unit)}
+              />
               <Tooltip
                 contentStyle={{
                   background: "var(--panel-2)",

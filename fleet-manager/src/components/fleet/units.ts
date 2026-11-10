@@ -16,6 +16,21 @@ export function formatBytes(bytes: number): string {
   return `${round(value)} ${BYTE_UNITS[unit]}`;
 }
 
+const COMPACT = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 2,
+});
+
+/**
+ * formatAxis writes a value of a chart axis short: bytes as formatBytes,
+ * cores as formatCores, and any other unit as a compact number.
+ */
+export function formatAxis(value: number, unit?: string): string {
+  if (unit === "bytes") return formatBytes(value);
+  if (unit === "cores") return formatCores(value);
+  return COMPACT.format(value);
+}
+
 function round(value: number): string {
   return String(Math.round(value * 10) / 10);
 }
