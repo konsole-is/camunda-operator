@@ -260,7 +260,12 @@ export function ClusterEditProvider({
       update({ ...stateRef.current, note: undefined, dropped: false });
       setWriting(true);
       try {
-        const result = await actions.apply(change);
+        const result = await actions
+          .apply(change)
+          .catch((error: unknown): WriteResult => ({
+            ok: false,
+            errors: [{ code: "Unavailable", message: String(error) }],
+          }));
         lastWrite.current = { result, before };
         if (!result.ok)
           update({
@@ -313,6 +318,8 @@ export function ClusterEditProvider({
     update({ ...current, reviewing: true });
   }, [update]);
   const stopWaiting = () => {
+    // The toast reads a push that leaves the tab as applied.
+    if (toast?.kind === "waiting") dismiss();
     if (claimKey) settle(claimKey);
     update({ ...stateRef.current, pushed: undefined, dropped: true });
   };

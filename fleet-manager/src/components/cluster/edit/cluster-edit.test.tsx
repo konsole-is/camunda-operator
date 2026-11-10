@@ -561,6 +561,45 @@ describe("ClusterEditProvider", () => {
     expect(text("Pushes 0")).toBeTruthy();
   });
 
+  it("in Git mode, Stop waiting removes the waiting toast and shows no saved toast", async () => {
+    fakeWriter.reset("git");
+    page(slotContext({ writeMode: "git" }));
+    click("Scale");
+    openReview();
+    await confirm("Push to Git");
+    await waitFor(() => expect(dialog()).toBeNull());
+    expect(text("Waiting for GitOps to apply")).toBeTruthy();
+
+    click("Stop waiting");
+
+    expect(text("Waiting for GitOps to apply")).toBeNull();
+    expect(text("The claim orders is saved.")).toBeNull();
+  });
+
+  it("a write whose request fails while the claim updates keeps the failure in the review", async () => {
+    let fail: (error: Error) => void = () => {};
+    const actions: ClaimActions = {
+      preview: previewClaimChange,
+      apply: () =>
+        new Promise<WriteResult>((_, reject) => {
+          fail = reject;
+        }),
+    };
+    const { update } = page(slotContext(), actions);
+    click("Scale");
+    openReview();
+    await confirm("Save");
+
+    update(slotContext({ claim: claim("42") }));
+    await act(async () =>
+      fail(new Error("The fleet manager is not reachable.")),
+    );
+
+    expect(
+      within(dialog()!).getByText(/The fleet manager is not reachable\./),
+    ).toBeTruthy();
+  });
+
   it("in Git mode, a new host of a claim with a waiting push blocks Review and shows the live claim", async () => {
     fakeWriter.reset("git");
     const { remount } = page(slotContext({ writeMode: "git" }));
