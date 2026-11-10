@@ -28,6 +28,8 @@ describe("formatAxis", () => {
     [12 * 2 ** 30, "bytes", "12 GiB"],
     [0.5, "cores", "500m"],
     [1500, "instances/s", "1.5K"],
+    [1234, "instances/s", "1.23K"],
+    [0.004, "instances/s", "0.004"],
     [0.25, undefined, "0.25"],
   ])("gives %s with the unit %s as %s", (value, unit, text) => {
     expect(formatAxis(value, unit)).toBe(text);

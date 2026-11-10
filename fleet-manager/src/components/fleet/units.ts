@@ -18,7 +18,7 @@ export function formatBytes(bytes: number): string {
 
 const COMPACT = new Intl.NumberFormat("en", {
   notation: "compact",
-  maximumFractionDigits: 2,
+  maximumSignificantDigits: 3,
 });
 
 /**
