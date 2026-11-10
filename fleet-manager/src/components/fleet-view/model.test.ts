@@ -215,6 +215,10 @@ describe("componentDots", () => {
       "Secondary storage (New Elasticsearch cluster)",
     ]);
     expect(dots.every((d) => d.used)).toBe(true);
+    expect(dots.slice(-2).map((d) => d.id)).toEqual([
+      "section:backup-storage",
+      "section:secondary-storage",
+    ]);
   });
 
   it("gives a PostgreSQL cluster of a claim the dot of its database server", () => {
@@ -558,6 +562,76 @@ describe("clusterRows", () => {
       "team-a/b",
       "team-b/a",
     ]);
+  });
+});
+
+describe("clusterRows on a large fleet", () => {
+  // counted wraps a list and counts the reads of its items, so a test can
+  // tell one pass over a list from a pass for each cluster.
+  function counted<T>(items: T[]): { list: T[]; reads: () => number } {
+    let reads = 0;
+    const list = new Proxy(items, {
+      get(target, key, receiver) {
+        if (typeof key === "string" && /^\d+$/.test(key)) reads++;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    return { list, reads: () => reads };
+  }
+
+  it("reads each list a fixed number of times, not once for each cluster", () => {
+    const clusters = Array.from({ length: 200 }, (_, i) =>
+      cluster(`team-${i % 20}`, `c${i}`, { claim: `c${i}` }),
+    );
+    const claims = counted(
+      clusters.map((c) =>
+        claim(c.metadata!.namespace!, c.metadata!.name!, {
+          plugins: [{ section: "access", registration: "gateway-api" }],
+          requests: [
+            {
+              section: "access",
+              registration: "gateway-api",
+              name: `${c.metadata!.name}-access`,
+            },
+          ],
+        }),
+      ),
+    );
+    const requests = counted(
+      clusters.map((c) =>
+        request(c.metadata!.namespace!, `${c.metadata!.name}-access`, {
+          type: "Ready",
+          status: "True",
+        }),
+      ),
+    );
+    const backups = counted(
+      Array.from({ length: 2000 }, (_, i) =>
+        backup(
+          `team-${i % 20}`,
+          `b${i}`,
+          `c${i % 200}`,
+          new Date(Date.UTC(2026, 10, 1) + i * 60_000).toISOString(),
+        ),
+      ),
+    );
+    const rows = clusterRows(
+      sources({
+        clusters,
+        claims: claims.list,
+        requests: requests.list,
+        backups: backups.list,
+      }),
+      NOW,
+    );
+    expect(rows).toHaveLength(200);
+    expect(rows.find((r) => r.name === "c7")?.lastBackup?.name).toBe("b1807");
+    expect(
+      rows.find((r) => r.name === "c7")?.sections[0].request,
+    ).toBeDefined();
+    expect(claims.reads()).toBeLessThanOrEqual(5 * 200);
+    expect(requests.reads()).toBeLessThanOrEqual(5 * 200);
+    expect(backups.reads()).toBeLessThanOrEqual(5 * 2000);
   });
 });
 

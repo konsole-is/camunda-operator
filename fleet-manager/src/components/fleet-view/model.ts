@@ -1,15 +1,13 @@
 import {
   type BackupObject,
   type BackupRow,
-  backupRowsOf,
+  newestBackupRowOf,
 } from "@/components/cluster/backups";
 import { componentCards } from "@/components/cluster/cards";
 import { STORAGE_LABEL } from "@/components/cluster/cluster-header";
 import { clusterOptimize } from "@/components/cluster/optimize";
 import type { PendingPush } from "@/components/fleet/git-pushes";
 import type { ConditionLike } from "@/components/fleet/status";
-import type { V1Namespace } from "@kubernetes/client-node";
-import type { Environment } from "@/generated/crds/environment";
 import {
   type SectionClaim,
   type SectionComponent,
@@ -18,7 +16,7 @@ import {
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, isManaged } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
-import { byCodeUnit, environmentOf } from "@/lib/policy";
+import { byCodeUnit, environmentNameOf } from "@/lib/policy";
 
 /** FleetSources are the lists that the fleet view follows. */
 export type FleetSources = {
@@ -89,6 +87,24 @@ export function componentDots(
   cluster: Resource<"CamundaCluster">,
   sources: FleetSources,
 ): ComponentDot[] {
+  const index = indexOf(sources);
+  const claim = index.claims.get(claimKey(cluster));
+  return dotsOf(
+    cluster,
+    sources,
+    index,
+    claim && sectionsOf(claim, sources, index),
+  );
+}
+
+// dotsOf gives the dots of componentDots. sections is undefined for a
+// cluster whose claim is not in sources.
+function dotsOf(
+  cluster: Resource<"CamundaCluster">,
+  sources: FleetSources,
+  index: FleetIndex,
+  sections: SectionComponent[] | undefined,
+): ComponentDot[] {
   const namespace = cluster.metadata?.namespace ?? "";
   const name = cluster.metadata?.name ?? "";
   const merged = mergeCluster(
@@ -102,7 +118,7 @@ export function componentDots(
     spec: merged,
     pods: [],
     conditions: cluster.status?.conditions,
-    optimize: clusterOptimize(name, inNamespace(sources.optimizes, namespace)),
+    optimize: clusterOptimize(name, index.optimizes.get(namespace) ?? []),
   }).map((card): ComponentDot => ({
     id: card.id,
     label: card.label,
@@ -110,24 +126,21 @@ export function componentDots(
     ...(card.condition ? { condition: card.condition } : {}),
   }));
 
-  const claim = claimOf(cluster, sources.claims);
-  if (claim) {
-    const sections = sectionsOf(claim, sources).map(
-      (component): ComponentDot => ({
-        id: `${component.id}/${component.selection.registration}`,
+  if (sections) {
+    return [
+      ...processes,
+      ...sections.map((component): ComponentDot => ({
+        id: component.id,
         label: `${component.label} (${registrationLabel(component.selection.registration, sources.registrations)})`,
         used: true,
         ...(component.condition ? { condition: component.condition } : {}),
-      }),
-    );
-    return [...processes, ...sections];
+      })),
+    ];
   }
 
   const storageRef = cluster.spec.storageRef;
   if (!storageRef) return processes;
-  const storage = inNamespace(sources.storage, namespace).find(
-    (s) => s.metadata?.name === storageRef,
-  );
+  const storage = index.storage.get(key(namespace, storageRef));
   const condition = storage?.status?.conditions?.find(
     (c) => c.type === "Ready",
   );
@@ -150,28 +163,27 @@ export function componentDots(
  * sorted by namespace, then name. A suspended cluster has no version.
  */
 export function clusterRows(sources: FleetSources, now: string): ClusterRow[] {
+  const index = indexOf(sources);
   const environment = (namespace: string) => {
-    const object = sources.namespaces.find(
-      (n) => n.metadata?.name === namespace,
-    );
-    return object
-      ? environmentOf(
-          object as V1Namespace,
-          sources.environments as Environment[],
-        ).environment?.metadata.name
-      : undefined;
+    const object = index.namespaces.get(namespace);
+    return object ? environmentNameOf(object, sources.environments) : undefined;
   };
   const joined = new Set<string>();
   const clusters = sources.clusters.map((cluster): ClusterRow => {
     const namespace = cluster.metadata?.namespace ?? "";
     const name = cluster.metadata?.name ?? "";
-    const claim = claimOf(cluster, sources.claims);
+    const claim = index.claims.get(claimKey(cluster));
     if (claim) joined.add(key(namespace, claim.metadata?.name));
+    const sections = claim && sectionsOf(claim, sources, index);
     const ready = readyOf(cluster.status?.conditions);
     const version = cluster.spec.suspend
       ? undefined
       : cluster.status?.management?.version;
-    const lastBackup = backupRowsOf(cluster, sources.backups, now)[0];
+    const lastBackup = newestBackupRowOf(
+      cluster,
+      index.backups.get(key(namespace, name)) ?? [],
+      now,
+    );
     return {
       id: `cluster/${key(namespace, name)}`,
       namespace,
@@ -181,8 +193,8 @@ export function clusterRows(sources: FleetSources, now: string): ClusterRow[] {
       ...(ready ? { ready } : {}),
       ...(version ? { version } : {}),
       ...(cluster.spec.presetRef ? { preset: cluster.spec.presetRef } : {}),
-      components: componentDots(cluster, sources),
-      sections: claim ? sectionsOf(claim, sources) : [],
+      components: dotsOf(cluster, sources, index, sections),
+      sections: sections ?? [],
       ...(lastBackup ? { lastBackup } : {}),
       href: `/fleet/clusters/${namespace}/${name}`,
     };
@@ -201,7 +213,7 @@ export function clusterRows(sources: FleetSources, now: string): ClusterRow[] {
         ...(ready ? { ready } : {}),
         preset: claim.spec.presetRef,
         components: [],
-        sections: sectionsOf(claim, sources),
+        sections: sectionsOf(claim, sources, index),
       };
     });
   return [...clusters, ...claims].sort(
@@ -366,21 +378,59 @@ function key(namespace: string | undefined, name: string | undefined) {
   return `${namespace ?? ""}/${name ?? ""}`;
 }
 
-function inNamespace<T extends { metadata?: { namespace?: string } }>(
-  items: readonly T[],
-  namespace: string,
-): T[] {
-  return items.filter((i) => i.metadata?.namespace === namespace);
+// FleetIndex holds the lists of FleetSources that a row looks up, by
+// "<namespace>/<name>", or by namespace for optimizes. backups go by the
+// cluster that spec.clusterRef names.
+type FleetIndex = {
+  claims: Map<string, Resource<"CamundaClusterClaim">>;
+  requests: Map<string, Resource<"PluginRequest">>;
+  backups: Map<string, BackupObject[]>;
+  optimizes: Map<string, Resource<"CamundaOptimize">[]>;
+  storage: Map<string, Resource<"SecondaryStorageConfig">>;
+  namespaces: Map<string, Resource<"Namespace">>;
+};
+
+function indexOf(sources: FleetSources): FleetIndex {
+  const named = <
+    T extends { metadata?: { namespace?: string; name?: string } },
+  >(
+    items: readonly T[],
+  ) =>
+    new Map(
+      items.map((i) => [key(i.metadata?.namespace, i.metadata?.name), i]),
+    );
+  return {
+    claims: named(sources.claims),
+    requests: named(sources.requests),
+    backups: grouped(sources.backups, (b) =>
+      key(b.metadata?.namespace, b.spec.clusterRef.name),
+    ),
+    optimizes: grouped(sources.optimizes, (o) => o.metadata?.namespace ?? ""),
+    storage: named(sources.storage),
+    namespaces: new Map(
+      sources.namespaces.map((n) => [n.metadata?.name ?? "", n]),
+    ),
+  };
 }
 
-function claimOf(
-  cluster: Resource<"CamundaCluster">,
-  claims: readonly Resource<"CamundaClusterClaim">[],
-): Resource<"CamundaClusterClaim"> | undefined {
-  const name = cluster.metadata?.labels?.[CLAIM_LABEL];
-  if (name === undefined) return undefined;
-  return inNamespace(claims, cluster.metadata?.namespace ?? "").find(
-    (c) => c.metadata?.name === name,
+function grouped<T>(
+  items: readonly T[],
+  keyOf: (item: T) => string,
+): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const k = keyOf(item);
+    const group = groups.get(k);
+    if (group) group.push(item);
+    else groups.set(k, [item]);
+  }
+  return groups;
+}
+
+function claimKey(cluster: Resource<"CamundaCluster">): string {
+  return key(
+    cluster.metadata?.namespace,
+    cluster.metadata?.labels?.[CLAIM_LABEL] ?? "",
   );
 }
 
@@ -389,11 +439,16 @@ function claimOf(
 function sectionsOf(
   claim: Resource<"CamundaClusterClaim">,
   sources: FleetSources,
+  index: FleetIndex,
 ): SectionComponent[] {
+  const namespace = claim.metadata?.namespace;
   return sectionComponents({
     claim: claim as SectionClaim,
     sections: sources.sections,
-    requests: sources.requests,
+    requests: (claim.status?.requests ?? []).flatMap((r) => {
+      const request = index.requests.get(key(namespace, r.name));
+      return request ? [request] : [];
+    }),
   });
 }
 
