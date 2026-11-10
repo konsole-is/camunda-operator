@@ -227,7 +227,7 @@ describe("draftErrors", () => {
 });
 
 describe("the changes", () => {
-  it("createChange applies the environment with its name and the compact spec and no precondition", () => {
+  it("createChange applies the environment with its name and the compact spec, and names it in create", () => {
     expect(createChange(draft({ displayName: "", color: "#2E7D32" }))).toEqual({
       intent: "Create the environment staging",
       apply: [
@@ -238,6 +238,7 @@ describe("the changes", () => {
           spec: { deletionPolicy: "Delete", color: "#2E7D32" },
         },
       ],
+      create: ["Environment//staging"],
     });
   });
 

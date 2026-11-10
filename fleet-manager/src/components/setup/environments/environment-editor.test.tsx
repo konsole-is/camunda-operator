@@ -256,6 +256,7 @@ describe("EnvironmentEditor", () => {
           spec: { deletionPolicy: "Delete" },
         },
       ],
+      create: ["Environment//lab"],
     });
     expect(router.push).not.toHaveBeenCalled();
     const sources = environmentFixtures();

@@ -146,7 +146,7 @@ export async function createClaim(input: unknown): Promise<WriteResult> {
 /**
  * adminChangeSchema accepts a Change of a Setup page: each object that it
  * applies or deletes has a kind of kinds. It allows deletes, preconditions,
- * and force, and refuses directOnly.
+ * create, and force, and refuses directOnly.
  */
 export function adminChangeSchema(
   kinds: readonly KindName[],

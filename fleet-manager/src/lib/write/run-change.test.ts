@@ -461,6 +461,15 @@ describe("adminChangeSchema", () => {
       }).success,
     ).toBe(false));
 
+  it("accepts a create of an object of the page", () =>
+    expect(
+      schema.safeParse({
+        intent: "Create staging",
+        apply: [environmentObject],
+        create: ["Environment//staging"],
+      }).success,
+    ).toBe(true));
+
   it("refuses directOnly", () =>
     expect(
       schema.safeParse({

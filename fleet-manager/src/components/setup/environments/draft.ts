@@ -128,7 +128,10 @@ function nameError(name: string, taken: readonly string[]): string | undefined {
   return undefined;
 }
 
-/** createChange applies a new environment with the spec of specOf. */
+/**
+ * createChange applies a new environment with the spec of specOf. The
+ * write fails with Stale when an environment of that name exists.
+ */
 export function createChange(draft: EnvironmentDraft): Change {
   return {
     intent: `Create the environment ${draft.name}`,
@@ -140,6 +143,7 @@ export function createChange(draft: EnvironmentDraft): Change {
         spec: specOf(draft),
       },
     ],
+    create: [refKey({ kind: KIND, name: draft.name })],
   };
 }
 
