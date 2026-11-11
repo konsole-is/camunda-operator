@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { EnvEditor, type EnvVar } from "@/components/fleet/env-editor";
 import { FieldValue } from "@/components/fleet/field-state";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
@@ -68,6 +68,7 @@ export function SettingsEditor({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
 }) {
+  const [resets, setResets] = useState(0);
   return (
     <section
       aria-label={`${group.label} settings`}
@@ -78,18 +79,20 @@ export function SettingsEditor({
       </h3>
       {group.embedded && (
         <p className="text-sm text-muted">
-          Applies when {group.label} runs standalone.
+          Applies when {group.label} runs standalone. The exception is extraEnv
+          and extraEnvFrom: they apply to the host now.
         </p>
       )}
       <div className="flex flex-col divide-y divide-divider">
         {settings.map((setting) => (
           <SettingRow
-            key={setting.key}
+            key={`${setting.key}:${resets}`}
             setting={setting}
             secrets={secrets}
             errors={errorsAt(errors, setting.steps)}
             set={set}
             reset={reset}
+            onReset={() => setResets((n) => n + 1)}
           />
         ))}
       </div>
@@ -101,7 +104,8 @@ export function SettingsEditor({
  * SettingRow is one setting: its editor with its state and reset link, or
  * its lock reason. A change with errors shows them and is not passed on. A
  * claim value of undefined resets the field. errors are field errors from
- * outside the row.
+ * outside the row. onReset runs after a click on the reset link: the caller
+ * remounts the rows, so that they show the values below the claim.
  */
 export function SettingRow({
   setting,
@@ -109,15 +113,16 @@ export function SettingRow({
   errors = [],
   set,
   reset,
+  onReset,
 }: {
   setting: Setting;
   secrets?: SecretRefs;
   errors?: readonly FieldError[];
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
+  onReset: () => void;
 }) {
-  // A reset remounts the editor, so that it shows the value below the claim.
-  const [version, setVersion] = useState(0);
+  const [mounted] = useState(setting.value);
   const { editor, steps } = setting;
   if (!editor || !steps)
     return (
@@ -146,10 +151,10 @@ export function SettingRow({
       className="flex min-w-0 flex-col gap-2 py-3"
     >
       <Editor
-        key={version}
         label={setting.label}
         editor={editor}
         value={setting.value}
+        current={"current" in setting ? setting.current : mounted}
         secrets={secrets ?? []}
         onChange={change}
       />
@@ -163,11 +168,19 @@ export function SettingRow({
             className="h-auto px-0"
             onClick={() => {
               reset(steps);
-              setVersion((v) => v + 1);
+              onReset();
             }}
           >
             {setting.resetLabel}
           </Button>
+        )}
+        {setting.claimSet && setting.resetNote && (
+          <span>{setting.resetNote}</span>
+        )}
+        {setting.inherited !== undefined && (
+          <span>
+            The preset or the release adds {setting.inherited} before these.
+          </span>
         )}
       </div>
       {errors.map((e, i) => (
@@ -181,22 +194,23 @@ export function SettingRow({
 
 // Editor is the input of one editor kind. It is uncontrolled: it starts
 // from value and reports each valid change. A change with errors is not
-// reported.
+// reported. current is the value before the pending changes.
 function Editor({
   label,
   editor,
   value,
+  current,
   secrets,
   onChange,
 }: {
   label: string;
   editor: SettingEditor;
   value: unknown;
+  current: unknown;
   secrets: SecretRefs;
   onChange: (value: unknown) => void;
 }) {
   const initial = editorValueOf(editor, value);
-  const [current] = useState(value);
   const valid = (v: unknown, errors: readonly ValidationError[]) => {
     if (errors.length === 0) onChange(v);
   };
@@ -280,15 +294,12 @@ function Editor({
       );
     case "secretRef":
       return (
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-sm font-medium text-muted">{label}</span>
-          <SecretRefPicker
-            label={label}
-            secrets={secrets}
-            defaultValue={initial as SecretKeyRef | undefined}
-            onChange={onChange}
-          />
-        </div>
+        <SecretRefEditor
+          label={label}
+          secrets={secrets}
+          defaultValue={initial as SecretKeyRef | undefined}
+          onChange={onChange}
+        />
       );
     case "yaml":
       return (
@@ -301,6 +312,41 @@ function Editor({
         />
       );
   }
+}
+
+// SecretRefEditor passes on a change only after the user picks: the picker
+// also reports undefined while secrets do not hold its value, as before
+// they load.
+function SecretRefEditor({
+  label,
+  secrets,
+  defaultValue,
+  onChange,
+}: {
+  label: string;
+  secrets: SecretRefs;
+  defaultValue: SecretKeyRef | undefined;
+  onChange: (value: unknown) => void;
+}) {
+  const picked = useRef(false);
+  return (
+    <div
+      className="flex min-w-0 flex-col gap-1"
+      onChange={() => {
+        picked.current = true;
+      }}
+    >
+      <span className="text-sm font-medium text-muted">{label}</span>
+      <SecretRefPicker
+        label={label}
+        secrets={secrets}
+        defaultValue={defaultValue}
+        onChange={(ref) => {
+          if (picked.current) onChange(ref);
+        }}
+      />
+    </div>
+  );
 }
 
 function NumberEditor({

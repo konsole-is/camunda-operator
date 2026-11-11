@@ -91,7 +91,14 @@ export function settingsGroupOf(
           (g) => g.component === process,
         );
   if (!group) throw new Error(`${host} shows no group ${process}`);
-  return { group, settings: settingsOf({ group, spec: merged.spec }) };
+  return {
+    group,
+    settings: settingsOf({
+      group,
+      spec: merged.spec,
+      claim: page.claim?.cluster ?? {},
+    }),
+  };
 }
 
 /** accessSection is the section access, whose slot fills the external URLs. */

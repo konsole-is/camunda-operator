@@ -22,6 +22,8 @@ import {
 } from "./cluster-edit";
 import { ComponentSettingsEditor } from "./settings-slot";
 
+const SHRINK = "Volumes cannot shrink. The operator keeps the current size.";
+
 const live = vi.hoisted(() => ({ secrets: [] as unknown[] }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string) => ({
@@ -126,7 +128,9 @@ describe("ComponentSettingsEditor", () => {
     await openEditors();
     const tasklist = group("Tasklist");
     expect(
-      within(tasklist).getByText("Applies when Tasklist runs standalone."),
+      within(tasklist).getByText(
+        "Applies when Tasklist runs standalone. The exception is extraEnv and extraEnvFrom: they apply to the host now.",
+      ),
     ).toBeDefined();
     await userEvent.type(
       within(settingRow(tasklist, "replicas")).getByRole("spinbutton"),
@@ -212,6 +216,93 @@ describe("ComponentSettingsEditor", () => {
     await userEvent.click(screen.getByRole("button", { name: "Discard" }));
     expect(claimSpec().cluster.zeebe.replicas).toBe(3);
     expect(input()).toHaveProperty("value", "3");
+  });
+
+  it("an edit that the user takes back keeps the editor and its focus", async () => {
+    renderSlot(contextOf({ openId: "gateway" }));
+    await openEditors();
+    const input = within(settingRow(group("Tasklist"), "replicas")).getByRole(
+      "spinbutton",
+    );
+    await userEvent.type(input, "2");
+    expect(claimSpec().cluster.tasklist.replicas).toBe(2);
+    await userEvent.type(input, "{Backspace}");
+    expect(claimSpec().cluster.tasklist).toBeUndefined();
+    expect(input.isConnected).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect(input).toHaveProperty("value", "");
+  });
+
+  it("a smaller pending size still says volumes cannot shrink when the editors open again", async () => {
+    const spec = {
+      zeebe: { replicas: 3, storageSize: "32Gi" },
+      gateway: { mode: "Standalone" },
+    };
+    renderSlot(
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(spec),
+        claim: claim("41", { cluster: spec }),
+      }),
+    );
+    await openEditors();
+    const amount = () =>
+      within(settingRow(group("Brokers"), "storageSize")).getByRole("textbox", {
+        name: "Amount",
+      });
+    await userEvent.clear(amount());
+    await userEvent.type(amount(), "16");
+    expect(screen.getByText(SHRINK)).toBeDefined();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close the editors" }),
+    );
+    await openEditors();
+    expect(amount()).toHaveProperty("value", "16");
+    expect(screen.getByText(SHRINK)).toBeDefined();
+  });
+
+  it("a reset of a block shows the preset in each editor of the block", async () => {
+    const spec = {
+      zeebe: {
+        replicas: 3,
+        scheduling: {
+          nodeAffinity: {
+            requiredDuringSchedulingIgnoredDuringExecution: {
+              nodeSelectorTerms: [
+                {
+                  matchExpressions: [
+                    { key: "pool", operator: "In", values: ["camunda"] },
+                  ],
+                },
+              ],
+            },
+          },
+          tolerations: [{ key: "dedicated", operator: "Exists" }],
+        },
+      },
+      gateway: { mode: "Standalone" },
+    };
+    renderSlot(
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(spec),
+        claim: claim("41", { cluster: spec }),
+      }),
+    );
+    await openEditors();
+    const affinity = () =>
+      within(settingRow(group("Brokers"), "scheduling.nodeAffinity")).getByRole(
+        "textbox",
+      );
+    expect(affinity()).toHaveProperty("value", expect.stringContaining("pool"));
+    await userEvent.click(
+      within(settingRow(group("Brokers"), "scheduling.tolerations")).getByRole(
+        "button",
+        { name: "Reset scheduling to preset" },
+      ),
+    );
+    expect(claimSpec().cluster.zeebe.scheduling).toBeUndefined();
+    expect(affinity()).toHaveProperty("value", "");
   });
 
   it("shows nothing without an open component", () => {

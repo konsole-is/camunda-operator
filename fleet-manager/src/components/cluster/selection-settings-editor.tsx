@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import type { ClusterField, Step } from "@/lib/fields";
 import type { OpenAPISchema } from "@/lib/schema";
@@ -30,15 +31,17 @@ export function SelectionSettingsEditor({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
 }) {
+  const [resets, setResets] = useState(0);
   return (
     <div className="flex min-w-0 flex-col divide-y divide-divider">
       {selectionSettingsOf(fields, schema, choices).map((setting) => (
         <SettingRow
-          key={setting.key}
+          key={`${setting.key}:${resets}`}
           setting={setting}
           secrets={secrets}
           set={set}
           reset={reset}
+          onReset={() => setResets((n) => n + 1)}
         />
       ))}
     </div>

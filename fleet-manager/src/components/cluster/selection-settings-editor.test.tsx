@@ -167,9 +167,15 @@ describe("SelectionSettingsEditor", () => {
 
   it("a parameter resets to the environment", async () => {
     const { reset } = renderEditor();
+    const replicas = settingRow("overrides.replicas");
+    expect(
+      within(replicas).getByText(
+        "Every overrides field of the claim goes back to the environment.",
+      ),
+    ).toBeDefined();
     await userEvent.click(
-      within(settingRow("overrides.replicas")).getByRole("button", {
-        name: "Reset to environment",
+      within(replicas).getByRole("button", {
+        name: "Reset overrides to environment",
       }),
     );
     expect(reset).toHaveBeenCalledWith(overridesSteps);

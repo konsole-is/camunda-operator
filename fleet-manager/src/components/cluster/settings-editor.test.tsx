@@ -22,6 +22,8 @@ import type { Process } from "./topology";
 afterEach(cleanup);
 
 const SHRINK = "Volumes cannot shrink. The operator keeps the current size.";
+const EMBEDDED_NOTE =
+  "Applies when Tasklist runs standalone. The exception is extraEnv and extraEnvFrom: they apply to the host now.";
 const SECRETS: SecretRefs = [{ name: "orders-oidc", keys: ["secret"] }];
 
 function renderEditor(
@@ -142,9 +144,7 @@ describe("SettingsEditor", () => {
     renderEditor("gateway", "tasklist", {
       cluster: { gateway: { mode: "Standalone" } },
     });
-    expect(
-      screen.getByText("Applies when Tasklist runs standalone."),
-    ).toBeDefined();
+    expect(screen.getByText(EMBEDDED_NOTE)).toBeDefined();
   });
 
   it("a smaller storage size says volumes cannot shrink", async () => {
@@ -174,6 +174,76 @@ describe("SettingsEditor", () => {
     expect(set).toHaveBeenLastCalledWith(
       steps("spec", "cluster", "auth", "clientSecretRef"),
       { name: "orders-oidc", key: "secret" },
+    );
+  });
+
+  it("a Secret reference survives a Secret list that is empty or late", () => {
+    const set = vi.fn();
+    const reset = vi.fn();
+    const ref = { name: "orders-oidc", key: "secret" };
+    const { group, settings } = settingsGroupOf("cluster", "cluster", {
+      claim: { cluster: { auth: { clientSecretRef: ref } } },
+    });
+    const editor = (secrets: SecretRefs) => (
+      <SettingsEditor
+        group={group}
+        settings={settings}
+        secrets={secrets}
+        set={set}
+        reset={reset}
+      />
+    );
+    const { rerender } = render(editor([]));
+    rerender(editor(SECRETS));
+    expect(
+      within(settingRow("auth.clientSecretRef")).getByRole("combobox", {
+        name: "Secret",
+      }),
+    ).toHaveProperty("value", "orders-oidc");
+    expect(set).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  it("a reset inside a block names the block that it resets", async () => {
+    const tolerations = [{ key: "dedicated", operator: "Exists" }];
+    const { reset } = renderEditor("zeebe", "zeebe", {
+      preset: { zeebe: { scheduling: { tolerations } } },
+      claim: {
+        cluster: {
+          zeebe: {
+            scheduling: { tolerations: [{ key: "spot", operator: "Exists" }] },
+          },
+        },
+      },
+    });
+    const row = settingRow("scheduling.tolerations");
+    expect(
+      within(row).getByText(
+        "Every scheduling field of the claim goes back to the preset.",
+      ),
+    ).toBeDefined();
+    await userEvent.click(
+      within(row).getByRole("button", { name: "Reset scheduling to preset" }),
+    );
+    expect(reset).toHaveBeenCalledWith(
+      steps("spec", "cluster", "zeebe", "scheduling"),
+    );
+  });
+
+  it("a list that each layer appends to says how many entries come first", () => {
+    renderEditor("zeebe", "zeebe", {
+      preset: { zeebe: { extraEnvFrom: [{ configMapRef: { name: "a" } }] } },
+      claim: {
+        cluster: { zeebe: { extraEnvFrom: [{ secretRef: { name: "b" } }] } },
+      },
+    });
+    const row = settingRow("extraEnvFrom");
+    expect(
+      within(row).getByText("The preset or the release adds 1 before these."),
+    ).toBeDefined();
+    expect(within(row).getByRole("textbox")).toHaveProperty(
+      "value",
+      expect.not.stringContaining("configMapRef"),
     );
   });
 

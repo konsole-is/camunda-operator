@@ -327,6 +327,24 @@ describe("settingsOf", () => {
     });
   });
 
+  it("a list that each layer appends to edits the list of the claim", () => {
+    const a = { configMapRef: { name: "preset-env" } };
+    const b = { secretRef: { name: "claim-env" } };
+    const c = { configMapRef: { name: "more-env" } };
+    const envFrom = setting(
+      processSettings("zeebe", "zeebe", {
+        preset: { zeebe: { extraEnvFrom: [a] } },
+        claim: { cluster: { zeebe: { extraEnvFrom: [b] } } },
+      }),
+      "extraEnvFrom",
+    );
+    expect(envFrom).toMatchObject({ value: [b], inherited: 1 });
+    expect(settingChange(envFrom, [b, c])).toEqual({
+      steps: steps("spec", "cluster", "zeebe", "extraEnvFrom"),
+      value: [b, c],
+    });
+  });
+
   it("a filled field is locked", () => {
     const url = setting(
       clusterSettings({

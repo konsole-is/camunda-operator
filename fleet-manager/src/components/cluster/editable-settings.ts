@@ -174,25 +174,32 @@ export function editorValueOf(
  * change. When a layer sets a whole field above the setting, steps is that
  * field and holder holds its value and the rest of the path to the
  * setting, so that a change keeps the rest of the field. claimSet shows the
- * reset link.
+ * reset link. current is the value before the pending changes. inherited
+ * counts the entries that the preset and the release put before value.
  */
 export type Setting = {
   key: string;
   label: string;
   editor?: SettingEditor;
   value: unknown;
+  current?: unknown;
+  inherited?: number;
   state?: FieldState;
   lock?: FieldLock;
   steps?: Step[];
   holder?: { value: unknown; rest: Step[] };
   claimSet: boolean;
-  resetLabel: "Reset to preset" | "Reset to environment";
+  resetLabel: string;
+  resetNote?: string;
 };
 
 /**
  * settingsOf returns the settings of group. spec holds the values by their
  * claim names: the merged CamundaCluster spec for a process or the
- * cluster, and spec.attachments.optimize of the claim for Optimize.
+ * cluster, and spec.attachments.optimize of the claim for Optimize. live,
+ * that spec before the pending changes, sets current. claim is the claim
+ * spec at the same root: an extraEnvFrom setting holds the list of the
+ * claim only.
  *
  * Each path of componentFieldPaths gives one setting, in that order, also
  * when no layer sets it. Its label is the path without the process name.
@@ -207,8 +214,10 @@ export type Setting = {
 export function settingsOf(input: {
   group: SettingsGroup;
   spec: unknown;
+  live?: unknown;
+  claim?: unknown;
 }): Setting[] {
-  const { group, spec } = input;
+  const { group, spec, live, claim } = input;
   const optimize = group.component === "optimize";
   const root: SchemaRoot = optimize ? "optimize" : "cluster";
   const base: Step[] = optimize
@@ -237,10 +246,22 @@ export function settingsOf(input: {
       mine.find(({ field }) => field.state.kind === "claim")?.field.state ??
       mine[0]?.field.state;
     const lock = mine.find(({ field }) => field.lock)?.field.lock;
+    const value = valueAt(spec, steps(names));
+    // The merge appends the extraEnvFrom of the claim to that of the preset
+    // and the release, so a merged value written to the claim repeats theirs.
+    const own =
+      "claim" in input && names.at(-1) === "extraEnvFrom"
+        ? valueAt(claim, steps(names))
+        : value;
+    const inherited =
+      own !== value ? lengthOf(value) - lengthOf(own) : undefined;
     const setting: Setting = {
       key: `${group.component}:${path}`,
       label: names.slice(prefix).join("."),
-      value: valueAt(spec, steps(names)),
+      value: own,
+      ...(inherited ? { inherited } : {}),
+      ...("live" in input &&
+        own === value && { current: valueAt(live, steps(names)) }),
       ...(state && { state }),
       claimSet: mine.some(({ field }) => field.state.kind === "claim"),
       resetLabel: "Reset to preset",
@@ -253,6 +274,10 @@ export function settingsOf(input: {
     if (holder?.field.claimSteps)
       return {
         ...setting,
+        ...blockReset(
+          names.slice(prefix, holder.names.length).join(".") || group.label,
+          "preset",
+        ),
         editor,
         steps: holder.field.claimSteps,
         holder: {
@@ -337,6 +362,7 @@ export function selectionSettingsOf(
           label: `${name}.${part}`,
           value: valueAt(field.value, [{ field: part }]),
           ...(editor && {
+            ...blockReset(name, "environment"),
             editor,
             steps: field.claimSteps,
             holder: { value: field.value, rest: [{ field: part }] },
@@ -353,6 +379,17 @@ export function selectionSettingsOf(
         : editorOf(name, own);
     return [{ ...base, ...(editor && { editor, steps: field.claimSteps }) }];
   });
+}
+
+function lengthOf(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function blockReset(block: string, layer: "preset" | "environment") {
+  return {
+    resetLabel: `Reset ${block} to ${layer}`,
+    resetNote: `Every ${block} field of the claim goes back to the ${layer}.`,
+  };
 }
 
 function propertiesOf(schema: unknown): Record<string, unknown> {

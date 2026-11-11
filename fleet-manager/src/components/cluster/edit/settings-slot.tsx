@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { secretRefsOf } from "@/components/fleet/secret-ref-picker";
 import { Button } from "@/components/ui/button";
-import { clusterFields } from "@/lib/fields";
+import { clusterFields, type Step } from "@/lib/fields";
 import { useResources } from "@/lib/k8s/hooks";
 import { claimAfter, type Session } from "@/lib/session";
 import type { CardId } from "../cards";
@@ -24,15 +24,17 @@ import { type ClusterClaim, useClusterEdit } from "./cluster-edit";
  * nothing without an open component or without a session.
  */
 export function ComponentSettingsEditor({ ctx }: { ctx: ClusterSlotContext }) {
-  const { session, pending } = useClusterEdit();
+  const { session, pending, set, reset } = useClusterEdit();
   const [open, setOpen] = useState(false);
-  // The editors start from their values, so they remount once nothing is
-  // pending, to show the live values.
+  // The editors start from their values. A discard or a write that leaves
+  // nothing pending remounts them, but an edit of their own (own) does not.
   const [generation, setGeneration] = useState(0);
-  const [wasPending, setWasPending] = useState(pending > 0);
-  if (wasPending !== pending > 0) {
-    setWasPending(pending > 0);
-    if (pending === 0) setGeneration((g) => g + 1);
+  const [own, setOwn] = useState(0);
+  const [seen, setSeen] = useState({ pending: pending > 0, own });
+  if (seen.pending !== pending > 0 || seen.own !== own) {
+    if (pending === 0 && seen.pending && seen.own === own)
+      setGeneration((g) => g + 1);
+    setSeen({ pending: pending > 0, own });
   }
   if (!ctx.openId || !session) return null;
   return (
@@ -52,6 +54,14 @@ export function ComponentSettingsEditor({ ctx }: { ctx: ClusterSlotContext }) {
           ctx={ctx}
           openId={ctx.openId}
           session={session}
+          set={(steps, value) => {
+            setOwn((n) => n + 1);
+            set(steps, value);
+          }}
+          reset={(steps) => {
+            setOwn((n) => n + 1);
+            reset(steps);
+          }}
         />
       )}
     </div>
@@ -64,15 +74,19 @@ function Editors({
   ctx,
   openId,
   session,
+  set,
+  reset,
 }: {
   ctx: ClusterSlotContext;
   openId: CardId;
   session: Session<ClusterClaim>;
+  set: (steps: Step[], value: unknown) => void;
+  reset: (steps: Step[]) => void;
 }) {
-  const { set, reset, errors } = useClusterEdit();
+  const { errors } = useClusterEdit();
   const namespace = ctx.cluster.metadata?.namespace ?? "";
   const secrets = secretRefsOf(useResources("Secret", { namespace }, []).items);
-  const merged = mergedSpecs(changeInputOf(ctx, session)).after;
+  const { before, after: merged } = mergedSpecs(changeInputOf(ctx, session));
   const claim = claimAfter(session);
   const fields = clusterFields(
     clusterFieldsInputOf({
@@ -91,13 +105,20 @@ function Editors({
         <SettingsEditor
           key={group.label}
           group={group}
-          settings={settingsOf({
-            group,
-            spec:
-              group.component === "optimize"
-                ? (claim.spec.attachments?.optimize ?? {})
-                : merged.spec,
-          })}
+          settings={settingsOf(
+            group.component === "optimize"
+              ? {
+                  group,
+                  spec: claim.spec.attachments?.optimize ?? {},
+                  live: session.claim.spec.attachments?.optimize ?? {},
+                }
+              : {
+                  group,
+                  spec: merged.spec,
+                  live: before.spec,
+                  claim: claim.spec.cluster ?? {},
+                },
+          )}
           secrets={secrets}
           errors={errors}
           set={set}

@@ -133,6 +133,31 @@ describe("outcomeOf", () => {
     ).toEqual(outcome);
   });
 
+  it("an error at an object above pending fields goes to each of them", () => {
+    const s = session();
+    const at = (path: string) =>
+      outcomeOf(
+        {
+          objects: [],
+          errors: [{ code: "Invalid", message: "too many brokers", path }],
+        },
+        s,
+      );
+    const outcome = {
+      ok: false,
+      stale: false,
+      fields: [
+        { path: "spec.cluster.zeebe.replicas", message: "too many brokers" },
+      ],
+      messages: [],
+    };
+    expect(at("spec.cluster.zeebe")).toEqual(outcome);
+    expect(at("cluster.zeebe")).toEqual(outcome);
+    const message = { ...outcome, fields: [], messages: ["too many brokers"] };
+    expect(at("spec.cluster.zee")).toEqual(message);
+    expect(at("spec")).toEqual(message);
+  });
+
   it("an error at an index path or below a pending object goes to its pending field", () => {
     const claim: ClaimObject = {
       apiVersion: ref.apiVersion,
