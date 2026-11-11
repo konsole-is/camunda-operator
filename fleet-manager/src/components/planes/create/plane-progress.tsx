@@ -13,8 +13,9 @@ const READY: FleetCamundaManagementClusterClaimConditionType = "Ready";
 
 /**
  * PlaneProgress follows the written claim live after the create and shows
- * it with PlaneProgressView. Until the claim exists, it shows claim as
- * written, with every row pending.
+ * it with PlaneProgressView, with the error of a failed read above it.
+ * Until the claim exists, it shows claim as written, with every row
+ * pending.
  */
 export function PlaneProgress({
   claim,
@@ -24,16 +25,23 @@ export function PlaneProgress({
   sections: readonly PluginSection[];
 }) {
   const { namespace, name = "" } = claim.metadata;
-  const { item } = useResource("CamundaManagementClusterClaim", {
+  const { item, error } = useResource("CamundaManagementClusterClaim", {
     namespace,
     name,
   });
   return (
-    <PlaneProgressView
-      name={name}
-      claim={(item as CamundaManagementClusterClaim | undefined) ?? claim}
-      sections={sections}
-    />
+    <div className="flex min-w-0 flex-col gap-4">
+      {error && (
+        <p role="alert" className="text-sm text-bad">
+          Could not read CamundaManagementClusterClaim: {error}
+        </p>
+      )}
+      <PlaneProgressView
+        name={name}
+        claim={(item as CamundaManagementClusterClaim | undefined) ?? claim}
+        sections={sections}
+      />
+    </div>
   );
 }
 
