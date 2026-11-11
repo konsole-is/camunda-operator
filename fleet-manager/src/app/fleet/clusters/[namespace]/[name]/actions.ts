@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  backupChangeSchema,
   claimChangeSchema,
   runChange,
   runPreview,
@@ -15,4 +16,9 @@ export async function previewClaimChange(change: Change): Promise<Preview> {
 /** applyClaimChange writes a change of one claim with the writer of the settings. */
 export async function applyClaimChange(change: Change): Promise<WriteResult> {
   return runChange(change, claimChangeSchema);
+}
+
+/** applyBackupChange writes one new backup or restore, or one backup delete, straight to the cluster. */
+export async function applyBackupChange(change: Change): Promise<WriteResult> {
+  return runChange(change, backupChangeSchema);
 }

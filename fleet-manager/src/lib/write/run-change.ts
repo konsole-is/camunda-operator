@@ -97,6 +97,52 @@ export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
   { message: "The change must apply one claim and nothing else." },
 );
 
+const BACKUP_KINDS: readonly string[] = [
+  "LogicalBackupElasticsearch",
+  "LogicalBackupRDBMS",
+];
+const BACKUP_WRITE_KINDS: readonly string[] = [
+  ...BACKUP_KINDS,
+  "LogicalRestoreElasticsearch",
+  "LogicalRestoreRDBMS",
+  "PointInTimeRestore",
+];
+
+/**
+ * backupChangeSchema accepts a Change with directOnly that does one of two
+ * things: it creates one backup or restore of the five backup and restore
+ * kinds, with a namespace, and create lists it; or it deletes one backup of
+ * either kind, with a namespace. It refuses force and preconditions.
+ */
+export const backupChangeSchema: z.ZodType<Change> = changeSchema.refine(
+  (c) => {
+    const [object] = c.apply;
+    const created =
+      c.apply.length === 1 &&
+      BACKUP_WRITE_KINDS.includes(object.kind) &&
+      object.metadata.namespace !== undefined &&
+      c.create?.length === 1 &&
+      c.create[0] === refKey(refOf(object)) &&
+      c.delete === undefined;
+    const deleted =
+      c.apply.length === 0 &&
+      c.delete?.length === 1 &&
+      BACKUP_KINDS.includes(c.delete[0].kind) &&
+      c.delete[0].namespace !== undefined &&
+      c.create === undefined;
+    return (
+      (created || deleted) &&
+      c.directOnly === true &&
+      c.force === undefined &&
+      c.preconditions === undefined
+    );
+  },
+  {
+    message:
+      "The change must create one backup or restore, or delete one backup, straight to the cluster.",
+  },
+);
+
 /**
  * createChangeSchema accepts a Change that applies one claim of either
  * kind with a namespace, optionally after the Namespace of that namespace,

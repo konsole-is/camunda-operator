@@ -9,6 +9,7 @@ const fake = {
 vi.mock("./writer", () => ({ getWriter: async () => fake }));
 
 const {
+  backupChangeSchema,
   changeSchema,
   claimChangeSchema,
   createChangeSchema,
@@ -363,6 +364,139 @@ describe("createChangeSchema", () => {
     ],
   ])("refuses %s", (_, input) => {
     expect(createChangeSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe("backupChangeSchema", () => {
+  const core = "core.camunda.io/v1";
+  const object = (kind: string) => ({
+    apiVersion: core,
+    kind,
+    metadata: { name: "orders-manual-1", namespace: "team-a" },
+    spec: {},
+  });
+  const ref = (kind: string) => ({
+    apiVersion: core,
+    kind,
+    namespace: "team-a",
+    name: "orders-manual-1",
+  });
+  const key = (kind: string) => `${kind}/team-a/orders-manual-1`;
+  const ok = (c: unknown) => backupChangeSchema.safeParse(c).success;
+
+  it.each([
+    "LogicalBackupElasticsearch",
+    "LogicalBackupRDBMS",
+    "LogicalRestoreElasticsearch",
+    "LogicalRestoreRDBMS",
+    "PointInTimeRestore",
+  ])("accepts one new %s, straight to the cluster", (kind) => {
+    expect(
+      ok({
+        intent: "x",
+        apply: [object(kind)],
+        create: [key(kind)],
+        directOnly: true,
+      }),
+    ).toBe(true);
+  });
+
+  it.each(["LogicalBackupElasticsearch", "LogicalBackupRDBMS"])(
+    "accepts one %s to delete, straight to the cluster",
+    (kind) => {
+      expect(
+        ok({ intent: "x", apply: [], delete: [ref(kind)], directOnly: true }),
+      ).toBe(true);
+    },
+  );
+
+  it("refuses a change that would go to Git in Git mode", () => {
+    const kind = "LogicalBackupElasticsearch";
+    const apply = [object(kind)];
+    const create = [key(kind)];
+    expect(ok({ intent: "x", apply, create })).toBe(false);
+    expect(ok({ intent: "x", apply, create, directOnly: false })).toBe(false);
+  });
+
+  it("refuses an apply of an object that may exist", () => {
+    const apply = [object("LogicalBackupRDBMS")];
+    expect(ok({ intent: "x", apply, directOnly: true })).toBe(false);
+  });
+
+  it("refuses a claim, a schedule, and the delete of a restore", () => {
+    for (const kind of ["CamundaClusterClaim", "BackupSchedule"]) {
+      expect(
+        ok({
+          intent: "x",
+          apply: [object(kind)],
+          create: [key(kind)],
+          directOnly: true,
+        }),
+      ).toBe(false);
+    }
+    expect(
+      ok({
+        intent: "x",
+        apply: [],
+        delete: [ref("LogicalRestoreRDBMS")],
+        directOnly: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses two objects, a create with a delete, force, a precondition, and no namespace", () => {
+    const kind = "LogicalBackupRDBMS";
+    const one = object(kind);
+    const create = [key(kind)];
+    const twoApplied = {
+      intent: "x",
+      apply: [one, { ...one, metadata: { ...one.metadata, name: "b" } }],
+      create: [key(kind), `${kind}/team-a/b`],
+      directOnly: true,
+    };
+    expect(ok(twoApplied)).toBe(false);
+    expect(
+      ok({
+        intent: "x",
+        apply: [],
+        delete: [ref(kind), { ...ref(kind), name: "b" }],
+        directOnly: true,
+      }),
+    ).toBe(false);
+    expect(
+      ok({
+        intent: "x",
+        apply: [one],
+        create,
+        delete: [{ ...ref(kind), name: "b" }],
+        directOnly: true,
+      }),
+    ).toBe(false);
+    expect(
+      ok({ intent: "x", apply: [one], create, directOnly: true, force: true }),
+    ).toBe(false);
+    expect(
+      ok({
+        intent: "x",
+        apply: [],
+        delete: [ref(kind)],
+        directOnly: true,
+        preconditions: { [key(kind)]: "7" },
+      }),
+    ).toBe(false);
+    const { namespace: _, ...noNamespace } = one.metadata;
+    expect(
+      ok({
+        intent: "x",
+        apply: [{ ...one, metadata: noNamespace }],
+        create: [`${kind}//orders-manual-1`],
+        directOnly: true,
+      }),
+    ).toBe(false);
+    const { namespace: __, ...noRefNamespace } = ref(kind);
+    expect(
+      ok({ intent: "x", apply: [], delete: [noRefNamespace], directOnly: true }),
+    ).toBe(false);
   });
 });
 

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeWriter } from "../../../../../../test/fakes/writer";
-import { applyClaimChange, previewClaimChange } from "./actions";
+import {
+  applyBackupChange,
+  applyClaimChange,
+  previewClaimChange,
+} from "./actions";
 
 vi.mock(
   "@/lib/write/writer",
@@ -54,5 +58,36 @@ describe("previewClaimChange", () => {
     const result = await previewClaimChange(change("Environment"));
     expect(result.errors[0].code).toBe("Invalid");
     expect(fakeWriter.previewed).toEqual([]);
+  });
+});
+
+describe("applyBackupChange", () => {
+  const backup = {
+    intent: "Back up orders",
+    apply: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "LogicalBackupElasticsearch",
+        metadata: { name: "orders-manual-1", namespace: "team-a" },
+        spec: { clusterRef: { name: "orders" } },
+      },
+    ],
+    create: ["LogicalBackupElasticsearch/team-a/orders-manual-1" as const],
+    directOnly: true,
+  };
+
+  it("applyBackupChange writes a backup straight to the cluster, also in Git mode", async () => {
+    fakeWriter.reset("git");
+    expect(await applyBackupChange(backup)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([backup]);
+  });
+
+  it("applyBackupChange refuses a claim change and writes nothing", async () => {
+    const result = await applyBackupChange(change());
+    expect(!result.ok && result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.applied).toEqual([]);
   });
 });
