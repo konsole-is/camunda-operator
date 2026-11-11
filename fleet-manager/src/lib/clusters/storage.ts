@@ -3,14 +3,23 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { accessPatterns, defaultAccessPatterns } from "@/lib/claims/hosts";
+import { SLOT_FIELDS } from "@/lib/fields/slots";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
   type BuiltinObjects,
+  type DeletionPolicy,
+  type ParameterRule,
   type PluginSelection,
   type SectionView,
+  type Slot,
+  builtinEntry,
   builtinOption,
   byCodeUnit,
+  checkDeletionPolicy,
+  lockedSummary,
   offeredSection,
+  resolve,
+  slotOf,
   withMissingInputs,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
@@ -146,4 +155,228 @@ export function draftAccessPatterns(
     (r) => r.metadata.name === picked?.registration,
   );
   return registration && accessPatterns(registration, data.environment, picked);
+}
+
+/**
+ * DeletionChoice is the deletion choice of step 2. defaultPolicy is
+ * spec.deletionPolicy of the Environment, Delete when unset or without an
+ * Environment. keepAllowed is false when checkDeletionPolicy refuses Orphan
+ * for the selections. alwaysDeleted lists each selection whose registration
+ * does not list Orphan, as "<option label> (<section label>)". policy is
+ * the pick of the draft, else the default, and Delete when that is Orphan
+ * and keepAllowed is false.
+ */
+export type DeletionChoice = {
+  defaultPolicy: DeletionPolicy;
+  keepAllowed: boolean;
+  alwaysDeleted: { section: string; label: string }[];
+  policy: DeletionPolicy;
+};
+
+/**
+ * deletionChoice returns the deletion choice of draft. The selections are
+ * those of the sections that storageViews shows, with the default of a
+ * section that the step has not reported yet.
+ */
+export function deletionChoice(
+  draft: ClusterDraft,
+  data: StorageData,
+): DeletionChoice {
+  const defaultPolicy = data.environment?.spec.deletionPolicy || "Delete";
+  const views = storageViews(draft, data);
+  const selections = views.flatMap((view) => picksOf(draft, view));
+  const keepAllowed =
+    "value" in checkDeletionPolicy("Orphan", selections, data.registrations);
+  const alwaysDeleted = selections.flatMap((s) => {
+    const registration = data.registrations.find(
+      (r) => r.metadata.name === s.registration,
+    );
+    if (
+      !registration ||
+      registration.spec.deletionPolicies.includes("Orphan")
+    ) {
+      return [];
+    }
+    const view = views.find((v) => v.name === s.section);
+    const option =
+      view?.options.find((o) => o.registration === s.registration)?.label ??
+      registration.spec.label;
+    return [
+      { section: s.section, label: `${option} (${view?.label ?? s.section})` },
+    ];
+  });
+  const picked = draft.claim.spec.deletionPolicy ?? defaultPolicy;
+  return {
+    defaultPolicy,
+    keepAllowed,
+    alwaysDeleted,
+    policy: picked === "Orphan" && !keepAllowed ? "Delete" : picked,
+  };
+}
+
+/**
+ * StorageSummary is what the step 2 picks give the later steps.
+ * backupStorage is the selection of the section with slot backupStorage.
+ * secondaryStorageType is the type of the secondary storage selection when
+ * it is known before creation, else undefined. optimizeUrl says that
+ * the access selection gives the Optimize URL. slots are the slots that the
+ * selections fill. picks are the review lines, one for each selection.
+ */
+export type StorageSummary = {
+  backupStorage?: PluginSelection;
+  secondaryStorageType?: "elasticsearch" | "rdbms";
+  optimizeUrl: boolean;
+  slots: Slot[];
+  picks: StoragePick[];
+};
+
+/**
+ * StoragePick is one selection as the review shows it, with no ARN. values
+ * holds each claim-editable parameter that has a value, from the
+ * selection, else the policy value.
+ */
+export type StoragePick = {
+  section: string;
+  sectionLabel: string;
+  registration: string;
+  optionLabel: string;
+  values: { label: string; value: string }[];
+};
+
+// The output key of the access section that fills the Optimize URL.
+const OPTIMIZE_URL_OUTPUT = SLOT_FIELDS.find(
+  (row) =>
+    row.claimKind === "CamundaClusterClaim" &&
+    row.slot === "externalAccess" &&
+    row.kind === "CamundaOptimize",
+)?.output;
+
+/**
+ * storageSummary returns the summary of the step 2 picks of draft, section
+ * after section in the order of storageViews, with the default of a section
+ * that the step has not reported yet. The type of a selection that names a
+ * SecondaryStorageConfig is the type of that object in the namespace of
+ * draft.
+ */
+export function storageSummary(
+  draft: ClusterDraft,
+  data: StorageData,
+): StorageSummary {
+  const summary: StorageSummary = { optimizeUrl: false, slots: [], picks: [] };
+  for (const view of storageViews(draft, data)) {
+    const selections = picksOf(draft, view);
+    const section = data.sections.find((s) => s.metadata.name === view.name);
+    const slot = section && slotOf(section);
+    if (slot && selections.length > 0) summary.slots.push(slot);
+    for (const selection of selections) {
+      const registration = data.registrations.find(
+        (r) => r.metadata.name === selection.registration,
+      );
+      const option = view.options.find(
+        (o) => o.registration === selection.registration,
+      );
+      summary.picks.push({
+        section: view.name,
+        sectionLabel: view.label,
+        registration: selection.registration,
+        optionLabel:
+          option?.label ?? registration?.spec.label ?? selection.registration,
+        values: pickValues(option?.parameters ?? [], selection),
+      });
+      if (!registration) continue;
+      if (slot === "backupStorage") summary.backupStorage = selection;
+      if (slot === "secondaryStorage") {
+        summary.secondaryStorageType = storageType(
+          registration,
+          selection,
+          draft,
+          data,
+        );
+      }
+      if (slot === "externalAccess") {
+        summary.optimizeUrl = (registration.spec.outputs ?? []).some(
+          (o) => o.key === OPTIMIZE_URL_OUTPUT,
+        );
+      }
+    }
+  }
+  return summary;
+}
+
+// SectionCards leaves out of a selection each parameter that equals its
+// policy value, so the policy value of an editable parameter fills the gap.
+function pickValues(
+  rules: readonly ParameterRule[],
+  selection: PluginSelection,
+): StoragePick["values"] {
+  const set = selection.parameters ?? {};
+  const names = [
+    ...rules
+      .filter(
+        (r) =>
+          r.claimEditable &&
+          (Object.hasOwn(set, r.name) || r.value !== undefined),
+      )
+      .map((r) => r.name),
+    ...Object.keys(set).filter((name) => !rules.some((r) => r.name === name)),
+  ];
+  return names.map((name) => {
+    const rule = rules.find((r) => r.name === name);
+    const value = Object.hasOwn(set, name)
+      ? set[name]
+      : rule?.claimEditable
+        ? rule.value
+        : undefined;
+    return pickValue(rule, name, value, Object.hasOwn(set, name));
+  });
+}
+
+function pickValue(
+  rule: ParameterRule | undefined,
+  name: string,
+  value: unknown,
+  entered: boolean,
+): { label: string; value: string } {
+  const allowed = (rule?.claimEditable && rule.allowed) || [];
+  const text = (v: unknown) =>
+    allowed.find((c) => c.name === v)?.label ??
+    (typeof v === "string" && v.startsWith("arn:")
+      ? entered
+        ? "An ARN that you entered"
+        : "Set by your admin"
+      : lockedSummary(v));
+  return {
+    label: rule?.label ?? name,
+    value:
+      allowed.length > 0 && Array.isArray(value)
+        ? value.map(text).join(", ")
+        : text(value),
+  };
+}
+
+function storageType(
+  registration: PluginRegistration,
+  selection: PluginSelection,
+  draft: ClusterDraft,
+  data: StorageData,
+): StorageSummary["secondaryStorageType"] {
+  const entry = builtinEntry(registration);
+  if (!entry) return undefined;
+  if (entry.storageType) return entry.storageType;
+  const parameter = Object.entries(entry.lists).find(
+    ([, kind]) => kind === "SecondaryStorageConfig",
+  )?.[0];
+  if (!parameter) return undefined;
+  const result = resolve({
+    environment: data.environment,
+    registrations: [registration],
+    selections: [selection],
+  });
+  if (!("value" in result)) return undefined;
+  const name = result.value.requests?.[0]?.parameters?.[parameter];
+  return data.objects.SecondaryStorageConfig?.find(
+    (c) =>
+      c.metadata?.namespace === draft.namespace?.name &&
+      c.metadata?.name === name,
+  )?.spec.type;
 }
