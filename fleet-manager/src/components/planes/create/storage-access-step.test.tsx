@@ -174,11 +174,12 @@ const keycloak: PlaneDraft = {
 function Harness({
   initial = keycloak,
   access = false,
+  ctx = ctxOf(access),
 }: {
   initial?: PlaneDraft;
   access?: boolean;
+  ctx?: PlaneContext;
 }) {
-  const ctx = ctxOf(access);
   const flow = useCreateFlow<PlaneDraft>({
     steps: [{ id: "storage", label: "Storage and access" }],
     initial,
@@ -294,6 +295,24 @@ describe("StorageAccessStep", () => {
     ]);
     expect(screen.queryByLabelText("Web Modeler URL")).toBeNull();
     expect(stepErrors()).toContain("Enter the Keycloak URL.");
+  });
+
+  it("without an access section shows the URL fields, and the typed URLs clear the URL errors", async () => {
+    const ctx = {
+      ...ctxOf(false),
+      sections: sections.filter((s) => s.metadata.name !== "access"),
+    };
+    render(<Harness ctx={ctx} />);
+    expect(stepErrors()).toContain("Enter the Keycloak URL.");
+    await userEvent.type(
+      screen.getByLabelText("Keycloak URL"),
+      "https://m.example.com/auth",
+    );
+    await userEvent.type(
+      screen.getByLabelText("Management Identity URL"),
+      "https://m.example.com/identity",
+    );
+    expect(stepErrors().filter((e) => e?.startsWith("Enter the"))).toEqual([]);
   });
 
   it("keeps the typed URLs across an access round trip", async () => {

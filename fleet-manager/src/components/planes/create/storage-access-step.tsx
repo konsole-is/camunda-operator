@@ -87,75 +87,75 @@ export function StorageAccessStep({
           )}
         </div>
       )}
-      {views.access && (
-        <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-3">
+        {views.access && (
           <StorageCards
             view={views.access}
             draft={draft}
             onChange={onChange(views.access.name)}
           />
-          {accessSelection(draft) ? (
-            host && (
-              <div className="flex flex-col gap-3">
-                <LockedField
-                  label="Hostname"
-                  value={<span className="font-mono">{host.host}</span>}
-                  reason={`From the pattern ${host.pattern}.`}
-                />
-                <ul
-                  aria-label="URLs"
-                  className="flex flex-col divide-y divide-divider rounded-md border border-border text-sm"
-                >
-                  {Object.entries(accessUrls(host.host, fields)).map(
-                    ([key, url]) => (
-                      <li
-                        key={key}
-                        className="flex flex-col gap-0.5 px-3 py-2 sm:flex-row sm:gap-4"
-                      >
-                        <span className="text-text-2 sm:w-48">
-                          {fields.find((f) => f.id === key)?.label}
-                        </span>
-                        <span className="font-mono break-all text-text">
-                          {url}
-                        </span>
-                      </li>
-                    ),
-                  )}
-                </ul>
-                <p className="text-xs text-muted">
-                  Paths are fixed. Each app serves under its path.
-                </p>
-              </div>
-            )
-          ) : (
-            <div className="flex max-w-md flex-col gap-4">
-              {fields.map((field) => (
-                <div key={field.id} className="flex flex-col gap-1">
-                  <label
-                    htmlFor={`${id}-${field.id}`}
-                    className="text-sm font-medium text-text"
-                  >
-                    {`${field.label} URL`}
-                  </label>
-                  <Input
-                    id={`${id}-${field.id}`}
-                    type="url"
-                    required
-                    value={draft.urls[field.id] ?? ""}
-                    placeholder={field.placeholder}
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="font-mono"
-                    onChange={(event) =>
-                      set(["urls", field.id], event.target.value)
-                    }
-                  />
-                </div>
-              ))}
+        )}
+        {accessSelection(draft) ? (
+          host && (
+            <div className="flex flex-col gap-3">
+              <LockedField
+                label="Hostname"
+                value={<span className="font-mono">{host.host}</span>}
+                reason={`From the pattern ${host.pattern}.`}
+              />
+              <ul
+                aria-label="URLs"
+                className="flex flex-col divide-y divide-divider rounded-md border border-border text-sm"
+              >
+                {Object.entries(accessUrls(host.host, fields)).map(
+                  ([key, url]) => (
+                    <li
+                      key={key}
+                      className="flex flex-col gap-0.5 px-3 py-2 sm:flex-row sm:gap-4"
+                    >
+                      <span className="text-text-2 sm:w-48">
+                        {fields.find((f) => f.id === key)?.label}
+                      </span>
+                      <span className="font-mono break-all text-text">
+                        {url}
+                      </span>
+                    </li>
+                  ),
+                )}
+              </ul>
+              <p className="text-xs text-muted">
+                Paths are fixed. Each app serves under its path.
+              </p>
             </div>
-          )}
-        </div>
-      )}
+          )
+        ) : (
+          <div className="flex max-w-md flex-col gap-4">
+            {fields.map((field) => (
+              <div key={field.id} className="flex flex-col gap-1">
+                <label
+                  htmlFor={`${id}-${field.id}`}
+                  className="text-sm font-medium text-text"
+                >
+                  {`${field.label} URL`}
+                </label>
+                <Input
+                  id={`${id}-${field.id}`}
+                  type="url"
+                  required
+                  value={draft.urls[field.id] ?? ""}
+                  placeholder={field.placeholder}
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="font-mono"
+                  onChange={(event) =>
+                    set(["urls", field.id], event.target.value)
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <section className="flex max-w-md min-w-0 flex-col gap-1">
         <label
           htmlFor={`${id}-contract`}
