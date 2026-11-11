@@ -88,7 +88,7 @@ export function draftErrors(
     if (message) add("name", message);
   }
   const { spec } = draft;
-  if ((spec.displayName ?? "").length > 64)
+  if ([...(spec.displayName ?? "")].length > 64)
     add("spec.displayName", "The display name has at most 64 characters.");
   if (spec.color && !isHexColor(spec.color))
     add("spec.color", "The color is a hex color such as #2E7D32.");

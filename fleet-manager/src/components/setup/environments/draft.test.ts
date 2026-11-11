@@ -136,6 +136,15 @@ describe("draftErrors", () => {
     );
   });
 
+  it("counts the characters of a display name as the API server does", () => {
+    expect(draftErrors(draft({ displayName: "🚀".repeat(64) }), NEW)).toEqual(
+      [],
+    );
+    expect(
+      draftErrors(draft({ displayName: "🚀".repeat(65) }), NEW),
+    ).toHaveLength(1);
+  });
+
   it("refuses a color that is not a hex color of six digits", () => {
     expect(draftErrors(draft({ color: "#abc" }), NEW)).toEqual([
       {
