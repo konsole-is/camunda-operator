@@ -239,7 +239,10 @@ describe("BackupHeaderActions", () => {
 
   it("a refused backup keeps the form open and shows the error", async () => {
     fakeWriter.results = [
-      { ok: false, errors: [{ code: "Invalid", message: "spec is immutable" }] },
+      {
+        ok: false,
+        errors: [{ code: "Invalid", message: "spec is immutable" }],
+      },
     ];
     header();
     await startBackup();

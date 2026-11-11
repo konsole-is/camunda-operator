@@ -1,9 +1,12 @@
-import { apiVersionOf, KindMap } from "@/lib/k8s/kinds";
 import { isDNSSubdomain, SUSPENSION_HOLD_PREFIX } from "@/lib/labels";
 import type { BackupKind } from "@/lib/policy/backups";
 import { refKey } from "@/lib/write/refs";
 import type { Change } from "@/lib/write/types";
 import type { BackupRow, BackupStorage } from "./backups";
+
+// The backup and restore kinds are all in this group and version. The kind
+// table of src/lib/k8s is server only, and this module runs in the browser.
+const CORE_V1 = "core.camunda.io/v1";
 
 /** DIRECT_NOTE says that the backup and restore writes skip Git. */
 export const DIRECT_NOTE =
@@ -88,7 +91,11 @@ export function clusterSuspended(cluster: {
  * kind to create, and waits is the note that the new backup waits behind
  * the running operation.
  */
-export type BackUpNow = { kind?: BackupKind; disabled?: string; waits?: string };
+export type BackUpNow = {
+  kind?: BackupKind;
+  disabled?: string;
+  waits?: string;
+};
 
 /**
  * backUpNow gives the state of Back up now. It is off without backup
@@ -142,7 +149,7 @@ export function backupChange(
     intent: `Back up ${cluster}`,
     apply: [
       {
-        apiVersion: apiVersionOf(KindMap[kind]),
+        apiVersion: CORE_V1,
         kind,
         metadata: { name, namespace },
         spec: { clusterRef: { name: cluster } },
@@ -160,7 +167,7 @@ export function deleteBackupChange(namespace: string, row: BackupRow): Change {
     apply: [],
     delete: [
       {
-        apiVersion: apiVersionOf(KindMap[row.kind]),
+        apiVersion: CORE_V1,
         kind: row.kind,
         namespace,
         name: row.name,

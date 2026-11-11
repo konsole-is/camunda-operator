@@ -63,7 +63,13 @@ describe("backupContextOf", () => {
   it("backupContextOf reads the storage, the running operation, and the backup names of the namespace", () => {
     const backups = [
       backup("LogicalBackupElasticsearch", "done-1", "Completed"),
-      backup("LogicalBackupRDBMS", "other-cluster-1", "Running", "team-a", "billing"),
+      backup(
+        "LogicalBackupRDBMS",
+        "other-cluster-1",
+        "Running",
+        "team-a",
+        "billing",
+      ),
       backup("LogicalBackupElasticsearch", "elsewhere-1", "Running", "team-b"),
     ];
     const base = slotContext({ backupStorage: es, backups });
@@ -89,7 +95,10 @@ describe("backupContextOf", () => {
 
     const both = slotContext({
       backupStorage: es,
-      backups: [...backups, backup("LogicalBackupElasticsearch", "now-1", undefined)],
+      backups: [
+        ...backups,
+        backup("LogicalBackupElasticsearch", "now-1", undefined),
+      ],
       restores: [restore("r1", "Restoring")],
     });
     expect(backupContextOf(both).running).toEqual({
@@ -123,7 +132,9 @@ describe("backupSlots", () => {
     );
     expect(screen.getByRole("button", { name: "Back up now" })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
-    await userEvent.click(screen.getByRole("button", { name: "Delete backup" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete backup" }),
+    );
     await waitFor(() =>
       expect(fakeWriter.applied.map((c) => c.intent)).toEqual([
         "Delete backup nightly-1",

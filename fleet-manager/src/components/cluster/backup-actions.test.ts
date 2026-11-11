@@ -185,11 +185,16 @@ describe("backup rules", () => {
         {
           apiVersion: "core.camunda.io/v1",
           kind: "LogicalBackupElasticsearch",
-          metadata: { name: "orders-manual-20261110-143005", namespace: "team-a" },
+          metadata: {
+            name: "orders-manual-20261110-143005",
+            namespace: "team-a",
+          },
           spec: { clusterRef: { name: "orders" } },
         },
       ],
-      create: ["LogicalBackupElasticsearch/team-a/orders-manual-20261110-143005"],
+      create: [
+        "LogicalBackupElasticsearch/team-a/orders-manual-20261110-143005",
+      ],
       directOnly: true,
     });
     expect(

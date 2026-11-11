@@ -484,18 +484,22 @@ describe("backupChangeSchema", () => {
         preconditions: { [key(kind)]: "7" },
       }),
     ).toBe(false);
-    const { namespace: _, ...noNamespace } = one.metadata;
     expect(
       ok({
         intent: "x",
-        apply: [{ ...one, metadata: noNamespace }],
+        apply: [{ ...one, metadata: { name: "orders-manual-1" } }],
         create: [`${kind}//orders-manual-1`],
         directOnly: true,
       }),
     ).toBe(false);
-    const { namespace: __, ...noRefNamespace } = ref(kind);
+    const noRefNamespace = { apiVersion: core, kind, name: "orders-manual-1" };
     expect(
-      ok({ intent: "x", apply: [], delete: [noRefNamespace], directOnly: true }),
+      ok({
+        intent: "x",
+        apply: [],
+        delete: [noRefNamespace],
+        directOnly: true,
+      }),
     ).toBe(false);
   });
 });

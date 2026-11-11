@@ -78,7 +78,10 @@ export function BackupHeaderActions({
         )}
       </div>
       {state.disabled && (
-        <p id={`${id}-reason`} className="max-w-md text-right text-xs text-muted">
+        <p
+          id={`${id}-reason`}
+          className="max-w-md text-right text-xs text-muted"
+        >
           {state.disabled}
         </p>
       )}

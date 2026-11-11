@@ -47,7 +47,9 @@ export function rowActionsOf(
 ): ((row: BackupRow) => ReactNode) | undefined {
   const fill = slots?.["cluster.backups.row"];
   if (!managed || fill === undefined) return undefined;
-  return (row) => (
-    <div data-action-slot="cluster.backups.row">{fill(context, row)}</div>
-  );
+  return function rowActions(row: BackupRow) {
+    return (
+      <div data-action-slot="cluster.backups.row">{fill(context, row)}</div>
+    );
+  };
 }
