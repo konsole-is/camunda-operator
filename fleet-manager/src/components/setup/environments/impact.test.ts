@@ -252,6 +252,56 @@ describe("environmentImpact", () => {
     },
   );
 
+  it("marks no refusal for a downgrade that the claim or the cluster approves", () => {
+    const live = environment({
+      releases: { allowed: ["old", "new"], default: "old" },
+    });
+    const releases = [
+      { metadata: { name: "old" }, spec: { version: "8.9.1" } },
+      { metadata: { name: "new" }, spec: { version: "8.9.0" } },
+    ] as unknown as EnvironmentSources["releases"];
+    const cluster = (name: string, annotations?: Record<string, string>) => ({
+      apiVersion: "core.camunda.io/v1",
+      kind: "CamundaCluster",
+      metadata: {
+        namespace: "team-a",
+        name,
+        labels: { "fleet.camunda.io/claim": name },
+        ...(annotations && { annotations }),
+      },
+      spec: {},
+      status: { management: { version: "8.9.1" } },
+    });
+    const clusters = [
+      cluster("orders"),
+      cluster("billing", { "camunda.io/allow-version-downgrade": "8.9.0" }),
+      cluster("search"),
+    ] as unknown as EnvironmentSources["clusters"];
+    const warnings = environmentImpact(
+      live,
+      edit({ releases: { allowed: ["old", "new"], default: "new" } }),
+      sources({
+        clusterClaims: [
+          clusterClaim("orders", { allowVersionDowngrade: "8.9.0" }),
+          clusterClaim("billing"),
+          clusterClaim("search"),
+        ],
+        releases,
+        clusters,
+      }),
+    ).warnings;
+    expect(
+      warnings.map((w) => [
+        w.claim.name,
+        "refused" in w ? w.refused : undefined,
+      ]),
+    ).toEqual([
+      ["orders", undefined],
+      ["billing", undefined],
+      ["search", "VersionDowngradeRefused"],
+    ]);
+  });
+
   it("checks a new default release against the version that the cluster reports", () => {
     const live = environment({
       releases: { allowed: ["old", "new"], default: "old" },
@@ -296,6 +346,23 @@ describe("environmentImpact", () => {
           namespaces: [namespace("team-a", "staging"), namespace("legacy")],
           clusterClaims: [
             clusterClaim("orders"),
+            clusterClaim("old", {}, undefined, "legacy"),
+          ],
+        }),
+      ).unassigned,
+    ).toEqual(["legacy"]);
+  });
+
+  it("leaves out a namespace whose label names another environment", () => {
+    expect(
+      environmentImpact(
+        undefined,
+        edit({}),
+        sources({
+          environments: [],
+          namespaces: [namespace("future-ns", "future"), namespace("legacy")],
+          clusterClaims: [
+            clusterClaim("next", {}, undefined, "future-ns"),
             clusterClaim("old", {}, undefined, "legacy"),
           ],
         }),

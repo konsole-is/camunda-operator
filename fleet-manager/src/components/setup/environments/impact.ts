@@ -1,5 +1,9 @@
 import type { Environment } from "@/generated/crds/environment";
-import { CLAIM_LABEL } from "@/lib/labels";
+import {
+  ALLOW_VERSION_DOWNGRADE_ANNOTATION,
+  CLAIM_LABEL,
+  ENVIRONMENT_LABEL,
+} from "@/lib/labels";
 import {
   byCodeUnit,
   type ClaimKind,
@@ -21,10 +25,10 @@ export type ClaimRef = { kind: ClaimKind; namespace: string; name: string };
  * recorded policy. removed: the edit no longer allows the release or the
  * preset of the claim. followsDefault: the claim names no release or no
  * platform config, so it moves to the new default, name. refused is set
- * when the new default release has a version below the old default
- * release, or more than one minor above it in the same major. It is
- * VersionDowngradeRefused or VersionSkipRefused, and it is not set when a
- * version is missing or not x.y.z. cleared: the claim names none, and the
+ * when the new default release has a version below the running version of
+ * the cluster that no approval allows, or more than one minor above it in
+ * the same major. It is VersionDowngradeRefused or VersionSkipRefused, and
+ * it is not set when a version is missing or not x.y.z. cleared: the claim names none, and the
  * edit removes the default.
  */
 export type ReferenceWarning =
@@ -71,6 +75,7 @@ type Claim = {
     platformConfigRef?: string;
     releaseRef?: string;
     presetRef?: string;
+    allowVersionDowngrade?: string;
   };
   status?: { resolvedPolicy?: ResolvedPolicy };
 };
@@ -112,16 +117,21 @@ export function environmentImpact(
     }
     impact.warnings.push(
       ...warningsOf(ref, claim, before, edited).map((w) =>
-        refusedMove(w, runningVersion(claim, before, s), s),
+        refusedMove(w, claim, runningVersion(claim, before, s), s),
       ),
     );
   }
   if (!live && s.environments.length === 0) {
+    const unlabelled = new Set(
+      s.namespaces
+        .filter((n) => !n.metadata?.labels?.[ENVIRONMENT_LABEL])
+        .map((n) => n.metadata?.name ?? ""),
+    );
     const unassigned = [
       ...new Set(
         [...s.clusterClaims, ...s.planeClaims]
           .map((c) => c.metadata.namespace ?? "")
-          .filter((ns) => !namespaces.has(ns)),
+          .filter((ns) => unlabelled.has(ns)),
       ),
     ].sort(byCodeUnit);
     if (unassigned.length > 0) impact.unassigned = unassigned;
@@ -137,13 +147,8 @@ function runningVersion(
   before: Environment | undefined,
   s: EnvironmentSources,
 ): string | undefined {
-  const cluster = s.clusters.find(
-    (c) =>
-      c.metadata?.namespace === claim.metadata.namespace &&
-      c.metadata?.labels?.[CLAIM_LABEL] === claim.metadata.name,
-  );
   return (
-    cluster?.status?.management?.version ||
+    clusterOf(claim, s)?.status?.management?.version ||
     s.releases.find((r) => r.metadata.name === before?.spec.releases?.default)
       ?.spec.version
   );
@@ -196,7 +201,7 @@ export function namespaceImpact(
           ]
         : []),
     ];
-    return warnings.map((w) => refusedMove(w, running, s));
+    return warnings.map((w) => refusedMove(w, claim, running, s));
   });
 }
 
@@ -281,22 +286,38 @@ function defaultWarnings(
 // run, or more than one minor above it in the same major.
 function refusedMove(
   warning: ReferenceWarning,
+  claim: Claim,
   running: string | undefined,
   s: EnvironmentSources,
 ): ReferenceWarning {
   if (!("followsDefault" in warning) || warning.kind !== "CamundaRelease")
     return warning;
+  const version = s.releases.find((r) => r.metadata.name === warning.name)?.spec
+    .version;
   const have = parseVersion(running);
-  const want = parseVersion(
-    s.releases.find((r) => r.metadata.name === warning.name)?.spec.version,
-  );
+  const want = parseVersion(version);
   if (!have || !want) return warning;
+  const approved =
+    claim.spec.allowVersionDowngrade === version ||
+    clusterOf(claim, s)?.metadata?.annotations?.[
+      ALLOW_VERSION_DOWNGRADE_ANNOTATION
+    ] === version;
   const index = want.findIndex((n, i) => n !== have[i]);
   if (index >= 0 && want[index] < have[index])
-    return { ...warning, refused: "VersionDowngradeRefused" };
+    return approved
+      ? warning
+      : { ...warning, refused: "VersionDowngradeRefused" };
   if (want[0] === have[0] && want[1] > have[1] + 1)
     return { ...warning, refused: "VersionSkipRefused" };
   return warning;
+}
+
+function clusterOf(claim: Claim, s: EnvironmentSources) {
+  return s.clusters.find(
+    (c) =>
+      c.metadata?.namespace === claim.metadata.namespace &&
+      c.metadata?.labels?.[CLAIM_LABEL] === claim.metadata.name,
+  );
 }
 
 function parseVersion(version: string | undefined): number[] | undefined {

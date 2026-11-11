@@ -13,6 +13,14 @@ export const CLAIM_LABEL = "fleet.camunda.io/claim";
 export const REVISION_ANNOTATION = "fleet.camunda.io/revision";
 
 /**
+ * ALLOW_VERSION_DOWNGRADE_ANNOTATION on a CamundaCluster approves a downgrade
+ * to the version it holds. It is AllowVersionDowngradeAnnotation of
+ * pkg/components/camundacluster.
+ */
+export const ALLOW_VERSION_DOWNGRADE_ANNOTATION =
+  "camunda.io/allow-version-downgrade";
+
+/**
  * LAST_APPLIED_ANNOTATION holds the last applied file of kubectl apply
  * without --server-side. It is LastAppliedConfigAnnotation of k8s.io/api/core/v1.
  */
