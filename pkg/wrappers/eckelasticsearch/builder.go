@@ -65,7 +65,8 @@ func (b *Builder) WithMutation(ms ...Mutation) *Builder {
 // Elasticsearch has reached its converged state.
 //
 // The default behavior uses DefaultConvergingStatusHandler, which maps the ECK
-// CR's reported health: green is Healthy, yellow is still converging (Creating
+// CR's reported health: green is Healthy while at least one Elasticsearch pod
+// is Ready, yellow or green with no Ready pod is still converging (Creating
 // on first apply, Updating otherwise), red is Failing, and a missing or
 // unknown health is Creating on the first apply and Failing afterwards. This
 // handler is required by the generic layer, so it is registered in NewBuilder

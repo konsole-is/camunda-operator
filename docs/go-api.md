@@ -49,10 +49,15 @@ the resources.
 
 The root module `github.com/konsole-is/camunda-operator` holds the controllers
 and the shared packages under `pkg/`. The release tag `v<version>` is also
-its Go tag, and the root module requires the api module at the same
-version. A program that needs a package from `pkg/` imports the root
-module at a release tag. That program gets every dependency of the operator.
+its Go tag, and the root module requires the api module and the conformance
+module at the same version. A program that needs a package from `pkg/`
+imports the root module at a release tag. That program gets every dependency
+of the operator.
 
-Commits between two releases require the api version of the last release. A
-program that pins the root module at a commit on `main` must also require the
-api module at the same commit.
+Between two releases, the root `go.mod` can require a commit of the api and
+conformance modules instead of a release. A program that pins the root module
+at a commit on `main` must also require the api and conformance modules at the
+same commit.
+
+Plugin authors import the conformance module to test a plugin. See
+[Run the conformance suite](guides/writing-a-plugin.md#run-the-conformance-suite).

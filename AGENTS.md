@@ -371,13 +371,15 @@ these two are the only `dist/` files checked into this repository
 pattern never crosses a module boundary, so the Makefile runs each Go tool once
 per module. `tidy`, `fmt`, `vet`, `lint`, `lint-fix`, and `vulncheck` loop over
 the `MODULES` variable, and `test` has one line for each module. The root
-`go.mod` requires the api module and replaces it with `./api`, and
-`conformance/go.mod` does the same with `../api`, so local builds always use the
-on-disk copy.
+`go.mod` requires the api module and replaces it with `./api`. It also requires
+the conformance module and replaces it with `./conformance`. `conformance/go.mod`
+requires the api module and replaces it with `../api`. So local builds always use
+the on-disk copy.
 
 **Releasing:** follow [`RELEASING.md`](RELEASING.md). Run the **Prepare release**
-workflow first. It pins the api module version in the root `go.mod`, and the
-release workflow fails if that pin does not match the tag.
+workflow first. It pins the api and conformance modules in the root `go.mod`
+and the api module in `conformance/go.mod`, and the release workflow fails if
+a pin does not match the tag.
 
 ### Publish Container Images
 

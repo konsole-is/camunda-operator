@@ -10,7 +10,7 @@ on:
 
 jobs:
   prepare:
-    name: Pin the api module
+    name: Pin the Go modules
     runs-on: ubuntu-latest
 
     permissions:
@@ -44,7 +44,7 @@ jobs:
             echo "Build metadata such as +build is not allowed, because an image tag cannot contain '+'." >&2
             exit 1
           fi
-          for tag in "${TAG}" "api/${TAG}"; do
+          for tag in "${TAG}" "api/${TAG}" "conformance/${TAG}"; do
             status=0
             git ls-remote --exit-code --tags origin "refs/tags/${tag}" > /dev/null || status=$?
             if [[ "${status}" -eq 0 ]]; then
@@ -58,24 +58,27 @@ jobs:
             fi
           done
 
-      - name: Pin the api module
-        run: make api-version VERSION="${TAG#v}"
+      - name: Pin the api and conformance modules
+        run: make api-version conformance-version VERSION="${TAG#v}"
+
+      - name: Check the pins
+        run: make check-release-pins VERSION="${TAG#v}"
 
       # The workflow does not open the pull request itself. The repository does
       # not let GitHub Actions create pull requests, and a pull request opened
       # with GITHUB_TOKEN starts no CI runs.
       - name: Push the release branch
         run: |
-          if git diff --quiet go.mod; then
-            echo "go.mod already pins the api module at ${TAG}. Publish the release from main." >> "${GITHUB_STEP_SUMMARY}"
+          if git diff --quiet go.mod conformance/go.mod; then
+            echo "go.mod and conformance/go.mod already pin the modules at ${TAG}. Publish the release from main." >> "${GITHUB_STEP_SUMMARY}"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "${BRANCH}"
-          git commit -am "chore(release): pin the api module at ${TAG}"
+          git commit -am "chore(release): pin the Go modules at ${TAG}"
           git push origin "${BRANCH}"
-          title=$(jq -rn --arg t "${TAG}" '"chore(release): pin the api module at \($t)" | @uri')
+          title=$(jq -rn --arg t "${TAG}" '"chore(release): pin the Go modules at \($t)" | @uri')
           {
             echo "Pushed \`${BRANCH}\`."
             echo

@@ -87,10 +87,11 @@ var lifecycleChecks = []Check{
 	},
 	{
 		ID: ReqReady,
-		Description: "The request gets Ready=True within the Ready timeout, and not while a Grant has a Ready " +
-			"condition and another Grant does not have Ready=True, or Ready=False with the reason " +
-			"GrantRejected while one of its Grants has Ready=False, or with the reason WaitingForGrants while " +
-			"one of its Grants does not have Ready=True yet.",
+		Description: "Within the Ready timeout, the request gets Ready=True, or Ready=False with the reason " +
+			"GrantRejected or WaitingForGrants. Ready=True fails the check while a Grant has a Ready condition " +
+			"and another Grant does not have Ready=True. The reason GrantRejected needs a Grant with " +
+			"Ready=False. The reason WaitingForGrants needs a Grant without Ready=True, and no Grant with " +
+			"Ready=False.",
 		run: checkReady,
 	},
 	{
