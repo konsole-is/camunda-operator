@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useEffect, useId } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { DraftPath } from "@/components/create/use-create-flow";
 import {
@@ -160,6 +160,9 @@ export function ComponentsStep({
   );
 }
 
+// The claim names no keys of the SMTP Secret, so the operator reads these.
+const SMTP_KEYS = ["username", "password"];
+
 function MailFields({
   mail,
   secrets,
@@ -170,6 +173,15 @@ function MailFields({
   onChange: (key: keyof MailDraft, value: unknown) => void;
 }) {
   const id = useId();
+  const usable = secrets.filter((s) =>
+    SMTP_KEYS.every((key) => s.keys.includes(key)),
+  );
+  const stale =
+    mail.credentialsSecret !== "" &&
+    !usable.some((s) => s.name === mail.credentialsSecret);
+  useEffect(() => {
+    if (stale) onChange("credentialsSecret", "");
+  }, [stale, onChange]);
   return (
     <div className="flex flex-col gap-4 border-l-2 border-border pl-4">
       <TextField
@@ -223,7 +235,7 @@ function MailFields({
           }
         >
           <NativeSelectOption value="">None</NativeSelectOption>
-          {secrets.map((s) => (
+          {usable.map((s) => (
             <NativeSelectOption key={s.name} value={s.name}>
               {s.name}
             </NativeSelectOption>

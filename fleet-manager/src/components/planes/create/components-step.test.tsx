@@ -60,7 +60,18 @@ const keycloak: PlaneDraft = {
   admin: { ...EMPTY_ADMIN, username: "admin" },
 };
 
-function Harness({ initial }: { initial: PlaneDraft }) {
+const SECRETS = [
+  { name: "smtp", keys: ["username", "password"] },
+  { name: "token-only", keys: ["password"] },
+];
+
+function Harness({
+  initial,
+  secrets = SECRETS,
+}: {
+  initial: PlaneDraft;
+  secrets?: { name: string; keys: string[] }[];
+}) {
   const flow = useCreateFlow<PlaneDraft>({
     steps: [{ id: "components", label: "Components and versions" }],
     initial,
@@ -71,7 +82,7 @@ function Harness({ initial }: { initial: PlaneDraft }) {
         draft={flow.draft}
         set={flow.set}
         ctx={ctx}
-        secrets={[{ name: "smtp", keys: ["username", "password"] }]}
+        secrets={secrets}
       />
       <output data-testid="draft">{JSON.stringify(flow.draft)}</output>
     </>
@@ -162,5 +173,34 @@ describe("ComponentsStep", () => {
       screen.getByRole("checkbox", { name: "Run Web Modeler" }),
     );
     expect(screen.queryByLabelText("SMTP host")).toBeNull();
+  });
+
+  it("offers only the Secrets that hold the keys username and password for SMTP", () => {
+    render(<Harness initial={{ ...keycloak, webModeler: true }} />);
+    const options = Array.from(
+      (
+        screen.getByRole("combobox", {
+          name: "Credentials Secret",
+        }) as HTMLSelectElement
+      ).options,
+    ).map((o) => o.value);
+    expect(options).toEqual(["", "smtp"]);
+  });
+
+  it("clears an SMTP Secret that the namespace does not hold", () => {
+    const mail = { ...keycloak.mail, credentialsSecret: "smtp" };
+    render(
+      <Harness
+        initial={{ ...keycloak, webModeler: true, mail }}
+        secrets={[{ name: "other", keys: ["username", "password"] }]}
+      />,
+    );
+    expect(draftOf().mail.credentialsSecret).toBe("");
+  });
+
+  it("keeps an SMTP Secret that the namespace holds", () => {
+    const mail = { ...keycloak.mail, credentialsSecret: "smtp" };
+    render(<Harness initial={{ ...keycloak, webModeler: true, mail }} />);
+    expect(draftOf().mail.credentialsSecret).toBe("smtp");
   });
 });
