@@ -19,8 +19,10 @@ import { PartitionTable } from "./partition-table";
 /**
  * ClusterComponentDetail is the component detail of one card of the
  * cluster page, or of an app embedded in a card. podSelector is the pod
- * selector of the page. An embedded app shows the pods and the charts of
- * its host. id must be a used card or an app embedded in one, as
+ * selector of the page. An embedded app shows the pods, the charts, the
+ * logs, and the events of its host. The events of the owner resource, the
+ * CamundaOptimize for Optimize and the cluster for every other card,
+ * belong to it too. id must be a used card or an app embedded in one, as
  * componentOf gives.
  */
 export function ClusterComponentDetail({
@@ -60,6 +62,17 @@ export function ClusterComponentDetail({
     component,
     optimize?.metadata?.uid,
   );
+  const owner = id === "optimize" ? optimize : cluster;
+  const eventRefs = owner
+    ? [
+        {
+          kind: id === "optimize" ? "CamundaOptimize" : "CamundaCluster",
+          name: owner.metadata?.name ?? "",
+          namespace,
+          uid: owner.metadata?.uid,
+        },
+      ]
+    : [];
   const rows =
     id === "optimize"
       ? conditionsAt(
@@ -76,6 +89,7 @@ export function ClusterComponentDetail({
       namespace={namespace}
       podSelector={selector}
       metrics={{ cluster: cluster.metadata?.name ?? "", component }}
+      eventRefs={eventRefs}
       conditions={rows}
       settings={settings}
       now={now}

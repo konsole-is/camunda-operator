@@ -15,11 +15,21 @@ const live = vi.hoisted(() => ({
   usageCalls: [] as string[][],
   metrics: undefined as unknown,
   metricsCalls: [] as unknown[][],
+  events: [] as unknown[],
+  logSources: [] as unknown[][],
+  registrations: [] as unknown[],
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, opts: unknown, initial: unknown[]) => {
     live.calls.push({ kind, opts });
-    return { items: live.pods.length ? live.pods : initial };
+    if (kind === "Event") return { items: live.events };
+    return { items: kind === "Pod" && live.pods.length ? live.pods : initial };
+  },
+}));
+vi.mock("@/lib/observe/use-log-stream", () => ({
+  useLogStreams: (sources: unknown[]) => {
+    live.logSources.push(sources);
+    return { lines: [], errors: [], ended: false };
   },
 }));
 vi.mock("@/lib/observe/use-observe", () => ({
@@ -31,6 +41,10 @@ vi.mock("@/lib/observe/use-observe", () => ({
     live.metricsCalls.push(args);
     return live.metrics;
   },
+  useControllerPods: (registration: unknown) => {
+    live.registrations.push(registration);
+    return undefined;
+  },
 }));
 
 beforeEach(() => {
@@ -40,6 +54,9 @@ beforeEach(() => {
   live.usageCalls = [];
   live.metrics = undefined;
   live.metricsCalls = [];
+  live.events = [];
+  live.logSources = [];
+  live.registrations = [];
 });
 afterEach(cleanup);
 
@@ -57,10 +74,7 @@ function pod(name: string, spec: { nodeName?: string } = {}) {
 }
 
 const keycloak = (
-  props: {
-    children?: React.ReactNode;
-    metrics?: { cluster: string; component: "zeebe" };
-  } = {},
+  props: Partial<Parameters<typeof ComponentDetail>[0]> = {},
 ) => (
   <ComponentDetail
     title="Keycloak"
@@ -125,6 +139,73 @@ describe("ComponentDetail", () => {
     expect(live.metricsCalls.every(([, ref]) => ref === undefined)).toBe(true);
     expect(screen.getByRole("region", { name: "Live usage" })).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "History" })).toBeNull();
+  });
+
+  it("opens the logs of its pods on the Logs tab only", async () => {
+    live.pods = [pod("plane-a-keycloak-0")];
+    render(keycloak());
+    expect(live.logSources).toEqual([]);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Logs" }));
+
+    expect(live.logSources.at(-1)).toEqual([
+      { namespace: "mgmt", pod: "plane-a-keycloak-0", tailLines: 200 },
+    ]);
+    expect(live.registrations.every((r) => r === undefined)).toBe(true);
+  });
+
+  it("asks the controller pods of its controller logs on the Logs tab", async () => {
+    render(
+      keycloak({
+        controllerLogs: {
+          registration: "rustfs-bucket",
+          request: { namespace: "mgmt", name: "orders-backup-storage" },
+        },
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "Logs" }));
+
+    expect(live.registrations).toContain("rustfs-bucket");
+  });
+
+  it("lists the events of its refs on the Events tab only", async () => {
+    live.events = [
+      {
+        metadata: { name: "e", namespace: "mgmt", uid: "e" },
+        reason: "Reconciled",
+        eventTime: "2026-10-30T11:00:00Z",
+        regarding: {
+          kind: "PluginRequest",
+          name: "orders-backup-storage",
+          namespace: "mgmt",
+          uid: "u-r",
+        },
+      },
+    ];
+    render(
+      keycloak({
+        eventRefs: [
+          {
+            kind: "PluginRequest",
+            name: "orders-backup-storage",
+            namespace: "mgmt",
+            uid: "u-r",
+          },
+        ],
+      }),
+    );
+    expect(live.calls.some((c) => c.kind === "Event")).toBe(false);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Events" }));
+
+    expect(live.calls).toContainEqual({
+      kind: "Event",
+      opts: { namespace: "mgmt" },
+    });
+    expect(
+      screen.getByText("PluginRequest/orders-backup-storage"),
+    ).toBeTruthy();
   });
 
   it("shows the children on the Overview", () => {
@@ -200,10 +281,32 @@ describe("ComponentDetailView", () => {
     expect(screen.getByText("Charts here")).toBeTruthy();
   });
 
-  it("has the tabs Overview, Metrics, and Settings", () =>
+  it("says that a component without a logs slot has no logs", async () => {
+    render(view({}));
+    await userEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    expect(screen.getByText("No logs.")).toBeTruthy();
+  });
+
+  it("says that a component without an events slot has no events", async () => {
+    render(view({}));
+    await userEvent.click(screen.getByRole("tab", { name: "Events" }));
+    expect(screen.getByText("No events")).toBeTruthy();
+  });
+
+  it("shows the logs and events slots on their tabs", async () => {
+    render(view({ logsTab: <p>Logs here</p>, eventsTab: <p>Events here</p> }));
+    await userEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    expect(screen.getByText("Logs here")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "Events" }));
+    expect(screen.getByText("Events here")).toBeTruthy();
+  });
+
+  it("has the tabs Overview, Metrics, Logs, Events, and Settings", () =>
     expect(DETAIL_TABS.map((t) => t.label)).toEqual([
       "Overview",
       "Metrics",
+      "Logs",
+      "Events",
       "Settings",
     ]));
 });
