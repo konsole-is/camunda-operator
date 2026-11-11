@@ -172,4 +172,24 @@ describe("LogViewer", () => {
     render(<LogViewer lines={[parseLogLine("plain")]} />);
     expect(screen.queryByText("Time (UTC)")).toBeNull();
   });
+
+  it("ends Pause and keeps the filters when the source changes", async () => {
+    const { rerender } = render(
+      <LogViewer lines={[line("a"), line("b", "error")]} source="p-0" />,
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Level" }),
+      "error",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Pause" }));
+
+    rerender(<LogViewer lines={[line("c", "error")]} source="p-1" />);
+
+    expect(screen.getByText("c")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+    expect(
+      (screen.getByRole("combobox", { name: "Level" }) as HTMLSelectElement)
+        .value,
+    ).toBe("error");
+  });
 });

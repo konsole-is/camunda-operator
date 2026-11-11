@@ -20,7 +20,8 @@ const LEVEL_TONE: Record<string, string> = {
 /**
  * LogViewer shows log lines and follows new ones. Pause keeps the lines
  * that show and counts the new ones, and Follow shows them all again. The
- * level and text filters apply to the lines that show. controls go first
+ * level and text filters apply to the lines that show. A new source ends
+ * Pause, so the lines of the new source show. controls go first
  * in the toolbar. Each line shows its time in UTC, its pod when the lines
  * come from more than one pod, its level, its logger, and its message. A
  * line with other fields opens to show them.
@@ -29,13 +30,20 @@ export function LogViewer({
   lines,
   label = "Logs",
   controls,
+  source,
 }: {
   lines: LogLine[];
   label?: string;
   controls?: ReactNode;
+  source?: string;
 }) {
   const id = useId();
   const [paused, setPaused] = useState<LogLine[] | undefined>();
+  const [shownSource, setShownSource] = useState(source);
+  if (shownSource !== source) {
+    setShownSource(source);
+    setPaused(undefined);
+  }
   const [level, setLevel] = useState("");
   const [text, setText] = useState("");
   const box = useRef<HTMLDivElement>(null);
