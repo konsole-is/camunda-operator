@@ -14,18 +14,25 @@ export const DIRECT_NOTE =
 
 /**
  * BackupContext is what the backup actions of one cluster read. suspended
- * is clusterSuspended of the cluster. running is the backup or restore of
- * the cluster that runs, a Pending one included. backupNames holds the
- * name of every backup of the namespace, of both kinds. now is an RFC 3339
- * time.
+ * is clusterSuspended of the cluster. running is the operation that a new
+ * backup of the cluster waits behind: the backup that runs, a Pending one
+ * included, else an Elasticsearch backup that ended as ResumeFailed (with
+ * resumeFailed set), which holds the cluster until it is deleted, else the
+ * restore that runs. backupNames holds the name of every backup of the namespace, of both
+ * kinds. readingRestores holds each logical restore of the namespace that
+ * is not Completed or Failed, with the kind and the name of the backup that
+ * it reads. changesOff is the reason that the page cannot write, and unset
+ * when it can. now is an RFC 3339 time.
  */
 export type BackupContext = {
   namespace: string;
   cluster: string;
   storage: BackupStorage;
   suspended: boolean;
-  running?: { what: "Backup" | "Restore"; name: string };
+  running?: { what: "Backup" | "Restore"; name: string; resumeFailed?: true };
   backupNames: string[];
+  readingRestores: { name: string; kind: BackupKind; backup: string }[];
+  changesOff?: string;
   now: string;
 };
 
@@ -98,13 +105,14 @@ export type BackUpNow = {
 };
 
 /**
- * backUpNow gives the state of Back up now. It is off without backup
- * storage, with storage of an unknown kind, and on a suspended cluster. A
- * running restore suspends its cluster, so a suspension while a restore
- * runs does not turn the action off.
+ * backUpNow gives the state of Back up now. It is off when the page cannot
+ * write, without backup storage, with storage of an unknown kind, and on a
+ * suspended cluster. A running restore suspends its cluster, so a
+ * suspension while a restore runs does not turn the action off.
  */
 export function backUpNow(context: BackupContext): BackUpNow {
-  const { storage, suspended, running } = context;
+  const { storage, suspended, running, changesOff } = context;
+  if (changesOff !== undefined) return { disabled: changesOff };
   if (storage.kind === "none") {
     return { disabled: "This cluster has no backup storage." };
   }
@@ -132,6 +140,9 @@ export function waitNote(
   what: "backup" | "restore",
 ): string | undefined {
   if (running === undefined) return undefined;
+  if (running.resumeFailed) {
+    return `Backup ${running.name} ended as ResumeFailed and still holds the cluster. The new ${what} waits until you delete that backup.`;
+  }
   return `${running.what} ${running.name} is running. The new ${what} waits until it ends.`;
 }
 
@@ -177,17 +188,45 @@ export function deleteBackupChange(namespace: string, row: BackupRow): Change {
   };
 }
 
+/**
+ * deleteBlock gives the reason that Delete is off for row, or undefined.
+ * Delete is off when the page cannot write, and while a restore in
+ * readingRestores reads the backup of row.
+ */
+export function deleteBlock(
+  context: BackupContext,
+  row: BackupRow,
+): string | undefined {
+  if (context.changesOff !== undefined) return context.changesOff;
+  const reader = context.readingRestores.find(
+    (r) => r.kind === row.kind && r.backup === row.name,
+  );
+  return reader
+    ? `Restore ${reader.name} reads this backup. Delete the backup after the restore ends.`
+    : undefined;
+}
+
 /** deleteLines gives the lines of the delete confirm of row: what goes with the backup, and what stays. */
 export function deleteLines(row: BackupRow): {
   goes: string[];
   stays: string[];
 } {
+  // The delete of a backup that is not Completed or Failed also stops its run.
+  const runs = row.phase !== "Completed" && row.phase !== "Failed";
+  const goes: string[] = [];
   const stays: string[] = [];
-  let goes: string;
   if (row.kind === "LogicalBackupElasticsearch") {
-    goes = `Backup ${row.name}, with its Elasticsearch snapshots and its Zeebe partition backup in the bucket.`;
+    goes.push(
+      `Backup ${row.name}, with its Elasticsearch snapshots and its Zeebe partition backup in the bucket.`,
+    );
+    if (runs) {
+      goes.push(
+        "The run of the backup. If it paused exporting on the cluster, exporting resumes.",
+      );
+    }
   } else {
-    goes = `Backup ${row.name}, with its database dump in the bucket.`;
+    goes.push(`Backup ${row.name}, with its database dump in the bucket.`);
+    if (runs) goes.push("The run of the backup, with its dump Job.");
     stays.push(
       "The Zeebe backups. Zeebe removes them after the retention window of the cluster.",
     );
@@ -197,5 +236,5 @@ export function deleteLines(row: BackupRow): {
       "The other backups of the schedule. The schedule deletes the oldest of them beyond the counts it keeps.",
     );
   }
-  return { goes: [goes], stays };
+  return { goes, stays };
 }

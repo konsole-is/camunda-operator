@@ -25,11 +25,14 @@ The page says "Backup my-cluster-manual-20261110-143005 created." when the backu
 
 | Reason on the page | What to do |
 | --- | --- |
-| This cluster has no backup storage. | Select a bucket in the **Backup storage** section of the claim. |
-| `SecondaryStorageConfig <name>` not found, so the kind of backup is not known. | Create the `SecondaryStorageConfig` that `spec.storageRef` of the cluster names. |
-| The cluster is suspended. A backup waits until it runs again, so resume the cluster first. | Resume the cluster, as [Suspend and resume](../guides/operations.md#suspend-and-resume) shows. |
+| "This cluster has no backup storage." | Select a bucket in the **Backup storage** section of the claim. |
+| "`SecondaryStorageConfig <name>` not found, so the kind of backup is not known." | Create the `SecondaryStorageConfig` that `spec.storageRef` of the cluster names. |
+| "The cluster is suspended. A backup waits until it runs again, so resume the cluster first." | Resume the cluster, as [Suspend and resume](../guides/operations.md#suspend-and-resume) shows. |
+| "Changes are off: the fleet manager could not read its settings." | Make sure that the fleet manager can read the ConfigMap `fleet-manager-settings`, as [Fleet manager settings](settings.md) shows. |
 
 A cluster holds one backup or one restore at a time, as [One backup or restore at a time](../guides/operations.md#one-backup-or-restore-at-a-time) shows. While a backup or a restore of the cluster runs, **Back up now** stays on. The form then says, for example, "Restore my-cluster-restore-1 is running. The new backup waits until it ends." The new backup waits in `Pending` and starts on its own. A restore also suspends the cluster while it runs. This suspension does not turn **Back up now** off, because it ends with the restore. Any other suspension turns it off.
+
+An Elasticsearch backup that ended as `Failed` with the reason `ResumeFailed` also holds the cluster, until you delete it. The form then says "Backup my-cluster-manual-20261110-143005 ended as ResumeFailed and still holds the cluster. The new backup waits until you delete that backup."
 
 ## Delete a backup
 
@@ -40,7 +43,15 @@ Each row of the table of backups has **Delete**. It opens a confirm in the row t
 | Elasticsearch | The backup, with its Elasticsearch snapshots and its Zeebe partition backup in the bucket | Nothing |
 | PostgreSQL | The backup, with its database dump in the bucket | The Zeebe backups. Zeebe removes them after the retention window of the cluster. |
 
+When you delete a backup that is still `Pending` or `Running`, its run stops too. On Elasticsearch, the operator resumes exporting on the cluster if the backup paused it. On PostgreSQL, the operator deletes the dump Job of the backup.
+
 A backup of a schedule shows **Scheduled** in the column **Origin**. When you delete such a backup, the other backups of the schedule stay. The schedule deletes the oldest of them beyond the counts that it keeps, as [BackupSchedule](../crds/backupschedule.md) shows.
+
+**Delete** is off while a restore that has not ended reads the backup. The reason under it names the restore:
+
+> Restore my-cluster-restore-1 reads this backup. Delete the backup after the restore ends.
+
+A delete during the restore can leave the secondary storage of the cluster empty, as [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md) shows. When the page cannot read its settings, **Delete** is off with the same reason as **Back up now**.
 
 The operator removes the artifacts before the resource goes. When it cannot reach them, the artifacts stay in the bucket, and an event on the backup names them. The Deletion section of [LogicalBackupElasticsearch](../crds/logicalbackupelasticsearch.md#deletion) and [LogicalBackupRDBMS](../crds/logicalbackuprdbms.md#deletion) names the cases.
 

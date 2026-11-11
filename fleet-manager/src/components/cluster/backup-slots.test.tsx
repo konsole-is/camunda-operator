@@ -14,7 +14,7 @@ import { cluster, NOW, slotContext } from "../../../test/fakes/slot-context";
 import { fakeWriter } from "../../../test/fakes/writer";
 import { backupContextOf, backupSlots } from "./backup-slots";
 import type { BackupObject, BackupRow, RestoreObject } from "./backups";
-import { ClusterEditProvider } from "./edit/cluster-edit";
+import { CHANGES_OFF, ClusterEditProvider } from "./edit/cluster-edit";
 
 vi.mock("@/lib/write/writer", () => import("../../../test/fakes/writer"));
 
@@ -79,6 +79,7 @@ describe("backupContextOf", () => {
       storage: es,
       suspended: false,
       backupNames: ["done-1", "other-cluster-1"],
+      readingRestores: [],
       now: NOW,
     });
 
@@ -105,6 +106,66 @@ describe("backupContextOf", () => {
       what: "Backup",
       name: "now-1",
     });
+  });
+});
+
+describe("backupContextOf, the holders and readers", () => {
+  function rdbmsRestore(name: string, phase: string, backupName: string) {
+    return {
+      kind: "LogicalRestoreRDBMS",
+      metadata: { namespace: "team-a", name },
+      spec: {
+        targetClusterRef: { name: "orders" },
+        backupRef: { name: backupName },
+      },
+      status: { phase },
+    } as unknown as RestoreObject;
+  }
+  function pitr(name: string) {
+    return {
+      kind: "PointInTimeRestore",
+      metadata: { namespace: "team-a", name },
+      spec: { clusterRef: { name: "orders" }, timestamp: NOW },
+      status: { phase: "Running" },
+    } as unknown as RestoreObject;
+  }
+
+  it("lists the restores of both logical kinds that are not final, with the backup that each reads", () => {
+    const context = slotContext({
+      restores: [
+        restore("r1", "Restoring"),
+        rdbmsRestore("r2", "Pending", "dump-1"),
+        rdbmsRestore("r3", "Completed", "dump-2"),
+        pitr("p1"),
+      ],
+    });
+    expect(backupContextOf(context).readingRestores).toEqual([
+      { name: "r1", kind: "LogicalBackupElasticsearch", backup: "b" },
+      { name: "r2", kind: "LogicalBackupRDBMS", backup: "dump-1" },
+    ]);
+  });
+
+  it("an Elasticsearch backup that ended as ResumeFailed holds the cluster when nothing runs", () => {
+    const held = {
+      ...backup("LogicalBackupElasticsearch", "held-1", "Failed"),
+      status: { phase: "Failed", terminalReason: "ResumeFailed" },
+    } as unknown as BackupObject;
+    expect(backupContextOf(slotContext({ backups: [held] })).running).toEqual({
+      what: "Backup",
+      name: "held-1",
+      resumeFailed: true,
+    });
+    const running = backup("LogicalBackupElasticsearch", "now-1", "Running");
+    expect(
+      backupContextOf(slotContext({ backups: [held, running] })).running,
+    ).toEqual({ what: "Backup", name: "now-1" });
+  });
+
+  it("a page without a write mode turns the changes off with the reason of the edit host", () => {
+    expect(
+      backupContextOf(slotContext({ writeMode: undefined })).changesOff,
+    ).toBe(CHANGES_OFF);
+    expect(backupContextOf(slotContext()).changesOff).toBeUndefined();
   });
 });
 

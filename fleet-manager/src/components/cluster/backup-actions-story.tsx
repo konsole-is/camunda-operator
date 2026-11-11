@@ -35,6 +35,7 @@ function context(
     storage: STORAGE[storage],
     suspended: false,
     backupNames: [],
+    readingRestores: [],
     now: "2026-11-10T14:30:05Z",
     ...over,
   };

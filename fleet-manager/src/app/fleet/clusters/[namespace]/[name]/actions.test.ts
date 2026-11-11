@@ -62,31 +62,38 @@ describe("previewClaimChange", () => {
 });
 
 describe("applyBackupChange", () => {
-  const backup = {
+  const orders = { namespace: "team-a", name: "orders" };
+  const backup = (cluster = "orders") => ({
     intent: "Back up orders",
     apply: [
       {
         apiVersion: "core.camunda.io/v1",
         kind: "LogicalBackupElasticsearch",
         metadata: { name: "orders-manual-1", namespace: "team-a" },
-        spec: { clusterRef: { name: "orders" } },
+        spec: { clusterRef: { name: cluster } },
       },
     ],
     create: ["LogicalBackupElasticsearch/team-a/orders-manual-1" as const],
     directOnly: true,
-  };
+  });
 
-  it("applyBackupChange writes a backup straight to the cluster, also in Git mode", async () => {
+  it("applyBackupChange writes a backup of the cluster straight to the cluster, also in Git mode", async () => {
     fakeWriter.reset("git");
-    expect(await applyBackupChange(backup)).toEqual({
+    expect(await applyBackupChange(orders, backup())).toEqual({
       ok: true,
       mode: "direct",
     });
-    expect(fakeWriter.applied).toEqual([backup]);
+    expect(fakeWriter.applied).toEqual([backup()]);
+  });
+
+  it("applyBackupChange refuses a backup of another cluster and writes nothing", async () => {
+    const result = await applyBackupChange(orders, backup("billing"));
+    expect(!result.ok && result.errors[0].code).toBe("Invalid");
+    expect(fakeWriter.applied).toEqual([]);
   });
 
   it("applyBackupChange refuses a claim change and writes nothing", async () => {
-    const result = await applyBackupChange(change());
+    const result = await applyBackupChange(orders, change());
     expect(!result.ok && result.errors[0].code).toBe("Invalid");
     expect(fakeWriter.applied).toEqual([]);
   });

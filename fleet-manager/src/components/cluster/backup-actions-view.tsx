@@ -13,17 +13,22 @@ import {
   backupNameErrors,
   DIRECT_NOTE,
   deleteBackupChange,
+  deleteBlock,
   deleteLines,
   manualBackupName,
 } from "./backup-actions";
 import type { BackupRow } from "./backups";
 
 /**
- * Write is how a backup action writes. apply is the server action of the
- * change. show reports its result in the one toast of the page.
+ * Write is how a backup action writes. apply is the server action of a
+ * change of the backups of cluster. show reports its result in the one
+ * toast of the page.
  */
 type Write = {
-  apply: (change: Change) => Promise<WriteResult>;
+  apply: (
+    cluster: { namespace: string; name: string },
+    change: Change,
+  ) => Promise<WriteResult>;
   show: (result: WriteResult, message: string) => void;
 };
 
@@ -48,7 +53,7 @@ export function BackupHeaderActions({
     if (name === undefined || state.kind === undefined) return;
     const change = backupChange(context, state.kind, name);
     startWrite(async () => {
-      const result = await apply(change);
+      const result = await apply(clusterOf(context), change);
       show(result, `Backup ${name} created.`);
       if (result.ok) setName(undefined);
     });
@@ -143,17 +148,40 @@ export function BackupHeaderActions({
   );
 }
 
-/** BackupRowActions holds the actions of one backup row: Delete, with a confirm that names what goes and what stays. */
+/**
+ * BackupRowActions holds the actions of one backup row: Delete, with a
+ * confirm that names what goes and what stays. Delete is off, with the
+ * reason of deleteBlock, when that reason is set.
+ */
 export function BackupRowActions({
   context,
   row,
   apply,
   show,
 }: { context: BackupContext; row: BackupRow } & Write) {
+  const id = useId();
   const [, startWrite] = useTransition();
   // A second confirm while the first delete runs would send a second
   // delete, which fails because the backup is gone.
   const writing = useRef(false);
+  const block = deleteBlock(context, row);
+  if (block !== undefined) {
+    return (
+      <div className="flex flex-col gap-1">
+        <Button
+          variant="outline"
+          disabled
+          aria-describedby={`${id}-reason`}
+          className="self-start"
+        >
+          Delete
+        </Button>
+        <p id={`${id}-reason`} className="text-xs text-muted">
+          {block}
+        </p>
+      </div>
+    );
+  }
   const { goes, stays } = deleteLines(row);
   return (
     <InlineConfirm
@@ -166,11 +194,18 @@ export function BackupRowActions({
         writing.current = true;
         const change = deleteBackupChange(context.namespace, row);
         startWrite(async () => {
-          const result = await apply(change);
+          const result = await apply(clusterOf(context), change);
           writing.current = false;
           show(result, `Backup ${row.name} deleted.`);
         });
       }}
     />
   );
+}
+
+function clusterOf(context: BackupContext): {
+  namespace: string;
+  name: string;
+} {
+  return { namespace: context.namespace, name: context.cluster };
 }

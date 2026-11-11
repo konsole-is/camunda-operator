@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { equalJSON } from "@/lib/policy";
 import { refKey, refOf } from "./refs";
 import type {
   ApiError,
@@ -101,47 +102,74 @@ const BACKUP_KINDS: readonly string[] = [
   "LogicalBackupElasticsearch",
   "LogicalBackupRDBMS",
 ];
-const BACKUP_WRITE_KINDS: readonly string[] = [
-  ...BACKUP_KINDS,
-  "LogicalRestoreElasticsearch",
-  "LogicalRestoreRDBMS",
-  "PointInTimeRestore",
+const BACKUP_API_VERSION = "core.camunda.io/v1";
+const BACKUP_METADATA: readonly string[] = [
+  "name",
+  "namespace",
+  "labels",
+  "annotations",
 ];
 
 /**
- * backupChangeSchema accepts a Change with directOnly that does one of two
- * things: it creates one backup or restore of the five backup and restore
- * kinds, with a namespace, and create lists it; or it deletes one backup of
- * either kind, with a namespace. It refuses force and preconditions.
+ * backupChangeSchema accepts a Change with directOnly, no force, and no
+ * preconditions that does one of two things for cluster. It creates one
+ * backup of either kind in the namespace of cluster, listed in create, with
+ * only name, namespace, labels, and annotations in its metadata and a spec
+ * of exactly { clusterRef: { name: cluster.name } }. Or it deletes one
+ * backup of either kind in that namespace. A delete has no precondition,
+ * because the status of a running backup changes its resourceVersion.
  */
-export const backupChangeSchema: z.ZodType<Change> = changeSchema.refine(
-  (c) => {
-    const [object] = c.apply;
-    const created =
-      c.apply.length === 1 &&
-      BACKUP_WRITE_KINDS.includes(object.kind) &&
-      object.metadata.namespace !== undefined &&
-      c.create?.length === 1 &&
-      c.create[0] === refKey(refOf(object)) &&
-      c.delete === undefined;
-    const deleted =
-      c.apply.length === 0 &&
-      c.delete?.length === 1 &&
-      BACKUP_KINDS.includes(c.delete[0].kind) &&
-      c.delete[0].namespace !== undefined &&
-      c.create === undefined;
-    return (
-      (created || deleted) &&
-      c.directOnly === true &&
-      c.force === undefined &&
-      c.preconditions === undefined
-    );
-  },
-  {
-    message:
-      "The change must create one backup or restore, or delete one backup, straight to the cluster.",
-  },
-);
+export function backupChangeSchema(cluster: {
+  namespace: string;
+  name: string;
+}): z.ZodType<Change> {
+  return changeSchema.refine(
+    (c) => {
+      const plain =
+        c.directOnly === true &&
+        c.force === undefined &&
+        c.preconditions === undefined;
+      if (!plain) return false;
+      if (c.apply.length === 1 && c.delete === undefined) {
+        const object = c.apply[0];
+        return (
+          isClusterBackup(object, cluster) &&
+          c.create?.length === 1 &&
+          c.create[0] === refKey(refOf(object))
+        );
+      }
+      const ref = c.delete?.[0];
+      return (
+        c.apply.length === 0 &&
+        c.delete?.length === 1 &&
+        c.create === undefined &&
+        ref !== undefined &&
+        ref.apiVersion === BACKUP_API_VERSION &&
+        BACKUP_KINDS.includes(ref.kind) &&
+        ref.namespace === cluster.namespace
+      );
+    },
+    {
+      message:
+        "The change must create one backup of the cluster, or delete one backup in its namespace, straight to the cluster.",
+    },
+  );
+}
+
+function isClusterBackup(
+  object: KubeObject,
+  cluster: { namespace: string; name: string },
+): boolean {
+  const { apiVersion, kind, metadata, spec, ...rest } = object;
+  return (
+    Object.keys(rest).length === 0 &&
+    apiVersion === BACKUP_API_VERSION &&
+    BACKUP_KINDS.includes(kind) &&
+    metadata.namespace === cluster.namespace &&
+    Object.keys(metadata).every((key) => BACKUP_METADATA.includes(key)) &&
+    equalJSON(spec, { clusterRef: { name: cluster.name } })
+  );
+}
 
 /**
  * createChangeSchema accepts a Change that applies one claim of either

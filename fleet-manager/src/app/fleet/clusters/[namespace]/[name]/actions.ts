@@ -18,7 +18,13 @@ export async function applyClaimChange(change: Change): Promise<WriteResult> {
   return runChange(change, claimChangeSchema);
 }
 
-/** applyBackupChange writes one new backup or restore, or one backup delete, straight to the cluster. */
-export async function applyBackupChange(change: Change): Promise<WriteResult> {
-  return runChange(change, backupChangeSchema);
+/**
+ * applyBackupChange writes one new backup of cluster, or one delete of a
+ * backup in its namespace, straight to the cluster.
+ */
+export async function applyBackupChange(
+  cluster: { namespace: string; name: string },
+  change: Change,
+): Promise<WriteResult> {
+  return runChange(change, backupChangeSchema(cluster));
 }

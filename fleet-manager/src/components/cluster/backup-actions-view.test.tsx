@@ -40,6 +40,7 @@ const context = (over: Partial<BackupContext> = {}): BackupContext => ({
   storage: es,
   suspended: false,
   backupNames: [],
+  readingRestores: [],
   now: "2026-11-10T14:30:05Z",
   ...over,
 });
@@ -325,5 +326,54 @@ describe("BackupRowActions", () => {
       "The other backups of the schedule. The schedule deletes the oldest of them beyond the counts it keeps.",
     ]);
     expect(fakeWriter.applied).toEqual([]);
+  });
+  it("delete is off with the name of the restore that reads the backup", async () => {
+    rowActions(
+      row(),
+      context({
+        readingRestores: [
+          {
+            name: "r1",
+            kind: "LogicalBackupElasticsearch",
+            backup: "nightly-1",
+          },
+        ],
+      }),
+    );
+    const button = screen.getByRole("button", { name: "Delete" });
+    expect(button).toHaveProperty("disabled", true);
+    const described = button.getAttribute("aria-describedby") ?? "";
+    expect(document.getElementById(described)?.textContent).toBe(
+      "Restore r1 reads this backup. Delete the backup after the restore ends.",
+    );
+    expect(fakeWriter.applied).toEqual([]);
+  });
+});
+
+describe("a page that cannot write", () => {
+  const OFF = "Changes are off: the fleet manager could not read its settings.";
+
+  it("back up now and delete are off with the reason of the page", () => {
+    renderPage((show) => (
+      <>
+        <BackupHeaderActions
+          context={context({ changesOff: OFF })}
+          apply={applyBackupChange}
+          show={show}
+        />
+        <BackupRowActions
+          context={context({ changesOff: OFF })}
+          row={row()}
+          apply={applyBackupChange}
+          show={show}
+        />
+      </>
+    ));
+    for (const name of ["Back up now", "Delete"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveProperty("disabled", true);
+      const described = button.getAttribute("aria-describedby") ?? "";
+      expect(document.getElementById(described)?.textContent).toBe(OFF);
+    }
   });
 });

@@ -179,19 +179,22 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/dev/watch-probe/actions.ts#ping": () => ping(),
   // The backup does not exist, so the delete refuses and writes nothing.
   "app/fleet/clusters/[namespace]/[name]/actions.ts#applyBackupChange": () =>
-    applyBackupChange({
-      intent: "Delete backup leak",
-      apply: [],
-      delete: [
-        {
-          apiVersion: "core.camunda.io/v1",
-          kind: "LogicalBackupElasticsearch",
-          namespace,
-          name: "leak",
-        },
-      ],
-      directOnly: true,
-    }),
+    applyBackupChange(
+      { namespace, name: "leak" },
+      {
+        intent: "Delete backup leak",
+        apply: [],
+        delete: [
+          {
+            apiVersion: "core.camunda.io/v1",
+            kind: "LogicalBackupElasticsearch",
+            namespace,
+            name: "leak",
+          },
+        ],
+        directOnly: true,
+      },
+    ),
   "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimChange": () =>
     previewClaimChange(claimChange()),
   // The precondition names a claim that does not exist, so the write

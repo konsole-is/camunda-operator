@@ -7,6 +7,7 @@ import {
   backupNameErrors,
   clusterSuspended,
   deleteBackupChange,
+  deleteBlock,
   deleteLines,
   manualBackupName,
   waitNote,
@@ -31,6 +32,7 @@ const context = (over: Partial<BackupContext> = {}): BackupContext => ({
   storage: es,
   suspended: false,
   backupNames: [],
+  readingRestores: [],
   now: "2026-11-10T14:30:05Z",
   ...over,
 });
@@ -254,5 +256,61 @@ describe("backup rules", () => {
         "The other backups of the schedule. The schedule deletes the oldest of them beyond the counts it keeps.",
       ],
     });
+  });
+  const OFF = "Changes are off: the fleet manager could not read its settings.";
+
+  it("back up now and delete are off with the reason of the page when the page cannot write", () => {
+    expect(backUpNow(context({ changesOff: OFF }))).toEqual({ disabled: OFF });
+    expect(deleteBlock(context({ changesOff: OFF }), row())).toBe(OFF);
+  });
+
+  it("delete is off while a restore that is not final reads the backup", () => {
+    const reading = context({
+      readingRestores: [
+        {
+          name: "r1",
+          kind: "LogicalBackupElasticsearch",
+          backup: "orders-manual-1",
+        },
+      ],
+    });
+    expect(deleteBlock(reading, row())).toBe(
+      "Restore r1 reads this backup. Delete the backup after the restore ends.",
+    );
+    expect(deleteBlock(reading, row({ name: "orders-manual-2" }))).toBe(
+      undefined,
+    );
+    expect(deleteBlock(reading, row({ kind: "LogicalBackupRDBMS" }))).toBe(
+      undefined,
+    );
+    expect(deleteBlock(context(), row())).toBeUndefined();
+  });
+
+  it("the wait note names a backup that ended as ResumeFailed and holds the cluster", () => {
+    const held = {
+      what: "Backup" as const,
+      name: "b1",
+      resumeFailed: true as const,
+    };
+    expect(waitNote(held, "backup")).toBe(
+      "Backup b1 ended as ResumeFailed and still holds the cluster. The new backup waits until you delete that backup.",
+    );
+    expect(backUpNow(context({ running: held })).waits).toBe(
+      waitNote(held, "backup"),
+    );
+  });
+
+  it("the delete confirm of a backup that runs says that the run stops", () => {
+    expect(deleteLines(row({ phase: "Pending" })).goes).toEqual([
+      "Backup orders-manual-1, with its Elasticsearch snapshots and its Zeebe partition backup in the bucket.",
+      "The run of the backup. If it paused exporting on the cluster, exporting resumes.",
+    ]);
+    expect(
+      deleteLines(row({ kind: "LogicalBackupRDBMS", phase: "Running" })).goes,
+    ).toEqual([
+      "Backup orders-manual-1, with its database dump in the bucket.",
+      "The run of the backup, with its dump Job.",
+    ]);
+    expect(deleteLines(row({ phase: "Failed" })).goes).toHaveLength(1);
   });
 });
