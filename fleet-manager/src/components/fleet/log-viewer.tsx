@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,15 +20,19 @@ const LEVEL_TONE: Record<string, string> = {
 /**
  * LogViewer shows log lines and follows new ones. Pause keeps the lines
  * that show and counts the new ones, and Follow shows them all again. The
- * level and text filters apply to the lines that show. A line with extra
- * fields opens to show them.
+ * level and text filters apply to the lines that show. controls go first
+ * in the toolbar. Each line shows its time in UTC, its pod when the lines
+ * come from more than one pod, its level, its logger, and its message. A
+ * line with other fields opens to show them.
  */
 export function LogViewer({
   lines,
   label = "Logs",
+  controls,
 }: {
   lines: LogLine[];
   label?: string;
+  controls?: ReactNode;
 }) {
   const id = useId();
   const [paused, setPaused] = useState<LogLine[] | undefined>();
@@ -53,6 +57,11 @@ export function LogViewer({
       (!level || l.level?.toLowerCase() === level) &&
       (!text || l.raw.toLowerCase().includes(text.toLowerCase())),
   );
+  const columns = {
+    time: kept.some((l) => l.time),
+    pod: new Set(kept.map((l) => l.pod)).size > 1,
+    logger: kept.some((l) => l.logger),
+  };
   const levels = [
     ...new Set(
       [...kept.map((l) => l.level?.toLowerCase()), level].filter(
@@ -69,6 +78,7 @@ export function LogViewer({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-end gap-2">
+        {controls}
         {paused === undefined ? (
           <Button variant="outline" size="sm" onClick={() => setPaused(lines)}>
             Pause
@@ -131,11 +141,12 @@ export function LogViewer({
         {shown.map((line) => {
           const row = (
             <>
-              {line.time && (
-                <span className="shrink-0 text-muted">
-                  {line.time.slice(11, 19)}
+              {columns.time && (
+                <span className="min-w-16 shrink-0 text-muted">
+                  {line.time && utcClock(line.time)}
                 </span>
               )}
+              {columns.pod && <Clipped text={line.pod} width="w-28 sm:w-56" />}
               {line.level && (
                 <span
                   className={cn(
@@ -145,6 +156,9 @@ export function LogViewer({
                 >
                   {line.level}
                 </span>
+              )}
+              {columns.logger && (
+                <Clipped text={line.logger} width="hidden w-48 sm:block" />
               )}
               <span className="min-w-0 break-all whitespace-pre-wrap text-text">
                 {line.message}
@@ -165,8 +179,32 @@ export function LogViewer({
           );
         })}
       </div>
+      {columns.time && (
+        <p className="-mt-1 text-right text-xs text-muted">Time (UTC)</p>
+      )}
     </div>
   );
+}
+
+// A pod or a logger name differs at its end, so a long one loses its start.
+function Clipped({ text, width }: { text?: string; width: string }) {
+  return (
+    <span
+      title={text}
+      className={cn(
+        "shrink-0 truncate text-left text-muted [direction:rtl]",
+        width,
+      )}
+    >
+      <bdi>{text}</bdi>
+    </span>
+  );
+}
+
+// A time that Date cannot read shows as the line wrote it.
+function utcClock(time: string): string {
+  const ms = Date.parse(time);
+  return Number.isNaN(ms) ? time : new Date(ms).toISOString().slice(11, 19);
 }
 
 // A buffer can drop its oldest lines, so a count by length is wrong.
