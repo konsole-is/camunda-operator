@@ -104,7 +104,6 @@ function ctx(over: Partial<ClusterClaimContext> = {}): ClusterClaimContext {
       status: { management: { version: "8.9.5" } },
     },
     backups: [],
-    requests: [],
     ...over,
   };
 }
@@ -169,7 +168,7 @@ describe("validateClusterClaim", () => {
   describe("with a built-in Elasticsearch preset that the Environment no longer lists", () => {
     const policy = {
       sections: { "secondary-storage": { allowed: ["elasticsearch"] } },
-      parameters: { elasticsearch: { preset: { value: "large" } } },
+      parameters: { elasticsearch: { preset: { claimEditable: true } } },
     } as unknown as ResolvedPolicy;
     const environment = {
       metadata: { name: "dev" },
@@ -181,58 +180,81 @@ describe("validateClusterClaim", () => {
         releases: { allowed: ["camunda-8-9-5"], default: "camunda-8-9-5" },
       },
     } as unknown as Resource<"Environment">;
-    const s = () =>
+    const storage = () =>
       open(
         claim(
           {
             plugins: [
-              { section: "secondary-storage", registration: "elasticsearch" },
+              {
+                section: "secondary-storage",
+                registration: "elasticsearch",
+                parameters: { preset: "large" },
+              },
             ],
           },
           policy,
         ),
       );
-    const sections = [
-      ...ctx().sections,
-      {
-        apiVersion: "plugins.camunda.io/v1alpha1",
-        kind: "PluginSection",
-        metadata: { name: "secondary-storage" },
-        spec: {
-          label: "Secondary storage",
-          slot: "secondaryStorage",
-          appliesTo: ["CamundaClusterClaim"],
-          selection: "One",
-        },
-      } as unknown as Resource<"PluginSection">,
-    ];
-    const request = {
-      metadata: { name: "orders-secondary-storage", namespace: "team-a" },
-      spec: {
-        section: "secondary-storage",
-        registration: "elasticsearch",
-        parameters: { preset: "large" },
-      },
-    } as unknown as Resource<"PluginRequest">;
+    const context = () =>
+      ctx({
+        environment,
+        sections: [
+          ...ctx().sections,
+          {
+            apiVersion: "plugins.camunda.io/v1alpha1",
+            kind: "PluginSection",
+            metadata: { name: "secondary-storage" },
+            spec: {
+              label: "Secondary storage",
+              slot: "secondaryStorage",
+              appliesTo: ["CamundaClusterClaim"],
+              selection: "One",
+            },
+          } as unknown as Resource<"PluginSection">,
+        ],
+        registrations: [
+          ...ctx().registrations,
+          {
+            apiVersion: "plugins.camunda.io/v1alpha1",
+            kind: "PluginRegistration",
+            metadata: { name: "elasticsearch" },
+            spec: {
+              parameters: {
+                type: "object",
+                properties: { preset: { type: "string" } },
+              },
+            },
+          } as unknown as Resource<"PluginRegistration">,
+        ],
+      });
 
-    it("accepts the claim while its request carries the preset", () => {
-      expect(
-        validateClusterClaim(
-          s(),
-          ctx({ environment, sections, requests: [request] }),
-        ),
-      ).toEqual([]);
+    it("accepts the claim while it keeps the preset", () => {
+      expect(validateClusterClaim(storage(), context())).toEqual([]);
     });
 
-    it("refuses the preset when no request carries it", () => {
-      expect(validateClusterClaim(s(), ctx({ environment, sections }))).toEqual(
+    it("refuses a change to a preset that the Environment does not list", () => {
+      const s = set(
+        storage(),
         [
+          f("spec"),
+          f("plugins"),
           {
-            message:
-              'ElasticsearchClusterPreset "large" is not in spec.presets.elasticsearchCluster of Environment "dev"',
+            item: {
+              section: "secondary-storage",
+              registration: "elasticsearch",
+            },
           },
+          f("parameters"),
+          f("preset"),
         ],
+        "medium",
       );
+      expect(validateClusterClaim(s, context())).toEqual([
+        {
+          message:
+            'ElasticsearchClusterPreset "medium" is not in spec.presets.elasticsearchCluster of Environment "dev"',
+        },
+      ]);
     });
   });
 

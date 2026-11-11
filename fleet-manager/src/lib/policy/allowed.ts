@@ -41,7 +41,12 @@ export type AllowedInput = (
   presetRef?: string;
   releaseRef?: string;
   selections?: PluginSelection[];
-  requests?: readonly PluginRequest[];
+  requests?: readonly LiveRequest[];
+};
+
+/** LiveRequest is the part of a PluginRequest that checkAllowed reads. */
+export type LiveRequest = {
+  spec: Pick<PluginRequest["spec"], "section" | "registration" | "parameters">;
 };
 
 // The Environment list of each preset kind of a built-in registration.
@@ -53,11 +58,11 @@ const PRESET_LISTS = {
 /**
  * checkAllowed refuses with NotAllowed the first value of a claim that its
  * policy does not allow, by the rule of CheckAllowed of pkg/claimpolicy, in
- * this order: the preset, the preset of each built-in storage selection in
- * claim order, the release, each selection in claim order in a
+ * this order: the preset, the release, each selection in claim order in a
  * section whose appliesTo does not list kind, each registration in claim
  * order, each required section that applies to kind and has no selection in
- * name order, and each parameter.
+ * name order, each parameter, and the preset of each built-in storage
+ * selection in claim order.
  * The preset of a built-in storage selection is the preset parameter of its
  * request, and it must be in spec.presets.elasticsearchCluster or
  * spec.presets.databaseServer, by the kind of the preset. A preset that the
@@ -87,13 +92,6 @@ export function checkAllowed(
         `CamundaClusterPreset "${input.presetRef}" is not in spec.presets.camundaCluster of Environment "${env}"`,
       );
     }
-    const refused = checkStoragePresets(
-      environment,
-      policy,
-      selections,
-      input.requests ?? [],
-    );
-    if (refused) return refused;
     if (input.releaseRef && !releaseAllowed(input.releaseRef, environment)) {
       return notAllowed(
         `CamundaRelease "${input.releaseRef}" is not in spec.releases.allowed of Environment "${env}"`,
@@ -141,6 +139,16 @@ export function checkAllowed(
     if (refused) return refused;
   }
 
+  if (environment) {
+    const refused = checkStoragePresets(
+      environment,
+      policy,
+      selections,
+      input.requests ?? [],
+    );
+    if (refused) return refused;
+  }
+
   return { value: {} };
 }
 
@@ -170,7 +178,7 @@ function checkStoragePresets(
   environment: Environment,
   policy: ResolvedPolicy,
   selections: readonly PluginSelection[],
-  requests: readonly PluginRequest[],
+  requests: readonly LiveRequest[],
 ): { refusal: Refusal } | { error: string } | undefined {
   for (const s of selections) {
     const kind = own(BUILTIN_OPTIONS, s.registration)?.lists.preset;
@@ -197,8 +205,18 @@ function checkStoragePresets(
       )
     )
       continue;
+    const env = environment.metadata.name ?? "";
+    const claimed = decodeObject(s.parameters) ?? {};
+    if (
+      Object.hasOwn(claimed, "preset") &&
+      own(policy.parameters ?? {}, s.registration)?.preset?.claimEditable
+    ) {
+      return notAllowed(
+        `${kind} "${preset}" is not in spec.presets.${list} of Environment "${env}"`,
+      );
+    }
     return notAllowed(
-      `${kind} "${preset}" is not in spec.presets.${list} of Environment "${environment.metadata.name ?? ""}"`,
+      `${kind} "${preset}" of spec.parameters.${s.registration}.preset is not in spec.presets.${list} of Environment "${env}"`,
     );
   }
   return undefined;
