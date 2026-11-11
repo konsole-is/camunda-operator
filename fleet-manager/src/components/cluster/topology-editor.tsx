@@ -14,7 +14,7 @@ import {
 import { lockLabel, type FieldLock } from "@/lib/fields";
 import { useClusterEdit } from "./edit/cluster-edit";
 import { changeInputOf } from "./edit/change-input";
-import { clusterImpacts, mergedSpecs } from "./impacts";
+import { clusterImpacts } from "./impacts";
 import type { ClusterSlotContext } from "./slots";
 import type { ComponentMode } from "./topology";
 import {
@@ -81,12 +81,7 @@ function EditorBody({ context }: { context: ClusterSlotContext }) {
   if (!session) return null;
   const input = changeInputOf(context, session);
   const onPick = (process: ModeProcess, mode: ComponentMode) => {
-    const write = modeWrite(
-      session,
-      mergedSpecs(input).before.spec,
-      process,
-      mode,
-    );
+    const write = modeWrite(input, process, mode);
     const lock =
       "reset" in write ? reset(write.reset) : set(write.set, write.value);
     setRefused(lock && { process, lock });

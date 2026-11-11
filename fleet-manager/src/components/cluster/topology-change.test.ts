@@ -198,11 +198,41 @@ describe("topologyChange", () => {
   });
 });
 
-describe("modeWrite", () => {
-  const s = (spec: Record<string, unknown> = {}) => input([], spec).session;
+// presetInput is input over a claim and a live cluster on the preset
+// medium, whose session moves the claim to the preset large. large runs
+// Operate standalone, and the claim holds no mode.
+function presetInput(): ClusterChangeInput {
+  const preset = (name: string, cluster: object) =>
+    ({
+      kind: "CamundaClusterPreset",
+      metadata: { name },
+      spec: { cluster },
+    }) as unknown as Resource<"CamundaClusterPreset">;
+  const base = input([], { presetRef: "medium" });
+  const c = {
+    ...base.session.claim,
+    spec: { presetRef: "medium", cluster: {} },
+  };
+  const s = openSession({
+    claim: c,
+    resource: base.live,
+    locks: () => undefined,
+  })!;
+  const r = setValue(s, [{ field: "spec" }, { field: "presetRef" }], "large");
+  if (!("session" in r)) throw new Error("refused");
+  return {
+    ...base,
+    session: r.session,
+    presets: [
+      preset("medium", {}),
+      preset("large", { operate: { mode: "Standalone" } }),
+    ],
+  };
+}
 
+describe("modeWrite", () => {
   it("sets the picked mode at spec.cluster.<process>.mode", () => {
-    expect(modeWrite(s(), {}, "operate", "Standalone")).toEqual({
+    expect(modeWrite(input([]), "operate", "Standalone")).toEqual({
       set: [
         { field: "spec" },
         { field: "cluster" },
@@ -214,21 +244,38 @@ describe("modeWrite", () => {
   });
 
   it("resets a pick of the current mode when the claim holds no mode", () => {
+    expect(modeWrite(input([]), "operate", "Embedded")).toEqual({
+      reset: modeSteps("operate"),
+    });
+  });
+
+  it("resets a pick back to the mode of the cluster after a pending pick", () => {
     expect(
-      modeWrite(s(), { operate: { mode: "Embedded" } }, "operate", "Embedded"),
+      modeWrite(input([["operate", "Standalone"]]), "operate", "Embedded"),
     ).toEqual({ reset: modeSteps("operate") });
   });
 
   it("sets the current mode when the claim holds another one", () => {
-    // The live cluster has not taken the mode of the claim yet.
     expect(
       modeWrite(
-        s({ operate: { mode: "Standalone" } }),
-        {},
+        input([], { operate: { mode: "Standalone" } }),
         "operate",
         "Embedded",
       ),
     ).toEqual({ set: modeSteps("operate"), value: "Embedded" });
+  });
+
+  it("sets a pick that a pending preset change would override", () => {
+    expect(modeWrite(presetInput(), "operate", "Embedded")).toEqual({
+      set: modeSteps("operate"),
+      value: "Embedded",
+    });
+  });
+
+  it("resets a pick of the mode that a pending preset change gives", () => {
+    expect(modeWrite(presetInput(), "operate", "Standalone")).toEqual({
+      reset: modeSteps("operate"),
+    });
   });
 });
 

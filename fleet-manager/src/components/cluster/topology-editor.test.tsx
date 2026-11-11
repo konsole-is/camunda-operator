@@ -68,14 +68,21 @@ function editor(
   );
 }
 
-// spec gives the claim and the live cluster the same cluster spec, with
-// the three brokers of the fixture.
+// withSpec gives the claim and the live cluster the same cluster spec,
+// with the three brokers of the fixture.
 function withSpec(spec: object): ClusterSlotContext {
   return slotContext({
     cluster: cluster(spec),
     claim: claim("41", { cluster: { zeebe: { replicas: 3 }, ...spec } }),
   });
 }
+
+const running = {
+  kind: "LogicalBackupRDBMS",
+  metadata: { namespace: "team-a", name: "nightly" },
+  spec: { clusterRef: { name: "orders" } },
+  status: { phase: "Running" },
+} as unknown as BackupObject;
 
 const open = () =>
   fireEvent.click(screen.getByRole("button", { name: "Change topology" }));
@@ -206,19 +213,28 @@ describe("TopologyEditor", () => {
   });
 
   it("shows the backup caution in the review of a mode switch during a running backup", () => {
-    const backup = {
-      kind: "LogicalBackupRDBMS",
-      metadata: { namespace: "team-a", name: "nightly" },
-      spec: { clusterRef: { name: "orders" } },
-      status: { phase: "Running" },
-    } as unknown as BackupObject;
-    editor(slotContext({ backups: [backup] }));
+    editor(slotContext({ backups: [running] }));
     open();
     pick("Gateway", "Embedded");
     fireEvent.click(reviewButton());
     expect(
       within(reviewDialog()).getByRole("note", { name: "Caution" }).textContent,
     ).toContain("Wait until backup nightly finishes.");
+  });
+
+  it("shows no caution in the review of a mode switch that keeps the brokers during a running backup", () => {
+    editor(slotContext({ backups: [running] }));
+    open();
+    pick("Operate", "Standalone");
+    fireEvent.click(reviewButton());
+    expect(
+      within(reviewDialog()).queryByRole("note", { name: "Caution" }),
+    ).toBeNull();
+    expect(
+      within(reviewDialog()).getByText(
+        /This change does not roll the brokers, so it does not affect the backup\./,
+      ),
+    ).toBeTruthy();
   });
 
   it("renders nothing without a session", () => {

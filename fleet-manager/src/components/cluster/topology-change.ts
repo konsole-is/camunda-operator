@@ -1,6 +1,5 @@
-import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import { pathFrom, type FieldLock, type Step } from "@/lib/fields";
-import { valueAt, type Session } from "@/lib/session";
+import { fieldLock, resetValue, valueAt, type Session } from "@/lib/session";
 import { mergedSpecs, type ClusterChangeInput } from "./impacts";
 import {
   modeOf,
@@ -81,7 +80,7 @@ export function topologyChange(input: ClusterChangeInput): TopologyChange {
       marks.after[box.process] = "new";
   const gatewayAfter = modeOf(after.spec, "gateway");
   const modes = MODE_PROCESSES.map((p): ModeRow => {
-    const lock = lockOf(input.session, modeSteps(p));
+    const lock = fieldLock(input.session, modeSteps(p));
     return {
       process: p,
       label: PROCESS_LABEL[p],
@@ -95,36 +94,31 @@ export function topologyChange(input: ClusterChangeInput): TopologyChange {
   return { before: was, after: is, marks, modes };
 }
 
-// lockOf returns the lock of steps or of a field above it, as setValue
-// refuses a change below a locked field.
-function lockOf(session: Session, steps: Step[]): FieldLock | undefined {
-  for (let i = 1; i <= steps.length; i++) {
-    const lock = session.locks(pathFrom("", steps.slice(0, i)));
-    if (lock) return lock;
-  }
-  return undefined;
-}
-
 /** ModeWrite is the session change of a pick: a reset of steps, or a value at steps. */
 export type ModeWrite =
   { reset: Step[] } | { set: Step[]; value: ComponentMode };
 
 /**
- * modeWrite returns the change of a pick of mode for p, where before is
- * the merged spec of the live cluster. A pick of the mode of before resets
- * the claim field when the claim holds no mode, so that no pending change
+ * modeWrite returns the change of a pick of mode for p in the session of
+ * input. When the claim holds no mode for p, a pick of the mode that the
+ * cluster gets without one resets the field, so that no pending change
  * stays. Every other pick sets the mode.
  */
 export function modeWrite(
-  session: Session,
-  before: CamundaClusterSpec,
+  input: ClusterChangeInput,
   p: ModeProcess,
   mode: ComponentMode,
 ): ModeWrite {
   const steps = modeSteps(p);
-  if (mode === modeOf(before, p) && valueAt(session.claim, steps) === undefined)
-    return { reset: steps };
-  return { set: steps, value: mode };
+  const { session } = input;
+  if (valueAt(session.claim, steps) !== undefined)
+    return { set: steps, value: mode };
+  const cleared = resetValue(session, steps);
+  if (!("session" in cleared)) return { set: steps, value: mode };
+  const after = mergedSpecs({ ...input, session: cleared.session }).after;
+  return modeOf(after.spec, p) === mode
+    ? { reset: steps }
+    : { set: steps, value: mode };
 }
 
 /** othersPending says whether session holds a pending change that is not the mode of a process of MODE_PROCESSES. */
