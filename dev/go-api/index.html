@@ -2561,12 +2561,16 @@ the resources.</p>
 <h2 id="the-operator-module">The operator module<a class="headerlink" href="#the-operator-module" title="Permanent link">&para;</a></h2>
 <p>The root module <code>github.com/konsole-is/camunda-operator</code> holds the controllers
 and the shared packages under <code>pkg/</code>. The release tag <code>v&lt;version&gt;</code> is also
-its Go tag, and the root module requires the api module at the same
-version. A program that needs a package from <code>pkg/</code> imports the root
-module at a release tag. That program gets every dependency of the operator.</p>
-<p>Commits between two releases require the api version of the last release. A
-program that pins the root module at a commit on <code>main</code> must also require the
-api module at the same commit.</p>
+its Go tag, and the root module requires the api module and the conformance
+module at the same version. A program that needs a package from <code>pkg/</code>
+imports the root module at a release tag. That program gets every dependency
+of the operator.</p>
+<p>Between two releases, the root <code>go.mod</code> can require a commit of the api and
+conformance modules instead of a release. A program that pins the root module
+at a commit on <code>main</code> must also require the api and conformance modules at the
+same commit.</p>
+<p>Plugin authors import the conformance module to test a plugin. See
+<a href="../guides/writing-a-plugin/#run-the-conformance-suite">Run the conformance suite</a>.</p>
 
 
 

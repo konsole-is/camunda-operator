@@ -985,6 +985,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#run-the-conformance-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the conformance suite
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Run the conformance suite">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-cluster-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the cluster needs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-the-binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the binary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-the-suite-in-github-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the suite in GitHub Actions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skip-a-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skip a check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2626,6 +2698,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#run-the-conformance-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the conformance suite
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Run the conformance suite">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-cluster-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the cluster needs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-the-binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the binary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-the-suite-in-github-actions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the suite in GitHub Actions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skip-a-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skip a check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The checks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2740,7 +2884,7 @@
 <ol>
 <li>The finalizer <code>plugins.camunda.io/cleanup</code>, before the first object for the request.</li>
 <li><code>status.outputs</code>, with a value for each output of the section, and the condition <code>OutputsReady=True</code>. The <code>observedGeneration</code> of the condition is the current generation of the request.</li>
-<li>The condition <code>Ready</code>, when the resources of the request are ready.</li>
+<li>The condition <code>Ready</code>, when the resources of the request are ready. When <code>status.podSelector</code> is set, at least one pod that it selects is Running and Ready by then.</li>
 </ol>
 <p>The status of a ready request, as <code>kubectl get pluginrequest orders-backup-storage -n my-cluster-ns -o yaml</code> prints it:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">status</span><span class="p">:</span>
@@ -2772,7 +2916,7 @@
 </span><span id="__span-3-27"><a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a><span class="w">      </span><span class="nt">role</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Backup bucket</span>
 </span><span id="__span-3-28"><a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="w">      </span><span class="nt">onOrphan</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Kept</span>
 </span></code></pre></div>
-<p>Four reasons of <code>Ready</code> have a fixed meaning. Use them only for that meaning:</p>
+<p>Five reasons of <code>Ready</code> have a fixed meaning. Use them only for that meaning:</p>
 <table>
 <thead>
 <tr>
@@ -2796,6 +2940,10 @@
 <tr>
 <td><code>InvalidParameters</code></td>
 <td>The parameters do not pass the schema or the rules of the registration. The message names each field that fails.</td>
+</tr>
+<tr>
+<td><code>MissingInput</code></td>
+<td>A required input of the registration has no value in <code>spec.inputs</code>. Set <code>OutputsReady</code> to <code>False</code> with the same reason, and write nothing for the request. The message names the input.</td>
 </tr>
 </tbody>
 </table>
@@ -2890,6 +3038,277 @@
 </span></code></pre></div>
 <p>The fleet manager shows the logs of a request from these lines. The conformance check <code>REQ-LOGS</code> reads the log of the controller pods. It fails when a line is not JSON. It also fails when no line carries the <code>request</code> key for a request.</p>
 <p>A controller built with pluginkit writes these lines for you.</p>
+<h2 id="run-the-conformance-suite">Run the conformance suite<a class="headerlink" href="#run-the-conformance-suite" title="Permanent link">&para;</a></h2>
+<p>The conformance suite checks that a plugin keeps the rules of this guide. Each release <code>vX.Y.Z</code> of the operator publishes the suite in three forms:</p>
+<ul>
+<li>The Go module <code>github.com/konsole-is/camunda-operator/conformance</code>, at the Go tag <code>conformance/vX.Y.Z</code>.</li>
+<li>The binaries <code>plugin-conformance-&lt;os&gt;-&lt;arch&gt;</code>, as assets of the release, for <code>linux-amd64</code>, <code>linux-arm64</code>, <code>darwin-amd64</code>, and <code>darwin-arm64</code>.</li>
+<li>The image <code>ghcr.io/konsole-is/camunda-operator-plugin-conformance:X.Y.Z</code>.</li>
+</ul>
+<p>Use the suite of the operator release that your plugin builds against.</p>
+<h3 id="what-the-cluster-needs">What the cluster needs<a class="headerlink" href="#what-the-cluster-needs" title="Permanent link">&para;</a></h3>
+<p>The suite runs against a cluster that has these parts:</p>
+<ul>
+<li>The operator chart of the same release. It installs the plugin kinds, the operator, and the grant admission policy.</li>
+<li>The chart of your plugin.</li>
+<li>The registration of your plugin, with <code>Accepted=True</code> and <code>Ready=True</code>. The suite reads the registration one time, when it starts. Wait for both conditions before you start the suite.</li>
+</ul>
+<p>The suite creates the namespace of the run and writes one request for each case into it. At the end, it deletes the requests and the namespace.</p>
+<p>Run the suite on a cluster of its own, such as the kind cluster of the job below. The check <code>ORDER-REGISTRATION-FIRST</code> scales the Deployment of the plugin to zero and deletes its registration. While it runs, the plugin serves no other request on that cluster. For the same reason, run one suite at a time against a plugin.</p>
+<h3 id="run-the-binary">Run the binary<a class="headerlink" href="#run-the-binary" title="Permanent link">&para;</a></h3>
+<p>Write a config file, for example <code>conformance.yaml</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">registration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3-backup-bucket</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">conformance-s3-backup-bucket</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">timeouts</span><span class="p">:</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">outputsReady</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2m</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="nt">ready</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nt">deletion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">90s</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="nt">cases</span><span class="p">:</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">default</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">    </span><span class="nt">inputs</span><span class="p">:</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">      </span><span class="nt">bucket-region</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">eu-west-1</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nt">parameters</span><span class="p">:</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">      </span><span class="nt">retentionDays</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">    </span><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">      </span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaCluster</span>
+</span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders</span>
+</span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">      </span><span class="nt">serviceAccountName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders-camunda</span>
+</span></code></pre></div>
+<p><code>registration</code> is the name of your registration. Each case is one request, with the inputs, the parameters, and the target that a claim gives it. A case without <code>deletionPolicy</code> runs one time for each deletion policy of the registration. The <code>timeouts</code> are optional. Without them, the suite waits 5 minutes for <code>OutputsReady</code>, 10 minutes for <code>Ready</code>, and 5 minutes for each deletion.</p>
+<p>Run the binary against the cluster of your kubeconfig:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>plugin-conformance<span class="w"> </span>--config<span class="w"> </span>conformance.yaml<span class="w"> </span>--report<span class="w"> </span>plugin-conformance-report.xml
+</span></code></pre></div>
+<p>The binary prints one line for each check, <code>PASS</code>, <code>FAIL</code>, or <code>SKIP</code>, and writes a JUnit report. Its exit code tells the result of the run:</p>
+<table>
+<thead>
+<tr>
+<th>Exit code</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>No check failed.</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>At least one check failed.</td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>The run did not start, the binary did not write the report, or the cleanup at the end failed.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="run-the-suite-in-github-actions">Run the suite in GitHub Actions<a class="headerlink" href="#run-the-suite-in-github-actions" title="Permanent link">&para;</a></h3>
+<p>This job creates a kind cluster, installs the operator and the plugin, and runs the binary of the release <code>v0.3.0</code>. It reads the config file <code>conformance.yaml</code> from the root of your repository. <code>OPERATOR_VERSION</code> is the release version without the <code>v</code>.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">jobs</span><span class="p">:</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="nt">conformance</span><span class="p">:</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span><span class="nt">env</span><span class="p">:</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">      </span><span class="nt">OPERATOR_VERSION</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.3.0</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v7</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">azure/setup-helm@v5.0.1</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">          </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v4.3.1</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Create a kind cluster</span>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-9-15"><a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a><span class="w">          </span><span class="no">curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64</span>
+</span><span id="__span-9-16"><a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="w">          </span><span class="no">chmod +x kind &amp;&amp; sudo mv kind /usr/local/bin/kind</span>
+</span><span id="__span-9-17"><a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="w">          </span><span class="no">kind create cluster --image kindest/node:v1.37.0 --wait 120s</span>
+</span><span id="__span-9-18"><a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a>
+</span><span id="__span-9-19"><a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install the operator</span>
+</span><span id="__span-9-20"><a id="__codelineno-9-20" name="__codelineno-9-20" href="#__codelineno-9-20"></a><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-9-21"><a id="__codelineno-9-21" name="__codelineno-9-21" href="#__codelineno-9-21"></a><span class="w">          </span><span class="no">helm install camunda-operator oci://ghcr.io/konsole-is/charts/camunda-operator \</span>
+</span><span id="__span-9-22"><a id="__codelineno-9-22" name="__codelineno-9-22" href="#__codelineno-9-22"></a><span class="w">            </span><span class="no">--version "${OPERATOR_VERSION}" \</span>
+</span><span id="__span-9-23"><a id="__codelineno-9-23" name="__codelineno-9-23" href="#__codelineno-9-23"></a><span class="w">            </span><span class="no">--namespace camunda-operator-system --create-namespace --wait</span>
+</span><span id="__span-9-24"><a id="__codelineno-9-24" name="__codelineno-9-24" href="#__codelineno-9-24"></a>
+</span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install the plugin</span>
+</span><span id="__span-9-26"><a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-9-27"><a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a><span class="w">          </span><span class="no">helm install s3-backup-bucket ./charts/s3-backup-bucket \</span>
+</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="w">            </span><span class="no">--namespace camunda-plugins --create-namespace --wait</span>
+</span><span id="__span-9-29"><a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a>
+</span><span id="__span-9-30"><a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Wait for the registration</span>
+</span><span id="__span-9-31"><a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-9-32"><a id="__codelineno-9-32" name="__codelineno-9-32" href="#__codelineno-9-32"></a><span class="w">          </span><span class="no">kubectl wait pluginregistration/s3-backup-bucket --for=create --timeout=120s</span>
+</span><span id="__span-9-33"><a id="__codelineno-9-33" name="__codelineno-9-33" href="#__codelineno-9-33"></a><span class="w">          </span><span class="no">kubectl wait pluginregistration/s3-backup-bucket --for=condition=Accepted --timeout=120s</span>
+</span><span id="__span-9-34"><a id="__codelineno-9-34" name="__codelineno-9-34" href="#__codelineno-9-34"></a><span class="w">          </span><span class="no">kubectl wait pluginregistration/s3-backup-bucket --for=condition=Ready --timeout=120s</span>
+</span><span id="__span-9-35"><a id="__codelineno-9-35" name="__codelineno-9-35" href="#__codelineno-9-35"></a>
+</span><span id="__span-9-36"><a id="__codelineno-9-36" name="__codelineno-9-36" href="#__codelineno-9-36"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run the conformance suite</span>
+</span><span id="__span-9-37"><a id="__codelineno-9-37" name="__codelineno-9-37" href="#__codelineno-9-37"></a><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+</span><span id="__span-9-38"><a id="__codelineno-9-38" name="__codelineno-9-38" href="#__codelineno-9-38"></a><span class="w">          </span><span class="no">curl -fsSLo plugin-conformance \</span>
+</span><span id="__span-9-39"><a id="__codelineno-9-39" name="__codelineno-9-39" href="#__codelineno-9-39"></a><span class="w">            </span><span class="no">"https://github.com/konsole-is/camunda-operator/releases/download/v${OPERATOR_VERSION}/plugin-conformance-linux-amd64"</span>
+</span><span id="__span-9-40"><a id="__codelineno-9-40" name="__codelineno-9-40" href="#__codelineno-9-40"></a><span class="w">          </span><span class="no">chmod +x plugin-conformance</span>
+</span><span id="__span-9-41"><a id="__codelineno-9-41" name="__codelineno-9-41" href="#__codelineno-9-41"></a><span class="w">          </span><span class="no">./plugin-conformance --config conformance.yaml --report plugin-conformance-report.xml</span>
+</span><span id="__span-9-42"><a id="__codelineno-9-42" name="__codelineno-9-42" href="#__codelineno-9-42"></a>
+</span><span id="__span-9-43"><a id="__codelineno-9-43" name="__codelineno-9-43" href="#__codelineno-9-43"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Keep the report</span>
+</span><span id="__span-9-44"><a id="__codelineno-9-44" name="__codelineno-9-44" href="#__codelineno-9-44"></a><span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ !cancelled() }}</span>
+</span><span id="__span-9-45"><a id="__codelineno-9-45" name="__codelineno-9-45" href="#__codelineno-9-45"></a><span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/upload-artifact@v7</span>
+</span><span id="__span-9-46"><a id="__codelineno-9-46" name="__codelineno-9-46" href="#__codelineno-9-46"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+</span><span id="__span-9-47"><a id="__codelineno-9-47" name="__codelineno-9-47" href="#__codelineno-9-47"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">plugin-conformance-report</span>
+</span><span id="__span-9-48"><a id="__codelineno-9-48" name="__codelineno-9-48" href="#__codelineno-9-48"></a><span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">plugin-conformance-report.xml</span>
+</span></code></pre></div>
+<p>The plugin writes its registration after it starts, so the first <code>kubectl wait</code> waits until the registration exists. A failed check fails the job, because the binary exits with <code>1</code>.</p>
+<h3 id="skip-a-check">Skip a check<a class="headerlink" href="#skip-a-check" title="Permanent link">&para;</a></h3>
+<p>A run can skip only a check that has <code>Yes</code> in the column "Skippable" of <a href="#the-checks">The checks</a>. Each skip needs a reason, and the report shows it. Add the skips to the config file:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">skip</span><span class="p">:</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">REQ-LOGS</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">    </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">the controller writes plain text logs</span>
+</span></code></pre></div>
+<p>If the config skips a check that a run cannot skip, the run does not start, and the exit code is <code>2</code>.</p>
+<h3 id="the-checks">The checks<a class="headerlink" href="#the-checks" title="Permanent link">&para;</a></h3>
+<p>The suite runs the checks in this order:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>What it checks</th>
+<th>Skippable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>REG-ACCEPTED</code></td>
+<td>The registration has Accepted=True and Ready=True.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REG-SCHEMA</code></td>
+<td><code>spec.parameters</code> is a valid OpenAPI v3 schema, and the parameters of every case pass it.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REG-OUTPUTS</code></td>
+<td><code>spec.outputs</code> covers every output of each section in <code>spec.sections</code>.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REG-INPUTS</code></td>
+<td>Each input names <code>&lt;section&gt;/&lt;output&gt;</code> of an installed section.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REG-GRANTS</code></td>
+<td>Each grant template has a supported format and uses only the placeholders of the contract.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REG-TEMPLATES</code></td>
+<td>Each default of an <code>x-fleet-template</code> parameter uses only the placeholders of the contract.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REG-DELETION</code></td>
+<td><code>spec.deletionPolicies</code> holds Delete.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REG-RBAC</code></td>
+<td>The ServiceAccount of the registration has the verb serve on the registration name.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REG-METRICS</code></td>
+<td>Each metric query uses only the placeholders of the contract and <code>.pods</code>.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REQ-FINALIZER</code></td>
+<td>The request gets the finalizer <code>plugins.camunda.io/cleanup</code> before any object that the plugin writes for it.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REQ-OUTPUTS-READY</code></td>
+<td>The request gets OutputsReady=True for its current generation within the OutputsReady timeout.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REQ-OUTPUTS</code></td>
+<td><code>status.outputs</code> has exactly the output keys of the registration, and each value is not empty.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REQ-READY</code></td>
+<td>Within the Ready timeout, the request gets Ready=True, or Ready=False with the reason GrantRejected or WaitingForGrants. Ready=True fails the check while a Grant has a Ready condition and another Grant does not have Ready=True. The reason GrantRejected needs a Grant with Ready=False. The reason WaitingForGrants needs a Grant without Ready=True, and no Grant with Ready=False.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REQ-LABELS</code></td>
+<td>Each object of the request carries both writer labels. A cluster-scoped object also carries <code>plugins.camunda.io/request-namespace</code> with the namespace of the request, and a namespaced object has an owner reference to the request.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REQ-RESOURCES</code></td>
+<td><code>status.resources</code> lists each object of the request, and each row has kind, name, and <code>onOrphan</code>.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REQ-EVENTS</code></td>
+<td>The request has at least one event for each row of <code>status.resources</code>.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REQ-DISPLAY</code></td>
+<td>The <code>summary</code>, <code>summaryTime</code>, <code>links</code>, and <code>podSelector</code> of the request status are complete and valid.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>REQ-LOGS</code></td>
+<td>The controller pods log JSON lines, and a line carries the key request with the name of each request.</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>REQ-ACCEPTED-KEPT</code></td>
+<td>The registration keeps the Accepted condition of the registry controller while the plugin serves requests.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>GRANT-MATCH</code></td>
+<td>Each grant template whose required inputs have values has one Grant of the request. The Grant has the labels, the owner, the format, and the fragment of the filled-in template.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>GRANT-REQUIRES</code></td>
+<td>A grant template with a required input without a value has no Grant.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>GRANT-ADMISSION</code></td>
+<td>The API server refuses a Grant of the registration from a requester without the verb serve on it. It skips itself when the Grant admission policy is not installed.</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>GRANT-READY</code></td>
+<td>A request is not Ready=True while one of its Grants has no Ready condition. It gets Ready=True within the Ready timeout after the suite sets Ready=True on its Grants.</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>ORDER-REGISTRATION-FIRST</code></td>
+<td>The suite scales the plugin Deployment to zero, deletes the registration, and creates a request. The plugin must write its registration again with Ready=True when it starts, before the request gets a finalizer or an output.</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>DELETE-DELETE</code></td>
+<td>With the deletion policy Delete, the request is gone within the Deletion timeout, and so is each of its objects.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>DELETE-ORPHAN</code></td>
+<td>With the deletion policy Orphan, each row with <code>onOrphan</code> Kept stays, with both writer labels and no owner reference to the request. Each row with <code>onOrphan</code> Deleted is gone.</td>
+<td>No</td>
+</tr>
+<tr>
+<td><code>DELETE-ROUTES</code></td>
+<td>For the access section, a route to a Service that is gone is deleted under both deletion policies.</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p>To run the suite from <code>go test</code>, see the <a href="https://github.com/konsole-is/camunda-operator/blob/main/conformance/README.md">README of the conformance module</a>.</p>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../crds/pluginsection/">PluginSection</a>: the sections and their outputs.</li>
