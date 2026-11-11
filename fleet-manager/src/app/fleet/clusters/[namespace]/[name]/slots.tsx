@@ -1,5 +1,6 @@
 import { ComponentSettingsEditor } from "@/components/cluster/edit/settings-slot";
 import type { ActionSlots } from "@/components/cluster/slots";
+import { TopologyEditor } from "@/components/cluster/topology-editor";
 
 /**
  * clusterSlots fills the action slots of the cluster page. Each write flow
@@ -8,5 +9,6 @@ import type { ActionSlots } from "@/components/cluster/slots";
  * component cannot pass a function.
  */
 export const clusterSlots: ActionSlots = {
+  "cluster.topology.actions": (context) => <TopologyEditor context={context} />,
   "component.settings.editor": (ctx) => <ComponentSettingsEditor ctx={ctx} />,
 };

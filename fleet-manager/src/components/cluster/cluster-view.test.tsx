@@ -156,6 +156,7 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     releases: [],
     storage: [],
     accessRequests: [],
+    requests: [],
     pods: [brokerPod(0), brokerPod(1), brokerPod(2)],
     podSelector: "camunda.io/cluster=orders",
     backups: { elasticsearch: [], rdbms: [] },
@@ -891,6 +892,17 @@ describe("Backups tab", () => {
     });
   });
 
+  it("watches the PluginRequests of the claim of the cluster by the claim label", () => {
+    render(view());
+    expect(live.calls).toContainEqual({
+      kind: "PluginRequest",
+      opts: {
+        namespace: "team-a",
+        labelSelector: `${CLAIM_LABEL}=orders`,
+      },
+    });
+  });
+
   it("watches the PluginSections and PluginRegistrations of the whole cluster", () => {
     render(view());
     expect(live.calls).toContainEqual({ kind: "PluginSection", opts: {} });
@@ -1247,6 +1259,35 @@ describe("slot context", () => {
     expect(seen?.writeMode).toBe("git");
     expect(seen?.openId).toBe("zeebe");
     expect(seen?.now).toBe(now);
+  });
+
+  it("gives the requests of the claim and no request of another claim", () => {
+    let seen: ClusterSlotContext | undefined;
+    const request = (kind: string, claimName: string) =>
+      nsObject("PluginRequest", `${claimName}-secondary-storage`, {
+        claimRef: { kind, name: claimName },
+        section: "secondary-storage",
+        registration: "elasticsearch",
+      });
+    render(
+      view({
+        initial: data({
+          requests: [
+            request("CamundaClusterClaim", "orders"),
+            request("CamundaManagementClusterClaim", "orders"),
+          ],
+        }),
+        slots: {
+          "cluster.header.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      }),
+    );
+    expect(seen?.requests.map((r) => r.spec.claimRef)).toEqual([
+      { kind: "CamundaClusterClaim", name: "orders" },
+    ]);
   });
 
   it("gives the environment of the namespace and the storage of spec.storageRef", () => {

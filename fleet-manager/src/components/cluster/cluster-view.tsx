@@ -55,8 +55,10 @@ import { TopologyView } from "./topology-view";
 /**
  * ClusterPageData is the first snapshot of the cluster page. The namespaced
  * lists hold the objects of the namespace of the cluster. accessRequests are
- * the PluginRequests of the access section. podSelector selects the pods of
- * the cluster by its owner label, and pods holds them. backupStorage holds
+ * the PluginRequests of the access section. requests holds the
+ * PluginRequests of the namespace whose claim label names the claim of the
+ * cluster. podSelector selects the pods of the cluster by its owner label,
+ * and pods holds them. backupStorage holds
  * the objects that the Backups tab follows from the cluster to its backup
  * storage and its schedules. Its databaseServerPresets are cluster-scoped.
  * optimizes holds every CamundaOptimize of the namespace, and sections and
@@ -73,6 +75,7 @@ export type ClusterPageData = {
   releases: Resource<"CamundaRelease">[];
   storage: Resource<"SecondaryStorageConfig">[];
   accessRequests: Resource<"PluginRequest">[];
+  requests: Resource<"PluginRequest">[];
   pods: Resource<"Pod">[];
   podSelector: string;
   backups: {
@@ -177,6 +180,12 @@ export function ClusterView({
     "PluginRequest",
     { namespace: ns, labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}` },
     initial.accessRequests,
+  );
+  const claimName = cluster.item?.metadata?.labels?.[CLAIM_LABEL];
+  const requests = useResources(
+    "PluginRequest",
+    { namespace: ns, labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}` },
+    initial.requests,
   );
   const pods = useResources(
     "Pod",
@@ -291,6 +300,7 @@ export function ClusterView({
       ["CamundaClusterClaim", claims],
       ["SecondaryStorageConfig", storage],
       ["PluginRequest", accessRequests],
+      ["PluginRequest", requests],
       ["Pod", pods],
       ["LogicalBackupElasticsearch", backupsES],
       ["LogicalBackupRDBMS", backupsRDBMS],
@@ -314,7 +324,6 @@ export function ClusterView({
   );
 
   const managed = isManaged(live);
-  const claimName = live.metadata?.labels?.[CLAIM_LABEL];
   const claim = claims.items.find((c) => c.metadata?.name === claimName);
   const access = accessRequests.items.find(
     (r) =>
@@ -420,6 +429,11 @@ export function ClusterView({
     managementAuthConfigs: managementAuthConfigs.items,
     sections: sections.items,
     registrations: registrations.items,
+    requests: requests.items.filter(
+      (r) =>
+        r.spec.claimRef.kind === "CamundaClusterClaim" &&
+        r.spec.claimRef.name === claimName,
+    ),
     storage: storageObject,
     backups,
     restores,
@@ -444,8 +458,8 @@ export function ClusterView({
 
   const content = (
     <div className="flex flex-col gap-4">
-      {errors.map((e) => (
-        <p key={e.kind} role="alert" className="text-sm text-bad">
+      {errors.map((e, i) => (
+        <p key={i} role="alert" className="text-sm text-bad">
           Could not read {e.kind}: {e.message}
         </p>
       ))}

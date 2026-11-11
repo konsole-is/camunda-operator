@@ -5,6 +5,7 @@ import { clusterStories } from "@/components/cluster/cluster.stories";
 import { detailStories } from "@/components/cluster/detail.stories";
 import { settingsStories } from "@/components/cluster/settings.stories";
 import { settingsEditorStories } from "@/components/cluster/settings-editor.stories";
+import { topologyEditorStories } from "@/components/cluster/topology-editor.stories";
 import { confirmStories } from "@/components/fleet/confirm.stories";
 import { createFlowStories } from "@/components/fleet/create-flow.stories";
 import { dataTableStories } from "@/components/fleet/data-table.stories";
@@ -43,6 +44,7 @@ export const stories: readonly Story[] = [
   ...createFlowStories,
   ...observeStories,
   ...clusterStories,
+  ...topologyEditorStories,
   ...cardsStories,
   ...detailStories,
   ...backupsStories,
