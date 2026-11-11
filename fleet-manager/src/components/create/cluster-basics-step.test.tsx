@@ -188,6 +188,7 @@ describe("ClusterBasicsStep", () => {
       [["environment"], "dev"],
       [["namespace"], undefined],
       [["storage"], undefined],
+      [["claim", "spec", "deletionPolicy"], undefined],
       [["claim", "spec", "presetRef"], undefined],
     ]);
   });
@@ -209,6 +210,27 @@ describe("ClusterBasicsStep", () => {
     await userEvent.click(screen.getByRole("radio", { name: /dev/ }));
 
     expect(spy).toHaveBeenCalledWith(["storage"], undefined);
+  });
+
+  it("clears the deletion policy when the environment changes", async () => {
+    const spy = vi.fn();
+    render(
+      <Harness
+        environments={[environment("prod"), environment("dev")]}
+        spy={spy}
+        initial={{
+          environment: "prod",
+          claim: { metadata: { name: "" }, spec: { deletionPolicy: "Delete" } },
+        }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("radio", { name: /dev/ }));
+
+    expect(spy).toHaveBeenCalledWith(
+      ["claim", "spec", "deletionPolicy"],
+      undefined,
+    );
   });
 
   it("shows no environment choice without any Environment", () => {
