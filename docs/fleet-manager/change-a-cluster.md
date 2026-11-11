@@ -10,7 +10,7 @@ A component also offers the fields that neither the preset nor the claim sets, f
 
 | Field | Editor |
 | --- | --- |
-| A string, such as `externalUrl` | A text input. |
+| A string, such as `storageClassName` of the brokers | A text input. |
 | A number, such as `replicas` | A number input. A value outside the range of the field shows an error. |
 | `true` or `false`, such as `enabled` | A checkbox. |
 | A field with a fixed list of values, such as `mode` | A list of the values, and **Not set**. |
@@ -20,9 +20,10 @@ A component also offers the fields that neither the preset nor the claim sets, f
 | `podLabels`, `podAnnotations`, and the other maps | One row for each key and value. |
 | `scheduling.tolerations` | One row for each toleration. |
 | `scheduling.nodeAffinity`, `scheduling.podAffinity`, `extraEnvFrom`, and the other lists | YAML, checked against the schema of the field. |
-| A reference to a Secret key, such as `auth.clientSecretRef` | A Secret and one of its keys. |
 
-**From a Secret** and the Secret reference show the names of the Secrets in the namespace and the names of their keys. The fleet manager never shows the value of a Secret.
+**From a Secret** shows the names of the Secrets in the namespace and the names of their keys. The fleet manager never shows the value of a Secret.
+
+The preset and the release can add their own `extraEnvFrom` sources. In the pods, these sources come before the sources of the claim. For this reason, the editor of `extraEnvFrom` shows only the sources of the claim. It also shows how many sources the preset and the release add.
 
 ## What a change writes
 
@@ -62,19 +63,23 @@ A value with an error does not count as a change, and the editor shows the error
 
 Below each editor, the page says where the value comes from, for example **From preset** or **Changed in the claim**. A field that the claim sets has the link **Reset to preset**. The link removes the value from the claim, so that the value of the preset applies again. The reset is an unsaved change, as each other change is.
 
+When the claim sets a block such as `scheduling` as one value, each field of the block has the link **Reset scheduling to preset**. This link removes the whole block from the claim. Every `scheduling` field of the claim then goes back to the preset, also `scheduling.nodeAffinity`.
+
 A field that you cannot change shows its value and the reason, with no editor:
 
 | Reason | What sets the field |
 | --- | --- |
-| Filled by *section* | A selection of that section, for example **Filled by Access** for `externalUrl`. Change the selection of the section in the claim. |
+| Filled by *section* | A selection of that section, for example **Filled by Volume encryption** for `storageClassName` of the brokers. Change the selection of the section in the claim. |
 | Set by the release | The `CamundaRelease` of the claim, such as `version`. Change the release of the claim. |
 | Fixed by the claim controller | The operator, such as `serviceAccount.name`. |
 
 ## Embedded apps
 
-Operate, Tasklist, and Admin run inside the gateway unless their `mode` is `Standalone`. When the gateway `mode` is `Embedded`, the gateway and these apps run inside the brokers. The **Settings** tab of the host shows the fields of each app that runs inside it, below the fields of the host. The note "Applies when *app* runs standalone." shows above them.
+Operate, Tasklist, and Admin run inside the gateway unless their `mode` is `Standalone`. When the gateway `mode` is `Embedded`, the gateway and these apps run inside the brokers. The **Settings** tab of the host shows the fields of each app that runs inside it, below the fields of the host. A note above them says that these fields apply only when the app runs standalone. The note also names the two exceptions, `extraEnv` and `extraEnvFrom`.
 
-A change of an embedded app writes to the block of the app, for example `spec.cluster.tasklist` for Tasklist. While the app runs inside its host, the app does not use these values. When the `mode` of the app changes to `Standalone`, the app starts with them. You can prepare the settings of an app before it runs standalone.
+A change of an embedded app writes to the block of the app, for example `spec.cluster.tasklist` for Tasklist. While the app runs inside its host, these values have no effect, except `extraEnv` and `extraEnvFrom`. When the `mode` of the app changes to `Standalone`, the app starts with them. You can prepare the settings of an app before it runs standalone.
+
+The `extraEnv` and `extraEnvFrom` of an embedded app apply to its host. For example, an `extraEnv` variable of an embedded Tasklist goes to the pods of the gateway. When the gateway is embedded too, it goes to the brokers.
 
 ## Storage size
 
