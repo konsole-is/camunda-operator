@@ -65,10 +65,10 @@ export function TopologyBoxes({
         return (
           <li
             key={box.process}
-            className={`flex flex-col gap-3 rounded-md border bg-panel-2 p-3 ${
+            className={`flex flex-col gap-3 rounded-md border p-3 ${
               mark === "removed"
-                ? "border-dashed border-faint opacity-60"
-                : "border-border"
+                ? "border-dashed border-faint"
+                : "border-border bg-panel-2"
             }`}
           >
             <div className="flex items-baseline justify-between gap-2">

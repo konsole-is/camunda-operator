@@ -210,7 +210,7 @@ function ModeChoice({
         {MODES.map((mode) => (
           <label
             key={mode}
-            className="flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-sm text-text-2 has-checked:bg-panel has-checked:font-medium has-checked:text-text has-checked:shadow-sm has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
+            className="flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-sm text-text-2 has-checked:bg-panel has-checked:font-medium has-checked:text-text has-checked:ring-1 has-checked:ring-accent has-focus-visible:ring-3 has-focus-visible:ring-ring/50"
           >
             <input
               type="radio"
