@@ -52,7 +52,7 @@ graph LR
 
 A plane claim follows the `Environment` of its own namespace, as a [CamundaClusterClaim](camundaclusterclaim.md#environment-and-policy) does. The label `fleet.camunda.io/environment` of the namespace names it. The claim records the policy of that `Environment` in `status.resolvedPolicy` on its first check. A later change of the `Environment` does not change the policy of the claim.
 
-The preset of the built-in PostgreSQL, the parameter `preset` of `management-database-server`, must be in `spec.presets.databaseServer` of the current `Environment`. The preset comes from the claim or from the policy. Otherwise the claim is refused with `NotAllowed`. A preset that the database server already uses stays allowed when the `Environment` drops it.
+The preset of the built-in PostgreSQL, the parameter `preset` of `management-database-server`, must be in `spec.presets.databaseServer` of the current `Environment`. The preset comes from the claim or from the policy. Otherwise the claim is refused with `NotAllowed`. When the policy sets the preset, the message names `spec.parameters.management-database-server.preset` of the `Environment`. You cannot change that preset in the claim, so ask the admin of the `Environment` to correct the value or the list. A preset that the database server already uses stays allowed when the `Environment` drops it.
 
 A section of the policy that does not apply to a plane claim, such as `secondary-storage`, is never required for a plane. A claim that selects an option in such a section is refused with `NotAllowed`. The [PluginSection](pluginsection.md#claim-kinds) page says what `appliesTo` does, and its [core sections](pluginsection.md#core-sections) list the claim kinds of each core section.
 

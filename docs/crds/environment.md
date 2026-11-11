@@ -171,7 +171,7 @@ spec:
 
 A claim that uses a preset outside its list is refused with `NotAllowed`. A list that is empty or not set allows no preset of its kind. So an `Environment` that allows `elasticsearch`, `database-server`, or `management-database-server` needs the list of its preset kind.
 
-The preset of a built-in Elasticsearch or PostgreSQL is its parameter `preset`. In the example above, a claim picks `small` or `large` for `elasticsearch`, and `database-server` always gets `small`. The claim sets the preset when `spec.parameters` makes `preset` claim-editable. Otherwise the `value` of the parameter policy sets it. The list check applies to the claim value and to the policy value. A `value` outside the list refuses each new claim that selects the option, so keep the `value` in the list. A refused claim shows the preset and the list:
+The preset of a built-in Elasticsearch or PostgreSQL is its parameter `preset`. In the example above, a claim picks `small` or `large` for `elasticsearch`, and `database-server` always gets `small`. The claim sets the preset when `spec.parameters` makes `preset` claim-editable. Otherwise the `value` of the parameter policy sets it. The list check applies to the claim value and to the policy value. A `value` outside the list refuses each new claim that selects the option, so keep the `value` in the list. A refused claim shows the preset and the list. When the `value` sets the preset, the message also names `spec.parameters.<registration>.preset`:
 
 ```yaml
 status:
@@ -181,6 +181,8 @@ status:
       reason: NotAllowed
       message: 'ElasticsearchClusterPreset "medium" is not in spec.presets.elasticsearchCluster of Environment "production"'
 ```
+
+If you remove `small` from `databaseServer` in the example above, a new claim that selects `database-server` shows `DatabaseServerPreset "small" of spec.parameters.database-server.preset is not in spec.presets.databaseServer of Environment "production"`.
 
 A change of `sections`, `parameters`, or `deletionPolicy` applies to new claims only. An existing claim keeps the policy that it recorded at creation. The releases and the presets are different. A new claim, and a release or preset change of an existing claim, are checked against the current lists. A release or a preset that an existing claim already uses stays allowed when you remove it from its list.
 

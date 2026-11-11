@@ -93,7 +93,20 @@ var storagePresetLists = map[string]presetList{
 // policy does not allow, in this order:
 //  1. A preset that spec.presets.camundaCluster of the current Environment
 //     does not list. An empty list allows no preset.
-//  2. A preset of a selection of the built-in elasticsearch,
+//  2. A release that spec.releases.allowed of the current Environment does
+//     not list. An empty release passes, because the default of the
+//     Environment is one of allowed.
+//  3. A selection, in claim order, in a section whose spec.appliesTo does
+//     not list Kind.
+//  4. A registration, in claim order, that the snapshot does not allow in
+//     its section. A section without a policy allows no registration.
+//  5. A section, in name order, that the snapshot marks required, that
+//     applies to Kind, and in which the claim selects nothing.
+//  6. A parameter, in claim order and then in key order. A key that is not
+//     claim-editable passes only with a value equal as JSON to the value of
+//     the snapshot. A claim-editable key with choices takes only the name of
+//     a choice or a list of such names.
+//  7. A preset of a selection of the built-in elasticsearch,
 //     database-server, or management-database-server, in claim order, that
 //     the current Environment does not list in
 //     spec.presets.elasticsearchCluster or spec.presets.databaseServer. The
@@ -101,19 +114,6 @@ var storagePresetLists = map[string]presetList{
 //     selection, from the claim or from the snapshot. A preset that the
 //     request in Requests of the same section and registration already
 //     carries passes. An empty list allows no preset.
-//  3. A release that spec.releases.allowed of the current Environment does
-//     not list. An empty release passes, because the default of the
-//     Environment is one of allowed.
-//  4. A selection, in claim order, in a section whose spec.appliesTo does
-//     not list Kind.
-//  5. A registration, in claim order, that the snapshot does not allow in
-//     its section. A section without a policy allows no registration.
-//  6. A section, in name order, that the snapshot marks required, that
-//     applies to Kind, and in which the claim selects nothing.
-//  7. A parameter, in claim order and then in key order. A key that is not
-//     claim-editable passes only with a value equal as JSON to the value of
-//     the snapshot. A claim-editable key with choices takes only the name of
-//     a choice or a list of such names.
 //
 // Without an Environment, every preset and release passes. The registrations
 // and the parameters are always checked against the snapshot, so a later
@@ -159,7 +159,7 @@ func CheckAllowed(in AllowedInput) error {
 		}
 	}
 
-	return nil
+	return checkStoragePresets(in)
 }
 
 func checkRefs(in AllowedInput) error {
@@ -175,10 +175,6 @@ func checkRefs(in AllowedInput) error {
 			in.PresetRef,
 			env.Name,
 		)
-	}
-
-	if err := checkStoragePresets(in); err != nil {
-		return err
 	}
 
 	if in.ReleaseRef != "" && (env.Spec.Releases == nil || !slices.Contains(env.Spec.Releases.Allowed, in.ReleaseRef)) {
@@ -214,11 +210,29 @@ func checkStoragePresets(in AllowedInput) error {
 			continue
 		}
 
+		claimed, err := decodeObject(s.Parameters)
+		if err != nil {
+			return fmt.Errorf("parameters of the selection of section %q: %w", s.Section, err)
+		}
+		_, set := claimed[presetParameter]
+		if set && in.Policy.Parameters[s.Registration][presetParameter].ClaimEditable {
+			return refuse(
+				fleetv1alpha1.ReasonNotAllowed,
+				"%s %q is not in %s of Environment %q",
+				list.kind,
+				preset,
+				list.field,
+				in.Environment.Name,
+			)
+		}
+
 		return refuse(
 			fleetv1alpha1.ReasonNotAllowed,
-			"%s %q is not in %s of Environment %q",
+			"%s %q of spec.parameters.%s.%s is not in %s of Environment %q",
 			list.kind,
 			preset,
+			s.Registration,
+			presetParameter,
 			list.field,
 			in.Environment.Name,
 		)

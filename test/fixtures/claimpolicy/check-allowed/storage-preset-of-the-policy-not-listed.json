@@ -41,7 +41,7 @@
   "result": {
     "refusal": {
       "reason": "NotAllowed",
-      "message": "DatabaseServerPreset \"large\" is not in spec.presets.databaseServer of Environment \"dev\""
+      "message": "DatabaseServerPreset \"large\" of spec.parameters.database-server.preset is not in spec.presets.databaseServer of Environment \"dev\""
     }
   }
 }

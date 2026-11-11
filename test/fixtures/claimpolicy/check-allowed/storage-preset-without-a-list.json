@@ -41,7 +41,7 @@
   "result": {
     "refusal": {
       "reason": "NotAllowed",
-      "message": "ElasticsearchClusterPreset \"small\" is not in spec.presets.elasticsearchCluster of Environment \"dev\""
+      "message": "ElasticsearchClusterPreset \"small\" of spec.parameters.elasticsearch.preset is not in spec.presets.elasticsearchCluster of Environment \"dev\""
     }
   }
 }

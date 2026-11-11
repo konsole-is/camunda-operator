@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "name": "A storage selection whose request gets no preset passes, and the parameter schema decides",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "elasticsearchCluster": [
+            "small"
+          ]
+        }
+      }
+    },
+    "policy": {
+      "sections": {
+        "secondary-storage": {
+          "allowed": [
+            "elasticsearch",
+            "database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "elasticsearch": {
+          "preset": {
+            "claimEditable": true
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}
