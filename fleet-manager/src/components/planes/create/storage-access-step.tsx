@@ -20,12 +20,12 @@ import type {
   SectionView,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
+import { listOf } from "@/lib/text";
 
 const MANAGEMENT_DATABASE_SERVER = "management-database-server";
 
-// The suffix of each Database that management-database-server makes, by
-// app. It is NameSuffix of pkg/planedatabases.
-const DATABASE_SUFFIX = {
+/** DATABASE_SUFFIX is NameSuffix of pkg/planedatabases: the suffix of each Database that management-database-server makes, by app. */
+export const DATABASE_SUFFIX = {
   keycloak: "keycloak",
   identity: "identity",
   webModeler: "web-modeler",
@@ -76,7 +76,7 @@ export function StorageAccessStep({
     <div className="flex max-w-3xl min-w-0 flex-col gap-8">
       {views.databases && (
         <div className="flex min-w-0 flex-col gap-3">
-          <Section
+          <StorageCards
             view={views.databases}
             draft={draft}
             onChange={onChange(views.databases.name)}
@@ -95,7 +95,7 @@ export function StorageAccessStep({
       )}
       {views.access && (
         <div className="flex min-w-0 flex-col gap-3">
-          <Section
+          <StorageCards
             view={views.access}
             draft={draft}
             onChange={onChange(views.access.name)}
@@ -187,7 +187,7 @@ export function StorageAccessStep({
   );
 }
 
-function Section({
+function StorageCards({
   view,
   draft,
   onChange,
@@ -208,9 +208,4 @@ function Section({
       onChange={onChange}
     />
   );
-}
-
-function listOf(items: readonly string[]): string {
-  if (items.length <= 2) return items.join(" and ");
-  return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 }

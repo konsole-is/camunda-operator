@@ -20,6 +20,7 @@ import {
   withMissingInputs,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
+import { listOf } from "@/lib/text";
 import { runningOf } from "./components";
 import type { PlaneContext, PlaneDraft } from "./draft";
 import { planeUrlFields, urlErrors } from "./urls";
@@ -375,9 +376,4 @@ export function storageErrors(
   );
   errors.push(...contractNameErrors(draft, ctx));
   return errors;
-}
-
-function listOf(labels: readonly string[]): string {
-  if (labels.length <= 2) return labels.join(" and ");
-  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
 }
