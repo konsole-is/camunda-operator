@@ -68,6 +68,7 @@ function data(managed = true): ClusterPageData {
     releases: [],
     storage: [],
     accessRequests: [],
+    requests: [],
     pods: [],
     podSelector: "camunda.io/cluster=orders",
     backups: { elasticsearch: [], rdbms: [] },

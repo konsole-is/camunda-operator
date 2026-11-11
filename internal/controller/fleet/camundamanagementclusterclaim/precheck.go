@@ -115,12 +115,29 @@ func (r *Reconciler) preCheck(
 		return res, err
 	}
 
+	var requests pluginsv1alpha1.PluginRequestList
+	if err := r.List(
+		ctx,
+		&requests,
+		client.InNamespace(claim.Namespace),
+		client.MatchingLabels{fleetv1alpha1.LabelClaim: claim.Name},
+	); err != nil {
+		return res, fmt.Errorf("listing the PluginRequests of the claim: %w", err)
+	}
+	res.requests = claimrequests.Own(
+		requests.Items,
+		pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim, Name: claim.Name},
+		claim.Spec.Plugins,
+		res.sections,
+	)
+
 	if err := claimpolicy.CheckAllowed(claimpolicy.AllowedInput{
 		Environment: environment,
 		Kind:        pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim,
 		Sections:    res.sections,
 		Policy:      res.resolution.Policy,
 		Selections:  claim.Spec.Plugins,
+		Requests:    res.requests,
 	}); err != nil {
 		return res, err
 	}
@@ -158,22 +175,6 @@ func (r *Reconciler) preCheck(
 	if err != nil {
 		return res, err
 	}
-
-	var requests pluginsv1alpha1.PluginRequestList
-	if err := r.List(
-		ctx,
-		&requests,
-		client.InNamespace(claim.Namespace),
-		client.MatchingLabels{fleetv1alpha1.LabelClaim: claim.Name},
-	); err != nil {
-		return res, fmt.Errorf("listing the PluginRequests of the claim: %w", err)
-	}
-	res.requests = claimrequests.Own(
-		requests.Items,
-		pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaManagementClusterClaim, Name: claim.Name},
-		claim.Spec.Plugins,
-		res.sections,
-	)
 
 	var live v1.CamundaManagementCluster
 	err = r.Get(ctx, client.ObjectKeyFromObject(claim), &live)

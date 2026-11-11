@@ -104,6 +104,7 @@ function ctx(over: Partial<ClusterClaimContext> = {}): ClusterClaimContext {
       status: { management: { version: "8.9.5" } },
     },
     backups: [],
+    requests: [],
     ...over,
   };
 }
@@ -163,6 +164,125 @@ describe("validateClusterClaim", () => {
           'parameter "hostnamePattern" of registration "gateway-access" is not claim-editable',
       },
     ]);
+  });
+
+  describe("with a built-in Elasticsearch preset that the Environment no longer lists", () => {
+    const policy = {
+      sections: { "secondary-storage": { allowed: ["elasticsearch"] } },
+      parameters: { elasticsearch: { preset: { claimEditable: true } } },
+    } as unknown as ResolvedPolicy;
+    const environment = {
+      metadata: { name: "dev" },
+      spec: {
+        presets: {
+          camundaCluster: ["medium"],
+          elasticsearchCluster: ["small"],
+        },
+        releases: { allowed: ["camunda-8-9-5"], default: "camunda-8-9-5" },
+      },
+    } as unknown as Resource<"Environment">;
+    const storage = (preset = "large") =>
+      open(
+        claim(
+          {
+            plugins: [
+              {
+                section: "secondary-storage",
+                registration: "elasticsearch",
+                parameters: { preset },
+              },
+            ],
+          },
+          policy,
+        ),
+      );
+    const request = (preset: string) =>
+      ({
+        metadata: { name: "orders-secondary-storage", namespace: "team-a" },
+        spec: {
+          section: "secondary-storage",
+          registration: "elasticsearch",
+          parameters: { preset },
+        },
+      }) as unknown as Resource<"PluginRequest">;
+    const PRESET: Step[] = [
+      f("spec"),
+      f("plugins"),
+      {
+        item: {
+          section: "secondary-storage",
+          registration: "elasticsearch",
+        },
+      },
+      f("parameters"),
+      f("preset"),
+    ];
+    const context = (over: Partial<ClusterClaimContext> = {}) =>
+      ctx({
+        environment,
+        sections: [
+          ...ctx().sections,
+          {
+            apiVersion: "plugins.camunda.io/v1alpha1",
+            kind: "PluginSection",
+            metadata: { name: "secondary-storage" },
+            spec: {
+              label: "Secondary storage",
+              slot: "secondaryStorage",
+              appliesTo: ["CamundaClusterClaim"],
+              selection: "One",
+            },
+          } as unknown as Resource<"PluginSection">,
+        ],
+        registrations: [
+          ...ctx().registrations,
+          {
+            apiVersion: "plugins.camunda.io/v1alpha1",
+            kind: "PluginRegistration",
+            metadata: { name: "elasticsearch" },
+            spec: {
+              parameters: {
+                type: "object",
+                properties: { preset: { type: "string" } },
+              },
+            },
+          } as unknown as Resource<"PluginRegistration">,
+        ],
+        requests: [request("large")],
+        ...over,
+      });
+
+    it("accepts the claim while its request carries the preset", () => {
+      expect(validateClusterClaim(storage(), context())).toEqual([]);
+    });
+
+    it("refuses the preset when no request carries it", () => {
+      expect(
+        validateClusterClaim(storage(), context({ requests: [] })),
+      ).toEqual([
+        {
+          message:
+            'ElasticsearchClusterPreset "large" is not in spec.presets.elasticsearchCluster of Environment "dev"',
+        },
+      ]);
+    });
+
+    it("refuses a change to a preset that the Environment does not list", () => {
+      const s = set(storage(), PRESET, "medium");
+      expect(validateClusterClaim(s, context())).toEqual([
+        {
+          message:
+            'ElasticsearchClusterPreset "medium" is not in spec.presets.elasticsearchCluster of Environment "dev"',
+        },
+      ]);
+    });
+
+    it("accepts a change back to the preset that the request still carries after a refused change", () => {
+      const s = set(storage("large"), PRESET, "medium");
+      expect(
+        validateClusterClaim(s, context({ requests: [request("medium")] })),
+      ).toEqual([]);
+    });
   });
 
   it("refuses a field that a selected slot fills", () => {
