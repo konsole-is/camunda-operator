@@ -42,7 +42,7 @@ export function regards(event: Resource<"Event">, ref: EventRef): boolean {
  * workloadNames returns the names of the workloads of pods, unique and
  * sorted: the Service names, the StatefulSet that owns a pod, and the
  * Deployment of a pod whose ReplicaSet is named after its
- * pod-template-hash label. It reads no workload object.
+ * pod-template-hash label.
  */
 export function workloadNames(
   pods: readonly Resource<"Pod">[],
