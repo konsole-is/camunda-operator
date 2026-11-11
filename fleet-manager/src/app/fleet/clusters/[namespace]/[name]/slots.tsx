@@ -1,4 +1,6 @@
+import { backupSlots } from "@/components/cluster/backup-slots";
 import type { ClusterSlots } from "@/components/cluster/slots";
+import { applyBackupChange } from "./actions";
 
 /**
  * clusterSlots fills the action slots of the cluster page. Each write flow
@@ -6,4 +8,6 @@ import type { ClusterSlots } from "@/components/cluster/slots";
  * context. Only cluster-page.tsx imports this module, because a server
  * component cannot pass a function.
  */
-export const clusterSlots: ClusterSlots = {};
+export const clusterSlots: ClusterSlots = {
+  ...backupSlots(applyBackupChange),
+};
