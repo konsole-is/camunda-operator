@@ -16,7 +16,8 @@ import type { EnvironmentSources } from "./sources";
  * NamespacesSection lists the namespaces of environment with their claims,
  * and adds the label of environment to a namespace that has no environment
  * label. The label goes to the cluster also in Git mode. A new environment
- * offers no namespace yet.
+ * offers no namespace yet, and without mode no review opens. onReview gets
+ * true when the review of a label opens and false when it closes.
  */
 export function NamespacesSection({
   environment,
@@ -25,16 +26,22 @@ export function NamespacesSection({
   mode,
   actions,
   show,
+  onReview,
 }: {
   environment: string;
   isNew: boolean;
   sources: EnvironmentSources;
-  mode: WriteMode;
+  mode?: WriteMode;
   actions: Pick<EnvironmentActions, "previewLabel" | "applyLabel">;
   show: (result: WriteResult, message: string) => void;
+  onReview?: (open: boolean) => void;
 }) {
   const [picked, setPicked] = useState("");
-  const [change, setChange] = useState<Change>();
+  const [change, setChangeState] = useState<Change>();
+  const setChange = (next: Change | undefined) => {
+    setChangeState(next);
+    onReview?.(next !== undefined);
+  };
   const members = labelledNamespaces(environment, sources.namespaces);
   const target = sources.environments.find(
     (e) => e.metadata.name === environment,
@@ -51,7 +58,8 @@ export function NamespacesSection({
     const namespace = sources.namespaces.find(
       (n) => n.metadata?.name === selected,
     );
-    if (namespace) setChange(namespaceLabelChange(namespace, environment));
+    if (namespace && mode)
+      setChange(namespaceLabelChange(namespace, environment));
   }
 
   return (
@@ -85,7 +93,7 @@ export function NamespacesSection({
         <p className="text-sm text-muted">
           Save the environment, then add namespaces.
         </p>
-      ) : change ? (
+      ) : change && mode ? (
         <ChangeReview
           change={change}
           mode={mode}

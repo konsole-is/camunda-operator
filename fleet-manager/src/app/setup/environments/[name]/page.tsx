@@ -15,7 +15,7 @@ export default async function EnvironmentPage({
   const [found, sources, mode] = await Promise.all([
     get("Environment", undefined, name),
     loadEnvironments(),
-    writeMode().catch(() => "direct" as const),
+    writeMode().catch(() => undefined),
   ]);
   if (!found) notFound();
   return <EnvironmentEditorLive initial={sources} name={name} mode={mode} />;

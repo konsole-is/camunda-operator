@@ -103,6 +103,13 @@ export const environmentStories: Story[] = [
     ),
   },
   {
+    component: "EnvironmentEditor",
+    name: "Settings unread",
+    render: () => (
+      <EnvironmentEditorStory sources={environmentFixtures()} name="staging" />
+    ),
+  },
+  {
     component: "ImpactLine",
     name: "Warnings",
     render: () => (

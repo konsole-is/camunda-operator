@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function NewEnvironmentPage() {
   const [sources, mode] = await Promise.all([
     loadEnvironments(),
-    writeMode().catch(() => "direct" as const),
+    writeMode().catch(() => undefined),
   ]);
   return <EnvironmentEditorLive initial={sources} mode={mode} />;
 }

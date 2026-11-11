@@ -43,19 +43,22 @@ const PUSHED: WriteResult = {
   deleted: {},
 };
 
-function setup({
-  name = "production",
-  mode = "direct",
-  sources = environmentFixtures(),
-  result = { ok: true, mode: "direct" },
-  errors = [],
-}: {
-  name?: string;
-  mode?: WriteMode;
-  sources?: EnvironmentSources;
-  result?: WriteResult;
-  errors?: ReadError[];
-} = {}) {
+function setup(
+  opts: {
+    name?: string;
+    mode?: WriteMode;
+    sources?: EnvironmentSources;
+    result?: WriteResult;
+    errors?: ReadError[];
+  } = {},
+) {
+  const {
+    name = "production",
+    sources = environmentFixtures(),
+    result = { ok: true, mode: "direct" },
+    errors = [],
+  } = opts;
+  const mode = "mode" in opts ? opts.mode : "direct";
   const actions = {
     previewChange: vi.fn<EnvironmentActions["previewChange"]>(async () => ({
       objects: [],
@@ -478,6 +481,52 @@ describe("EnvironmentEditor", () => {
     expect(
       screen.queryByRole("button", { name: "Delete the environment" }),
     ).toBeNull();
+  });
+
+  it("turns changes off when the settings could not be read", () => {
+    const sources = environmentFixtures();
+    sources.namespaces = sources.namespaces.filter(
+      (n) => n.metadata?.name === "legacy",
+    );
+    setup({ sources, mode: undefined });
+    expect(
+      screen.getByText(
+        "Changes are off: the fleet manager could not read its settings.",
+      ),
+    ).toBeTruthy();
+    expect(displayName().matches(":disabled")).toBe(true);
+    expect(screen.getByLabelText("Add a namespace").matches(":disabled")).toBe(
+      true,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Review the delete" })
+        .matches(":disabled"),
+    ).toBe(true);
+  });
+
+  it("offers no Delete while a namespace waits in its review", () => {
+    const sources = environmentFixtures();
+    sources.namespaces = sources.namespaces.filter(
+      (n) => n.metadata?.name === "legacy",
+    );
+    setup({ sources });
+    fireEvent.change(screen.getByLabelText("Add a namespace"), {
+      target: { value: "legacy" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    expect(
+      screen.queryByRole("button", { name: "Review the delete" }),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "Delete is possible when the review of the namespace is closed.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(
+      screen.getByRole("button", { name: "Review the delete" }),
+    ).toBeTruthy();
   });
 
   it("disables the form when the environment was deleted", () => {

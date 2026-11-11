@@ -26,7 +26,7 @@ export function EnvironmentEditorStory({
 }: {
   sources: EnvironmentSources;
   name?: string;
-  mode: WriteMode;
+  mode?: WriteMode;
 }) {
   return (
     <EnvironmentEditor

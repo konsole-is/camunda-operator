@@ -59,7 +59,8 @@ export type EnvironmentActions = {
 /**
  * EnvironmentEditor edits the environment name of sources, or a new one
  * without name, with the form state of useSetupEditor. A save and a delete
- * each show a review with a dry run before the write.
+ * each show a review with a dry run before the write. Without mode the
+ * form is disabled.
  */
 export function EnvironmentEditor({
   sources,
@@ -69,7 +70,7 @@ export function EnvironmentEditor({
 }: {
   sources: EnvironmentSources & { errors: ReadError[] };
   name?: string;
-  mode: WriteMode;
+  mode?: WriteMode;
   actions: EnvironmentActions;
 }): ReactNode {
   const isNew = name === undefined;
@@ -77,6 +78,7 @@ export function EnvironmentEditor({
     ? undefined
     : sources.environments.find((e) => e.metadata.name === name);
   const [labelErrors, setLabelErrors] = useState<ValidationError[]>([]);
+  const [labelReview, setLabelReview] = useState(false);
   const editor = useSetupEditor({
     live,
     isNew,
@@ -138,6 +140,11 @@ export function EnvironmentEditor({
           <p className="font-mono text-sm text-muted">{name}</p>
         )}
       </header>
+      {!mode && (
+        <p role="alert" className="text-sm text-bad">
+          Changes are off: the fleet manager could not read its settings.
+        </p>
+      )}
       {sources.errors.map((e) => (
         <p key={e.kind} role="alert" className="text-sm text-bad">
           Could not read {e.kind}: {e.message}
@@ -161,7 +168,7 @@ export function EnvironmentEditor({
         </p>
       )}
       <fieldset
-        disabled={locked || (!isNew && !live)}
+        disabled={locked || (!isNew && !live) || !mode}
         className="flex min-w-0 flex-col gap-4"
       >
         <BasicsSection
@@ -179,6 +186,7 @@ export function EnvironmentEditor({
             mode={mode}
             actions={actions}
             show={show}
+            onReview={setLabelReview}
           />
           <NamespaceCreationSection
             key={editor.generation}
@@ -206,7 +214,11 @@ export function EnvironmentEditor({
         </EditorSection>
         {!isNew && live && (
           <EditorSection title="Delete the environment">
-            {namespacesUnread ? (
+            {labelReview ? (
+              <p className="text-sm text-muted">
+                Delete is possible when the review of the namespace is closed.
+              </p>
+            ) : namespacesUnread ? (
               <p className="text-sm text-muted">
                 Delete is possible when the fleet manager can read the
                 namespaces.
@@ -231,7 +243,7 @@ export function EnvironmentEditor({
           </EditorSection>
         )}
       </fieldset>
-      {reviewing ? (
+      {reviewing && mode ? (
         <section
           aria-label={deleting ? "Review the delete" : "Review the environment"}
           className="rounded-md border border-border bg-panel p-5"
@@ -326,7 +338,7 @@ export function EnvironmentEditorLive({
 }: {
   initial: EnvironmentSources;
   name?: string;
-  mode: WriteMode;
+  mode?: WriteMode;
 }) {
   const sources = useEnvironmentSources(initial);
   return (

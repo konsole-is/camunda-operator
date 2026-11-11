@@ -26,9 +26,9 @@ vi.mock("@/lib/write/writer", () => ({
   writeMode: vi.fn(async () => "direct"),
 }));
 vi.mock("@/components/setup/environments/environment-editor", () => ({
-  EnvironmentEditorLive: (props: { name?: string; mode: string }) => (
+  EnvironmentEditorLive: (props: { name?: string; mode?: string }) => (
     <p>
-      editor {props.name} {props.mode}
+      editor {props.name} {props.mode ?? "unknown"}
     </p>
   ),
 }));
@@ -54,9 +54,9 @@ describe("EnvironmentPage", () => {
     expect(dynamic).toBe("force-dynamic");
   });
 
-  it("takes the direct mode when the settings cannot be read", async () => {
+  it("passes no write mode when the settings cannot be read", async () => {
     vi.mocked(writeMode).mockRejectedValueOnce(new Error("forbidden"));
     render(await EnvironmentPage(params("staging")));
-    expect(screen.getByText("editor staging direct")).toBeTruthy();
+    expect(screen.getByText("editor staging unknown")).toBeTruthy();
   });
 });
