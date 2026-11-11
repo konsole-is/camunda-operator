@@ -17,6 +17,8 @@ limitations under the License.
 package conformance_test
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"regexp"
 	"strings"
@@ -33,6 +35,9 @@ import (
 // skip it.
 func TestPluginGuideListsEveryCheckOfTheRegistry(t *testing.T) {
 	page, err := os.ReadFile("../docs/guides/writing-a-plugin.md")
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skip("the guide is outside this module, so only a checkout of the repository has it")
+	}
 	require.NoError(t, err)
 
 	row := regexp.MustCompile("(?m)^\\| `([A-Z]+(?:-[A-Z]+)+)` \\| (.+) \\| (Yes|No) \\|$")
