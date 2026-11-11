@@ -15,6 +15,8 @@ const CADVISOR =
 const KUBELET = "https://kubernetes.io/docs/reference/instrumentation/metrics/";
 const CAMUNDA =
   "https://docs.camunda.io/docs/8.9/self-managed/operational-guides/monitoring/metrics/#available-metrics";
+const BACKPRESSURE =
+  "https://docs.camunda.io/docs/8.9/self-managed/components/orchestration-cluster/zeebe/operations/backpressure/#backpressure-tuning";
 const OUTPUTS_READY: PluginsPluginRequestConditionType = "OutputsReady";
 const SELECT = 'namespace="{{ .namespace }}", pod=~"{{ .pods }}"';
 const SELECT_VOLUMES =
@@ -116,6 +118,20 @@ export const PARTITION_HEALTH: CoreQuery = {
   query: `min by (partition) (zeebe_health{${SELECT}})`,
   metric: "zeebe_health",
   source: CAMUNDA,
+  versions: CAMUNDA_8_9,
+};
+
+/**
+ * BACKPRESSURE_SHARE gives the share of the requests that the brokers
+ * dropped by backpressure over 5 minutes, from 0 to 1. It has no value
+ * while the brokers receive no request.
+ */
+export const BACKPRESSURE_SHARE: CoreQuery = {
+  label: "Share of requests dropped by backpressure",
+  query: `sum(rate(zeebe_dropped_request_count_total{${SELECT}}[5m])) / sum(rate(zeebe_received_request_count_total{${SELECT}}[5m]))`,
+  metric: "zeebe_dropped_request_count_total",
+  // The metrics page does not name zeebe_received_request_count_total.
+  source: BACKPRESSURE,
   versions: CAMUNDA_8_9,
 };
 
