@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "name": "An Elasticsearch preset that the Environment does not list is refused",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "elasticsearchCluster": [
+            "small"
+          ]
+        }
+      }
+    },
+    "policy": {
+      "sections": {
+        "secondary-storage": {
+          "allowed": [
+            "elasticsearch",
+            "database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "elasticsearch": {
+          "preset": {
+            "claimEditable": true
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch",
+        "parameters": {
+          "preset": "large"
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "ElasticsearchClusterPreset \"large\" is not in spec.presets.elasticsearchCluster of Environment \"dev\""
+    }
+  }
+}

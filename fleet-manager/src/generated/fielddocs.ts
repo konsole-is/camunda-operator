@@ -5917,7 +5917,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#environmentspec"
       },
       "spec.presets": {
-        "description": "Presets lists, for each preset kind, the presets that a claim of the\nenvironment can use. The claim controller checks a new claim, and a\npreset change of an existing claim, against the current lists.",
+        "description": "Presets lists, for each preset kind, the presets that a claim of the\nenvironment can use. The claim controller checks a new claim, and a\npreset change of an existing claim, against the current lists. A list\nthat is empty or not set allows no preset of its kind. A preset that\nan existing claim already uses stays allowed when a list drops it.",
         "anchor": "#environmentspec"
       },
       "spec.presets.camundaCluster": {
@@ -5925,11 +5925,11 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#environmentpresets"
       },
       "spec.presets.databaseServer": {
-        "description": "DatabaseServer are the names of the DatabaseServerPresets that the\nbuilt-in PostgreSQL of a claim can use.",
+        "description": "DatabaseServer are the names of the DatabaseServerPresets that the\nbuilt-in PostgreSQL of a claim can use: the parameter preset of the\nregistrations database-server and management-database-server.",
         "anchor": "#environmentpresets"
       },
       "spec.presets.elasticsearchCluster": {
-        "description": "ElasticsearchCluster are the names of the ElasticsearchClusterPresets\nthat the built-in Elasticsearch of a claim can use.",
+        "description": "ElasticsearchCluster are the names of the ElasticsearchClusterPresets\nthat the built-in Elasticsearch of a claim can use: the parameter\npreset of the registration elasticsearch.",
         "anchor": "#environmentpresets"
       },
       "spec.releases": {

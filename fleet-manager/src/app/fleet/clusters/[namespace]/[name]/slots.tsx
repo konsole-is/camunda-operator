@@ -1,5 +1,6 @@
 import { backupSlots } from "@/components/cluster/backup-slots";
 import type { ClusterSlots } from "@/components/cluster/slots";
+import { TopologyEditor } from "@/components/cluster/topology-editor";
 import { applyBackupChange } from "./actions";
 
 /**
@@ -10,4 +11,5 @@ import { applyBackupChange } from "./actions";
  */
 export const clusterSlots: ClusterSlots = {
   ...backupSlots(applyBackupChange),
+  "cluster.topology.actions": (context) => <TopologyEditor context={context} />,
 };

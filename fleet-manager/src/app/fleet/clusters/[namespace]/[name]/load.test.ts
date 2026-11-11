@@ -55,6 +55,24 @@ describe("loadClusterPage", () => {
     });
   });
 
+  it("lists the requests of the claim of the cluster by the claim label", async () => {
+    k8s.cluster = {
+      kind: "CamundaCluster",
+      metadata: {
+        namespace: "team-a",
+        name: "orders",
+        labels: { "fleet.camunda.io/claim": "orders-claim" },
+      },
+    };
+    await loadClusterPage("team-a", "orders");
+    expect(
+      k8s.lists.filter((l) => l.kind === "PluginRequest").map((l) => l.opts),
+    ).toContainEqual({
+      namespace: "team-a",
+      labelSelector: "fleet.camunda.io/claim=orders-claim",
+    });
+  });
+
   it("lists the namespaced kinds in the namespace and the cluster-scoped kinds everywhere", async () => {
     named("orders");
     await loadClusterPage("team-a", "orders");
