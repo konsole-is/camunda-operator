@@ -196,15 +196,19 @@ function view(over: Partial<Parameters<typeof FleetView>[0]> = {}) {
   );
 }
 
-const clusterNames = () =>
-  screen
+// The links of the cluster tables, not those of Needs attention.
+const clusterNames = () => {
+  const attention = screen.queryByRole("region", { name: "Needs attention" });
+  return screen
     .queryAllByRole("link")
+    .filter((l) => !attention?.contains(l))
     .map((l) => l.getAttribute("href") ?? "")
     .filter(
       (href) =>
         href.startsWith("/fleet/clusters/") && href !== "/fleet/clusters/new",
     )
     .map((href) => href.split("/").slice(3).join("/"));
+};
 
 const podWarnings: PodWarnings = {
   clusters: {
@@ -251,6 +255,7 @@ describe("FleetView", () => {
   it("shows one table for each environment group on All, then No environment", () => {
     render(view());
     expect(regions()).toEqual([
+      "Needs attention",
       "Management planes",
       "Development",
       "Production",
@@ -399,6 +404,29 @@ describe("FleetView", () => {
     ).toHaveLength(1);
   });
 
+  it("shows a management plane that is not ready in Needs attention", () => {
+    const down = planesOf({
+      ...planeSources,
+      clusters: [managementCluster("plane-a", "False")],
+      claims: [managementClaim("plane-a", ["production"])],
+    });
+    render(view({ planes: down }));
+    expect(
+      within(screen.getByRole("region", { name: "Needs attention" })).getByText(
+        "Management plane platform/plane-a",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows Needs attention on every tab", async () => {
+    render(view());
+    const panel = () => screen.getByRole("region", { name: "Needs attention" });
+    expect(within(panel()).getByText("Cluster prod/legacy")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: /Staging/ }));
+    expect(within(panel()).getByText("Cluster prod/legacy")).toBeTruthy();
+    expect(screen.getAllByRole("region", { name: "Needs attention" })).toHaveLength(1);
+  });
+
   it("says that no cluster matches the filters", async () => {
     render(view());
     await userEvent.type(
@@ -421,7 +449,7 @@ describe("FleetView", () => {
       }),
     );
     expect(screen.queryAllByRole("tab")).toEqual([]);
-    expect(regions()).toEqual(["Clusters"]);
+    expect(regions()).toEqual(["Needs attention", "Clusters"]);
     expect(clusterNames()).toEqual(["team-a/orders", "team-b/billing"]);
     expect(screen.getByText("No management plane yet.")).toBeTruthy();
   });

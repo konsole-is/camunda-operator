@@ -22,6 +22,8 @@ import type { Unavailable } from "@/lib/observe/types";
 import { useWarnings } from "@/lib/observe/use-observe";
 import type { PodWarnings, Warning } from "@/lib/warnings";
 import type { RefKey } from "@/lib/write/types";
+import { attentionItems } from "./attention";
+import { AttentionPanel } from "./attention-panel";
 import { ClusterTable, WaitingTable } from "./cluster-table";
 import {
   ALL_TAB,
@@ -99,6 +101,13 @@ export function FleetView({
     () => new Map(rows.map((row) => [row.id, rowWarnings(row, podWarnings)])),
     [rows, podWarnings],
   );
+  const attention = attentionItems({
+    rows,
+    backups: sources.backups,
+    registrations: sources.registrations,
+    planes,
+    now,
+  });
   const waiting = waitingRows(pushes, sources.claims);
   const tabs = environmentTabs(sources.environments, rows);
   const active = tabs.some((t) => t.value === tab) ? tab : ALL_TAB;
@@ -135,6 +144,7 @@ export function FleetView({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      <AttentionPanel items={attention} />
       {tabs.length === 0 ? (
         content
       ) : (
