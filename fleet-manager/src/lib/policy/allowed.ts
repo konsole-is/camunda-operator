@@ -41,12 +41,7 @@ export type AllowedInput = (
   presetRef?: string;
   releaseRef?: string;
   selections?: PluginSelection[];
-  requests?: readonly LiveRequest[];
-};
-
-/** LiveRequest is the part of a PluginRequest that checkAllowed reads. */
-export type LiveRequest = {
-  spec: Pick<PluginRequest["spec"], "section" | "registration" | "parameters">;
+  requests?: readonly PluginRequest[];
 };
 
 // The Environment list of each preset kind of a built-in registration.
@@ -178,7 +173,7 @@ function checkStoragePresets(
   environment: Environment,
   policy: ResolvedPolicy,
   selections: readonly PluginSelection[],
-  requests: readonly LiveRequest[],
+  requests: readonly PluginRequest[],
 ): { refusal: Refusal } | { error: string } | undefined {
   for (const s of selections) {
     const kind = own(BUILTIN_OPTIONS, s.registration)?.lists.preset;

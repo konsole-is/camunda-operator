@@ -1,6 +1,7 @@
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
   pathFrom,
@@ -17,7 +18,6 @@ import {
   equalJSON,
   releaseMove,
   resolve,
-  type LiveRequest,
   type BackupLike,
   type MovingCluster,
   type PluginSelection,
@@ -34,7 +34,8 @@ export type FieldError = { path?: FieldPath; message: string };
 /**
  * ClusterClaimContext is what validateClusterClaim reads beside the session.
  * environment is the Environment of the namespace, cluster the live
- * CamundaCluster, and backups the backups of its namespace.
+ * CamundaCluster, backups the backups of its namespace, and requests the
+ * live PluginRequests of the claim.
  */
 export type ClusterClaimContext = {
   environment?: Resource<"Environment">;
@@ -43,6 +44,7 @@ export type ClusterClaimContext = {
   releases: readonly Resource<"CamundaRelease">[];
   cluster: MovingCluster;
   backups: readonly BackupLike[];
+  requests: readonly Resource<"PluginRequest">[];
 };
 
 type Claim = Resource<"CamundaClusterClaim">;
@@ -88,7 +90,7 @@ export function validateClusterClaim(
         environment: generated<Environment | undefined>(ctx.environment),
         policy: policy ?? {},
         selections: policy ? selections : [],
-        requests: policy ? requestsBefore(s.claim, policy) : [],
+        requests: generated<PluginRequest[]>(ctx.requests),
         ...(changed("presetRef") && { presetRef: spec.presetRef }),
         ...(changed("releaseRef") && { releaseRef: spec.releaseRef }),
       }),
@@ -113,15 +115,6 @@ export function validateClusterClaim(
     errors.push(...releaseErrors(release, spec, ctx));
 
   return errors;
-}
-
-// requestsBefore stands in for the live requests of the claim: a storage
-// preset that the claim resolves to before the change stays allowed, as an
-// unchanged presetRef does.
-function requestsBefore(claim: Claim, policy: ResolvedPolicy): LiveRequest[] {
-  const before = resolve({ recorded: policy, selections: selectionsOf(claim) });
-  if (!("value" in before)) return [];
-  return (before.value.requests ?? []).map((spec) => ({ spec }));
 }
 
 function refusedMessage(row: RefusedField): string {

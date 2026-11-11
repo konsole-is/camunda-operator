@@ -168,8 +168,15 @@ export function ClusterEditProvider({
         (q) => q.key === p.key && "revision" in q && q.revision === p.revision,
       ),
   });
-  const { environment, sections, registrations, releases, cluster, backups } =
-    context;
+  const {
+    environment,
+    sections,
+    registrations,
+    releases,
+    cluster,
+    backups,
+    requests,
+  } = context;
   const invalid = useMemo(
     () =>
       validationOf(synced.session, {
@@ -179,6 +186,7 @@ export function ClusterEditProvider({
         releases,
         cluster,
         backups,
+        requests,
       }),
     [
       synced.session,
@@ -188,6 +196,7 @@ export function ClusterEditProvider({
       releases,
       cluster,
       backups,
+      requests,
     ],
   );
   const reviewing =

@@ -22,7 +22,8 @@ export type ActionSlotName = (typeof ACTION_SLOTS)[number];
  * ClusterSlotContext is what ClusterView gives each slot: the live objects
  * of the page, as its hooks follow them. claim is undefined when the claim
  * of the cluster is not in the namespace. environment is the Environment
- * that the label of the namespace names. storage is the
+ * that the label of the namespace names. requests are the PluginRequests
+ * of the claim. storage is the
  * SecondaryStorageConfig of spec.storageRef of the cluster. backups and
  * restores hold every backup and restore of the namespace. fields are the
  * field states of the cluster (clusterFields). writeMode is undefined when
@@ -41,6 +42,7 @@ export type ClusterSlotContext = {
   managementAuthConfigs: readonly Resource<"ManagementAuthConfig">[];
   sections: readonly Resource<"PluginSection">[];
   registrations: readonly Resource<"PluginRegistration">[];
+  requests: readonly Resource<"PluginRequest">[];
   storage?: Resource<"SecondaryStorageConfig">;
   backups: readonly BackupObject[];
   restores: readonly RestoreObject[];
