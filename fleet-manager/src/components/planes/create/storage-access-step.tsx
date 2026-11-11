@@ -4,6 +4,7 @@ import { useId, useMemo } from "react";
 import type { DraftPath } from "@/components/create/use-create-flow";
 import { LockedField } from "@/components/fleet/locked-field";
 import { SectionCards } from "@/components/fleet/section-cards";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { runningOf } from "@/lib/planes/components";
 import type { PlaneContext, PlaneDraft } from "@/lib/planes/draft";
@@ -31,8 +32,9 @@ const MANAGEMENT_DATABASE_SERVER = "management-database-server";
  * contract name. A section that the step showed before restores its
  * selections from draft.storage; any other preselects its default. Each
  * section reports its selections to draft.storage and its errors to
- * onSectionErrors. objects are the source kinds of builtinOption, in every
- * namespace.
+ * onSectionErrors. A pick of a section that no PluginSection holds any more
+ * gets a button that empties it and its errors. objects are the source kinds
+ * of builtinOption, in every namespace.
  */
 export function StorageAccessStep({
   draft,
@@ -61,6 +63,15 @@ export function StorageAccessStep({
       onSectionErrors(name, errors);
     };
 
+  const sectionNames = ctx.sections.map((s) => s.metadata.name);
+  const gone = Object.entries(draft.storage)
+    .filter(([name, p]) => p.length > 0 && !sectionNames.includes(name))
+    .map(([name]) => name);
+  const remove = (name: string) => {
+    set(["storage", name], []);
+    onSectionErrors(name, []);
+  };
+
   const database = views.databases && picked(views.databases);
   const apps = (["keycloak", "identity", "webModeler"] as const)
     .filter((a) => a === "identity" || running[a])
@@ -68,6 +79,17 @@ export function StorageAccessStep({
 
   return (
     <div className="flex max-w-3xl min-w-0 flex-col gap-8">
+      {gone.map((name) => (
+        <div
+          key={name}
+          className="flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-text sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span>{`The section ${name} is no longer offered. Its pick does not apply.`}</span>
+          <Button variant="outline" size="sm" onClick={() => remove(name)}>
+            {`Remove the ${name} pick`}
+          </Button>
+        </div>
+      ))}
       {views.databases && (
         <div className="flex min-w-0 flex-col gap-3">
           <StorageCards

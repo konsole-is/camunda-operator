@@ -315,6 +315,29 @@ describe("StorageAccessStep", () => {
     expect(stepErrors().filter((e) => e?.startsWith("Enter the"))).toEqual([]);
   });
 
+  it("a pick of an access section that is gone can be removed, and then the URL fields show", async () => {
+    const ctx = {
+      ...ctxOf(false),
+      sections: sections.filter((s) => s.metadata.name !== "access"),
+    };
+    render(
+      <Harness
+        ctx={ctx}
+        initial={{
+          ...keycloak,
+          storage: { access: [{ section: "access", registration: "gateway" }] },
+        }}
+      />,
+    );
+    expect(stepErrors()).toContain("Choose another option for access.");
+    expect(screen.queryByLabelText("Keycloak URL")).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove the access pick" }),
+    );
+    expect(stepErrors()).not.toContain("Choose another option for access.");
+    expect(screen.getByLabelText("Keycloak URL")).toBeTruthy();
+  });
+
   it("keeps the typed URLs across an access round trip", async () => {
     render(<Harness access />);
     await userEvent.type(
