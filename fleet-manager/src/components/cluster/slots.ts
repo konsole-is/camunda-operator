@@ -23,12 +23,12 @@ export type ActionSlotName = (typeof ACTION_SLOTS)[number];
  * of the page, as its hooks follow them. claim is undefined when the claim
  * of the cluster is not in the namespace. environment is the Environment
  * that the label of the namespace names. requests are the PluginRequests
- * of the claim. storage is the
- * SecondaryStorageConfig of spec.storageRef of the cluster. backups and
- * restores hold every backup and restore of the namespace. fields are the
- * field states of the cluster (clusterFields). writeMode is undefined when
- * the page could not read the write mode. openId is the component whose
- * detail the Overview tab shows. now is the clock of the page.
+ * of the claim. storage is the SecondaryStorageConfig of spec.storageRef of
+ * the cluster. backups and restores hold every backup and restore of the
+ * namespace. fields are the field states of the cluster (clusterFields).
+ * writeMode is undefined when the page could not read the write mode.
+ * openId is the component whose detail the Overview tab shows. now is the
+ * clock of the page.
  */
 export type ClusterSlotContext = {
   cluster: Resource<"CamundaCluster">;

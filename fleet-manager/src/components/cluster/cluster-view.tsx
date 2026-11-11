@@ -55,9 +55,10 @@ import { TopologyView } from "./topology-view";
 /**
  * ClusterPageData is the first snapshot of the cluster page. The namespaced
  * lists hold the objects of the namespace of the cluster. accessRequests are
- * the PluginRequests of the access section, and requests the PluginRequests
- * of the claim of the cluster. podSelector selects the pods of
- * the cluster by its owner label, and pods holds them. backupStorage holds
+ * the PluginRequests of the access section. requests holds the
+ * PluginRequests of the namespace whose claim label names the claim of the
+ * cluster. podSelector selects the pods of the cluster by its owner label,
+ * and pods holds them. backupStorage holds
  * the objects that the Backups tab follows from the cluster to its backup
  * storage and its schedules. Its databaseServerPresets are cluster-scoped.
  * optimizes holds every CamundaOptimize of the namespace, and sections and
