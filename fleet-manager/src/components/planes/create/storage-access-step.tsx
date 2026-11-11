@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { runningOf } from "@/lib/planes/components";
 import type { PlaneContext, PlaneDraft } from "@/lib/planes/draft";
 import {
+  DATABASE_SUFFIX,
   EXISTING_DATABASE_CONFIGS,
   accessSelection,
   managementHost,
@@ -23,13 +24,6 @@ import type { ValidationError } from "@/lib/schema";
 import { listOf } from "@/lib/text";
 
 const MANAGEMENT_DATABASE_SERVER = "management-database-server";
-
-/** DATABASE_SUFFIX is NameSuffix of pkg/planedatabases: the suffix of each Database that management-database-server makes, by app. */
-export const DATABASE_SUFFIX = {
-  keycloak: "keycloak",
-  identity: "identity",
-  webModeler: "web-modeler",
-} as const;
 
 /**
  * StorageAccessStep is step 4 of the plane create flow: the database

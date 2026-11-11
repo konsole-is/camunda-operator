@@ -29,6 +29,13 @@ import { type Running, VERSION_LABEL } from "./versions";
 /** EXISTING_DATABASE_CONFIGS is the built-in registration that names one DatabaseConfig for each app. */
 export const EXISTING_DATABASE_CONFIGS = "existing-database-configs";
 
+/** DATABASE_SUFFIX is NameSuffix of pkg/planedatabases: the suffix of each Database that management-database-server makes, by app. */
+export const DATABASE_SUFFIX = {
+  keycloak: "keycloak",
+  identity: "identity",
+  webModeler: "web-modeler",
+} as const;
+
 const MANAGEMENT_HOST = "managementHostnamePattern";
 const CONTRACT_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const DATABASE_APPS = ["keycloak", "identity", "webModeler"] as const;

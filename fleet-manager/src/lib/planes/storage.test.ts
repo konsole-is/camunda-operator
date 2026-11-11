@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { Environment } from "@/generated/crds/environment";
@@ -7,6 +8,7 @@ import type { PluginSection } from "@/generated/crds/pluginsection";
 import { EMPTY_ADMIN } from "./components";
 import { EMPTY_PLANE_DRAFT, type PlaneContext, type PlaneDraft } from "./draft";
 import {
+  DATABASE_SUFFIX,
   contractNameErrors,
   contractNameOf,
   databaseConfigErrors,
@@ -523,4 +525,28 @@ describe("planeSectionViews", () => {
       planeSectionViews(d, live, {}).databases?.options[0].disabledReason,
     ).toBeUndefined();
   });
+});
+
+// The Go source is the source of the suffixes. A change on one side alone
+// fails here.
+it("DATABASE_SUFFIX matches NameSuffix of pkg/planedatabases", () => {
+  const source = readFileSync(
+    new URL(
+      "../../../../pkg/planedatabases/planedatabases.go",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const components = new Map(
+    [...source.matchAll(/(\w+)\s+Component\s*=\s*"([^"]*)"/g)].map((m) => [
+      m[1],
+      m[2],
+    ]),
+  );
+  const suffixes = Object.fromEntries(
+    [
+      ...source.matchAll(/Component:\s*(\w+),[^}]*?NameSuffix:\s*"([^"]*)"/g),
+    ].map((m) => [components.get(m[1]), m[2]]),
+  );
+  expect(DATABASE_SUFFIX).toEqual(suffixes);
 });
