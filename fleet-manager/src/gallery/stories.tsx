@@ -1,3 +1,4 @@
+import { backupReviewStories } from "@/components/cluster/backup-review.stories";
 import { backupsStories } from "@/components/cluster/backups.stories";
 import { cardsStories } from "@/components/cluster/cards.stories";
 import { clusterStories } from "@/components/cluster/cluster.stories";
@@ -8,6 +9,7 @@ import { createFlowStories } from "@/components/fleet/create-flow.stories";
 import { dataTableStories } from "@/components/fleet/data-table.stories";
 import { workloadEditorStories } from "@/components/fleet/workload-editors.stories";
 import { editorStories } from "@/components/fleet/editors.stories";
+import { fleetViewStories } from "@/components/fleet-view/fleet-view.stories";
 import { helpStories } from "@/components/fleet/help.stories";
 import { lockedFieldStories } from "@/components/fleet/locked-field.stories";
 import { observeStories } from "@/components/fleet/observe.stories";
@@ -28,10 +30,12 @@ export const stories: readonly Story[] = [
   ...statusStories,
   ...lockedFieldStories,
   ...reviewStories,
+  ...backupReviewStories,
   ...confirmStories,
   ...helpStories,
   ...dataTableStories,
   ...planesStories,
+  ...fleetViewStories,
   ...planeCreateStories,
   ...editorStories,
   ...workloadEditorStories,

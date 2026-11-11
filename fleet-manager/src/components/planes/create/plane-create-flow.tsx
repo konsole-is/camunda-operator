@@ -182,7 +182,6 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
   const readErrors: ReadError[] = [
     ...(
       [
-        ["Environment", environments],
         ["CamundaCluster", clusters],
         ["CamundaPlatformConfig", platformConfigs],
       ] as const
@@ -201,6 +200,7 @@ export function PlaneCreateFlow({ initial }: { initial: PlaneCreateData }) {
       clusters: managementClusters.items,
       claims: claims.items,
       namespaces: namespaces.items,
+      environments: environments.items,
     },
   };
   const [selectorErrors, setSelectorErrors] = useState<ValidationError[]>([]);

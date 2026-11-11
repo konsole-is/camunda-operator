@@ -283,8 +283,32 @@ export const reviewStories: Story[] = [
   },
   {
     component: "ChangeBar",
-    name: "Two changes",
-    render: () => <ChangeBar count={2} />,
+    name: "One change",
+    render: () => <ChangeBar count={1} />,
+  },
+  {
+    component: "ChangeBar",
+    name: "Three changes",
+    render: () => <ChangeBar count={3} />,
+  },
+  {
+    component: "ChangeBar",
+    name: "Blocked by errors",
+    render: () => (
+      <ChangeBar
+        count={2}
+        errors={[
+          {
+            path: "spec.releaseRef",
+            message: "Release camunda-8-10-0 does not exist.",
+          },
+          {
+            message:
+              "The section access does not allow the registration aws-alb.",
+          },
+        ]}
+      />
+    ),
   },
   {
     component: "ChangeBar",

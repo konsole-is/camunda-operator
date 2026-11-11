@@ -8,10 +8,13 @@ export const dynamic = "force-dynamic";
 export default async function PlanesPage() {
   // A failed read gives no objects of that kind. The watch of the kind
   // then shows its error on the page.
-  const [clusters, claims, namespaces] = await Promise.all([
+  const [clusters, claims, namespaces, environments] = await Promise.all([
     list("CamundaManagementCluster").catch(() => []),
     list("CamundaManagementClusterClaim").catch(() => []),
     list("Namespace").catch(() => []),
+    list("Environment").catch(() => []),
   ]);
-  return <PlaneListLive initial={{ clusters, claims, namespaces }} />;
+  return (
+    <PlaneListLive initial={{ clusters, claims, namespaces, environments }} />
+  );
 }
