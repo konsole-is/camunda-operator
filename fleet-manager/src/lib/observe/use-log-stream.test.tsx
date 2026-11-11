@@ -3,7 +3,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import type { LogFilter } from "./logs";
-import { type LogSource, useLogStream } from "./use-log-stream";
+import { type LogSource, useLogStream, useLogStreams } from "./use-log-stream";
 
 beforeEach(() => {
   FakeEventSource.instances = [];
@@ -185,5 +185,152 @@ describe("useLogStream", () => {
     expect(first.closed).toBe(true);
     expect(FakeEventSource.instances).toHaveLength(2);
     expect(result.current.lines).toEqual([]);
+  });
+});
+
+describe("useLogStreams", () => {
+  const a = { namespace: "n", pod: "a" };
+  const b = { namespace: "n", pod: "b" };
+  const of = (pod: string) =>
+    FakeEventSource.instances.find((e) => e.url.includes(`pod=${pod}`))!;
+
+  it("opens one stream for each pod and keeps the lines in the order they arrive, with their pod", () => {
+    const { result } = renderHook(() => useLogStreams([a, b]));
+
+    expect(FakeEventSource.instances).toHaveLength(2);
+    of("a").emit("line", "one");
+    of("b").emit("line", "two");
+    of("a").emit("line", "three");
+
+    expect(result.current.lines.map((l) => [l.pod, l.message])).toEqual([
+      ["a", "one"],
+      ["b", "two"],
+      ["a", "three"],
+    ]);
+  });
+
+  it("keeps only the lines of the request of a controller source", () => {
+    const { result } = renderHook(() =>
+      useLogStreams([{ ...a, request: "team-a/orders-backup-storage" }, b]),
+    );
+
+    of("a").emit(
+      "line",
+      '{"msg":"mine","request":{"name":"orders-backup-storage","namespace":"team-a"}}',
+    );
+    of("a").emit(
+      "line",
+      '{"msg":"other","request":{"name":"x","namespace":"team-a"}}',
+    );
+    of("b").emit("line", "request pod line");
+
+    expect(result.current.lines.map((l) => l.message)).toEqual([
+      "mine",
+      "request pod line",
+    ]);
+  });
+
+  it("names the pod of a stream that broke and keeps the others", () => {
+    const { result } = renderHook(() => useLogStreams([a, b]));
+
+    of("a").emit("failure", { message: "The log stream of pod a broke" });
+    of("b").emit("line", "still here");
+
+    expect(result.current.errors).toEqual([
+      { pod: "a", error: "The log stream of pod a broke" },
+    ]);
+    expect(result.current.lines.map((l) => l.message)).toEqual(["still here"]);
+    expect(result.current.ended).toBe(false);
+  });
+
+  it("names the refusal of /api/logs for a stream that did not open", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("The pod n/a does not exist", { status: 404 })),
+    );
+    const { result } = renderHook(() => useLogStreams([a, b]));
+
+    of("a").fail(2);
+
+    await waitFor(() =>
+      expect(result.current.errors).toEqual([
+        { pod: "a", error: "The pod n/a does not exist" },
+      ]),
+    );
+  });
+
+  it("is ended when every stream ended or broke", () => {
+    const { result } = renderHook(() => useLogStreams([a, b]));
+
+    of("a").emit("end", {});
+    expect(result.current.ended).toBe(false);
+    of("b").emit("failure", { message: "broke" });
+
+    expect(result.current.ended).toBe(true);
+  });
+
+  it("is not ended without a source", () => {
+    const { result } = renderHook(() => useLogStreams([]));
+
+    expect(FakeEventSource.instances).toEqual([]);
+    expect(result.current).toEqual({ lines: [], errors: [], ended: false });
+  });
+
+  it("keeps the newest 1000 lines over all streams", () => {
+    const { result } = renderHook(() => useLogStreams([a, b]));
+
+    act(() => {
+      for (let i = 0; i < 1005; i++) of(i % 2 ? "b" : "a").emit("line", `line ${i}`);
+    });
+
+    expect(result.current.lines).toHaveLength(1000);
+    expect(result.current.lines[0].message).toBe("line 5");
+    expect(result.current.lines.at(-1)!.message).toBe("line 1004");
+  });
+
+  it("closes every stream on unmount", () => {
+    const { unmount } = renderHook(() => useLogStreams([a, b]));
+
+    unmount();
+
+    expect(FakeEventSource.instances.map((e) => e.closed)).toEqual([true, true]);
+  });
+
+  it("starts with no lines when the pods change", () => {
+    const { result, rerender } = renderHook(
+      ({ pods }: { pods: LogSource[] }) => useLogStreams(pods),
+      { initialProps: { pods: [a, b] } },
+    );
+    of("a").emit("line", "old");
+    of("b").emit("failure", { message: "broke" });
+
+    rerender({ pods: [a] });
+
+    expect(result.current).toEqual({ lines: [], errors: [], ended: false });
+    expect(FakeEventSource.instances).toHaveLength(3);
+    expect(FakeEventSource.instances.slice(0, 2).every((e) => e.closed)).toBe(true);
+  });
+
+  it("keeps its streams when it gets an equal list of sources", () => {
+    const { rerender } = renderHook(
+      ({ pods }: { pods: LogSource[] }) => useLogStreams(pods),
+      { initialProps: { pods: [a, b] } },
+    );
+
+    rerender({ pods: [{ ...a }, { ...b }] });
+
+    expect(FakeEventSource.instances).toHaveLength(2);
+  });
+
+  it("applies the level filter to the lines of every stream", () => {
+    const { result } = renderHook(() =>
+      useLogStreams([a, b], { level: "error" }),
+    );
+
+    of("a").emit("line", '{"level":"info","msg":"a1"}');
+    of("a").emit("line", '{"level":"error","msg":"a2"}');
+    of("b").emit("line", '{"level":"ERROR","msg":"b1"}');
+
+    expect(result.current.lines.map((l) => l.message)).toEqual(["a2", "b1"]);
   });
 });
