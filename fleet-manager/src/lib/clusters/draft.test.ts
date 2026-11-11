@@ -11,6 +11,7 @@ import {
   pickerEnvironment,
   syncedNamespace,
 } from "./draft";
+import type { DeletionChoice } from "./storage";
 
 function environment(
   name: string,
@@ -415,6 +416,12 @@ describe("draftSelections", () => {
 });
 
 describe("clusterClaimOf", () => {
+  const deleting: DeletionChoice = {
+    defaultPolicy: "Delete",
+    keepAllowed: true,
+    alwaysDeleted: [],
+    policy: "Delete",
+  };
   const env = environment("prod", {
     releases: { allowed: ["r1", "r2"], default: "r1" },
     platformConfigRef: "pc",
@@ -422,21 +429,28 @@ describe("clusterClaimOf", () => {
 
   it("writes the default release when the draft picks none", () => {
     expect(
-      clusterClaimOf(draftWith({ presetRef: "small" }), env).spec.releaseRef,
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, deleting).spec
+        .releaseRef,
     ).toBe("r1");
   });
 
   it("writes the picked release also when it is the default", () => {
     expect(
-      clusterClaimOf(draftWith({ presetRef: "small", releaseRef: "r1" }), env)
-        .spec.releaseRef,
+      clusterClaimOf(
+        draftWith({ presetRef: "small", releaseRef: "r1" }),
+        env,
+        deleting,
+      ).spec.releaseRef,
     ).toBe("r1");
   });
 
   it("writes the picked release that is not the default", () => {
     expect(
-      clusterClaimOf(draftWith({ presetRef: "small", releaseRef: "r2" }), env)
-        .spec.releaseRef,
+      clusterClaimOf(
+        draftWith({ presetRef: "small", releaseRef: "r2" }),
+        env,
+        deleting,
+      ).spec.releaseRef,
     ).toBe("r2");
   });
 
@@ -445,13 +459,14 @@ describe("clusterClaimOf", () => {
       clusterClaimOf(
         draftWith({ presetRef: "small", platformConfigRef: "pc" }),
         env,
+        deleting,
       ).spec,
     ).not.toHaveProperty("platformConfigRef");
   });
 
   it("writes no platform config when the draft picks none", () => {
     expect(
-      clusterClaimOf(draftWith({ presetRef: "small" }), env).spec,
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, deleting).spec,
     ).not.toHaveProperty("platformConfigRef");
   });
 
@@ -460,13 +475,15 @@ describe("clusterClaimOf", () => {
       clusterClaimOf(
         draftWith({ presetRef: "small", platformConfigRef: "other" }),
         env,
+        deleting,
       ).spec.platformConfigRef,
     ).toBe("other");
   });
 
   it("writes no release without an Environment and without a pick", () => {
     expect(
-      clusterClaimOf(draftWith({ presetRef: "small" }), undefined).spec,
+      clusterClaimOf(draftWith({ presetRef: "small" }), undefined, deleting)
+        .spec,
     ).not.toHaveProperty("releaseRef");
   });
 
@@ -485,6 +502,7 @@ describe("clusterClaimOf", () => {
         },
       ),
       env,
+      deleting,
     );
 
     expect(claim.spec.plugins).toEqual([
@@ -499,8 +517,11 @@ describe("clusterClaimOf", () => {
 
   it("leaves plugins out when no section has a selection", () => {
     expect(
-      clusterClaimOf(draftWith({ presetRef: "small" }, { access: [] }), env)
-        .spec,
+      clusterClaimOf(
+        draftWith({ presetRef: "small" }, { access: [] }),
+        env,
+        deleting,
+      ).spec,
     ).not.toHaveProperty("plugins");
   });
 
@@ -512,49 +533,49 @@ describe("clusterClaimOf", () => {
         attachments: { optimize: {} },
       } as ClusterDraft["claim"]["spec"]),
       env,
+      deleting,
     ).spec;
 
     expect(spec.cluster).toEqual({ zeebe: { replicas: 3 } });
     expect(spec.attachments).toEqual({ optimize: {} });
   });
 
-  it("writes Delete when the default keeps and a pick cannot", () => {
-    const keeps = environment("prod", { deletionPolicy: "Orphan" });
-
+  it("writes the deletion policy of the choice when it differs from the default", () => {
     expect(
-      clusterClaimOf(
-        draftWith({ presetRef: "small", deletionPolicy: "Delete" }),
-        keeps,
-      ).spec.deletionPolicy,
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, {
+        ...deleting,
+        defaultPolicy: "Orphan",
+        keepAllowed: false,
+      }).spec.deletionPolicy,
     ).toBe("Delete");
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, {
+        ...deleting,
+        policy: "Orphan",
+      }).spec.deletionPolicy,
+    ).toBe("Orphan");
   });
 
-  it("writes no deletion policy when the pick is the default", () => {
+  it("writes no deletion policy when the policy of the choice is the default", () => {
     expect(
-      clusterClaimOf(
-        draftWith({ presetRef: "small", deletionPolicy: "Delete" }),
-        undefined,
-      ).spec,
-    ).not.toHaveProperty("deletionPolicy");
-    expect(
-      clusterClaimOf(
-        draftWith({ presetRef: "small", deletionPolicy: "Orphan" }),
-        environment("prod", { deletionPolicy: "Orphan" }),
-      ).spec,
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, deleting).spec,
     ).not.toHaveProperty("deletionPolicy");
   });
 
-  it("writes Orphan when the default deletes", () => {
+  it("writes the policy of the choice, not a pick of the draft that the choice refuses", () => {
     expect(
       clusterClaimOf(
         draftWith({ presetRef: "small", deletionPolicy: "Orphan" }),
         env,
-      ).spec.deletionPolicy,
-    ).toBe("Orphan");
+        { ...deleting, keepAllowed: false },
+      ).spec,
+    ).not.toHaveProperty("deletionPolicy");
   });
 
   it("names the claim and its namespace", () => {
-    expect(clusterClaimOf(draftWith({ presetRef: "small" }), env)).toEqual({
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, deleting),
+    ).toEqual({
       apiVersion: "fleet.camunda.io/v1alpha1",
       kind: "CamundaClusterClaim",
       metadata: { name: "orders", namespace: "team-a" },

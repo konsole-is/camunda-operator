@@ -361,7 +361,7 @@ describe("ClusterCreateFlow", () => {
     expect(radio(/^Gateway/).checked).toBe(true);
   });
 
-  it("asks for the deletion policy in step 2 and refuses a default that the picks cannot keep", async () => {
+  it("shows the deletion default again once the pick that cannot keep goes", async () => {
     const keeps = prod();
     keeps.spec.deletionPolicy = "Orphan";
     render(<ClusterCreateFlow initial={data({ environments: [keeps] })} />);
@@ -374,32 +374,10 @@ describe("ClusterCreateFlow", () => {
     expect(radio(/Keep the resources/).disabled).toBe(true);
     expect(radio(/Delete the resources/).checked).toBe(true);
     expect(screen.getByText("Gateway (Access)")).toBeTruthy();
-  });
 
-  it("sets Delete in the draft when a pick refuses Orphan after step 2", async () => {
-    const keeping = {
-      ...internal,
-      spec: { ...internal.spec, deletionPolicies: ["Delete", "Orphan"] },
-    } as Resource<"PluginRegistration">;
-    const initial = data({
-      registrations: [gateway, keeping],
-      accessRequests: [],
-    });
-    const { rerender } = render(<ClusterCreateFlow initial={initial} />);
-    await fillBasics("search");
-    await userEvent.click(next());
-    await userEvent.click(radio(/^Internal/));
-    await userEvent.click(radio(/Keep the resources/));
-    await userEvent.click(next());
+    await userEvent.click(radio(/No access from outside/));
 
-    live.objects.PluginRegistration = [gateway, internal];
-    rerender(<ClusterCreateFlow initial={initial} />);
-    live.objects.PluginRegistration = [gateway, keeping];
-    rerender(<ClusterCreateFlow initial={initial} />);
-    await userEvent.click(screen.getByRole("button", { name: "Back" }));
-
-    expect(radio(/Keep the resources/).disabled).toBe(false);
-    expect(radio(/Delete the resources/).checked).toBe(true);
+    expect(radio(/Keep the resources/).checked).toBe(true);
   });
 
   it("checks the hosts of the picked access option", async () => {

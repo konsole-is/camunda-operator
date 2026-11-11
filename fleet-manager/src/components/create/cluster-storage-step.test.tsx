@@ -11,6 +11,7 @@ import type {
 } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
+  type ClusterClaimObject,
   type ClusterDraft,
   clusterClaimOf,
   draftSelections,
@@ -231,11 +232,16 @@ const START: ClusterDraft = {
   claim: { metadata: { name: "c1" }, spec: { presetRef: "small" } },
 };
 
-/** last holds the draft and the step errors of the last render of Harness. */
-const last = { draft: START, errors: [] as string[] };
+/** last holds the draft, the step errors, and the claim of the last render of Harness. */
+const last = {
+  draft: START,
+  errors: [] as string[],
+  claim: undefined as ClusterClaimObject | undefined,
+};
 const harness = {
   draft: () => last.draft,
   errors: () => last.errors,
+  claim: () => last.claim!,
 };
 
 function Harness({
@@ -254,9 +260,11 @@ function Harness({
   >({});
   const views = storageViews(flow.draft, data);
   const errors = storageErrors(flow.draft, views, cardErrors, []);
+  const deletion = deletionChoice(flow.draft, data);
   useEffect(() => {
     last.draft = flow.draft;
     last.errors = errors;
+    last.claim = clusterClaimOf(flow.draft, data.environment, deletion);
   });
   return (
     <ClusterStorageStep
@@ -271,7 +279,7 @@ function Harness({
         flow.set(["storage", name], selections);
         setCardErrors((current) => ({ ...current, [name]: errors }));
       }}
-      deletion={deletionChoice(flow.draft, data)}
+      deletion={deletion}
       onDeletion={(policy) =>
         flow.set(["claim", "spec", "deletionPolicy"], policy)
       }
@@ -334,7 +342,7 @@ describe("ClusterStorageStep", () => {
     expect(screen.getByText("2 items")).toBeTruthy();
     expect(screen.getByText("2 fields")).toBeTruthy();
     expect(container.innerHTML).not.toMatch(/arn:aws/);
-    const claim = clusterClaimOf(harness.draft(), ENV);
+    const claim = harness.claim();
     expect(claim.spec.plugins).toContainEqual({
       section: "connectors-permissions",
       registration: "aws-connectors-role",
@@ -457,54 +465,61 @@ describe("ClusterStorageStep", () => {
     expect(radio(/No key/).checked).toBe(true);
   });
 
-  it("disables Keep the resources when a new pick refuses Orphan", async () => {
-    const keeping = {
-      ...DATA,
-      registrations: DATA.registrations.map((r) =>
-        r.metadata.name === "s3"
-          ? r
-          : {
-              ...r,
-              spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] },
-            },
-      ) as PluginRegistration[],
-    };
+  const keeping = (spec: Environment["spec"] = ENV.spec): StorageData => ({
+    ...DATA,
+    environment: { ...ENV, spec },
+    registrations: DATA.registrations.map((r) =>
+      r.metadata.name === "s3"
+        ? r
+        : {
+            ...r,
+            spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] },
+          },
+    ) as PluginRegistration[],
+  });
+
+  it("keeps the default of the Environment once the pick that cannot keep goes", async () => {
     render(
       <Harness
-        data={keeping}
-        initial={{
-          ...START,
-          claim: {
-            ...START.claim,
-            spec: { ...START.claim.spec, deletionPolicy: "Orphan" },
+        data={keeping({
+          ...ENV.spec,
+          deletionPolicy: "Orphan",
+          sections: {
+            ...ENV.spec.sections,
+            "backup-storage": { allowed: ["s3"], default: "s3" },
           },
-        }}
+        })}
       />,
     );
+    expect(radio(/Keep the resources/).disabled).toBe(true);
+    expect(radio(/Delete the resources/).checked).toBe(true);
+    expect(
+      screen.getByText(
+        "The default keeps the resources, but the options below cannot keep them.",
+      ),
+    ).toBeTruthy();
+    expect(harness.claim().spec.deletionPolicy).toBe("Delete");
+
+    await userEvent.click(radio(/No backups/));
+
     expect(radio(/Keep the resources/).checked).toBe(true);
+    expect(harness.claim().spec).not.toHaveProperty("deletionPolicy");
+  });
+
+  it("keeps the Keep pick of the user through a pick that cannot keep", async () => {
+    render(<Harness data={keeping()} />);
+    await userEvent.click(radio(/Keep the resources/));
+    expect(harness.claim().spec.deletionPolicy).toBe("Orphan");
 
     await userEvent.click(radio(/S3 bucket/));
-
     expect(radio(/Keep the resources/).disabled).toBe(true);
     expect(radio(/Delete the resources/).checked).toBe(true);
     expect(screen.getByText("S3 bucket (Backup storage)")).toBeTruthy();
-  });
+    expect(harness.claim().spec).not.toHaveProperty("deletionPolicy");
 
-  it("keeps the deletion pick of the user", async () => {
-    const keeping = {
-      ...DATA,
-      registrations: DATA.registrations.map((r) => ({
-        ...r,
-        spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] },
-      })) as PluginRegistration[],
-    };
-    render(<Harness data={keeping} />);
-    expect(radio(/Delete the resources/).checked).toBe(true);
-
-    await userEvent.click(radio(/Keep the resources/));
-
+    await userEvent.click(radio(/No backups/));
     expect(radio(/Keep the resources/).checked).toBe(true);
-    expect(harness.draft().claim.spec.deletionPolicy).toBe("Orphan");
+    expect(harness.claim().spec.deletionPolicy).toBe("Orphan");
   });
 
   it("lists the picked labels in the summary for the review, without an ARN", async () => {
