@@ -1,3 +1,4 @@
+import { ComponentSettingsEditor } from "@/components/cluster/edit/settings-slot";
 import type { ActionSlots } from "@/components/cluster/slots";
 
 /**
@@ -6,4 +7,6 @@ import type { ActionSlots } from "@/components/cluster/slots";
  * context. Only cluster-page.tsx imports this module, because a server
  * component cannot pass a function.
  */
-export const clusterSlots: ActionSlots = {};
+export const clusterSlots: ActionSlots = {
+  "component.settings.editor": (ctx) => <ComponentSettingsEditor ctx={ctx} />,
+};
