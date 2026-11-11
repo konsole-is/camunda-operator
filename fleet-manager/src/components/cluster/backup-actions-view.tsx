@@ -129,7 +129,10 @@ export function BackupHeaderActions({
             <Button
               type="submit"
               size="sm"
-              disabled={errors.length > 0 || writing}
+              disabled={
+                errors.length > 0 || writing || state.disabled !== undefined
+              }
+              aria-describedby={state.disabled ? `${id}-reason` : undefined}
             >
               Start backup
             </Button>

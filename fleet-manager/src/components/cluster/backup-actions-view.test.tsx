@@ -223,6 +223,46 @@ describe("BackupHeaderActions", () => {
     },
   );
 
+  it.each([
+    [
+      context({ suspended: true }),
+      "The cluster is suspended. A backup waits until it runs again, so resume the cluster first.",
+    ],
+    [
+      context({ storage: { kind: "none", schedules: [] } }),
+      "This cluster has no backup storage.",
+    ],
+  ])(
+    "start backup turns off with the reason when back up now turns off while the form is open",
+    async (off, reason) => {
+      const client = new QueryClient();
+      const page = (c: BackupContext) => (
+        <QueryClientProvider client={client}>
+          <GitPushesProvider>
+            <Page>
+              {(show) => (
+                <BackupHeaderActions
+                  context={c}
+                  apply={applyBackupChange}
+                  show={show}
+                />
+              )}
+            </Page>
+          </GitPushesProvider>
+        </QueryClientProvider>
+      );
+      const { rerender } = render(page(context()));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Back up now" }),
+      );
+      rerender(page(off));
+      const start = screen.getByRole("button", { name: "Start backup" });
+      expect(start).toHaveProperty("disabled", true);
+      const described = start.getAttribute("aria-describedby") ?? "";
+      expect(document.getElementById(described)?.textContent).toBe(reason);
+    },
+  );
+
   it("a taken name blocks Start backup", async () => {
     header(context({ backupNames: [NAME] }));
     await userEvent.click(screen.getByRole("button", { name: "Back up now" }));
