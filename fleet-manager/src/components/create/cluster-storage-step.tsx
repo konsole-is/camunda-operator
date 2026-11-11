@@ -6,14 +6,17 @@ import type { PluginSection } from "@/generated/crds/pluginsection";
 import { SectionCards } from "@/components/fleet/section-cards";
 import type { RenderedHost } from "@/lib/claims/hosts";
 import { type ClusterDraft, draftSelections } from "@/lib/clusters/draft";
+import type { DeletionChoice } from "@/lib/clusters/storage";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
   type BuiltinContext,
+  type DeletionPolicy,
   type PluginSelection,
   type SectionView,
   bucketNote,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
+import { DeletionChoiceField } from "./deletion-choice";
 
 /**
  * ClusterStorageStep is step 2 of the cluster create flow: one SectionCards
@@ -23,7 +26,7 @@ import type { ValidationError } from "@/lib/schema";
  * built-in option, with the presets of context, and under the access cards
  * the hosts and their conflicts. A section with no option and no empty
  * option says "Your admin allows no option here." Each view keeps its
- * object while its content does not change.
+ * object while its content does not change. onDeletion gets each pick.
  */
 export function ClusterStorageStep({
   draft,
@@ -34,6 +37,8 @@ export function ClusterStorageStep({
   hosts,
   conflicts,
   onSection,
+  deletion,
+  onDeletion,
 }: {
   draft: ClusterDraft;
   views: readonly SectionView[];
@@ -47,6 +52,8 @@ export function ClusterStorageStep({
     selections: PluginSelection[],
     errors: ValidationError[],
   ) => void;
+  deletion: DeletionChoice;
+  onDeletion: (policy: DeletionPolicy) => void;
 }) {
   const selections = draftSelections(draft);
   return (
@@ -75,6 +82,7 @@ export function ClusterStorageStep({
           />
         );
       })}
+      <DeletionChoiceField choice={deletion} onChange={onDeletion} />
     </div>
   );
 }

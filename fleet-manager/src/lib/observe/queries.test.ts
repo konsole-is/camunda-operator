@@ -2,13 +2,23 @@ import { describe, expect, it } from "vitest";
 import { parseTemplate, render } from "@/lib/gotemplate";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
+  CAMUNDA_8_9,
   PARTITION_HEALTH,
+  POD_QUERIES,
   coreMetricDefs,
   coreQueries,
+  inVersionRange,
   podsPattern,
+  queriesFor,
   registrationQueries,
+  renderCoreQuery,
 } from "./queries";
 import type { QueryError } from "./types";
+
+const CAMUNDA_SOURCE =
+  "https://docs.camunda.io/docs/8.9/self-managed/operational-guides/monitoring/metrics/#available-metrics";
+const KUBELET_SOURCE =
+  "https://kubernetes.io/docs/reference/instrumentation/metrics/";
 
 const registration = {
   metadata: { name: "rustfs-bucket" },
@@ -145,11 +155,63 @@ describe("coreQueries", () => {
     }
   });
 
-  it("every core query selects the namespace and the pods", () => {
+  it("every core query selects the namespace, and the pods or the volumes of the pods", () => {
     for (const q of all) {
       expect(q.query).toContain('namespace="{{ .namespace }}"');
-      expect(q.query).toContain('pod=~"{{ .pods }}"');
+      expect(q.query).toContain(
+        q.over === "volumes"
+          ? 'persistentvolumeclaim=~"{{ .pods }}"'
+          : 'pod=~"{{ .pods }}"',
+      );
     }
+  });
+
+  it("every Camunda query has a version range and the 8.9 metrics page as its source", () => {
+    for (const q of all) {
+      if (q.metric.startsWith("zeebe_")) {
+        expect(q.versions, q.label).toEqual(CAMUNDA_8_9);
+        expect(q.source, q.label).toBe(CAMUNDA_SOURCE);
+      } else {
+        expect(q.versions, q.label).toBeUndefined();
+      }
+    }
+  });
+
+  it("every chart query gives one series for each pod, or for each volume over volumes", () => {
+    for (const q of all) {
+      expect(q.query, q.label).toMatch(
+        q.over === "volumes"
+          ? /^max by \(persistentvolumeclaim\) /
+          : /^(sum|min) by \(pod\) /,
+      );
+    }
+  });
+
+  it("the disk query reads the kubelet volume stats of the PVCs of the pods", () => {
+    const disk = POD_QUERIES.find((q) => q.label === "Disk used")!;
+    expect(disk).toMatchObject({
+      metric: "kubelet_volume_stats_used_bytes",
+      source: KUBELET_SOURCE,
+      over: "volumes",
+      unit: "bytes",
+    });
+    expect(renderCoreQuery(disk, "team-a", ["data-o-zeebe-0"])).toBe(
+      'max by (persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace="team-a", persistentvolumeclaim=~"data-o-zeebe-0"})',
+    );
+  });
+
+  it("process instances count the activated PROCESS elements", () => {
+    const q = coreQueries.zeebe.find(
+      (x) => x.label === "Process instances activated",
+    )!;
+    expect(q.unit).toBe("instances/s");
+    expect(renderCoreQuery(q, "team-a", ["o-zeebe-0"])).toBe(
+      'sum by (pod) (rate(zeebe_element_instance_events_total{namespace="team-a", pod=~"o-zeebe-0", action="activated", type="PROCESS"}[5m]))',
+    );
+  });
+
+  it("has no query of the exporter lag", () => {
+    for (const q of all) expect(q.query).not.toContain("exporter_last");
   });
 
   it("each cAdvisor query drops the pod-level series", () => {
@@ -159,25 +221,91 @@ describe("coreQueries", () => {
   });
 });
 
-describe("coreMetricDefs", () => {
-  it("renders the namespace and the pods of a component", () =>
-    expect(
-      coreMetricDefs("zeebe", "team-a", ["orders-zeebe-0"]).find(
-        (d) => d.label === "Records processed",
-      )?.query,
-    ).toBe(
-      'sum(rate(zeebe_stream_processor_records_total{namespace="team-a", pod=~"orders-zeebe-0", action="processed"}[5m]))',
-    ));
+describe("inVersionRange", () => {
+  it.each([
+    ["8.9.0", true],
+    ["8.9.26", true],
+    ["8.10.0", false],
+    ["8.8.9", false],
+    ["8.9.0-alpha1", false],
+    ["", false],
+    [undefined, false],
+  ])("8.9.0 to below 8.10.0 holds %j: %s", (version, holds) =>
+    expect(inVersionRange(version, CAMUNDA_8_9)).toBe(holds),
+  );
 
-  it("keeps the label, the unit, and the source of the query", () =>
-    expect(coreMetricDefs("operate", "team-a", ["o-0"])[0]).toMatchObject({
-      label: "CPU",
-      unit: "cores",
-      source: coreQueries.operate[0].source,
-    }));
+  it("a range without an upper bound holds every later version", () => {
+    expect(inVersionRange("10.0.0", { min: "8.9.0" })).toBe(true);
+    expect(inVersionRange("8.8.0", { min: "8.9.0" })).toBe(false);
+  });
+
+  it("a query without a range applies to every version, also to none", () => {
+    expect(inVersionRange(undefined, undefined)).toBe(true);
+    expect(inVersionRange("9.0.0", undefined)).toBe(true);
+  });
+});
+
+describe("queriesFor", () => {
+  it("gives the brokers of 8.9 the pod queries and the Camunda queries", () =>
+    expect(queriesFor("zeebe", "8.9.4").map((q) => q.label)).toEqual([
+      "CPU",
+      "Memory",
+      "Disk used",
+      "Process instances activated",
+      "Records processed",
+      "Records exported",
+      "Requests dropped by backpressure",
+      "Partition health",
+    ]));
+
+  it.each([["8.10.0"], [undefined]])(
+    "gives the brokers of %j only the pod queries",
+    (version) =>
+      expect(queriesFor("zeebe", version).map((q) => q.label)).toEqual([
+        "CPU",
+        "Memory",
+        "Disk used",
+      ]),
+  );
+
+  it("gives Optimize the pod queries", () =>
+    expect(queriesFor("optimize", "8.9.0")).toEqual(POD_QUERIES));
+});
+
+describe("coreMetricDefs", () => {
+  it("renders the pod queries for the pods and a volume query for the volumes", () => {
+    const defs = coreMetricDefs(POD_QUERIES, "team-a", {
+      pods: ["o-zeebe-0"],
+      volumes: ["data-o-zeebe-0"],
+    });
+    expect(defs.map((d) => d.label)).toEqual(["CPU", "Memory", "Disk used"]);
+    expect(defs[2].query).toContain('persistentvolumeclaim=~"data-o-zeebe-0"');
+    expect(defs[0].query).toContain('pod=~"o-zeebe-0"');
+  });
+
+  it("leaves out a volume query when the pods have no volume", () =>
+    expect(
+      coreMetricDefs(POD_QUERIES, "n", { pods: ["p"], volumes: [] }).map(
+        (d) => d.label,
+      ),
+    ).toEqual(["CPU", "Memory"]));
 
   it("gives nothing for a component without pods", () =>
-    expect(coreMetricDefs("operate", "team-a", [])).toEqual([]));
+    expect(
+      coreMetricDefs(POD_QUERIES, "n", { pods: [], volumes: ["v"] }),
+    ).toEqual([]));
+
+  it("keeps the label, the unit, and the source of the query", () =>
+    expect(
+      coreMetricDefs(POD_QUERIES.slice(0, 1), "n", {
+        pods: ["p"],
+        volumes: [],
+      })[0],
+    ).toMatchObject({
+      label: "CPU",
+      unit: "cores",
+      source: POD_QUERIES[0].source,
+    }));
 });
 
 describe("PARTITION_HEALTH", () => {
@@ -201,4 +329,7 @@ describe("PARTITION_HEALTH", () => {
       text: 'min by (partition) (zeebe_health{namespace="team-a", pod=~"orders-zeebe-0"})',
     });
   });
+
+  it("applies to the Camunda versions of its metrics page", () =>
+    expect(PARTITION_HEALTH.versions).toEqual(CAMUNDA_8_9));
 });

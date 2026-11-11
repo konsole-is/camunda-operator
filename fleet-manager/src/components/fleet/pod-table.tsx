@@ -21,6 +21,14 @@ export type PodLike = {
 };
 
 /**
+ * USAGE_UNAVAILABLE says why a table shows no usage. The usage reader gives
+ * the same answer for a cluster without metrics-server and for a read that
+ * failed, so the sentence names both.
+ */
+export const USAGE_UNAVAILABLE =
+  "Usage is not available. The cluster has no metrics server, or the app could not read the usage.";
+
+/**
  * PodTable lists pods with their ready containers, phase, node, restarts,
  * and age, and the CPU and memory of each pod. When usage is "unavailable",
  * the usage column is hidden and a note says why. A pod without usage data shows "-"
@@ -88,11 +96,7 @@ export function PodTable({
           })}
         </TableBody>
       </Table>
-      {!showUsage && (
-        <p className="text-xs text-muted">
-          Usage is not available. The cluster has no metrics server.
-        </p>
-      )}
+      {!showUsage && <p className="text-xs text-muted">{USAGE_UNAVAILABLE}</p>}
     </div>
   );
 }

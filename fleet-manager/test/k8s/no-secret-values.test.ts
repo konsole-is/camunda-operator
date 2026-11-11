@@ -22,6 +22,7 @@ import {
 } from "@/app/setup/settings/actions";
 import { GET as healthz } from "@/app/api/healthz/route";
 import { GET as logsRoute } from "@/app/api/logs/route";
+import { GET as metricsRoute } from "@/app/api/metrics/route";
 import { GET as partitionsRoute } from "@/app/api/partitions/route";
 import { GET as usageRoute } from "@/app/api/usage/route";
 import { GET as watchRoute } from "@/app/api/watch/route";
@@ -83,6 +84,22 @@ beforeAll(async () => {
     kind: "Secret",
     metadata: { name: "leak", namespace },
     stringData: values,
+  });
+  await api.create({
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaCluster",
+    metadata: { name: "leak", namespace },
+    spec: { storageRef: "storage", platformConfigRef: "platform" },
+  });
+  await api.create({
+    apiVersion: "v1",
+    kind: "Pod",
+    metadata: {
+      name: "leak-zeebe-0",
+      namespace,
+      labels: { "camunda.io/cluster": "leak", "camunda.io/component": "zeebe" },
+    },
+    spec: { containers: [{ name: "zeebe", image: "camunda/zeebe" }] },
   });
   process.env.FLEET_NAMESPACE = namespace;
   Object.assign(process.env, {
@@ -163,6 +180,17 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
         ),
       )
     ).text(),
+  // The cluster has a broker pod, so the route asks Prometheus with the
+  // credentials of the Secret and answers with the result.
+  "api/metrics": async () => {
+    const response = await metricsRoute(
+      new Request(
+        `http://localhost/api/metrics?namespace=${namespace}&cluster=leak&component=zeebe`,
+      ),
+    );
+    expect(response.status).toBe(200);
+    return response.text();
+  },
   "api/partitions": async () =>
     (
       await partitionsRoute(

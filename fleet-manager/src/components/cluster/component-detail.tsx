@@ -8,15 +8,17 @@ import {
 import { type PodLike, PodTable } from "@/components/fleet/pod-table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResources } from "@/lib/k8s/hooks";
-import type { PodUsage, Unavailable } from "@/lib/observe/types";
+import type { MetricsRef, PodUsage, Unavailable } from "@/lib/observe/types";
 import { usePodUsage } from "@/lib/observe/use-observe";
+import { DetailMetrics, DetailMetricsView } from "./detail-metrics";
 
 /** DetailTab names one tab of a component detail. */
-export type DetailTab = "overview" | "settings";
+export type DetailTab = "overview" | "metrics" | "settings";
 
 /** DETAIL_TABS are the tabs of a component detail, in order. */
 export const DETAIL_TABS: readonly { value: DetailTab; label: string }[] = [
   { value: "overview", label: "Overview" },
+  { value: "metrics", label: "Metrics" },
   { value: "settings", label: "Settings" },
 ];
 
@@ -32,27 +34,48 @@ type DetailProps = {
 /**
  * ComponentDetail shows one component: the pods in namespace that
  * podSelector selects, with their live usage, and the given conditions.
- * The Overview tab ends with children, and the Settings tab holds
- * settings. It reads nothing else, so any page can mount it for any
- * component. It needs a QueryClientProvider above it.
+ * The Overview tab ends with children, the Metrics tab charts the metrics
+ * ref, and the Settings tab holds settings. Without metrics, the Metrics
+ * tab shows the live usage only. It reads nothing else, so any page can
+ * mount it for any component. It needs a QueryClientProvider above it.
  */
 export function ComponentDetail({
   namespace,
   podSelector,
+  metrics,
   ...props
-}: DetailProps & { namespace: string; podSelector: string }) {
+}: DetailProps & {
+  namespace: string;
+  podSelector: string;
+  metrics?: MetricsRef;
+}) {
   const pods = useResources(
     "Pod",
     { namespace, labelSelector: podSelector },
     [],
   );
   const usage = usePodUsage(namespace, podSelector);
-  return <ComponentDetailView {...props} pods={pods.items} usage={usage} />;
+  return (
+    <ComponentDetailView
+      {...props}
+      pods={pods.items}
+      usage={usage}
+      metricsTab={
+        <DetailMetrics
+          namespace={namespace}
+          source={metrics}
+          pods={pods.items}
+          usage={usage}
+        />
+      }
+    />
+  );
 }
 
 /**
  * ComponentDetailView is ComponentDetail with its pods and usage given.
- * An undefined usage is not loaded yet.
+ * An undefined usage is not loaded yet. Without metricsTab, the Metrics
+ * tab shows the live usage of the pods and no charts.
  */
 export function ComponentDetailView({
   title,
@@ -61,11 +84,13 @@ export function ComponentDetailView({
   pods,
   usage,
   settings,
+  metricsTab,
   children,
   now,
 }: DetailProps & {
   pods: PodLike[];
   usage: PodUsage[] | Unavailable | undefined;
+  metricsTab?: ReactNode;
 }) {
   return (
     <section
@@ -99,6 +124,11 @@ export function ComponentDetailView({
             <PodTable pods={pods} usage={usage ?? []} now={now} />
             {children}
           </div>
+        </TabsContent>
+        <TabsContent value="metrics">
+          {metricsTab ?? (
+            <DetailMetricsView pods={pods} usage={usage} range="1h" />
+          )}
         </TabsContent>
         <TabsContent value="settings">
           <div className="pt-2">
