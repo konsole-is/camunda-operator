@@ -160,20 +160,25 @@ export function LogViewer({
               {columns.logger && (
                 <Clipped text={line.logger} width="hidden w-48 sm:block" />
               )}
-              <span className="min-w-0 break-all whitespace-pre-wrap text-text">
+              <span className="min-w-0 basis-full break-all whitespace-pre-wrap text-text sm:basis-auto">
                 {line.message}
               </span>
             </>
           );
           return Object.keys(line.fields).length > 0 ? (
             <details key={keyOf(line)} className="px-3">
-              <summary className="flex cursor-pointer gap-3">{row}</summary>
+              <summary className="flex cursor-pointer flex-wrap gap-x-3 sm:flex-nowrap">
+                {row}
+              </summary>
               <pre className="ml-6 text-muted">
                 {JSON.stringify(line.fields, null, 2)}
               </pre>
             </details>
           ) : (
-            <div key={keyOf(line)} className="flex gap-3 px-3">
+            <div
+              key={keyOf(line)}
+              className="flex flex-wrap gap-x-3 px-3 sm:flex-nowrap"
+            >
               {row}
             </div>
           );
