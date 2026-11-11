@@ -272,9 +272,9 @@ function selectionErrors(
   });
 }
 
-// SectionCards checks the choices only while step 4 shows, and a
-// DatabaseConfig or a preset of the Environment can go after that.
-function choiceErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
+// SectionCards checks the values only while step 4 shows, and a
+// DatabaseConfig, a preset, or a policy value can go after that.
+function valueErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
   return [views.databases, views.access].flatMap((view) => {
     if (!view) return [];
     return picksOf(draft, view).flatMap((selection) => {
@@ -288,7 +288,15 @@ function choiceErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
         const value = Object.hasOwn(set, rule.name)
           ? set[rule.name]
           : rule.value;
-        if (value === undefined) return [];
+        const empty =
+          value === undefined ||
+          value === "" ||
+          (Array.isArray(value) && value.length === 0);
+        if (empty) {
+          return rule.required
+            ? [`Choose a ${rule.label} for ${option.label}.`]
+            : [];
+        }
         const names =
           option.choices?.parameter === rule.name
             ? option.choices.items.map((i) => i.name)
@@ -373,8 +381,9 @@ export function contractNameErrors(
  * storageErrors returns the errors of step 4. sectionErrors are the errors
  * that SectionCards reported, and views the sections of planeSectionViews.
  * A section of views whose selected option is missing or disabled, a
- * parameter value that is not among the choices of views, or an access
- * section that is required and has no selection, blocks the step.
+ * required parameter that a claim can edit and that has no value, a value
+ * that is not among the choices of views, or an access section that is
+ * required and has no selection, blocks the step.
  */
 export function storageErrors(
   draft: PlaneDraft,
@@ -387,7 +396,7 @@ export function storageErrors(
   const sectionNames = ctx.sections.map((s) => s.metadata.name);
   const errors: string[] = [
     ...selectionErrors(draft, views),
-    ...choiceErrors(draft, views),
+    ...valueErrors(draft, views),
   ];
   for (const [name, picked] of Object.entries(draft.storage)) {
     if (picked.length > 0 && !sectionNames.includes(name)) {

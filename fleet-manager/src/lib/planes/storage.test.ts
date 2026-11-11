@@ -538,6 +538,7 @@ describe("storageErrors and a live choice that is gone", () => {
     name: string,
     label: string,
     properties: Record<string, unknown>,
+    required: string[] = [],
   ) =>
     ({
       metadata: { name },
@@ -548,7 +549,7 @@ describe("storageErrors and a live choice that is gone", () => {
         deletionPolicies: ["Delete"],
         serviceAccount: { name: "camunda", namespace: "camunda-system" },
         controller: { name: "camunda-operator", version: "0.0.0" },
-        parameters: { type: "object", properties },
+        parameters: { type: "object", properties, required },
       },
       status: ready,
     }) as unknown as PluginRegistration;
@@ -579,9 +580,14 @@ describe("storageErrors and a live choice that is gone", () => {
         identity: app("Management Identity"),
         webModeler: app("Web Modeler"),
       }),
-      builtin("management-database-server", "New PostgreSQL server", {
-        preset: { type: "string", title: "Preset" },
-      }),
+      builtin(
+        "management-database-server",
+        "New PostgreSQL server",
+        {
+          preset: { type: "string", title: "Preset" },
+        },
+        ["preset"],
+      ),
     ],
   });
   const configSpec = {
@@ -680,6 +686,27 @@ describe("storageErrors and a live choice that is gone", () => {
     ).toEqual([
       "small is not available for Preset of New PostgreSQL server. Choose another.",
     ]);
+  });
+
+  it("asks for a required preset that the selection leaves out once the Environment gives no value", () => {
+    const d = draft({ storage: { "management-database": [database] } });
+    const objects = { DatabaseServerPreset: [preset("large")] };
+    const withValue = {
+      parameters: {
+        "management-database-server": {
+          preset: { claimEditable: true, value: "large" },
+        },
+      },
+      presets: { databaseServer: ["large"] },
+    };
+    expect(errorsOf(d, live(withValue), objects)).toEqual([]);
+    expect(
+      errorsOf(
+        d,
+        live({ ...presetSpec, presets: { databaseServer: ["large"] } }),
+        objects,
+      ),
+    ).toEqual(["Choose a Preset for New PostgreSQL server."]);
   });
 });
 
