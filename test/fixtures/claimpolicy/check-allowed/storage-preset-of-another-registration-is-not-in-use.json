@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "name": "A preset that the request of another registration carries is checked",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "elasticsearchCluster": [
+            "small"
+          ],
+          "databaseServer": [
+            "large"
+          ]
+        }
+      }
+    },
+    "policy": {
+      "sections": {
+        "secondary-storage": {
+          "allowed": [
+            "elasticsearch",
+            "database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "elasticsearch": {
+          "preset": {
+            "claimEditable": true
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch",
+        "parameters": {
+          "preset": "large"
+        }
+      }
+    ],
+    "requests": [
+      {
+        "metadata": {
+          "name": "orders-secondary-storage"
+        },
+        "spec": {
+          "section": "secondary-storage",
+          "registration": "database-server",
+          "parameters": {
+            "preset": "large"
+          }
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "ElasticsearchClusterPreset \"large\" is not in spec.presets.elasticsearchCluster of Environment \"dev\""
+    }
+  }
+}

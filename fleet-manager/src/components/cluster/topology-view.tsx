@@ -5,6 +5,7 @@ import {
   TEXT_TONE,
 } from "@/components/fleet/status";
 import { StatusDot } from "@/components/fleet/status-dot";
+import { Badge } from "@/components/ui/badge";
 import type { PodDot, Process, TopologyBox } from "./topology";
 
 /**
@@ -31,11 +32,44 @@ export function TopologyView({
         <h2 className="font-heading text-base font-semibold">Topology</h2>
         {actions}
       </div>
-      <ul className="grid gap-3 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]">
-        {boxes.map((box) => (
+      <TopologyBoxes boxes={boxes} conditions={conditions} />
+    </section>
+  );
+}
+
+/**
+ * TopologyBoxes is the list of boxes of TopologyView, named label. A box
+ * with a mark shows it as a badge. With pods false, a box shows neither its
+ * pods nor No pods.
+ */
+export function TopologyBoxes({
+  boxes,
+  conditions,
+  marks,
+  pods = true,
+  label,
+}: {
+  boxes: TopologyBox[];
+  conditions?: Partial<Record<Process, ConditionLike>>;
+  marks?: Partial<Record<Process, "new" | "removed">>;
+  pods?: boolean;
+  label?: string;
+}) {
+  return (
+    <ul
+      aria-label={label}
+      className="grid gap-3 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]"
+    >
+      {boxes.map((box) => {
+        const mark = marks?.[box.process];
+        return (
           <li
             key={box.process}
-            className="flex flex-col gap-3 rounded-md border border-border bg-panel-2 p-3"
+            className={`flex flex-col gap-3 rounded-md border p-3 ${
+              mark === "removed"
+                ? "border-dashed border-faint"
+                : "border-border bg-panel-2"
+            }`}
           >
             <div className="flex items-baseline justify-between gap-2">
               <span className="flex items-center gap-2 font-medium text-text">
@@ -46,6 +80,8 @@ export function TopologyView({
                   />
                 )}
                 {box.label}
+                {mark === "new" && <Badge>New</Badge>}
+                {mark === "removed" && <Badge variant="outline">Removed</Badge>}
               </span>
               <span className="text-xs text-muted">{box.workload}</span>
             </div>
@@ -61,22 +97,23 @@ export function TopologyView({
                 ))}
               </ul>
             )}
-            {box.pods.length > 0 ? (
-              <ul
-                aria-label={`Pods of ${box.label}`}
-                className="flex flex-col gap-1"
-              >
-                {box.pods.map((pod) => (
-                  <PodState key={pod.name} pod={pod} />
-                ))}
-              </ul>
-            ) : (
-              <p className="text-xs text-muted">No pods</p>
-            )}
+            {pods &&
+              (box.pods.length > 0 ? (
+                <ul
+                  aria-label={`Pods of ${box.label}`}
+                  className="flex flex-col gap-1"
+                >
+                  {box.pods.map((pod) => (
+                    <PodState key={pod.name} pod={pod} />
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted">No pods</p>
+              ))}
           </li>
-        ))}
-      </ul>
-    </section>
+        );
+      })}
+    </ul>
   );
 }
 

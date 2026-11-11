@@ -28,6 +28,7 @@ export function slotContext(
     managementAuthConfigs: [],
     sections: [],
     registrations: [],
+    requests: [],
     backups: [],
     restores: [],
     backupStorage: { kind: "none", schedules: [] },
