@@ -63,6 +63,11 @@ describe("previewClaimChange", () => {
 
 describe("applyBackupChange", () => {
   const orders = { namespace: "team-a", name: "orders" };
+  const object = (kind: string, name: string, namespace = "team-a") => ({
+    apiVersion: "core.camunda.io/v1",
+    kind,
+    metadata: { name, namespace },
+  });
   const backup = (cluster = "orders") => ({
     intent: "Back up orders",
     apply: [
@@ -89,7 +94,7 @@ describe("applyBackupChange", () => {
   it.each(["LogicalBackupElasticsearch", "LogicalBackupRDBMS"])(
     "applyBackupChange refuses a name that a %s of the namespace has, and writes nothing",
     async (kind) => {
-      fakeWriter.existing = [`${kind}/team-a/orders-manual-1`];
+      fakeWriter.objects = [object(kind, "orders-manual-1")];
       expect(await applyBackupChange(orders, backup())).toEqual({
         ok: false,
         errors: [
@@ -109,26 +114,84 @@ describe("applyBackupChange", () => {
     },
   );
 
-  it("applyBackupChange deletes a backup whatever exists", async () => {
-    fakeWriter.existing = ["LogicalBackupRDBMS/team-a/orders-manual-1"];
-    const remove = {
-      intent: "Delete backup orders-manual-1",
-      apply: [],
-      delete: [
-        {
-          apiVersion: "core.camunda.io/v1",
-          kind: "LogicalBackupRDBMS",
-          namespace: "team-a",
-          name: "orders-manual-1",
-        },
-      ],
-      directOnly: true,
-    };
-    expect(await applyBackupChange(orders, remove)).toEqual({
+  const remove = (kind = "LogicalBackupRDBMS") => ({
+    intent: "Delete backup orders-manual-1",
+    apply: [],
+    delete: [
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind,
+        namespace: "team-a",
+        name: "orders-manual-1",
+      },
+    ],
+    directOnly: true,
+  });
+  const restore = (
+    kind: string,
+    name: string,
+    phase: string,
+    backup = "orders-manual-1",
+    namespace = "team-a",
+  ) => ({
+    ...object(kind, name, namespace),
+    spec: { backupRef: { name: backup }, targetClusterRef: { name: "orders" } },
+    status: { phase },
+  });
+
+  it("applyBackupChange deletes a backup that no restore reads", async () => {
+    fakeWriter.objects = [
+      object("LogicalBackupRDBMS", "orders-manual-1"),
+      restore("LogicalRestoreRDBMS", "done", "Completed"),
+      restore("LogicalRestoreRDBMS", "failed", "Failed"),
+      restore("LogicalRestoreRDBMS", "other", "Pending", "orders-manual-2"),
+      restore("LogicalRestoreElasticsearch", "es", "Pending"),
+      restore(
+        "LogicalRestoreRDBMS",
+        "elsewhere",
+        "Pending",
+        undefined,
+        "team-b",
+      ),
+    ];
+    expect(await applyBackupChange(orders, remove())).toEqual({
       ok: true,
       mode: "direct",
     });
-    expect(fakeWriter.applied).toEqual([remove]);
+    expect(fakeWriter.applied).toEqual([remove()]);
+  });
+
+  it.each([
+    ["LogicalBackupElasticsearch", "LogicalRestoreElasticsearch"],
+    ["LogicalBackupRDBMS", "LogicalRestoreRDBMS"],
+  ])(
+    "applyBackupChange refuses to delete a %s that a restore reads until the restore ends, and writes nothing",
+    async (kind, restoreKind) => {
+      fakeWriter.objects = [restore(restoreKind, "r1", "Pending")];
+      expect(await applyBackupChange(orders, remove(kind))).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Stale",
+            message:
+              "Restore r1 reads the backup orders-manual-1. Delete the backup after the restore ends.",
+            ref: remove(kind).delete[0],
+          },
+        ],
+      });
+      expect(fakeWriter.applied).toEqual([]);
+    },
+  );
+
+  it("applyBackupChange writes nothing when it cannot read the backups and restores", async () => {
+    fakeWriter.readError = new Error("connect ECONNREFUSED");
+    for (const change of [backup(), remove()]) {
+      expect(await applyBackupChange(orders, change)).toEqual({
+        ok: false,
+        errors: [{ code: "Unavailable", message: "connect ECONNREFUSED" }],
+      });
+    }
+    expect(fakeWriter.applied).toEqual([]);
   });
 
   it("applyBackupChange refuses a backup of another cluster and writes nothing", async () => {

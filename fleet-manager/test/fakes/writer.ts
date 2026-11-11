@@ -4,13 +4,14 @@
 //
 //   vi.mock("@/lib/write/writer", () => import("<relative>/test/fakes/writer"))
 //
-// The module then serves only the path of runChange and runPreview, and
-// firstExisting. A test that needs refKey imports it from @/lib/write/refs.
+// Of that module, it serves only getWriter, writeMode, firstExisting, and
+// listObjects. A test that needs refKey imports it from @/lib/write/refs.
 // A test resets fakeWriter before each test.
 import { createHash } from "node:crypto";
-import { refKey } from "@/lib/write/refs";
+import { refKey, refOf } from "@/lib/write/refs";
 import type {
   Change,
+  KubeObject,
   ObjectRef,
   Preview,
   RefKey,
@@ -39,8 +40,10 @@ export class FakeWriter implements Writer {
   results: WriteResult[] = [];
   /** previews are the results of the next previews, first one first. */
   previews: Preview[] = [];
-  /** existing holds the key of each object that firstExisting finds. */
-  existing: RefKey[] = [];
+  /** objects are the objects that firstExisting and listObjects read. */
+  objects: KubeObject[] = [];
+  /** readError, when set, is what firstExisting and listObjects throw. */
+  readError?: Error;
   private commits = 0;
 
   constructor(mode: WriteMode = "direct") {
@@ -54,7 +57,8 @@ export class FakeWriter implements Writer {
     this.previewed.length = 0;
     this.results = [];
     this.previews = [];
-    this.existing = [];
+    this.objects = [];
+    this.readError = undefined;
     this.commits = 0;
   }
 
@@ -108,11 +112,24 @@ function fileOf(ref: {
 /** fakeWriter is the writer that getWriter of this module returns. */
 export const fakeWriter = new FakeWriter();
 
-/** firstExisting returns the first of refs whose key is in fakeWriter.existing. */
+/** firstExisting returns the first of refs that has an object in fakeWriter.objects. */
 export async function firstExisting(
   refs: readonly ObjectRef[],
 ): Promise<ObjectRef | undefined> {
-  return refs.find((ref) => fakeWriter.existing.includes(refKey(ref)));
+  if (fakeWriter.readError) throw fakeWriter.readError;
+  const keys = fakeWriter.objects.map((o) => refKey(refOf(o)));
+  return refs.find((ref) => keys.includes(refKey(ref)));
+}
+
+/** listObjects returns the objects of kind in namespace in fakeWriter.objects. */
+export async function listObjects(
+  kind: string,
+  namespace: string,
+): Promise<KubeObject[]> {
+  if (fakeWriter.readError) throw fakeWriter.readError;
+  return fakeWriter.objects.filter(
+    (o) => o.kind === kind && o.metadata.namespace === namespace,
+  );
 }
 
 /** getWriter returns fakeWriter. */

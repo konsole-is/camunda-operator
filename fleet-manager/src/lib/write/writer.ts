@@ -10,9 +10,11 @@ import {
 import {
   KindMap,
   apiVersionOf,
+  collectionPath,
   isKindName,
   objectPath,
   type KindInfo,
+  type KindName,
 } from "@/lib/k8s/kinds";
 import { APP_FIELD_MANAGER } from "@/lib/merge";
 import type { Settings } from "@/lib/settings/keys";
@@ -408,6 +410,24 @@ export async function firstExisting(
     if ((await readObject(kc, ref)) !== undefined) return ref;
   }
   return undefined;
+}
+
+/**
+ * listObjects returns the objects of kind in namespace from the API server
+ * of kc, kubeConfig() by default, not from the cache. kind must be a
+ * namespaced kind of KindMap. It throws when the read fails.
+ */
+export async function listObjects(
+  kind: KindName,
+  namespace: string,
+  kc: KubeConfig = kubeConfig(),
+): Promise<KubeObject[]> {
+  const list = await requestJSON<{ items: KubeObject[] }>(kc, {
+    method: "GET",
+    path: `${collectionPath(KindMap[kind])}?fieldSelector=${encodeURIComponent(`metadata.namespace=${namespace}`)}`,
+    timeoutMs: WRITE_TIMEOUT_MS,
+  });
+  return list.items;
 }
 
 /** kindInfoOf returns the kind of KindMap or WriteOnlyKindMap, or undefined for any other kind. */

@@ -9,6 +9,7 @@ import type { KubeObject } from "@/lib/write/types";
 import {
   directWriter,
   firstExisting,
+  listObjects,
   readObject,
   refKey,
 } from "@/lib/write/writer";
@@ -857,5 +858,33 @@ describe("the direct writer against envtest", () => {
     expect(
       await firstExisting([backupRef("LogicalBackupElasticsearch")], kc),
     ).toBeUndefined();
+  });
+
+  it("listObjects gives the objects of a kind in one namespace", async () => {
+    const restore = (ns: string): KubeObject => ({
+      apiVersion: "core.camunda.io/v1",
+      kind: "LogicalRestoreRDBMS",
+      metadata: { name, namespace: ns },
+      spec: {
+        backupRef: { name: "dump-1" },
+        targetClusterRef: { name: "orders" },
+      },
+    });
+    const other = `write-${randomUUID().slice(0, 8)}`;
+    await api.create({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: other },
+    });
+    for (const ns of [namespace, other]) {
+      expect(
+        await writer.apply({ intent: "Restore", apply: [restore(ns)] }),
+      ).toEqual({ ok: true, mode: "direct" });
+    }
+
+    const listed = await listObjects("LogicalRestoreRDBMS", namespace, kc);
+    expect(
+      listed.map((o) => [o.metadata.namespace, o.metadata.name, o.spec]),
+    ).toEqual([[namespace, name, restore(namespace).spec]]);
   });
 });

@@ -11,7 +11,7 @@ import type {
   Preview,
   WriteResult,
 } from "./types";
-import { firstExisting, getWriter } from "./writer";
+import { firstExisting, getWriter, listObjects } from "./writer";
 
 /** kubeObjectSchema accepts an object with apiVersion, kind, and metadata.name, and keeps every other field. */
 export const kubeObjectSchema: z.ZodType<KubeObject> = z.looseObject({
@@ -160,7 +160,10 @@ export function backupChangeSchema(cluster: {
 /**
  * runBackupChange is runChange with backupChangeSchema(cluster). A new
  * backup also fails with Stale, and writes nothing, when a backup of either
- * kind in the namespace has its name.
+ * kind in the namespace has its name. A delete fails with Stale while a
+ * logical restore that is not Completed or Failed reads the backup. When
+ * these checks cannot read the backups or the restores, it gives
+ * Unavailable and writes nothing.
  */
 export async function runBackupChange(
   cluster: { namespace: string; name: string },
@@ -169,25 +172,59 @@ export async function runBackupChange(
   const schema = backupChangeSchema(cluster);
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
-  const [backup] = parsed.data.apply;
-  if (backup !== undefined) {
-    try {
-      const taken = await firstExisting(
-        BACKUP_KINDS.map((kind) => ({
-          apiVersion: BACKUP_API_VERSION,
-          kind,
-          namespace: cluster.namespace,
-          name: backup.metadata.name,
-        })),
-      );
-      if (taken !== undefined) {
-        return { ok: false, errors: [existsError(taken)] };
-      }
-    } catch (error) {
-      return { ok: false, errors: [unavailable(error)] };
-    }
+  try {
+    const refusal = await backupRefusalOf(cluster.namespace, parsed.data);
+    if (refusal !== undefined) return { ok: false, errors: [refusal] };
+  } catch (error) {
+    return { ok: false, errors: [unavailable(error)] };
   }
   return runChange(parsed.data, schema);
+}
+
+const RESTORE_OF = {
+  LogicalBackupElasticsearch: "LogicalRestoreElasticsearch",
+  LogicalBackupRDBMS: "LogicalRestoreRDBMS",
+} as const;
+
+async function backupRefusalOf(
+  namespace: string,
+  change: Change,
+): Promise<ApiError | undefined> {
+  const [backup] = change.apply;
+  if (backup !== undefined) {
+    const taken = await firstExisting(
+      BACKUP_KINDS.map((kind) => ({
+        apiVersion: BACKUP_API_VERSION,
+        kind,
+        namespace,
+        name: backup.metadata.name,
+      })),
+    );
+    return taken === undefined ? undefined : existsError(taken);
+  }
+  const ref = change.delete![0];
+  const restores = await listObjects(
+    RESTORE_OF[ref.kind as keyof typeof RESTORE_OF],
+    namespace,
+  );
+  const reader = restores.find((r) => {
+    const { spec, status } = r as {
+      spec?: { backupRef?: { name?: string } };
+      status?: { phase?: string };
+    };
+    return (
+      spec?.backupRef?.name === ref.name &&
+      status?.phase !== "Completed" &&
+      status?.phase !== "Failed"
+    );
+  });
+  return reader === undefined
+    ? undefined
+    : {
+        code: "Stale",
+        message: `Restore ${reader.metadata.name} reads the backup ${ref.name}. Delete the backup after the restore ends.`,
+        ref,
+      };
 }
 
 function isClusterBackup(
