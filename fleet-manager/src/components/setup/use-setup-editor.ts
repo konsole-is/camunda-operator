@@ -25,7 +25,8 @@ export type SetupReview = { change: Change; kind: "save" | "delete" };
  * for a new object and until the list shows it. base is the copy that the
  * draft started from, so a save of a stale draft fails with Stale. The form
  * is locked while a change is under review and after an ok write: after a
- * save until the list shows the saved copy, in Git mode the pushed revision;
+ * save until the list shows the saved copy, in Git mode the pushed revision
+ * or another one that replaced it;
  * after a create until the page moves to hrefOf of the new name, once the
  * list shows it. An ok delete moves the page to listHref. onReset runs on
  * each reset of the draft, and generation changes with it.
@@ -64,7 +65,9 @@ export function useSetupEditor<T extends SetupObject, D>({
   const [draft, setDraftState] = useState<D>(() => draftOf(live));
   const [generation, setGeneration] = useState(0);
   const [reviewing, setReviewing] = useState<SetupReview>();
-  const [waiting, setWaiting] = useState<{ revision: string } | "save">();
+  const [waiting, setWaiting] = useState<
+    { revision: string; before?: string } | "save"
+  >();
   const [created, setCreated] = useState<string>();
   const [deleted, setDeleted] = useState(false);
 
@@ -78,9 +81,10 @@ export function useSetupEditor<T extends SetupObject, D>({
   };
   // The first list can miss the object that the page found by name.
   if (!isNew && live && !base) reset(live);
+  const liveRevision = live?.metadata.annotations?.[REVISION_ANNOTATION];
   if (
     typeof waiting === "object" &&
-    live?.metadata.annotations?.[REVISION_ANNOTATION] === waiting.revision
+    (liveRevision === waiting.revision || liveRevision !== waiting.before)
   )
     reset(live);
   if (
@@ -123,7 +127,8 @@ export function useSetupEditor<T extends SetupObject, D>({
           result.mode === "git"
             ? result.revisions[refKey({ kind: base?.kind ?? "", name })]
             : undefined;
-        setWaiting(revision ? { revision } : "save");
+        const before = base?.metadata.annotations?.[REVISION_ANNOTATION];
+        setWaiting(revision ? { revision, before } : "save");
       }
     },
   };

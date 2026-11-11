@@ -418,6 +418,21 @@ describe("EnvironmentEditor", () => {
     expect(displayName().value).toBe("Prod");
   });
 
+  it("unlocks the form when the list shows a revision that replaced the push", async () => {
+    const { rerender } = setup({ mode: "git", result: PUSHED });
+    await saveDisplayName("Prod", "Push to Git");
+    await waitFor(() => expect(displayName().matches(":disabled")).toBe(true));
+    const later = environmentFixtures();
+    later.environments[0].spec.displayName = "Later";
+    later.environments[0].metadata.resourceVersion = "14";
+    later.environments[0].metadata.annotations = {
+      "fleet.camunda.io/revision": "def",
+    };
+    rerender(later);
+    await waitFor(() => expect(displayName().matches(":disabled")).toBe(false));
+    expect(displayName().value).toBe("Later");
+  });
+
   it("loads the environment when it arrives after the first render", () => {
     const { rerender } = setup({
       sources: { ...environmentFixtures(), environments: [] },
