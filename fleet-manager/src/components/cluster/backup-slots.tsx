@@ -9,7 +9,7 @@ import {
 } from "@/lib/policy/backups";
 import { type BackupContext, clusterSuspended } from "./backup-actions";
 import { BackupHeaderActions, BackupRowActions } from "./backup-actions-view";
-import type { BackupRow } from "./backups";
+import type { BackupObject, BackupRow } from "./backups";
 import type { Change, WriteResult } from "@/lib/write/types";
 import { CHANGES_OFF, useClusterEdit } from "./edit/cluster-edit";
 import type { ClusterSlotContext, ClusterSlots } from "./slots";
@@ -49,26 +49,34 @@ const READ_KIND = {
   LogicalRestoreRDBMS: "LogicalBackupRDBMS",
 } as const;
 
-// holderOf gives the running field of BackupContext. runningBackup counts
-// only the backups that run, so it misses a backup that ended as
-// ResumeFailed.
+// holderOf gives the running field of BackupContext. A restore stays in
+// Pending while it suspends its cluster, so a Pending restore can hold the
+// cluster, and a Pending backup only waits.
 function holderOf(context: ClusterSlotContext): BackupContext["running"] {
   const { cluster, backups, restores } = context;
-  const backup = runningBackup(cluster, backups);
-  if (backup) return { what: "Backup", name: backup.name };
-  const [held] = clusterBackups(cluster, backups)
-    .filter(
+  const ofCluster = clusterBackups(cluster, backups);
+  const [active] = namesOf(
+    ofCluster.filter((b) => b.status?.phase === "Running"),
+  );
+  if (active !== undefined) return { what: "Backup", name: active };
+  const [held] = namesOf(
+    ofCluster.filter(
       (b) =>
         b.kind === "LogicalBackupElasticsearch" &&
         b.status?.terminalReason === "ResumeFailed",
-    )
-    .map((b) => b.metadata?.name ?? "")
-    .sort();
+    ),
+  );
   if (held !== undefined) {
     return { what: "Backup", name: held, resumeFailed: true };
   }
   const restore = runningRestore(cluster, restores);
-  return restore ? { what: "Restore", name: restore.name } : undefined;
+  if (restore) return { what: "Restore", name: restore.name };
+  const queued = runningBackup(cluster, backups);
+  return queued ? { what: "Backup", name: queued.name } : undefined;
+}
+
+function namesOf(objects: readonly BackupObject[]): string[] {
+  return objects.map((o) => o.metadata?.name ?? "").sort();
 }
 
 type Apply = (

@@ -15,11 +15,11 @@ export const DIRECT_NOTE =
 /**
  * BackupContext is what the backup actions of one cluster read. suspended
  * is clusterSuspended of the cluster. running is the operation that a new
- * backup of the cluster waits behind: the backup that runs, a Pending one
- * included, else an Elasticsearch backup that ended as ResumeFailed (with
- * resumeFailed set), which holds the cluster until it is deleted, else the
- * restore that runs. backupNames holds the name of every backup of the namespace, of both
- * kinds. readingRestores holds each logical restore of the namespace that
+ * backup of the cluster waits behind: the backup in phase Running, else an
+ * Elasticsearch backup that ended as ResumeFailed (with resumeFailed set),
+ * which holds the cluster until it is deleted, else the restore that runs,
+ * a Pending one included, else a Pending backup. backupNames holds the name
+ * of every backup of the namespace, of both kinds. readingRestores holds each logical restore of the namespace that
  * is not Completed or Failed, with the kind and the name of the backup that
  * it reads. changesOff is the reason that the page cannot write, and unset
  * when it can. now is an RFC 3339 time.
@@ -78,19 +78,28 @@ export function backupNameErrors(
 
 /**
  * clusterSuspended says whether a CamundaCluster is suspended: spec.suspend
- * is true, or an annotation key starts with SUSPENSION_HOLD_PREFIX.
+ * is true, an annotation key starts with SUSPENSION_HOLD_PREFIX, or Ready
+ * reports StorageAlreadyAttached or WaitingForHandover.
  */
 export function clusterSuspended(cluster: {
   spec?: { suspend?: boolean };
   metadata?: { annotations?: Record<string, string> };
+  status?: { conditions?: { type: string; reason?: string }[] };
 }): boolean {
+  const ready = cluster.status?.conditions?.find((c) => c.type === "Ready");
   return (
     cluster.spec?.suspend === true ||
     Object.keys(cluster.metadata?.annotations ?? {}).some((key) =>
       key.startsWith(SUSPENSION_HOLD_PREFIX),
-    )
+    ) ||
+    SUSPENDED_READY_REASONS.includes(ready?.reason ?? "")
   );
 }
+
+const SUSPENDED_READY_REASONS = [
+  "StorageAlreadyAttached",
+  "WaitingForHandover",
+];
 
 /**
  * BackUpNow is the state of the Back up now action. disabled is the reason

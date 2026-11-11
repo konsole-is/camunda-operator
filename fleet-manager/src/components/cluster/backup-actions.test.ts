@@ -106,6 +106,22 @@ describe("backup rules", () => {
     expect(clusterSuspended({})).toBe(false);
   });
 
+  it("a cluster is suspended, as CamundaCluster.Suspended of api/v1 says, while Ready reports StorageAlreadyAttached or WaitingForHandover", () => {
+    const ready = (type: string, reason: string) => ({
+      status: { conditions: [{ type, reason }] },
+    });
+    expect(clusterSuspended(ready("Ready", "StorageAlreadyAttached"))).toBe(
+      true,
+    );
+    expect(clusterSuspended(ready("Ready", "WaitingForHandover"))).toBe(true);
+    expect(clusterSuspended(ready("Ready", "VersionDowngradeRefused"))).toBe(
+      false,
+    );
+    expect(
+      clusterSuspended(ready("Progressing", "StorageAlreadyAttached")),
+    ).toBe(false);
+  });
+
   it("back up now is disabled without backup storage, with unknown storage, and on a suspended cluster", () => {
     expect(
       backUpNow(context({ storage: { kind: "none", schedules: [] } })),

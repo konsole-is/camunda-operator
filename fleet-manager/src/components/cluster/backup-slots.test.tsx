@@ -12,6 +12,7 @@ import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import { cluster, NOW, slotContext } from "../../../test/fakes/slot-context";
 import { fakeWriter } from "../../../test/fakes/writer";
+import { backUpNow } from "./backup-actions";
 import { backupContextOf, backupSlots } from "./backup-slots";
 import type { BackupObject, BackupRow, RestoreObject } from "./backups";
 import { CHANGES_OFF, ClusterEditProvider } from "./edit/cluster-edit";
@@ -98,13 +99,40 @@ describe("backupContextOf", () => {
       backupStorage: es,
       backups: [
         ...backups,
-        backup("LogicalBackupElasticsearch", "now-1", undefined),
+        backup("LogicalBackupElasticsearch", "now-1", "Running"),
       ],
-      restores: [restore("r1", "Restoring")],
+      restores: [restore("r1", "Pending")],
     });
     expect(backupContextOf(both).running).toEqual({
       what: "Backup",
       name: "now-1",
+    });
+  });
+
+  it("a restore that runs comes before a queued backup, so Back up now stays on while the restore suspends the cluster", () => {
+    const context = slotContext({
+      cluster: cluster({ suspend: true }),
+      backupStorage: es,
+      backups: [
+        backup("LogicalBackupElasticsearch", "queued-1", "Pending"),
+        backup("LogicalBackupElasticsearch", "queued-2", undefined),
+      ],
+      restores: [restore("r1", "RestoringSecondaryStorage")],
+    });
+    expect(backupContextOf(context).running).toEqual({
+      what: "Restore",
+      name: "r1",
+    });
+    expect(backUpNow(backupContextOf(context)).disabled).toBeUndefined();
+  });
+
+  it("a queued backup is the running operation when nothing else runs or holds the cluster", () => {
+    const context = slotContext({
+      backups: [backup("LogicalBackupElasticsearch", "queued-1", "Pending")],
+    });
+    expect(backupContextOf(context).running).toEqual({
+      what: "Backup",
+      name: "queued-1",
     });
   });
 });
@@ -159,6 +187,21 @@ describe("backupContextOf, the holders and readers", () => {
     expect(
       backupContextOf(slotContext({ backups: [held, running] })).running,
     ).toEqual({ what: "Backup", name: "now-1" });
+  });
+
+  it("a ResumeFailed holder comes before a queued backup, so the wait note names the holder", () => {
+    const held = {
+      ...backup("LogicalBackupElasticsearch", "held-1", "Failed"),
+      status: { phase: "Failed", terminalReason: "ResumeFailed" },
+    } as unknown as BackupObject;
+    const queued = backup(
+      "LogicalBackupElasticsearch",
+      "a-queued-1",
+      "Pending",
+    );
+    expect(
+      backupContextOf(slotContext({ backups: [held, queued] })).running,
+    ).toEqual({ what: "Backup", name: "held-1", resumeFailed: true });
   });
 
   it("a page without a write mode turns the changes off with the reason of the edit host", () => {
