@@ -8,6 +8,7 @@ import {
 } from "@/app/fleet/planes/new/actions";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
+import type { WriteResult } from "@/lib/write/types";
 import { fakeWriter } from "../../../../test/fakes/writer";
 import { type PlaneCreateData, PlaneCreateFlow } from "./plane-create-flow";
 
@@ -469,6 +470,37 @@ describe("PlaneCreateFlow", () => {
       "CamundaManagementClusterClaim",
     ]);
     expect(fakeWriter.applied[1].apply[0].metadata.namespace).toBe("team-new");
+    expect(
+      await screen.findByRole("heading", {
+        name: "Creating the management plane plane-a",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("keeps Create disabled while a create runs, also after Back and Next", async () => {
+    let finish: (result: WriteResult) => void = () => {};
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce((change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    });
+    show();
+    await toReview();
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    const previews = fakeWriter.previewed.length;
+    await userEvent.click(next());
+    await waitFor(() =>
+      expect(fakeWriter.previewed.length).toBeGreaterThan(previews),
+    );
+    expect(create().disabled).toBe(true);
+    await userEvent.click(create());
+    expect(fakeWriter.applied).toHaveLength(1);
+
+    finish({ ok: true, mode: "direct" });
     expect(
       await screen.findByRole("heading", {
         name: "Creating the management plane plane-a",

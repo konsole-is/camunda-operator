@@ -421,6 +421,17 @@ export function PlaneCreateFlow({
   const { toast, show, dismiss } = useWriteToast();
   const [written, setWritten] = useState<CamundaManagementClusterClaim>();
   const [keptNamespace, setKeptNamespace] = useState<string>();
+  // Back and Next remount the review step, so the lock of a running write
+  // lives here.
+  const [writing, setWriting] = useState(false);
+  const createOnce = async (change: Change): Promise<WriteResult> => {
+    setWriting(true);
+    try {
+      return await create(change);
+    } finally {
+      setWriting(false);
+    }
+  };
   const onWritten = (result: WriteResult) => {
     const name = flow.draft.name;
     show(result, `Created the management plane ${name}.`);
@@ -493,7 +504,13 @@ export function PlaneCreateFlow({
           secrets={existing === undefined ? [] : secrets}
           onSelectorErrors={setSelectorErrors}
           onSectionErrors={onSectionErrors}
-          review={{ mode, preview, create, onWritten, blocked: earlier }}
+          review={{
+            mode,
+            preview,
+            create: createOnce,
+            onWritten,
+            blocked: earlier || writing,
+          }}
         />
       </WizardStepper>
       {keptNamespace !== undefined && (
