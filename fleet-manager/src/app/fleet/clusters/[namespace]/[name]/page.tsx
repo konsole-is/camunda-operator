@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { ClusterView } from "@/components/cluster/cluster-view";
+import { writeMode } from "@/lib/write/writer";
+import { ClusterPage as ClusterClient } from "./cluster-page";
 import { loadClusterPage } from "./load";
 
 export default async function ClusterPage({
@@ -8,5 +9,12 @@ export default async function ClusterPage({
   const { namespace, name } = await params;
   const data = await loadClusterPage(namespace, name);
   if (!data) notFound();
-  return <ClusterView initial={data} now={new Date().toISOString()} />;
+  const mode = await writeMode().catch(() => undefined);
+  return (
+    <ClusterClient
+      initial={data}
+      now={new Date().toISOString()}
+      writeMode={mode}
+    />
+  );
 }

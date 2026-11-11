@@ -359,7 +359,6 @@ export function PlaneCreateFlow({
   const readErrors: ReadError[] = [
     ...(
       [
-        ["Environment", environments],
         ["CamundaCluster", clusters],
         ["CamundaPlatformConfig", platformConfigs],
         ["CamundaRelease", releases],
@@ -394,6 +393,7 @@ export function PlaneCreateFlow({
       clusters: managementClusters.items,
       claims: claims.items,
       namespaces: namespaces.items,
+      environments: environments.items,
     },
     images: initial.images,
   };

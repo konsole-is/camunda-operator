@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ActionSlot } from "./action-slot";
-import { ACTION_SLOTS } from "./slots";
+import { ACTION_SLOTS, type ClusterSlotContext } from "./slots";
 
 afterEach(cleanup);
 
@@ -37,5 +37,31 @@ describe("ActionSlot", () => {
       />,
     );
     expect(container.innerHTML).toBe("");
+  });
+
+  it("calls a render function with the slot context", () => {
+    const context = { now: "2026-11-10T12:00:00Z" } as ClusterSlotContext;
+    render(
+      <ActionSlot
+        name="cluster.header.actions"
+        managed
+        context={context}
+        slots={{ "cluster.header.actions": (c) => <p>Now {c.now}</p> }}
+      />,
+    );
+    expect(screen.getByText("Now 2026-11-10T12:00:00Z")).toBeTruthy();
+  });
+
+  it("renders nothing for a render function without a context", () => {
+    const { container } = render(
+      <ActionSlot
+        name="cluster.header.actions"
+        managed
+        slots={{ "cluster.header.actions": () => <p>x</p> }}
+      />,
+    );
+    expect(
+      container.querySelector("[data-action-slot]")?.childNodes.length,
+    ).toBe(0);
   });
 });

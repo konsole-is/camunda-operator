@@ -94,6 +94,7 @@ nav:
   - Fleet manager:
       - Install the fleet manager: fleet-manager/install.md
       - Fleet manager settings: fleet-manager/settings.md
+      - The fleet view: fleet-manager/fleet-view.md
       - Management planes: fleet-manager/management-planes.md
   - Guides:
       - Presets: guides/presets.md

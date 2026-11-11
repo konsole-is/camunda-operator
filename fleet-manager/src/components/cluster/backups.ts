@@ -136,6 +136,19 @@ export function backupRowsOf(
 }
 
 /**
+ * newestBackupRowOf returns the first row of backupRowsOf, or undefined
+ * when cluster has no backup.
+ */
+export function newestBackupRowOf(
+  cluster: ClusterLike,
+  backups: readonly BackupObject[],
+  now: string,
+): BackupRow | undefined {
+  const newest = newestFirst(clusterBackups(cluster, backups))[0];
+  return newest ? backupRowsOf(cluster, [newest], now)[0] : undefined;
+}
+
+/**
  * restoreRowsOf returns the rows of the restores of cluster: every running
  * restore, then the RECENT_RESTORES newest finished ones. Each group is
  * newest first.

@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { lockLabel } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
   type ClaimRef,
@@ -44,13 +45,16 @@ export function ClaimTab({
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel label="Basics">
           <Terms>
-            <Term label="Name" note="Set at creation">
+            <Term label="Name" note={lockLabel({ reason: "atCreation" })}>
               {view.name}
             </Term>
-            <Term label="Namespace" note="Set at creation">
+            <Term label="Namespace" note={lockLabel({ reason: "atCreation" })}>
               {view.namespace}
             </Term>
-            <Term label="Environment" note="Set at creation">
+            <Term
+              label="Environment"
+              note={lockLabel({ reason: "atCreation" })}
+            >
               {view.environment ?? (
                 <span className="text-muted">No environment</span>
               )}
@@ -195,7 +199,9 @@ function SectionPanel({ section }: { section: ClaimSection }) {
     <Panel label={section.sectionLabel} name={name}>
       <p className="text-sm">
         <span className="font-medium">{section.optionLabel}</span>
-        <span className={NOTE}>Chosen at creation</span>
+        <span className={NOTE}>
+          {lockLabel({ reason: "chosenAtCreation" })}
+        </span>
       </p>
       {section.parameters.length === 0 ? (
         <p className="text-sm text-muted">No parameters.</p>

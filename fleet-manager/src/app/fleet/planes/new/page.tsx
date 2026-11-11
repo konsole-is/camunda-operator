@@ -70,7 +70,12 @@ export default async function NewPlanePage() {
           authConfigs,
           databaseServerPresets,
           databaseConfigs,
-          planes: { clusters: managementClusters, claims, namespaces },
+          planes: {
+            clusters: managementClusters,
+            claims,
+            namespaces,
+            environments,
+          },
           images,
         }}
         mode={mode}
