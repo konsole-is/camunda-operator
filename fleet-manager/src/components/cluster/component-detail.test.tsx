@@ -13,6 +13,8 @@ const live = vi.hoisted(() => ({
   usage: undefined as unknown,
   calls: [] as { kind: string; opts: unknown }[],
   usageCalls: [] as string[][],
+  metrics: undefined as unknown,
+  metricsCalls: [] as unknown[][],
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, opts: unknown, initial: unknown[]) => {
@@ -25,6 +27,10 @@ vi.mock("@/lib/observe/use-observe", () => ({
     live.usageCalls.push(args);
     return live.usage;
   },
+  useMetrics: (...args: unknown[]) => {
+    live.metricsCalls.push(args);
+    return live.metrics;
+  },
 }));
 
 beforeEach(() => {
@@ -32,6 +38,8 @@ beforeEach(() => {
   live.usage = undefined;
   live.calls = [];
   live.usageCalls = [];
+  live.metrics = undefined;
+  live.metricsCalls = [];
 });
 afterEach(cleanup);
 
@@ -48,7 +56,12 @@ function pod(name: string, spec: { nodeName?: string } = {}) {
   };
 }
 
-const keycloak = (props: { children?: React.ReactNode } = {}) => (
+const keycloak = (
+  props: {
+    children?: React.ReactNode;
+    metrics?: { cluster: string; component: "zeebe" };
+  } = {},
+) => (
   <ComponentDetail
     title="Keycloak"
     namespace="mgmt"
@@ -91,6 +104,27 @@ describe("ComponentDetail", () => {
     expect(screen.queryByText("Plane settings")).toBeNull();
     await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
     expect(screen.getByText("Plane settings")).toBeTruthy();
+  });
+
+  it("asks the charts of its metrics ref on the Metrics tab", async () => {
+    live.pods = [pod("plane-a-keycloak-0")];
+    render(keycloak({ metrics: { cluster: "orders", component: "zeebe" } }));
+    await userEvent.click(screen.getByRole("tab", { name: "Metrics" }));
+    expect(live.metricsCalls).toContainEqual([
+      "mgmt",
+      { cluster: "orders", component: "zeebe" },
+      "1h",
+    ]);
+    expect(screen.getByRole("region", { name: "Live usage" })).toBeTruthy();
+  });
+
+  it("asks no charts without a metrics ref and still shows the live rows", async () => {
+    live.pods = [pod("plane-a-keycloak-0")];
+    render(keycloak());
+    await userEvent.click(screen.getByRole("tab", { name: "Metrics" }));
+    expect(live.metricsCalls.every(([, ref]) => ref === undefined)).toBe(true);
+    expect(screen.getByRole("region", { name: "Live usage" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "History" })).toBeNull();
   });
 
   it("shows the children on the Overview", () => {
@@ -148,6 +182,28 @@ describe("ComponentDetailView", () => {
     ).toBe("-1");
   });
 
-  it("has the tabs Overview and Settings", () =>
-    expect(DETAIL_TABS.map((t) => t.label)).toEqual(["Overview", "Settings"]));
+  it("shows the live usage of its pods on the Metrics tab without a metrics slot", async () => {
+    render(view({}));
+    await userEvent.click(screen.getByRole("tab", { name: "Metrics" }));
+    expect(
+      within(screen.getByRole("region", { name: "Live usage" })).getByRole(
+        "rowheader",
+        { name: "orders-gateway-0" },
+      ),
+    ).toBeTruthy();
+  });
+
+  it("shows the metrics slot on the Metrics tab", async () => {
+    render(view({ metricsTab: <p>Charts here</p> }));
+    expect(screen.queryByText("Charts here")).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Metrics" }));
+    expect(screen.getByText("Charts here")).toBeTruthy();
+  });
+
+  it("has the tabs Overview, Metrics, and Settings", () =>
+    expect(DETAIL_TABS.map((t) => t.label)).toEqual([
+      "Overview",
+      "Metrics",
+      "Settings",
+    ]));
 });

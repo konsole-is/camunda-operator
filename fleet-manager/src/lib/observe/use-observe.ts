@@ -1,9 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { PartitionHealth, PodUsage, Unavailable } from "./types";
+import type {
+  MetricsAnswer,
+  MetricsRange,
+  MetricsRef,
+  PartitionHealth,
+  PodUsage,
+  Unavailable,
+} from "./types";
 
 const REFETCH_MS = 15_000;
+const METRICS_REFETCH_MS = 30_000;
 
 /**
  * usePodUsage polls /api/usage every 15 seconds for the usage of the pods in
@@ -37,6 +45,45 @@ export function usePartitions(
     `/api/partitions?${new URLSearchParams({ namespace, name })}`,
     "partitions",
   );
+}
+
+/**
+ * useMetrics polls /api/metrics every 30 seconds for the charts of ref in
+ * namespace over range. It is undefined until the first answer and while
+ * ref is undefined, when it asks nothing. It is "failed" when the route
+ * answers other than 200 or the fetch fails. It needs a
+ * QueryClientProvider above it.
+ */
+export function useMetrics(
+  namespace: string,
+  ref: MetricsRef | undefined,
+  range: MetricsRange,
+): MetricsAnswer | "failed" | undefined {
+  const params = new URLSearchParams({ namespace });
+  if (ref && "request" in ref) {
+    params.set("request", ref.request);
+  } else if (ref) {
+    params.set("cluster", ref.cluster);
+    params.set("component", ref.component);
+  }
+  params.set("range", range);
+  const url = `/api/metrics?${params}`;
+  const { data } = useQuery({
+    queryKey: ["metrics", url],
+    queryFn: async (): Promise<MetricsAnswer | "failed"> => {
+      try {
+        const response = await fetch(url, { cache: "no-store" });
+        if (response.status !== 200) return "failed";
+        const body = (await response.json()) as { metrics?: MetricsAnswer };
+        return body.metrics ?? "failed";
+      } catch {
+        return "failed";
+      }
+    },
+    enabled: ref !== undefined,
+    refetchInterval: METRICS_REFETCH_MS,
+  });
+  return data;
 }
 
 function usePolled<T>(
