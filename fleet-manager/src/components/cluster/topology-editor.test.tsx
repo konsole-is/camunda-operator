@@ -199,6 +199,17 @@ describe("TopologyEditor", () => {
     ).toBe(true);
   });
 
+  it("gives the focus back to Change topology when it closes", async () => {
+    editor();
+    open();
+    close();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Change topology" }),
+      ),
+    );
+  });
+
   it("says when the lines include other pending changes", () => {
     const note =
       "These lines include the other pending changes of this cluster.";

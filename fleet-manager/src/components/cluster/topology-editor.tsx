@@ -10,6 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { lockLabel, type FieldLock } from "@/lib/fields";
 import { useClusterEdit } from "./edit/cluster-edit";
@@ -44,9 +45,11 @@ export function TopologyEditor({ context }: { context: ClusterSlotContext }) {
   if (!edit.session) return null;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        Change topology
-      </Button>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          Change topology
+        </Button>
+      </DialogTrigger>
       <DialogContent
         showCloseButton={false}
         className="max-h-[85vh] overflow-y-auto sm:max-w-3xl"
