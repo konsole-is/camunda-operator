@@ -1,7 +1,7 @@
 "use client";
 
 import type { V1Namespace } from "@kubernetes/client-node";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CamundaCluster } from "@/generated/crds/camundacluster";
 import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { CamundaPlatformConfig } from "@/generated/crds/camundaplatformconfig";
@@ -292,12 +292,8 @@ export function PlaneStepBody({
  * PlaneCreateFlow is the plane create wizard. It follows each list of
  * initial live and checks each step against the newest data. The error of
  * each failed watch shows above the steps, and the lists then keep their
- * last items. Create of the review writes through create in mode and shows
- * the result as a toast. Create stays disabled while an earlier step has
- * errors. After a write, the flow shows the progress of the plane. A
- * refused write keeps the review. When the refused write created its new
- * namespace, the draft takes that namespace as an existing one, so the
- * next Create writes only the claim.
+ * last items. When a refused write created the new namespace, create must
+ * name it in createdNamespace.
  */
 export function PlaneCreateFlow({
   initial,
@@ -424,6 +420,12 @@ export function PlaneCreateFlow({
   // Back and Next remount the review step, so the lock of a running write
   // lives here.
   const [writing, setWriting] = useState(false);
+  // onWritten runs in the render of the click, after the admin could have
+  // picked another namespace.
+  const latest = useRef(flow.draft);
+  useEffect(() => {
+    latest.current = flow.draft;
+  });
   const createOnce = async (change: Change): Promise<WriteResult> => {
     setWriting(true);
     try {
@@ -444,7 +446,12 @@ export function PlaneCreateFlow({
       );
       return;
     }
-    if (result.createdNamespace !== undefined) {
+    const now = latest.current.namespace;
+    if (
+      result.createdNamespace !== undefined &&
+      now?.kind === "new" &&
+      now.name === result.createdNamespace
+    ) {
       flow.set(["namespace"], {
         kind: "existing",
         name: result.createdNamespace,
@@ -513,7 +520,7 @@ export function PlaneCreateFlow({
           }}
         />
       </WizardStepper>
-      {keptNamespace !== undefined && (
+      {keptNamespace !== undefined && existing === keptNamespace && (
         <p
           role="note"
           className="rounded-md border border-warn/40 bg-warn/10 p-3 text-sm text-text"

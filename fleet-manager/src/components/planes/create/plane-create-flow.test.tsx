@@ -507,4 +507,88 @@ describe("PlaneCreateFlow", () => {
       }),
     ).toBeTruthy();
   });
+
+  async function refusedCreateInNewNamespace() {
+    await fillBasics();
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Create a namespace" }),
+    );
+    await userEvent.type(screen.getAllByLabelText("Name")[1], "team-new");
+    await userEvent.click(next());
+    await userEvent.click(next());
+    await userEvent.type(screen.getByLabelText("Username"), "admin");
+    await userEvent.click(next());
+    await userEvent.click(next());
+    await waitFor(() => expect(create().disabled).toBe(false));
+  }
+
+  const refused = {
+    ok: false as const,
+    errors: [{ code: "Invalid" as const, message: "The claim is invalid." }],
+    createdNamespace: "team-new",
+  };
+
+  async function backToBasics() {
+    for (let i = 0; i < 4; i++) {
+      await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    }
+  }
+
+  it("drops the note about the kept namespace once the admin picks another namespace", async () => {
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce(async (change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      watch.added = { Namespace: [namespace("team-new", "production")] };
+      return refused;
+    });
+    show();
+    await refusedCreateInNewNamespace();
+    await userEvent.click(create());
+    expect(await screen.findByRole("note", { name: "" })).toBeTruthy();
+
+    await backToBasics();
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Namespace" }),
+      "platform",
+    );
+    expect(
+      screen.queryByText(/The write created the namespace team-new/),
+    ).toBeNull();
+  });
+
+  it("keeps a namespace that the admin changed while the refused write ran", async () => {
+    let finish: (result: WriteResult) => void = () => {};
+    vi.spyOn(fakeWriter, "apply").mockImplementationOnce((change) => {
+      fakeWriter.applied.push(structuredClone(change));
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    });
+    show();
+    await refusedCreateInNewNamespace();
+    await userEvent.click(create());
+
+    await backToBasics();
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Use an existing namespace" }),
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Namespace" }),
+      "platform",
+    );
+    watch.added = { Namespace: [namespace("team-new", "production")] };
+    finish(refused);
+
+    expect(await screen.findByText("The claim is invalid.")).toBeTruthy();
+    expect(
+      screen.queryByText(/The write created the namespace team-new/),
+    ).toBeNull();
+
+    for (let i = 0; i < 4; i++) await userEvent.click(next());
+    await waitFor(() => expect(create().disabled).toBe(false));
+    await userEvent.click(create());
+    expect(fakeWriter.applied).toHaveLength(2);
+    expect(
+      fakeWriter.applied[1].apply.map((o) => o.metadata.namespace),
+    ).toEqual(["platform"]);
+  });
 });
