@@ -19,7 +19,7 @@ import {
   resolve,
   withMissingInputs,
 } from "@/lib/policy";
-import type { ValidationError } from "@/lib/schema";
+import { type ValidationError, validate } from "@/lib/schema";
 import { listOf } from "@/lib/text";
 import { runningOf } from "./components";
 import type { PlaneContext, PlaneDraft } from "./draft";
@@ -196,24 +196,26 @@ export function runningSelection(
 /**
  * databaseConfigErrors returns the errors of an existing-database-configs
  * selection: one for each running app without a DatabaseConfig, and one
- * for each DatabaseConfig that two running apps share. selection holds the
- * names that the claim gets, policy values included.
+ * for each DatabaseConfig that two apps share. selection holds the names
+ * of the request, policy values included.
  */
 export function databaseConfigErrors(
   selection: PluginSelection | undefined,
   running: Running,
 ): string[] {
   if (selection?.registration !== EXISTING_DATABASE_CONFIGS) return [];
-  const parameters = runningSelection(selection, running).parameters ?? {};
+  const parameters = selection.parameters ?? {};
   const apps = new Map<string, string[]>();
   const missing: string[] = [];
   for (const app of DATABASE_APPS) {
-    if (!runs(app, running)) continue;
     const name = parameters[app];
     if (typeof name !== "string" || name === "") {
-      missing.push(`Pick a DatabaseConfig for ${VERSION_LABEL[app]}.`);
+      if (runs(app, running)) {
+        missing.push(`Pick a DatabaseConfig for ${VERSION_LABEL[app]}.`);
+      }
       continue;
     }
+    // The handler refuses two equal names also for an app that does not run.
     apps.set(name, [...(apps.get(name) ?? []), VERSION_LABEL[app]]);
   }
   return [
@@ -301,15 +303,26 @@ function valueErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
           option.choices?.parameter === rule.name
             ? option.choices.items.map((i) => i.name)
             : rule.allowed?.map((a) => a.name);
-        if (!names) return [];
-        const picked =
-          Array.isArray(value) && !rule.allowedLists ? value : [value];
-        return picked
+        const fix = [`Fix the ${rule.label} of ${option.label}.`];
+        if (!names) {
+          return rule.schema && !validate(rule.schema, value).ok ? fix : [];
+        }
+        const list = Array.isArray(value) && !rule.allowedLists;
+        const picked = list ? value : [value];
+        const gone = picked
           .filter((v) => !names.includes(v as string))
           .map(
             (v) =>
               `${String(v)} is not available for ${rule.label} of ${option.label}. Choose another.`,
           );
+        if (gone.length > 0 || !list) return gone;
+        // The schema describes the values of the choices, not their names,
+        // so only its count applies to a list of names.
+        const { minItems, maxItems } = rule.schema ?? {};
+        return (typeof minItems === "number" && value.length < minItems) ||
+          (typeof maxItems === "number" && value.length > maxItems)
+          ? fix
+          : [];
       });
     });
   });
@@ -425,7 +438,8 @@ export function storageErrors(
   }
   errors.push(
     ...databaseConfigErrors(
-      database && effectiveSelection(database, draft, ctx),
+      database &&
+        effectiveSelection(runningSelection(database, running), draft, ctx),
       running,
     ),
   );

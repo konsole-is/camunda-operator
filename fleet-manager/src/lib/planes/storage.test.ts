@@ -142,13 +142,15 @@ describe("databaseConfigErrors", () => {
     ]);
   });
 
-  it("ignores the name of an app that does not run", () => {
+  it("refuses an equal name of an app that does not run, as the request holds it", () => {
     expect(
       databaseConfigErrors(
         configs({ keycloak: "db", identity: "db", webModeler: "modeler" }),
         { ...all, keycloak: false },
       ),
-    ).toEqual([]);
+    ).toEqual([
+      "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use db.",
+    ]);
   });
 
   it("checks no other registration", () => {
@@ -320,6 +322,59 @@ describe("storageErrors", () => {
       "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use db.",
       "A contract ops exists already. Enter another name.",
     ]);
+  });
+
+  describe("and an app that does not run", () => {
+    const existing = {
+      metadata: { name: "existing-database-configs" },
+      spec: {
+        sections: ["management-database"],
+        mode: "Optional",
+        label: "Existing databases",
+        deletionPolicies: ["Delete"],
+        serviceAccount: { name: "x", namespace: "plugins" },
+      },
+    } as PluginRegistration;
+    const environment = (keycloak: Record<string, unknown>) =>
+      ({
+        metadata: { name: "production" },
+        spec: {
+          parameters: {
+            "existing-database-configs": {
+              keycloak,
+              identity: { claimEditable: true },
+            },
+          },
+        },
+      }) as unknown as Environment;
+    const errorsOf = (keycloak: Record<string, unknown>, picked: object) =>
+      storageErrors(
+        draft({
+          mode: "oidc",
+          storage: { "management-database": [configs({ ...picked })] },
+        }),
+        {
+          ...ctx,
+          environments: [environment(keycloak)],
+          registrations: [gateway, existing],
+        },
+        [],
+        {},
+      );
+
+    it("ignores the picked name of that app, which the claim leaves out", () => {
+      expect(
+        errorsOf({ claimEditable: true }, { keycloak: "db", identity: "db" }),
+      ).toEqual([]);
+    });
+
+    it("refuses a name that the policy gives that app and a running app picks", () => {
+      expect(
+        errorsOf({ claimEditable: true, value: "db" }, { identity: "db" }),
+      ).toEqual([
+        "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use db.",
+      ]);
+    });
   });
 
   it("checks the DatabaseConfig names that the policy gives, not only the picked ones", () => {
@@ -585,6 +640,17 @@ describe("storageErrors and a live choice that is gone", () => {
         "New PostgreSQL server",
         {
           preset: { type: "string", title: "Preset" },
+          version: {
+            type: "string",
+            title: "PostgreSQL version",
+            pattern: "^\\d+$",
+          },
+          zones: {
+            type: "array",
+            title: "Zones",
+            maxItems: 1,
+            items: { type: "string" },
+          },
         },
         ["preset"],
       ),
@@ -707,6 +773,61 @@ describe("storageErrors and a live choice that is gone", () => {
         objects,
       ),
     ).toEqual(["Choose a Preset for New PostgreSQL server."]);
+  });
+
+  it("refuses a policy list of names that has more items than its schema allows", () => {
+    const d = draft({
+      storage: {
+        "management-database": [
+          { ...database, parameters: { preset: "large" } },
+        ],
+      },
+    });
+    const objects = { DatabaseServerPreset: [preset("large")] };
+    const zone = (name: string) => ({ name, label: name, value: name });
+    const withZones = (value: string[]) =>
+      live({
+        parameters: {
+          "management-database-server": {
+            preset: editable,
+            zones: {
+              claimEditable: true,
+              allowed: [zone("a"), zone("b")],
+              value,
+            },
+          },
+        },
+        presets: { databaseServer: ["large"] },
+      });
+    expect(errorsOf(d, withZones(["a"]), objects)).toEqual([]);
+    expect(errorsOf(d, withZones(["a", "b"]), objects)).toEqual([
+      "Fix the Zones of New PostgreSQL server.",
+    ]);
+  });
+
+  it("refuses a policy value that its schema refuses", () => {
+    const d = draft({
+      storage: {
+        "management-database": [
+          { ...database, parameters: { preset: "large" } },
+        ],
+      },
+    });
+    const objects = { DatabaseServerPreset: [preset("large")] };
+    const withVersion = (value: string) =>
+      live({
+        parameters: {
+          "management-database-server": {
+            preset: editable,
+            version: { claimEditable: true, value },
+          },
+        },
+        presets: { databaseServer: ["large"] },
+      });
+    expect(errorsOf(d, withVersion("17"), objects)).toEqual([]);
+    expect(errorsOf(d, withVersion("not-a-version"), objects)).toEqual([
+      "Fix the PostgreSQL version of New PostgreSQL server.",
+    ]);
   });
 });
 
