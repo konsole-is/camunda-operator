@@ -14,7 +14,7 @@ const header = (page: Page) =>
     .locator("header")
     .filter({ has: page.getByRole("heading", { level: 1 }) });
 
-test("the fleet page shows the shell", async ({ page }) => {
+test("the fleet page lists the cluster of the scenario", async ({ page }) => {
   await page.goto("/fleet");
   const nav = page.getByRole("navigation", { name: "Main" });
   await expect(nav.getByRole("link", { name: "Fleet" })).toBeVisible();
@@ -22,6 +22,14 @@ test("the fleet page shows the shell", async ({ page }) => {
   await expect(
     page.getByRole("heading", { level: 1, name: "Fleet" }),
   ).toBeVisible();
+  // The scenario has no Environment, so the page shows one list without tabs.
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  const row = page.getByRole("row", { name: /camundacluster-sample/ });
+  await expect(
+    row.getByRole("link", { name: "camundacluster-sample" }),
+  ).toHaveAttribute("href", CLUSTER);
+  await expect(row.getByText("Not managed")).toBeVisible();
+  await expect(row.getByText("Ready", { exact: true })).toBeVisible();
   expect(await blockingViolations(page)).toEqual([]);
   await shot(page, "fleet", { dir: PAGES_DIR });
 });
