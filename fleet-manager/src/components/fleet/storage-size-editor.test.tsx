@@ -60,7 +60,11 @@ describe("StorageSizeEditor", () => {
 
   it("compares sizes in different units", async () => {
     render(
-      <StorageSizeEditor label="storageSize" defaultValue="1Ti" current="2Ti" />,
+      <StorageSizeEditor
+        label="storageSize"
+        defaultValue="1Ti"
+        current="2Ti"
+      />,
     );
     expect(screen.getByText(SHRINK)).toBeDefined();
     await userEvent.selectOptions(

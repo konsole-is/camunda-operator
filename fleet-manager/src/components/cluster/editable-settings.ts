@@ -1,5 +1,6 @@
 import { fieldSchemas } from "@/generated/fieldschema";
 import {
+  type ClusterField,
   COMPONENTS,
   componentFieldPaths,
   type FieldLock,
@@ -222,57 +223,56 @@ export function settingsOf(input: {
   }));
   const used = new Set<string>();
 
-  const settings = secretRefPaths(root, componentFieldPaths(group.component)).map(
-    ({ path, secretRef }): Setting => {
-      const names = path.split(".");
-      const mine = fields.filter(
-        ({ names: f }) => startsWith(f, names) || startsWith(names, f),
-      );
-      for (const { field } of mine) used.add(field.key);
-      const holder = mine.find(({ names: f }) => f.length < names.length);
-      const state =
-        mine.find(({ field }) => field.state.kind === "claim")?.field.state ??
-        mine[0]?.field.state;
-      const lock = mine.find(({ field }) => field.lock)?.field.lock;
-      const setting: Setting = {
-        key: `${group.component}:${path}`,
-        label: names.slice(prefix).join("."),
-        value: valueAt(spec, steps(names)),
-        ...(state && { state }),
-        claimSet: mine.some(({ field }) => field.state.kind === "claim"),
-        resetLabel: "Reset to preset",
+  const settings = secretRefPaths(
+    root,
+    componentFieldPaths(group.component),
+  ).map(({ path, secretRef }): Setting => {
+    const names = path.split(".");
+    const mine = fields.filter(
+      ({ names: f }) => startsWith(f, names) || startsWith(names, f),
+    );
+    for (const { field } of mine) used.add(field.key);
+    const holder = mine.find(({ names: f }) => f.length < names.length);
+    const state =
+      mine.find(({ field }) => field.state.kind === "claim")?.field.state ??
+      mine[0]?.field.state;
+    const lock = mine.find(({ field }) => field.lock)?.field.lock;
+    const setting: Setting = {
+      key: `${group.component}:${path}`,
+      label: names.slice(prefix).join("."),
+      value: valueAt(spec, steps(names)),
+      ...(state && { state }),
+      claimSet: mine.some(({ field }) => field.state.kind === "claim"),
+      resetLabel: "Reset to preset",
+    };
+    if (lock) return { ...setting, lock };
+    const editor = secretRef
+      ? ({ kind: "secretRef" } as const)
+      : editorOf(path, fieldSchemaOf(root, path));
+    if (!editor) return setting;
+    if (holder?.field.claimSteps)
+      return {
+        ...setting,
+        editor,
+        steps: holder.field.claimSteps,
+        holder: {
+          value: holder.field.value,
+          rest: steps(names.slice(holder.names.length)),
+        },
       };
-      if (lock) return { ...setting, lock };
-      const editor = secretRef
-        ? ({ kind: "secretRef" } as const)
-        : editorOf(path, fieldSchemaOf(root, path));
-      if (!editor) return setting;
-      if (holder?.field.claimSteps)
-        return {
-          ...setting,
-          editor,
-          steps: holder.field.claimSteps,
-          holder: {
-            value: holder.field.value,
-            rest: steps(names.slice(holder.names.length)),
-          },
-        };
-      return { ...setting, editor, steps: [...base, ...steps(names)] };
-    },
-  );
+    return { ...setting, editor, steps: [...base, ...steps(names)] };
+  });
   const rest = group.fields
     .filter((field) => !used.has(field.key))
-    .map(
-      (field): Setting => ({
-        key: field.key,
-        label: field.label,
-        value: field.value,
-        state: field.state,
-        ...(field.lock && { lock: field.lock }),
-        claimSet: field.state.kind === "claim",
-        resetLabel: "Reset to preset",
-      }),
-    );
+    .map((field): Setting => ({
+      key: field.key,
+      label: field.label,
+      value: field.value,
+      state: field.state,
+      ...(field.lock && { lock: field.lock }),
+      claimSet: field.state.kind === "claim",
+      resetLabel: "Reset to preset",
+    }));
   return [...settings, ...rest];
 }
 
@@ -295,6 +295,70 @@ export function settingChange(
       ? without(holder.value ?? {}, holder.rest)
       : withValue(holder.value ?? {}, holder.rest, claim);
   return { steps: at, value: isEmpty(value) ? undefined : value };
+}
+
+/**
+ * selectionSettingsOf returns the settings of the parameters of one
+ * selection. fields are the parameterFields of that selection and schema is
+ * spec.parameters of its registration. A locked parameter is read only. An
+ * object parameter with properties gives one setting for each property,
+ * and a change of one writes the whole parameter. Any other parameter is
+ * one setting. choices make a select of a string parameter. A parameter
+ * resets to the environment.
+ */
+export function selectionSettingsOf(
+  fields: readonly ClusterField[],
+  schema: OpenAPISchema | undefined,
+  choices?: Partial<Record<string, readonly string[]>>,
+): Setting[] {
+  const properties = propertiesOf(schema);
+  return fields.flatMap((field): Setting[] => {
+    const name = field.label;
+    const base: Setting = {
+      key: field.key,
+      label: name,
+      value: field.value,
+      state: field.state,
+      claimSet: field.state.kind === "claim",
+      resetLabel: "Reset to environment",
+    };
+    if (field.lock || !field.claimSteps)
+      return [{ ...base, ...(field.lock && { lock: field.lock }) }];
+    const property = Object.hasOwn(properties, name)
+      ? properties[name]
+      : undefined;
+    const inner = propertiesOf(property);
+    if (Object.keys(inner).length > 0)
+      return Object.entries(inner).map(([part, partSchema]) => {
+        const editor = editorOf(part, fieldSchemaFromOpenAPI(partSchema));
+        return {
+          ...base,
+          key: `${field.key}.${part}`,
+          label: `${name}.${part}`,
+          value: valueAt(field.value, [{ field: part }]),
+          ...(editor && {
+            editor,
+            steps: field.claimSteps,
+            holder: { value: field.value, rest: [{ field: part }] },
+          }),
+        };
+      });
+    const own = fieldSchemaFromOpenAPI(property);
+    const options = Object.hasOwn(choices ?? {}, name)
+      ? choices?.[name]
+      : undefined;
+    const editor =
+      options && (own === undefined || own.type === "string")
+        ? ({ kind: "select", options } as const)
+        : editorOf(name, own);
+    return [{ ...base, ...(editor && { editor, steps: field.claimSteps }) }];
+  });
+}
+
+function propertiesOf(schema: unknown): Record<string, unknown> {
+  return isObject(schema) && isObject(schema.properties)
+    ? schema.properties
+    : {};
 }
 
 // secretRefPaths folds the name and key leaves of each Secret reference of

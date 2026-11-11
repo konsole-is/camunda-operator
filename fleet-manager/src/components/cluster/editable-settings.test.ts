@@ -134,10 +134,20 @@ describe("the claim value of each editor", () => {
     valueFrom: { secretKeyRef: { name: "orders-db", key: "password" } },
   };
   it.each<[string, SettingEditor, unknown, unknown]>([
-    ["text", { kind: "text" }, "https://orders.example.com", "https://orders.example.com"],
+    [
+      "text",
+      { kind: "text" },
+      "https://orders.example.com",
+      "https://orders.example.com",
+    ],
     ["number", { kind: "number", integer: true }, 3, 3],
     ["toggle", { kind: "toggle" }, false, false],
-    ["select", { kind: "select", options: ["Standalone", "Embedded"] }, "Embedded", "Embedded"],
+    [
+      "select",
+      { kind: "select", options: ["Standalone", "Embedded"] },
+      "Embedded",
+      "Embedded",
+    ],
     [
       "resources",
       { kind: "resources" },
@@ -170,11 +180,14 @@ describe("the claim value of each editor", () => {
       { name: "orders-oidc", key: "secret" },
       { name: "orders-oidc", key: "secret" },
     ],
-  ])("%s turns its input into the claim value and back", (_, editor, input, claim) => {
-    expect(claimValueOf(editor, input)).toEqual(claim);
-    if (editor.kind !== "resources")
-      expect(editorValueOf(editor, claim)).toEqual(input);
-  });
+  ])(
+    "%s turns its input into the claim value and back",
+    (_, editor, input, claim) => {
+      expect(claimValueOf(editor, input)).toEqual(claim);
+      if (editor.kind !== "resources")
+        expect(editorValueOf(editor, claim)).toEqual(input);
+    },
+  );
 
   it.each<[string, SettingEditor, unknown]>([
     ["text", { kind: "text" }, ""],
@@ -227,12 +240,21 @@ function setting(settings: Setting[], label: string): Setting {
 
 describe("settingsOf", () => {
   it("a component offers a field that no layer sets", () => {
-    const replicas = setting(processSettings("tasklist", "tasklist", {}), "replicas");
-    expect(replicas.editor).toEqual({ kind: "number", integer: true, minimum: 0 });
+    const replicas = setting(
+      processSettings("tasklist", "tasklist", {}),
+      "replicas",
+    );
+    expect(replicas.editor).toEqual({
+      kind: "number",
+      integer: true,
+      minimum: 0,
+    });
     expect(replicas.value).toBeUndefined();
     expect(replicas.state).toBeUndefined();
     expect(replicas.claimSet).toBe(false);
-    expect(replicas.steps).toEqual(steps("spec", "cluster", "tasklist", "replicas"));
+    expect(replicas.steps).toEqual(
+      steps("spec", "cluster", "tasklist", "replicas"),
+    );
   });
 
   it("a field that a layer sets takes its state", () => {
@@ -240,7 +262,11 @@ describe("settingsOf", () => {
       processSettings("zeebe", "zeebe", { preset: { zeebe: { replicas: 3 } } }),
       "replicas",
     );
-    expect(preset).toMatchObject({ value: 3, state: { kind: "preset" }, claimSet: false });
+    expect(preset).toMatchObject({
+      value: 3,
+      state: { kind: "preset" },
+      claimSet: false,
+    });
     const claimed = setting(
       processSettings("zeebe", "zeebe", {
         preset: { zeebe: { replicas: 3 } },
@@ -248,13 +274,19 @@ describe("settingsOf", () => {
       }),
       "replicas",
     );
-    expect(claimed).toMatchObject({ value: 5, state: { kind: "claim" }, claimSet: true });
+    expect(claimed).toMatchObject({
+      value: 5,
+      state: { kind: "claim" },
+      claimSet: true,
+    });
     expect(claimed.resetLabel).toBe("Reset to preset");
   });
 
   it("the leaves of one editor share one setting", () => {
     const settings = processSettings("zeebe", "zeebe", {
-      claim: { cluster: { zeebe: { resources: { requests: { cpu: "500m" } } } } },
+      claim: {
+        cluster: { zeebe: { resources: { requests: { cpu: "500m" } } } },
+      },
     });
     expect(setting(settings, "resources")).toMatchObject({
       value: { requests: { cpu: "500m" } },
@@ -267,7 +299,13 @@ describe("settingsOf", () => {
   it("settingChange writes the whole block that a layer sets", () => {
     const nodeAffinity = {
       requiredDuringSchedulingIgnoredDuringExecution: {
-        nodeSelectorTerms: [{ matchExpressions: [{ key: "pool", operator: "In", values: ["camunda"] }] }],
+        nodeSelectorTerms: [
+          {
+            matchExpressions: [
+              { key: "pool", operator: "In", values: ["camunda"] },
+            ],
+          },
+        ],
       },
     };
     const t1 = { key: "dedicated", operator: "Exists" };
@@ -292,19 +330,32 @@ describe("settingsOf", () => {
   it("a filled field is locked", () => {
     const url = setting(
       clusterSettings({
-        claim: { plugins: [{ section: "access", registration: "gateway-access" }] },
+        claim: {
+          plugins: [{ section: "access", registration: "gateway-access" }],
+        },
         sections: [accessSection()],
       }),
       "externalUrl",
     );
-    expect(url.lock).toEqual({ reason: "filled", section: "access", sectionLabel: "Access" });
+    expect(url.lock).toEqual({
+      reason: "filled",
+      section: "access",
+      sectionLabel: "Access",
+    });
     expect(url.editor).toBeUndefined();
     expect(url.steps).toBeUndefined();
   });
 
   it("a Secret reference is one setting with a Secret picker", () => {
     const settings = clusterSettings({
-      claim: { cluster: { auth: { clientId: "orders", clientSecretRef: { name: "orders-oidc", key: "secret" } } } },
+      claim: {
+        cluster: {
+          auth: {
+            clientId: "orders",
+            clientSecretRef: { name: "orders-oidc", key: "secret" },
+          },
+        },
+      },
     });
     expect(setting(settings, "auth.clientSecretRef")).toMatchObject({
       editor: { kind: "secretRef" },
@@ -312,14 +363,23 @@ describe("settingsOf", () => {
       steps: steps("spec", "cluster", "auth", "clientSecretRef"),
       claimSet: true,
     });
-    expect(settings.some((s) => s.label.startsWith("auth.clientSecretRef."))).toBe(false);
+    expect(
+      settings.some((s) => s.label.startsWith("auth.clientSecretRef.")),
+    ).toBe(false);
   });
 
   it("Optimize settings use the claim names", () => {
-    const attachment = { managementAuthConfigRef: "keycloak", importer: { replicas: 1 } };
+    const attachment = {
+      managementAuthConfigRef: "keycloak",
+      importer: { replicas: 1 },
+    };
     const { fields } = settingsFieldsOf({
       claim: { attachments: { optimize: attachment } },
-      optimize: { clusterRef: { name: "orders" }, managementAuthRef: "keycloak", importer: { replicas: 1 } },
+      optimize: {
+        clusterRef: { name: "orders" },
+        managementAuthRef: "keycloak",
+        importer: { replicas: 1 },
+      },
     });
     const [group] = componentSettings(fields, "optimize", {});
     const settings = settingsOf({ group, spec: attachment });
@@ -338,7 +398,9 @@ describe("settingsOf", () => {
 
   it("a field outside the schema stays read only", () => {
     const version = setting(
-      processSettings("connectors", "connectors", { cluster: { connectors: { version: "8.9.1" } } }),
+      processSettings("connectors", "connectors", {
+        cluster: { connectors: { version: "8.9.1" } },
+      }),
       "version",
     );
     expect(version.lock).toEqual({ reason: "release" });
@@ -348,17 +410,23 @@ describe("settingsOf", () => {
 
   it("an embedded app writes to its own block", () => {
     const replicas = setting(
-      processSettings("gateway", "tasklist", { cluster: { gateway: { mode: "Standalone" } } }),
+      processSettings("gateway", "tasklist", {
+        cluster: { gateway: { mode: "Standalone" } },
+      }),
       "replicas",
     );
-    expect(replicas.steps).toEqual(steps("spec", "cluster", "tasklist", "replicas"));
+    expect(replicas.steps).toEqual(
+      steps("spec", "cluster", "tasklist", "replicas"),
+    );
   });
 });
 
 describe("settingChange", () => {
   it("an empty value resets the field", () => {
     const labels = setting(
-      processSettings("zeebe", "zeebe", { claim: { cluster: { zeebe: { podLabels: { team: "a" } } } } }),
+      processSettings("zeebe", "zeebe", {
+        claim: { cluster: { zeebe: { podLabels: { team: "a" } } } },
+      }),
       "podLabels",
     );
     expect(settingChange(labels, {})).toEqual({

@@ -118,9 +118,7 @@ function below(
 ): boolean {
   if (current === undefined) return false;
   try {
-    return (
-      parseQuantity(`${size.amount}${size.unit}`) < parseQuantity(current)
-    );
+    return parseQuantity(`${size.amount}${size.unit}`) < parseQuantity(current);
   } catch {
     return false;
   }
