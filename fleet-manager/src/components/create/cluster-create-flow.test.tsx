@@ -361,6 +361,25 @@ describe("ClusterCreateFlow", () => {
     expect(radio(/^Gateway/).checked).toBe(true);
   });
 
+  it("shows the deletion default again once the pick that cannot keep goes", async () => {
+    const keeps = prod();
+    keeps.spec.deletionPolicy = "Orphan";
+    render(<ClusterCreateFlow initial={data({ environments: [keeps] })} />);
+    await fillBasics("search");
+    await userEvent.click(next());
+
+    expect(
+      screen.getByRole("group", { name: "When the cluster is deleted" }),
+    ).toBeTruthy();
+    expect(radio(/Keep the resources/).disabled).toBe(true);
+    expect(radio(/Delete the resources/).checked).toBe(true);
+    expect(screen.getByText("Gateway (Access)")).toBeTruthy();
+
+    await userEvent.click(radio(/No access from outside/));
+
+    expect(radio(/Keep the resources/).checked).toBe(true);
+  });
+
   it("checks the hosts of the picked access option", async () => {
     const taken =
       "The host c1.team-a.internal.example.com is taken by team-b/x. Choose another name.";

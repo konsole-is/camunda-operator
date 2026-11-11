@@ -30,6 +30,7 @@ import {
 } from "@/lib/clusters/draft";
 import {
   type StorageData,
+  deletionChoice,
   draftAccessPatterns,
   storageErrors,
   storageViews,
@@ -173,7 +174,16 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
         ? renderHosts(patterns, name, namespace)
         : [];
     const conflicts = hostConflicts(hosts, takenHosts(accessRequests));
-    return { environment, views, presets, takenNames, hosts, conflicts };
+    const deletion = deletionChoice(draft, data);
+    return {
+      environment,
+      views,
+      presets,
+      takenNames,
+      hosts,
+      conflicts,
+      deletion,
+    };
   };
 
   const checks: Record<string, CreateStep<ClusterDraft>["check"]> = {
@@ -202,9 +212,15 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
     Object.hasOwn(checks, step.id) ? { ...step, check: checks[step.id] } : step,
   );
   const flow = useCreateFlow({ steps, initial: INITIAL });
-  const { environment, views, presets, takenNames, hosts, conflicts } = derive(
-    flow.draft,
-  );
+  const {
+    environment,
+    views,
+    presets,
+    takenNames,
+    hosts,
+    conflicts,
+    deletion,
+  } = derive(flow.draft);
   // A claim must not select a section that step 2 no longer shows.
   const gone = Object.keys(flow.draft.storage ?? {}).filter(
     (name) => !views.some((v) => v.name === name),
@@ -258,6 +274,10 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
           hosts={hosts}
           conflicts={conflicts}
           onSection={onSection}
+          deletion={deletion}
+          onDeletion={(policy) =>
+            flow.set(["claim", "spec", "deletionPolicy"], policy)
+          }
         />
       ) : (
         <p className="text-sm text-muted">
