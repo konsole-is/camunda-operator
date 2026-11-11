@@ -29,4 +29,15 @@ describe("MetricChart", () => {
     const figure = screen.getByRole("figure", { name: /Requests/ });
     expect(figure.textContent).toContain("Declared by Bucket on RustFS");
   });
+
+  it("says once that the times are in UTC", () => {
+    render(
+      <MetricChart
+        title="CPU"
+        series={[{ name: "zeebe-0", points: [[0, 1]] }]}
+      />,
+    );
+    const figure = screen.getByRole("figure", { name: /CPU/ });
+    expect(figure.textContent?.match(/UTC/g)).toHaveLength(1);
+  });
 });

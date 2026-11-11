@@ -10,8 +10,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { dateTime } from "@/components/cluster/backups";
 import type { Series, Unavailable } from "@/lib/observe/types";
-import { formatAxis, formatClock, formatDateClock } from "./units";
+import { formatAxis, formatClock } from "./units";
 
 const COLORS = ["var(--info)", "var(--accent)", "var(--ok)", "var(--warn)"];
 
@@ -84,7 +85,9 @@ export function MetricChart({
                   border: "1px solid var(--border)",
                   color: "var(--text)",
                 }}
-                labelFormatter={(t) => formatDateClock(Number(t))}
+                labelFormatter={(t) =>
+                  dateTime(new Date(Number(t)).toISOString())
+                }
                 formatter={(value) => formatAxis(Number(value), unit)}
               />
               {series.map((s, i) => (
@@ -101,6 +104,9 @@ export function MetricChart({
             </LineChart>
           </ResponsiveContainer>
         </div>
+      )}
+      {!empty && (
+        <p className="-mt-1 text-right text-xs text-muted">Time (UTC)</p>
       )}
     </figure>
   );

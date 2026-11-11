@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  formatAxis,
-  formatBytes,
-  formatClock,
-  formatCores,
-  formatDateClock,
-} from "./units";
+import { formatAxis, formatBytes, formatClock, formatCores } from "./units";
 
 describe("formatCores", () => {
   it.each([
@@ -42,22 +36,14 @@ describe("formatAxis", () => {
   });
 });
 
-describe("the chart times", () => {
+describe("formatClock", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  // The zone has a half-hour offset, so a UTC answer cannot pass.
-  const zone = "Asia/Kolkata";
-  const time = Date.parse("2026-10-18T11:58:30Z");
-
-  it("write the clock of the viewer on the axis", () => {
-    vi.stubEnv("TZ", zone);
-    expect(formatClock(time)).toBe("17:28");
-  });
-
-  it("write the date and the clock of the viewer in the tooltip", () => {
-    vi.stubEnv("TZ", zone);
-    expect(formatDateClock(time)).toBe("2026-10-18 17:28");
+  it("writes the UTC clock in any zone of the viewer", () => {
+    // The zone has a half-hour offset, so a clock in the zone of the viewer cannot pass.
+    vi.stubEnv("TZ", "Asia/Kolkata");
+    expect(formatClock(Date.parse("2026-10-18T11:58:30Z"))).toBe("11:58");
   });
 });
