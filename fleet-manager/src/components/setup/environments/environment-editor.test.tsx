@@ -47,7 +47,7 @@ function setup(
   opts: {
     name?: string;
     mode?: WriteMode;
-    sources?: EnvironmentSources;
+    sources?: EnvironmentSources & { namespacesStale?: boolean };
     result?: WriteResult;
     errors?: ReadError[];
   } = {},
@@ -542,6 +542,44 @@ describe("EnvironmentEditor", () => {
     expect(
       screen.getByRole("button", { name: "Review the delete" }),
     ).toBeTruthy();
+  });
+
+  it("keeps the delete review while the delete writes, also when a namespace gets the label", async () => {
+    const sources = environmentFixtures();
+    sources.namespaces = [];
+    const { actions, rerender } = setup({ sources });
+    actions.applyChange.mockImplementation(
+      () => new Promise<WriteResult>(() => {}),
+    );
+    fireEvent.change(screen.getByLabelText(/to confirm/), {
+      target: { value: "production" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review the delete" }));
+    const confirm = screen.getByRole("button", {
+      name: "Delete the environment",
+    });
+    await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(actions.applyChange).toHaveBeenCalled());
+    rerender(environmentFixtures());
+    expect(
+      screen.getByRole("button", { name: "Delete the environment" }),
+    ).toBeTruthy();
+    expect(displayName().matches(":disabled")).toBe(true);
+  });
+
+  it("offers no Delete while the namespace list is not fresh", () => {
+    const sources = environmentFixtures();
+    sources.namespaces = [];
+    setup({ sources: { ...sources, namespacesStale: true } });
+    expect(
+      screen.getByText(
+        "Delete is possible when the fleet manager can read the namespaces.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Review the delete" }),
+    ).toBeNull();
   });
 
   it("disables the form when the environment was deleted", () => {

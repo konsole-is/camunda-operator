@@ -15,7 +15,7 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import { useResources } from "@/lib/k8s/hooks";
+import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { SOURCE_KINDS } from "./source-kinds";
 
@@ -40,13 +40,15 @@ export type EnvironmentSources = {
 /**
  * useEnvironmentSources follows each list of initial live. errors holds the
  * error of each failed watch. The lists then keep their last items, which
- * can be out of date.
+ * can be out of date. namespacesStale is true while the watch of the
+ * namespaces has no snapshot on its current connection.
  */
 export function useEnvironmentSources(
   initial: EnvironmentSources,
-): EnvironmentSources & { errors: ReadError[] } {
+): EnvironmentSources & { errors: ReadError[]; namespacesStale: boolean } {
   const environments = useLive("Environment", initial.environments);
   const namespaces = useLive("Namespace", initial.namespaces);
+  const [namespacesFresh] = useWatchesFresh([{ kind: "Namespace", opts: {} }]);
   const clusterClaims = useLive("CamundaClusterClaim", initial.clusterClaims);
   const planeClaims = useLive(
     "CamundaManagementClusterClaim",
@@ -112,6 +114,7 @@ export function useEnvironmentSources(
     releases: releases.items,
     platformConfigs: platformConfigs.items,
     errors,
+    namespacesStale: !namespacesFresh,
   };
 }
 

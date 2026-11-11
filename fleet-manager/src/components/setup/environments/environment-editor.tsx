@@ -68,7 +68,10 @@ export function EnvironmentEditor({
   mode,
   actions,
 }: {
-  sources: EnvironmentSources & { errors: ReadError[] };
+  sources: EnvironmentSources & {
+    errors: ReadError[];
+    namespacesStale?: boolean;
+  };
   name?: string;
   mode?: WriteMode;
   actions: EnvironmentActions;
@@ -79,6 +82,7 @@ export function EnvironmentEditor({
     : sources.environments.find((e) => e.metadata.name === name);
   const [labelErrors, setLabelErrors] = useState<ValidationError[]>([]);
   const [labelReview, setLabelReview] = useState(false);
+  const [writing, setWriting] = useState(false);
   const editor = useSetupEditor({
     live,
     isNew,
@@ -101,7 +105,9 @@ export function EnvironmentEditor({
     [base, draft, sources],
   );
   const members = labelledNamespaces(name ?? "", sources.namespaces);
-  const namespacesUnread = sources.errors.some((e) => e.kind === "Namespace");
+  const namespacesUnread =
+    sources.namespacesStale ||
+    sources.errors.some((e) => e.kind === "Namespace");
   const blocked =
     errors[0]?.message ??
     (labelErrors.length > 0
@@ -123,8 +129,9 @@ export function EnvironmentEditor({
   const title = draft.spec.displayName || draft.name || "New environment";
   const deleting = reviewing?.kind === "delete";
   // A namespace can get the label, or the namespaces can turn unreadable,
-  // after the delete review opened.
-  if (deleting && (members.length > 0 || namespacesUnread)) editor.cancel();
+  // after the delete review opened. A delete that already runs cannot stop.
+  if (deleting && !writing && (members.length > 0 || namespacesUnread))
+    editor.cancel();
 
   return (
     <div className="flex flex-col gap-6">
@@ -282,6 +289,7 @@ export function EnvironmentEditor({
               editor.written(result, draft.name);
             }}
             onCancel={editor.cancel}
+            onWriting={setWriting}
           />
         </section>
       ) : (

@@ -126,6 +126,7 @@ function setup({
     show: vi.fn(),
     onWritten: vi.fn(),
     onCancel: vi.fn(),
+    onWriting: vi.fn(),
   };
   render(
     <ChangeReview
@@ -304,6 +305,19 @@ describe("ChangeReview", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Back" })).toBeNull(),
     );
+  });
+
+  it("calls onWriting with true when the write starts and false when it settles", async () => {
+    const { apply, onWriting } = setup();
+    await waitFor(() => expect(confirm()).toHaveProperty("disabled", false));
+    let settle: (result: WriteResult) => void = () => {};
+    apply.mockImplementation(
+      () => new Promise<WriteResult>((resolve) => (settle = resolve)),
+    );
+    fireEvent.click(confirm());
+    await waitFor(() => expect(onWriting).toHaveBeenLastCalledWith(true));
+    settle({ ok: true, mode: "direct" });
+    await waitFor(() => expect(onWriting).toHaveBeenLastCalledWith(false));
   });
 
   it("takes the effects from the preview when effects is a function", async () => {

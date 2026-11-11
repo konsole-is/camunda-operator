@@ -11,6 +11,7 @@ vi.mock("@/lib/k8s/hooks", () => ({
     items: initial,
     ...(kind === failing.kind && { error: `${kind} is forbidden` }),
   }),
+  useWatchesFresh: (lists: unknown[]) => lists.map(() => true),
 }));
 
 afterEach(() => {
