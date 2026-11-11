@@ -5,7 +5,13 @@ import type {
   PluginRegistrationSpec,
 } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import { claimEditable, lockedSummary, sectionOptions } from "./options";
+import {
+  claimEditable,
+  lockedSummary,
+  offeredSection,
+  sectionOptions,
+  withMissingInputs,
+} from "./options";
 
 const READY = [
   { type: "Accepted", status: "True" },
@@ -15,7 +21,11 @@ const READY = [
 function reg(
   spec: Partial<PluginRegistrationSpec> = {},
   name = "s3",
-  conditions: readonly { type: string; status: string }[] = READY,
+  conditions: readonly {
+    type: string;
+    status: string;
+    message?: string;
+  }[] = READY,
 ): PluginRegistration {
   return {
     apiVersion: "plugins.camunda.io/v1alpha1",
@@ -34,7 +44,7 @@ function reg(
         ...c,
         status: c.status as "True" | "False" | "Unknown",
         reason: "Test",
-        message: "",
+        message: c.message ?? "",
         lastTransitionTime: "2026-10-21T00:00:00Z",
       })),
     },
@@ -293,6 +303,62 @@ describe("claimEditable", () => {
     ]);
   });
 
+  it("hides the ARN of a locked role parameter", () => {
+    const existingRole = reg(
+      {
+        sections: ["connectors-permissions"],
+        parameters: {
+          type: "object",
+          required: ["roleArn"],
+          properties: { roleArn: { type: "string" } },
+        },
+      },
+      "aws-connectors-existing-role",
+    );
+    const env: Environment = {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "dev" },
+      spec: {
+        parameters: {
+          "aws-connectors-existing-role": {
+            roleArn: { value: "arn:aws:iam::123456789012:role/connectors" },
+          },
+        },
+      },
+    };
+
+    const [rule] = claimEditable(existingRole, env);
+
+    expect(rule).toMatchObject({
+      name: "roleArn",
+      claimEditable: false,
+      summary: "Set by your admin",
+    });
+    expect(JSON.stringify(rule)).not.toContain("arn:");
+  });
+
+  it("shows a locked value by the label of its choice", () => {
+    const [rule] = claimEditable(
+      reg(),
+      envWith({
+        tier: {
+          value: "cold",
+          allowed: [
+            { name: "warm", label: "Warm tier", value: "warm" },
+            { name: "archive", label: "Archive tier", value: "cold" },
+          ],
+        },
+      }),
+    );
+
+    expect(rule).toMatchObject({
+      name: "tier",
+      claimEditable: false,
+      summary: "Archive tier",
+    });
+  });
+
   it("counts parameterValues that is not an object as no values", () => {
     expect(
       claimEditable(
@@ -304,6 +370,27 @@ describe("claimEditable", () => {
 });
 
 describe("lockedSummary", () => {
+  it("shows the label of the choice that holds the value", () => {
+    expect(
+      lockedSummary("{name}.internal.example.com", [
+        { name: "public", label: "Public", value: "{name}.example.com" },
+        {
+          name: "internal",
+          label: "Internal network",
+          value: "{name}.internal.example.com",
+        },
+      ]),
+    ).toBe("Internal network");
+  });
+
+  it("hides an ARN that no choice holds", () => {
+    expect(
+      lockedSummary("arn:aws:iam::123456789012:role/connectors", [
+        { name: "other", label: "Other", value: "arn:aws:iam::1:role/x" },
+      ]),
+    ).toBe("Set by your admin");
+  });
+
   it.each([
     [undefined, "Not set"],
     [null, "Not set"],
@@ -592,5 +679,242 @@ describe("sectionOptions", () => {
 
     expect(withSchema.schema).toEqual(parameters);
     expect(withoutSchema.schema).toBeUndefined();
+  });
+});
+
+function notReady(message?: string) {
+  return [
+    { type: "Accepted", status: "True" },
+    { type: "Ready", status: "False", ...(message && { message }) },
+  ];
+}
+
+describe("offeredSection", () => {
+  it("adds an allowed registration that is accepted but not ready, disabled with its Ready message, at its place", () => {
+    const env = envWith(
+      {},
+      {
+        sections: {
+          "backup-storage": { allowed: ["a", "b", "c"], default: "b" },
+        },
+      },
+    );
+
+    const view = offeredSection(
+      section(),
+      [reg({}, "a"), reg({}, "b", notReady("token expired")), reg({}, "c")],
+      env,
+      "CamundaClusterClaim",
+    );
+
+    expect(
+      view.options.map((o) => [o.registration, o.disabledReason, o.isDefault]),
+    ).toEqual([
+      ["a", undefined, false],
+      ["b", "Unavailable right now: token expired", true],
+      ["c", undefined, false],
+    ]);
+  });
+
+  it("says only Unavailable right now when Ready is missing", () => {
+    const view = offeredSection(
+      section(),
+      [reg({}, "a", [{ type: "Accepted", status: "True" }])],
+      undefined,
+      "CamundaClusterClaim",
+    );
+
+    expect(view.options.map((o) => o.disabledReason)).toEqual([
+      "Unavailable right now",
+    ]);
+  });
+
+  it("leaves out a registration that is not accepted", () => {
+    const view = offeredSection(
+      section(),
+      [
+        reg({}, "a", [
+          { type: "Accepted", status: "False" },
+          { type: "Ready", status: "True" },
+        ]),
+        reg({}, "b"),
+      ],
+      undefined,
+      "CamundaClusterClaim",
+    );
+
+    expect(view.options.map((o) => o.registration)).toEqual(["b"]);
+  });
+
+  it("leaves out a not-ready registration that the environment does not allow", () => {
+    const view = offeredSection(
+      section(),
+      [reg({}, "a"), reg({}, "b", notReady("down"))],
+      envWith({}, { sections: { "backup-storage": { allowed: ["a"] } } }),
+      "CamundaClusterClaim",
+    );
+
+    expect(view.options.map((o) => o.registration)).toEqual(["a"]);
+  });
+
+  it("leaves out a not-ready registration that does not serve the section", () => {
+    const view = offeredSection(
+      section(),
+      [reg({ sections: ["secondary-storage"] }, "a", notReady("down"))],
+      envWith({}, { sections: { "backup-storage": { allowed: ["a"] } } }),
+      "CamundaClusterClaim",
+    );
+
+    expect(view.options).toEqual([]);
+  });
+
+  it("adds a not-ready registration without an environment, by name", () => {
+    const view = offeredSection(
+      section(),
+      [reg({ mode: "Default" }, "b", notReady("down")), reg({}, "a")],
+      undefined,
+      "CamundaClusterClaim",
+    );
+
+    expect(
+      view.options.map((o) => [o.registration, o.disabledReason, o.isDefault]),
+    ).toEqual([
+      ["a", undefined, false],
+      ["b", "Unavailable right now: down", true],
+    ]);
+  });
+
+  it("gives a section that does not apply to the claim kind no options", () => {
+    const view = offeredSection(
+      section({ appliesTo: ["CamundaManagementClusterClaim"] }),
+      [reg({}, "a", notReady("down"))],
+      undefined,
+      "CamundaClusterClaim",
+    );
+
+    expect(view.options).toEqual([]);
+  });
+
+  it("gives a claim the same options as sectionOptions", () => {
+    const registrations = [
+      reg({}, "a"),
+      reg({}, "b", notReady("down")),
+      reg({}, "c"),
+    ];
+    const env = envWith(
+      {},
+      {
+        sections: {
+          "backup-storage": { allowed: ["c", "b", "a"], default: "a" },
+        },
+      },
+    );
+
+    const offered = offeredSection(
+      section(),
+      registrations,
+      env,
+      "CamundaClusterClaim",
+    );
+
+    expect(offered.options.filter((o) => !o.disabledReason)).toEqual(
+      sectionOptions(section(), registrations, env, "CamundaClusterClaim")
+        .options,
+    );
+  });
+});
+
+describe("withMissingInputs", () => {
+  const sections = [
+    section(),
+    {
+      ...section({ label: "Encryption key" }),
+      metadata: { name: "encryption-key" },
+    },
+    {
+      ...section({ label: "Cloud identity" }),
+      metadata: { name: "cloud-identity" },
+    },
+  ];
+  const ebs = (
+    inputs: NonNullable<PluginRegistrationSpec["inputs"]> = [
+      { name: "keyRef", from: "encryption-key/keyRef", required: true },
+    ],
+  ) => reg({ inputs }, "ebs");
+  const viewOf = (registration: PluginRegistration) =>
+    sectionOptions(section(), [registration], undefined, "CamundaClusterClaim");
+
+  it("disables an option whose required input has no selection, by the label of its section", () => {
+    const view = withMissingInputs(viewOf(ebs()), [], [ebs()], sections);
+
+    expect(view.options[0].disabledReason).toBe("Needs an encryption key");
+  });
+
+  it("enables it once the input section has a selection", () => {
+    const view = withMissingInputs(
+      viewOf(ebs()),
+      [{ section: "encryption-key", registration: "kms" }],
+      [ebs()],
+      sections,
+    );
+
+    expect(view.options[0].disabledReason).toBeUndefined();
+  });
+
+  it("names two missing inputs with and", () => {
+    const registration = ebs([
+      { name: "keyRef", from: "encryption-key/keyRef", required: true },
+      { name: "role", from: "cloud-identity/role", required: true },
+    ]);
+
+    const view = withMissingInputs(
+      viewOf(registration),
+      [],
+      [registration],
+      sections,
+    );
+
+    expect(view.options[0].disabledReason).toBe(
+      "Needs an encryption key and a cloud identity",
+    );
+  });
+
+  it("names an input section that no PluginSection has by its name", () => {
+    const registration = ebs([
+      { name: "zone", from: "zone-picker/zone", required: true },
+    ]);
+
+    const view = withMissingInputs(
+      viewOf(registration),
+      [],
+      [registration],
+      sections,
+    );
+
+    expect(view.options[0].disabledReason).toBe("Needs a zone-picker");
+  });
+
+  it("keeps the reason of an option that is disabled already", () => {
+    const view = viewOf(ebs());
+    view.options[0].disabledReason = "Unavailable right now";
+
+    expect(
+      withMissingInputs(view, [], [ebs()], sections).options[0].disabledReason,
+    ).toBe("Unavailable right now");
+  });
+
+  it("ignores an optional input", () => {
+    const registration = ebs([
+      { name: "keyRef", from: "encryption-key/keyRef", required: false },
+    ]);
+
+    const view = withMissingInputs(
+      viewOf(registration),
+      [],
+      [registration],
+      sections,
+    );
+
+    expect(view.options[0].disabledReason).toBeUndefined();
   });
 });

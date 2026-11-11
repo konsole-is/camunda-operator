@@ -143,6 +143,55 @@ describe("ClaimReview", () => {
     );
   });
 
+  const ANYWAY = {
+    label: "Change anyway",
+    gitLabel: "Push anyway",
+    danger: true,
+  };
+
+  it.each([
+    ["direct", "Change anyway"],
+    ["git", "Push anyway"],
+  ] as const)(
+    "in %s mode the confirm prop gives the danger button %s",
+    async (mode, label) => {
+      fakeWriter.reset(mode);
+      review({ confirm: ANYWAY });
+      expect((await confirm(label)).getAttribute("data-variant")).toBe(
+        "destructive",
+      );
+    },
+  );
+
+  it.each([
+    ["direct", "Save"],
+    ["git", "Push to Git"],
+  ] as const)(
+    "without the confirm prop, %s mode shows %s as a default button",
+    async (mode, label) => {
+      fakeWriter.reset(mode);
+      review();
+      expect((await confirm(label)).getAttribute("data-variant")).toBe(
+        "default",
+      );
+    },
+  );
+
+  it("a typed confirm enables only after the preview and the word", async () => {
+    const preview = vi.fn(previewClaimChange);
+    review({ preview, confirm: { ...ANYWAY, typed: "orders" } });
+    const button = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Change anyway",
+    });
+    await waitFor(() => expect(preview).toHaveBeenCalledOnce());
+    await act(async () => {});
+    expect(button.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Type orders to confirm"), {
+      target: { value: "orders" },
+    });
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
   it("direct mode applies exactly the changed claim with the precondition", async () => {
     const onWritten = vi.fn();
     review({ onWritten });

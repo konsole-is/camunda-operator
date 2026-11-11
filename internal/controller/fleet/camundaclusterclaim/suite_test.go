@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
+	clustercomponents "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/test/envtest"
 )
 
@@ -60,7 +61,10 @@ var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	plugin = newFakePlugin()
-	witness = &applyWitness{policyRecorded: map[types.NamespacedName][]bool{}}
+	witness = &applyWitness{
+		policyRecorded:   map[types.NamespacedName][]bool{},
+		downgradeApplied: map[types.NamespacedName][]string{},
+	}
 
 	env = envtest.Start(func(mgr ctrl.Manager) error {
 		uncached, err := client.NewWithWatch(mgr.GetConfig(), client.Options{
@@ -93,12 +97,15 @@ var _ = AfterSuite(func() {
 	Eventually(env.Stop, time.Minute, time.Second).Should(Succeed())
 })
 
-// applyWitness records, for each apply of a PluginRequest, whether the claim
-// named by its claim label had status.resolvedPolicy at that moment. It
-// passes every call through.
+// applyWitness records two things for the claim named by the claim label of
+// an apply: for each apply of a PluginRequest, whether the claim had
+// status.resolvedPolicy at that moment, and for each apply of a
+// CamundaCluster, the downgrade annotation it carried, empty when it carried
+// none. It passes every call through.
 type applyWitness struct {
-	mu             sync.Mutex
-	policyRecorded map[types.NamespacedName][]bool
+	mu               sync.Mutex
+	policyRecorded   map[types.NamespacedName][]bool
+	downgradeApplied map[types.NamespacedName][]string
 }
 
 func (w *applyWitness) patch(
@@ -119,6 +126,17 @@ func (w *applyWitness) patch(
 		w.mu.Unlock()
 	}
 
+	if claimName := obj.GetLabels()[fleetv1alpha1.LabelClaim]; kind == "CamundaCluster" && claimName != "" {
+		key := types.NamespacedName{Namespace: obj.GetNamespace(), Name: claimName}
+
+		w.mu.Lock()
+		w.downgradeApplied[key] = append(
+			w.downgradeApplied[key],
+			obj.GetAnnotations()[clustercomponents.AllowVersionDowngradeAnnotation],
+		)
+		w.mu.Unlock()
+	}
+
 	return c.Patch(ctx, obj, patch, opts...)
 }
 
@@ -129,4 +147,13 @@ func (w *applyWitness) recorded(key types.NamespacedName) []bool {
 	defer w.mu.Unlock()
 
 	return append([]bool(nil), w.policyRecorded[key]...)
+}
+
+// downgrades returns the downgrade annotation of each apply of the
+// CamundaCluster of the claim key, in order.
+func (w *applyWitness) downgrades(key types.NamespacedName) []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return append([]string(nil), w.downgradeApplied[key]...)
 }

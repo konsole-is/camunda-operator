@@ -17,8 +17,11 @@ limitations under the License.
 package camundaclusterclaim
 
 import (
+	"slices"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -240,6 +243,63 @@ var _ = Describe("Changing a cluster claim", func() {
 			}, timeout, interval).Should(Succeed())
 		})
 
+		It("writes the annotation once and not again when the downgraded brokers fail", func() {
+			By("setting the downgrade while the cluster is suspended")
+			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.Suspend = true })
+			setManagement(claim, "")
+			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) {
+				c.Spec.ReleaseRef = olderReleaseName
+				c.Spec.AllowVersionDowngrade = olderVersion
+			})
+			// A later apply of these changes would make the refusal stale.
+			Eventually(func(g Gomega) {
+				cluster, err := clusterOf(claim)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cluster.Spec.Suspend).To(BeTrue())
+				g.Expect(cluster.Spec.ReleaseRef).To(Equal(olderReleaseName))
+			}, timeout, interval).Should(Succeed())
+
+			By("resuming into the refusal of the operator")
+			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.Suspend = false })
+			Eventually(func(g Gomega) {
+				cluster, err := clusterOf(claim)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cluster.Spec.Suspend).To(BeFalse())
+			}, timeout, interval).Should(Succeed())
+			setClusterReady(claim, metav1.ConditionFalse, v1.ReasonVersionDowngradeRefused, "")
+			Eventually(func(g Gomega) {
+				g.Expect(downgradeAnnotation(g, claim)).To(Equal(olderVersion))
+			}, timeout, interval).Should(Succeed())
+
+			By("failing the brokers at the target and spending the sanction, as the operator does")
+			setClusterReady(
+				claim,
+				metav1.ConditionFalse,
+				string(component.AliveFailing),
+				"zeebe: the broker is unhealthy",
+			)
+			// The claim must see the failing brokers before the management
+			// version moves, or an early removal has no pass to happen in.
+			expectNewPass(claim)
+			expectNewPass(claim)
+			setManagement(claim, olderVersion)
+			expectNewPass(claim)
+			expectNewPass(claim)
+			Expect(appliedDowngrades(claim)).To(
+				Equal([]string{"", olderVersion}),
+				"the claim must keep the annotation until the operator spends the sanction",
+			)
+			consumeSanction(claim)
+
+			expectNewPass(claim)
+			expectNewPass(claim)
+			expectNoAnnotation()
+			Expect(appliedDowngrades(claim)).To(
+				Equal([]string{"", olderVersion, ""}),
+				"the claim must write the annotation once and stop writing it once",
+			)
+		})
+
 		It("removes the annotation when the field is cleared", func() {
 			downgrade()
 			updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.AllowVersionDowngrade = "" })
@@ -274,6 +334,13 @@ func downgradeAnnotation(g Gomega, claim *fleetv1alpha1.CamundaClusterClaim) str
 	cluster, err := clusterOf(claim)
 	g.Expect(err).NotTo(HaveOccurred())
 	return cluster.Annotations[clustercomponents.AllowVersionDowngradeAnnotation]
+}
+
+// appliedDowngrades returns the downgrade annotation of each apply of the
+// CamundaCluster of claim, in order, with each run of equal values as one
+// entry. The empty string stands for an apply without the annotation.
+func appliedDowngrades(claim *fleetv1alpha1.CamundaClusterClaim) []string {
+	return slices.Compact(witness.downgrades(client.ObjectKeyFromObject(claim)))
 }
 
 // setKeyParameters sets the parameters of the encryption-key selection of

@@ -34,7 +34,12 @@ export default async function NewPlanePage() {
           namespaces,
           clusters,
           platformConfigs,
-          planes: { clusters: managementClusters, claims, namespaces },
+          planes: {
+            clusters: managementClusters,
+            claims,
+            namespaces,
+            environments,
+          },
         }}
       />
     </div>

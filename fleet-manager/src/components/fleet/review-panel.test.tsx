@@ -74,6 +74,41 @@ describe("ReviewPanel", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it("enables the confirm only for the exact typed word", async () => {
+    render(panel({ typed: "orders", confirmLabel: "Change anyway" }));
+    const button = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Change anyway",
+    });
+    const field = screen.getByLabelText("Type orders to confirm");
+    expect(button.disabled).toBe(true);
+    for (const text of ["Orders", " orders", "orders ", "order"]) {
+      await userEvent.clear(field);
+      await userEvent.type(field, text);
+      expect(button.disabled).toBe(true);
+    }
+    await userEvent.clear(field);
+    await userEvent.type(field, "orders");
+    expect(button.disabled).toBe(false);
+  });
+
+  it("keeps the confirm disabled while pending, also with the typed word", async () => {
+    render(panel({ typed: "orders", pending: true }));
+    await userEvent.type(
+      screen.getByLabelText("Type orders to confirm"),
+      "orders",
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Change the claim",
+      }).disabled,
+    ).toBe(true);
+  });
+
+  it("shows no typed field without typed", () => {
+    render(panel());
+    expect(screen.queryByLabelText(/to confirm$/)).toBeNull();
+  });
+
   it("blocks the confirm while the write runs", () => {
     render(panel({ pending: true }));
     expect(

@@ -18,9 +18,11 @@ import {
   applyBody,
   directWriter,
   getWriter,
+  inNewNamespaces,
   refKey,
   writeMode,
 } from "./writer";
+import type { ObjectRef } from "./types";
 
 vi.mock("@/lib/settings/store", () => ({ getSettings: vi.fn() }));
 
@@ -367,6 +369,46 @@ describe("directWriter when a target of a delete is gone before the dry run", ()
       (await writer.preview({ intent: "Delete", apply: [], delete: [ref] }))
         .objects,
     ).toEqual([]);
+  });
+});
+
+describe("inNewNamespaces", () => {
+  const ns = (name: string) => ({
+    apiVersion: "v1",
+    kind: "Namespace",
+    metadata: { name },
+  });
+  const claim = (namespace: string) => ({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaManagementClusterClaim",
+    metadata: { name: "plane-a", namespace },
+  });
+  const reader = (existing: string[]) => async (ref: ObjectRef) =>
+    ref.kind === "Namespace" && existing.includes(ref.name)
+      ? ns(ref.name)
+      : undefined;
+
+  it("holds an object in a namespace that the change makes", async () => {
+    const apply = [ns("platform"), claim("platform")];
+
+    expect([...(await inNewNamespaces(apply, reader([])))]).toEqual([apply[1]]);
+  });
+
+  it("holds nothing when that namespace exists", async () => {
+    expect(
+      (
+        await inNewNamespaces(
+          [ns("platform"), claim("platform")],
+          reader(["platform"]),
+        )
+      ).size,
+    ).toBe(0);
+  });
+
+  it("holds nothing for an object in a namespace that the change does not list", async () => {
+    expect((await inNewNamespaces([claim("platform")], reader([]))).size).toBe(
+      0,
+    );
   });
 });
 

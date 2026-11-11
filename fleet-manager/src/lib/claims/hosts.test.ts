@@ -7,6 +7,7 @@ import type {
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
+  accessPatterns,
   defaultAccessPatterns,
   hostConflicts,
   renderHosts,
@@ -213,6 +214,84 @@ describe("defaultAccessPatterns", () => {
         [gatewayA, broken],
         prod,
         "CamundaClusterClaim",
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe("accessPatterns", () => {
+  const gateway = registration("gateway", {
+    parameterValues: { hostnamePattern: "{name}.example.com", other: "x" },
+  });
+  const editable = (
+    hostnamePattern: NonNullable<
+      Environment["spec"]["parameters"]
+    >[string][string],
+  ): Environment => ({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "Environment",
+    metadata: { name: "prod" },
+    spec: { parameters: { gateway: { hostnamePattern } } },
+  });
+
+  it("takes the policy patterns without a selection", () => {
+    expect(accessPatterns(gateway, undefined)).toEqual({
+      hostnamePattern: "{name}.example.com",
+    });
+  });
+
+  it("takes the value of the selection for a claim-editable pattern", () => {
+    expect(
+      accessPatterns(
+        gateway,
+        editable({ claimEditable: true, value: "{name}.a.com" }),
+        {
+          section: "access",
+          registration: "gateway",
+          parameters: { hostnamePattern: "{name}.b.com" },
+        },
+      ),
+    ).toEqual({ hostnamePattern: "{name}.b.com" });
+  });
+
+  it("ignores the selection for a locked pattern", () => {
+    expect(
+      accessPatterns(gateway, editable({ value: "{name}.a.com" }), {
+        section: "access",
+        registration: "gateway",
+        parameters: { hostnamePattern: "{name}.b.com" },
+      }),
+    ).toEqual({ hostnamePattern: "{name}.a.com" });
+  });
+
+  it("turns a picked name of an allowed list into its value", () => {
+    expect(
+      accessPatterns(
+        gateway,
+        editable({
+          claimEditable: true,
+          allowed: [
+            {
+              name: "internal",
+              label: "Internal",
+              value: "{name}.internal.example.com",
+            },
+          ],
+        }),
+        {
+          section: "access",
+          registration: "gateway",
+          parameters: { hostnamePattern: "internal" },
+        },
+      ),
+    ).toEqual({ hostnamePattern: "{name}.internal.example.com" });
+  });
+
+  it("gives undefined for a malformed policy", () => {
+    expect(
+      accessPatterns(
+        registration("gateway", { parameterValues: "x" }),
+        undefined,
       ),
     ).toBeUndefined();
   });

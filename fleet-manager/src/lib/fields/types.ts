@@ -44,7 +44,13 @@ export type FieldLock =
   | { reason: "filled"; section: string; sectionLabel: string }
   | {
       reason:
-        "release" | "claimController" | "section" | "notManaged" | "admin";
+        | "release"
+        | "claimController"
+        | "section"
+        | "notManaged"
+        | "admin"
+        | "atCreation"
+        | "chosenAtCreation";
     };
 
 /**

@@ -38,6 +38,10 @@ describe("loadCreateCluster", () => {
       "CamundaClusterPreset",
       "PluginSection",
       "PluginRegistration",
+      "ElasticsearchClusterPreset",
+      "DatabaseServerPreset",
+      "SecondaryStorageConfig",
+      "ObjectStorageConfig",
     ]) {
       expect(listOf(kind)).toEqual({});
     }
@@ -48,5 +52,22 @@ describe("loadCreateCluster", () => {
     const data = await loadCreateCluster();
     expect(data.clusters).toEqual([]);
     expect(data.claims).toHaveLength(1);
+  });
+
+  it("gives the presets and storage configs that step 2 lists", async () => {
+    const data = await loadCreateCluster();
+    expect([
+      data.elasticsearchPresets,
+      data.databaseServerPresets,
+      data.secondaryStorageConfigs,
+      data.objectStorageConfigs,
+    ]).toEqual(
+      [
+        "ElasticsearchClusterPreset",
+        "DatabaseServerPreset",
+        "SecondaryStorageConfig",
+        "ObjectStorageConfig",
+      ].map((kind) => [{ kind, metadata: { name: "x" } }]),
+    );
   });
 });

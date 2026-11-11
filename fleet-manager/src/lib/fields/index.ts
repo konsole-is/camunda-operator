@@ -14,3 +14,10 @@ export {
   refusedSteps,
   type RefusedField,
 } from "./claim";
+export {
+  componentFieldPaths,
+  fieldSchemaOf,
+  fullSchemaOf,
+  type SchemaGroup,
+} from "./schema";
+export type { FieldSchema, SchemaRoot } from "@/generated/fieldschema";

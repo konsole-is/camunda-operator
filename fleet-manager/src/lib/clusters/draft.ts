@@ -1,4 +1,5 @@
 // This module runs in the browser and on the server.
+import type { CamundaClusterClaim } from "@/generated/crds/camundaclusterclaim";
 import type { CamundaClusterPreset } from "@/generated/crds/camundaclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
 import type {
@@ -8,13 +9,35 @@ import type {
 import { claimNameErrors } from "@/lib/claims/names";
 import { environmentReady } from "@/lib/environments";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
-import { byCodeUnit } from "@/lib/policy";
+import { byCodeUnit, type PluginSelection } from "@/lib/policy";
 
-/** ClusterDraft is the draft of the cluster create flow. environment stays unset while no Environment exists. */
+/** ClusterClaimSpec is the spec of a cluster claim with typed plugin parameters. */
+export type ClusterClaimSpec = Omit<CamundaClusterClaim["spec"], "plugins"> & {
+  plugins?: PluginSelection[];
+};
+
+/**
+ * ClusterDraft is the draft of the cluster create flow. environment stays
+ * unset while no Environment exists. storage holds the selections of each
+ * section by section name, as step 2 last reported them. A section that
+ * has a key was shown; an empty list is a picked empty option.
+ */
 export type ClusterDraft = {
   environment?: string;
   namespace?: NamespaceChoice;
-  claim: { metadata: { name: string }; spec: { presetRef?: string } };
+  claim: {
+    metadata: { name: string };
+    spec: Partial<Omit<ClusterClaimSpec, "plugins">>;
+  };
+  storage?: Record<string, PluginSelection[]>;
+};
+
+/** ClusterClaimObject is the claim that a create writes. */
+export type ClusterClaimObject = {
+  apiVersion: "fleet.camunda.io/v1alpha1";
+  kind: "CamundaClusterClaim";
+  metadata: { name: string; namespace: string };
+  spec: ClusterClaimSpec;
 };
 
 /** CLUSTER_STEPS are the steps of the cluster create flow, in order. */
@@ -127,6 +150,48 @@ export function offeredPresets(
   return (environment.spec.presets?.camundaCluster ?? []).flatMap((name) =>
     presets.filter((p) => p.metadata.name === name).slice(0, 1),
   );
+}
+
+/** draftSelections returns the selections of draft.storage, section after section, in the order the step reported them. */
+export function draftSelections(draft: ClusterDraft): PluginSelection[] {
+  return Object.values(draft.storage ?? {}).flat();
+}
+
+/**
+ * clusterClaimOf returns the claim that draft writes. releaseRef is always
+ * set when one is known: the pick of the draft, else the default release
+ * of environment. platformConfigRef is set only when the pick differs from
+ * spec.platformConfigRef of environment. plugins are draftSelections, left
+ * out when empty. cluster and attachments are copied when the draft sets
+ * them.
+ */
+export function clusterClaimOf(
+  draft: ClusterDraft,
+  environment: Environment | undefined,
+): ClusterClaimObject {
+  const { spec } = draft.claim;
+  const releaseRef = spec.releaseRef ?? environment?.spec.releases?.default;
+  const platformConfigRef =
+    spec.platformConfigRef !== environment?.spec.platformConfigRef
+      ? spec.platformConfigRef
+      : undefined;
+  const plugins = draftSelections(draft);
+  return {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaClusterClaim",
+    metadata: {
+      name: draft.claim.metadata.name,
+      namespace: draft.namespace?.name ?? "",
+    },
+    spec: {
+      presetRef: spec.presetRef ?? "",
+      ...(releaseRef !== undefined && { releaseRef }),
+      ...(platformConfigRef !== undefined && { platformConfigRef }),
+      ...(spec.cluster && { cluster: spec.cluster }),
+      ...(spec.attachments && { attachments: spec.attachments }),
+      ...(plugins.length > 0 && { plugins }),
+    },
+  };
 }
 
 /**

@@ -2,12 +2,14 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import type { OpenAPISchema } from "@/lib/schema";
+import { missingInputs } from "./inputs";
 import { byCodeUnit, equalJSON, isObject, own } from "./json";
 import { parameterPolicies, sectionPolicy } from "./resolve";
 import type {
   ClaimKind,
   OptionView,
   ParameterRule,
+  PluginSelection,
   SectionView,
 } from "./types";
 
@@ -20,7 +22,7 @@ import type {
  * claim-editable parameter carries its policy value and the names and labels
  * of its choices, and allowedLists when every choice is a list. A value of a
  * choice, or a list of such values, is given as the names of the choices. A
- * locked parameter carries lockedSummary of its value and no value. A
+ * locked parameter carries lockedSummary of its value and choices, and no value. A
  * parameterValues that is not an object counts as no values.
  */
 export function claimEditable(
@@ -72,7 +74,7 @@ export function claimEditable(
       return {
         ...base,
         claimEditable: false,
-        summary: lockedSummary(policy.value),
+        summary: lockedSummary(policy.value, policy.allowed),
       };
     }
     return {
@@ -93,13 +95,23 @@ export function claimEditable(
 }
 
 /**
- * lockedSummary says what a locked value holds without showing it: "Not set"
- * for no value or null, the text of a string, number, or boolean, "No items",
- * "1 item", or "<n> items" for a list, and "No fields", "1 field", or
- * "<n> fields" for an object.
+ * lockedSummary says what a locked value holds: "Not set" for no value or
+ * null, the text of a string, number, or boolean, "No items", "1 item", or
+ * "<n> items" for a list, and "No fields", "1 field", or "<n> fields" for an
+ * object. A value other than null that one of choices holds shows as the
+ * label of that choice. Any other string that starts with "arn:" shows as
+ * "Set by your admin".
  */
-export function lockedSummary(value: unknown): string {
+export function lockedSummary(
+  value: unknown,
+  choices: readonly { name: string; label: string; value?: unknown }[] = [],
+): string {
   if (value === undefined || value === null) return "Not set";
+  const choice = choices.find((c) => equalJSON(c.value, value));
+  if (choice) return choice.label;
+  if (typeof value === "string" && value.startsWith("arn:")) {
+    return "Set by your admin";
+  }
   if (Array.isArray(value)) return count(value.length, "item");
   if (typeof value === "object")
     return count(Object.keys(value).length, "field");
@@ -114,11 +126,12 @@ export function lockedSummary(value: unknown): string {
  * name, and the Default is the one registration with mode Default. With one,
  * they are the allowed registrations in the order of allowed, and the Default
  * is its default. A registration that is missing, does not serve the section,
- * or is not Accepted=True and Ready=True, is left out. An option has no choices when its registration
- * lists none, or when its choice parameter ("preset" if the schema has it,
- * else "name") is claim-editable and the Environment gives it an allowed
- * list. That list is then in parameters. disabledReason stays unset: the
- * caller sets it from missingInputs.
+ * or is not Accepted=True and Ready=True, is left out: offeredSection shows
+ * the accepted ones that serve the section. An option has no choices when its
+ * registration lists none, or when its choice parameter ("preset" if the
+ * schema has it, else "name") is claim-editable and the Environment gives it
+ * an allowed list. That list is then in parameters. disabledReason stays
+ * unset: withMissingInputs sets it.
  */
 export function sectionOptions(
   section: PluginSection,
@@ -160,6 +173,87 @@ export function sectionOptions(
   return view;
 }
 
+/**
+ * offeredSection returns sectionOptions, plus each allowed registration that
+ * serves the section and is Accepted=True but not Ready=True, at its place
+ * in the allowed order, disabled with "Unavailable right now: <Ready
+ * message>" ("Unavailable right now" without a message). Such an option
+ * keeps isDefault, so it shows the Default label, and SectionCards does not
+ * preselect it. What a claim can select does not change.
+ */
+export function offeredSection(
+  section: PluginSection,
+  registrations: readonly PluginRegistration[],
+  environment: Environment | undefined,
+  claimKind: ClaimKind,
+): SectionView {
+  const view = sectionOptions(section, registrations, environment, claimKind);
+  const name = view.name;
+  const policy = section.spec.appliesTo.includes(claimKind)
+    ? sectionPolicy(name, environment, registrations)
+    : undefined;
+  if (!policy) return view;
+
+  const options = (policy.allowed ?? []).flatMap((allowed): OptionView[] => {
+    const offered = view.options.find((o) => o.registration === allowed);
+    if (offered) return [offered];
+    const registration = registrations.find((r) => r.metadata.name === allowed);
+    if (
+      !registration?.spec.sections.includes(name) ||
+      conditionOf(registration, "Accepted")?.status !== "True"
+    ) {
+      return [];
+    }
+    const message = conditionOf(registration, "Ready")?.message;
+    return [
+      {
+        ...optionOf(registration, environment, allowed === policy.default),
+        disabledReason: message
+          ? `Unavailable right now: ${message}`
+          : "Unavailable right now",
+      },
+    ];
+  });
+  return { ...view, options };
+}
+
+/**
+ * withMissingInputs disables each option of view that has a required input
+ * whose section has no selection in selections (missingInputs), with
+ * "Needs <a|an> <section label in lower case>", one phrase for each such
+ * section, joined by " and ". A section that no PluginSection of sections
+ * has is named by its name. An option that is disabled already keeps its
+ * reason.
+ */
+export function withMissingInputs(
+  view: SectionView,
+  selections: readonly PluginSelection[],
+  registrations: readonly PluginRegistration[],
+  sections: readonly PluginSection[],
+): SectionView {
+  return {
+    ...view,
+    options: view.options.map((option) => {
+      if (option.disabledReason) return option;
+      const missing = missingInputs(
+        { section: view.name, registration: option.registration },
+        selections,
+        registrations,
+      );
+      if (missing.length === 0) return option;
+      const phrases = [...new Set(missing.map((input) => input.section))].map(
+        (name) => {
+          const label =
+            sections.find((s) => s.metadata.name === name)?.spec.label ?? name;
+          const noun = label.charAt(0).toLowerCase() + label.slice(1);
+          return `${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}`;
+        },
+      );
+      return { ...option, disabledReason: `Needs ${phrases.join(" and ")}` };
+    }),
+  };
+}
+
 function optionOf(
   registration: PluginRegistration,
   environment: Environment | undefined,
@@ -190,10 +284,13 @@ function optionOf(
 // Contract 3.6: the app offers a registration only while it is accepted and
 // ready.
 function ready(registration: PluginRegistration): boolean {
-  const conditions = registration.status?.conditions ?? [];
-  return ["Accepted", "Ready"].every((type) =>
-    conditions.some((c) => c.type === type && c.status === "True"),
+  return ["Accepted", "Ready"].every(
+    (type) => conditionOf(registration, type)?.status === "True",
   );
+}
+
+function conditionOf(registration: PluginRegistration, type: string) {
+  return registration.status?.conditions?.find((c) => c.type === type);
 }
 
 // The values of the choices stay with the claim controller, and the

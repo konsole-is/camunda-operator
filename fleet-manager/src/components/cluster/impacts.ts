@@ -63,6 +63,73 @@ const OUTSIDE_POD = new Set([
 // The operator applies these fields of an embedded process to its host.
 const HOST_FIELDS = new Set(["extraEnv", "extraEnvFrom"]);
 
+// The impact rules read a change of these keys of a claim spec. A change of
+// another key, such as plugins, can reach the cluster in a way that the
+// review cannot see.
+const CLAIM_KEYS = new Set([
+  "presetRef",
+  "releaseRef",
+  "platformConfigRef",
+  "cluster",
+  "suspend",
+  "deletionPolicy",
+  "attachments",
+  "allowVersionDowngrade",
+]);
+
+// The operator keeps none of these keys of the user on a pod template.
+const OPERATOR_ANNOTATIONS = [
+  "camunda.io/config-hash",
+  "camunda.io/service-account-hash",
+];
+const OPERATOR_LABELS = [
+  "camunda.io/cluster",
+  "camunda.io/cluster-uid",
+  "camunda.io/component",
+  "camunda.io/storage-claim",
+];
+
+/**
+ * FieldReach says what a change of a top-level field of CamundaClusterSpec
+ * can restart: "brokers" the brokers and other processes, "others" only
+ * processes other than the brokers, "outside" no pod.
+ */
+export type FieldReach = "brokers" | "others" | "outside";
+
+/**
+ * SPEC_FIELDS gives the reach of each top-level field of CamundaClusterSpec.
+ * restartsBrokers counts a change of a field that is not in it as a change
+ * that restarts the brokers.
+ */
+export const SPEC_FIELDS = {
+  platformConfigRef: "brokers",
+  presetRef: "brokers",
+  releaseRef: "brokers",
+  version: "brokers",
+  externalUrl: "brokers",
+  serviceAccount: "brokers",
+  auth: "brokers",
+  zeebe: "brokers",
+  gateway: "brokers",
+  operate: "brokers",
+  tasklist: "brokers",
+  admin: "brokers",
+  extraEnv: "brokers",
+  extraEnvFrom: "brokers",
+  podLabels: "brokers",
+  podAnnotations: "brokers",
+  scheduling: "brokers",
+  storageRef: "brokers",
+  indexReplicas: "brokers",
+  backupStorageRef: "brokers",
+  documentStorageRef: "brokers",
+  backup: "brokers",
+  suspend: "brokers",
+  connectors: "brokers",
+  monitoring: "outside",
+  pause: "outside",
+} as const satisfies Record<keyof CamundaClusterSpec, FieldReach>;
+
 /**
  * mergedSpecs returns the merged spec of the cluster before the change and
  * after it. after is the cluster that the claim controller makes from the
@@ -86,6 +153,24 @@ export function mergedSpecs(input: ClusterChangeInput): {
  * impact table of the review, each once.
  */
 export function clusterImpacts(input: ClusterChangeInput): string[] {
+  return impactsOf(input).lines;
+}
+
+/**
+ * restartsBrokers says whether the change restarts the broker pods. It is
+ * true exactly when an impact line of the change says that the brokers
+ * restart or can restart. It is true also when the review cannot decide: for
+ * a change of a section, or a preset or a release that the input does not
+ * hold.
+ */
+export function restartsBrokers(input: ClusterChangeInput): boolean {
+  return impactsOf(input).brokers;
+}
+
+function impactsOf(input: ClusterChangeInput): {
+  lines: string[];
+  brokers: boolean;
+} {
   const { session, live } = input;
   const { before, after } = mergedSpecs(input);
   const refs = clusterAfter(input);
@@ -94,13 +179,23 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
   const changed = (name: keyof typeof was) => !equalJSON(was[name], is[name]);
   const cluster = clusterChanges(input);
   const lines = new Set<string>();
+  let brokers = false;
+  const restart = (p: Process) => {
+    lines.add(`${PROCESS_NAME[p]} pods restart.`);
+    if (p === "zeebe") brokers = true;
+  };
 
   // The config hash of every process takes the name and the generation of
-  // the preset, the release, and the platform config of the cluster.
-  const restartsAll = (
-    ["presetRef", "releaseRef", "platformConfigRef"] as const
-  ).some((name) => changed(name) && refs[name] !== live.spec[name]);
-  if (restartsAll) lines.add(RESTART_ALL);
+  // the release, the platform config, and the storage of the cluster, and
+  // the name and the fingerprint of the preset.
+  const restartsAll =
+    (["presetRef", "releaseRef", "platformConfigRef"] as const).some(
+      (name) => changed(name) && refs[name] !== live.spec[name],
+    ) || before.spec.storageRef !== after.spec.storageRef;
+  if (restartsAll) {
+    lines.add(RESTART_ALL);
+    brokers = true;
+  }
 
   if (changed("presetRef"))
     for (const line of leafChanges(
@@ -124,33 +219,42 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
       b.embedded.some((e) => e.process === process),
     );
     if (boxes.some((b) => b.process === process)) {
-      if (had.has(process) && !OUTSIDE_POD.has(field ?? ""))
-        lines.add(`${PROCESS_NAME[process]} pods restart.`);
+      if (had.has(process) && !OUTSIDE_POD.has(field ?? "")) restart(process);
     } else if (host && field !== undefined && HOST_FIELDS.has(field))
-      lines.add(`${PROCESS_NAME[host.process]} pods restart.`);
+      restart(host.process);
     else applies.push(`Applies when ${PROCESS_NAME[process]} runs standalone.`);
   }
 
+  // A new version changes the image of every process except the connectors,
+  // which take connectors.version.
+  const newImage = (process: Process) =>
+    process !== "connectors" && before.spec.version !== after.spec.version;
   if (!restartsAll)
     for (const { process } of boxes)
       if (
         had.has(process) &&
-        !equalJSON(
-          podInputs(before.spec, input, process),
-          podInputs(after.spec, input, process),
-        )
+        (newImage(process) ||
+          !equalJSON(
+            podInputs(before.spec, input, process),
+            podInputs(after.spec, input, process),
+          ))
       )
-        lines.add(`${PROCESS_NAME[process]} pods restart.`);
+        restart(process);
   for (const line of applies) lines.add(line);
 
   if (
     cluster.some(([first]) => "field" in first && CLUSTER_WIDE.has(first.field))
-  )
+  ) {
+    if (!equalJSON(brokerPod(before.spec), brokerPod(after.spec)))
+      restart("zeebe");
     lines.add(
       "Every process restarts, except the processes that set the field themselves.",
     );
+  }
 
-  for (const line of modeLines(input, before.spec, after.spec)) lines.add(line);
+  const modes = modeLines(input, before.spec, after.spec);
+  for (const line of modes.lines) lines.add(line);
+  if (modes.brokers) brokers = true;
 
   if (shrinks)
     lines.add("Volumes cannot shrink. The operator keeps the current size.");
@@ -177,15 +281,96 @@ export function clusterImpacts(input: ClusterChangeInput): string[] {
       "Nothing restarts. The policy applies when the cluster is deleted.",
     );
 
-  if (is.suspend === true && was.suspend !== true)
+  if (is.suspend === true && was.suspend !== true) {
     lines.add("Every workload goes to zero. The volumes stay.");
+    brokers = true;
+  }
 
   if (
     !equalJSON(was.attachments?.backupSchedule, is.attachments?.backupSchedule)
   )
     lines.add("Nothing restarts.");
 
-  return [...lines];
+  if (!brokers && undecided(input)) {
+    lines.add("Broker pods can restart.");
+    brokers = true;
+  }
+
+  return { lines: [...lines], brokers };
+}
+
+// undecided says whether the review cannot tell if the change restarts the
+// brokers. A preset or a release that the input does not hold makes the
+// merged specs wrong. A section fills slot fields of the cluster only after
+// its outputs change.
+function undecided(input: ClusterChangeInput): boolean {
+  const refs = clusterAfter(input);
+  const held = (
+    list: readonly { metadata?: { name?: string } }[],
+    name: string | undefined,
+  ) => !name || list.some((r) => r.metadata?.name === name);
+  if (
+    !held(input.presets, input.live.spec.presetRef) ||
+    !held(input.presets, refs.presetRef) ||
+    !held(input.releases, input.live.spec.releaseRef) ||
+    !held(input.releases, refs.releaseRef)
+  )
+    return true;
+  const was: Record<string, unknown> = input.session.claim.spec;
+  const is: Record<string, unknown> = claimAfter(input.session).spec;
+  const keys = new Set([...Object.keys(was), ...Object.keys(is)]);
+  if ([...keys].some((k) => !CLAIM_KEYS.has(k) && !equalJSON(was[k], is[k])))
+    return true;
+  return clusterChanges(input).some(
+    ([first]) =>
+      !("field" in first) || !Object.hasOwn(SPEC_FIELDS, first.field),
+  );
+}
+
+type PodBlock = {
+  extraEnv?: { name: string }[];
+  extraEnvFrom?: unknown[];
+  podLabels?: Record<string, string>;
+  podAnnotations?: Record<string, string>;
+};
+
+// brokerPod returns the cluster-wide settings of the broker pod template as
+// workloadMutations in pkg/components/camundacluster/mutations.go and userEnv
+// in render.go render them: a scheduling block of the brokers replaces the
+// cluster one, and the last variable of a name wins.
+function brokerPod(spec: CamundaClusterSpec): unknown {
+  const zeebe: PodBlock = spec.zeebe ?? {};
+  const embedded =
+    topologyOf(spec, [])
+      .find((b) => b.process === "zeebe")
+      ?.embedded.map((e): PodBlock => spec[e.process] ?? {}) ?? [];
+  const sources = [...embedded, zeebe];
+  const env = new Map<string, unknown>();
+  for (const e of [
+    ...(spec.extraEnv ?? []),
+    ...sources.flatMap((s) => s.extraEnv ?? []),
+  ])
+    env.set(e.name, e);
+  const annotations: Record<string, string> = {
+    ...spec.podAnnotations,
+    ...zeebe.podAnnotations,
+  };
+  for (const key of OPERATOR_ANNOTATIONS) delete annotations[key];
+  const labels: Record<string, string> = {
+    ...spec.podLabels,
+    ...zeebe.podLabels,
+  };
+  for (const key of OPERATOR_LABELS) delete labels[key];
+  return {
+    scheduling: spec.zeebe?.scheduling ?? spec.scheduling,
+    podLabels: labels,
+    podAnnotations: annotations,
+    extraEnv: [...env.values()],
+    extraEnvFrom: [
+      ...(spec.extraEnvFrom ?? []),
+      ...sources.flatMap((s) => s.extraEnvFrom ?? []),
+    ],
+  };
 }
 
 /** showsMergedDiff says whether the review shows the merged diff: a change of presetRef or releaseRef, or a reset. */
@@ -378,15 +563,18 @@ function shrinksStorage(
   }
 }
 
+// modeLines returns the lines of the processes that a mode switch creates or
+// removes. brokers is true when a process moves into or out of the brokers.
 function modeLines(
   input: ClusterChangeInput,
   before: CamundaClusterSpec,
   after: CamundaClusterSpec,
-): string[] {
+): { lines: string[]; brokers: boolean } {
   const name = input.live.metadata?.name ?? "";
   const was = topologyOf(before, []);
   const is = topologyOf(after, []);
   const lines: string[] = [];
+  let brokers = false;
   for (const box of is) {
     if (was.some((b) => b.process === box.process)) continue;
     const p = box.process;
@@ -395,13 +583,16 @@ function modeLines(
       startLine(input, p),
     );
     const host = was.find((b) => b.embedded.some((e) => e.process === p));
-    if (host && is.some((b) => b.process === host.process))
+    if (host && is.some((b) => b.process === host.process)) {
       lines.push(`${PROCESS_NAME[host.process]} pods restart.`);
+      if (host.process === "zeebe") brokers = true;
+    }
   }
   for (const box of was) {
     const p = box.process;
     if (is.some((b) => b.process === p)) continue;
     const host = is.find((b) => b.embedded.some((e) => e.process === p));
+    if (host?.process === "zeebe") brokers = true;
     const removes = `Removes Deployment ${name}-${p} and Service ${name}-${p}.`;
     lines.push(
       host
@@ -409,7 +600,7 @@ function modeLines(
         : removes,
     );
   }
-  return lines;
+  return { lines, brokers };
 }
 
 function startLine(input: ClusterChangeInput, p: Process): string {

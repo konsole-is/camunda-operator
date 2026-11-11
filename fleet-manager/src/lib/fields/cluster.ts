@@ -112,14 +112,15 @@ const CLAIM_FIELDS = new Set([
   "suspend",
 ]);
 
-const COMPONENTS = new Set<FieldGroup>([
+/** COMPONENTS are the FieldGroups of the six components, each a block of spec.cluster. */
+export const COMPONENTS: readonly FieldGroup[] = [
   "zeebe",
   "gateway",
   "operate",
   "tasklist",
   "admin",
   "connectors",
-]);
+];
 
 const RANK: Record<Layer, number> = { preset: 0, release: 1, overrides: 2 };
 
@@ -292,7 +293,7 @@ function camundaClusterFields(
     const component =
       unit.steps.length > 1 &&
       "field" in first &&
-      COMPONENTS.has(first.field as FieldGroup)
+      COMPONENTS.includes(first.field as FieldGroup)
         ? (first.field as FieldGroup)
         : undefined;
     return {
