@@ -217,7 +217,12 @@ function snapshot(input: ResolveInput): PolicyResult<ResolvedPolicy> {
   return { value: policy };
 }
 
-function requestParameters(
+/**
+ * requestParameters returns the parameters of the request of selection
+ * under policies, by the rule of resolve, or undefined when it has none.
+ * parameters of selection that is not a JSON object is an error.
+ */
+export function requestParameters(
   selection: PluginSelection,
   policies: ParameterPolicies,
 ): PolicyResult<Record<string, unknown> | undefined> {

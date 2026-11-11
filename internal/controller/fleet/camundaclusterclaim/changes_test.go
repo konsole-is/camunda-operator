@@ -98,6 +98,45 @@ var _ = Describe("Changing a cluster claim", func() {
 		}, consistently, interval).Should(Succeed())
 	})
 
+	It("keeps an Elasticsearch preset that the Environment drops, and refuses a change to another one", func() {
+		environment := elasticsearchEnvironment("small")
+		createEnvironment(environment)
+		claim := newClaim(newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}))
+		claim.Spec.Plugins[0] = elasticsearchSelection("small")
+		create(claim)
+		eventuallyCluster(claim)
+
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(environment), environment)).To(Succeed())
+		environment.Spec.Presets.ElasticsearchCluster = []string{"medium"}
+		Expect(k8sClient.Update(ctx, environment)).To(Succeed())
+		updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) { c.Spec.Suspend = true })
+
+		Eventually(func(g Gomega) {
+			cluster, err := clusterOf(claim)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(cluster.Spec.Suspend).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+		Consistently(func(g Gomega) {
+			ready := meta.FindStatusCondition(latest(g, claim).Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Reason).NotTo(Equal(fleetv1alpha1.ReasonNotAllowed))
+		}, consistently, interval).Should(Succeed())
+
+		By("changing the preset to one that the Environment does not list")
+		updateClaim(claim, func(c *fleetv1alpha1.CamundaClusterClaim) {
+			c.Spec.Plugins[0] = elasticsearchSelection("large")
+		})
+		expectFalse(
+			claim,
+			v1.ConditionReady,
+			fleetv1alpha1.ReasonNotAllowed,
+			ContainSubstring(`ElasticsearchClusterPreset "large" is not in spec.presets.elasticsearchCluster`),
+		)
+		request, err := requestOf(claim, pluginstartup.SectionSecondaryStorage)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(request.Spec.Parameters.Raw)).To(ContainSubstring(`"preset":"small"`))
+	})
+
 	It("passes a claim-editable parameter to the request and refuses another key", func() {
 		environment := allowingEnvironment(map[string][]string{
 			pluginstartup.SectionSecondaryStorage: {pluginstartup.RegistrationExistingSecondaryStorage},

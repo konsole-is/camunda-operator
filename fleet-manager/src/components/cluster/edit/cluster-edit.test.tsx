@@ -343,6 +343,58 @@ describe("ClusterEditProvider", () => {
     ).toBeTruthy();
   });
 
+  it("checks a storage preset of the claim against the requests of the context", () => {
+    const storageClaim = {
+      ...claim("41", {
+        plugins: [
+          {
+            section: "secondary-storage",
+            registration: "elasticsearch",
+            parameters: { preset: "small" },
+          },
+        ],
+      }),
+      status: {
+        resolvedPolicy: {
+          sections: { "secondary-storage": { allowed: ["elasticsearch"] } },
+          parameters: { elasticsearch: { preset: { claimEditable: true } } },
+        },
+      },
+    } as unknown as Resource<"CamundaClusterClaim">;
+    const request = {
+      metadata: { namespace: "team-a", name: "orders-secondary-storage" },
+      spec: {
+        claimRef: { kind: "CamundaClusterClaim", name: "orders" },
+        section: "secondary-storage",
+        registration: "elasticsearch",
+        parameters: { preset: "small" },
+      },
+    } as unknown as Resource<"PluginRequest">;
+    const sections = [
+      {
+        kind: "PluginSection",
+        metadata: { name: "secondary-storage" },
+        spec: {
+          label: "Secondary storage",
+          slot: "secondaryStorage",
+          appliesTo: ["CamundaClusterClaim"],
+          selection: "One",
+        },
+      } as unknown as Resource<"PluginSection">,
+    ];
+    const errors = () =>
+      screen.getByRole("list", { name: "Field errors" }).textContent;
+    const { update } = page(
+      slotContext({ claim: storageClaim, sections, requests: [request] }),
+    );
+    click("Scale");
+    expect(errors()).toBe("");
+    update(slotContext({ claim: storageClaim, sections, requests: [] }));
+    expect(errors()).toContain(
+      'ElasticsearchClusterPreset "small" is not in spec.presets.elasticsearchCluster of Environment "prod"',
+    );
+  });
+
   it("the review shows the impacts and saves the claim with the precondition", async () => {
     page();
     click("Suspend");
