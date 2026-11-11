@@ -189,7 +189,7 @@ export function builtinOption(
 }
 
 // With an Environment, the cards show the preset list of the Environment for
-// the kind.
+// the kind, because the claim controller refuses any other preset.
 function presetItems<P extends { metadata: { name?: string } }>(
   presets: readonly P[],
   listed: readonly string[] | undefined,

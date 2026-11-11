@@ -4336,8 +4336,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `camundaCluster` _string array_ | CamundaCluster are the names of the CamundaClusterPresets that a<br />cluster claim can use. |  | items:MinLength: 1 <br />Optional: \{\} <br /> |
-| `elasticsearchCluster` _string array_ | ElasticsearchCluster are the names of the ElasticsearchClusterPresets<br />that the built-in Elasticsearch of a claim can use. |  | items:MinLength: 1 <br />Optional: \{\} <br /> |
-| `databaseServer` _string array_ | DatabaseServer are the names of the DatabaseServerPresets that the<br />built-in PostgreSQL of a claim can use. |  | items:MinLength: 1 <br />Optional: \{\} <br /> |
+| `elasticsearchCluster` _string array_ | ElasticsearchCluster are the names of the ElasticsearchClusterPresets<br />that the built-in Elasticsearch of a claim can use: the parameter<br />preset of the registration elasticsearch. |  | items:MinLength: 1 <br />Optional: \{\} <br /> |
+| `databaseServer` _string array_ | DatabaseServer are the names of the DatabaseServerPresets that the<br />built-in PostgreSQL of a claim can use: the parameter preset of the<br />registrations database-server and management-database-server. |  | items:MinLength: 1 <br />Optional: \{\} <br /> |
 
 
 #### EnvironmentReleases
@@ -4376,7 +4376,7 @@ _Appears in:_
 | `displayName` _string_ | DisplayName is the name that the fleet manager shows for the<br />environment, at most 64 characters. It changes nothing for a claim. |  | MaxLength: 64 <br />Optional: \{\} <br /> |
 | `color` _string_ | Color is the color that the fleet manager shows for the environment,<br />as a hex color such as #2E7D32. It changes nothing for a claim. |  | Pattern: `^#[0-9a-fA-F]\{6\}$` <br />Optional: \{\} <br /> |
 | `platformConfigRef` _string_ | PlatformConfigRef names the CamundaPlatformConfig of a claim of the<br />environment that names none itself. |  | Optional: \{\} <br /> |
-| `presets` _[EnvironmentPresets](#environmentpresets)_ | Presets lists, for each preset kind, the presets that a claim of the<br />environment can use. The claim controller checks a new claim, and a<br />preset change of an existing claim, against the current lists. |  | Optional: \{\} <br /> |
+| `presets` _[EnvironmentPresets](#environmentpresets)_ | Presets lists, for each preset kind, the presets that a claim of the<br />environment can use. The claim controller checks a new claim, and a<br />preset change of an existing claim, against the current lists. A list<br />that is empty or not set allows no preset of its kind. A preset that<br />an existing claim already uses stays allowed when a list drops it. |  | Optional: \{\} <br /> |
 | `releases` _[EnvironmentReleases](#environmentreleases)_ | Releases lists the CamundaReleases that a claim of the environment can<br />use. The claim controller checks a new claim, and a release change of<br />an existing claim, against the current list. |  | Optional: \{\} <br /> |
 | `sections` _object (keys:string, values:[SectionPolicy](#sectionpolicy))_ | Sections holds the policy of each PluginSection, by section name. A<br />claim of the environment can select only a registration that the<br />policy of its section allows. A section that is not listed offers<br />only the empty option. A change applies to new claims only. |  | MaxProperties: 64 <br />Optional: \{\} <br /> |
 | `parameters` _object (keys:string, values:[ParameterPolicies](#parameterpolicies))_ | Parameters holds the policy of the parameters of each<br />PluginRegistration, by registration name and then by parameter name.<br />A parameter without a policy keeps the value of its registration, and<br />a claim cannot change it. A change applies to new claims only. |  | MaxProperties: 64 <br />Optional: \{\} <br /> |

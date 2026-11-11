@@ -43,6 +43,8 @@ The operator writes six built-in registrations:
 
 Without an `Environment`, a new cluster claim selects `elasticsearch` for its secondary storage, and a new management plane claim selects `management-database-server` for its databases. A claim selects the other options only when you pick them.
 
+In a namespace of an `Environment`, the `preset` of `elasticsearch` must be in `spec.presets.elasticsearchCluster`. The `preset` of `database-server` and of `management-database-server` must be in `spec.presets.databaseServer`. Otherwise the claim is refused with `NotAllowed`. See [Environment](environment.md#policy).
+
 Every input of a built-in registration is optional. Every built-in registration supports the deletion policies `Delete` and `Orphan`. The registrations of existing resources write nothing, so both policies keep everything in place.
 
 On `elasticsearch`, the input `backup-storage/objectStorageConfig` or `cloud-identity/serviceAccountAnnotations` fixes the ServiceAccount of the Elasticsearch pods to `<claim>-es-es`, which the cloud identity trusts. It then replaces the ServiceAccount settings of the preset. Without both inputs, the preset decides the ServiceAccount.
