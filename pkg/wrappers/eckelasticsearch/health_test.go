@@ -153,6 +153,55 @@ func TestDefaultConvergingStatusHandlerNamesTheMissingReadyPod(t *testing.T) {
 	assert.Equal(t, "Elasticsearch reports green health, and no Elasticsearch pod is Ready yet", got.Reason)
 }
 
+func TestDefaultConvergingStatusHandlerWaitsForECKToObserveTheSpec(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		op   concepts.ConvergingOperation
+		want concepts.AliveConvergingStatus
+	}{
+		{
+			name: "a stale status on create is creating",
+			op:   concepts.ConvergingOperationCreated, want: concepts.AliveConvergingStatusCreating,
+		},
+		{
+			name: "a stale status on update is updating",
+			op:   concepts.ConvergingOperationUpdated, want: concepts.AliveConvergingStatusUpdating,
+		},
+		{
+			name: "a stale status with no change is updating",
+			op:   concepts.ConvergingOperationNone, want: concepts.AliveConvergingStatusUpdating,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			es := esWithHealth(esv1.ElasticsearchGreenHealth, 1)
+			es.Generation = 3
+			es.Status.ObservedGeneration = 2
+
+			got, err := DefaultConvergingStatusHandler(tt.op, es)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got.Status)
+			assert.NotEmpty(t, got.Reason)
+		})
+	}
+}
+
+func TestDefaultConvergingStatusHandlerTrustsAStatusOfTheCurrentGeneration(t *testing.T) {
+	t.Parallel()
+
+	es := esWithHealth(esv1.ElasticsearchGreenHealth, 1)
+	es.Generation = 3
+	es.Status.ObservedGeneration = 3
+
+	got, err := DefaultConvergingStatusHandler(concepts.ConvergingOperationUpdated, es)
+	require.NoError(t, err)
+	assert.Equal(t, concepts.AliveConvergingStatusHealthy, got.Status)
+}
+
 func TestDefaultGraceStatusHandler(t *testing.T) {
 	t.Parallel()
 
@@ -187,6 +236,48 @@ func TestDefaultGraceStatusHandlerNamesTheMissingReadyPod(t *testing.T) {
 	got, err := DefaultGraceStatusHandler(esWithHealth(esv1.ElasticsearchGreenHealth, 0))
 	require.NoError(t, err)
 	assert.Equal(t, "Elasticsearch reports green health, and no Elasticsearch pod is Ready", got.Reason)
+}
+
+func TestDefaultGraceStatusHandlerWaitsForECKToObserveTheSpec(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		health    esv1.ElasticsearchHealth
+		readyPods int32
+		want      concepts.GraceStatus
+	}{
+		{"green with a Ready pod is degraded", esv1.ElasticsearchGreenHealth, 1, concepts.GraceStatusDegraded},
+		{"green with no Ready pod is down", esv1.ElasticsearchGreenHealth, 0, concepts.GraceStatusDown},
+		{"yellow is degraded", esv1.ElasticsearchYellowHealth, 1, concepts.GraceStatusDegraded},
+		{"red is down", esv1.ElasticsearchRedHealth, 1, concepts.GraceStatusDown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			es := esWithHealth(tt.health, tt.readyPods)
+			es.Generation = 3
+			es.Status.ObservedGeneration = 2
+
+			got, err := DefaultGraceStatusHandler(es)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got.Status)
+			assert.NotEmpty(t, got.Reason)
+		})
+	}
+}
+
+func TestDefaultGraceStatusHandlerTrustsAStatusOfTheCurrentGeneration(t *testing.T) {
+	t.Parallel()
+
+	es := esWithHealth(esv1.ElasticsearchGreenHealth, 1)
+	es.Generation = 3
+	es.Status.ObservedGeneration = 3
+
+	got, err := DefaultGraceStatusHandler(es)
+	require.NoError(t, err)
+	assert.Equal(t, concepts.GraceStatusHealthy, got.Status)
 }
 
 func TestDefaultSuspendMutationHandlerSetsRetainingDeletePolicy(t *testing.T) {
