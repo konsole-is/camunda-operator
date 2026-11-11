@@ -8,6 +8,7 @@ import { type Plane, planesOf } from "@/components/planes/plane";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { type FleetPageData, FleetView, FleetViewLive } from "./fleet-view";
+import type { PodWarnings } from "@/lib/warnings";
 import type { FleetSources } from "./model";
 
 const live = vi.hoisted(() => ({
@@ -16,6 +17,10 @@ const live = vi.hoisted(() => ({
   pushes: [] as unknown[],
   settled: [] as string[],
   fresh: [] as string[],
+  warnings: undefined as unknown,
+}));
+vi.mock("@/lib/observe/use-observe", () => ({
+  useWarnings: () => live.warnings,
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => {
@@ -38,6 +43,7 @@ beforeEach(() => {
   live.pushes = [];
   live.settled = [];
   live.fresh = [];
+  live.warnings = undefined;
 });
 afterEach(cleanup);
 
@@ -200,6 +206,20 @@ const clusterNames = () =>
     )
     .map((href) => href.split("/").slice(3).join("/"));
 
+const podWarnings: PodWarnings = {
+  clusters: {
+    "prod/orders": [
+      {
+        kind: "oom",
+        severity: "Error",
+        label: "Out of memory",
+        detail: "Container zeebe of pod orders-zeebe-0 ran out of memory",
+      },
+    ],
+  },
+  missing: ["prometheus"],
+};
+
 const regions = () =>
   screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"));
 
@@ -340,6 +360,43 @@ describe("FleetView", () => {
       "p",
     );
     expect(waiting().some((t) => t.includes("p00"))).toBe(true);
+  });
+
+  it("shows the warning chips of each cluster", () => {
+    render(view({ podWarnings }));
+    expect(
+      within(screen.getByRole("row", { name: /orders/ })).getByRole("button", {
+        name: "Out of memory",
+      }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("row", { name: /billing/ })).queryByRole(
+        "button",
+        { name: "Out of memory" },
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps the clusters with warnings", async () => {
+    render(view({ podWarnings }));
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Status" }),
+      "with-warnings",
+    );
+    expect(clusterNames()).toEqual(["prod/orders"]);
+  });
+
+  it("says which source is missing above the clusters", () => {
+    render(view({ podWarnings }));
+    const note = screen.getByText(/Prometheus is not set or does not answer/);
+    const firstGroup = screen.getByRole("region", { name: "Development" });
+    expect(
+      note.compareDocumentPosition(firstGroup) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getAllByText(/Prometheus is not set or does not answer/),
+    ).toHaveLength(1);
   });
 
   it("says that no cluster matches the filters", async () => {
@@ -618,6 +675,14 @@ describe("FleetViewLive", () => {
     ];
     rerender(<FleetViewLive initial={initial} now={NOW} />);
     expect(clusterNames()).toContain("loose/fresh");
+  });
+
+  it("shows the warnings of the route", () => {
+    live.warnings = podWarnings;
+    render(<FleetViewLive initial={initial} now={NOW} />);
+    expect(
+      screen.getByRole("button", { name: "Out of memory" }),
+    ).toBeTruthy();
   });
 
   it("shows a pushed claim of this browser tab", () => {

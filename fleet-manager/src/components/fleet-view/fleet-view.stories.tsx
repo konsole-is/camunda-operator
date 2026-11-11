@@ -338,7 +338,12 @@ export const fleetViewStories: Story[] = [
     component: "ClusterTable",
     name: "Mixed states",
     render: () => (
-      <ClusterTable label="Production" rows={clusterRows(fleet, NOW)} />
+      <ClusterTable
+        label="Production"
+        rows={clusterRows(fleet, NOW)}
+        warnings={new Map()}
+        now={NOW}
+      />
     ),
   },
 ];

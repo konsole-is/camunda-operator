@@ -4,11 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BackupRow } from "@/components/cluster/backups";
 import { ClusterTable, WaitingTable } from "./cluster-table";
+import type { Warning } from "@/lib/warnings";
 import type { ClusterRow } from "./model";
 
 afterEach(cleanup);
 
 const NOW = "2026-11-10T12:00:00Z";
+const NONE = new Map<string, Warning[]>();
 
 const row = (name: string, over: Partial<ClusterRow> = {}): ClusterRow => ({
   id: `cluster/team-a/${name}`,
@@ -25,16 +27,25 @@ const rowOf = (name: string) =>
   screen.getByRole("row", { name: new RegExp(name) });
 
 describe("ClusterTable", () => {
-  it("has the five columns in order", () => {
-    render(<ClusterTable label="Production" rows={[row("orders")]} />);
+  it("has the six columns in order", () => {
+    render(<ClusterTable now={NOW} warnings={NONE} label="Production" rows={[row("orders")]} />);
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
-    ).toEqual(["Cluster", "Status", "Version", "Components", "Last backup"]);
+    ).toEqual([
+      "Cluster",
+      "Status",
+      "Version",
+      "Components",
+      "Last backup",
+      "Warnings",
+    ]);
   });
 
   it("links a cluster to its page and shows Not managed without the claim label", () => {
     render(
       <ClusterTable
+        now={NOW}
+        warnings={NONE}
         label="Production"
         rows={[row("orders"), row("legacy", { managed: false })]}
       />,
@@ -50,6 +61,8 @@ describe("ClusterTable", () => {
   it("names a claim without a cluster without a link", () => {
     render(
       <ClusterTable
+        now={NOW}
+        warnings={NONE}
         label="Production"
         rows={[row("returns", { href: undefined })]}
       />,
@@ -61,6 +74,8 @@ describe("ClusterTable", () => {
   it("shows the reason of a cluster that is not ready", () => {
     render(
       <ClusterTable
+        now={NOW}
+        warnings={NONE}
         label="Production"
         rows={[row("orders", { ready: { status: "False", reason: "Down" } })]}
       />,
@@ -71,6 +86,8 @@ describe("ClusterTable", () => {
   it("shows the reason of a ready cluster that is not Healthy", () => {
     render(
       <ClusterTable
+        now={NOW}
+        warnings={NONE}
         label="Production"
         rows={[
           row("orders", { ready: { status: "True", reason: "Suspended" } }),
@@ -83,6 +100,8 @@ describe("ClusterTable", () => {
   it("shows the version with the preset below it, and a dash without a version", () => {
     render(
       <ClusterTable
+        now={NOW}
+        warnings={NONE}
         label="Production"
         rows={[
           row("orders", { version: "8.9.23", preset: "medium" }),
@@ -99,6 +118,8 @@ describe("ClusterTable", () => {
   it("shows the component dots of a cluster", () => {
     render(
       <ClusterTable
+        now={NOW}
+        warnings={NONE}
         label="Production"
         rows={[
           row("orders", {
@@ -119,6 +140,8 @@ describe("ClusterTable", () => {
   it("shows the phase and the start of the newest backup", () => {
     render(
       <ClusterTable
+        now={NOW}
+        warnings={NONE}
         label="Production"
         rows={[
           row("orders", {
@@ -138,12 +161,42 @@ describe("ClusterTable", () => {
   });
 
   it("shows No backups for a cluster without backups", () => {
-    render(<ClusterTable label="Production" rows={[row("orders")]} />);
+    render(<ClusterTable now={NOW} warnings={NONE} label="Production" rows={[row("orders")]} />);
     expect(within(rowOf("orders")).getByText("No backups")).toBeTruthy();
   });
 
+  it("shows the warnings of a row and nothing for a row without warnings", () => {
+    const warnings = new Map<string, Warning[]>([
+      [
+        "cluster/team-a/orders",
+        [
+          {
+            kind: "backup",
+            severity: "Warning",
+            label: "Backup failed",
+            detail: "The newest backup orders-nightly failed",
+          },
+        ],
+      ],
+    ]);
+    render(
+      <ClusterTable
+        now={NOW}
+        warnings={warnings}
+        label="Production"
+        rows={[row("orders"), row("billing")]}
+      />,
+    );
+    expect(
+      within(rowOf("orders")).getByRole("button", { name: "Backup failed" }),
+    ).toBeTruthy();
+    expect(
+      within(rowOf("billing")).getAllByRole("cell")[5].textContent,
+    ).toBe("-");
+  });
+
   it("names the table by its label", () => {
-    render(<ClusterTable label="Production" rows={[row("orders")]} />);
+    render(<ClusterTable now={NOW} warnings={NONE} label="Production" rows={[row("orders")]} />);
     expect(screen.getByRole("region", { name: "Production" })).toBeTruthy();
   });
 });

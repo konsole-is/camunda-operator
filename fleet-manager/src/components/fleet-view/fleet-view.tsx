@@ -18,6 +18,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useResources, useWatchesFresh } from "@/lib/k8s/hooks";
 import type { KindName } from "@/lib/k8s/kinds";
+import type { Unavailable } from "@/lib/observe/types";
+import { useWarnings } from "@/lib/observe/use-observe";
+import type { PodWarnings, Warning } from "@/lib/warnings";
 import type { RefKey } from "@/lib/write/types";
 import { ClusterTable, WaitingTable } from "./cluster-table";
 import {
@@ -34,8 +37,10 @@ import {
   filterRows,
   groupRows,
   rowNamespaces,
+  rowWarnings,
   waitingRows,
 } from "./model";
+import { MissingSources } from "./warning-chips";
 
 import type { ReadError } from "@/components/planes/planes-table";
 
@@ -61,11 +66,16 @@ const isReady = (row: ClusterRow) => row.ready?.status === "True";
 // page does not say that the fleet is empty.
 const UNREAD_EMPTY = ["CamundaCluster", "CamundaClusterClaim"];
 
-/** FleetView is the fleet page on the given lists. It fetches nothing. */
+/**
+ * FleetView is the fleet page on the given lists and pod warnings. It
+ * fetches nothing. Without podWarnings a row shows only the warnings of its
+ * backups and requests.
+ */
 export function FleetView({
   sources,
   planes,
   pushes,
+  podWarnings,
   errors = [],
   now,
   onStopWaiting,
@@ -73,6 +83,7 @@ export function FleetView({
   sources: FleetSources;
   planes: Plane[];
   pushes: PendingPush[];
+  podWarnings?: PodWarnings | Unavailable;
   errors?: ReadError[];
   now: string;
   onStopWaiting?: (key: RefKey) => void;
@@ -84,6 +95,10 @@ export function FleetView({
     status: "all",
   });
   const rows = useMemo(() => clusterRows(sources, now), [sources, now]);
+  const warnings = useMemo(
+    () => new Map(rows.map((row) => [row.id, rowWarnings(row, podWarnings)])),
+    [rows, podWarnings],
+  );
   const waiting = waitingRows(pushes, sources.claims);
   const tabs = environmentTabs(sources.environments, rows);
   const active = tabs.some((t) => t.value === tab) ? tab : ALL_TAB;
@@ -92,6 +107,8 @@ export function FleetView({
     <TabContent
       tab={tabs.length === 0 ? undefined : active}
       rows={rows}
+      warnings={warnings}
+      podWarnings={podWarnings}
       waiting={waiting}
       planes={planes}
       sources={sources}
@@ -162,6 +179,8 @@ export function FleetView({
 function TabContent({
   tab,
   rows,
+  warnings,
+  podWarnings,
   waiting,
   planes,
   sources,
@@ -173,6 +192,8 @@ function TabContent({
 }: {
   tab?: string;
   rows: ClusterRow[];
+  warnings: ReadonlyMap<string, Warning[]>;
+  podWarnings?: PodWarnings | Unavailable;
   waiting: ReturnType<typeof waitingRows>;
   planes: Plane[];
   sources: FleetSources;
@@ -203,7 +224,9 @@ function TabContent({
     ? filter
     : { ...filter, namespace: "" };
   const groups = groupRows(
-    filterRows(rows, active, isReady),
+    filterRows(rows, active, isReady, (row) =>
+      Boolean(warnings.get(row.id)?.length),
+    ),
     sources.environments,
     tab ?? ALL_TAB,
   );
@@ -241,6 +264,7 @@ function TabContent({
               onFilter={onFilter}
               namespaces={namespaces}
             />
+            <MissingSources pods={podWarnings} />
             {shownWaiting.length > 0 && (
               <WaitingTable
                 key={`${active.search}|${active.namespace}|${active.status}`}
@@ -258,6 +282,8 @@ function TabContent({
                   // table again at its first page.
                   key={`${group.environment ?? group.label ?? "all"}|${active.search}|${active.namespace}|${active.status}`}
                   group={group}
+                  warnings={warnings}
+                  now={now}
                   filtered={rows.some((r) => inGroup(r, group))}
                 />
               ))
@@ -274,11 +300,23 @@ function inGroup(row: ClusterRow, group: RowGroup): boolean {
   return row.environment === group.environment;
 }
 
-function Group({ group, filtered }: { group: RowGroup; filtered: boolean }) {
+function Group({
+  group,
+  warnings,
+  now,
+  filtered,
+}: {
+  group: RowGroup;
+  warnings: ReadonlyMap<string, Warning[]>;
+  now: string;
+  filtered: boolean;
+}) {
   const table = (
     <ClusterTable
       label={group.label ?? "Clusters"}
       rows={group.rows}
+      warnings={warnings}
+      now={now}
       emptyText={filtered ? NO_MATCH : "No cluster in this environment yet."}
     />
   );
@@ -351,13 +389,20 @@ function FilterBar({
         >
           <NativeSelectOption value="all">All</NativeSelectOption>
           <NativeSelectOption value="not-ready">Not ready</NativeSelectOption>
+          <NativeSelectOption value="with-warnings">
+            With warnings
+          </NativeSelectOption>
         </NativeSelect>
       </div>
     </div>
   );
 }
 
-/** FleetViewLive is FleetView on the live lists, starting from initial. It never watches pods, logs, or events. */
+/**
+ * FleetViewLive is FleetView on the live lists, starting from initial, and
+ * on the pod warnings that useWarnings polls. It never watches pods, logs,
+ * or events.
+ */
 export function FleetViewLive({
   initial,
   now,
@@ -392,6 +437,7 @@ export function FleetViewLive({
   );
   const planes = usePlanes(initial.planes);
   const { pushes, settle } = useGitPushes();
+  const podWarnings = useWarnings();
   const clock = useClock(now);
 
   const sources: FleetSources = useMemo(
@@ -462,6 +508,7 @@ export function FleetViewLive({
       sources={sources}
       planes={planes.planes}
       pushes={pushes}
+      podWarnings={podWarnings}
       errors={errors}
       now={clock}
       onStopWaiting={settle}
