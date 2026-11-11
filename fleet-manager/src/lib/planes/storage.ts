@@ -272,6 +272,41 @@ function selectionErrors(
   });
 }
 
+// SectionCards checks the choices only while step 4 shows, and a
+// DatabaseConfig or a preset of the Environment can go after that.
+function choiceErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
+  return [views.databases, views.access].flatMap((view) => {
+    if (!view) return [];
+    return picksOf(draft, view).flatMap((selection) => {
+      const option = view.options.find(
+        (o) => o.registration === selection.registration,
+      );
+      if (!option || option.disabledReason) return [];
+      const set = selection.parameters ?? {};
+      return option.parameters.flatMap((rule) => {
+        if (!rule.claimEditable) return [];
+        const value = Object.hasOwn(set, rule.name)
+          ? set[rule.name]
+          : rule.value;
+        if (value === undefined) return [];
+        const names =
+          option.choices?.parameter === rule.name
+            ? option.choices.items.map((i) => i.name)
+            : rule.allowed?.map((a) => a.name);
+        if (!names) return [];
+        const picked =
+          Array.isArray(value) && !rule.allowedLists ? value : [value];
+        return picked
+          .filter((v) => !names.includes(v as string))
+          .map(
+            (v) =>
+              `${String(v)} is not available for ${rule.label} of ${option.label}. Choose another.`,
+          );
+      });
+    });
+  });
+}
+
 // SectionCards checks the parameters against the policy only while step 4
 // shows, and the Environment can change after that.
 function parameterErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
@@ -337,8 +372,9 @@ export function contractNameErrors(
 /**
  * storageErrors returns the errors of step 4. sectionErrors are the errors
  * that SectionCards reported, and views the sections of planeSectionViews.
- * A section of views whose selected option is missing or disabled, or an
- * access section that is required and has no selection, blocks the step.
+ * A section of views whose selected option is missing or disabled, a
+ * parameter value that is not among the choices of views, or an access
+ * section that is required and has no selection, blocks the step.
  */
 export function storageErrors(
   draft: PlaneDraft,
@@ -349,7 +385,10 @@ export function storageErrors(
   const running = runningOf(draft);
   const databases = databaseSection(ctx.sections);
   const sectionNames = ctx.sections.map((s) => s.metadata.name);
-  const errors: string[] = selectionErrors(draft, views);
+  const errors: string[] = [
+    ...selectionErrors(draft, views),
+    ...choiceErrors(draft, views),
+  ];
   for (const [name, picked] of Object.entries(draft.storage)) {
     if (picked.length > 0 && !sectionNames.includes(name)) {
       errors.push(`Choose another option for ${name}.`);

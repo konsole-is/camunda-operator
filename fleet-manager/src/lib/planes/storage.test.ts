@@ -527,6 +527,162 @@ describe("planeSectionViews", () => {
   });
 });
 
+describe("storageErrors and a live choice that is gone", () => {
+  const ready = {
+    conditions: [
+      { type: "Accepted", status: "True" },
+      { type: "Ready", status: "True" },
+    ],
+  };
+  const builtin = (
+    name: string,
+    label: string,
+    properties: Record<string, unknown>,
+  ) =>
+    ({
+      metadata: { name },
+      spec: {
+        sections: ["management-database"],
+        mode: "Optional",
+        label,
+        deletionPolicies: ["Delete"],
+        serviceAccount: { name: "camunda", namespace: "camunda-system" },
+        controller: { name: "camunda-operator", version: "0.0.0" },
+        parameters: { type: "object", properties },
+      },
+      status: ready,
+    }) as unknown as PluginRegistration;
+  const app = (title: string) => ({ type: "string", title });
+  const environment = (spec: Record<string, unknown>) =>
+    ({
+      metadata: { name: "production" },
+      spec: {
+        sections: {
+          "management-database": {
+            required: true,
+            allowed: [
+              "existing-database-configs",
+              "management-database-server",
+            ],
+          },
+        },
+        ...spec,
+      },
+    }) as unknown as Environment;
+  const editable = { claimEditable: true };
+  const live = (spec: Record<string, unknown>): PlaneContext => ({
+    ...ctx,
+    environments: [environment(spec)],
+    registrations: [
+      builtin("existing-database-configs", "Existing databases", {
+        keycloak: app("Keycloak"),
+        identity: app("Management Identity"),
+        webModeler: app("Web Modeler"),
+      }),
+      builtin("management-database-server", "New PostgreSQL server", {
+        preset: { type: "string", title: "Preset" },
+      }),
+    ],
+  });
+  const configSpec = {
+    parameters: {
+      "existing-database-configs": {
+        keycloak: editable,
+        identity: editable,
+        webModeler: editable,
+      },
+    },
+  };
+  const presetSpec = {
+    parameters: { "management-database-server": { preset: editable } },
+  };
+  const config = (name: string) => ({
+    metadata: { namespace: "platform", name },
+    spec: {},
+  });
+  const preset = (name: string) => ({
+    metadata: { name },
+    spec: { server: { instances: 1 } },
+  });
+  const errorsOf = (d: PlaneDraft, c: PlaneContext, objects: object) =>
+    storageErrors(d, c, [], planeSectionViews(d, c, objects));
+  const keycloakOnly = { mode: "keycloak" as const };
+
+  it("refuses a picked DatabaseConfig that is gone while another one is left, and names it", () => {
+    const d = draft({
+      ...keycloakOnly,
+      storage: {
+        "management-database": [
+          configs({ keycloak: "kc-db", identity: "id-db" }),
+        ],
+      },
+    });
+    const c = live(configSpec);
+    expect(
+      errorsOf(d, c, {
+        DatabaseConfig: [config("kc-db"), config("id-db"), config("other")],
+      }),
+    ).toEqual([]);
+    expect(
+      errorsOf(d, c, { DatabaseConfig: [config("id-db"), config("other")] }),
+    ).toEqual([
+      "kc-db is not available for Keycloak of Existing databases. Choose another.",
+    ]);
+  });
+
+  it("refuses a DatabaseConfig that the policy gives and that is gone", () => {
+    const d = draft({
+      ...keycloakOnly,
+      storage: { "management-database": [configs({ identity: "id-db" })] },
+    });
+    const c = live({
+      parameters: {
+        "existing-database-configs": {
+          ...configSpec.parameters["existing-database-configs"],
+          keycloak: { claimEditable: true, value: "kc-db" },
+        },
+      },
+    });
+    expect(
+      errorsOf(d, c, { DatabaseConfig: [config("id-db"), config("other")] }),
+    ).toEqual([
+      "kc-db is not available for Keycloak of Existing databases. Choose another.",
+    ]);
+  });
+
+  it("refuses a picked preset that the Environment no longer lists while another one is left", () => {
+    const d = draft({
+      storage: {
+        "management-database": [
+          { ...database, parameters: { preset: "small" } },
+        ],
+      },
+    });
+    const objects = {
+      DatabaseServerPreset: [preset("small"), preset("large")],
+    };
+    expect(
+      errorsOf(
+        d,
+        live({
+          ...presetSpec,
+          presets: { databaseServer: ["small", "large"] },
+        }),
+        objects,
+      ),
+    ).toEqual([]);
+    expect(
+      errorsOf(
+        d,
+        live({ ...presetSpec, presets: { databaseServer: ["large"] } }),
+        objects,
+      ),
+    ).toEqual([
+      "small is not available for Preset of New PostgreSQL server. Choose another.",
+    ]);
+  });
+});
+
 // The Go source is the source of the suffixes. A change on one side alone
 // fails here.
 it("DATABASE_SUFFIX matches NameSuffix of pkg/planedatabases", () => {
