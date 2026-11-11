@@ -66,6 +66,7 @@ export function ClusterBasicsStep({
     set(["environment"], name);
     set(["namespace"], undefined);
     set(["storage"], undefined);
+    set(["claim", "spec", "deletionPolicy"], undefined);
     const next = environments.find((e) => e.metadata.name === name);
     if (
       presetRef &&

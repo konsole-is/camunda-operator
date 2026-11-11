@@ -9,8 +9,10 @@ import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageco
 import type { ClusterDraft } from "./draft";
 import {
   type StorageData,
+  deletionChoice,
   draftAccessPatterns,
   storageErrors,
+  storageSummary,
   storageViews,
 } from "./storage";
 
@@ -419,5 +421,518 @@ describe("draftAccessPatterns", () => {
         DATA,
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("deletionChoice", () => {
+  const keeping = (name: string, sections: string[]) =>
+    registration(name, { sections, deletionPolicies: ["Delete", "Orphan"] });
+  const data: StorageData = {
+    environment: undefined,
+    sections: SECTIONS,
+    registrations: [
+      keeping("s3", ["backup-storage"]),
+      registration("ephemeral", {
+        sections: ["backup-storage"],
+        label: "Ephemeral bucket",
+      }),
+      keeping("internal", ["access"]),
+    ],
+    objects: {},
+  };
+  const withEnvironment = (
+    deletionPolicy?: "Delete" | "Orphan",
+    backupDefault?: string,
+  ): StorageData => ({
+    ...data,
+    environment: {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "prod" },
+      spec: {
+        sections: {
+          "backup-storage": {
+            allowed: ["s3", "ephemeral"],
+            ...(backupDefault && { default: backupDefault }),
+          },
+          access: { allowed: ["internal"] },
+        },
+        ...(deletionPolicy && { deletionPolicy }),
+      },
+    } satisfies Environment,
+  });
+  const picking = (
+    backup: string,
+    policy?: "Delete" | "Orphan",
+  ): ClusterDraft => ({
+    ...draftWith({
+      "backup-storage": [{ section: "backup-storage", registration: backup }],
+      access: [{ section: "access", registration: "internal" }],
+    }),
+    ...(policy && {
+      claim: {
+        metadata: { name: "c1" },
+        spec: { presetRef: "small", deletionPolicy: policy },
+      },
+    }),
+  });
+
+  it("does not offer Keep when checkDeletionPolicy refuses Orphan", () => {
+    const choice = deletionChoice(picking("ephemeral"), data);
+
+    expect(choice.keepAllowed).toBe(false);
+    expect(choice.alwaysDeleted).toEqual([
+      { section: "backup-storage", label: "Ephemeral bucket (Backup storage)" },
+    ]);
+  });
+
+  it("offers Keep when every registration supports Orphan", () => {
+    const choice = deletionChoice(picking("s3"), data);
+
+    expect(choice.keepAllowed).toBe(true);
+    expect(choice.alwaysDeleted).toEqual([]);
+  });
+
+  it("does not offer Keep for a default that the step has not reported yet", () => {
+    expect(
+      deletionChoice(draftWith(), withEnvironment(undefined, "ephemeral"))
+        .keepAllowed,
+    ).toBe(false);
+  });
+
+  it("offers Keep for the picked empty option", () => {
+    expect(
+      deletionChoice(draftWith({ "backup-storage": [], access: [] }), data)
+        .keepAllowed,
+    ).toBe(true);
+  });
+
+  it("takes Delete as the default without an Environment", () => {
+    expect(deletionChoice(picking("s3"), data)).toMatchObject({
+      defaultPolicy: "Delete",
+      policy: "Delete",
+    });
+  });
+
+  it("takes Delete as the default of an Environment that sets none", () => {
+    expect(deletionChoice(picking("s3"), withEnvironment()).defaultPolicy).toBe(
+      "Delete",
+    );
+  });
+
+  it("takes the deletion default of the Environment", () => {
+    expect(
+      deletionChoice(picking("s3"), withEnvironment("Orphan")),
+    ).toMatchObject({ defaultPolicy: "Orphan", policy: "Orphan" });
+  });
+
+  it("takes the pick of the draft over the default", () => {
+    expect(
+      deletionChoice(picking("s3", "Delete"), withEnvironment("Orphan")).policy,
+    ).toBe("Delete");
+  });
+
+  it("falls back to Delete when the default keeps and a pick cannot", () => {
+    expect(
+      deletionChoice(picking("ephemeral"), withEnvironment("Orphan")),
+    ).toMatchObject({ defaultPolicy: "Orphan", policy: "Delete" });
+  });
+
+  it("falls back to Delete when the draft keeps and a pick cannot", () => {
+    expect(deletionChoice(picking("ephemeral", "Orphan"), data).policy).toBe(
+      "Delete",
+    );
+  });
+});
+
+describe("storageSummary", () => {
+  const builtin = { name: "camunda-operator", version: "0.0.0" };
+  const data: StorageData = {
+    environment: {
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "Environment",
+      metadata: { name: "prod" },
+      spec: {
+        sections: {
+          "backup-storage": { allowed: ["s3"] },
+          "secondary-storage": {
+            allowed: [
+              "elasticsearch",
+              "database-server",
+              "existing-secondary-storage",
+              "plugin-store",
+            ],
+          },
+          access: { allowed: ["gateway", "internal"] },
+          "connectors-permissions": { allowed: ["aws-connectors-role"] },
+        },
+        parameters: {
+          "existing-secondary-storage": { name: { claimEditable: true } },
+          "aws-connectors-role": {
+            managedPolicyArns: {
+              value: ["arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"],
+            },
+            extraPolicyArns: {
+              claimEditable: true,
+              allowed: [
+                {
+                  name: "sqs",
+                  label: "SQS access",
+                  value: "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+                },
+                {
+                  name: "s3",
+                  label: "S3 read",
+                  value: "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+                },
+              ],
+            },
+            roleArn: { claimEditable: true },
+          },
+        },
+      },
+    },
+    sections: [
+      section("backup-storage", "Backup storage", {
+        order: 40,
+        slot: "backupStorage",
+        emptyOptionLabel: "No backups",
+      }),
+      section("secondary-storage", "Secondary storage", {
+        order: 50,
+        slot: "secondaryStorage",
+        emptyOptionLabel: "None",
+      }),
+      section("access", "Access", {
+        order: 60,
+        slot: "externalAccess",
+        emptyOptionLabel: "No access",
+      }),
+      section("connectors-permissions", "Connectors permissions", {
+        order: 70,
+        slot: "connectorsIdentity",
+        emptyOptionLabel: "None",
+      }),
+    ],
+    registrations: [
+      registration("s3", { sections: ["backup-storage"] }),
+      registration("elasticsearch", {
+        sections: ["secondary-storage"],
+        controller: builtin,
+      }),
+      registration("database-server", {
+        sections: ["secondary-storage"],
+        controller: builtin,
+      }),
+      registration("existing-secondary-storage", {
+        sections: ["secondary-storage"],
+        controller: builtin,
+        parameterValues: { name: "shared" },
+        parameters: {
+          type: "object",
+          properties: { name: { type: "string", title: "Name" } },
+        },
+      }),
+      registration("plugin-store", { sections: ["secondary-storage"] }),
+      registration("gateway", {
+        outputs: [{ key: "externalUrl" }, { key: "optimizeUrl" }],
+      }),
+      registration("internal", { outputs: [{ key: "externalUrl" }] }),
+      registration("aws-connectors-role", {
+        sections: ["connectors-permissions"],
+        label: "Role for each cluster",
+      }),
+    ],
+    objects: {
+      SecondaryStorageConfig: [
+        config("shared", "team-a"),
+        { ...config("other", "team-a"), spec: { type: "elasticsearch" } },
+        { ...config("shared", "team-b"), spec: { type: "elasticsearch" } },
+      ] as SecondaryStorageConfig[],
+    },
+  };
+  const pick = (
+    section: string,
+    registration: string,
+    parameters?: Record<string, unknown>,
+  ) => ({ section, registration, ...(parameters && { parameters }) });
+  const summaryOf = (storage: ClusterDraft["storage"]) =>
+    storageSummary(
+      draftWith({
+        "backup-storage": [],
+        "secondary-storage": [],
+        access: [],
+        "connectors-permissions": [],
+        ...storage,
+      }),
+      data,
+    );
+
+  it("names the backup storage selection by the slot of its section", () => {
+    expect(
+      summaryOf({ "backup-storage": [pick("backup-storage", "s3")] })
+        .backupStorage,
+    ).toEqual(pick("backup-storage", "s3"));
+    expect(summaryOf({}).backupStorage).toBeUndefined();
+  });
+
+  it("knows the type of built-in Elasticsearch and PostgreSQL", () => {
+    expect(
+      summaryOf({
+        "secondary-storage": [pick("secondary-storage", "elasticsearch")],
+      }).secondaryStorageType,
+    ).toBe("elasticsearch");
+    expect(
+      summaryOf({
+        "secondary-storage": [pick("secondary-storage", "database-server")],
+      }).secondaryStorageType,
+    ).toBe("rdbms");
+  });
+
+  it("reads the type of the named SecondaryStorageConfig in the namespace of the draft", () => {
+    expect(
+      summaryOf({
+        "secondary-storage": [
+          pick("secondary-storage", "existing-secondary-storage", {
+            name: "other",
+          }),
+        ],
+      }).secondaryStorageType,
+    ).toBe("elasticsearch");
+  });
+
+  it("reads the type of the SecondaryStorageConfig that the policy names", () => {
+    expect(
+      summaryOf({
+        "secondary-storage": [
+          pick("secondary-storage", "existing-secondary-storage"),
+        ],
+      }).secondaryStorageType,
+    ).toBe("rdbms");
+  });
+
+  it("does not know the type of a SecondaryStorageConfig that is not there", () => {
+    expect(
+      summaryOf({
+        "secondary-storage": [
+          pick("secondary-storage", "existing-secondary-storage", {
+            name: "missing",
+          }),
+        ],
+      }).secondaryStorageType,
+    ).toBeUndefined();
+  });
+
+  it("does not know the type of another registration", () => {
+    expect(
+      summaryOf({
+        "secondary-storage": [pick("secondary-storage", "plugin-store")],
+      }).secondaryStorageType,
+    ).toBeUndefined();
+  });
+
+  it("says that an access option gives the Optimize URL when it lists that output", () => {
+    expect(summaryOf({ access: [pick("access", "gateway")] }).optimizeUrl).toBe(
+      true,
+    );
+    expect(
+      summaryOf({ access: [pick("access", "internal")] }).optimizeUrl,
+    ).toBe(false);
+    expect(summaryOf({}).optimizeUrl).toBe(false);
+  });
+
+  it("lists the slots that the selections fill, in section order", () => {
+    expect(
+      summaryOf({
+        access: [pick("access", "gateway")],
+        "backup-storage": [pick("backup-storage", "s3")],
+      }).slots,
+    ).toEqual(["backupStorage", "externalAccess"]);
+  });
+
+  it("lists the picked labels of an allowed list and no ARN", () => {
+    const summary = summaryOf({
+      "connectors-permissions": [
+        pick("connectors-permissions", "aws-connectors-role", {
+          extraPolicyArns: ["sqs", "s3"],
+        }),
+      ],
+    });
+
+    expect(summary.picks).toContainEqual({
+      section: "connectors-permissions",
+      sectionLabel: "Connectors permissions",
+      registration: "aws-connectors-role",
+      optionLabel: "Role for each cluster",
+      values: [{ label: "extraPolicyArns", value: "SQS access, S3 read" }],
+    });
+    expect(JSON.stringify(summary)).not.toMatch(/arn:aws/);
+  });
+
+  it("lists the policy value of an editable parameter that the selection leaves out", () => {
+    const withDefault: StorageData = {
+      ...data,
+      environment: {
+        ...data.environment!,
+        spec: {
+          ...data.environment!.spec,
+          parameters: {
+            "aws-connectors-role": {
+              extraPolicyArns: {
+                claimEditable: true,
+                value: ["arn:aws:iam::aws:policy/AmazonSQSFullAccess"],
+                allowed: [
+                  {
+                    name: "sqs",
+                    label: "SQS access",
+                    value: "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+    const summary = storageSummary(
+      draftWith({
+        "connectors-permissions": [
+          pick("connectors-permissions", "aws-connectors-role"),
+        ],
+      }),
+      withDefault,
+    );
+
+    expect(summary.picks.at(-1)?.values).toEqual([
+      { label: "extraPolicyArns", value: "SQS access" },
+    ]);
+    expect(JSON.stringify(summary)).not.toMatch(/arn:aws/);
+  });
+
+  it("shows a policy value that is no name of the allowed list as Set by your admin", () => {
+    const outside: StorageData = {
+      ...data,
+      environment: {
+        ...data.environment!,
+        spec: {
+          ...data.environment!.spec,
+          parameters: {
+            "aws-connectors-role": {
+              extraPolicyArns: {
+                claimEditable: true,
+                value: "arn:aws:iam::aws:policy/AdministratorAccess",
+                allowed: [
+                  {
+                    name: "sqs",
+                    label: "SQS access",
+                    value: "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    };
+    const summary = storageSummary(
+      draftWith({
+        "connectors-permissions": [
+          pick("connectors-permissions", "aws-connectors-role"),
+        ],
+      }),
+      outside,
+    );
+
+    expect(summary.picks.at(-1)?.values).toEqual([
+      { label: "extraPolicyArns", value: "Set by your admin" },
+    ]);
+  });
+
+  it("shows an ARN that the user entered as An ARN that you entered", () => {
+    const summary = summaryOf({
+      "connectors-permissions": [
+        pick("connectors-permissions", "aws-connectors-role", {
+          roleArn: "arn:aws:iam::123456789012:role/x",
+        }),
+      ],
+    });
+
+    expect(summary.picks[0].values).toEqual([
+      { label: "roleArn", value: "An ARN that you entered" },
+    ]);
+  });
+
+  it("shows an ARN of the policy as Set by your admin", () => {
+    const withRole: StorageData = {
+      ...data,
+      environment: {
+        ...data.environment!,
+        spec: {
+          ...data.environment!.spec,
+          parameters: {
+            "aws-connectors-role": {
+              roleArn: {
+                claimEditable: true,
+                value: "arn:aws:iam::123456789012:role/admin",
+              },
+            },
+          },
+        },
+      },
+    };
+    const summary = storageSummary(
+      draftWith({
+        "connectors-permissions": [
+          pick("connectors-permissions", "aws-connectors-role"),
+        ],
+      }),
+      withRole,
+    );
+
+    expect(summary.picks.at(-1)?.values).toEqual([
+      { label: "roleArn", value: "Set by your admin" },
+    ]);
+  });
+
+  it("shows another typed value as written", () => {
+    const summary = summaryOf({
+      "connectors-permissions": [
+        pick("connectors-permissions", "aws-connectors-role", {
+          roleArn: "connectors",
+        }),
+      ],
+    });
+
+    expect(summary.picks[0].values).toEqual([
+      { label: "roleArn", value: "connectors" },
+    ]);
+  });
+
+  it("gives one pick for each selection, in section order, with the label of the parameter", () => {
+    const summary = summaryOf({
+      access: [pick("access", "gateway")],
+      "secondary-storage": [
+        pick("secondary-storage", "existing-secondary-storage", {
+          name: "other",
+        }),
+      ],
+    });
+
+    expect(summary.picks).toEqual([
+      {
+        section: "secondary-storage",
+        sectionLabel: "Secondary storage",
+        registration: "existing-secondary-storage",
+        optionLabel: "existing-secondary-storage",
+        values: [{ label: "Name", value: "other" }],
+      },
+      {
+        section: "access",
+        sectionLabel: "Access",
+        registration: "gateway",
+        optionLabel: "gateway",
+        values: [],
+      },
+    ]);
   });
 });

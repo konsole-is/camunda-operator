@@ -10,6 +10,7 @@ import { claimNameErrors } from "@/lib/claims/names";
 import { environmentReady } from "@/lib/environments";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { byCodeUnit, type PluginSelection } from "@/lib/policy";
+import type { DeletionChoice } from "./storage";
 
 /** ClusterClaimSpec is the spec of a cluster claim with typed plugin parameters. */
 export type ClusterClaimSpec = Omit<CamundaClusterClaim["spec"], "plugins"> & {
@@ -163,11 +164,14 @@ export function draftSelections(draft: ClusterDraft): PluginSelection[] {
  * of environment. platformConfigRef is set only when the pick differs from
  * spec.platformConfigRef of environment. plugins are draftSelections, left
  * out when empty. cluster and attachments are copied when the draft sets
- * them.
+ * them. deletionPolicy is deletion.policy, set only when it differs from
+ * deletion.defaultPolicy. The deletion pick of draft counts only through
+ * deletion.
  */
 export function clusterClaimOf(
   draft: ClusterDraft,
   environment: Environment | undefined,
+  deletion: DeletionChoice,
 ): ClusterClaimObject {
   const { spec } = draft.claim;
   const releaseRef = spec.releaseRef ?? environment?.spec.releases?.default;
@@ -175,6 +179,8 @@ export function clusterClaimOf(
     spec.platformConfigRef !== environment?.spec.platformConfigRef
       ? spec.platformConfigRef
       : undefined;
+  const deletionPolicy =
+    deletion.policy !== deletion.defaultPolicy ? deletion.policy : undefined;
   const plugins = draftSelections(draft);
   return {
     apiVersion: "fleet.camunda.io/v1alpha1",
@@ -187,6 +193,7 @@ export function clusterClaimOf(
       presetRef: spec.presetRef ?? "",
       ...(releaseRef !== undefined && { releaseRef }),
       ...(platformConfigRef !== undefined && { platformConfigRef }),
+      ...(deletionPolicy !== undefined && { deletionPolicy }),
       ...(spec.cluster && { cluster: spec.cluster }),
       ...(spec.attachments && { attachments: spec.attachments }),
       ...(plugins.length > 0 && { plugins }),
