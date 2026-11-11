@@ -51,6 +51,10 @@ A backup of a schedule shows **Scheduled** in the column **Origin**. When you de
 
 > Restore my-cluster-restore-1 reads this backup. Delete the backup after the restore ends.
 
+If such a restore starts after the page showed the backup, **Delete backup** deletes nothing. The page then shows the reason:
+
+> Restore my-cluster-restore-1 reads the backup my-cluster-manual-20261110-143005. Delete the backup after the restore ends.
+
 A delete during the restore can leave the secondary storage of the cluster empty, as [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md) shows. When the page cannot read its settings, **Delete** is off with the same reason as **Back up now**.
 
 The operator removes the artifacts before the resource goes. When it cannot reach them, the artifacts stay in the bucket, and an event on the backup names them. The Deletion section of [LogicalBackupElasticsearch](../crds/logicalbackupelasticsearch.md#deletion) and [LogicalBackupRDBMS](../crds/logicalbackuprdbms.md#deletion) names the cases.
