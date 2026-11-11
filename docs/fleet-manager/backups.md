@@ -25,9 +25,9 @@ The page says "Backup my-cluster-manual-20261110-143005 created." when the backu
 
 | Reason on the page | What to do |
 | --- | --- |
-| "This cluster has no backup storage." | Select a bucket in the **Backup storage** section of the claim. |
+| "This cluster has no backup storage." | The claim chose no bucket in its **Backup storage** section when it was created. The sections of a claim are fixed after creation. To back up from the fleet manager, create a cluster with a bucket in that section. |
 | "`SecondaryStorageConfig <name>` not found, so the kind of backup is not known." | Create the `SecondaryStorageConfig` that `spec.storageRef` of the cluster names. |
-| "The cluster is suspended. A backup waits until it runs again, so resume the cluster first." | Resume the cluster, as [Suspend and resume](../guides/operations.md#suspend-and-resume) shows. |
+| "The cluster is suspended. A backup waits until it runs again, so resume the cluster first." | If you suspended the cluster, resume it, as [Suspend and resume](../guides/operations.md#suspend-and-resume) shows. Otherwise, read the reason of the `Ready` condition of the `CamundaCluster`, and find it in [Why the cluster is at zero replicas](../crds/camundacluster.md#why-the-cluster-is-at-zero-replicas). For example, `StorageAlreadyAttached` means that another cluster holds the secondary storage. |
 | "Changes are off: the fleet manager could not read its settings." | Make sure that the fleet manager can read the ConfigMap `fleet-manager-settings`, as [Fleet manager settings](settings.md) shows. |
 
 A cluster holds one backup or one restore at a time, as [One backup or restore at a time](../guides/operations.md#one-backup-or-restore-at-a-time) shows. While a backup or a restore of the cluster runs, **Back up now** stays on. The form then says, for example, "Restore my-cluster-restore-1 is running. The new backup waits until it ends." The new backup waits in `Pending` and starts on its own. A restore also suspends the cluster while it runs. This suspension does not turn **Back up now** off, because it ends with the restore. Any other suspension turns it off.
