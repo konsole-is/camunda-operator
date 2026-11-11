@@ -25,7 +25,7 @@ import type { WriteMode } from "@/lib/write/types";
 import { mergeCluster } from "@/lib/merge";
 import { usePartitions, usePodUsage } from "@/lib/observe/use-observe";
 import { runningBackup, runningRestore } from "@/lib/policy/backups";
-import { ActionSlot } from "./action-slot";
+import { ActionSlot, rowActionsOf } from "./action-slot";
 import { ActivityBanner, UnmanagedBanner } from "./banners";
 import { backupRowsOf, backupStorageOf, restoreRowsOf } from "./backups";
 import { BackupsTab } from "./backups-tab";
@@ -47,7 +47,7 @@ import {
   operatorVersionOf,
 } from "./settings";
 import { type ClaimActions, ClusterEditProvider } from "./edit/cluster-edit";
-import type { ActionSlots, ClusterSlotContext } from "./slots";
+import type { ClusterSlotContext, ClusterSlots } from "./slots";
 import { CLUSTER_TABS, type ClusterTab, clusterTabOf } from "./tabs";
 import { type Process, topologyOf } from "./topology";
 import { TopologyView } from "./topology-view";
@@ -107,7 +107,8 @@ export type ClusterPageData = {
  * opens the detail of a used component, or of an app embedded in one, on
  * the Overview tab, in place of the cards. slots fill the action slots of a
  * managed cluster, and an unmanaged cluster ignores them. A render function
- * of slots gets the slot context of the page. For a managed cluster with a
+ * of slots gets the slot context of the page, and the render function of
+ * cluster.backups.row also gets each backup row. For a managed cluster with a
  * claim, a filled cluster.claim.editor slot shows in place of the read view
  * of the claim. writeMode is the write mode of the fleet manager, undefined
  * when the page could not read it. claimActions turn on the edit host of a
@@ -125,7 +126,7 @@ export function ClusterView({
 }: {
   initial: ClusterPageData;
   now: string;
-  slots?: ActionSlots;
+  slots?: ClusterSlots;
   pushedClaim?: PushedObject;
   writeMode?: WriteMode;
   claimActions?: ClaimActions;
@@ -550,6 +551,7 @@ export function ClusterView({
             backups={backupRowsOf(live, backups, clock)}
             restores={restoreRowsOf(live, restores)}
             actions={slot("cluster.backups.actions")}
+            rowActions={rowActionsOf(slots, managed, context)}
           />
         </TabsContent>
         <TabsContent value="endpoints">

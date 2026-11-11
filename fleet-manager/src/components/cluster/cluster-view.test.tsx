@@ -16,6 +16,7 @@ import {
   ACTION_SLOTS,
   type ActionSlots,
   type ClusterSlotContext,
+  type ClusterSlots,
 } from "./slots";
 
 const live = vi.hoisted(() => ({
@@ -749,6 +750,52 @@ describe("Backups tab", () => {
     expect(
       screen.getByRole("button", { name: "Slot cluster.backups.actions" }),
     ).toBeTruthy();
+  });
+
+  const twoBackups = () =>
+    data({
+      backups: {
+        elasticsearch: [
+          esBackup("nightly-1", "Completed", "2026-10-18T02:00:00Z"),
+          esBackup("manual-1", "Completed", "2026-10-18T10:00:00Z"),
+        ],
+        rdbms: [],
+      },
+    });
+  const rowSlots: ClusterSlots = {
+    "cluster.backups.actions": <button>Back up now</button>,
+    "cluster.backups.row": (_ctx, row) => <button>Delete {row.name}</button>,
+  };
+
+  it("a managed cluster mounts the row slot on each backup row and keeps the header slot", () => {
+    const { container } = render(
+      view({ initial: twoBackups(), slots: rowSlots }),
+    );
+    for (const name of ["nightly-1", "manual-1"]) {
+      const row = screen
+        .getByRole("button", { name: `Details of ${name}` })
+        .closest("tr")!;
+      const mount = row.querySelector(
+        '[data-action-slot="cluster.backups.row"]',
+      );
+      expect(mount?.textContent).toBe(`Delete ${name}`);
+    }
+    const header = container.querySelector(
+      '[data-action-slot="cluster.backups.actions"]',
+    );
+    expect(header?.textContent).toBe("Back up now");
+  });
+
+  it("an unmanaged cluster mounts no row slot", () => {
+    const initial = twoBackups();
+    render(
+      view({
+        initial: { ...initial, cluster: cluster({ labels: {} }) },
+        slots: rowSlots,
+      }),
+    );
+    expect(screen.queryByRole("button", { name: /^Delete/ })).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
   });
 
   it("follows a backup that appears after the first render", () => {

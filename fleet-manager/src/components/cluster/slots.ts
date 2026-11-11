@@ -4,7 +4,12 @@ import type { ClusterField } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import type { Merged } from "@/lib/merge";
 import type { WriteMode } from "@/lib/write/types";
-import type { BackupObject, BackupStorage, RestoreObject } from "./backups";
+import type {
+  BackupObject,
+  BackupRow,
+  BackupStorage,
+  RestoreObject,
+} from "./backups";
 import type { CardId } from "./cards";
 
 /** ACTION_SLOTS names the places where the write flows mount their actions. */
@@ -62,3 +67,23 @@ export type ActionSlotFill =
 
 /** ActionSlots holds the fill of each filled slot. */
 export type ActionSlots = Partial<Record<ActionSlotName, ActionSlotFill>>;
+
+/** ROW_SLOTS names the slots that a write flow fills once for each row of a table. */
+export const ROW_SLOTS = ["cluster.backups.row"] as const;
+
+export type RowSlotName = (typeof ROW_SLOTS)[number];
+
+/**
+ * RowSlots holds the render function of each filled row slot.
+ * cluster.backups.row renders the actions of one backup row. A render
+ * function returns an element and calls no hook.
+ */
+export type RowSlots = Partial<{
+  "cluster.backups.row": (
+    context: ClusterSlotContext,
+    row: BackupRow,
+  ) => ReactNode;
+}>;
+
+/** ClusterSlots holds every slot of the cluster page. */
+export type ClusterSlots = ActionSlots & RowSlots;
