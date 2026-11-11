@@ -20,6 +20,7 @@ import {
   testGitConnection,
   testPrometheusQuery,
 } from "@/app/setup/settings/actions";
+import { GET as controllerPodsRoute } from "@/app/api/controller-pods/route";
 import { GET as healthz } from "@/app/api/healthz/route";
 import { GET as logsRoute } from "@/app/api/logs/route";
 import { GET as metricsRoute } from "@/app/api/metrics/route";
@@ -160,6 +161,14 @@ async function watchText(watch: string): Promise<string> {
 }
 
 const ROUTE_CALLS: Record<string, () => Promise<string>> = {
+  "api/controller-pods": async () =>
+    (
+      await controllerPodsRoute(
+        new Request(
+          `http://localhost/api/controller-pods?registration=${namespace}-missing`,
+        ),
+      )
+    ).text(),
   "api/healthz": async () => healthz().text(),
   // envtest runs no kubelet, so no pod has a log: the call reads a pod that
   // does not exist.

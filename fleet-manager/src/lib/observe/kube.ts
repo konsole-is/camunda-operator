@@ -158,6 +158,20 @@ export async function requestPods(
 }
 
 /**
+ * controllerPods returns the pods of the controller of registration: the
+ * pods in the namespace of its ServiceAccount that run under that
+ * ServiceAccount. The ServiceAccount of a built-in registration is the one
+ * of the operator, so it gives the operator pods.
+ */
+export async function controllerPods(
+  registration: Resource<"PluginRegistration">,
+): Promise<Resource<"Pod">[]> {
+  const { namespace, name } = registration.spec.serviceAccount;
+  const pods = await list("Pod", { namespace });
+  return pods.filter((pod) => pod.spec?.serviceAccountName === name);
+}
+
+/**
  * events returns the events.k8s.io events whose regarding object has the
  * kind, name, and namespace of ref, and its uid when ref has one, so that
  * the events of an older object of the same name can be left out.
