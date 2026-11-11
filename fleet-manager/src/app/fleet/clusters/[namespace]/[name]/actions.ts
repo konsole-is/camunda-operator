@@ -1,8 +1,8 @@
 "use server";
 
 import {
-  backupChangeSchema,
   claimChangeSchema,
+  runBackupChange,
   runChange,
   runPreview,
 } from "@/lib/write/run-change";
@@ -26,5 +26,5 @@ export async function applyBackupChange(
   cluster: { namespace: string; name: string },
   change: Change,
 ): Promise<WriteResult> {
-  return runChange(change, backupChangeSchema(cluster));
+  return runBackupChange(cluster, change);
 }

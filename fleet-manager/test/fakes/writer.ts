@@ -4,13 +4,14 @@
 //
 //   vi.mock("@/lib/write/writer", () => import("<relative>/test/fakes/writer"))
 //
-// The module then serves only the path of runChange and runPreview. A test
-// that needs refKey imports it from @/lib/write/refs. A test resets
-// fakeWriter before each test.
+// The module then serves only the path of runChange and runPreview, and
+// firstExisting. A test that needs refKey imports it from @/lib/write/refs.
+// A test resets fakeWriter before each test.
 import { createHash } from "node:crypto";
 import { refKey } from "@/lib/write/refs";
 import type {
   Change,
+  ObjectRef,
   Preview,
   RefKey,
   WriteMode,
@@ -38,6 +39,8 @@ export class FakeWriter implements Writer {
   results: WriteResult[] = [];
   /** previews are the results of the next previews, first one first. */
   previews: Preview[] = [];
+  /** existing holds the key of each object that firstExisting finds. */
+  existing: RefKey[] = [];
   private commits = 0;
 
   constructor(mode: WriteMode = "direct") {
@@ -51,6 +54,7 @@ export class FakeWriter implements Writer {
     this.previewed.length = 0;
     this.results = [];
     this.previews = [];
+    this.existing = [];
     this.commits = 0;
   }
 
@@ -103,6 +107,13 @@ function fileOf(ref: {
 
 /** fakeWriter is the writer that getWriter of this module returns. */
 export const fakeWriter = new FakeWriter();
+
+/** firstExisting returns the first of refs whose key is in fakeWriter.existing. */
+export async function firstExisting(
+  refs: readonly ObjectRef[],
+): Promise<ObjectRef | undefined> {
+  return refs.find((ref) => fakeWriter.existing.includes(refKey(ref)));
+}
 
 /** getWriter returns fakeWriter. */
 export async function getWriter(): Promise<Writer> {

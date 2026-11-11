@@ -6,7 +6,12 @@ import {
 } from "@kubernetes/client-node";
 import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 import type { KubeObject } from "@/lib/write/types";
-import { directWriter, readObject, refKey } from "@/lib/write/writer";
+import {
+  directWriter,
+  firstExisting,
+  readObject,
+  refKey,
+} from "@/lib/write/writer";
 import { createClientSideApplied } from "./client-side-apply";
 
 const kc = new KubeConfig();
@@ -817,5 +822,40 @@ describe("the direct writer against envtest", () => {
       expect(shown).not.toContain(Buffer.from(value).toString("base64"));
     }
     expect(preview.objects[0].diff.some((l) => l.op !== "same")).toBe(true);
+  });
+
+  it("firstExisting gives the first ref whose object exists, or nothing when none exists", async () => {
+    const backupRef = (kind: string) => ({
+      apiVersion: "core.camunda.io/v1",
+      kind,
+      namespace,
+      name,
+    });
+    expect(
+      await writer.apply({
+        intent: "Back up",
+        apply: [
+          {
+            apiVersion: "core.camunda.io/v1",
+            kind: "LogicalBackupRDBMS",
+            metadata: { name, namespace },
+            spec: { clusterRef: { name: "orders" } },
+          },
+        ],
+      }),
+    ).toEqual({ ok: true, mode: "direct" });
+
+    expect(
+      await firstExisting(
+        [
+          backupRef("LogicalBackupElasticsearch"),
+          backupRef("LogicalBackupRDBMS"),
+        ],
+        kc,
+      ),
+    ).toEqual(backupRef("LogicalBackupRDBMS"));
+    expect(
+      await firstExisting([backupRef("LogicalBackupElasticsearch")], kc),
+    ).toBeUndefined();
   });
 });

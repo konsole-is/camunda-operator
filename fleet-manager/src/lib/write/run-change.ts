@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { equalJSON } from "@/lib/policy";
+import { existsError } from "./errors";
 import { refKey, refOf } from "./refs";
 import type {
   ApiError,
@@ -10,7 +11,7 @@ import type {
   Preview,
   WriteResult,
 } from "./types";
-import { getWriter } from "./writer";
+import { firstExisting, getWriter } from "./writer";
 
 /** kubeObjectSchema accepts an object with apiVersion, kind, and metadata.name, and keeps every other field. */
 export const kubeObjectSchema: z.ZodType<KubeObject> = z.looseObject({
@@ -154,6 +155,39 @@ export function backupChangeSchema(cluster: {
         "The change must create one backup of the cluster, or delete one backup in its namespace, straight to the cluster.",
     },
   );
+}
+
+/**
+ * runBackupChange is runChange with backupChangeSchema(cluster). A new
+ * backup also fails with Stale, and writes nothing, when a backup of either
+ * kind in the namespace has its name.
+ */
+export async function runBackupChange(
+  cluster: { namespace: string; name: string },
+  input: unknown,
+): Promise<WriteResult> {
+  const schema = backupChangeSchema(cluster);
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
+  const [backup] = parsed.data.apply;
+  if (backup !== undefined) {
+    try {
+      const taken = await firstExisting(
+        BACKUP_KINDS.map((kind) => ({
+          apiVersion: BACKUP_API_VERSION,
+          kind,
+          namespace: cluster.namespace,
+          name: backup.metadata.name,
+        })),
+      );
+      if (taken !== undefined) {
+        return { ok: false, errors: [existsError(taken)] };
+      }
+    } catch (error) {
+      return { ok: false, errors: [unavailable(error)] };
+    }
+  }
+  return runChange(parsed.data, schema);
 }
 
 function isClusterBackup(

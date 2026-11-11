@@ -395,6 +395,21 @@ export function readObject(
   );
 }
 
+/**
+ * firstExisting returns the first of refs whose object exists on the API
+ * server of kc, kubeConfig() by default, or undefined. Each ref must pass
+ * refusalOf. It throws when a read fails.
+ */
+export async function firstExisting(
+  refs: readonly ObjectRef[],
+  kc: KubeConfig = kubeConfig(),
+): Promise<ObjectRef | undefined> {
+  for (const ref of refs) {
+    if ((await readObject(kc, ref)) !== undefined) return ref;
+  }
+  return undefined;
+}
+
 /** kindInfoOf returns the kind of KindMap or WriteOnlyKindMap, or undefined for any other kind. */
 export function kindInfoOf(kind: string): KindInfo | undefined {
   if (isKindName(kind)) return KindMap[kind];
