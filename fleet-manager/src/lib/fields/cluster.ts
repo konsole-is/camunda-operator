@@ -576,8 +576,6 @@ function docNamesOf(steps: readonly Step[]): string[] {
   return ["spec", ...steps.flatMap((s) => ("field" in s ? [s.field] : []))];
 }
 
-// The claim names the auth reference of Optimize managementAuthConfigRef,
-// and CamundaOptimize names it managementAuthRef.
 const CLAIM_AUTH = "managementAuthConfigRef";
 const LIVE_AUTH = "managementAuthRef";
 
@@ -585,6 +583,17 @@ function renameAuth(optimize: object | undefined): object | undefined {
   if (optimize === undefined) return undefined;
   const { [CLAIM_AUTH]: auth, ...rest } = optimize as Record<string, unknown>;
   return auth === undefined ? rest : { ...rest, [LIVE_AUTH]: auth };
+}
+
+/**
+ * optimizeClaimNames returns the claim names of the JSON names of a
+ * CamundaOptimize field, from below spec: the claim names the auth
+ * reference managementAuthConfigRef, and CamundaOptimize names it
+ * managementAuthRef.
+ */
+export function optimizeClaimNames(names: readonly string[]): string[] {
+  const [first, ...rest] = names;
+  return first === LIVE_AUTH ? [CLAIM_AUTH, ...rest] : [...names];
 }
 
 function claimAuthSteps(steps: readonly Step[]): Step[] {

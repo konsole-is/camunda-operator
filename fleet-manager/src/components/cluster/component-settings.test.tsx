@@ -132,7 +132,14 @@ describe("ComponentSettings", () => {
   it("says No settings when no group has a field", () => {
     render(
       <ComponentSettings
-        groups={[{ label: "Connectors", embedded: false, fields: [] }]}
+        groups={[
+          {
+            label: "Connectors",
+            component: "connectors",
+            embedded: false,
+            fields: [],
+          },
+        ]}
         docs={{}}
         operatorVersion="0.2.0"
         cluster={{ namespace: "team-a", name: "orders" }}

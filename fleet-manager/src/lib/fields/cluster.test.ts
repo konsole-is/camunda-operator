@@ -6,7 +6,11 @@ import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { mergeCluster, type ManagedFieldsEntry } from "@/lib/merge";
 import { loadMergeFixtures } from "../../../test/merge/fixtures";
-import { clusterFields, type ClusterFieldsInput } from "./cluster";
+import {
+  clusterFields,
+  optimizeClaimNames,
+  type ClusterFieldsInput,
+} from "./cluster";
 import { pathFrom } from "./walk";
 import { lockLabel, stateLabel, stateNote } from "./labels";
 import type { ClusterField } from "./types";
@@ -790,6 +794,25 @@ describe("claimSteps", () => {
       { field: "spec" },
       { field: "plugins" },
       { item: { section: "volume-encryption", registration: "x" } },
+    ]);
+  });
+});
+
+describe("optimizeClaimNames", () => {
+  it("names the auth reference as the claim does", () => {
+    expect(optimizeClaimNames(["managementAuthRef"])).toEqual([
+      "managementAuthConfigRef",
+    ]);
+  });
+
+  it("keeps every other name", () => {
+    expect(optimizeClaimNames(["importer", "replicas"])).toEqual([
+      "importer",
+      "replicas",
+    ]);
+    expect(optimizeClaimNames(["webapp", "managementAuthRef"])).toEqual([
+      "webapp",
+      "managementAuthRef",
     ]);
   });
 });
