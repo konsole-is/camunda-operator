@@ -7,6 +7,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { MAX_LOG_STREAMS } from "@/lib/observe/logs";
 import type { LogLine } from "@/lib/observe/types";
 import {
   type LogStreamSource,
@@ -25,8 +26,7 @@ export type ControllerLogs = {
   request: { namespace: string; name: string };
 };
 
-/** MAX_LOG_STREAMS is the number of pods that All pods follows at most. */
-export const MAX_LOG_STREAMS = 10;
+export { MAX_LOG_STREAMS };
 
 /** LOG_TAIL_LINES is the number of earlier lines that each stream starts with. */
 export const LOG_TAIL_LINES = 200;
@@ -55,14 +55,12 @@ export function DetailLogs({
   const own: LogStreamSource[] = pods.map((p) => ({
     namespace,
     pod: p.metadata?.name ?? "",
-    tailLines: LOG_TAIL_LINES,
   }));
   const controllers: LogStreamSource[] =
     controller && found && found !== "unavailable"
       ? found.pods.map((pod) => ({
           namespace: found.namespace,
           pod,
-          tailLines: LOG_TAIL_LINES,
           request: `${controller.request.namespace}/${controller.request.name}`,
         }))
       : [];
@@ -71,6 +69,7 @@ export function DetailLogs({
   const pick = one ? picked : ALL;
   const { lines, errors } = useLogStreams(
     one ? [one] : all.slice(0, MAX_LOG_STREAMS),
+    { tailLines: LOG_TAIL_LINES },
   );
   return (
     <DetailLogsView
@@ -156,7 +155,7 @@ export function DetailLogsView({
   );
   return (
     <div className="flex flex-col gap-2 pt-2">
-      <LogViewer lines={lines} controls={picker} />
+      <LogViewer lines={lines} controls={picker} source={picked} />
       {picked === ALL && total > MAX_LOG_STREAMS && (
         <p className="text-sm text-muted">
           {`Showing the logs of ${MAX_LOG_STREAMS} of ${total} pods. Pick a pod to see the others.`}

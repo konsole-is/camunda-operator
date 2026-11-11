@@ -7,14 +7,24 @@ import { DetailLogs, LOG_TAIL_LINES, MAX_LOG_STREAMS } from "./detail-logs";
 
 const live = vi.hoisted(() => ({
   sources: [] as unknown[][],
-  streams: { lines: [] as unknown[], errors: [] as unknown[], ended: false },
+  options: [] as unknown[],
+  streams: { lines: [], errors: [], ended: false } as
+    | { lines: unknown[]; errors: unknown[]; ended: boolean }
+    | ((sources: { pod: string }[]) => {
+        lines: unknown[];
+        errors: unknown[];
+        ended: boolean;
+      }),
   controller: undefined as unknown,
   registrations: [] as unknown[],
 }));
 vi.mock("@/lib/observe/use-log-stream", () => ({
-  useLogStreams: (sources: unknown[]) => {
+  useLogStreams: (sources: { pod: string }[], options: unknown) => {
     live.sources.push(sources);
-    return live.streams;
+    live.options.push(options);
+    return typeof live.streams === "function"
+      ? live.streams(sources)
+      : live.streams;
   },
 }));
 vi.mock("@/lib/observe/use-observe", () => ({
@@ -26,6 +36,7 @@ vi.mock("@/lib/observe/use-observe", () => ({
 
 beforeEach(() => {
   live.sources = [];
+  live.options = [];
   live.streams = { lines: [], errors: [], ended: false };
   live.controller = undefined;
   live.registrations = [];
@@ -48,9 +59,9 @@ describe("DetailLogs", () => {
       brokers.map((p) => ({
         namespace: "team-a",
         pod: p.metadata.name,
-        tailLines: LOG_TAIL_LINES,
       })),
     );
+    expect(live.options.at(-1)).toEqual({ tailLines: LOG_TAIL_LINES });
     expect(screen.getByRole("option", { name: "All pods (3)" })).toBeTruthy();
     expect(live.registrations.every((r) => r === undefined)).toBe(true);
   });
@@ -64,7 +75,7 @@ describe("DetailLogs", () => {
     );
 
     expect(lastSources()).toEqual([
-      { namespace: "team-a", pod: "orders-zeebe-1", tailLines: LOG_TAIL_LINES },
+      { namespace: "team-a", pod: "orders-zeebe-1" },
     ]);
   });
 
@@ -94,11 +105,10 @@ describe("DetailLogs", () => {
 
     expect(live.registrations).toContain("rustfs-bucket");
     expect(lastSources()).toEqual([
-      { namespace: "team-a", pod: "rustfs-0", tailLines: LOG_TAIL_LINES },
+      { namespace: "team-a", pod: "rustfs-0" },
       {
         namespace: "plugins",
         pod: "rustfs-controller-0",
-        tailLines: LOG_TAIL_LINES,
         request: "team-a/orders-backup-storage",
       },
     ]);
@@ -130,7 +140,6 @@ describe("DetailLogs", () => {
       {
         namespace: "plugins",
         pod: "rustfs-controller-0",
-        tailLines: LOG_TAIL_LINES,
         request: "team-a/orders-backup-storage",
       },
     ]);
@@ -179,6 +188,29 @@ describe("DetailLogs", () => {
     expect(
       within(screen.getByRole("log")).getByText("Broker 0 is ready"),
     ).toBeTruthy();
+  });
+
+  it("shows the lines of the pod that the user picks, also while paused", async () => {
+    live.streams = (sources) => ({
+      lines: sources.map((s) => ({
+        ...parseLogLine(`line of ${s.pod}`),
+        pod: s.pod,
+      })),
+      errors: [],
+      ended: false,
+    });
+    render(<DetailLogs namespace="team-a" pods={brokers} />);
+    await userEvent.click(screen.getByRole("button", { name: "Pause" }));
+
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Pod" }),
+      "orders-zeebe-2",
+    );
+
+    const log = within(screen.getByRole("log"));
+    expect(log.getByText("line of orders-zeebe-2")).toBeTruthy();
+    expect(log.queryByText("line of orders-zeebe-0")).toBeNull();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
   });
 
   it("says so when the component has no pods", () => {

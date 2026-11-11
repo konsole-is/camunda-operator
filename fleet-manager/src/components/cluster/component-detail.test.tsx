@@ -149,7 +149,7 @@ describe("ComponentDetail", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Logs" }));
 
     expect(live.logSources.at(-1)).toEqual([
-      { namespace: "mgmt", pod: "plane-a-keycloak-0", tailLines: 200 },
+      { namespace: "mgmt", pod: "plane-a-keycloak-0" },
     ]);
     expect(live.registrations.every((r) => r === undefined)).toBe(true);
   });

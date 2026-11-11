@@ -23,6 +23,7 @@ import {
 import { GET as controllerPodsRoute } from "@/app/api/controller-pods/route";
 import { GET as healthz } from "@/app/api/healthz/route";
 import { GET as logsRoute } from "@/app/api/logs/route";
+import { GET as mergedLogsRoute } from "@/app/api/logs/merged/route";
 import { GET as metricsRoute } from "@/app/api/metrics/route";
 import { GET as partitionsRoute } from "@/app/api/partitions/route";
 import { GET as usageRoute } from "@/app/api/usage/route";
@@ -177,6 +178,14 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
       await logsRoute(
         new Request(
           `http://localhost/api/logs?namespace=${namespace}&pod=missing`,
+        ),
+      )
+    ).text(),
+  "api/logs/merged": async () =>
+    (
+      await mergedLogsRoute(
+        new Request(
+          `http://localhost/api/logs/merged?log=${namespace}%2Fmissing`,
         ),
       )
     ).text(),

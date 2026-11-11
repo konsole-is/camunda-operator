@@ -191,16 +191,27 @@ describe("useLogStream", () => {
 describe("useLogStreams", () => {
   const a = { namespace: "n", pod: "a" };
   const b = { namespace: "n", pod: "b" };
-  const of = (pod: string) =>
-    FakeEventSource.instances.find((e) => e.url.includes(`pod=${pod}`))!;
+  const line = (source: number, text: string) =>
+    last().emit("line", { source, line: text });
 
-  it("opens one stream for each pod and keeps the lines in the order they arrive, with their pod", () => {
+  it("follows every pod over one connection to /api/logs/merged", () => {
+    renderHook(() =>
+      useLogStreams([a, { namespace: "plugins", pod: "c", container: "m" }], {
+        tailLines: 200,
+      }),
+    );
+
+    expect(FakeEventSource.instances.map((e) => e.url)).toEqual([
+      "/api/logs/merged?log=n%2Fa&log=plugins%2Fc%2Fm&tailLines=200",
+    ]);
+  });
+
+  it("keeps the lines in the order they arrive, each with its pod", () => {
     const { result } = renderHook(() => useLogStreams([a, b]));
 
-    expect(FakeEventSource.instances).toHaveLength(2);
-    of("a").emit("line", "one");
-    of("b").emit("line", "two");
-    of("a").emit("line", "three");
+    line(0, "one");
+    line(1, "two");
+    line(0, "three");
 
     expect(result.current.lines.map((l) => [l.pod, l.message])).toEqual([
       ["a", "one"],
@@ -214,15 +225,12 @@ describe("useLogStreams", () => {
       useLogStreams([{ ...a, request: "team-a/orders-backup-storage" }, b]),
     );
 
-    of("a").emit(
-      "line",
+    line(
+      0,
       '{"msg":"mine","request":{"name":"orders-backup-storage","namespace":"team-a"}}',
     );
-    of("a").emit(
-      "line",
-      '{"msg":"other","request":{"name":"x","namespace":"team-a"}}',
-    );
-    of("b").emit("line", "request pod line");
+    line(0, '{"msg":"other","request":{"name":"x","namespace":"team-a"}}');
+    line(1, "request pod line");
 
     expect(result.current.lines.map((l) => l.message)).toEqual([
       "mine",
@@ -230,60 +238,83 @@ describe("useLogStreams", () => {
     ]);
   });
 
-  it("names the pod of a stream that broke and keeps the others", () => {
+  it("names the pod of a log that broke and keeps the others", () => {
     const { result } = renderHook(() => useLogStreams([a, b]));
 
-    of("a").emit("failure", { message: "The log stream of pod a broke" });
-    of("b").emit("line", "still here");
+    last().emit("failure", {
+      source: 0,
+      message: "The pod n/a does not exist",
+    });
+    line(1, "still here");
 
     expect(result.current.errors).toEqual([
-      { pod: "a", error: "The log stream of pod a broke" },
+      { pod: "a", error: "The pod n/a does not exist" },
     ]);
     expect(result.current.lines.map((l) => l.message)).toEqual(["still here"]);
     expect(result.current.ended).toBe(false);
+    expect(last().closed).toBe(false);
   });
 
-  it("names the refusal of /api/logs for a stream that did not open", async () => {
+  it("is ended and closes the connection when every log ended or broke", () => {
+    const { result } = renderHook(() => useLogStreams([a, b]));
+
+    last().emit("end", { source: 0 });
+    expect(result.current.ended).toBe(false);
+    last().emit("failure", { source: 1, message: "broke" });
+
+    expect(result.current.ended).toBe(true);
+    expect(last().closed).toBe(true);
+  });
+
+  it("names each open pod when the connection breaks, and does not connect again", () => {
+    const { result } = renderHook(() => useLogStreams([a, b]));
+    last().emit("open", {});
+    last().emit("end", { source: 0 });
+
+    last().fail(0);
+
+    expect(result.current.errors).toEqual([
+      { pod: "b", error: "The connection to the log stream broke" },
+    ]);
+    expect(result.current.ended).toBe(true);
+    expect(last().closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it("names each pod with the text of /api/logs/merged when it refuses the connection", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
-        async () => new Response("The pod n/a does not exist", { status: 404 }),
+        async () =>
+          new Response("The parameter log is required and must be valid", {
+            status: 400,
+          }),
       ),
     );
     const { result } = renderHook(() => useLogStreams([a, b]));
 
-    of("a").fail(2);
+    last().fail(2);
 
     await waitFor(() =>
       expect(result.current.errors).toEqual([
-        { pod: "a", error: "The pod n/a does not exist" },
+        { pod: "a", error: "The parameter log is required and must be valid" },
+        { pod: "b", error: "The parameter log is required and must be valid" },
       ]),
     );
   });
 
-  it("is ended when every stream ended or broke", () => {
-    const { result } = renderHook(() => useLogStreams([a, b]));
-
-    of("a").emit("end", {});
-    expect(result.current.ended).toBe(false);
-    of("b").emit("failure", { message: "broke" });
-
-    expect(result.current.ended).toBe(true);
-  });
-
-  it("is not ended without a source", () => {
+  it("opens no connection and is not ended without a source", () => {
     const { result } = renderHook(() => useLogStreams([]));
 
     expect(FakeEventSource.instances).toEqual([]);
     expect(result.current).toEqual({ lines: [], errors: [], ended: false });
   });
 
-  it("keeps the newest 1000 lines over all streams", () => {
+  it("keeps the newest 1000 lines over all logs", () => {
     const { result } = renderHook(() => useLogStreams([a, b]));
 
     act(() => {
-      for (let i = 0; i < 1005; i++)
-        of(i % 2 ? "b" : "a").emit("line", `line ${i}`);
+      for (let i = 0; i < 1005; i++) line(i % 2, `line ${i}`);
     });
 
     expect(result.current.lines).toHaveLength(1000);
@@ -291,35 +322,31 @@ describe("useLogStreams", () => {
     expect(result.current.lines.at(-1)!.message).toBe("line 1004");
   });
 
-  it("closes every stream on unmount", () => {
+  it("closes the connection on unmount", () => {
     const { unmount } = renderHook(() => useLogStreams([a, b]));
 
     unmount();
 
-    expect(FakeEventSource.instances.map((e) => e.closed)).toEqual([
-      true,
-      true,
-    ]);
+    expect(last().closed).toBe(true);
   });
 
-  it("starts with no lines when the pods change", () => {
+  it("starts with no lines and a new connection when the pods change", () => {
     const { result, rerender } = renderHook(
       ({ pods }: { pods: LogSource[] }) => useLogStreams(pods),
       { initialProps: { pods: [a, b] } },
     );
-    of("a").emit("line", "old");
-    of("b").emit("failure", { message: "broke" });
+    const first = last();
+    line(0, "old");
+    first.emit("failure", { source: 1, message: "broke" });
 
     rerender({ pods: [a] });
 
     expect(result.current).toEqual({ lines: [], errors: [], ended: false });
-    expect(FakeEventSource.instances).toHaveLength(3);
-    expect(FakeEventSource.instances.slice(0, 2).every((e) => e.closed)).toBe(
-      true,
-    );
+    expect(first.closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(2);
   });
 
-  it("keeps its streams when it gets an equal list of sources", () => {
+  it("keeps its connection when it gets an equal list of sources", () => {
     const { rerender } = renderHook(
       ({ pods }: { pods: LogSource[] }) => useLogStreams(pods),
       { initialProps: { pods: [a, b] } },
@@ -327,17 +354,17 @@ describe("useLogStreams", () => {
 
     rerender({ pods: [{ ...a }, { ...b }] });
 
-    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(FakeEventSource.instances).toHaveLength(1);
   });
 
-  it("applies the level filter to the lines of every stream", () => {
+  it("applies the level filter to the lines of every log", () => {
     const { result } = renderHook(() =>
-      useLogStreams([a, b], { level: "error" }),
+      useLogStreams([a, b], {}, { level: "error" }),
     );
 
-    of("a").emit("line", '{"level":"info","msg":"a1"}');
-    of("a").emit("line", '{"level":"error","msg":"a2"}');
-    of("b").emit("line", '{"level":"ERROR","msg":"b1"}');
+    line(0, '{"level":"info","msg":"a1"}');
+    line(0, '{"level":"error","msg":"a2"}');
+    line(1, '{"level":"ERROR","msg":"b1"}');
 
     expect(result.current.lines.map((l) => l.message)).toEqual(["a2", "b1"]);
   });
