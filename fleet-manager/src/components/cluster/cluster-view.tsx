@@ -499,6 +499,7 @@ export function ClusterView({
               <ClusterComponentDetail
                 id={openId}
                 cards={cards}
+                cluster={live}
                 namespace={ns}
                 podSelector={initial.podSelector}
                 conditions={clusterConditions}

@@ -92,6 +92,23 @@ export const observeStories: Story[] = [
   },
   {
     component: "UsageBars",
+    name: "Request and limit",
+    render: () => (
+      <UsageBars
+        usage={{
+          pod: "x",
+          cpu: { usedCores: 0.8, requestCores: 0.5, limitCores: 1 },
+          memory: {
+            usedBytes: 1.2 * GiB,
+            requestBytes: 1 * GiB,
+            limitBytes: 2 * GiB,
+          },
+        }}
+      />
+    ),
+  },
+  {
+    component: "UsageBars",
     name: "No limit",
     render: () => (
       <UsageBars

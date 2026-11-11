@@ -458,6 +458,28 @@ describe("brokerPartitions", () => {
     ]);
   });
 
+  it.each([["8.10.0"], ["8.9.0-alpha1"]])(
+    "keeps the health unknown and asks no Prometheus for the version %s, outside the zeebe_health range",
+    async (version) => {
+      const port = await serve(broker());
+      vi.mocked(list).mockResolvedValue([
+        pod("orders-zeebe-0", "127.0.0.1"),
+      ] as never);
+      const live = cluster(port);
+      live.status!.management!.version = version;
+
+      expect(await brokerPartitions(live, NOW)).toEqual([
+        expect.objectContaining({
+          partition: 1,
+          leader: "orders-zeebe-0",
+          health: "unknown",
+        }),
+        expect.objectContaining({ partition: 2, health: "unknown" }),
+      ]);
+      expect(promRange).not.toHaveBeenCalled();
+    },
+  );
+
   it("is unavailable when the management API is", async () => {
     const noManagement = {
       ...cluster(1),

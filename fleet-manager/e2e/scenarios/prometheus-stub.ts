@@ -6,6 +6,12 @@ export interface PrometheusStub {
   url: string;
   /** requests holds the URL of each request, in order. */
   requests: URL[];
+  /**
+   * respond replaces the answer of the stub for the next requests, as the
+   * answer of startPrometheusStub does. No argument restores the default
+   * answers.
+   */
+  respond(answer?: (url: URL) => unknown | undefined): void;
   close(): Promise<void>;
 }
 
@@ -19,10 +25,11 @@ export async function startPrometheusStub(
   answer?: (url: URL) => unknown | undefined,
 ): Promise<PrometheusStub> {
   const requests: URL[] = [];
+  let current = answer;
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     requests.push(url);
-    const body = answer?.(url) ?? defaultAnswer(url);
+    const body = current?.(url) ?? defaultAnswer(url);
     if (body === undefined) {
       res.writeHead(404).end();
       return;
@@ -39,6 +46,9 @@ export async function startPrometheusStub(
   return {
     url: `http://127.0.0.1:${port}`,
     requests,
+    respond: (next) => {
+      current = next;
+    },
     close: () =>
       new Promise((resolve) => {
         server.closeAllConnections();
