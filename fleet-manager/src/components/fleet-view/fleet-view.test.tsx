@@ -424,7 +424,9 @@ describe("FleetView", () => {
     expect(within(panel()).getByText("Cluster prod/legacy")).toBeTruthy();
     await userEvent.click(screen.getByRole("tab", { name: /Staging/ }));
     expect(within(panel()).getByText("Cluster prod/legacy")).toBeTruthy();
-    expect(screen.getAllByRole("region", { name: "Needs attention" })).toHaveLength(1);
+    expect(
+      screen.getAllByRole("region", { name: "Needs attention" }),
+    ).toHaveLength(1);
   });
 
   it("says that no cluster matches the filters", async () => {
@@ -708,9 +710,7 @@ describe("FleetViewLive", () => {
   it("shows the warnings of the route", () => {
     live.warnings = podWarnings;
     render(<FleetViewLive initial={initial} now={NOW} />);
-    expect(
-      screen.getByRole("button", { name: "Out of memory" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Out of memory" })).toBeTruthy();
   });
 
   it("shows a pushed claim of this browser tab", () => {

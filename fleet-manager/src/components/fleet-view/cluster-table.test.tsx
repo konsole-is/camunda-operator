@@ -28,7 +28,14 @@ const rowOf = (name: string) =>
 
 describe("ClusterTable", () => {
   it("has the six columns in order", () => {
-    render(<ClusterTable now={NOW} warnings={NONE} label="Production" rows={[row("orders")]} />);
+    render(
+      <ClusterTable
+        now={NOW}
+        warnings={NONE}
+        label="Production"
+        rows={[row("orders")]}
+      />,
+    );
     expect(
       screen.getAllByRole("columnheader").map((h) => h.textContent),
     ).toEqual([
@@ -161,7 +168,14 @@ describe("ClusterTable", () => {
   });
 
   it("shows No backups for a cluster without backups", () => {
-    render(<ClusterTable now={NOW} warnings={NONE} label="Production" rows={[row("orders")]} />);
+    render(
+      <ClusterTable
+        now={NOW}
+        warnings={NONE}
+        label="Production"
+        rows={[row("orders")]}
+      />,
+    );
     expect(within(rowOf("orders")).getByText("No backups")).toBeTruthy();
   });
 
@@ -190,13 +204,20 @@ describe("ClusterTable", () => {
     expect(
       within(rowOf("orders")).getByRole("button", { name: "Backup failed" }),
     ).toBeTruthy();
-    expect(
-      within(rowOf("billing")).getAllByRole("cell")[5].textContent,
-    ).toBe("-");
+    expect(within(rowOf("billing")).getAllByRole("cell")[5].textContent).toBe(
+      "-",
+    );
   });
 
   it("names the table by its label", () => {
-    render(<ClusterTable now={NOW} warnings={NONE} label="Production" rows={[row("orders")]} />);
+    render(
+      <ClusterTable
+        now={NOW}
+        warnings={NONE}
+        label="Production"
+        rows={[row("orders")]}
+      />,
+    );
     expect(screen.getByRole("region", { name: "Production" })).toBeTruthy();
   });
 });

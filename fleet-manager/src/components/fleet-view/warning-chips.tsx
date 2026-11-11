@@ -38,7 +38,8 @@ export function WarningChips({
     <TooltipProvider>
       <span className="flex flex-wrap gap-1">
         {ordered.map((warning, i) => {
-          const Icon = warning.severity === "Error" ? CircleAlert : TriangleAlert;
+          const Icon =
+            warning.severity === "Error" ? CircleAlert : TriangleAlert;
           return (
             <Tooltip key={`${warning.kind}-${i}`}>
               <TooltipTrigger asChild>
@@ -90,8 +91,8 @@ export function MissingSources({
     <div className="flex flex-col gap-1 text-sm text-muted">
       {pods.missing.includes("metrics-server") && (
         <p>
-          metrics-server is not found, so the near memory and CPU limit
-          warnings do not show.{" "}
+          metrics-server is not found, so the near memory and CPU limit warnings
+          do not show.{" "}
           <Link href={SETTINGS} className={LINK}>
             Open Settings
           </Link>
@@ -99,8 +100,8 @@ export function MissingSources({
       )}
       {pods.missing.includes("prometheus") && (
         <p>
-          Prometheus is not set or does not answer, so the backpressure
-          warning does not show.{" "}
+          Prometheus is not set or does not answer, so the backpressure warning
+          does not show.{" "}
           <Link href={SETTINGS} className={LINK}>
             Set the Prometheus URL in Settings
           </Link>

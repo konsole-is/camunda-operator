@@ -38,7 +38,12 @@ const backup = (
 
 const registration = (
   name: string,
-  conditions: { type: string; status: string; reason?: string; message?: string }[],
+  conditions: {
+    type: string;
+    status: string;
+    reason?: string;
+    message?: string;
+  }[],
   label?: string,
 ) =>
   ({
@@ -94,7 +99,10 @@ describe("attentionItems", () => {
         }),
       ],
     });
-    expect(item).toMatchObject({ name: "team-a/returns", reason: "NotAllowed" });
+    expect(item).toMatchObject({
+      name: "team-a/returns",
+      reason: "NotAllowed",
+    });
     expect(item.href).toBeUndefined();
   });
 
@@ -194,7 +202,9 @@ describe("attentionItems", () => {
       attentionItems({
         rows: [row("orders", { ready: { status: "True", reason: "Healthy" } })],
         backups: [backup("ok", "Completed", { completed: hoursAgo(1) })],
-        registrations: [registration("pg", [{ type: "Ready", status: "True" }])],
+        registrations: [
+          registration("pg", [{ type: "Ready", status: "True" }]),
+        ],
         planes: [plane("plane-a", "True")],
         now: NOW,
       }),

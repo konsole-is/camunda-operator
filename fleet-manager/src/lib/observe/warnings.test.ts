@@ -161,7 +161,13 @@ describe("fleetPodWarnings", () => {
       ],
     );
     vi.mocked(promRange).mockResolvedValue([
-      { name: "share", points: [[1, 0.005], [2, 0.02]] },
+      {
+        name: "share",
+        points: [
+          [1, 0.005],
+          [2, 0.02],
+        ],
+      },
     ]);
 
     const answer = await fleetPodWarnings(NOW);

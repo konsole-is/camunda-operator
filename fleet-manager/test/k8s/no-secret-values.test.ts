@@ -25,6 +25,7 @@ import { GET as logsRoute } from "@/app/api/logs/route";
 import { GET as metricsRoute } from "@/app/api/metrics/route";
 import { GET as partitionsRoute } from "@/app/api/partitions/route";
 import { GET as usageRoute } from "@/app/api/usage/route";
+import { GET as warningsRoute } from "@/app/api/warnings/route";
 import { GET as watchRoute } from "@/app/api/watch/route";
 import { defaultCache } from "@/lib/k8s/cache";
 import * as secrets from "@/lib/secrets";
@@ -199,6 +200,7 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
         ),
       )
     ).text(),
+  "api/warnings": async () => (await warningsRoute()).text(),
   "api/watch": () => watchText(`kind=Secret&namespace=${namespace}`),
 };
 // "<file under src>#<export>".

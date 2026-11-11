@@ -337,7 +337,9 @@ describe("PARTITION_HEALTH", () => {
 
 describe("BACKPRESSURE_SHARE", () => {
   it("divides the dropped by the received requests of the broker pods", () =>
-    expect(renderCoreQuery(BACKPRESSURE_SHARE, "team-a", ["orders-zeebe-0"])).toBe(
+    expect(
+      renderCoreQuery(BACKPRESSURE_SHARE, "team-a", ["orders-zeebe-0"]),
+    ).toBe(
       'sum(rate(zeebe_dropped_request_count_total{namespace="team-a", pod=~"orders-zeebe-0"}[5m])) / sum(rate(zeebe_received_request_count_total{namespace="team-a", pod=~"orders-zeebe-0"}[5m]))',
     ));
 

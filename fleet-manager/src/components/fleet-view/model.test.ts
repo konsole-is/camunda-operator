@@ -881,11 +881,8 @@ describe("filterRows", () => {
   it("keeps the rows with warnings", () => {
     const warned = new Set(["b"]);
     expect(
-      filterRows(
-        rows,
-        { ...all, status: "with-warnings" },
-        isReady,
-        (r) => warned.has(r.name),
+      filterRows(rows, { ...all, status: "with-warnings" }, isReady, (r) =>
+        warned.has(r.name),
       ).map((r) => r.name),
     ).toEqual(["b"]);
   });

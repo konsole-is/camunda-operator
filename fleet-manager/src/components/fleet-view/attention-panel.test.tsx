@@ -35,7 +35,9 @@ describe("AttentionPanel", () => {
     ).toBe("/fleet/clusters/team-a/orders");
     expect(within(panel).getByText("Down: No broker is ready")).toBeTruthy();
     expect(within(panel).getAllByRole("link")).toHaveLength(1);
-    expect(within(panel).getByText("Management plane platform/plane-a")).toBeTruthy();
+    expect(
+      within(panel).getByText("Management plane platform/plane-a"),
+    ).toBeTruthy();
   });
 
   it("says that nothing needs attention", () => {

@@ -14,7 +14,11 @@ const component = ({
 }: {
   label?: string;
   summary?: Summary;
-  ready?: { status: "True" | "False" | "Unknown"; reason?: string; message?: string };
+  ready?: {
+    status: "True" | "False" | "Unknown";
+    reason?: string;
+    message?: string;
+  };
 }): SectionComponent => {
   const request = {
     apiVersion: "plugins.camunda.io/v1alpha1",
@@ -36,14 +40,14 @@ const component = ({
 
 describe("backupWarning", () => {
   it("warns when the newest backup failed", () => {
-    expect(backupWarning({ name: "orders-nightly-1", phase: "Failed" })).toEqual(
-      {
-        kind: "backup",
-        severity: "Warning",
-        label: "Backup failed",
-        detail: "The newest backup orders-nightly-1 failed",
-      },
-    );
+    expect(
+      backupWarning({ name: "orders-nightly-1", phase: "Failed" }),
+    ).toEqual({
+      kind: "backup",
+      severity: "Warning",
+      label: "Backup failed",
+      detail: "The newest backup orders-nightly-1 failed",
+    });
   });
 
   it("does not warn when an older backup failed and the newest completed", () => {
