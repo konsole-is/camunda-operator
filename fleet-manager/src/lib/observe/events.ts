@@ -53,7 +53,11 @@ export function workloadNames(
     const hash = pod.metadata?.labels?.["pod-template-hash"];
     for (const owner of pod.metadata?.ownerReferences ?? []) {
       if (owner.kind === "StatefulSet") names.add(owner.name);
-      if (owner.kind === "ReplicaSet" && hash && owner.name.endsWith(`-${hash}`))
+      if (
+        owner.kind === "ReplicaSet" &&
+        hash &&
+        owner.name.endsWith(`-${hash}`)
+      )
         names.add(owner.name.slice(0, -hash.length - 1));
     }
   }

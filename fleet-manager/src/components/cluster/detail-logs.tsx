@@ -76,7 +76,9 @@ export function DetailLogs({
     <DetailLogsView
       pods={own.map((s) => s.pod)}
       controllerPods={controller && controllers.map((s) => s.pod)}
-      controllerUnavailable={controller !== undefined && found === "unavailable"}
+      controllerUnavailable={
+        controller !== undefined && found === "unavailable"
+      }
       picked={pick}
       onPick={setPicked}
       lines={lines}
@@ -128,7 +130,9 @@ export function DetailLogsView({
         onChange={(event) => onPick?.(event.target.value)}
         className="w-60"
       >
-        <NativeSelectOption value={ALL}>{`All pods (${total})`}</NativeSelectOption>
+        <NativeSelectOption
+          value={ALL}
+        >{`All pods (${total})`}</NativeSelectOption>
         {pods.length > 0 && (
           <optgroup label="Pods">
             {pods.map((pod) => (

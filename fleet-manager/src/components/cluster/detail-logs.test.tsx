@@ -51,9 +51,7 @@ describe("DetailLogs", () => {
         tailLines: LOG_TAIL_LINES,
       })),
     );
-    expect(
-      screen.getByRole("option", { name: "All pods (3)" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("option", { name: "All pods (3)" })).toBeTruthy();
     expect(live.registrations.every((r) => r === undefined)).toBe(true);
   });
 
@@ -149,7 +147,9 @@ describe("DetailLogs", () => {
       />,
     );
 
-    expect(screen.getByText("Could not read the controller pods.")).toBeTruthy();
+    expect(
+      screen.getByText("Could not read the controller pods."),
+    ).toBeTruthy();
     expect(lastSources()).toHaveLength(1);
   });
 

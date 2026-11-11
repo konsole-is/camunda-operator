@@ -302,7 +302,9 @@ describe("requestPods", () => {
 describe("controllerPods", () => {
   const registration = {
     metadata: { name: "rustfs-bucket" },
-    spec: { serviceAccount: { namespace: "plugins", name: "rustfs-controller" } },
+    spec: {
+      serviceAccount: { namespace: "plugins", name: "rustfs-controller" },
+    },
   } as unknown as Resource<"PluginRegistration">;
   const podAs = (name: string, serviceAccountName?: string) => ({
     metadata: { name, namespace: "plugins" },

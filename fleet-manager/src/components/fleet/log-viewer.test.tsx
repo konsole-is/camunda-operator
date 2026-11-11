@@ -144,10 +144,7 @@ describe("LogViewer", () => {
 
   it("puts the controls before the filters", () => {
     render(
-      <LogViewer
-        lines={[]}
-        controls={<button type="button">Pick</button>}
-      />,
+      <LogViewer lines={[]} controls={<button type="button">Pick</button>} />,
     );
     const pick = screen.getByRole("button", { name: "Pick" });
     const pause = screen.getByRole("button", { name: "Pause" });

@@ -29,7 +29,12 @@ const brokers = [
       name: "orders-zeebe-0",
       namespace: "team-a",
       ownerReferences: [
-        { apiVersion: "apps/v1", kind: "StatefulSet", name: "orders-zeebe", uid: "s" },
+        {
+          apiVersion: "apps/v1",
+          kind: "StatefulSet",
+          name: "orders-zeebe",
+          uid: "s",
+        },
       ],
     },
   },
@@ -48,7 +53,12 @@ function show() {
       podSelector={SELECTOR}
       pods={brokers}
       refs={[
-        { kind: "CamundaCluster", name: "orders", namespace: "team-a", uid: "u-1" },
+        {
+          kind: "CamundaCluster",
+          name: "orders",
+          namespace: "team-a",
+          uid: "u-1",
+        },
       ]}
       now={NOW}
     />,
@@ -62,7 +72,10 @@ describe("DetailEvents", () => {
     expect(live.calls).toEqual(
       expect.arrayContaining([
         { kind: "Event", opts: { namespace: "team-a" } },
-        { kind: "Service", opts: { namespace: "team-a", labelSelector: SELECTOR } },
+        {
+          kind: "Service",
+          opts: { namespace: "team-a", labelSelector: SELECTOR },
+        },
         {
           kind: "PersistentVolumeClaim",
           opts: { namespace: "team-a", labelSelector: SELECTOR },

@@ -62,9 +62,18 @@ describe("componentEvents", () => {
       "a PVC with the component labels",
       ev("PersistentVolumeClaim", "data-orders-zeebe-0"),
     ],
-    ["the StatefulSet named after the workload", ev("StatefulSet", "orders-zeebe")],
-    ["the Deployment of a pod's ReplicaSet", ev("Deployment", "orders-gateway")],
-    ["an older ReplicaSet of that Deployment", ev("ReplicaSet", "orders-gateway-55aa")],
+    [
+      "the StatefulSet named after the workload",
+      ev("StatefulSet", "orders-zeebe"),
+    ],
+    [
+      "the Deployment of a pod's ReplicaSet",
+      ev("Deployment", "orders-gateway"),
+    ],
+    [
+      "an older ReplicaSet of that Deployment",
+      ev("ReplicaSet", "orders-gateway-55aa"),
+    ],
     ["the owner resource", ev("CamundaCluster", "orders", "u-1")],
   ])("keeps the event of %s", (_, event) =>
     expect(componentEvents([event], scope)).toEqual([event]),
@@ -76,12 +85,18 @@ describe("componentEvents", () => {
       "a ReplicaSet of another workload with the same prefix",
       ev("ReplicaSet", "orders-zeebe-gateway-5d8f"),
     ],
-    ["the owner resource with another UID", ev("CamundaCluster", "orders", "u-old")],
+    [
+      "the owner resource with another UID",
+      ev("CamundaCluster", "orders", "u-old"),
+    ],
     [
       "a pod of the same name in another namespace",
       ev("Pod", "orders-zeebe-0", undefined, "team-b"),
     ],
-    ["a StatefulSet that no pod and no Service names", ev("StatefulSet", "orders-elastic")],
+    [
+      "a StatefulSet that no pod and no Service names",
+      ev("StatefulSet", "orders-elastic"),
+    ],
     ["a ConfigMap named after the workload", ev("ConfigMap", "orders-zeebe")],
   ])("leaves out the event of %s", (_, event) =>
     expect(componentEvents([event], scope)).toEqual([]),
@@ -91,7 +106,9 @@ describe("componentEvents", () => {
     const ref = { kind: "PluginRequest", name: "r", namespace: "team-b" };
     const event = ev("PluginRequest", "r", undefined, "team-b");
 
-    expect(componentEvents([event], { ...scope, refs: [ref] })).toEqual([event]);
+    expect(componentEvents([event], { ...scope, refs: [ref] })).toEqual([
+      event,
+    ]);
   });
 
   it("keeps the events in their order", () => {
@@ -111,7 +128,11 @@ describe("workloadNames", () => {
   it("leaves out a ReplicaSet whose name does not end in the pod template hash", () =>
     expect(
       workloadNames(
-        [podOwnedBy("x-abc", "ReplicaSet", "x", { "pod-template-hash": "abc" })],
+        [
+          podOwnedBy("x-abc", "ReplicaSet", "x", {
+            "pod-template-hash": "abc",
+          }),
+        ],
         [],
       ),
     ).toEqual([]));
@@ -121,11 +142,31 @@ describe("regards", () => {
   const event = ev("Pod", "p", "2");
 
   it.each([
-    ["the same kind, name, and namespace", { kind: "Pod", name: "p", namespace: "team-a" }, true],
-    ["the same UID", { kind: "Pod", name: "p", namespace: "team-a", uid: "2" }, true],
-    ["another UID", { kind: "Pod", name: "p", namespace: "team-a", uid: "1" }, false],
-    ["another kind", { kind: "Service", name: "p", namespace: "team-a" }, false],
-    ["another namespace", { kind: "Pod", name: "p", namespace: "team-b" }, false],
+    [
+      "the same kind, name, and namespace",
+      { kind: "Pod", name: "p", namespace: "team-a" },
+      true,
+    ],
+    [
+      "the same UID",
+      { kind: "Pod", name: "p", namespace: "team-a", uid: "2" },
+      true,
+    ],
+    [
+      "another UID",
+      { kind: "Pod", name: "p", namespace: "team-a", uid: "1" },
+      false,
+    ],
+    [
+      "another kind",
+      { kind: "Service", name: "p", namespace: "team-a" },
+      false,
+    ],
+    [
+      "another namespace",
+      { kind: "Pod", name: "p", namespace: "team-b" },
+      false,
+    ],
     ["no namespace", { kind: "Pod", name: "p" }, false],
   ])("a ref with %s gives %s", (_, ref, holds) =>
     expect(regards(event, ref)).toBe(holds),

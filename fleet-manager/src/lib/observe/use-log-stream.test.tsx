@@ -246,7 +246,9 @@ describe("useLogStreams", () => {
   it("names the refusal of /api/logs for a stream that did not open", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response("The pod n/a does not exist", { status: 404 })),
+      vi.fn(
+        async () => new Response("The pod n/a does not exist", { status: 404 }),
+      ),
     );
     const { result } = renderHook(() => useLogStreams([a, b]));
 
@@ -280,7 +282,8 @@ describe("useLogStreams", () => {
     const { result } = renderHook(() => useLogStreams([a, b]));
 
     act(() => {
-      for (let i = 0; i < 1005; i++) of(i % 2 ? "b" : "a").emit("line", `line ${i}`);
+      for (let i = 0; i < 1005; i++)
+        of(i % 2 ? "b" : "a").emit("line", `line ${i}`);
     });
 
     expect(result.current.lines).toHaveLength(1000);
@@ -293,7 +296,10 @@ describe("useLogStreams", () => {
 
     unmount();
 
-    expect(FakeEventSource.instances.map((e) => e.closed)).toEqual([true, true]);
+    expect(FakeEventSource.instances.map((e) => e.closed)).toEqual([
+      true,
+      true,
+    ]);
   });
 
   it("starts with no lines when the pods change", () => {
@@ -308,7 +314,9 @@ describe("useLogStreams", () => {
 
     expect(result.current).toEqual({ lines: [], errors: [], ended: false });
     expect(FakeEventSource.instances).toHaveLength(3);
-    expect(FakeEventSource.instances.slice(0, 2).every((e) => e.closed)).toBe(true);
+    expect(FakeEventSource.instances.slice(0, 2).every((e) => e.closed)).toBe(
+      true,
+    );
   });
 
   it("keeps its streams when it gets an equal list of sources", () => {
