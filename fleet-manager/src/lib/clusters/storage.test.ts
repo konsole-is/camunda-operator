@@ -848,7 +848,7 @@ describe("storageSummary", () => {
     ]);
   });
 
-  it("shows a typed ARN as Set by your admin", () => {
+  it("shows an ARN that the user entered as An ARN that you entered", () => {
     const summary = summaryOf({
       "connectors-permissions": [
         pick("connectors-permissions", "aws-connectors-role", {
@@ -858,7 +858,53 @@ describe("storageSummary", () => {
     });
 
     expect(summary.picks[0].values).toEqual([
+      { label: "roleArn", value: "An ARN that you entered" },
+    ]);
+  });
+
+  it("shows an ARN of the policy as Set by your admin", () => {
+    const withRole: StorageData = {
+      ...data,
+      environment: {
+        ...data.environment!,
+        spec: {
+          ...data.environment!.spec,
+          parameters: {
+            "aws-connectors-role": {
+              roleArn: {
+                claimEditable: true,
+                value: "arn:aws:iam::123456789012:role/admin",
+              },
+            },
+          },
+        },
+      },
+    };
+    const summary = storageSummary(
+      draftWith({
+        "connectors-permissions": [
+          pick("connectors-permissions", "aws-connectors-role"),
+        ],
+      }),
+      withRole,
+    );
+
+    expect(summary.picks.at(-1)?.values).toEqual([
       { label: "roleArn", value: "Set by your admin" },
+    ]);
+  });
+
+  it("shows another typed value as written", () => {
+    const summary = summaryOf({
+      "connectors-permissions": [
+        pick("connectors-permissions", "aws-connectors-role", {
+          roleArn: "connectors",
+        }),
+      ],
+    });
+
+    expect(summary.picks[0].values).toEqual([
+      { label: "roleArn", value: "connectors" },
     ]);
   });
 

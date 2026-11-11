@@ -230,7 +230,11 @@ export type StorageSummary = {
   picks: StoragePick[];
 };
 
-/** StoragePick is one selection as the review shows it: labels only, never a value of an allowed list. */
+/**
+ * StoragePick is one selection as the review shows it, with no ARN. values
+ * holds each claim-editable parameter that has a value, from the
+ * selection, else the policy value.
+ */
 export type StoragePick = {
   section: string;
   sectionLabel: string;
@@ -252,10 +256,7 @@ const OPTIMIZE_URL_OUTPUT = SLOT_FIELDS.find(
  * after section in the order of storageViews, with the default of a section
  * that the step has not reported yet. The type of a selection that names a
  * SecondaryStorageConfig is the type of that object in the namespace of
- * draft. The values of a pick hold each claim-editable parameter with a
- * value, from the selection, else from the policy. Each value of a pick
- * shows the labels of the picked names of an allowed list, joined by ", ",
- * and lockedSummary of any other value.
+ * draft.
  */
 export function storageSummary(
   draft: ClusterDraft,
@@ -326,7 +327,7 @@ function pickValues(
       : rule?.claimEditable
         ? rule.value
         : undefined;
-    return pickValue(rule, name, value);
+    return pickValue(rule, name, value, Object.hasOwn(set, name));
   });
 }
 
@@ -334,17 +335,22 @@ function pickValue(
   rule: ParameterRule | undefined,
   name: string,
   value: unknown,
+  entered: boolean,
 ): { label: string; value: string } {
-  const label = rule?.label ?? name;
-  const allowed = rule?.claimEditable ? rule.allowed : undefined;
-  if (!allowed) return { label, value: lockedSummary(value) };
-  const labelOf = (picked: unknown) =>
-    allowed.find((c) => c.name === picked)?.label ?? lockedSummary(picked);
+  const allowed = (rule?.claimEditable && rule.allowed) || [];
+  const text = (v: unknown) =>
+    allowed.find((c) => c.name === v)?.label ??
+    (typeof v === "string" && v.startsWith("arn:")
+      ? entered
+        ? "An ARN that you entered"
+        : "Set by your admin"
+      : lockedSummary(v));
   return {
-    label,
-    value: Array.isArray(value)
-      ? value.map(labelOf).join(", ")
-      : labelOf(value),
+    label: rule?.label ?? name,
+    value:
+      allowed.length > 0 && Array.isArray(value)
+        ? value.map(text).join(", ")
+        : text(value),
   };
 }
 
