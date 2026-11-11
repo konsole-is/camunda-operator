@@ -62,6 +62,21 @@ const checked = () =>
     .map((box) => box.getAttribute("aria-label"));
 
 describe("DataTable", () => {
+  it("shows no search box and no filters without the toolbar", () => {
+    render(
+      <DataTable
+        label="Clusters"
+        columns={columns}
+        rows={rows}
+        filters={filters}
+        toolbar={false}
+      />,
+    );
+    expect(screen.queryByRole("searchbox")).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getAllByRole("row")).toHaveLength(rows.length + 1);
+  });
+
   it("selects nothing at first", () => {
     const onChange = table();
     expect(checked()).toEqual([]);

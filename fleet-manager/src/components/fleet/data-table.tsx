@@ -56,7 +56,9 @@ type Sort = { key: string; direction: "ascending" | "descending" };
  * that the search and the filters show, on every page. Nothing is selected
  * at first. A row that a new search or filter hides, that new rows drop,
  * or that new rows mark as not applicable leaves the selection.
- * onChange gets the selected ids in row order after each change.
+ * onChange gets the selected ids in row order after each change. Without
+ * the toolbar the table shows no search box and no filters, and its caller
+ * filters the rows.
  */
 export function DataTable({
   label,
@@ -66,6 +68,7 @@ export function DataTable({
   pageSize = 25,
   selection,
   emptyText = "No rows match the search and the filters.",
+  toolbar = true,
 }: {
   label: string;
   columns: DataTableColumn[];
@@ -74,6 +77,7 @@ export function DataTable({
   pageSize?: number;
   selection?: { applicableLabel: string; onChange?: (ids: string[]) => void };
   emptyText?: string;
+  toolbar?: boolean;
 }) {
   const id = useId();
   const [query, setQuery] = useState("");
@@ -136,72 +140,79 @@ export function DataTable({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex min-w-48 flex-1 flex-col gap-1">
-          <label htmlFor={`${id}-search`} className="text-sm text-muted">
-            Search
-          </label>
-          <Input
-            id={`${id}-search`}
-            type="search"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              narrow(event.target.value, activeFilters);
-            }}
-          />
-        </div>
-        {filters.map((filter) => (
-          <div key={filter.key} className="flex min-w-40 flex-col gap-1">
-            <label
-              htmlFor={`${id}-filter-${filter.key}`}
-              className="text-sm text-muted"
-            >
-              {filter.label}
-            </label>
-            <NativeSelect
-              id={`${id}-filter-${filter.key}`}
-              value={activeFilters[filter.key] ?? ""}
-              onChange={(event) => {
-                const next = {
-                  ...activeFilters,
-                  [filter.key]: event.target.value,
-                };
-                setFilterValues(next);
-                narrow(query, next);
-              }}
-            >
-              <NativeSelectOption value="">All</NativeSelectOption>
-              {filter.options.map((option) => (
-                <NativeSelectOption key={option.value} value={option.value}>
-                  {option.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-        ))}
-        {selection && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              disabled={!visible.some(applicable)}
-              onClick={() =>
-                select(new Set(visible.filter(applicable).map((row) => row.id)))
-              }
-            >
-              {`Select all ${selection.applicableLabel}`}
-            </Button>
-            {selected.size > 0 && (
-              <Button variant="ghost" onClick={() => select(new Set())}>
-                Clear selection
+      {(toolbar || selection) && (
+        <div className="flex flex-wrap items-end gap-3">
+          {toolbar && (
+            <div className="flex min-w-48 flex-1 flex-col gap-1">
+              <label htmlFor={`${id}-search`} className="text-sm text-muted">
+                Search
+              </label>
+              <Input
+                id={`${id}-search`}
+                type="search"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  narrow(event.target.value, activeFilters);
+                }}
+              />
+            </div>
+          )}
+          {toolbar &&
+            filters.map((filter) => (
+              <div key={filter.key} className="flex min-w-40 flex-col gap-1">
+                <label
+                  htmlFor={`${id}-filter-${filter.key}`}
+                  className="text-sm text-muted"
+                >
+                  {filter.label}
+                </label>
+                <NativeSelect
+                  id={`${id}-filter-${filter.key}`}
+                  value={activeFilters[filter.key] ?? ""}
+                  onChange={(event) => {
+                    const next = {
+                      ...activeFilters,
+                      [filter.key]: event.target.value,
+                    };
+                    setFilterValues(next);
+                    narrow(query, next);
+                  }}
+                >
+                  <NativeSelectOption value="">All</NativeSelectOption>
+                  {filter.options.map((option) => (
+                    <NativeSelectOption key={option.value} value={option.value}>
+                      {option.label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </div>
+            ))}
+          {selection && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                disabled={!visible.some(applicable)}
+                onClick={() =>
+                  select(
+                    new Set(visible.filter(applicable).map((row) => row.id)),
+                  )
+                }
+              >
+                {`Select all ${selection.applicableLabel}`}
               </Button>
-            )}
-            <span aria-live="polite" className="text-sm text-muted">
-              {selected.size > 0 ? `${selected.size} selected` : ""}
-            </span>
-          </div>
-        )}
-      </div>
+              {selected.size > 0 && (
+                <Button variant="ghost" onClick={() => select(new Set())}>
+                  Clear selection
+                </Button>
+              )}
+              <span aria-live="polite" className="text-sm text-muted">
+                {selected.size > 0 ? `${selected.size} selected` : ""}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       <Table label={label}>
         <TableHeader>
           <TableRow>

@@ -1,7 +1,7 @@
 "use client";
 // The client half of the data layer. It imports only types from the server
 // modules of src/lib/k8s, and the isomorphic deltas module.
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { REVISION_ANNOTATION } from "@/lib/labels";
 import type { NamedObject } from "./deltas";
@@ -44,6 +44,34 @@ export function useResources<K extends KindName>(
     initial,
   );
   return error === undefined ? { items } : { items, error };
+}
+
+/**
+ * useWatchesFresh says for each list of lists whether its watch got its
+ * snapshot on the current connection, in the order of lists. It is false
+ * until then, and again after a reconnect until the next snapshot. It opens
+ * no watch of its own, so each list needs useResources with the same kind
+ * and options in the same tree.
+ */
+export function useWatchesFresh(
+  lists: readonly { kind: KindName; opts: ListOptions }[],
+): boolean[] {
+  const client = useQueryClient();
+  return useQueries({
+    queries: lists.map(({ kind, opts }) => {
+      const key = freshKey({
+        kind,
+        namespace: opts.namespace,
+        labelSelector: opts.labelSelector,
+      });
+      return {
+        queryKey: key,
+        queryFn: () => client.getQueryData<boolean>(key) ?? false,
+        initialData: false,
+        staleTime: Infinity,
+      };
+    }),
+  }).map((result) => result.data);
 }
 
 /**

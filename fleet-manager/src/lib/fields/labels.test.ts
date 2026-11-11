@@ -57,6 +57,8 @@ describe("lockLabel", () => {
     [{ reason: "section" }, "Set by a section"],
     [{ reason: "notManaged" }, "Not managed by the fleet manager"],
     [{ reason: "admin" }, "Set by your admin"],
+    [{ reason: "atCreation" }, "Set at creation"],
+    [{ reason: "chosenAtCreation" }, "Chosen at creation"],
   ])("%o reads %s", (lock, want) => {
     expect(lockLabel(lock)).toBe(want);
   });

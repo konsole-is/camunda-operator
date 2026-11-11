@@ -1,0 +1,258 @@
+import { describe, expect, it } from "vitest";
+import type { Resource } from "@/lib/k8s/kinds";
+import type { PluginSelection } from "@/lib/policy";
+import { type SectionClaim, sectionComponents } from "./sections";
+
+const sel = (section: string, registration = `${section}-option`) =>
+  ({ section, registration }) satisfies PluginSelection;
+
+const claimOf = (
+  plugins: PluginSelection[],
+  requests?: { section: string; registration: string; name: string }[],
+): SectionClaim => ({
+  metadata: { namespace: "team-a" },
+  spec: { plugins },
+  ...(requests ? { status: { requests } } : {}),
+});
+
+const section = (
+  name: string,
+  label: string,
+  order?: number,
+  selection: "One" | "Many" = "One",
+) =>
+  ({
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginSection",
+    metadata: { name },
+    spec: {
+      appliesTo: ["CamundaClusterClaim"],
+      label,
+      selection,
+      ...(order === undefined ? {} : { order }),
+    },
+  }) as Resource<"PluginSection">;
+
+const request = (
+  namespace: string,
+  name: string,
+  ready?: { status: "True" | "False" | "Unknown"; reason: string },
+) =>
+  ({
+    apiVersion: "plugins.camunda.io/v1alpha1",
+    kind: "PluginRequest",
+    metadata: { namespace, name },
+    spec: {
+      claimRef: { kind: "CamundaClusterClaim", name: "orders" },
+      deletionPolicy: "Delete",
+      registration: "elasticsearch",
+      section: "secondary-storage",
+      target: { kind: "CamundaCluster", name: "orders" },
+    },
+    status: ready
+      ? {
+          conditions: [
+            {
+              type: "Ready",
+              ...ready,
+              message: "The grant was rejected",
+              lastTransitionTime: "2026-11-10T10:00:00Z",
+            },
+          ],
+        }
+      : undefined,
+  }) as Resource<"PluginRequest">;
+
+describe("sectionComponents", () => {
+  it("gives one component for each selection in the order of the sections", () => {
+    const result = sectionComponents({
+      claim: claimOf([sel("access"), sel("secondary-storage")]),
+      sections: [
+        section("secondary-storage", "Secondary storage", 50),
+        section("access", "Access", 60),
+      ],
+      requests: [],
+    });
+    expect(result.map((c) => [c.id, c.label, c.order])).toEqual([
+      ["section:secondary-storage", "Secondary storage", 50],
+      ["section:access", "Access", 60],
+    ]);
+    expect(result[0].selection).toEqual(sel("secondary-storage"));
+  });
+
+  it("gives no component to a section without a selection", () => {
+    const result = sectionComponents({
+      claim: claimOf([sel("secondary-storage")]),
+      sections: [
+        section("backup-storage", "Backup storage", 40),
+        section("secondary-storage", "Secondary storage", 50),
+      ],
+      requests: [],
+    });
+    expect(result.map((c) => c.section)).toEqual(["secondary-storage"]);
+  });
+
+  it("names a section that is not found by its name and sorts it last", () => {
+    const result = sectionComponents({
+      claim: claimOf([sel("volume-encryption"), sel("access")]),
+      sections: [section("access", "Access", 60)],
+      requests: [],
+    });
+    expect(result.map((c) => [c.label, c.order])).toEqual([
+      ["Access", 60],
+      ["volume-encryption", Number.MAX_SAFE_INTEGER],
+    ]);
+  });
+
+  it("gives a section without an order the order 0", () => {
+    const result = sectionComponents({
+      claim: claimOf([sel("access"), sel("identity"), sel("gone")]),
+      sections: [
+        section("access", "Access", 10),
+        section("identity", "Identity"),
+      ],
+      requests: [],
+    });
+    expect(result.map((c) => [c.section, c.order])).toEqual([
+      ["identity", 0],
+      ["access", 10],
+      ["gone", Number.MAX_SAFE_INTEGER],
+    ]);
+  });
+
+  it("sorts sections of the same order by name", () => {
+    const result = sectionComponents({
+      claim: claimOf([sel("b"), sel("a")]),
+      sections: [section("b", "B", 10), section("a", "A", 10)],
+      requests: [],
+    });
+    expect(result.map((c) => c.section)).toEqual(["a", "b"]);
+  });
+
+  it("takes the request that the claim status names and its Ready condition", () => {
+    const [component] = sectionComponents({
+      claim: claimOf(
+        [sel("secondary-storage")],
+        [
+          {
+            section: "secondary-storage",
+            registration: "secondary-storage-option",
+            name: "orders-es",
+          },
+        ],
+      ),
+      sections: [section("secondary-storage", "Secondary storage", 50)],
+      requests: [
+        request("team-a", "orders-es", {
+          status: "False",
+          reason: "GrantRejected",
+        }),
+      ],
+    });
+    expect(component.request?.metadata?.name).toBe("orders-es");
+    expect(component.condition).toMatchObject({
+      status: "False",
+      reason: "GrantRejected",
+    });
+  });
+
+  it("takes the request of each selection of a Many section by its registration", () => {
+    const result = sectionComponents({
+      claim: claimOf(
+        [sel("access", "gateway-api"), sel("access", "load-balancer")],
+        [
+          { section: "access", registration: "gateway-api", name: "orders-gw" },
+          {
+            section: "access",
+            registration: "load-balancer",
+            name: "orders-lb",
+          },
+        ],
+      ),
+      sections: [section("access", "Access", 60, "Many")],
+      requests: [
+        request("team-a", "orders-gw", { status: "True", reason: "Ready" }),
+        request("team-a", "orders-lb", {
+          status: "False",
+          reason: "GrantRejected",
+        }),
+      ],
+    });
+    expect(
+      result.map((c) => [
+        c.selection.registration,
+        c.request?.metadata?.name,
+        c.condition?.status,
+      ]),
+    ).toEqual([
+      ["gateway-api", "orders-gw", "True"],
+      ["load-balancer", "orders-lb", "False"],
+    ]);
+  });
+
+  it("gives each selection of a Many section an id with its registration", () => {
+    const result = sectionComponents({
+      claim: claimOf([
+        sel("access", "load-balancer"),
+        sel("access", "gateway-api"),
+        sel("secondary-storage", "elasticsearch"),
+      ]),
+      sections: [
+        section("access", "Access", 60, "Many"),
+        section("secondary-storage", "Secondary storage", 50),
+      ],
+      requests: [],
+    });
+    expect(result.map((c) => c.id)).toEqual([
+      "section:secondary-storage",
+      "section:access/gateway-api",
+      "section:access/load-balancer",
+    ]);
+  });
+
+  it("gives a section that is not found the registration in its id only when the claim selects it more than once", () => {
+    const result = sectionComponents({
+      claim: claimOf([sel("gone", "a"), sel("gone", "b"), sel("lost", "c")]),
+      sections: [],
+      requests: [],
+    });
+    expect(result.map((c) => c.id)).toEqual([
+      "section:gone/a",
+      "section:gone/b",
+      "section:lost",
+    ]);
+  });
+
+  it("ignores a request of the same name in another namespace", () => {
+    const [component] = sectionComponents({
+      claim: claimOf(
+        [sel("secondary-storage")],
+        [
+          {
+            section: "secondary-storage",
+            registration: "secondary-storage-option",
+            name: "orders-es",
+          },
+        ],
+      ),
+      sections: [section("secondary-storage", "Secondary storage", 50)],
+      requests: [
+        request("team-b", "orders-es", { status: "True", reason: "Ready" }),
+      ],
+    });
+    expect(component.request).toBeUndefined();
+    expect(component.condition).toBeUndefined();
+  });
+
+  it("has no request while the claim status names none", () => {
+    const [component] = sectionComponents({
+      claim: claimOf([sel("secondary-storage")]),
+      sections: [section("secondary-storage", "Secondary storage", 50)],
+      requests: [
+        request("team-a", "orders-es", { status: "True", reason: "Ready" }),
+      ],
+    });
+    expect(component.request).toBeUndefined();
+    expect(component.condition).toBeUndefined();
+  });
+});
