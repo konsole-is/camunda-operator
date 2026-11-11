@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyBackupChange } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
-import type { WriteMode } from "@/lib/write/types";
+import type { WriteMode, WriteResult } from "@/lib/write/types";
 import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
 import type { BackupContext } from "./backup-actions";
@@ -415,5 +415,46 @@ describe("a page that cannot write", () => {
       const described = button.getAttribute("aria-describedby") ?? "";
       expect(document.getElementById(described)?.textContent).toBe(OFF);
     }
+  });
+});
+
+describe("a request that rejects", () => {
+  let calls = 0;
+  const rejects = async (): Promise<WriteResult> => {
+    calls++;
+    throw new Error("fetch failed");
+  };
+  beforeEach(() => {
+    calls = 0;
+  });
+
+  it("a rejected backup shows the error and keeps the form open", async () => {
+    renderPage((show) => (
+      <BackupHeaderActions context={context()} apply={rejects} show={show} />
+    ));
+    await startBackup();
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "fetch failed",
+    );
+    expect(screen.getByLabelText("Name")).toHaveProperty("value", NAME);
+  });
+
+  it("a rejected delete shows the error, and the next confirm sends the delete again", async () => {
+    renderPage((show) => (
+      <BackupRowActions
+        context={context()}
+        row={row()}
+        apply={rejects}
+        show={show}
+      />
+    ));
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = screen.getByRole("button", { name: "Delete backup" });
+    await userEvent.click(confirm);
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "fetch failed",
+    );
+    await userEvent.click(confirm);
+    await waitFor(() => expect(calls).toBe(2));
   });
 });

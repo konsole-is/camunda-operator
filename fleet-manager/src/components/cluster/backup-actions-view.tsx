@@ -53,7 +53,7 @@ export function BackupHeaderActions({
     if (name === undefined || state.kind === undefined) return;
     const change = backupChange(context, state.kind, name);
     startWrite(async () => {
-      const result = await apply(clusterOf(context), change);
+      const result = await apply(clusterOf(context), change).catch(rejected);
       show(result, `Backup ${name} created.`);
       if (result.ok) setName(undefined);
     });
@@ -197,7 +197,9 @@ export function BackupRowActions({
         writing.current = true;
         const change = deleteBackupChange(context.namespace, row);
         startWrite(async () => {
-          const result = await apply(clusterOf(context), change);
+          const result = await apply(clusterOf(context), change).catch(
+            rejected,
+          );
           writing.current = false;
           show(result, `Backup ${row.name} deleted.`);
         });
@@ -211,4 +213,13 @@ function clusterOf(context: BackupContext): {
   name: string;
 } {
   return { namespace: context.namespace, name: context.cluster };
+}
+
+// A server action rejects when its request fails, such as on a network
+// error.
+function rejected(error: unknown): WriteResult {
+  return {
+    ok: false,
+    errors: [{ code: "Unavailable", message: String(error) }],
+  };
 }
