@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -19,7 +20,7 @@ import {
 } from "@/lib/planes/draft";
 import { planeSectionViews, storageErrors } from "@/lib/planes/storage";
 import type { ValidationError } from "@/lib/schema";
-import { StorageAccessStep } from "./storage-access-step";
+import { DATABASE_SUFFIX, StorageAccessStep } from "./storage-access-step";
 
 afterEach(cleanup);
 
@@ -352,4 +353,28 @@ describe("StorageAccessStep", () => {
       "The contract name must be lower case letters, digits, and dashes.",
     );
   });
+});
+
+// The Go source is the source of the suffixes. A change on one side alone
+// fails here.
+it("DATABASE_SUFFIX matches NameSuffix of pkg/planedatabases", () => {
+  const source = readFileSync(
+    new URL(
+      "../../../../../pkg/planedatabases/planedatabases.go",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const components = new Map(
+    [...source.matchAll(/(\w+)\s+Component\s*=\s*"([^"]*)"/g)].map((m) => [
+      m[1],
+      m[2],
+    ]),
+  );
+  const suffixes = Object.fromEntries(
+    [
+      ...source.matchAll(/Component:\s*(\w+),[^}]*?NameSuffix:\s*"([^"]*)"/g),
+    ].map((m) => [components.get(m[1]), m[2]]),
+  );
+  expect(DATABASE_SUFFIX).toEqual(suffixes);
 });
