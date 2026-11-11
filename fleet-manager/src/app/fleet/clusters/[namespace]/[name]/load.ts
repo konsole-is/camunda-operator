@@ -29,6 +29,7 @@ export async function loadClusterPage(
 
   const inNamespace = { namespace };
   const podSelector = `${CLUSTER_LABEL}=${ownerName(name)}`;
+  const claimName = cluster.metadata?.labels?.[CLAIM_LABEL];
   const [
     namespaceObject,
     environments,
@@ -37,6 +38,7 @@ export async function loadClusterPage(
     releases,
     storage,
     accessRequests,
+    requests,
     pods,
     backupsES,
     backupsRDBMS,
@@ -65,6 +67,10 @@ export async function loadClusterPage(
       namespace,
       labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
     }),
+    listOrEmpty("PluginRequest", {
+      namespace,
+      labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}`,
+    }),
     listOrEmpty("Pod", { namespace, labelSelector: podSelector }),
     listOrEmpty("LogicalBackupElasticsearch", inNamespace),
     listOrEmpty("LogicalBackupRDBMS", inNamespace),
@@ -83,7 +89,6 @@ export async function loadClusterPage(
     listOrEmpty("CamundaPlatformConfig", {}),
     listOrEmpty("ManagementAuthConfig", {}),
   ]);
-  const claimName = cluster.metadata?.labels?.[CLAIM_LABEL];
   const fields = clusterFields(
     clusterFieldsInputOf({
       cluster,
@@ -109,6 +114,7 @@ export async function loadClusterPage(
     releases,
     storage,
     accessRequests,
+    requests,
     pods,
     podSelector,
     backups: { elasticsearch: backupsES, rdbms: backupsRDBMS },

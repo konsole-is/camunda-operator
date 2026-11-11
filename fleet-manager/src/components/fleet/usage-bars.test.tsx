@@ -57,4 +57,57 @@ describe("UsageBars", () => {
     expect(cpu.getAttribute("aria-valuetext")).toBe("950m cores");
     expect(cpu.firstElementChild).toBeNull();
   });
+
+  it("names the request beside the limit when a pod has both", () => {
+    render(
+      <UsageBars
+        usage={{
+          pod: "x",
+          cpu: { usedCores: 0.8, requestCores: 0.5, limitCores: 1 },
+          memory: {
+            usedBytes: 1.2 * 2 ** 30,
+            requestBytes: 2 ** 30,
+            limitBytes: 2 * 2 ** 30,
+          },
+        }}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("meter", { name: "Memory" })
+        .getAttribute("aria-valuetext"),
+    ).toBe("1.2 GiB of 2 GiB, request 1 GiB");
+    expect(
+      screen.getByRole("meter", { name: "CPU" }).getAttribute("aria-valuetext"),
+    ).toBe("800m of 1 cores, request 500m cores");
+    expect(screen.getByText("request 1 GiB")).toBeTruthy();
+  });
+
+  it("marks the request on the meter at its share of the limit", () => {
+    const { container } = render(
+      <UsageBars
+        usage={{
+          pod: "x",
+          cpu: { usedCores: 0.8, requestCores: 0.25, limitCores: 1 },
+          memory: { usedBytes: 0 },
+        }}
+      />,
+    );
+    const marks = container.querySelectorAll('[data-slot="request-mark"]');
+    expect(marks).toHaveLength(1);
+    expect((marks[0] as HTMLElement).style.left).toBe("25%");
+  });
+
+  it("names no request when the pod has only a request", () =>
+    expect(
+      render(
+        <UsageBars
+          usage={{
+            pod: "x",
+            cpu: { usedCores: 0.5, requestCores: 1 },
+            memory: { usedBytes: 0 },
+          }}
+        />,
+      ).container.querySelector('[data-slot="request-mark"]'),
+    ).toBeNull());
 });

@@ -33,15 +33,34 @@ export type TopologyBox = {
 
 const WEB_APPS = ["operate", "tasklist", "admin"] as const;
 
+/** ComponentMode is where a process with a mode runs. */
+export type ComponentMode = NonNullable<
+  NonNullable<CamundaClusterSpec["operate"]>["mode"]
+>;
+
+/**
+ * modeOf returns the mode of p in spec. The gateway is standalone unless
+ * its mode is Embedded, and a web app is embedded unless its mode is
+ * Standalone.
+ */
+export function modeOf(
+  spec: CamundaClusterSpec,
+  p: "gateway" | (typeof WEB_APPS)[number],
+): ComponentMode {
+  if (p === "gateway")
+    return spec.gateway?.mode === "Embedded" ? "Embedded" : "Standalone";
+  return spec[p]?.mode === "Standalone" ? "Standalone" : "Embedded";
+}
+
 /**
  * topologyOf returns the boxes of a cluster from its merged spec, in the
  * order Brokers, Gateway, Operate, Tasklist, Admin, Connectors. Brokers
- * always run. The gateway is standalone unless its mode is Embedded, and a
- * web app is embedded unless its mode is Standalone. An embedded process is
- * a chip of its host: the brokers for the gateway, and for a web app the
- * gateway when it is standalone, else the brokers. Connectors have a box
- * only when connectors.enabled is true. A pod goes into the box of its
- * COMPONENT_LABEL value. Other pods, such as those of Optimize, are left out.
+ * always run, and the gateway and each web app run in the mode of modeOf.
+ * An embedded process is a chip of its host: the brokers for the gateway,
+ * and for a web app the gateway when it is standalone, else the brokers.
+ * Connectors have a box only when connectors.enabled is true. A pod goes
+ * into the box of its COMPONENT_LABEL value. Other pods, such as those of
+ * Optimize, are left out.
  */
 export function topologyOf(
   spec: CamundaClusterSpec,
@@ -50,12 +69,13 @@ export function topologyOf(
   const standalone: Process[] = ["zeebe"];
   const embeddedIn: Record<string, Process[]> = { zeebe: [], gateway: [] };
 
-  if (spec.gateway?.mode === "Embedded") embeddedIn.zeebe.push("gateway");
+  const gateway = modeOf(spec, "gateway");
+  if (gateway === "Embedded") embeddedIn.zeebe.push("gateway");
   else standalone.push("gateway");
 
-  const host = spec.gateway?.mode === "Embedded" ? "zeebe" : "gateway";
+  const host = gateway === "Embedded" ? "zeebe" : "gateway";
   for (const app of WEB_APPS) {
-    if (spec[app]?.mode === "Standalone") standalone.push(app);
+    if (modeOf(spec, app) === "Standalone") standalone.push(app);
     else embeddedIn[host].push(app);
   }
 
