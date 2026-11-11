@@ -12,6 +12,7 @@ import {
   databaseConfigErrors,
   databaseSection,
   managementHost,
+  planeSectionViews,
   storageErrors,
 } from "./storage";
 import type { Running } from "./versions";
@@ -399,5 +400,124 @@ describe("storageErrors", () => {
     expect(storageErrors(draft(), ctx, [], { databases: disabled })).toEqual([
       "Choose another option for Databases.",
     ]);
+  });
+});
+
+describe("storageErrors and a policy that changed after step 4", () => {
+  const databases = {
+    name: "management-database",
+    label: "Databases",
+    selection: "One" as const,
+    required: true,
+    options: [
+      {
+        registration: "management-database-server",
+        label: "New PostgreSQL server",
+        isDefault: true,
+        parameters: [],
+      },
+    ],
+  };
+
+  it("refuses a pick of a section that no PluginSection offers any more", () => {
+    const d = draft({ storage: { ...withDatabase, access: [gatewayPick] } });
+    const gone = { ...ctx, sections: [sections[0]] };
+    expect(storageErrors(d, gone, [], { databases })).toEqual([
+      "Choose another option for access.",
+    ]);
+  });
+
+  it("refuses a parameter whose choice the Environment no longer allows", () => {
+    const environment = {
+      metadata: { name: "production" },
+      spec: {
+        parameters: {
+          gateway: {
+            tier: {
+              claimEditable: true,
+              allowed: [{ name: "gold", label: "Gold", value: "gold" }],
+            },
+          },
+        },
+      },
+    } as unknown as Environment;
+    const d = draft({
+      storage: {
+        ...withDatabase,
+        access: [{ ...gatewayPick, parameters: { tier: "silver" } }],
+      },
+    });
+    expect(
+      storageErrors(d, { ...ctx, environments: [environment] }, [], {}),
+    ).toEqual(["Fix the fields of the databases and access options."]);
+  });
+});
+
+describe("planeSectionViews", () => {
+  const ready = {
+    conditions: [
+      { type: "Accepted", status: "True" },
+      { type: "Ready", status: "True" },
+    ],
+  };
+  const behindGateway = {
+    metadata: { name: "behind-gateway" },
+    spec: {
+      sections: ["management-database"],
+      mode: "Optional",
+      label: "Database behind the gateway",
+      deletionPolicies: ["Delete"],
+      serviceAccount: { name: "db", namespace: "plugins" },
+      inputs: [{ name: "host", from: "access/managementHost", required: true }],
+    },
+    status: ready,
+  } as unknown as PluginRegistration;
+  const environment = {
+    metadata: { name: "production" },
+    spec: {
+      sections: {
+        "management-database": {
+          required: true,
+          allowed: ["behind-gateway"],
+          default: "behind-gateway",
+        },
+        access: { allowed: ["gateway"] },
+      },
+    },
+  } as unknown as Environment;
+  const live: PlaneContext = {
+    ...ctx,
+    environments: [environment],
+    registrations: [{ ...gateway, status: ready } as PluginRegistration, behindGateway],
+  };
+
+  it("disables an option whose input section has no pick, and the step refuses that pick", () => {
+    const d = draft({
+      storage: {
+        "management-database": [
+          { section: "management-database", registration: "behind-gateway" },
+        ],
+        access: [],
+      },
+    });
+    const views = planeSectionViews(d, live, {});
+    expect(views.databases?.options[0].disabledReason).toBe("Needs an access");
+    expect(storageErrors(d, live, [], views)).toContain(
+      "Choose another option for Databases.",
+    );
+  });
+
+  it("enables the option once its input section has a pick", () => {
+    const d = draft({
+      storage: {
+        "management-database": [
+          { section: "management-database", registration: "behind-gateway" },
+        ],
+        access: [gatewayPick],
+      },
+    });
+    expect(
+      planeSectionViews(d, live, {}).databases?.options[0].disabledReason,
+    ).toBeUndefined();
   });
 });

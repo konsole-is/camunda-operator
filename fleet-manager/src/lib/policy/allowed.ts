@@ -143,7 +143,12 @@ function appliesTo(
   return !found || (kind !== undefined && found.spec.appliesTo.includes(kind));
 }
 
-function checkParameters(
+/**
+ * checkParameters refuses with NotAllowed the first parameter of selection
+ * that policies do not allow, by the parameter rule of checkAllowed. It
+ * returns undefined when each parameter passes.
+ */
+export function checkParameters(
   selection: PluginSelection,
   policies: ParameterPolicies,
 ): { refusal: Refusal } | { error: string } | undefined {

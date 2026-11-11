@@ -13,8 +13,11 @@ import {
   type PluginSelection,
   type SectionView,
   builtinOption,
+  checkParameters,
   offeredSection,
+  parameterPolicies,
   resolve,
+  withMissingInputs,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { runningOf } from "./components";
@@ -28,6 +31,7 @@ export const EXISTING_DATABASE_CONFIGS = "existing-database-configs";
 const MANAGEMENT_HOST = "managementHostnamePattern";
 const CONTRACT_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const DATABASE_APPS = ["keycloak", "identity", "webModeler"] as const;
+const FIX_FIELDS = "Fix the fields of the databases and access options.";
 
 /** databaseSection returns the section whose slot is managementDatabases. */
 export function databaseSection(
@@ -50,9 +54,9 @@ export type PlaneSectionViews = {
 /**
  * planeSectionViews returns the database and access sections of step 4 as
  * a plane claim sees them: offeredSection with builtinOption in the
- * namespace of draft. existing-database-configs has no parameter of an app
- * that does not run. objects are the source kinds of builtinOption, in
- * every namespace.
+ * namespace of draft, then withMissingInputs over the picks of draft.
+ * existing-database-configs has no parameter of an app that does not run.
+ * objects are the source kinds of builtinOption, in every namespace.
  */
 export function planeSectionViews(
   draft: PlaneDraft,
@@ -83,10 +87,27 @@ export function planeSectionViews(
       ),
     };
   };
-  return {
+  const views = {
     databases: view(databaseSection(ctx.sections)),
     access: view(ctx.sections.find((s) => s.metadata.name === ACCESS_SECTION)),
   };
+  const shown = [views.databases, views.access].filter((v) => v !== undefined);
+  const selections = shown.flatMap((v) => picksOf(draft, v));
+  const missing = (v: SectionView | undefined) =>
+    v && withMissingInputs(v, selections, ctx.registrations, ctx.sections);
+  return { databases: missing(views.databases), access: missing(views.access) };
+}
+
+// A section that draft.storage does not hold yet counts its enabled default
+// option as picked, as SectionCards preselects it.
+function picksOf(draft: PlaneDraft, view: SectionView): PluginSelection[] {
+  if (Object.hasOwn(draft.storage, view.name)) return draft.storage[view.name];
+  const preselected = view.options.find(
+    (o) => o.isDefault && !o.disabledReason,
+  );
+  return preselected
+    ? [{ section: view.name, registration: preselected.registration }]
+    : [];
 }
 
 function runningOption(option: OptionView, running: Running): OptionView {
@@ -243,6 +264,28 @@ function selectionErrors(
   });
 }
 
+// SectionCards checks the parameters against the policy only while step 4
+// shows, and the Environment can change after that.
+function parameterErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
+  const environment = ctx.environments.find(
+    (e) => e.metadata.name === draft.environment,
+  );
+  const running = runningOf(draft);
+  const refused = planeSelections(draft).some((picked) => {
+    const selection = runningSelection(picked, running);
+    const registration = ctx.registrations.find(
+      (r) => r.metadata.name === selection.registration,
+    );
+    if (!registration) return false;
+    const policies = parameterPolicies(registration, environment);
+    return (
+      !("value" in policies) ||
+      checkParameters(selection, policies.value) !== undefined
+    );
+  });
+  return refused ? [FIX_FIELDS] : [];
+}
+
 /** contractNameOf is the name of the ManagementAuthConfig of the draft: the typed name, else the claim name. */
 export function contractNameOf(draft: PlaneDraft): string {
   return draft.contractName || draft.name;
@@ -299,8 +342,15 @@ export function storageErrors(
   const databases = databaseSection(ctx.sections);
   const sectionNames = ctx.sections.map((s) => s.metadata.name);
   const errors: string[] = selectionErrors(draft, views);
+  for (const [name, picked] of Object.entries(draft.storage)) {
+    if (picked.length > 0 && !sectionNames.includes(name)) {
+      errors.push(`Choose another option for ${name}.`);
+    }
+  }
   if (sectionErrors.some((e) => !sectionNames.includes(e.path))) {
-    errors.push("Fix the fields of the databases and access options.");
+    errors.push(FIX_FIELDS);
+  } else {
+    errors.push(...parameterErrors(draft, ctx));
   }
   const database = planeSelections(draft).find(
     (p) => p.section === databases?.metadata.name,
