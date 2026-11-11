@@ -157,7 +157,7 @@ const data = {
   authConfigs: [],
   databaseServerPresets: [],
   databaseConfigs: [],
-  planes: { clusters: [], claims: [], namespaces: [] },
+  planes: { clusters: [], claims: [], namespaces: [], environments: [] },
   images: {
     schemaVersion: 1,
     minors: {

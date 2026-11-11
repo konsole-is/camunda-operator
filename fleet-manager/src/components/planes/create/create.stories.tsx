@@ -326,6 +326,7 @@ const data = {
       },
     ],
     namespaces: [],
+    environments: [],
   },
 } as unknown as PlaneCreateData;
 
