@@ -295,15 +295,15 @@ spec:
     passwordKey: password
     usernameKey: username
   engine: postgres
-  host: postgres.platform.svc.cluster.local
-  port: 5432
+  host: 127.0.0.1
+  port: 1
 status:
   conditions:
   - lastTransitionTime: "2026-01-01T00:00:00Z"
-    message: "Connecting to postgres.platform.svc.cluster.local:5432: connecting to
-      postgres.platform.svc.cluster.local:5432/postgres: failed to connect to `user=postgres
-      database=postgres`:\n\thostname resolving error: lookup postgres.platform.svc.cluster.local:
-      no such host\n\tlookup postgres.platform.svc.cluster.local: no such host"
+    message: "Connecting to 127.0.0.1:1: connecting to 127.0.0.1:1/postgres: failed
+      to connect to `user=postgres database=postgres`:\n\t127.0.0.1:1 (127.0.0.1):
+      dial error: dial tcp 127.0.0.1:1: connect: connection refused\n\t127.0.0.1:1
+      (127.0.0.1): dial error: dial tcp 127.0.0.1:1: connect: connection refused"
     observedGeneration: 1
     reason: ConnectionFailed
     status: "False"

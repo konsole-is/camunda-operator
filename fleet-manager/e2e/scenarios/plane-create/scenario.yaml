@@ -62,8 +62,11 @@ seed:
       namespace: platform
     spec:
       engine: postgres
-      host: postgres.platform.svc.cluster.local
-      port: 5432
+      # The generator probes the server. A host name fails with the text of
+      # the local resolver, which differs between machines. Nothing listens
+      # on port 1, so this probe fails with the same text everywhere.
+      host: 127.0.0.1
+      port: 1
       adminCredentialsSecretRef:
         name: postgres-admin
         usernameKey: username
