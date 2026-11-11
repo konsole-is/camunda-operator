@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClusterPageData } from "@/components/cluster/cluster-view";
@@ -39,14 +39,16 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function data(): ClusterPageData {
+// data is the page of the managed cluster orders with its claim. managed
+// false leaves out the claim label.
+function data(managed = true): ClusterPageData {
   return {
     cluster: {
       kind: "CamundaCluster",
       metadata: {
         namespace: "team-a",
         name: "orders",
-        labels: { [CLAIM_LABEL]: "orders" },
+        labels: managed ? { [CLAIM_LABEL]: "orders" } : {},
       },
       spec: {},
     } as unknown as Resource<"CamundaCluster">,
@@ -105,12 +107,16 @@ function Pusher({ result }: { result: WriteResult }) {
   return null;
 }
 
-function page(writeMode: WriteMode | undefined, pushed?: WriteResult) {
+function page(
+  writeMode: WriteMode | undefined,
+  pushed?: WriteResult,
+  initial = data(),
+) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <GitPushesProvider>
         {pushed && <Pusher result={pushed} />}
-        <ClusterPage initial={data()} now={now} writeMode={writeMode} />
+        <ClusterPage initial={initial} now={now} writeMode={writeMode} />
       </GitPushesProvider>
     </QueryClientProvider>,
   );
@@ -148,5 +154,21 @@ describe("ClusterPage", () => {
         "Changes are off: the fleet manager could not read its settings.",
       ),
     ).toBeTruthy();
+  });
+
+  it("a managed cluster offers Change topology in the Topology section", () => {
+    page("direct");
+    const topology = screen.getByRole("region", { name: "Topology" });
+    expect(
+      within(topology).getByRole("button", { name: "Change topology" }),
+    ).toBeTruthy();
+  });
+
+  it("an unmanaged cluster offers no Change topology", () => {
+    page("direct", undefined, data(false));
+    expect(screen.getByRole("region", { name: "Topology" })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Change topology" }),
+    ).toBeNull();
   });
 });
