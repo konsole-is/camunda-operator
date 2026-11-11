@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { usePartitions, usePodUsage } from "./use-observe";
+import { useMetrics, usePartitions, usePodUsage } from "./use-observe";
 
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider
@@ -124,5 +124,92 @@ describe("usePartitions", () => {
     });
 
     await waitFor(() => expect(result.current).toBe("unavailable"));
+  });
+});
+
+describe("useMetrics", () => {
+  it("asks /api/metrics for the namespace, the component ref, and the range", async () => {
+    const fetchMock = stubFetch(async () =>
+      Response.json({ metrics: { prometheus: "unavailable" } }),
+    );
+
+    renderHook(
+      () =>
+        useMetrics("team-a", { cluster: "orders", component: "zeebe" }, "6h"),
+      { wrapper },
+    );
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/metrics?namespace=team-a&cluster=orders&component=zeebe&range=6h",
+        { cache: "no-store" },
+      ),
+    );
+  });
+
+  it("asks /api/metrics for a request ref", async () => {
+    const fetchMock = stubFetch(async () =>
+      Response.json({ metrics: { prometheus: "unavailable" } }),
+    );
+
+    renderHook(
+      () => useMetrics("team-a", { request: "orders-backup-storage" }, "1h"),
+      { wrapper },
+    );
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/metrics?namespace=team-a&request=orders-backup-storage&range=1h",
+        { cache: "no-store" },
+      ),
+    );
+  });
+
+  it("gives the answer of the route", async () => {
+    const metrics = { prometheus: "answered", charts: [], errors: [] };
+    stubFetch(async () => Response.json({ metrics }));
+
+    const { result } = renderHook(
+      () => useMetrics("team-a", { request: "r" }, "1h"),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current).toEqual(metrics));
+  });
+
+  it("is failed on an answer other than 200", async () => {
+    stubFetch(async () => new Response("gone", { status: 404 }));
+
+    const { result } = renderHook(
+      () => useMetrics("team-a", { request: "r" }, "1h"),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current).toBe("failed"));
+  });
+
+  it("is failed when the fetch fails", async () => {
+    stubFetch(async () => {
+      throw new TypeError("network");
+    });
+
+    const { result } = renderHook(
+      () => useMetrics("team-a", { request: "r" }, "1h"),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current).toBe("failed"));
+  });
+
+  it("asks nothing without a ref", async () => {
+    const fetchMock = stubFetch(async () => Response.json({}));
+
+    const { result } = renderHook(() => useMetrics("team-a", undefined, "1h"), {
+      wrapper,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current).toBeUndefined();
   });
 });
