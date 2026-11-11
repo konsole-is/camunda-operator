@@ -6,6 +6,7 @@ import {
   changeOf,
   claimAfter,
   discard,
+  fieldLock,
   openSession,
   rebase,
   resetValue,
@@ -507,6 +508,45 @@ describe("locks above a field", () => {
     expect(setValue(s, cluster("zeebe"), { replicas: 9 })).toEqual({
       refused: admin,
     });
+  });
+});
+
+describe("fieldLock", () => {
+  const admin: FieldLock = { reason: "admin" };
+  const zeebeLocked: LockProvider = (p) =>
+    p === "spec.cluster.zeebe" ? admin : undefined;
+  const hostLocked: LockProvider = (p) =>
+    p ===
+    "spec.plugins[section=access,registration=gateway-access].parameters.hostnamePattern"
+      ? admin
+      : undefined;
+
+  it("returns the lock of the field", () => {
+    expect(fieldLock(open(), cluster("version"))).toEqual({
+      reason: "release",
+    });
+  });
+
+  it("returns the lock of a field above it", () => {
+    expect(
+      fieldLock(open(claim(), zeebeLocked), cluster("zeebe", "replicas")),
+    ).toEqual(admin);
+  });
+
+  it("returns the lock of an item that the lock names by its keys for an index step", () => {
+    expect(
+      fieldLock(open(claim(), hostLocked), [
+        f("spec"),
+        f("plugins"),
+        { index: 0 },
+        f("parameters"),
+        f("hostnamePattern"),
+      ]),
+    ).toEqual(admin);
+  });
+
+  it("returns undefined for a field that no lock holds", () => {
+    expect(fieldLock(open(), cluster("zeebe", "replicas"))).toBeUndefined();
   });
 });
 
