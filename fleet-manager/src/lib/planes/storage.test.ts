@@ -488,7 +488,10 @@ describe("planeSectionViews", () => {
   const live: PlaneContext = {
     ...ctx,
     environments: [environment],
-    registrations: [{ ...gateway, status: ready } as PluginRegistration, behindGateway],
+    registrations: [
+      { ...gateway, status: ready } as PluginRegistration,
+      behindGateway,
+    ],
   };
 
   it("disables an option whose input section has no pick, and the step refuses that pick", () => {
