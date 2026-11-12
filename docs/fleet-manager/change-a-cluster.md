@@ -48,6 +48,58 @@ The preset can set a block such as `scheduling` as one value. A claim value of t
 
 When you empty a field, for example when you remove the last label, the claim no longer sets the field. The value of the preset then applies again.
 
+## Change the topology
+
+The topology of a cluster shows where each process runs. The **Topology** panel on the **Overview** tab of the cluster page draws it. On a cluster that a claim made, the panel has the button **Change topology**.
+
+**Change topology** opens a dialog with a choice for the gateway, Operate, Tasklist, and Admin:
+
+- **Standalone**: the process gets its own Deployment and Service.
+- **Embedded**: the gateway runs in the brokers. Operate, Tasklist, and Admin run in the gateway, or in the brokers when the gateway is embedded too.
+
+The brokers and Connectors have no choice. The dialog changes only where the processes run. The number of brokers is `replicas`, and the number of partitions is `partitions`. Both are fields of the **Settings** tab of the brokers, as [Change the settings of a component](#change-the-settings-of-a-component) shows.
+
+A pick writes `mode` in the block of the process, for example `spec.cluster.operate.mode`:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  cluster:
+    operate:
+      mode: Standalone
+  # ... the rest of your claim
+```
+
+If the claim does not set the mode, a pick of the current mode writes nothing. To undo a pick before you save, pick the mode that the process had before. Then the pick leaves nothing to save. **Discard** on the bar removes every unsaved change. To undo a saved change, pick the other mode and save again. The claim then keeps `mode` with that value.
+
+Below the choices, the dialog shows the topology **Now** and **After the change**. The list **What happens** names what the change creates, removes, and restarts. When Operate of `my-cluster` becomes standalone, the list is:
+
+- Creates Deployment my-cluster-operate and Service my-cluster-operate.
+- Operate starts from the workload settings of the preset: replicas, CPU, and memory.
+- Gateway pods restart.
+
+When the claim already holds settings for Operate, the second line is "Operate starts with the settings prepared in the claim (*n* fields)." [Embedded apps](#embedded-apps) shows how to prepare them. When Operate goes back into the gateway, the list says "Removes Deployment my-cluster-operate and Service my-cluster-operate. Operate runs in the gateway, which restarts." When the gateway goes into the brokers, the list says "Removes Deployment my-cluster-gateway and Service my-cluster-gateway. Gateway runs in the brokers, which restarts."
+
+The list covers every unsaved change of the cluster, not only the picks of the dialog. The dialog then says "These lines include the other pending changes of this cluster."
+
+A mode that you cannot change shows its value and the reason, with no choice. The table in [The state of a field](#the-state-of-a-field) gives each reason and where to change the value.
+
+Each pick is an unsaved change. When you close the dialog, the picks stay, and the bar at the bottom of the page counts them. **Review** in the dialog opens the review of every unsaved change, as [Save or discard the changes](#save-or-discard-the-changes) shows. When the page blocks the review, for example while an editor shows an error, the dialog stays open. It says "Review is blocked. The change bar says why."
+
+### A running backup
+
+A change that restarts the brokers, or that changes the Camunda version, can make a running backup of the cluster fail. A mode change of the gateway restarts the brokers, because the gateway moves into or out of them. A running backup does not stop the change. The review warns before you save, for example:
+
+> CAUTION: Wait until backup my-cluster-manual-1 finishes. This change can restart the brokers, which can fail a running backup.
+
+The confirm button is then **Change anyway**, or **Push anyway** in Git mode, in place of **Save** or **Push to Git**. The caution has a link to the **Backups** tab. In Git mode, the caution adds that a backup that runs when GitOps applies the change can fail. A backup that starts after the change waits until the rollout is done.
+
+A change that does not restart the brokers shows no caution. The review then adds the line "Backup my-cluster-manual-1 is running. This change does not roll the brokers, so it does not affect the backup." A change of Operate, Tasklist, or Admin between the gateway and standalone is such a change. [Back up and restore a cluster](backups.md) describes the backups.
+
 ## Change the claim in the Claim tab
 
 The **Claim** tab shows the choices for the whole cluster in panels. Each panel that you can change has an **Edit** button. One panel is open at a time. **Done** closes the panel and keeps its changes as unsaved changes.

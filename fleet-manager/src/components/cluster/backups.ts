@@ -3,7 +3,7 @@ import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import type { StatusTone } from "@/components/fleet/status";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { DatabaseServerSpec } from "@/generated/crds/databaseserver";
-import { formatBytes } from "@/components/fleet/units";
+import { dateTime, formatBytes } from "@/components/fleet/units";
 import type { Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
 import { mergeDatabaseServer } from "@/lib/merge";
@@ -62,17 +62,6 @@ export const RECENT_RESTORES = 5;
 
 const DASH = "-";
 const FINAL = ["Completed", "Failed"];
-
-/**
- * dateTime writes an RFC 3339 time as "2026-10-18 11:58 UTC", the same on
- * every machine. It writes "-" for an unset or bad time.
- */
-export function dateTime(iso: string | undefined): string {
-  const ms = parse(iso);
-  if (ms === undefined) return DASH;
-  const text = new Date(ms).toISOString();
-  return `${text.slice(0, 10)} ${text.slice(11, 16)} UTC`;
-}
 
 /**
  * duration writes the time from from to to in its two largest units, such as

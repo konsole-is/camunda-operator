@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type ReactNode, useId, useRef, useState, useTransition } from "react";
 import { InlineConfirm } from "@/components/fleet/inline-confirm";
 import { TypedConfirm } from "@/components/fleet/typed-confirm";
+import { secondText } from "@/components/fleet/units";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
@@ -429,13 +430,6 @@ function intervalText(interval: RestoreInterval): string {
   return interval.failing
     ? `${text}. Uploads are failing after this point.`
     : text;
-}
-
-// secondText writes an RFC 3339 time as "2026-11-10 09:30:15 UTC": a point
-// in time needs the seconds that dateTime leaves out.
-function secondText(at: string): string {
-  const text = new Date(at).toISOString();
-  return `${text.slice(0, 10)} ${text.slice(11, 19)} UTC`;
 }
 
 function DeleteAction({

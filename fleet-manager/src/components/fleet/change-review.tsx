@@ -11,6 +11,7 @@ import type {
   WriteMode,
   WriteResult,
 } from "@/lib/write/types";
+import type { ReviewConfirm } from "./claim-review";
 import { DiffView } from "./diff-view";
 import { ReviewPanel } from "./review-panel";
 
@@ -33,9 +34,7 @@ export function ChangeReview({
   diffLabel,
   effects,
   caution,
-  confirmLabel,
-  gitConfirmLabel,
-  danger,
+  confirm: confirmProps,
   savedMessage,
   preview,
   apply,
@@ -50,9 +49,7 @@ export function ChangeReview({
   /** effects are the lines of the effects, or a function of the preview that gives them once the preview is in. */
   effects: ReactNode[] | ((preview: Preview) => ReactNode[]);
   caution?: ReactNode;
-  confirmLabel: string;
-  gitConfirmLabel?: string;
-  danger?: boolean;
+  confirm: ReviewConfirm;
   savedMessage: string;
   preview: (change: Change) => Promise<Preview>;
   apply: (change: Change) => Promise<WriteResult>;
@@ -201,9 +198,10 @@ export function ChangeReview({
         </>
       }
       mode={mode}
-      confirmLabel={confirmLabel}
-      gitConfirmLabel={gitConfirmLabel}
-      danger={danger}
+      confirmLabel={confirmProps.label ?? "Save"}
+      gitConfirmLabel={confirmProps.gitLabel}
+      danger={confirmProps.danger}
+      typed={confirmProps.typed}
       pending={writing || blocked}
       onConfirm={confirm}
       onCancel={writing ? undefined : onCancel}

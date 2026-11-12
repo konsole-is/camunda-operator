@@ -31,6 +31,26 @@ export function formatAxis(value: number, unit?: string): string {
   return COMPACT.format(value);
 }
 
+/**
+ * dateTime writes an RFC 3339 time as "2026-10-18 11:58 UTC", the same on
+ * every machine. It writes "-" for an unset or bad time.
+ */
+export function dateTime(iso: string | undefined): string {
+  const ms = iso ? Date.parse(iso) : NaN;
+  if (Number.isNaN(ms)) return "-";
+  const text = new Date(ms).toISOString();
+  return `${text.slice(0, 10)} ${text.slice(11, 16)} UTC`;
+}
+
+/**
+ * secondText writes a valid RFC 3339 time as "2026-11-10 09:30:15 UTC": a
+ * point in time needs the seconds that dateTime leaves out.
+ */
+export function secondText(at: string): string {
+  const text = new Date(at).toISOString();
+  return `${text.slice(0, 10)} ${text.slice(11, 19)} UTC`;
+}
+
 /** formatClock writes a time in ms as "11:58", in UTC. */
 export function formatClock(ms: number): string {
   return new Date(ms).toISOString().slice(11, 16);
