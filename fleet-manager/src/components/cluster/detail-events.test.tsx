@@ -7,17 +7,20 @@ import { DetailEvents } from "./detail-events";
 const live = vi.hoisted(() => ({
   calls: [] as { kind: string; opts: unknown }[],
   items: {} as Record<string, unknown[]>,
+  errors: {} as Record<string, string>,
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, opts: unknown) => {
     live.calls.push({ kind, opts });
-    return { items: live.items[kind] ?? [] };
+    const error = live.errors[kind];
+    return { items: live.items[kind] ?? [], ...(error && { error }) };
   },
 }));
 
 beforeEach(() => {
   live.calls = [];
   live.items = {};
+  live.errors = {};
 });
 afterEach(cleanup);
 
@@ -50,7 +53,7 @@ function show() {
   render(
     <DetailEvents
       namespace="team-a"
-      podSelector={SELECTOR}
+      selector={SELECTOR}
       pods={brokers}
       refs={[
         {
@@ -104,6 +107,39 @@ describe("DetailEvents", () => {
     expect(items.join("\n")).toContain("Pod/orders-zeebe-0");
     expect(items.join("\n")).toContain("CamundaCluster/orders");
     expect(items.join("\n")).not.toContain("Pulled");
+  });
+
+  it("names a read that failed and does not say that there are no events", () => {
+    live.errors = { Event: "The API server refused the list of Event" };
+
+    show();
+
+    expect(
+      screen.getByText(
+        "Could not read Event: The API server refused the list of Event",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("No events")).toBeNull();
+  });
+
+  it("lists the events it has and says that the list can be incomplete when a Service read failed", () => {
+    live.items = { Event: [event("Started", "Pod", "orders-zeebe-0")] };
+    live.errors = { Service: "watch broke" };
+
+    show();
+
+    expect(
+      screen.getByText("Could not read Service: watch broke"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("The list can miss events, because a read failed."),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole("listitem")
+        .map((li) => li.textContent)
+        .join(),
+    ).toContain("Pod/orders-zeebe-0");
   });
 
   it("says so when the component has no events", () => {
