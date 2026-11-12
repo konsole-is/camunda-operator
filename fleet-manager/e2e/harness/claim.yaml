@@ -5,13 +5,15 @@
 #
 # The Environment lets the claim name the SecondaryStorageConfig of the
 # existing-secondary-storage option: without an Environment, no parameter
-# of a built-in option is claim-editable.
+# of a built-in option is claim-editable. It also gives the cluster its
+# platform config, which a CamundaCluster needs.
 apiVersion: fleet.camunda.io/v1alpha1
 kind: Environment
 metadata:
   name: fleet-harness
 spec:
   displayName: Fleet harness
+  platformConfigRef: fleet-harness
   presets:
     camundaCluster:
       - fleet-harness
@@ -34,6 +36,14 @@ spec:
     existing-secondary-storage:
       name:
         claimEditable: true
+---
+# The platform config of the Environment. The cluster is suspended, so no
+# component reads its settings.
+apiVersion: core.camunda.io/v1
+kind: CamundaPlatformConfig
+metadata:
+  name: fleet-harness
+spec: {}
 ---
 # One broker with one partition, so that the preset fits a kind node if
 # the cluster ever resumes.
