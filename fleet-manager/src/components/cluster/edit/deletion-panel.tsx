@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { DeletionChoiceField } from "@/components/fleet/deletion-choice";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
@@ -25,20 +24,13 @@ const KEEP_REFUSED =
  * DeletionPanel edits the deletion policy of the claim. Choosing the
  * default while the claim sets no policy removes the change. While the
  * claim keeps its resources and an option cannot, the panel shows Keep as
- * chosen, and it blocks Review only while it is mounted. It renders nothing
- * without a session.
+ * chosen. It renders nothing without a session.
  */
 export function DeletionPanel({ context }: { context: ClusterSlotContext }) {
   const edit = useClusterEdit();
-  const { invalid } = edit;
-  const choice = edit.session && shownChoice(context, edit.session);
-  // The claim controller refuses Keep with such an option.
-  const refused = choice?.policy === "Orphan" && !choice.keepAllowed;
-  useEffect(() => {
-    invalid(POLICY, refused ? `Deletion policy: ${KEEP_REFUSED}` : undefined);
-  }, [invalid, refused]);
-  useEffect(() => () => invalid(POLICY, undefined), [invalid]);
-  if (!edit.session || !choice) return null;
+  if (!edit.session) return null;
+  const choice = shownChoice(context, edit.session);
+  const refused = choice.policy === "Orphan" && !choice.keepAllowed;
   const claimed = edit.session.claim.spec?.deletionPolicy;
   return (
     <div className="flex flex-col gap-3">

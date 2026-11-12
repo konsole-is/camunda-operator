@@ -14,11 +14,13 @@ import {
   previewClaimChange,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { FakeEventSource } from "../../../../test/fakes/event-source";
 import { claim, slotContext } from "../../../../test/fakes/slot-context";
 import { fakeWriter } from "../../../../test/fakes/writer";
 import type { ClusterSlotContext } from "../slots";
+import type { ClaimPanel } from "../tabs";
 import { ClaimEditorPanels } from "./claim-editor";
 import { ClusterEditProvider, useClusterEdit } from "./cluster-edit";
 
@@ -81,13 +83,47 @@ function Suspend() {
   );
 }
 
-function panel(context: ClusterSlotContext) {
+// Probe makes the change of its label outside the panel.
+function Probe({
+  label,
+  steps,
+  value,
+}: {
+  label: string;
+  steps: Step[];
+  value: unknown;
+}) {
+  const { set } = useClusterEdit();
+  return (
+    <button type="button" onClick={() => set(steps, value)}>
+      {label}
+    </button>
+  );
+}
+
+function panel(
+  context: ClusterSlotContext,
+  requested: ClaimPanel = "deletion",
+) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <GitPushesProvider>
         <ClusterEditProvider context={context} actions={actions}>
-          <ClaimEditorPanels context={context} requested="deletion" />
+          <ClaimEditorPanels context={context} requested={requested} />
           <Suspend />
+          <Probe
+            label="Add an option"
+            steps={[{ field: "spec" }, { field: "plugins" }]}
+            value={[
+              { section: "access", registration: "gateway-access" },
+              { section: "backup", registration: "delete-only" },
+            ]}
+          />
+          <Probe
+            label="Delete"
+            steps={[{ field: "spec" }, { field: "deletionPolicy" }]}
+            value="Delete"
+          />
         </ClusterEditProvider>
       </GitPushesProvider>
     </QueryClientProvider>,
@@ -102,6 +138,8 @@ const DELETE = /^Delete the resources/;
 const bar = () => screen.queryByRole("region", { name: "Unsaved changes" });
 const barButton = (name: string) =>
   within(bar()!).getByRole<HTMLButtonElement>("button", { name });
+const refusal = (registration: string, section: string) =>
+  `the deletion policy is Orphan, and these registrations do not support it: PluginRegistration "${registration}" of section "${section}"`;
 const REFUSED =
   "The claim keeps its resources, but an option below cannot keep them. Choose Delete, or remove that option.";
 
@@ -157,7 +195,7 @@ describe("the Deletion policy panel", () => {
     expect(fakeWriter.applied).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
     expect(barButton("Review").disabled).toBe(true);
-    expect(bar()!.textContent).toContain(`Deletion policy: ${REFUSED}`);
+    expect(bar()!.textContent).toContain(refusal("gateway-access", "access"));
   });
 
   it("choosing Delete for a refused Keep makes one change that writes Delete", async () => {
@@ -187,6 +225,41 @@ describe("the Deletion policy panel", () => {
     expect(fakeWriter.applied).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
     expect(barButton("Review").disabled).toBe(true);
+  });
+
+  it("with the panel closed, a change that adds an option that cannot keep its resources blocks Review", () => {
+    const context = contextOf(["Delete", "Orphan"], "Orphan");
+    context.claim!.status!.resolvedPolicy!.sections!.backup = {
+      allowed: ["delete-only"],
+    };
+    context.sections = [
+      ...context.sections,
+      {
+        kind: "PluginSection",
+        metadata: { name: "backup" },
+        spec: {
+          label: "Backup",
+          selection: "One",
+          appliesTo: ["CamundaClusterClaim"],
+        },
+      } as unknown as Resource<"PluginSection">,
+    ];
+    context.registrations = [
+      ...context.registrations,
+      {
+        kind: "PluginRegistration",
+        metadata: { name: "delete-only" },
+        spec: { label: "Delete only", deletionPolicies: ["Delete"] },
+      } as unknown as Resource<"PluginRegistration">,
+    ];
+    panel(context, "release");
+    expect(within(deletion()).queryByRole("radio")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Add an option" }));
+    expect(barButton("Review").disabled).toBe(true);
+    expect(bar()!.textContent).toContain(refusal("delete-only", "backup"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(bar()!.textContent).not.toContain("the deletion policy is Orphan");
+    expect(barButton("Review").disabled).toBe(false);
   });
 
   it("takes Delete as the default when the resolved policy names none", () => {

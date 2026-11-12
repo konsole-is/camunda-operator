@@ -285,6 +285,86 @@ describe("validateClusterClaim", () => {
     });
   });
 
+  describe("the deletion policy", () => {
+    const registration = (name: string, deletionPolicies: string[]) =>
+      ({
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRegistration",
+        metadata: { name },
+        spec: { deletionPolicies },
+      }) as unknown as Resource<"PluginRegistration">;
+    const keeping = () =>
+      ctx({
+        sections: [
+          ...ctx().sections,
+          {
+            apiVersion: "plugins.camunda.io/v1alpha1",
+            kind: "PluginSection",
+            metadata: { name: "backup" },
+            spec: {
+              label: "Backup",
+              appliesTo: ["CamundaClusterClaim"],
+              selection: "One",
+            },
+          } as unknown as Resource<"PluginSection">,
+        ],
+        registrations: [
+          registration("gateway-access", ["Delete", "Orphan"]),
+          registration("delete-only", ["Delete"]),
+        ],
+      });
+    const PLUGINS = [f("spec"), f("plugins")];
+    const withDeleteOnly = [
+      { section: "access", registration: "gateway-access" },
+      { section: "backup", registration: "delete-only" },
+    ];
+
+    it("refuses Keep when a change adds an option that cannot keep its resources", () => {
+      const s = set(
+        open(claim({ deletionPolicy: "Orphan" })),
+        PLUGINS,
+        withDeleteOnly,
+      );
+      expect(validateClusterClaim(s, keeping())).toEqual([
+        {
+          message:
+            'the deletion policy is Orphan, and these registrations do not support it: PluginRegistration "delete-only" of section "backup"',
+        },
+      ]);
+    });
+
+    it("refuses the Keep that the claim recorded when it sets no policy", () => {
+      const s = set(
+        open(claim({}, { deletionPolicy: "Orphan" } as ResolvedPolicy)),
+        PLUGINS,
+        withDeleteOnly,
+      );
+      expect(validateClusterClaim(s, keeping())).toContainEqual({
+        message:
+          'the deletion policy is Orphan, and these registrations do not support it: PluginRegistration "delete-only" of section "backup"',
+      });
+    });
+
+    it("accepts the change once the claim picks Delete", () => {
+      let s = set(
+        open(claim({ deletionPolicy: "Orphan" })),
+        PLUGINS,
+        withDeleteOnly,
+      );
+      s = set(s, [f("spec"), f("deletionPolicy")], "Delete");
+      expect(validateClusterClaim(s, keeping())).toEqual([]);
+    });
+
+    it("accepts Keep when every option can keep its resources", () => {
+      const s = set(
+        open(claim({ deletionPolicy: "Orphan" })),
+        [...ACCESS, f("parameters"), f("hostnamePattern")],
+        "{name}.b.example.com",
+      );
+      expect(validateClusterClaim(s, keeping())).toEqual([]);
+    });
+  });
+
   it("refuses a field that a selected slot fills", () => {
     const s = set(
       open(),
