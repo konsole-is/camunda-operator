@@ -135,7 +135,7 @@ describe("the Attachments panel", () => {
     expect((await save()).attachments).toBeUndefined();
   });
 
-  it("the external URL is locked Filled by Access when the access option fills it", () => {
+  it("the external URL is locked Filled by Access, with the URL of the live Optimize, when the access option fills it", () => {
     const filled: ClusterField = {
       key: "CamundaOptimize:spec.externalUrl",
       target: { kind: "CamundaOptimize" },
@@ -150,11 +150,19 @@ describe("the Attachments panel", () => {
     panel({
       claim: withOptimize({ managementAuthConfigRef: "camunda" }),
       fields: [filled],
+      optimize: {
+        kind: "CamundaOptimize",
+        metadata: { namespace: "team-a", name: "orders-optimize" },
+        spec: { externalUrl: "https://orders.example.com/optimize" },
+      } as unknown as Resource<"CamundaOptimize">,
     });
     const url = within(attachments()).getByRole("group", {
       name: "External URL",
     });
     expect(within(url).getByText("Filled by Access")).toBeTruthy();
+    expect(
+      within(url).getByText("https://orders.example.com/optimize"),
+    ).toBeTruthy();
     expect(within(url).queryByRole("textbox")).toBeNull();
   });
 

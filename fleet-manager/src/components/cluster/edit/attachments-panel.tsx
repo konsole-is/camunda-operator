@@ -33,7 +33,8 @@ export const DEFAULT_SCHEDULE = "0 2 * * *";
  * name, and turning it off removes the attachment with its settings. It
  * needs Elasticsearch as secondary storage and a ManagementAuthConfig.
  * While Optimize is on, the panel edits its ManagementAuthConfig and its
- * external URL, which stays locked while a section fills it. Back up on a
+ * external URL, which stays locked, with the URL of the live Optimize,
+ * while a section fills it. Back up on a
  * schedule sets DEFAULT_SCHEDULE and needs a backup storage option; while
  * it is on, the panel edits the cron and the counts to keep, where an
  * empty count removes the field. It renders nothing without a session.
@@ -95,7 +96,11 @@ export function AttachmentsPanel({ context }: { context: ClusterSlotContext }) {
             {urlLock ? (
               <LockedField
                 label="External URL"
-                value={optimize.externalUrl ?? "Not set"}
+                value={
+                  optimize.externalUrl ??
+                  context.optimize?.spec.externalUrl ??
+                  "Not set"
+                }
                 reason={lockLabel(urlLock)}
               />
             ) : (
