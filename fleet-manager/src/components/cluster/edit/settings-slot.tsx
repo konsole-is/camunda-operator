@@ -14,6 +14,7 @@ import { SettingsEditor } from "../settings-editor";
 import type { ClusterSlotContext } from "../slots";
 import { changeInputOf } from "./change-input";
 import { type ClusterClaim, useClusterEdit } from "./cluster-edit";
+import { useEditorGeneration } from "./editor-generation";
 
 /**
  * ComponentSettingsEditor fills component.settings.editor: an "Edit
@@ -26,16 +27,7 @@ import { type ClusterClaim, useClusterEdit } from "./cluster-edit";
 export function ComponentSettingsEditor({ ctx }: { ctx: ClusterSlotContext }) {
   const { session, pending, set, reset } = useClusterEdit();
   const [open, setOpen] = useState(false);
-  // The editors start from their values. A discard or a write that leaves
-  // nothing pending remounts them, but an edit of their own (own) does not.
-  const [generation, setGeneration] = useState(0);
-  const [own, setOwn] = useState(0);
-  const [seen, setSeen] = useState({ pending: pending > 0, own });
-  if (seen.pending !== pending > 0 || seen.own !== own) {
-    if (pending === 0 && seen.pending && seen.own === own)
-      setGeneration((g) => g + 1);
-    setSeen({ pending: pending > 0, own });
-  }
+  const { generation, own } = useEditorGeneration(pending);
   if (!ctx.openId || !session) return null;
   return (
     <div className="flex flex-col gap-3">
@@ -54,14 +46,8 @@ export function ComponentSettingsEditor({ ctx }: { ctx: ClusterSlotContext }) {
           ctx={ctx}
           openId={ctx.openId}
           session={session}
-          set={(steps, value) => {
-            setOwn((n) => n + 1);
-            set(steps, value);
-          }}
-          reset={(steps) => {
-            setOwn((n) => n + 1);
-            reset(steps);
-          }}
+          set={own(set)}
+          reset={own(reset)}
         />
       )}
     </div>

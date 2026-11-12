@@ -160,6 +160,34 @@ describe("a section panel", () => {
     });
   });
 
+  it("Discard shows the values of the claim again in the parameter editors", async () => {
+    panel();
+    const input = () =>
+      within(row("hostPrefix")).getByRole<HTMLInputElement>("textbox");
+    await userEvent.type(input(), "-eu");
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "Unsaved changes" })).getByRole(
+        "button",
+        { name: "Discard" },
+      ),
+    );
+    expect(input().value).toBe("orders");
+  });
+
+  it("an edit that the user takes back keeps the editor and its focus", async () => {
+    panel();
+    const input = within(row("hostPrefix")).getByRole<HTMLInputElement>(
+      "textbox",
+    );
+    await userEvent.type(input, "x");
+    await userEvent.type(input, "{Backspace}");
+    expect(
+      screen.queryByRole("region", { name: "Unsaved changes" }),
+    ).toBeNull();
+    expect(input.isConnected).toBe(true);
+    expect(document.activeElement).toBe(input);
+  });
+
   it("a parameter that the admin set stays locked", () => {
     panel();
     const zone = row("zone");

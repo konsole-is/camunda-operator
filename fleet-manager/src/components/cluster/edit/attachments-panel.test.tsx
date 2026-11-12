@@ -262,6 +262,27 @@ describe("the Attachments panel", () => {
     ).toBe(false);
   });
 
+  it("Discard shows the counts of the claim again", async () => {
+    panel({
+      backupStorage: rdbmsBackups,
+      claim: claim("41", {
+        attachments: {
+          backupSchedule: { schedule: "0 2 * * *", retained: { completed: 7 } },
+        },
+      }),
+    });
+    await userEvent.clear(field("Completed backups to keep"));
+    await userEvent.type(field("Completed backups to keep"), "1.5");
+    fireEvent.click(within(bar()!).getByRole("button", { name: "Discard" }));
+    expect(field("Completed backups to keep").value).toBe("7");
+    await userEvent.clear(field("Schedule (cron, UTC)"));
+    await userEvent.type(field("Schedule (cron, UTC)"), "0 3 * * *");
+    expect(
+      within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(false);
+  });
+
   it("the backup schedule needs a backup storage option", () => {
     panel();
     expect(box("Back up on a schedule").disabled).toBe(true);

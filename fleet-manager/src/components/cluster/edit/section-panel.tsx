@@ -11,6 +11,7 @@ import type { ClaimSection } from "../claim";
 import { SelectionSettingsEditor } from "../selection-settings-editor";
 import type { ClusterSlotContext } from "../slots";
 import { useClusterEdit } from "./cluster-edit";
+import { useEditorGeneration } from "./editor-generation";
 
 type Choice = { name: string; value: unknown };
 
@@ -18,8 +19,9 @@ type Choice = { name: string; value: unknown };
  * SectionPanel edits one selection of the claim: its option is locked as
  * chosen at creation, and the parameters that the claim may set have
  * editors. A parameter with choices of the Environment picks a choice by
- * its name. section comes from the claim after the pending changes. It
- * follows the Secrets of the namespace while it is open, and renders
+ * its name. section comes from the claim after the pending changes. After
+ * a discard or a write, the editors show the values of the session again.
+ * It follows the Secrets of the namespace while it is open, and renders
  * nothing without a session.
  */
 export function SectionPanel({
@@ -29,7 +31,8 @@ export function SectionPanel({
   context: ClusterSlotContext;
   section: ClaimSection;
 }) {
-  const { session, set, reset, invalid } = useClusterEdit();
+  const { session, pending, set, reset, invalid } = useClusterEdit();
+  const { generation, own } = useEditorGeneration(pending);
   const namespace = context.cluster.metadata?.namespace ?? "";
   const secrets = secretRefsOf(useResources("Secret", { namespace }, []).items);
   if (!session) return null;
@@ -55,6 +58,7 @@ export function SectionPanel({
       />
       {editable ? (
         <SelectionSettingsEditor
+          key={generation}
           fields={section.parameters.map((f) => withChoiceName(f, choices))}
           schema={registration?.spec.parameters as OpenAPISchema | undefined}
           choices={Object.fromEntries(
@@ -64,8 +68,8 @@ export function SectionPanel({
             ]),
           )}
           secrets={secrets}
-          set={set}
-          reset={reset}
+          set={own(set)}
+          reset={own(reset)}
           invalid={invalid}
         />
       ) : (

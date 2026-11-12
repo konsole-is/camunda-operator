@@ -14,6 +14,7 @@ import { byCodeUnit } from "@/lib/policy";
 import { claimAfter, fieldLock } from "@/lib/session";
 import type { ClusterSlotContext } from "../slots";
 import { useClusterEdit } from "./cluster-edit";
+import { useEditorGeneration } from "./editor-generation";
 
 const f = (field: string): Step => ({ field });
 const OPTIMIZE: Step[] = [f("spec"), f("attachments"), f("optimize")];
@@ -37,11 +38,14 @@ export const DEFAULT_SCHEDULE = "0 2 * * *";
  * while a section fills it. Back up on a
  * schedule sets DEFAULT_SCHEDULE and needs a backup storage option; while
  * it is on, the panel edits the cron and the counts to keep, where an
- * empty count removes the field. It renders nothing without a session.
+ * empty count removes the field. After a discard or a write, the counts
+ * show the values of the session again. It renders nothing without a
+ * session.
  */
 export function AttachmentsPanel({ context }: { context: ClusterSlotContext }) {
   const edit = useClusterEdit();
   const { session } = edit;
+  const { generation, own } = useEditorGeneration(edit.pending);
   if (!session) return null;
   const after = claimAfter(session).spec?.attachments;
   const optimize = after?.optimize;
@@ -156,16 +160,20 @@ export function AttachmentsPanel({ context }: { context: ClusterSlotContext }) {
                 />
               )}
             </Field>
-            <div className="flex flex-wrap gap-4">
+            <div key={generation} className="flex flex-wrap gap-4">
               <CountField
                 label="Completed backups to keep"
                 steps={COMPLETED}
                 value={schedule.retained?.completed}
+                set={own(edit.set)}
+                reset={own(edit.reset)}
               />
               <CountField
                 label="Failed backups to keep"
                 steps={FAILED}
                 value={schedule.retained?.failed}
+                set={own(edit.set)}
+                reset={own(edit.reset)}
               />
             </div>
           </>
@@ -242,15 +250,19 @@ function Field({
 
 // CountField keeps its own text, so that a count with an error stays in
 // the input while the session keeps the last valid count. It clears its
-// error when it unmounts.
+// error when it unmounts. set and reset change the session.
 function CountField({
   label,
   steps,
   value,
+  set,
+  reset,
 }: {
   label: string;
   steps: Step[];
   value: number | undefined;
+  set: (steps: Step[], value: unknown) => void;
+  reset: (steps: Step[]) => void;
 }) {
   const edit = useClusterEdit();
   const id = useId();
@@ -278,8 +290,8 @@ function CountField({
           const nextError = countError(next);
           edit.invalid(steps, nextError && `${label}: ${nextError}`);
           if (nextError) return;
-          if (next === "") edit.reset(steps);
-          else edit.set(steps, Number(next));
+          if (next === "") reset(steps);
+          else set(steps, Number(next));
         }}
       />
       {error && (
