@@ -187,6 +187,32 @@ describe("draftErrors", () => {
     ]);
   });
 
+  it("refuses a duplicate name in the allowed values of a parameter", () => {
+    expect(
+      draftErrors(
+        draft({
+          parameters: {
+            "aws-connectors-role": {
+              extraPolicyArns: {
+                claimEditable: true,
+                allowed: [
+                  { name: "sqs", label: "SQS access", value: "a" },
+                  { name: "sqs", label: "SQS read", value: "b" },
+                ],
+              },
+            },
+          },
+        }),
+        NEW,
+      ),
+    ).toEqual([
+      {
+        path: "spec.parameters.aws-connectors-role.extraPolicyArns.allowed.1.name",
+        message: "Each name is used once.",
+      },
+    ]);
+  });
+
   it("refuses the environment label in the fixed labels and in the required label keys", () => {
     expect(
       draftErrors(

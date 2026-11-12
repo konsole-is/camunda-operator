@@ -10,6 +10,7 @@ import {
 import { APP_FIELD_MANAGER, child, fieldManagers } from "@/lib/merge";
 import type { ValidationError } from "@/lib/schema";
 import { refKey } from "@/lib/write/refs";
+import { allowedErrors } from "./settings";
 import type { Change, KubeObject } from "@/lib/write/types";
 
 const API_VERSION = "fleet.camunda.io/v1alpha1";
@@ -114,6 +115,14 @@ export function draftErrors(
         "The default option must be one of the allowed options.",
       );
   }
+
+  for (const [registration, policies] of Object.entries(spec.parameters ?? {}))
+    for (const [parameter, policy] of Object.entries(policies))
+      for (const e of allowedErrors(policy.allowed ?? []))
+        add(
+          `spec.parameters.${registration}.${parameter}.allowed.${e.path}`,
+          e.message,
+        );
 
   const labels = spec.namespaceCreation?.labels ?? {};
   const labelsPath = "spec.namespaceCreation.labels";
