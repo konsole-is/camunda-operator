@@ -165,6 +165,7 @@ export function SettingRow({
       role="group"
       aria-label={setting.label}
       className="flex min-w-0 flex-col gap-2 py-3"
+      onChange={own(() => {})}
     >
       <Editor
         key={generation}
@@ -174,9 +175,9 @@ export function SettingRow({
         current={"current" in setting ? setting.current : mounted}
         secrets={secrets ?? []}
         onChange={change}
-        onInvalid={own((message: string | undefined) =>
-          shows(message && `${setting.label}: ${message}`),
-        )}
+        onInvalid={(message) =>
+          shows(message && `${setting.label}: ${message}`)
+        }
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span>{setting.state ? stateLabel(setting.state) : "Not set"}</span>

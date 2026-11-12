@@ -353,6 +353,52 @@ describe("ComponentSettingsEditor", () => {
     });
   });
 
+  it("a claim update keeps the text and the focus of a YAML editor after an edit that keeps its value", async () => {
+    const affinityOf = (pool: string) => ({
+      zeebe: {
+        replicas: 3,
+        scheduling: {
+          nodeAffinity: {
+            requiredDuringSchedulingIgnoredDuringExecution: {
+              nodeSelectorTerms: [
+                {
+                  matchExpressions: [
+                    { key: "pool", operator: "In", values: [pool] },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+      gateway: { mode: "Standalone" },
+    });
+    const contextAt = (version: string, pool: string) =>
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(affinityOf(pool)),
+        claim: claim(version, { cluster: affinityOf(pool) }),
+      });
+    const { update } = renderSlot(contextAt("41", "camunda"));
+    await openEditors();
+    const replicas = within(settingRow(group("Brokers"), "replicas")).getByRole(
+      "spinbutton",
+    );
+    await userEvent.clear(replicas);
+    await userEvent.type(replicas, "5");
+    const affinity = within(
+      settingRow(group("Brokers"), "scheduling.nodeAffinity"),
+    ).getByRole("textbox");
+    await userEvent.type(affinity, "{Enter}# a note");
+    update(contextAt("42", "batch"));
+    expect(affinity.isConnected).toBe(true);
+    expect(document.activeElement).toBe(affinity);
+    expect(affinity).toHaveProperty(
+      "value",
+      expect.stringContaining("# a note"),
+    );
+  });
+
   it("a smaller pending size still says volumes cannot shrink when the editors open again", async () => {
     const spec = {
       zeebe: { replicas: 3, storageSize: "32Gi" },
