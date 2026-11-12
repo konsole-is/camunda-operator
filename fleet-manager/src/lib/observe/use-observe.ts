@@ -86,12 +86,32 @@ export function useMetrics(
   return data;
 }
 
+/**
+ * useControllerPods polls /api/controller-pods every 15 seconds for the
+ * namespace and the pod names of the controller of registration. It is
+ * undefined until the first answer and while registration is undefined,
+ * when it asks nothing. It is "unavailable" when the route refuses or the
+ * fetch fails. It needs a QueryClientProvider above it.
+ */
+export function useControllerPods(
+  registration: string | undefined,
+): { namespace: string; pods: string[] } | Unavailable | undefined {
+  return usePolled(
+    ["controller-pods", registration ?? ""],
+    `/api/controller-pods?${new URLSearchParams({ registration: registration ?? "" })}`,
+    "controller",
+    registration !== undefined,
+  );
+}
+
 function usePolled<T>(
   queryKey: readonly string[],
   url: string,
   field: string,
+  enabled = true,
 ): T | Unavailable | undefined {
   const { data } = useQuery({
+    enabled,
     queryKey,
     queryFn: async (): Promise<T | Unavailable> => {
       try {
