@@ -121,15 +121,15 @@ export function storageErrors(
   const storage = storageDraftOf(draft, data);
   const errors = [...draftErrors(storage, views, cardErrors), ...conflicts];
   if (errors.length > 0) return errors;
-  const release = releaseOf(draft, data.environment);
+  // A later step picks the release when the Environment gives no default,
+  // so a name stands in for it until then.
+  const release = releaseOf(draft, data.environment) ?? "release";
   return resolvedErrors(
     storage,
     views,
     viewSelections(storage, views),
     (_, registration) =>
-      release !== undefined && declaresRelease(registration)
-        ? { releaseRef: release }
-        : {},
+      declaresRelease(registration) ? { releaseRef: release } : {},
   );
 }
 

@@ -588,6 +588,26 @@ describe("storageErrors and a live list that changed after the pick", () => {
     ]);
   });
 
+  it("leaves the release to a later step while no release is known", () => {
+    const data = dataOf(
+      {
+        releases: { allowed: ["r1"] },
+        presets: { elasticsearchCluster: ["small"] },
+        parameters: { elasticsearch: { preset: { claimEditable: true } } },
+      },
+      { ElasticsearchClusterPreset: [preset("small")] },
+    );
+
+    expect(
+      storageErrors(
+        picking("elasticsearch", { preset: "small" }),
+        data,
+        {},
+        [],
+      ),
+    ).toEqual([]);
+  });
+
   it("refuses a locked policy value that the schema of its registration refuses", () => {
     const locked = (replicas: number) =>
       dataOf(
