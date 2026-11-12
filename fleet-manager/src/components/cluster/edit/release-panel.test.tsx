@@ -103,8 +103,11 @@ describe("the Release and preset panel", () => {
     ).toBeTruthy();
     openReview();
     const spec = await confirm("Downgrade");
-    expect(spec.releaseRef).toBe("camunda-8-9-0");
-    expect(spec.allowVersionDowngrade).toBe("8.9.0");
+    expect(spec).toEqual({
+      ...claim("41").spec,
+      releaseRef: "camunda-8-9-0",
+      allowVersionDowngrade: "8.9.0",
+    });
   });
 
   it("asks for the downgrade confirm when the claim names a lower release already and gets allowVersionDowngrade", async () => {
