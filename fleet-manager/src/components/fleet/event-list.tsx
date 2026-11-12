@@ -3,10 +3,10 @@ import { cn } from "@/lib/utils";
 import { age } from "./age";
 
 /**
- * EventList lists the events.k8s.io/v1 Events of an object, newest first,
- * with the reason, the note, how many times it happened, and its age. A
- * Warning event is marked. With showObject, each event also names its
- * object as "<kind>/<name>". An empty list says "No events".
+ * EventList lists the given events.k8s.io/v1 Events, newest first, with
+ * the reason, the note, how many times it happened, and its age. A
+ * Warning event is marked. With showObject, an event that has a regarding
+ * object also names it as "<kind>/<name>". An empty list says "No events".
  */
 export function EventList({
   events,
