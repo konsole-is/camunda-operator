@@ -569,6 +569,22 @@ export const planeCreateStories: Story[] = [
   },
   {
     component: "PlaneCreateFlow",
+    name: "Storage and access with a pick of a section that is gone",
+    render: () => (
+      <PlaneCreateStory
+        data={data}
+        step="storage"
+        initial={{
+          ...components,
+          storage: {
+            "dns-zone": [{ section: "dns-zone", registration: "route53" }],
+          },
+        }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
     name: "Review in direct mode",
     render: () => (
       <PlaneCreateStory
