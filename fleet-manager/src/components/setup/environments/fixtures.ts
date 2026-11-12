@@ -106,7 +106,8 @@ const CONNECTORS_ROLE_PARAMETERS = {
       "x-kubernetes-list-type": "set",
       maxItems: 10,
       items: { type: "string", pattern: POLICY_ARN },
-      description: "Managed policies that every cluster of the environment gets.",
+      description:
+        "Managed policies that every cluster of the environment gets.",
     },
     extraPolicyArns: {
       type: "array",
@@ -288,16 +289,17 @@ export function environmentFixtures(): EnvironmentSources {
         "management-database",
       ]),
       registration("rustfs", "RustFS", ["backup-storage"]),
+      registration("aws-kms", "AWS KMS key", ["encryption-key"], {}, [
+        ACCEPTED,
+        ready("False", "AccessDenied", "AccessDenied on the key."),
+      ]),
       registration(
-        "aws-kms",
-        "AWS KMS key",
+        "vault-transit",
+        "Vault transit key",
         ["encryption-key"],
         {},
-        [ACCEPTED, ready("False", "AccessDenied", "AccessDenied on the key.")],
+        [{ ...ready("False", "Invalid"), type: "Accepted" }],
       ),
-      registration("vault-transit", "Vault transit key", ["encryption-key"], {}, [
-        { ...ready("False", "Invalid"), type: "Accepted" },
-      ]),
       registration(
         "aws-ebs-encrypted",
         "Encrypted EBS volumes",

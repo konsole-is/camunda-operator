@@ -22,8 +22,7 @@ import type { EnvironmentSources } from "./sources";
 
 /** StoragePresetKind is the preset kind of the built-in Elasticsearch or PostgreSQL. */
 export type StoragePresetKind =
-  | "ElasticsearchClusterPreset"
-  | "DatabaseServerPreset";
+  "ElasticsearchClusterPreset" | "DatabaseServerPreset";
 
 // The Environment list of each preset kind of the built-in storage.
 const STORAGE_PRESET_LISTS = {
@@ -48,10 +47,7 @@ export type ClaimRef = { kind: ClaimKind; namespace: string; name: string };
 export type ReferenceWarning =
   | {
       claim: ClaimRef;
-      kind:
-        | "CamundaRelease"
-        | "CamundaClusterPreset"
-        | StoragePresetKind;
+      kind: "CamundaRelease" | "CamundaClusterPreset" | StoragePresetKind;
       name: string;
       removed: true;
     }

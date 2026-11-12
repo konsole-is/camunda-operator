@@ -89,7 +89,10 @@ export function TemplateEditor({
         onChange={(event) => update(event.target.value)}
       />
       {errors.length > 0 && (
-        <ul id={`${id}-errors`} className="flex flex-col gap-0.5 text-xs text-bad">
+        <ul
+          id={`${id}-errors`}
+          className="flex flex-col gap-0.5 text-xs text-bad"
+        >
           {errors.map((e, i) => (
             <li key={i}>{e.path ? `${e.path}: ${e.message}` : e.message}</li>
           ))}

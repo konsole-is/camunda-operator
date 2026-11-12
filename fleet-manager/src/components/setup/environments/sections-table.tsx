@@ -24,8 +24,7 @@ export function SectionsTable({
   if (groups.length === 0)
     return (
       <p className="text-sm text-muted">
-        No section exists. The operator writes the core sections when it
-        starts.
+        No section exists. The operator writes the core sections when it starts.
       </p>
     );
   return (
@@ -107,7 +106,9 @@ function SectionPolicyRow({
             type="checkbox"
             className="size-4 accent-accent"
             checked={policy.required}
-            onChange={(e) => onPolicy({ ...policy, required: e.target.checked })}
+            onChange={(e) =>
+              onPolicy({ ...policy, required: e.target.checked })
+            }
           />
           Required
         </label>

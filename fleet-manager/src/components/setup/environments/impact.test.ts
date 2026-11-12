@@ -576,7 +576,10 @@ describe("namespaceImpact", () => {
 });
 
 describe("environmentImpact for the presets of the built-in storage", () => {
-  const STORAGE = { section: "secondary-storage", registration: "elasticsearch" };
+  const STORAGE = {
+    section: "secondary-storage",
+    registration: "elasticsearch",
+  };
   const DATABASE = {
     section: "management-database",
     registration: "management-database-server",
@@ -612,7 +615,9 @@ describe("environmentImpact for the presets of the built-in storage", () => {
   it("lists a claim whose Elasticsearch preset the edit removes", () => {
     expect(
       environmentImpact(
-        environment({ presets: { elasticsearchCluster: ["es-small", "es-large"] } }),
+        environment({
+          presets: { elasticsearchCluster: ["es-small", "es-large"] },
+        }),
         edit({ presets: { elasticsearchCluster: ["es-large"] } }),
         sources({
           registrations,
@@ -630,7 +635,11 @@ describe("environmentImpact for the presets of the built-in storage", () => {
       ).warnings,
     ).toEqual([
       {
-        claim: { kind: "CamundaClusterClaim", namespace: "team-a", name: "orders" },
+        claim: {
+          kind: "CamundaClusterClaim",
+          namespace: "team-a",
+          name: "orders",
+        },
         kind: "ElasticsearchClusterPreset",
         name: "es-small",
         removed: true,
@@ -648,7 +657,9 @@ describe("environmentImpact for the presets of the built-in storage", () => {
           planeClaims: [
             planeClaim(
               "plane-a",
-              { plugins: [{ ...DATABASE, parameters: { preset: "pg-small" } }] },
+              {
+                plugins: [{ ...DATABASE, parameters: { preset: "pg-small" } }],
+              },
               editable("management-database-server"),
             ),
           ],

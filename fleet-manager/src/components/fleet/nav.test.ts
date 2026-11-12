@@ -39,9 +39,7 @@ describe("SETUP_ITEMS", () => {
   it("puts each create page beside the lists, where no object name can take its path", () => {
     expect(
       SETUP_ITEMS.flatMap((item) => (item.create ? [item.create] : [])),
-    ).toEqual([
-      { href: "/setup/new-environment", label: "New environment" },
-    ]);
+    ).toEqual([{ href: "/setup/new-environment", label: "New environment" }]);
   });
 });
 

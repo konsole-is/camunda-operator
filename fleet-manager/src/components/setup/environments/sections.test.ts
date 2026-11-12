@@ -62,9 +62,7 @@ describe("sectionGroups", () => {
       [],
       {},
     );
-    expect(
-      groups.map((g) => [g.label, g.rows.map((r) => r.name)]),
-    ).toEqual([
+    expect(groups.map((g) => [g.label, g.rows.map((r) => r.name)])).toEqual([
       ["Clusters", ["access", "backup-storage"]],
       ["Management planes", ["access", "management-database"]],
     ]);
@@ -90,19 +88,15 @@ describe("sectionGroups", () => {
   });
 
   it("reads the policy of the section from the spec", () => {
-    const groups = sectionGroups(
-      [section("backup-storage", [CLUSTER])],
-      [],
-      {
-        sections: {
-          "backup-storage": {
-            required: true,
-            allowed: ["rustfs"],
-            default: "rustfs",
-          },
+    const groups = sectionGroups([section("backup-storage", [CLUSTER])], [], {
+      sections: {
+        "backup-storage": {
+          required: true,
+          allowed: ["rustfs"],
+          default: "rustfs",
         },
       },
-    );
+    });
     expect(rowOf(groups, "Clusters", "backup-storage")?.policy).toEqual({
       required: true,
       default: "rustfs",
@@ -120,10 +114,14 @@ describe("sectionGroups", () => {
       [
         registration("s3", ["backup-storage"]),
         registration("rustfs", ["backup-storage"]),
-        registration("refused", ["backup-storage"], [
-          { type: "Accepted", status: "False" },
-          { type: "Ready", status: "True" },
-        ]),
+        registration(
+          "refused",
+          ["backup-storage"],
+          [
+            { type: "Accepted", status: "False" },
+            { type: "Ready", status: "True" },
+          ],
+        ),
         registration("gateway", ["access"]),
       ],
       {},
@@ -133,26 +131,32 @@ describe("sectionGroups", () => {
         (o) => o.registration,
       ),
     ).toEqual(["rustfs", "s3"]);
-    expect(
-      rowOf(groups, "Clusters", "backup-storage")?.options[0].label,
-    ).toBe("Label of rustfs");
+    expect(rowOf(groups, "Clusters", "backup-storage")?.options[0].label).toBe(
+      "Label of rustfs",
+    );
   });
 
   it("notes a registration that is not ready with its Ready message", () => {
     const groups = sectionGroups(
       [section("encryption-key", [CLUSTER])],
       [
-        registration("kms", ["encryption-key"], [
-          { type: "Accepted", status: "True" },
-          {
-            type: "Ready",
-            status: "False",
-            message: "AccessDenied on the key.",
-          },
-        ]),
-        registration("vault", ["encryption-key"], [
-          { type: "Accepted", status: "True" },
-        ]),
+        registration(
+          "kms",
+          ["encryption-key"],
+          [
+            { type: "Accepted", status: "True" },
+            {
+              type: "Ready",
+              status: "False",
+              message: "AccessDenied on the key.",
+            },
+          ],
+        ),
+        registration(
+          "vault",
+          ["encryption-key"],
+          [{ type: "Accepted", status: "True" }],
+        ),
         registration("plain", ["encryption-key"]),
       ],
       {},
@@ -184,8 +188,11 @@ describe("sectionGroups", () => {
       sections: { "encryption-key": { allowed: ["kms"] } },
     };
     expect(
-      rowOf(sectionGroups(sections, registrations, noDefault), "Clusters", "storage")
-        ?.options[0].inputNotes,
+      rowOf(
+        sectionGroups(sections, registrations, noDefault),
+        "Clusters",
+        "storage",
+      )?.options[0].inputNotes,
     ).toEqual([
       "Needs an option of Encryption key. Set a default in Encryption key.",
     ]);
@@ -225,9 +232,11 @@ describe("sectionGroups", () => {
       [section("backup-storage", [CLUSTER])],
       [
         registration("rustfs", ["backup-storage"]),
-        registration("refused", ["backup-storage"], [
-          { type: "Accepted", status: "False" },
-        ]),
+        registration(
+          "refused",
+          ["backup-storage"],
+          [{ type: "Accepted", status: "False" }],
+        ),
       ],
       {
         sections: {
@@ -288,7 +297,9 @@ describe("withSectionPolicy", () => {
   });
 
   it("does not change spec", () => {
-    const spec: Environment["spec"] = { sections: { access: { allowed: ["a"] } } };
+    const spec: Environment["spec"] = {
+      sections: { access: { allowed: ["a"] } },
+    };
     withSectionPolicy(spec, "access", { required: true, allowed: [] });
     expect(spec).toEqual({ sections: { access: { allowed: ["a"] } } });
   });

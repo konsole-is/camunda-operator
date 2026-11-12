@@ -22,32 +22,29 @@ const orders = {
 describe("previewClaims", () => {
   it("returns the claims of the namespaces of the environment that a section of the registration applies to, by namespace and name", () => {
     expect(
-      previewClaims(sources, "production", "aws-connectors-role")
-        .map((c) => `${c.namespace}/${c.name}`),
+      previewClaims(sources, "production", "aws-connectors-role").map(
+        (c) => `${c.namespace}/${c.name}`,
+      ),
     ).toEqual(["team-a/billing", "team-a/orders"]);
   });
 
   it("leaves out a claim of a kind that no section of the registration applies to", () => {
     const s = sectionFixtures();
-    s.namespaces.find((n) => n.metadata?.name === "platform")!.metadata!.labels = {
+    s.namespaces.find(
+      (n) => n.metadata?.name === "platform",
+    )!.metadata!.labels = {
       [ENVIRONMENT_LABEL]: "production",
     };
     expect(
-      previewClaims(s, "production", "aws-connectors-role").map(
-        (c) => c.name,
-      ),
+      previewClaims(s, "production", "aws-connectors-role").map((c) => c.name),
     ).toEqual(["billing", "orders"]);
     expect(
-      previewClaims(s, "production", "gateway-public").map(
-        (c) => c.name,
-      ),
+      previewClaims(s, "production", "gateway-public").map((c) => c.name),
     ).toEqual(["plane-a", "billing", "orders"]);
   });
 
   it("offers the example claim in the first namespace without a claim", () => {
-    expect(
-      previewClaims(sources, "staging", "aws-connectors-role"),
-    ).toEqual([
+    expect(previewClaims(sources, "staging", "aws-connectors-role")).toEqual([
       {
         kind: "CamundaClusterClaim",
         namespace: "team-c",
@@ -107,7 +104,10 @@ describe("templateData", () => {
     } as PluginRequest;
     expect(
       templateData({ ...input, requests: [other, request] }),
-    ).toMatchObject({ request: "orders-perms-1", serviceAccount: "orders-custom" });
+    ).toMatchObject({
+      request: "orders-perms-1",
+      serviceAccount: "orders-custom",
+    });
   });
 
   it("gives a plane claim the account of the plane", () => {
@@ -125,7 +125,10 @@ describe("templateData", () => {
         registration: registration("gateway-public"),
         environment: env.environments[2],
       }),
-    ).toMatchObject({ request: "plane-a-access", serviceAccount: "plane-a-management" });
+    ).toMatchObject({
+      request: "plane-a-access",
+      serviceAccount: "plane-a-management",
+    });
   });
 
   it("takes the parameters that the edited environment gives the request", () => {
@@ -138,9 +141,9 @@ describe("templateData", () => {
         },
       },
     };
-    expect(
-      templateData({ ...input, environment: edited }).parameters,
-    ).toEqual({ managedPolicyArns: ["arn:a"] });
+    expect(templateData({ ...input, environment: edited }).parameters).toEqual({
+      managedPolicyArns: ["arn:a"],
+    });
   });
 
   it("takes the parameters of the selection of the claim", () => {
@@ -168,7 +171,9 @@ describe("templateErrors", () => {
   it("names each string of an object that does not parse, by its path", () => {
     expect(
       templateErrors({
-        Statement: [{ Resource: "{{ .claimName }}", Action: "{{ .outputs.x }}" }],
+        Statement: [
+          { Resource: "{{ .claimName }}", Action: "{{ .outputs.x }}" },
+        ],
         Version: "2012-10-17",
       }),
     ).toEqual([
@@ -194,6 +199,8 @@ describe("templateErrors", () => {
   });
 
   it("has no error for a template that parses", () => {
-    expect(templateErrors({ a: "{{ .namespace }}-{{ .parameters.x }}" })).toEqual([]);
+    expect(
+      templateErrors({ a: "{{ .namespace }}-{{ .parameters.x }}" }),
+    ).toEqual([]);
   });
 });

@@ -58,14 +58,12 @@ export function previewClaims(
         namespaces.includes(c.metadata.namespace ?? "") &&
         kinds.includes(c.kind),
     )
-    .map(
-      (c): PreviewClaim => ({
-        kind: c.kind,
-        namespace: c.metadata.namespace ?? "",
-        name: c.metadata.name ?? "",
-        plugins: (c.spec.plugins ?? []) as PluginSelection[],
-      }),
-    )
+    .map((c): PreviewClaim => ({
+      kind: c.kind,
+      namespace: c.metadata.namespace ?? "",
+      name: c.metadata.name ?? "",
+      plugins: (c.spec.plugins ?? []) as PluginSelection[],
+    }))
     .sort(
       (a, b) =>
         byCodeUnit(a.namespace, b.namespace) || byCodeUnit(a.name, b.name),

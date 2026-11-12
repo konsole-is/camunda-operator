@@ -11,7 +11,11 @@ import {
   own,
   setOwn,
 } from "@/lib/policy";
-import { type OpenAPISchema, type ValidationError, validate } from "@/lib/schema";
+import {
+  type OpenAPISchema,
+  type ValidationError,
+  validate,
+} from "@/lib/schema";
 
 type Spec = Environment["spec"];
 type Policy = NonNullable<Spec["parameters"]>[string][string];
@@ -95,14 +99,17 @@ function settingsOf(
     limits: registration.spec.limits ?? [],
     parameters: names.map((parameter): ParameterSetting => {
       const property = own(properties, parameter);
-      const propertySchema = isObject(property) ? (property as OpenAPISchema) : undefined;
+      const propertySchema = isObject(property)
+        ? (property as OpenAPISchema)
+        : undefined;
       const parameterSchema = propertySchema ?? others;
       const policy: Policy = own(policies, parameter) ?? {};
       const presetKind = entry && own(entry.lists, parameter);
       return {
         name: parameter,
         label:
-          typeof propertySchema?.title === "string" && propertySchema.title !== ""
+          typeof propertySchema?.title === "string" &&
+          propertySchema.title !== ""
             ? propertySchema.title
             : parameter,
         ...(parameterSchema && { schema: parameterSchema }),
@@ -148,7 +155,7 @@ export function withParameterPolicy(
   delete parameters[registration];
   if (Object.keys(policies).length > 0)
     setOwn(parameters, registration, policies);
-  const next = { ...spec, parameters };
+  const next: Spec = { ...spec, parameters };
   if (Object.keys(parameters).length === 0) delete next.parameters;
   return next;
 }

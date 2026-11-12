@@ -39,9 +39,7 @@ describe("TemplateEditor", () => {
         onChange={() => {}}
       />,
     );
-    expect(
-      screen.getAllByRole("button").map((b) => b.textContent),
-    ).toEqual([
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
       "{{ .namespace }}",
       "{{ .claim }}",
       "{{ .request }}",

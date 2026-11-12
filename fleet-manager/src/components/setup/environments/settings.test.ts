@@ -54,7 +54,11 @@ const allowing = (
 describe("optionSettings", () => {
   it("returns one entry for each registration that a section allows, by name, with its label and limits", () => {
     const settings = optionSettings(
-      [role, registration("rustfs", ["backup-storage"]), registration("s3", ["backup-storage"])],
+      [
+        role,
+        registration("rustfs", ["backup-storage"]),
+        registration("s3", ["backup-storage"]),
+      ],
       allowing({
         "connectors-permissions": ["aws-connectors-role"],
         "backup-storage": ["s3", "gone"],
@@ -136,7 +140,10 @@ describe("optionSettings", () => {
       controller: { name: BUILTIN_CONTROLLER },
       parameters: {
         type: "object",
-        properties: { preset: { type: "string" }, releaseRef: { type: "string" } },
+        properties: {
+          preset: { type: "string" },
+          releaseRef: { type: "string" },
+        },
       },
     } as Partial<PluginRegistration["spec"]>);
     const [settings] = optionSettings(
@@ -149,7 +156,10 @@ describe("optionSettings", () => {
   it("names the preset kind of the parameter that lists presets", () => {
     const database = registration("database-server", ["secondary-storage"], {
       controller: { name: BUILTIN_CONTROLLER },
-      parameters: { type: "object", properties: { preset: { type: "string" } } },
+      parameters: {
+        type: "object",
+        properties: { preset: { type: "string" } },
+      },
     } as Partial<PluginRegistration["spec"]>);
     const [settings] = optionSettings(
       [database],
@@ -162,7 +172,10 @@ describe("optionSettings", () => {
     const gateway = registration("gateway-public", ["access"], {
       parameters: {
         type: "object",
-        properties: { hostnamePattern: { type: "string" }, other: { type: "string" } },
+        properties: {
+          hostnamePattern: { type: "string" },
+          other: { type: "string" },
+        },
       },
     });
     const settings = optionSettings(
@@ -195,7 +208,9 @@ describe("withParameterPolicy", () => {
         { value: 2, claimEditable: true },
       ),
     ).toEqual({
-      parameters: { a: { x: { value: 1 }, y: { value: 2, claimEditable: true } } },
+      parameters: {
+        a: { x: { value: 1 }, y: { value: 2, claimEditable: true } },
+      },
     });
   });
 
@@ -235,7 +250,9 @@ describe("withParameterPolicy", () => {
   });
 
   it("does not change spec", () => {
-    const spec: Environment["spec"] = { parameters: { a: { x: { value: 1 } } } };
+    const spec: Environment["spec"] = {
+      parameters: { a: { x: { value: 1 } } },
+    };
     withParameterPolicy(spec, "a", "x", {});
     expect(spec).toEqual({ parameters: { a: { x: { value: 1 } } } });
   });

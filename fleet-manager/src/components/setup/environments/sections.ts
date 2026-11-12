@@ -105,8 +105,7 @@ function rowOf(
   };
   const options = registrations
     .filter(
-      (r) =>
-        r.spec.sections.includes(name) && conditionTrue(r, "Accepted"),
+      (r) => r.spec.sections.includes(name) && conditionTrue(r, "Accepted"),
     )
     .sort((a, b) => byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""))
     .map((r): OfferedOption => {
@@ -181,7 +180,7 @@ export function withSectionPolicy(
     Object.entries(spec.sections ?? {}).filter(([name]) => name !== section),
   );
   if (Object.keys(entry).length > 0) setOwn(sections, section, entry);
-  const next = { ...spec, sections };
+  const next: Spec = { ...spec, sections };
   if (Object.keys(sections).length === 0) delete next.sections;
   return next;
 }

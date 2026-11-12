@@ -7,7 +7,11 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import type { ParameterRule } from "@/lib/policy/types";
-import { type SchemaRule, type ValidationError, schemaRules } from "@/lib/schema";
+import {
+  type SchemaRule,
+  type ValidationError,
+  schemaRules,
+} from "@/lib/schema";
 import { cn } from "@/lib/utils";
 import { LockedField } from "./locked-field";
 import { YamlEditor } from "./yaml-editor";

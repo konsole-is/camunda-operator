@@ -8,8 +8,18 @@ import { TemplatePreview } from "./template-preview";
 afterEach(cleanup);
 
 const claims: PreviewClaim[] = [
-  { kind: "CamundaClusterClaim", namespace: "team-a", name: "orders", plugins: [] },
-  { kind: "CamundaClusterClaim", namespace: "team-b", name: "billing", plugins: [] },
+  {
+    kind: "CamundaClusterClaim",
+    namespace: "team-a",
+    name: "orders",
+    plugins: [],
+  },
+  {
+    kind: "CamundaClusterClaim",
+    namespace: "team-b",
+    name: "billing",
+    plugins: [],
+  },
 ];
 
 const dataOf = (claim: PreviewClaim): TemplateData => ({
@@ -70,7 +80,11 @@ describe("TemplatePreview", () => {
       <TemplatePreview
         claims={claims}
         render={(claim) =>
-          renderJSON({ a: ["{{ .parameters.region }}"] }, dataOf(claim), "parameter")
+          renderJSON(
+            { a: ["{{ .parameters.region }}"] },
+            dataOf(claim),
+            "parameter",
+          )
         }
       />,
     );
@@ -87,7 +101,9 @@ describe("TemplatePreview", () => {
       />,
     );
     expect(
-      screen.getByText("No claim exists yet, so the preview uses the example claim example in team-a."),
+      screen.getByText(
+        "No claim exists yet, so the preview uses the example claim example in team-a.",
+      ),
     ).toBeTruthy();
   });
 

@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { Environment } from "@/generated/crds/environment";
 import {
   EnvironmentEditor,
   type EnvironmentActions,
@@ -71,14 +72,17 @@ async function save(actions: ReturnType<typeof renderEditor>) {
   await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
   fireEvent.click(confirm);
   await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
-  return actions.applyChange.mock.calls[0][0].apply[0].spec;
+  return actions.applyChange.mock.calls[0][0].apply[0]
+    .spec as Environment["spec"];
 }
 
 afterEach(cleanup);
 
 function withRustfsSchema() {
   const sources = sectionFixtures();
-  const rustfs = sources.registrations.find((r) => r.metadata.name === "rustfs")!;
+  const rustfs = sources.registrations.find(
+    (r) => r.metadata.name === "rustfs",
+  )!;
   rustfs.spec.parameters = {
     type: "object",
     properties: {
@@ -96,7 +100,11 @@ function withElasticsearch(listed: string[]) {
     apiVersion: "plugins.camunda.io/v1alpha1",
     kind: "PluginSection",
     metadata: { name: "secondary-storage" },
-    spec: { label: "Secondary storage", appliesTo: ["CamundaClusterClaim"], selection: "One" },
+    spec: {
+      label: "Secondary storage",
+      appliesTo: ["CamundaClusterClaim"],
+      selection: "One",
+    },
   });
   sources.registrations.push({
     ...sources.registrations[0],
@@ -108,7 +116,10 @@ function withElasticsearch(listed: string[]) {
       controller: { name: "camunda-operator" },
       parameters: {
         type: "object",
-        properties: { preset: { type: "string", title: "Preset" }, releaseRef: { type: "string" } },
+        properties: {
+          preset: { type: "string", title: "Preset" },
+          releaseRef: { type: "string" },
+        },
       },
     },
   } as (typeof sources.registrations)[number]);
@@ -122,7 +133,10 @@ function withElasticsearch(listed: string[]) {
       }) as unknown as (typeof sources.elasticsearchPresets)[number],
   );
   const spec = sources.environments[0].spec;
-  spec.sections = { ...spec.sections, "secondary-storage": { allowed: ["elasticsearch"] } };
+  spec.sections = {
+    ...spec.sections,
+    "secondary-storage": { allowed: ["elasticsearch"] },
+  };
   spec.presets = { ...spec.presets, elasticsearchCluster: listed };
   return sources;
 }
@@ -130,12 +144,16 @@ function withElasticsearch(listed: string[]) {
 describe("OptionSettings", () => {
   it("shows a number parameter with its range and an enum parameter as a select", () => {
     renderEditor("production", withRustfsSchema());
-    const replicas = within(group("RustFS", "Replicas")).getByLabelText("Replicas");
+    const replicas = within(group("RustFS", "Replicas")).getByLabelText(
+      "Replicas",
+    );
     expect(replicas).toHaveProperty("type", "number");
-    expect(within(group("RustFS", "Replicas")).getByText("From 1 to 9")).toBeTruthy();
     expect(
-      within(group("RustFS", "Tier")).getByLabelText("Tier").tagName,
-    ).toBe("SELECT");
+      within(group("RustFS", "Replicas")).getByText("From 1 to 9"),
+    ).toBeTruthy();
+    expect(within(group("RustFS", "Tier")).getByLabelText("Tier").tagName).toBe(
+      "SELECT",
+    );
   });
 
   it("shows the value of the registration while the environment value is empty", () => {
@@ -148,7 +166,9 @@ describe("OptionSettings", () => {
       { target: { value: "5" } },
     );
     expect(
-      within(group("RustFS", "Replicas")).queryByText("From the registration: 3"),
+      within(group("RustFS", "Replicas")).queryByText(
+        "From the registration: 3",
+      ),
     ).toBeNull();
   });
 
@@ -190,13 +210,17 @@ describe("OptionSettings", () => {
       within(role).getByText("Permissions boundary (limit set at install)"),
     ).toBeTruthy();
     expect(
-      within(role).getByText("arn:aws:iam::123456789012:policy/camunda-boundary"),
+      within(role).getByText(
+        "arn:aws:iam::123456789012:policy/camunda-boundary",
+      ),
     ).toBeTruthy();
   });
 
   it("shows the hostname pattern with a rendered host", () => {
     const sources = sectionFixtures();
-    sources.environments[0].spec.sections!.access = { allowed: ["gateway-public"] };
+    sources.environments[0].spec.sections!.access = {
+      allowed: ["gateway-public"],
+    };
     renderEditor("production", sources);
     expect(
       within(group("Public gateway", "Hostname pattern")).getByText(
@@ -207,9 +231,9 @@ describe("OptionSettings", () => {
 
   it("offers the presets that the environment allows for a preset parameter", () => {
     renderEditor("production", withElasticsearch(["es-small"]));
-    const preset = within(group("Elasticsearch in the cluster", "Preset")).getByLabelText(
-      "Preset",
-    ) as HTMLSelectElement;
+    const preset = within(
+      group("Elasticsearch in the cluster", "Preset"),
+    ).getByLabelText("Preset") as HTMLSelectElement;
     expect(Array.from(preset.options).map((o) => o.text)).toEqual([
       "Choose one",
       "es-small",

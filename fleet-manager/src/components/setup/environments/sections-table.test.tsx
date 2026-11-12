@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { Environment } from "@/generated/crds/environment";
 import {
   EnvironmentEditor,
   type EnvironmentActions,
@@ -71,7 +72,8 @@ async function save(actions: ReturnType<typeof renderEditor>) {
   await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
   fireEvent.click(confirm);
   await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
-  return actions.applyChange.mock.calls[0][0].apply[0].spec;
+  return actions.applyChange.mock.calls[0][0].apply[0]
+    .spec as Environment["spec"];
 }
 
 afterEach(cleanup);
@@ -105,7 +107,9 @@ describe("SectionsTable", () => {
     const backups = row("Clusters", "Backup storage");
     expect(within(backups).getByText(/No backups/)).toBeTruthy();
     fireEvent.click(within(backups).getByRole("checkbox", { name: "RustFS" }));
-    fireEvent.click(within(backups).getByRole("checkbox", { name: "Required" }));
+    fireEvent.click(
+      within(backups).getByRole("checkbox", { name: "Required" }),
+    );
     expect(within(backups).queryByText(/No backups/)).toBeNull();
     expect(await save(actions)).toMatchObject({
       sections: { "backup-storage": { required: true, allowed: ["rustfs"] } },
@@ -135,9 +139,9 @@ describe("SectionsTable", () => {
       within(access).getByRole("checkbox", { name: "Internal gateway" }),
     );
     expect(
-      within(access).getByLabelText("Default option").getAttribute(
-        "aria-invalid",
-      ),
+      within(access)
+        .getByLabelText("Default option")
+        .getAttribute("aria-invalid"),
     ).toBe("true");
     expect(
       within(access).getByText(

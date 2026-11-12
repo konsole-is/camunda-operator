@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
+import type { Environment } from "@/generated/crds/environment";
 import {
   EnvironmentEditor,
   type EnvironmentActions,
@@ -71,7 +72,8 @@ async function save(actions: ReturnType<typeof renderEditor>) {
   await waitFor(() => expect(confirm).toHaveProperty("disabled", false));
   fireEvent.click(confirm);
   await waitFor(() => expect(actions.applyChange).toHaveBeenCalledTimes(1));
-  return actions.applyChange.mock.calls[0][0].apply[0].spec;
+  return actions.applyChange.mock.calls[0][0].apply[0]
+    .spec as Environment["spec"];
 }
 
 afterEach(cleanup);
@@ -104,7 +106,9 @@ describe("AllowedEditor", () => {
     fireEvent.click(
       within(extra()).getByRole("checkbox", { name: "A claim can change it" }),
     );
-    fireEvent.click(within(extra()).getByRole("button", { name: "Add a choice" }));
+    fireEvent.click(
+      within(extra()).getByRole("button", { name: "Add a choice" }),
+    );
     const choice = within(extra()).getByRole("group", { name: "Choice 1" });
     fireEvent.change(within(choice).getByLabelText("Name"), {
       target: { value: "sqs" },
@@ -116,7 +120,7 @@ describe("AllowedEditor", () => {
       target: { value: "arn:aws:iam::aws:policy/AmazonSQSFullAccess" },
     });
     const spec = await save(actions);
-    expect(spec.parameters["aws-connectors-role"].extraPolicyArns).toEqual({
+    expect(spec.parameters?.["aws-connectors-role"]?.extraPolicyArns).toEqual({
       claimEditable: true,
       allowed: [
         {
@@ -130,7 +134,9 @@ describe("AllowedEditor", () => {
 
   it("refuses a duplicate name or label and blocks Review", () => {
     const { previewChange } = renderEditor("production", sectionFixtures());
-    fireEvent.click(within(extra()).getByRole("button", { name: "Add a choice" }));
+    fireEvent.click(
+      within(extra()).getByRole("button", { name: "Add a choice" }),
+    );
     const second = within(extra()).getByRole("group", { name: "Choice 2" });
     fireEvent.change(within(second).getByLabelText("Name"), {
       target: { value: "sqs" },
@@ -149,9 +155,11 @@ describe("AllowedEditor", () => {
   it("removes a choice", async () => {
     const actions = renderEditor("production", sectionFixtures());
     const first = within(extra()).getByRole("group", { name: "Choice 1" });
-    fireEvent.click(within(first).getByRole("button", { name: "Remove choice 1" }));
+    fireEvent.click(
+      within(first).getByRole("button", { name: "Remove choice 1" }),
+    );
     const spec = await save(actions);
-    expect(spec.parameters["aws-connectors-role"].extraPolicyArns).toEqual({
+    expect(spec.parameters?.["aws-connectors-role"]?.extraPolicyArns).toEqual({
       claimEditable: true,
     });
   });
