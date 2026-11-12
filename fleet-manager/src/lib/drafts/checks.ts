@@ -91,15 +91,10 @@ export function goneSections(draft: StorageDraft): string[] {
 
 /**
  * draftErrors returns the errors of the picks of draft against views, the
- * live sections of the storage step. For each view, it gives a pick whose
- * option is gone or disabled, more than one pick in a One section, or a
- * required section without a pick. Then it gives each value that
- * valueErrors refuses. Without such a value, it gives "Fix the <label>
- * settings." when cardErrors, the errors that SectionCards last reported
- * by section name, hold one for a field of the section. After the views,
- * it gives a pick of each section of goneSections. The card errors
- * of a section that views do not hold do not count. asked names the
- * sections whose missing pick the flow reports in its own words.
+ * live sections of the storage step. cardErrors are the errors that
+ * SectionCards last reported, by section name. The card errors of a section
+ * that views do not hold do not count. asked names the sections whose
+ * missing pick the flow reports in its own words.
  */
 export function draftErrors(
   draft: StorageDraft,

@@ -363,16 +363,13 @@ export function contractNameErrors(
 }
 
 /**
- * storageErrors returns the errors of step 4 against the newest data.
- * sectionErrors are the errors that SectionCards last reported, by section
- * name, and views the sections of planeSectionViews. It returns the
- * errors of draftErrors over views, a missing database pick, the host or
- * URL errors, the DatabaseConfig errors, and the contract name errors.
- * When there are none, it returns resolvedErrors of the plugins of the
- * claim, so a value that the claim controller would refuse blocks the
- * step too. With objects, the source kinds of builtinOption in every
- * namespace, each preset and config that a request names must exist, a
- * config in the namespace of draft.
+ * storageErrors returns the errors of step 4. sectionErrors are the errors
+ * that SectionCards last reported, by section name, and views the sections
+ * of planeSectionViews. A plugin value that the policy of the environment or
+ * the schema of its registration refuses blocks the step too. With objects,
+ * the source kinds of builtinOption in every namespace, each preset and
+ * config that a request names must exist, a config in the namespace of
+ * draft.
  */
 export function storageErrors(
   draft: PlaneDraft,

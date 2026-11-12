@@ -60,8 +60,7 @@ import {
  * holds only the versions that the admin typed. storage holds the
  * selections by section name, once step 4 showed the section. urls are the
  * URLs typed for "No access from outside". contractName "" means the claim
- * name. deletionPolicy is the deletion pick. Without it, the claim takes
- * the default of the environment.
+ * name. deletionPolicy is the deletion pick.
  */
 export type PlaneDraft = {
   environment?: string;

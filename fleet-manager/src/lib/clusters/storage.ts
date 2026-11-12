@@ -104,12 +104,12 @@ export function storageDraftOf(
 }
 
 /**
- * storageErrors returns the errors of step 2 against the newest data: the
- * errors of draftErrors over storageViews, then conflicts, the host
- * conflicts of the access pick. When there are none, it returns
- * resolvedErrors of the selections of the step, so a value that the claim
- * controller would refuse blocks the step too. cardErrors are the errors
- * that SectionCards last reported, by section name.
+ * storageErrors returns the errors of step 2, with the host conflicts of
+ * the access pick in conflicts. cardErrors are the errors that SectionCards
+ * last reported, by section name. A plugin value that the policy of the
+ * environment or the schema of its registration refuses blocks the step
+ * too, and so does a preset or a config that a request names and that does
+ * not exist.
  */
 export function storageErrors(
   draft: ClusterDraft,
