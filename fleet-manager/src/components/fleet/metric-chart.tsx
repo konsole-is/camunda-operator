@@ -10,9 +10,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { dateTime } from "@/components/cluster/backups";
 import type { Series, Unavailable } from "@/lib/observe/types";
-import { formatAxis, formatClock } from "./units";
+import { dateTime, formatAxis, formatClock } from "./units";
 
 const COLORS = ["var(--info)", "var(--accent)", "var(--ok)", "var(--warn)"];
 

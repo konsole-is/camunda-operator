@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
 import {
@@ -11,7 +11,6 @@ import {
   archiveLocation,
   backupStorageOf,
   bucketLocation,
-  dateTime,
   duration,
   restoreRowsOf,
 } from "./backups";
@@ -87,26 +86,6 @@ describe("duration", () => {
     ["not a time", "2026-10-18T12:00:00Z", "-"],
   ])("duration(%s, %s) is %s", (from, to, want) => {
     expect(duration(from, to)).toBe(want);
-  });
-});
-
-describe("dateTime", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("writes the UTC date and minute", () => {
-    expect(dateTime("2026-10-18T11:58:31Z")).toBe("2026-10-18 11:58 UTC");
-  });
-
-  it("writes the same text in any zone of the viewer", () => {
-    // The zone has a half-hour offset, so a time in the zone of the viewer cannot pass.
-    vi.stubEnv("TZ", "Asia/Kolkata");
-    expect(dateTime("2026-10-18T11:58:31Z")).toBe("2026-10-18 11:58 UTC");
-  });
-
-  it.each([undefined, "", "not a time"])("writes - for %j", (iso) => {
-    expect(dateTime(iso)).toBe("-");
   });
 });
 
