@@ -281,7 +281,7 @@ export function settingsOf(input: {
         editor,
         steps: holder.field.claimSteps,
         holder: {
-          value: holder.field.value,
+          value: valueAt(spec, steps(holder.names)),
           rest: steps(names.slice(holder.names.length)),
         },
       };

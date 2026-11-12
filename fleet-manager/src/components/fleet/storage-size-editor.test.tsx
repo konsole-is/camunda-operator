@@ -41,6 +41,28 @@ describe("StorageSizeEditor", () => {
     );
   });
 
+  it("keeps an exponent as its unit", async () => {
+    const onChange = vi.fn();
+    render(
+      <StorageSizeEditor
+        label="storageSize"
+        defaultValue="1e9"
+        current="2e9"
+        onChange={onChange}
+      />,
+    );
+    expect(amount()).toHaveProperty("value", "1");
+    expect(screen.getByRole("combobox", { name: "Unit" })).toHaveProperty(
+      "value",
+      "e9",
+    );
+    expect(screen.queryByText("Enter a size above 0")).toBeNull();
+    expect(screen.getByText(SHRINK)).toBeDefined();
+    await userEvent.clear(amount());
+    await userEvent.type(amount(), "3");
+    expect(onChange).toHaveBeenLastCalledWith("3e9", []);
+  });
+
   it("says that volumes cannot shrink below the current size", async () => {
     render(
       <StorageSizeEditor

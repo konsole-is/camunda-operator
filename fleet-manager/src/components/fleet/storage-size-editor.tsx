@@ -101,7 +101,7 @@ export function StorageSizeEditor({
 
 function parse(size: string | undefined): { amount: string; unit: string } {
   if (size === undefined || size === "") return { amount: "", unit: "Gi" };
-  const match = /^(\d+\.?\d*|\.\d+)([A-Za-z]*)$/.exec(size);
+  const match = /^(\d+\.?\d*|\.\d+)([eE][-+]?\d+|[A-Za-z]*)$/.exec(size);
   return match
     ? { amount: match[1], unit: match[2] }
     : { amount: size, unit: "" };

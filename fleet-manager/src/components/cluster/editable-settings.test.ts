@@ -414,6 +414,30 @@ describe("settingsOf", () => {
     expect(clusterRef.editor).toBeUndefined();
   });
 
+  it("a change inside a block keeps the pending changes of the block", () => {
+    const pending = {
+      managementAuthConfigRef: "keycloak",
+      webapp: { replicas: 2 },
+    };
+    const { fields } = settingsFieldsOf({
+      claim: { attachments: { optimize: pending } },
+      optimize: {
+        clusterRef: { name: "orders" },
+        managementAuthRef: "keycloak",
+        webapp: {},
+      },
+    });
+    const [group] = componentSettings(fields, "optimize", {});
+    const settings = settingsOf({ group, spec: pending });
+    const resources = { requests: { cpu: "1" } };
+    expect(
+      settingChange(setting(settings, "webapp.resources"), resources),
+    ).toEqual({
+      steps: steps("spec", "attachments", "optimize", "webapp"),
+      value: { replicas: 2, resources },
+    });
+  });
+
   it("a field outside the schema stays read only", () => {
     const version = setting(
       processSettings("connectors", "connectors", {
