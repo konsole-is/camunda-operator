@@ -128,6 +128,22 @@ describe("environmentImpact", () => {
     ).toEqual({ clusters: 0, planes: 0, warnings: [] });
   });
 
+  it("names each list that it reads and that could not be read, and the namespaces while their list is stale", () => {
+    const impact = environmentImpact(
+      environment({}),
+      edit({ deletionPolicy: "Orphan" }),
+      {
+        ...sources({}),
+        errors: [
+          { kind: "CamundaClusterClaim", message: "forbidden" },
+          { kind: "CamundaPlatformConfig", message: "forbidden" },
+        ],
+        namespacesStale: true,
+      },
+    );
+    expect(impact.unread).toEqual(["Namespace", "CamundaClusterClaim"]);
+  });
+
   it("lists a claim whose release the edit removes, with removed true", () => {
     expect(
       environmentImpact(

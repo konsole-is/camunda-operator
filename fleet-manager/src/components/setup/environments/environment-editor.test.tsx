@@ -582,6 +582,24 @@ describe("EnvironmentEditor", () => {
     ).toBeNull();
   });
 
+  it("says in the impact note and in the review that a list could not be read, and not new claims only", async () => {
+    setup({
+      errors: [{ kind: "CamundaClusterClaim", message: "forbidden" }],
+    });
+    const unread =
+      "The fleet manager cannot read CamundaClusterClaim, so the claims that this change touches can be more than this note names.";
+    fireEvent.change(displayName(), { target: { value: "Prod" } });
+    const note = screen.getByRole("note", { name: "Impact" });
+    expect(note.textContent).toContain(unread);
+    expect(note.textContent).not.toContain("new claims only");
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    const review = screen.getByRole("region", {
+      name: "Review the environment",
+    });
+    await waitFor(() => expect(review.textContent).toContain(unread));
+    expect(review.textContent).not.toContain("new claims only");
+  });
+
   it("disables the form when the environment was deleted", () => {
     const { rerender } = setup();
     rerender({ ...environmentFixtures(), environments: [] });

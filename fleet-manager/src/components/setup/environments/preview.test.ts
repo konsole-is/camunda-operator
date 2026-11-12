@@ -4,6 +4,7 @@ import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { environmentFixtures, sectionFixtures } from "./fixtures";
 import {
+  emptyPreviewText,
   previewClaims,
   previewSection,
   templateData,
@@ -63,6 +64,27 @@ describe("previewClaims", () => {
   it("offers no claim without a namespace", () => {
     expect(previewClaims(sources, "lab", "aws-connectors-role")).toEqual([]);
     expect(previewClaims(sources, "", "aws-connectors-role")).toEqual([]);
+  });
+});
+
+describe("emptyPreviewText", () => {
+  it("asks for a namespace when the environment has none", () => {
+    expect(emptyPreviewText(sources, "lab")).toBe(
+      "Add a namespace first. The preview renders the template for a claim of the environment.",
+    );
+  });
+
+  it("says that no section applies when the environment has namespaces", () => {
+    const s = sectionFixtures();
+    s.registrations = s.registrations.map((r) =>
+      r.metadata.name === "aws-connectors-role"
+        ? { ...r, spec: { ...r.spec, sections: ["missing"] } }
+        : r,
+    );
+    expect(previewClaims(s, "production", "aws-connectors-role")).toEqual([]);
+    expect(emptyPreviewText(s, "production")).toBe(
+      "No section of this option applies to a claim, so the preview has no claim to render for.",
+    );
   });
 });
 

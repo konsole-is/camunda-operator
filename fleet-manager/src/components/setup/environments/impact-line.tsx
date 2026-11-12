@@ -1,11 +1,7 @@
 import { Info } from "lucide-react";
 import type { EnvironmentImpact, ReferenceWarning } from "./impact";
 
-/**
- * impactLines returns the text of impact: the new-claims-only line with the
- * count of the claims that keep their recorded policy, the namespaces that
- * a first environment leaves without one, then one line for each warning.
- */
+/** impactLines returns the text of impact, with the count line first. */
 export function impactLines(impact: EnvironmentImpact): string[] {
   return [
     countLine(impact),
@@ -42,8 +38,10 @@ export function ImpactLine({ impact }: { impact: EnvironmentImpact }) {
   );
 }
 
-function countLine({ clusters, planes }: EnvironmentImpact): string {
-  const first = "Changes apply to new claims only.";
+function countLine({ clusters, planes, unread }: EnvironmentImpact): string {
+  const first = unread
+    ? `The fleet manager cannot read ${unread.join(", ")}, so the claims that this change touches can be more than this note names.`
+    : "Changes apply to new claims only.";
   const parts = [
     ...(clusters > 0 ? [plural(clusters, "cluster", "clusters")] : []),
     ...(planes > 0

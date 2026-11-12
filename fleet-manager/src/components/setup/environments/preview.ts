@@ -81,6 +81,16 @@ export function previewClaims(
   ];
 }
 
+/** emptyPreviewText says why previewClaims gives no claim in environment. */
+export function emptyPreviewText(
+  s: EnvironmentSources,
+  environment: string,
+): string {
+  return labelledNamespaces(environment, s.namespaces).length === 0
+    ? "Add a namespace first. The preview renders the template for a claim of the environment."
+    : "No section of this option applies to a claim, so the preview has no claim to render for.";
+}
+
 /**
  * previewSection returns the section of registration that a preview of
  * claim renders for: the section of the selection of registration in the

@@ -186,11 +186,11 @@ export function createChange(draft: EnvironmentDraft): Change {
 /**
  * updateChange applies live with the spec of specOf, with the
  * resourceVersion of live as its precondition, and with force, so a field
- * that kubectl apply set changes too. When the edit turns namespace
- * creation off, the spec holds namespaceCreation.allowed false. It leaves
- * out the last applied file of kubectl. existing names the PluginSections
- * and PluginRegistrations that exist: an edit that removes the entry of
- * one that does not exist leaves it out of the spec.
+ * that kubectl apply set changes too. It sends false for each
+ * namespaceCreation.allowed, required, and claimEditable that live has true
+ * and the edit turns off. It leaves out the last applied file of kubectl.
+ * existing names the PluginSections and PluginRegistrations that exist: an
+ * edit that removes the entry of one that does not exist leaves it out.
  */
 export function updateChange(
   live: Environment,

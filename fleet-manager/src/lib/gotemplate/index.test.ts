@@ -6,7 +6,14 @@ const data: TemplateData = {
   claim: "orders",
   request: "orders-backup-storage",
   serviceAccount: "orders-camunda",
-  parameters: { x: "eu-1", size: 3, on: true, obj: { a: 1 }, none: null },
+  parameters: {
+    x: "eu-1",
+    size: 3,
+    on: true,
+    obj: { a: 1 },
+    list: ["a", "b"],
+    none: null,
+  },
   outputs: { y: "bucket-1" },
   pods: "orders-zeebe-0|orders-zeebe-1",
 };
@@ -205,12 +212,13 @@ describe("render", () => {
       render("{{ .parameters.size }}/{{ .parameters.on }}", data, "parameter"),
     ).toEqual({ text: "3/true" }));
 
-  it.each(["obj", "none"])(
-    "refuses the parameter %s, which is not text",
+  it.each(["obj", "list", "none"])(
+    "refuses the parameter %s, which is not text, and says that the plugin prints it in another form",
     (name) =>
-      expect(
-        render(`{{ .parameters.${name} }}`, data, "parameter"),
-      ).toMatchObject({ field: `parameters.${name}` }),
+      expect(render(`{{ .parameters.${name} }}`, data, "parameter")).toEqual({
+        error: `parameter "${name}" is not a string, a number, or a boolean, and the plugin prints such a value in another form`,
+        field: `parameters.${name}`,
+      }),
   );
 
   it("fills a parameter whose name has a letter outside ASCII, as Go does", () =>

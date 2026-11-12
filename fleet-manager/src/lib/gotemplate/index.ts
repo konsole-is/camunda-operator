@@ -66,10 +66,11 @@ const ONLY_FIELDS = "a template holds field references only";
  * holds plain text and field references only: {{ .namespace }},
  * {{ .claim }}, {{ .request }}, {{ .serviceAccount }},
  * {{ .parameters.<name> }}, {{ .outputs.<key> }} except in a template
- * parameter, and in a metric query also {{ .pods }}. {{- and -}} trim the white space around an action, as
- * in Go. Each other construct, an unknown name, and an action that is not
- * closed is an error that names it, with the messages of pluginkit. It does
- * not check the values of a metric query; render does.
+ * parameter, and in a metric query also {{ .pods }}. {{- and -}} trim the
+ * white space around an action, as in Go. Each other construct, an unknown
+ * name, and an action that is not closed is an error that names it, with
+ * the messages of pluginkit. It does not check the values of a metric
+ * query; render does.
  */
 export function parseTemplate(
   template: string,
@@ -110,7 +111,7 @@ export function render(
       !["string", "number", "boolean"].includes(typeof data.parameters[name])
     ) {
       return {
-        error: `parameter "${name}" is not a string, a number, or a boolean`,
+        error: `parameter "${name}" is not a string, a number, or a boolean, and the plugin prints such a value in another form`,
         field: `parameters.${name}`,
       };
     }

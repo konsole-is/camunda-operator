@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Environment } from "@/generated/crds/environment";
 import { renderJSON } from "@/lib/gotemplate";
 import { OptionSettingsSection } from "./option-settings";
-import { previewClaims, templateData } from "./preview";
+import { emptyPreviewText, previewClaims, templateData } from "./preview";
 import { sectionGroups, withSectionPolicy } from "./sections";
 import { SectionsTable } from "./sections-table";
 import { optionSettings } from "./settings";
@@ -99,6 +99,7 @@ export function TemplatePreviewStory({
         environment.metadata.name ?? "",
         registration,
       )}
+      empty={emptyPreviewText(sources, environment.metadata.name ?? "")}
       render={(claim) =>
         renderJSON(
           value,

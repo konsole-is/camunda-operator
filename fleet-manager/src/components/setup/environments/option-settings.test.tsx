@@ -244,7 +244,7 @@ describe("OptionSettings", () => {
     renderEditor("production", withElasticsearch([]));
     expect(
       within(group("Elasticsearch in the cluster", "Preset")).getByText(
-        "No Elasticsearch preset is allowed. A claim that picks this option is refused until you check one under Presets.",
+        "No Elasticsearch preset is allowed. A new claim that picks this option is refused until you check one under Presets.",
       ),
     ).toBeTruthy();
   });

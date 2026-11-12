@@ -9,6 +9,7 @@ import {
   isObject,
   lockedSummary,
   own,
+  PRESET_LISTS,
   setOwn,
 } from "@/lib/policy";
 import {
@@ -39,7 +40,7 @@ export type ParameterSetting = {
   /** hostPattern is set for a host pattern of an access registration. */
   hostPattern: boolean;
   /** presetKind is set for the parameter that lists presets of that kind. */
-  presetKind?: "ElasticsearchClusterPreset" | "DatabaseServerPreset";
+  presetKind?: keyof typeof PRESET_LISTS;
 };
 
 /** OptionSettings is one registration with the settings of its parameters and its limits. */
@@ -55,11 +56,9 @@ export type OptionSettings = {
 /**
  * optionSettings returns one entry for each registration that a section of
  * spec allows or that spec.parameters names, by name. A name that no
- * registration has gives no entry.
- * parameters are the properties of the schema in schema order, then the
- * keys of the environment policy and of the values of the registration that
- * are not properties in code-unit order, without the parameters that the
- * built-in table hides.
+ * registration has gives no entry. parameters are the properties of the
+ * schema in schema order, then the other keys of the policy and of the
+ * registration values in code-unit order, without the hidden parameters.
  */
 export function optionSettings(
   registrations: readonly PluginRegistration[],
@@ -202,13 +201,10 @@ export function allowedErrors(
 }
 
 /**
- * settingErrors returns an error for each value of settings that its schema
- * refuses, that is not a valid template parameter in a template
- * parameter, or that names a preset that spec does not list in a preset
- * parameter: the environment value at
- * spec.parameters.<registration>.<parameter>.value, and each allowed value
- * at .allowed.<row>.value. An allowed value of an array parameter that is
- * not a list is one item, so its items schema checks it.
+ * settingErrors returns an error for each value of settings that its schema,
+ * its template check, or the preset list of spec refuses, at
+ * spec.parameters.<registration>.<parameter>.value or .allowed.<row>.value.
+ * An allowed value of an array parameter that is not a list is one item.
  */
 export function settingErrors(
   settings: readonly OptionSettings[],
@@ -262,11 +258,7 @@ export function presetsOf(
   spec: Spec,
   kind: NonNullable<ParameterSetting["presetKind"]>,
 ): string[] {
-  const list =
-    kind === "ElasticsearchClusterPreset"
-      ? spec.presets?.elasticsearchCluster
-      : spec.presets?.databaseServer;
-  return list ?? [];
+  return spec.presets?.[PRESET_LISTS[kind]] ?? [];
 }
 
 /** presetMessage is the error of a preset parameter that names the preset name, which the environment does not list. */

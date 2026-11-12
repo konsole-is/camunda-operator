@@ -9,7 +9,12 @@ import { accessPatterns, renderHosts } from "@/lib/claims/hosts";
 import { renderJSON } from "@/lib/gotemplate";
 import type { ValidationError } from "@/lib/schema";
 import { AllowedEditor } from "./allowed-editor";
-import { previewClaims, previewSection, templateData } from "./preview";
+import {
+  emptyPreviewText,
+  previewClaims,
+  previewSection,
+  templateData,
+} from "./preview";
 import {
   type NamedValue,
   type OptionSettings,
@@ -260,8 +265,8 @@ function ParameterSettingRow({
       )}
       {presetWords && presets.length === 0 && (
         <p className="text-xs text-warn">
-          No {presetWords} preset is allowed. A claim that picks this option is
-          refused until you check one under Presets.
+          No {presetWords} preset is allowed. A new claim that picks this option
+          is refused until you check one under Presets.
         </p>
       )}
       {setting.hostPattern && registration && (
@@ -274,6 +279,7 @@ function ParameterSettingRow({
       {setting.template && setting.value !== undefined && registration && (
         <TemplatePreview
           claims={claims}
+          empty={emptyPreviewText(sources, environment.metadata.name ?? "")}
           render={(claim) => {
             const section = previewSection(
               claim,

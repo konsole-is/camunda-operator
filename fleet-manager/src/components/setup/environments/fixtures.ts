@@ -141,16 +141,7 @@ function clusterClaim(
   };
 }
 
-/**
- * environmentFixtures returns the sources of the Environments page in the
- * stories and the component tests: the environments production, staging
- * (no status yet), and platform (the plane sections access and
- * management-database), the namespaces legacy (a cluster without an
- * environment) and sandbox (empty, without an environment), the objects
- * they name, and the core sections with their registrations: aws-kms is
- * not ready, vault-transit is not accepted, and aws-ebs-encrypted needs an
- * encryption key.
- */
+/** environmentFixtures returns the sources of the Environments page for the stories and the component tests. */
 export function environmentFixtures(): EnvironmentSources {
   return {
     environments: [
@@ -359,12 +350,7 @@ export function environmentFixtures(): EnvironmentSources {
   };
 }
 
-/**
- * sectionFixtures returns environmentFixtures with sections and parameters
- * in production: an encryption key without a default, encrypted volumes,
- * required backups, and the Connectors role with an extra policy that a
- * claim can pick and an inline policy template.
- */
+/** sectionFixtures returns environmentFixtures with sections and parameters in the environment production. */
 export function sectionFixtures(): EnvironmentSources {
   const sources = environmentFixtures();
   sources.environments[0].spec.sections = {

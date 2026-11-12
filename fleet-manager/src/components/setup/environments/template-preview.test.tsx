@@ -36,6 +36,7 @@ describe("TemplatePreview", () => {
     render(
       <TemplatePreview
         claims={claims}
+        empty=""
         render={(claim) =>
           renderJSON(
             "{{ .namespace }}/{{ .serviceAccount }}",
@@ -56,6 +57,7 @@ describe("TemplatePreview", () => {
     const { container } = render(
       <TemplatePreview
         claims={claims}
+        empty=""
         render={(claim) =>
           renderJSON(
             {
@@ -79,6 +81,7 @@ describe("TemplatePreview", () => {
     render(
       <TemplatePreview
         claims={claims}
+        empty=""
         render={(claim) =>
           renderJSON(
             { a: ["{{ .parameters.region }}"] },
@@ -97,6 +100,7 @@ describe("TemplatePreview", () => {
     render(
       <TemplatePreview
         claims={[{ ...claims[0], name: "example", example: true }]}
+        empty=""
         render={() => ({ value: "x" })}
       />,
     );
@@ -107,11 +111,28 @@ describe("TemplatePreview", () => {
     ).toBeTruthy();
   });
 
-  it("shows Add a namespace first without a namespace", () => {
-    render(<TemplatePreview claims={[]} render={() => ({ value: "x" })} />);
+  it("shows the empty text without claims", () => {
+    render(
+      <TemplatePreview
+        claims={[]}
+        empty="Add a namespace first."
+        render={() => ({ value: "x" })}
+      />,
+    );
+    expect(screen.getByText("Add a namespace first.")).toBeTruthy();
+  });
+
+  it("says that it shows what a new claim gets", () => {
+    render(
+      <TemplatePreview
+        claims={claims}
+        empty=""
+        render={() => ({ value: "x" })}
+      />,
+    );
     expect(
       screen.getByText(
-        "Add a namespace first. The preview renders the template for a claim of the environment.",
+        "The preview shows what a new claim gets. An existing claim keeps the policy it recorded.",
       ),
     ).toBeTruthy();
   });

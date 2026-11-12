@@ -31,6 +31,19 @@ describe("impactLines", () => {
     ]);
   });
 
+  it("says which lists could not be read instead of new claims only, and keeps the count", () => {
+    const [line] = impactLines({
+      clusters: 1,
+      planes: 0,
+      warnings: [],
+      unread: ["Namespace", "PluginRequest"],
+    });
+    expect(line).toBe(
+      "The fleet manager cannot read Namespace, PluginRequest, so the claims that this change touches can be more than this note names. 1 cluster keeps the policy it recorded at creation.",
+    );
+    expect(line).not.toContain("new claims only");
+  });
+
   it("names the claims whose release the edit removes and says that they keep running", () => {
     const [, line] = impactLines({
       clusters: 0,
