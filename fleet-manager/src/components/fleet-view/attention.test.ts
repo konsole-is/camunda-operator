@@ -55,7 +55,7 @@ const registration = (
 
 const plane = (name: string, status: "True" | "False"): Plane =>
   ({
-    id: `plane/platform/${name}`,
+    id: `cluster/platform/${name}`,
     namespace: "platform",
     name,
     ready: { status, reason: status === "False" ? "Down" : "Healthy" },
@@ -175,12 +175,27 @@ describe("attentionItems", () => {
       }),
     ).toEqual([
       {
-        id: "plane/platform/plane-a",
+        id: "plane/cluster/platform/plane-a",
         what: "Management plane",
         name: "platform/plane-a",
         reason: "Down",
       },
     ]);
+  });
+
+  it("gives a plane and a cluster of the same namespace and name distinct ids", () => {
+    const ids = attentionItems({
+      ...none,
+      rows: [
+        row("plane-a", {
+          id: "cluster/platform/plane-a",
+          namespace: "platform",
+          ready: { status: "False", reason: "Down" },
+        }),
+      ],
+      planes: [plane("plane-a", "False")],
+    }).map((i) => i.id);
+    expect(new Set(ids).size).toBe(2);
   });
 
   it("orders clusters, backups, options, then planes", () => {

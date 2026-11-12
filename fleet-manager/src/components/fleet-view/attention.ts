@@ -104,7 +104,8 @@ export function attentionItems({
     plane.ready?.status === "False"
       ? [
           {
-            id: plane.id,
+            // A plane id has the same form as the id of a cluster row.
+            id: `plane/${plane.id}`,
             what: "Management plane",
             name: `${plane.namespace}/${plane.name}`,
             ...defined(plane.ready.reason, plane.ready.message),
