@@ -22,6 +22,7 @@ type Over = {
   created?: string;
   labels?: Record<string, string>;
   cluster?: string;
+  uid?: string;
 };
 
 function backupOf(
@@ -37,6 +38,7 @@ function backupOf(
       name,
       creationTimestamp: over.created,
       labels: over.labels,
+      uid: over.uid,
     },
     spec: { clusterRef: { name: over.cluster ?? "orders" } },
     status,
@@ -218,6 +220,15 @@ describe("backupRowsOf", () => {
       now,
     );
     expect(row.details).toEqual([]);
+  });
+
+  it("a row carries the UID of its backup", () => {
+    const [row] = backupRowsOf(
+      cluster,
+      [esBackup("b", {}, { uid: "u-1" })],
+      now,
+    );
+    expect(row.uid).toBe("u-1");
   });
 
   it("an empty schedule label is a backup by hand", () => {

@@ -6,6 +6,8 @@ import {
   PatchStrategy,
 } from "@kubernetes/client-node";
 import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
+import { deleteBackupChange } from "@/components/cluster/backup-actions";
+import { type BackupObject, backupRowsOf } from "@/components/cluster/backups";
 import { keptPaths } from "@/components/fleet/change-review";
 import {
   draftOf,
@@ -674,6 +676,73 @@ describe("the direct writer against envtest", () => {
         delete: [environmentRef(name)],
       }),
     ).toEqual({ ok: true, mode: "direct" });
+  });
+
+  describe("a backup delete from the row that the page showed", () => {
+    const backup = (): KubeObject => ({
+      apiVersion: "core.camunda.io/v1",
+      kind: "LogicalBackupRDBMS",
+      metadata: { name, namespace },
+      spec: { clusterRef: { name: "orders" } },
+    });
+    const readLive = () =>
+      api.read({
+        apiVersion: "core.camunda.io/v1",
+        kind: "LogicalBackupRDBMS",
+        metadata: { name, namespace },
+      });
+    const liveUid = async () => (await readLive()).metadata?.uid;
+    const shownRow = async () => {
+      const [row] = backupRowsOf(
+        { metadata: { name: "orders", namespace } },
+        [(await readLive()) as unknown as BackupObject],
+        new Date().toISOString(),
+      );
+      return row;
+    };
+    const created = async () =>
+      expect(
+        await writer.apply({ intent: "Back up", apply: [backup()] }),
+      ).toEqual({ ok: true, mode: "direct" });
+
+    it("is refused when a new backup of the same name replaced it, and the new backup stays", async () => {
+      await created();
+      const row = await shownRow();
+      await api.delete(await readLive());
+      await created();
+      const replacement = await liveUid();
+
+      const result = await writer.apply(deleteBackupChange(namespace, row));
+
+      expect(result).toEqual({
+        ok: false,
+        errors: [expect.objectContaining({ code: "Stale" })],
+      });
+      expect(await liveUid()).toBe(replacement);
+      expect(replacement).not.toBe(row.uid);
+    });
+
+    it("removes the backup when it is the one the page showed", async () => {
+      await created();
+      const row = await shownRow();
+
+      expect(await writer.apply(deleteBackupChange(namespace, row))).toEqual({
+        ok: true,
+        mode: "direct",
+      });
+      await expect(liveUid()).rejects.toMatchObject({ code: 404 });
+    });
+
+    it("without a UID removes the backup of that name, as before", async () => {
+      await created();
+      const row = { ...(await shownRow()), uid: undefined };
+
+      expect(await writer.apply(deleteBackupChange(namespace, row))).toEqual({
+        ok: true,
+        mode: "direct",
+      });
+      await expect(liveUid()).rejects.toMatchObject({ code: 404 });
+    });
   });
 
   it("an apply into a missing namespace names that namespace", async () => {

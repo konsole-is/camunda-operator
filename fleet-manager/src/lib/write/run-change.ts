@@ -46,7 +46,7 @@ const refKeySchema = z.templateLiteral([
 /**
  * changeSchema accepts a Change with an intent and at least one object to
  * apply or delete. Each key of create names an applied object that has no
- * precondition.
+ * precondition. Each key of uids names a deleted object.
  */
 export const changeSchema: z.ZodType<Change> = z
   .object({
@@ -54,6 +54,7 @@ export const changeSchema: z.ZodType<Change> = z
     apply: z.array(kubeObjectSchema),
     delete: z.array(objectRefSchema).optional(),
     preconditions: z.record(refKeySchema, z.string()).optional(),
+    uids: z.record(refKeySchema, z.string().min(1)).optional(),
     create: z.array(refKeySchema).optional(),
     force: z.boolean().optional(),
     directOnly: z.boolean().optional(),
@@ -69,6 +70,16 @@ export const changeSchema: z.ZodType<Change> = z
     {
       message: "create names an object that the change does not apply.",
       path: ["create"],
+    },
+  )
+  .refine(
+    (c) => {
+      const deleted = (c.delete ?? []).map(refKey);
+      return Object.keys(c.uids ?? {}).every((key) => deleted.includes(key));
+    },
+    {
+      message: "uids names an object that the change does not delete.",
+      path: ["uids"],
     },
   )
   .refine(
@@ -126,7 +137,7 @@ const BACKUP_METADATA: readonly string[] = [
  * cluster.name and timestamp is RFC 3339 in UTC to the second. Or it
  * deletes one backup of either kind in that namespace. A delete has no
  * precondition, because the status of a running backup changes its
- * resourceVersion.
+ * resourceVersion. It can carry the UID of the backup in uids.
  */
 export function backupChangeSchema(cluster: {
   namespace: string;

@@ -600,6 +600,75 @@ describe("the Git writer", slow, () => {
     });
   });
 
+  it("a delete whose UID is not the UID of the live object makes no commit and returns Stale", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", uid: "new" },
+    });
+
+    const result = await writerFor().apply({
+      intent: "Delete the claim orders",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+      uids: { "CamundaClusterClaim/team-a/orders": "old" },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(await repo.log()).toEqual(["Create", "Initial commit"]);
+  });
+
+  it("a delete with a UID of an object that is gone from the cluster makes no commit and returns Stale", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+
+    const result = await writerFor().apply({
+      intent: "Delete the claim orders",
+      apply: [],
+      delete: [claimRef("team-a", "orders")],
+      uids: { "CamundaClusterClaim/team-a/orders": "old" },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Stale" })],
+    });
+    expect(await repo.log()).toEqual(["Create", "Initial commit"]);
+  });
+
+  it("a delete with the UID of the live object removes the file", async () => {
+    repo = await serveBareRepository();
+    await writerFor().apply({
+      intent: "Create",
+      apply: [claim("team-a", "orders")],
+    });
+    live.set("CamundaClusterClaim/team-a/orders", {
+      ...claim("team-a", "orders"),
+      metadata: { name: "orders", namespace: "team-a", uid: "same" },
+    });
+
+    ok(
+      await writerFor().apply({
+        intent: "Delete the claim orders",
+        apply: [],
+        delete: [claimRef("team-a", "orders")],
+        uids: { "CamundaClusterClaim/team-a/orders": "same" },
+      }),
+    );
+
+    expect(await repo.files()).toEqual(["README.md"]);
+  });
+
   it("a change that writes and deletes returns the revision of the written object and the file of the deleted one", async () => {
     repo = await serveBareRepository();
     await writerFor().apply({

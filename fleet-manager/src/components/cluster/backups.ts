@@ -28,11 +28,12 @@ export type Detail = { label: string; value: string };
 /**
  * BackupRow is one backup as the Backups table shows it. Each text field is
  * "-" when the backup has no value for it. details holds only the values
- * that the backup has.
+ * that the backup has. uid is unset when the backup object has none.
  */
 export type BackupRow = {
   kind: BackupKind;
   name: string;
+  uid?: string;
   origin: "Scheduled" | "Manual";
   started: string;
   finished: string;
@@ -109,6 +110,7 @@ export function backupRowsOf(
     return {
       kind: b.kind,
       name: b.metadata?.name ?? "",
+      ...(b.metadata?.uid ? { uid: b.metadata.uid } : {}),
       origin: b.metadata?.labels?.[BACKUP_SCHEDULE_LABEL]
         ? "Scheduled"
         : "Manual",

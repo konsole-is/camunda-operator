@@ -233,6 +233,43 @@ describe("changeSchema and create", () => {
     ).toBe(false);
   });
 
+  it("keeps the UID of a deleted object", () => {
+    const parsed = changeSchema.safeParse({
+      intent: "x",
+      apply: [],
+      delete: [{ apiVersion: env.apiVersion, kind: env.kind, name: "prod" }],
+      uids: { "Environment//prod": "uid-1" },
+    });
+
+    expect(parsed.success && parsed.data.uids).toEqual({
+      "Environment//prod": "uid-1",
+    });
+  });
+
+  it.each([
+    ["an applied object", { apply: [env] }],
+    ["no object of the change", { apply: [env], delete: [] }],
+  ])("refuses a UID for %s", (_, over) => {
+    expect(
+      changeSchema.safeParse({
+        intent: "x",
+        ...over,
+        uids: { "Environment//prod": "uid-1" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("refuses an empty UID", () => {
+    expect(
+      changeSchema.safeParse({
+        intent: "x",
+        apply: [],
+        delete: [{ apiVersion: env.apiVersion, kind: env.kind, name: "prod" }],
+        uids: { "Environment//prod": "" },
+      }).success,
+    ).toBe(false);
+  });
+
   it("refuses a key in create and in preconditions", () => {
     expect(
       changeSchema.safeParse({
@@ -432,9 +469,25 @@ describe("backupChangeSchema", () => {
     },
   );
 
+  it("accepts the delete of a backup with the UID that the page read", () => {
+    expect(
+      ok(
+        deleted(ref(), {
+          uids: { "LogicalBackupElasticsearch/team-a/orders-manual-1": "u-1" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
   const other = { name: "orders-manual-2", namespace: "team-a" };
   it.each([
     ["no directOnly", created(backup(), { directOnly: undefined })],
+    [
+      "a UID on a new backup",
+      created(backup(), {
+        uids: { "LogicalBackupElasticsearch/team-a/orders-manual-1": "u-1" },
+      }),
+    ],
     ["directOnly false", created(backup(), { directOnly: false })],
     ["force", created(backup(), { force: true })],
     ["a create without create", created(backup(), { create: undefined })],
@@ -753,6 +806,11 @@ describe("adminChangeSchema", () => {
   it.each([
     ["an update with its precondition and force", schema, update],
     ["a delete with its precondition", schema, remove],
+    [
+      "a delete with its precondition and its UID",
+      schema,
+      { ...remove, uids: { "Environment//staging": "u-1" } },
+    ],
     ["a create", schema, create],
     [
       "a namespaced object in a namespace that the page writes",

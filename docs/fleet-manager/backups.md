@@ -60,6 +60,12 @@ If such a restore starts after the page showed the backup, **Delete backup** del
 
 A delete during the restore can leave the secondary storage of the cluster empty, as [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md) shows. When the page cannot read its settings, **Delete** is off with the same reason as **Back up now**.
 
+**Delete backup** deletes only the backup that the page showed. Someone can delete that backup and create a new backup with the same name after the page showed it. Then **Delete backup** deletes nothing. The new backup stays, and the page shows the kind and the name of the backup:
+
+> The LogicalBackupElasticsearch my-cluster-manual-20261110-143005 changed since you opened it.
+
+A PostgreSQL backup shows `LogicalBackupRDBMS` as its kind.
+
 The operator removes the artifacts before the resource goes. When it cannot reach them, the artifacts stay in the bucket, and an event on the backup names them. The Deletion section of [LogicalBackupElasticsearch](../crds/logicalbackupelasticsearch.md#deletion) and [LogicalBackupRDBMS](../crds/logicalbackuprdbms.md#deletion) names the cases.
 
 ## Restore from a backup

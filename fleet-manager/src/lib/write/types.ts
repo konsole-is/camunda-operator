@@ -31,7 +31,10 @@ export type RefKey = `${string}/${string}/${string}`;
  * Change is one save of a page: the objects to apply and the objects to
  * delete. preconditions holds the resourceVersion that the page read for
  * an object. A write of that object fails with Stale when the object
- * changed since. create lists objects of apply that must not exist yet. A
+ * changed since. uids holds the UID that the page read for an object of
+ * delete. Its delete fails with Stale when the live object has another
+ * UID, so it never removes an object that was created again under the
+ * same name. create lists objects of apply that must not exist yet. A
  * write fails with Stale, and writes nothing, when one exists as the write
  * begins. force sends each apply of the change with the force option of
  * server-side apply. A change with directOnly goes to the API in Git mode
@@ -50,6 +53,7 @@ export type Change = {
   apply: KubeObject[];
   delete?: ObjectRef[];
   preconditions?: Record<RefKey, string>;
+  uids?: Record<RefKey, string>;
   create?: RefKey[];
   force?: boolean;
   directOnly?: boolean;
