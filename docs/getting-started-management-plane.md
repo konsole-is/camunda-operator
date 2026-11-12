@@ -7,6 +7,8 @@ The guide follows one path. CloudNativePG runs the PostgreSQL server for the dat
 
 The [Management plane](guides/management-plane.md) guide covers the other identity providers, Web Modeler, and the routing for a real domain.
 
+The [fleet manager](fleet-manager/management-planes.md) creates a management plane from a form, as a claim.
+
 ## The ready-made manifests
 
 The manifests on this page come from [`config/example/camunda-management-cluster/keycloak`](https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/keycloak). The link shows the `main` branch. Select the tag of your release on GitHub to get the manifests of that version.
