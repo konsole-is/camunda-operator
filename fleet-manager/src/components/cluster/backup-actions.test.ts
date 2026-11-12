@@ -5,14 +5,29 @@ import {
   backupChange,
   backupKindOf,
   backupNameErrors,
-  clusterSuspended,
+  clusterVersionOf,
   deleteBackupChange,
   deleteBlock,
   deleteLines,
+  freeName,
   manualBackupName,
+  pointInTime,
+  pointInTimeChange,
+  pointInTimeConfirm,
+  pointInTimeError,
+  pointInTimeWindow,
+  restoreBlock,
+  restoreChange,
+  restoreConfirm,
+  restoreKindOf,
+  restoreNameOf,
+  retentionMs,
+  type Suspension,
+  suspensionOf,
+  timestampOf,
   waitNote,
 } from "./backup-actions";
-import type { BackupRow, BackupStorage } from "./backups";
+import type { BackupRow, BackupStorage, RestoreInterval } from "./backups";
 
 const es: BackupStorage = {
   kind: "elasticsearch",
@@ -30,9 +45,9 @@ const context = (over: Partial<BackupContext> = {}): BackupContext => ({
   namespace: "team-a",
   cluster: "orders",
   storage: es,
-  suspended: false,
   backupNames: [],
   readingRestores: [],
+  restoreNames: [],
   now: "2026-11-10T14:30:05Z",
   ...over,
 });
@@ -87,40 +102,71 @@ describe("backup rules", () => {
     expect(backupNameErrors("orders-1", ["orders-2"])).toEqual([]);
   });
 
-  it("a cluster is suspended by spec.suspend or by a suspension hold annotation", () => {
-    expect(clusterSuspended({ spec: { suspend: true } })).toBe(true);
+  it("a cluster is suspended by spec.suspend or by a suspension hold annotation, and a hold comes first", () => {
+    const hold = { "suspension-hold.camunda.io/restore": "r1" };
+    expect(suspensionOf({ spec: { suspend: true } })).toBe("requested");
     expect(
-      clusterSuspended({
+      suspensionOf({
         spec: { suspend: false },
-        metadata: {
-          annotations: { "suspension-hold.camunda.io/restore": "r1" },
-        },
+        metadata: { annotations: hold },
       }),
-    ).toBe(true);
+    ).toBe("held");
     expect(
-      clusterSuspended({
+      suspensionOf({
+        spec: { suspend: true },
+        metadata: { annotations: hold },
+      }),
+    ).toBe("held");
+    expect(
+      suspensionOf({
         spec: {},
         metadata: { annotations: { "camunda.io/other": "x" } },
       }),
-    ).toBe(false);
-    expect(clusterSuspended({})).toBe(false);
+    ).toBeUndefined();
+    expect(suspensionOf({})).toBeUndefined();
   });
 
   it("a cluster is suspended, as CamundaCluster.Suspended of api/v1 says, while Ready reports StorageAlreadyAttached or WaitingForHandover", () => {
     const ready = (type: string, reason: string) => ({
       status: { conditions: [{ type, reason }] },
     });
-    expect(clusterSuspended(ready("Ready", "StorageAlreadyAttached"))).toBe(
-      true,
+    expect(suspensionOf(ready("Ready", "StorageAlreadyAttached"))).toBe(
+      "StorageAlreadyAttached",
     );
-    expect(clusterSuspended(ready("Ready", "WaitingForHandover"))).toBe(true);
-    expect(clusterSuspended(ready("Ready", "VersionDowngradeRefused"))).toBe(
-      false,
+    expect(suspensionOf(ready("Ready", "WaitingForHandover"))).toBe(
+      "WaitingForHandover",
     );
     expect(
-      clusterSuspended(ready("Progressing", "StorageAlreadyAttached")),
-    ).toBe(false);
+      suspensionOf(ready("Ready", "VersionDowngradeRefused")),
+    ).toBeUndefined();
+    expect(
+      suspensionOf(ready("Progressing", "StorageAlreadyAttached")),
+    ).toBeUndefined();
   });
+
+  it.each([
+    [
+      "requested",
+      "The cluster is suspended. A backup waits until it runs again, so resume the cluster first.",
+    ],
+    [
+      "held",
+      "A suspension hold keeps the cluster suspended, and a backup waits until the cluster runs again. A failed restore keeps its hold until you delete that restore.",
+    ],
+    [
+      "StorageAlreadyAttached",
+      "Another cluster holds the secondary storage of this cluster, so the operator keeps this cluster suspended, and a backup waits until it runs again. Give this cluster storage of its own, or delete the cluster that holds the storage.",
+    ],
+    [
+      "WaitingForHandover",
+      "Something else still writes the secondary storage of this cluster, so the operator keeps this cluster suspended, and a backup waits until it runs again. Wait, or remove what the Ready condition of the cluster names.",
+    ],
+  ] as const)(
+    "back up now on a cluster suspended as %s gives the remedy of that case",
+    (suspension, reason) => {
+      expect(backUpNow(context({ suspension }))).toEqual({ disabled: reason });
+    },
+  );
 
   it("back up now is disabled without backup storage, with unknown storage, and on a suspended cluster", () => {
     expect(
@@ -145,11 +191,11 @@ describe("backup rules", () => {
       disabled:
         "The cluster is suspended. A backup waits until it runs again, so resume the cluster first.",
     };
-    expect(backUpNow(context({ suspended: true }))).toEqual(suspended);
+    expect(backUpNow(context({ suspension: "requested" }))).toEqual(suspended);
     expect(
       backUpNow(
         context({
-          suspended: true,
+          suspension: "requested",
           running: { what: "Backup", name: "nightly-1" },
         }),
       ),
@@ -170,7 +216,7 @@ describe("backup rules", () => {
       backUpNow(
         context({
           storage: rdbms,
-          suspended: true,
+          suspension: "held",
           running: { what: "Restore", name: "r1" },
         }),
       ),
@@ -328,5 +374,372 @@ describe("backup rules", () => {
       "The run of the backup, with its dump Job.",
     ]);
     expect(deleteLines(row({ phase: "Failed" })).goes).toHaveLength(1);
+  });
+});
+
+describe("restore rules", () => {
+  const NOW = "2026-11-10T14:30:05Z";
+  const ago = (days: number) =>
+    new Date(Date.parse(NOW) - days * 86_400_000).toISOString();
+  const OFF = "Changes are off: the fleet manager could not read its settings.";
+
+  it("the restore kind follows the backup kind", () => {
+    expect(restoreKindOf("LogicalBackupElasticsearch")).toBe(
+      "LogicalRestoreElasticsearch",
+    );
+    expect(restoreKindOf("LogicalBackupRDBMS")).toBe("LogicalRestoreRDBMS");
+  });
+
+  it("the cluster version is the reported one, else the version of the merged spec", () => {
+    expect(
+      clusterVersionOf(
+        { status: { management: { version: "8.9.2" } } },
+        { version: "8.9.4" },
+      ),
+    ).toBe("8.9.2");
+    expect(clusterVersionOf({ status: {} }, { version: "8.9.4" })).toBe(
+      "8.9.4",
+    );
+    expect(
+      clusterVersionOf({ status: { management: { version: "" } } }, {}),
+    ).toBeUndefined();
+  });
+
+  it("an Elasticsearch backup restores when it recorded an x.y.z version", () => {
+    const c = context({ clusterVersion: "8.10.1" });
+    expect(restoreBlock(c, row({ version: "8.9.4" }))).toBeUndefined();
+    for (const version of ["-", "8.9"]) {
+      expect(restoreBlock(c, row({ version }))).toBe(
+        "Backup orders-manual-1 recorded no Camunda version, so it cannot be restored.",
+      );
+    }
+  });
+
+  it("an RDBMS backup restores into the same minor or one minor newer", () => {
+    const dump = row({ kind: "LogicalBackupRDBMS", version: "8.9.4" });
+    const at = (clusterVersion?: string) =>
+      restoreBlock(context({ storage: rdbms, clusterVersion }), dump);
+    for (const version of ["8.9.0", "8.9.9", "8.10.2"]) {
+      expect(at(version)).toBeUndefined();
+    }
+    for (const version of ["8.8.9", "8.11.0", "9.9.4"]) {
+      expect(at(version)).toBe(
+        `Backup orders-manual-1 has Camunda 8.9.4. It restores only into Camunda 8.9 or 8.10, and the cluster has ${version}.`,
+      );
+    }
+    expect(at(undefined)).toBe(
+      "The cluster has no Camunda version yet, so the version rule cannot be checked.",
+    );
+    expect(at("latest")).toBe(
+      "The cluster has no Camunda version yet, so the version rule cannot be checked.",
+    );
+  });
+
+  it("restore is off when the page cannot write and while a restore of the cluster has not ended", () => {
+    expect(restoreBlock(context({ changesOff: OFF }), row())).toBe(OFF);
+    expect(restoreBlock(context({ restoring: "r1" }), row())).toBe(
+      "Restore r1 of this cluster has not ended. Start a new restore after it ends.",
+    );
+  });
+
+  it("a restore name skips the names that are taken", () => {
+    const base = "orders-restore-20261110-143005";
+    expect(freeName(base, [])).toBe(base);
+    expect(freeName(base, [base])).toBe(`${base}-2`);
+    expect(freeName(base, [base, `${base}-2`, `${base}-4`])).toBe(`${base}-3`);
+    expect(restoreNameOf(context({ restoreNames: [base] }), "restore")).toBe(
+      `${base}-2`,
+    );
+    expect(restoreNameOf(context(), "pitr")).toBe(
+      "orders-pitr-20261110-143005",
+    );
+  });
+
+  it("a restore writes the exact logical restore of the backup kind, straight to the cluster", () => {
+    expect(restoreChange(context(), row(), "r1")).toEqual({
+      intent: "Restore orders from backup orders-manual-1",
+      apply: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "LogicalRestoreElasticsearch",
+          metadata: { name: "r1", namespace: "team-a" },
+          spec: {
+            backupRef: { name: "orders-manual-1" },
+            targetClusterRef: { name: "orders" },
+          },
+        },
+      ],
+      create: ["LogicalRestoreElasticsearch/team-a/r1"],
+      directOnly: true,
+    });
+    expect(
+      restoreChange(context(), row({ kind: "LogicalBackupRDBMS" }), "r2"),
+    ).toEqual({
+      intent: "Restore orders from backup orders-manual-1",
+      apply: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "LogicalRestoreRDBMS",
+          metadata: { name: "r2", namespace: "team-a" },
+          spec: {
+            backupRef: { name: "orders-manual-1" },
+            targetClusterRef: { name: "orders" },
+          },
+        },
+      ],
+      create: ["LogicalRestoreRDBMS/team-a/r2"],
+      directOnly: true,
+    });
+  });
+
+  it("the retention window reads days and time and refuses weeks", () => {
+    expect(retentionMs("P7D")).toBe(604_800_000);
+    expect(retentionMs("PT12H")).toBe(43_200_000);
+    expect(retentionMs("P1DT1H30M15.5S")).toBe(
+      86_400_000 + 3_600_000 + 1_800_000 + 15_500,
+    );
+    for (const window of ["P1W", "P1M", "P", "PT", "7d", ""]) {
+      expect(retentionMs(window)).toBeUndefined();
+    }
+  });
+
+  it("the point-in-time window is the archive cut to the Zeebe window and to now", () => {
+    const archive: RestoreInterval[] = [
+      { from: ago(10), to: ago(8) },
+      { from: ago(9), to: ago(6) },
+      { from: ago(5), to: ago(2), failing: true },
+      { from: ago(1) },
+    ];
+    expect(pointInTimeWindow(archive, "P7D", NOW)).toEqual({
+      intervals: [
+        { from: ago(7), to: ago(6) },
+        { from: ago(5), to: ago(2), failing: true },
+        { from: ago(1) },
+      ],
+    });
+    expect(pointInTimeWindow(archive, undefined, NOW)).toEqual(
+      pointInTimeWindow(archive, "P7D", NOW),
+    );
+    expect(pointInTimeWindow([{ from: ago(1) }], "PT12H", NOW)).toEqual({
+      intervals: [{ from: ago(0.5) }],
+    });
+  });
+
+  it("an interval that ends at now keeps its end, which no point reaches", () => {
+    const window = pointInTimeWindow(
+      [{ from: ago(1), to: NOW, failing: true }],
+      "P7D",
+      NOW,
+    );
+    expect(window).toEqual({
+      intervals: [{ from: ago(1), to: NOW, failing: true }],
+    });
+    const intervals = "intervals" in window ? window.intervals : [];
+    expect(pointInTimeError(NOW, intervals, NOW)).toBe(
+      "Choose a point inside the restore window.",
+    );
+  });
+
+  it("the point-in-time window is unavailable without a restore point, outside the Zeebe window, and with a window the fleet manager cannot read", () => {
+    expect(pointInTimeWindow([], "P7D", NOW)).toEqual({
+      unavailable: "The archive has no restore point yet.",
+    });
+    expect(
+      pointInTimeWindow([{ from: ago(10), to: ago(8) }], "P7D", NOW),
+    ).toEqual({
+      unavailable:
+        "No point is inside both the archive window and the P7D in which Zeebe keeps its backups.",
+    });
+    expect(pointInTimeWindow([{ from: ago(1) }], "P1W", NOW)).toEqual({
+      unavailable:
+        "The cluster keeps its Zeebe backups for P1W, which the fleet manager cannot read, so it cannot offer a point.",
+    });
+  });
+
+  it("a point must be a time, in the past, and inside an interval", () => {
+    const intervals: RestoreInterval[] = [
+      { from: ago(5), to: ago(2) },
+      { from: ago(1) },
+    ];
+    const error = (at: string | undefined) =>
+      pointInTimeError(at, intervals, NOW);
+    expect(error(undefined)).toBe("Enter a date and time.");
+    expect(error(ago(5))).toBeUndefined();
+    expect(error(ago(3))).toBeUndefined();
+    expect(error(NOW)).toBeUndefined();
+    const outside = "Choose a point inside the restore window.";
+    expect(error(ago(2))).toBe(outside);
+    expect(error(ago(1.5))).toBe(outside);
+    expect(error(ago(6))).toBe(outside);
+    expect(error("2026-11-10T14:30:06Z")).toBe("Choose a point in the past.");
+  });
+
+  it("the time of the field is read as UTC to the second", () => {
+    expect(timestampOf("2026-11-10T09:30")).toBe("2026-11-10T09:30:00Z");
+    expect(timestampOf("2026-11-10T09:30:15")).toBe("2026-11-10T09:30:15Z");
+    expect(timestampOf("")).toBeUndefined();
+    expect(timestampOf("tomorrow")).toBeUndefined();
+  });
+
+  it("a point-in-time restore writes the exact PointInTimeRestore, straight to the cluster", () => {
+    expect(pointInTimeChange(context(), "p1", "2026-11-10T09:30:00Z")).toEqual({
+      intent: "Restore orders to 2026-11-10T09:30:00Z",
+      apply: [
+        {
+          apiVersion: "core.camunda.io/v1",
+          kind: "PointInTimeRestore",
+          metadata: { name: "p1", namespace: "team-a" },
+          spec: {
+            clusterRef: { name: "orders" },
+            timestamp: "2026-11-10T09:30:00Z",
+          },
+        },
+      ],
+      create: ["PointInTimeRestore/team-a/p1"],
+      directOnly: true,
+    });
+  });
+
+  const archived = (window?: RestoreInterval[]): BackupStorage => ({
+    ...rdbms,
+    database: {
+      archive: {
+        server: "orders-db",
+        state: { tone: "ok", label: "Archiving" },
+        ...(window ? { window } : {}),
+      },
+    },
+  });
+
+  it("point in time is offered only on PostgreSQL with recovery by the operator", () => {
+    expect(pointInTime(context())).toBeUndefined();
+    expect(pointInTime(context({ storage: rdbms }))).toBeUndefined();
+    expect(pointInTime(context({ storage: archived() }))).toBeUndefined();
+    expect(
+      pointInTime(context({ storage: archived([{ from: ago(1) }]) })),
+    ).toEqual({ intervals: [{ from: ago(1) }] });
+  });
+
+  it("point in time is off when the page cannot write, while a restore has not ended, and without a point", () => {
+    const storage = archived([{ from: ago(1) }]);
+    expect(pointInTime(context({ storage, changesOff: OFF }))).toEqual({
+      disabled: OFF,
+    });
+    expect(pointInTime(context({ storage, restoring: "r1" }))).toEqual({
+      disabled:
+        "Restore r1 of this cluster has not ended. Start a new restore after it ends.",
+    });
+    expect(
+      pointInTime(context({ storage: archived([]), retentionWindow: "P7D" })),
+    ).toEqual({ disabled: "The archive has no restore point yet." });
+  });
+});
+
+describe("restore confirm", () => {
+  const dump = row({ kind: "LogicalBackupRDBMS", name: "nightly-1" });
+  const snapshot = row({ name: "nightly-1" });
+  const text = (confirm: { lead: string; lines: string[] }) =>
+    [confirm.lead, ...confirm.lines].join("\n");
+
+  it.each([
+    ["Elasticsearch", snapshot],
+    ["PostgreSQL", dump],
+  ])(
+    "a restore of a %s backup says that everything after the backup is lost",
+    (_, backup) => {
+      expect(restoreConfirm(context(), backup).lead).toBe(
+        "The cluster goes back to backup nightly-1. Everything that it wrote after that backup is lost.",
+      );
+    },
+  );
+
+  it("an Elasticsearch restore says that it deletes the indices and the broker volumes", () => {
+    expect(text(restoreConfirm(context(), snapshot))).toContain(
+      "The restore deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
+    );
+  });
+
+  it("a PostgreSQL restore says that it writes over the database and deletes the broker volumes", () => {
+    expect(text(restoreConfirm(context(), dump))).toContain(
+      "The restore runs pg_restore over the database of the cluster, which drops each table of the dump and creates it again. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
+    );
+  });
+
+  it.each([
+    ["Elasticsearch", snapshot, "the Camunda indices and the broker volumes"],
+    ["PostgreSQL", dump, "the database and the broker volumes"],
+  ])(
+    "a %s restore says that a failure can leave no usable data, and names the remedy",
+    (_, backup, what) => {
+      expect(restoreConfirm(context(), backup).lines).toContain(
+        `If the restore fails, ${what} can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.`,
+      );
+    },
+  );
+
+  it("the restore confirm names both versions and the version that the restore sets", () => {
+    expect(
+      restoreConfirm(context({ clusterVersion: "8.10.1" }), dump).lines[0],
+    ).toBe(
+      "Backup nightly-1 has Camunda 8.9.3. The cluster has 8.10.1. The restore sets the cluster to 8.9.3.",
+    );
+    expect(restoreConfirm(context(), dump).lines[0]).toBe(
+      "Backup nightly-1 has Camunda 8.9.3. The cluster reports no Camunda version yet. The restore sets the cluster to 8.9.3.",
+    );
+  });
+
+  it("a point-in-time restore says that everything after the point is lost", () => {
+    expect(pointInTimeConfirm(context(), "2026-11-09 09:30:15 UTC").lead).toBe(
+      "The cluster goes back to 2026-11-09 09:30:15 UTC. Everything that it wrote after that time is lost.",
+    );
+  });
+
+  it("a point-in-time restore says that it rolls the database back and deletes the broker volumes", () => {
+    expect(
+      pointInTimeConfirm(context(), "2026-11-09 09:30:15 UTC").lines,
+    ).toContain(
+      "The database server rolls back to that time. The restore also deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
+    );
+  });
+
+  it("a point-in-time restore says that a failure can leave no usable data, and names the remedy", () => {
+    const { lines } = pointInTimeConfirm(context(), "2026-11-09 09:30:15 UTC");
+    expect(lines).toContain(
+      "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.",
+    );
+    expect(lines).toContain(
+      'If the restore fails, the broker volumes can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.',
+    );
+  });
+
+  const STARTS =
+    "The restore suspends the cluster while it runs, and starts it again when it completes.";
+  const OWNER =
+    "The cluster is suspended now. If its owner suspended it, it stays suspended after the restore, and the owner resumes it.";
+  const OTHER =
+    "Something else keeps the cluster suspended now. It stays suspended after the restore until that suspension ends.";
+
+  it.each<[string, Suspension | undefined, string]>([
+    ["a running cluster", undefined, STARTS],
+    ["a cluster that its owner suspended", "requested", OWNER],
+    ["a cluster under a suspension hold", "held", OTHER],
+    [
+      "a cluster whose storage another cluster holds",
+      "StorageAlreadyAttached",
+      OTHER,
+    ],
+    ["a cluster that waits for a handover", "WaitingForHandover", OTHER],
+  ])("each confirm says whether %s starts again", (_, suspension, line) => {
+    const c = context(suspension ? { suspension } : {});
+    for (const confirm of [
+      restoreConfirm(c, snapshot),
+      restoreConfirm(c, dump),
+      pointInTimeConfirm(c, "2026-11-09 09:30:15 UTC"),
+    ]) {
+      expect(confirm.lines).toContain(line);
+      for (const other of [STARTS, OWNER, OTHER].filter((l) => l !== line)) {
+        expect(confirm.lines).not.toContain(other);
+      }
+    }
   });
 });

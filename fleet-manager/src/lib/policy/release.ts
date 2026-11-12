@@ -37,10 +37,7 @@ export function releaseMove(
   };
 }
 
-/**
- * parseVersion returns the major, minor, and patch of a version, and
- * undefined for a version that is not major.minor.patch.
- */
+/** parseVersion reads a version of the form major.minor.patch, or gives undefined, as the operator does. */
 export function parseVersion(
   version: string | undefined,
 ): [number, number, number] | undefined {

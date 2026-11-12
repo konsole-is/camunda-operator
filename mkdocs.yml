@@ -98,7 +98,7 @@ nav:
       - The fleet view: fleet-manager/fleet-view.md
       - Management planes: fleet-manager/management-planes.md
       - Environments: fleet-manager/environments.md
-      - Back up a cluster: fleet-manager/backups.md
+      - Back up and restore a cluster: fleet-manager/backups.md
   - Guides:
       - Presets: guides/presets.md
       - Secondary storage: guides/secondary-storage.md

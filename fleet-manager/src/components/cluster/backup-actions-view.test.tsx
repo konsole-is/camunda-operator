@@ -2,6 +2,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -18,7 +19,7 @@ import { FakeEventSource } from "../../../test/fakes/event-source";
 import { fakeWriter } from "../../../test/fakes/writer";
 import type { BackupContext } from "./backup-actions";
 import { BackupHeaderActions, BackupRowActions } from "./backup-actions-view";
-import type { BackupRow, BackupStorage } from "./backups";
+import type { BackupRow, BackupStorage, RestoreInterval } from "./backups";
 
 vi.mock("@/lib/write/writer", () => import("../../../test/fakes/writer"));
 
@@ -38,9 +39,10 @@ const context = (over: Partial<BackupContext> = {}): BackupContext => ({
   namespace: "team-a",
   cluster: "orders",
   storage: es,
-  suspended: false,
   backupNames: [],
+  restoreNames: [],
   readingRestores: [],
+  clusterVersion: "8.9.3",
   now: "2026-11-10T14:30:05Z",
   ...over,
 });
@@ -178,7 +180,10 @@ describe("BackupHeaderActions", () => {
       "Backup nightly-1 is running. The new backup waits until it ends.",
     ],
     [
-      context({ suspended: true, running: { what: "Restore", name: "r1" } }),
+      context({
+        suspension: "held",
+        running: { what: "Restore", name: "r1" },
+      }),
       "Restore r1 is running. The new backup waits until it ends.",
     ],
   ])(
@@ -209,8 +214,12 @@ describe("BackupHeaderActions", () => {
       "SecondaryStorageConfig orders-es not found, so the kind of backup is not known.",
     ],
     [
-      context({ suspended: true }),
+      context({ suspension: "requested" }),
       "The cluster is suspended. A backup waits until it runs again, so resume the cluster first.",
+    ],
+    [
+      context({ suspension: "StorageAlreadyAttached" }),
+      "Another cluster holds the secondary storage of this cluster, so the operator keeps this cluster suspended, and a backup waits until it runs again. Give this cluster storage of its own, or delete the cluster that holds the storage.",
     ],
   ])(
     "back up now is disabled with its reason without backup storage, with unknown storage, and on a suspended cluster",
@@ -225,7 +234,7 @@ describe("BackupHeaderActions", () => {
 
   it.each([
     [
-      context({ suspended: true }),
+      context({ suspension: "requested" }),
       "The cluster is suspended. A backup waits until it runs again, so resume the cluster first.",
     ],
     [
@@ -456,5 +465,350 @@ describe("a request that rejects", () => {
     );
     await userEvent.click(confirm);
     await waitFor(() => expect(calls).toBe(2));
+  });
+});
+
+describe("restore of a backup", () => {
+  const RESTORE = "orders-restore-20261110-143005";
+  const dump = (over: Partial<BackupRow> = {}) =>
+    row({ kind: "LogicalBackupRDBMS", version: "8.9.3", ...over });
+  // stored is the backup of dump() on the API server, which the server
+  // action reads before it writes a restore.
+  const stored = {
+    apiVersion: "core.camunda.io/v1",
+    kind: "LogicalBackupRDBMS",
+    metadata: { name: "nightly-1", namespace: "team-a" },
+    spec: { clusterRef: { name: "orders" } },
+    status: { phase: "Completed", version: "8.9.3" },
+  };
+
+  async function openRestore() {
+    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    return screen.getByRole("dialog", { name: "Restore orders" });
+  }
+
+  async function confirm(dialog: HTMLElement) {
+    await userEvent.type(
+      within(dialog).getByLabelText("Type orders to confirm"),
+      "orders",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Restore" }),
+    );
+  }
+
+  it.each(["direct", "git"] as const)(
+    "restore of a completed backup writes the exact logical restore in %s mode",
+    async (mode) => {
+      fakeWriter.reset(mode);
+      fakeWriter.objects = [stored];
+      rowActions(dump(), context({ storage: rdbms }));
+      await confirm(await openRestore());
+      await waitFor(() =>
+        expect(fakeWriter.applied).toEqual([
+          {
+            intent: "Restore orders from backup nightly-1",
+            apply: [
+              {
+                apiVersion: "core.camunda.io/v1",
+                kind: "LogicalRestoreRDBMS",
+                metadata: { name: RESTORE, namespace: "team-a" },
+                spec: {
+                  backupRef: { name: "nightly-1" },
+                  targetClusterRef: { name: "orders" },
+                },
+              },
+            ],
+            create: [`LogicalRestoreRDBMS/team-a/${RESTORE}`],
+            directOnly: true,
+          },
+        ]),
+      );
+      const status = await screen.findByRole("status");
+      expect(status.textContent).toContain(`Restore ${RESTORE} created.`);
+      expect(status.textContent).not.toContain("Waiting for GitOps to apply");
+      expect(screen.queryByRole("dialog")).toBeNull();
+    },
+  );
+
+  it.each([
+    [
+      "PostgreSQL",
+      () => dump(),
+      "The restore runs pg_restore over the database of the cluster, which drops each table of the dump and creates it again. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
+      "the database and the broker volumes",
+    ],
+    [
+      "Elasticsearch",
+      () => row(),
+      "The restore deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
+      "the Camunda indices and the broker volumes",
+    ],
+  ])(
+    "the %s restore confirm says what is lost, what goes, and what a failure leaves, before the typed name",
+    async (_, backup, deletes, broken) => {
+      rowActions(
+        backup(),
+        context({
+          storage: backup().kind === "LogicalBackupRDBMS" ? rdbms : es,
+          clusterVersion: "8.10.1",
+        }),
+      );
+      const dialog = await openRestore();
+      const lead = within(dialog).getByText(
+        "The cluster goes back to backup nightly-1. Everything that it wrote after that backup is lost.",
+      );
+      const items = within(dialog)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent);
+      expect(items).toEqual([
+        "Backup nightly-1 has Camunda 8.9.3. The cluster has 8.10.1. The restore sets the cluster to 8.9.3.",
+        deletes,
+        "The restore suspends the cluster while it runs, and starts it again when it completes.",
+        `If the restore fails, ${broken} can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.`,
+      ]);
+      const typed = within(dialog).getByLabelText("Type orders to confirm");
+      expect(
+        lead.compareDocumentPosition(typed) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    },
+  );
+
+  it("the restore confirm says that a cluster its owner suspended stays suspended", async () => {
+    rowActions(dump(), context({ storage: rdbms, suspension: "requested" }));
+    const dialog = await openRestore();
+    expect(
+      within(dialog).getByText(
+        "The cluster is suspended now. If its owner suspended it, it stays suspended after the restore, and the owner resumes it.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByText(
+        "The restore suspends the cluster while it runs, and starts it again when it completes.",
+      ),
+    ).toBeNull();
+  });
+
+  it("the confirm stays disabled until the cluster name is typed", async () => {
+    rowActions(dump(), context({ storage: rdbms }));
+    const dialog = await openRestore();
+    const button = within(dialog).getByRole("button", { name: "Restore" });
+    expect(button).toHaveProperty("disabled", true);
+    await userEvent.type(
+      within(dialog).getByLabelText("Type orders to confirm"),
+      "Orders",
+    );
+    expect(button).toHaveProperty("disabled", true);
+    expect(fakeWriter.applied).toEqual([]);
+  });
+
+  it("restore is disabled with its reason when the RDBMS backup is on another minor", () => {
+    rowActions(
+      dump({ version: "8.8.4" }),
+      context({ storage: rdbms, clusterVersion: "8.10.1" }),
+    );
+    const button = screen.getByRole("button", { name: "Restore" });
+    expect(button).toHaveProperty("disabled", true);
+    const described = button.getAttribute("aria-describedby") ?? "";
+    expect(document.getElementById(described)?.textContent).toBe(
+      "Backup nightly-1 has Camunda 8.8.4. It restores only into Camunda 8.8 or 8.9, and the cluster has 8.10.1.",
+    );
+  });
+
+  it.each(["Failed", "Running", "Pending"])(
+    "restore is not offered on a %s backup",
+    (phase) => {
+      rowActions(dump({ phase }), context({ storage: rdbms }));
+      expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+    },
+  );
+
+  it("restore stays enabled with its note while a backup runs", async () => {
+    rowActions(
+      dump(),
+      context({
+        storage: rdbms,
+        running: { what: "Backup", name: "nightly-2" },
+      }),
+    );
+    const dialog = await openRestore();
+    expect(
+      within(dialog).getByText(
+        "Backup nightly-2 is running. The new restore waits until it ends.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a refused restore closes the confirm and shows the error", async () => {
+    fakeWriter.objects = [
+      stored,
+      {
+        apiVersion: "core.camunda.io/v1",
+        kind: "LogicalRestoreRDBMS",
+        metadata: { name: "r0", namespace: "team-a" },
+        spec: {
+          backupRef: { name: "nightly-0" },
+          targetClusterRef: { name: "orders" },
+        },
+        status: { phase: "Pending" },
+      },
+    ];
+    rowActions(dump(), context({ storage: rdbms }));
+    await confirm(await openRestore());
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Restore r0 of this cluster has not ended.",
+    );
+    expect(fakeWriter.applied).toEqual([]);
+  });
+});
+
+describe("restore to a point in time", () => {
+  const ago = (days: number) =>
+    new Date(
+      Date.parse("2026-11-10T14:30:05Z") - days * 86_400_000,
+    ).toISOString();
+  const archived = (window: RestoreInterval[]): BackupStorage => ({
+    ...rdbms,
+    database: {
+      archive: {
+        server: "orders-db",
+        state: { tone: "ok", label: "Archiving" },
+        window,
+      },
+    },
+  });
+  const window: RestoreInterval[] = [
+    { from: "2026-11-05T00:00:00Z", to: "2026-11-08T00:00:00Z", failing: true },
+    { from: "2026-11-09T00:00:30Z" },
+  ];
+
+  async function openPoint() {
+    await userEvent.click(
+      screen.getByRole("button", { name: "Restore to a point in time" }),
+    );
+    return screen.getByRole("dialog", {
+      name: "Restore orders to a point in time",
+    });
+  }
+
+  function pick(dialog: HTMLElement, value: string) {
+    fireEvent.change(within(dialog).getByLabelText("Time (UTC)"), {
+      target: { value },
+    });
+  }
+
+  it("point in time is offered only on PostgreSQL with recovery by the operator", () => {
+    header(context());
+    header(context({ storage: rdbms }));
+    expect(
+      screen.queryByRole("button", { name: "Restore to a point in time" }),
+    ).toBeNull();
+    cleanup();
+    header(context({ storage: archived(window) }));
+    expect(
+      screen.getByRole("button", { name: "Restore to a point in time" }),
+    ).toHaveProperty("disabled", false);
+  });
+
+  it("point in time lists the window to the second and refuses a point outside it", async () => {
+    header(context({ storage: archived(window) }));
+    const dialog = await openPoint();
+    const items = within(dialog)
+      .getAllByRole("listitem")
+      .map((li) => li.textContent);
+    expect(items).toEqual([
+      "2026-11-05 00:00:00 UTC to 2026-11-08 00:00:00 UTC. Uploads are failing after this point.",
+      "2026-11-09 00:00:30 UTC to now",
+    ]);
+    pick(dialog, "2026-11-08T12:00:00");
+    expect(
+      within(dialog).getByText("Choose a point inside the restore window."),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByLabelText("Type orders to confirm"),
+    ).toBeNull();
+    pick(dialog, "2026-11-11T12:00:00");
+    expect(
+      within(dialog).getByText("Choose a point in the past."),
+    ).toBeTruthy();
+  });
+
+  it.each(["direct", "git"] as const)(
+    "point in time writes the exact PointInTimeRestore in %s mode",
+    async (mode) => {
+      fakeWriter.reset(mode);
+      header(context({ storage: archived(window) }));
+      const dialog = await openPoint();
+      pick(dialog, "2026-11-09T09:30:15");
+      expect(
+        within(dialog)
+          .getAllByRole("listitem")
+          .map((li) => li.textContent)
+          .slice(2),
+      ).toEqual([
+        "The database server rolls back to that time. The restore also deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
+        "The restore suspends the cluster while it runs, and starts it again when it completes.",
+        "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.",
+        'If the restore fails, the broker volumes can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.',
+      ]);
+      expect(
+        within(dialog).getByText(
+          "The cluster goes back to 2026-11-09 09:30:15 UTC. Everything that it wrote after that time is lost.",
+        ),
+      ).toBeTruthy();
+      await userEvent.type(
+        within(dialog).getByLabelText("Type orders to confirm"),
+        "orders",
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Restore" }),
+      );
+      await waitFor(() =>
+        expect(fakeWriter.applied).toEqual([
+          {
+            intent: "Restore orders to 2026-11-09T09:30:15Z",
+            apply: [
+              {
+                apiVersion: "core.camunda.io/v1",
+                kind: "PointInTimeRestore",
+                metadata: {
+                  name: "orders-pitr-20261110-143005",
+                  namespace: "team-a",
+                },
+                spec: {
+                  clusterRef: { name: "orders" },
+                  timestamp: "2026-11-09T09:30:15Z",
+                },
+              },
+            ],
+            create: ["PointInTimeRestore/team-a/orders-pitr-20261110-143005"],
+            directOnly: true,
+          },
+        ]),
+      );
+      const status = await screen.findByRole("status");
+      expect(status.textContent).toContain(
+        "Restore orders-pitr-20261110-143005 created.",
+      );
+      expect(status.textContent).not.toContain("Waiting for GitOps to apply");
+    },
+  );
+
+  it("point in time is disabled when the cluster keeps its Zeebe backups for a window the fleet manager cannot read", () => {
+    header(
+      context({
+        storage: archived([{ from: ago(1) }]),
+        retentionWindow: "P1W",
+      }),
+    );
+    const button = screen.getByRole("button", {
+      name: "Restore to a point in time",
+    });
+    expect(button).toHaveProperty("disabled", true);
+    const described = button.getAttribute("aria-describedby") ?? "";
+    expect(document.getElementById(described)?.textContent).toBe(
+      "The cluster keeps its Zeebe backups for P1W, which the fleet manager cannot read, so it cannot offer a point.",
+    );
   });
 });
