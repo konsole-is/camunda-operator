@@ -737,6 +737,46 @@ describe("environmentImpact for the presets of the built-in storage", () => {
     ).toEqual(["es-small"]);
   });
 
+  it("lists the preset of a live request that the claim no longer selects", () => {
+    const request = {
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginRequest",
+      metadata: { namespace: "team-a", name: "orders-secondary-storage" },
+      spec: {
+        claimRef: { kind: "CamundaClusterClaim", name: "orders" },
+        ...STORAGE,
+        deletionPolicy: "Delete",
+        target: { kind: "CamundaCluster", name: "orders" },
+        parameters: { preset: "es-small" },
+      },
+    } as unknown as EnvironmentSources["requests"][number];
+    expect(
+      environmentImpact(
+        environment({ presets: { elasticsearchCluster: ["es-small"] } }),
+        edit({}),
+        sources({
+          registrations,
+          requests: [request],
+          clusterClaims: [
+            clusterClaim(
+              "orders",
+              {
+                presetRef: undefined,
+                plugins: [
+                  {
+                    section: "secondary-storage",
+                    registration: "other-storage",
+                  },
+                ],
+              },
+              editable("elasticsearch"),
+            ),
+          ],
+        }),
+      ).warnings.map((w) => ("removed" in w ? w.name : undefined)),
+    ).toEqual(["es-small"]);
+  });
+
   it("does not list a preset that the live environment already did not allow", () => {
     expect(
       environmentImpact(

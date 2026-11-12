@@ -472,4 +472,29 @@ describe("OptionSettings", () => {
     expect(chips).not.toContain("{{ .parameters.managedPolicyArns }}");
     expect(chips).not.toContain("{{ .parameters.extraPolicyArns }}");
   });
+
+  it("keeps the last value of a parameter while its YAML does not parse", () => {
+    const sources = sectionFixtures();
+    sources.environments[0].spec.sections!["connectors-permissions"] = {};
+    sources.environments[0].spec.parameters = {
+      "aws-connectors-role": {
+        inlinePolicy: { value: { Version: "2012-10-17" } },
+      },
+    };
+    renderEditor("production", sources);
+    fireEvent.change(
+      within(group("Role for each cluster", "inlinePolicy")).getByLabelText(
+        "inlinePolicy",
+      ),
+      { target: { value: "a: [" } },
+    );
+    expect(
+      screen.getByRole("region", { name: "Role for each cluster" }),
+    ).toBeTruthy();
+    expect(
+      within(group("Role for each cluster", "inlinePolicy"))
+        .getByLabelText("inlinePolicy")
+        .getAttribute("aria-invalid"),
+    ).toBe("true");
+  });
 });

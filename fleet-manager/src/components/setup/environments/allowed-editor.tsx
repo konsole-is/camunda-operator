@@ -107,8 +107,9 @@ export function AllowedEditor({
                 parameters={parameters}
                 onChange={(value, found) => {
                   textErrors.current[id] = value === undefined ? found : [];
-                  update(row, { value });
                   reportText();
+                  if (value !== undefined || found.length === 0)
+                    update(row, { value });
                 }}
               />
             ) : (
@@ -124,8 +125,8 @@ export function AllowedEditor({
                 error={errorAt(`${row}.value`)}
                 onValue={(value, parse) => {
                   textErrors.current[id] = parse ?? [];
-                  update(row, { value });
                   reportText();
+                  if (!parse?.length) update(row, { value });
                 }}
               />
             )}

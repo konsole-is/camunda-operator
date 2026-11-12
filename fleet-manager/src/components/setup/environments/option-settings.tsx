@@ -209,7 +209,8 @@ function ParameterSettingRow({
           onChange={(value, found) => {
             valueErrors.current = value === undefined ? found : [];
             report();
-            set({ value });
+            // Text that does not parse keeps the last value.
+            if (value !== undefined || found.length === 0) set({ value });
           }}
         />
       ) : (
@@ -233,6 +234,7 @@ function ParameterSettingRow({
           onValue={(value, parse) => {
             valueErrors.current = parse ?? [];
             report();
+            if (parse?.length) return;
             set({ value: value === "" && !emptyMember ? undefined : value });
           }}
         />

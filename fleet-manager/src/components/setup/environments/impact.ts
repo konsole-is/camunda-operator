@@ -285,8 +285,8 @@ function warningsOf(
   return warnings;
 }
 
-// The live request keeps its preset while a change of the claim to another
-// preset is refused.
+// A live request keeps its preset, and runs, while a change of the claim to
+// another preset or another option is refused.
 function storagePresetWarnings(
   ref: ClaimRef,
   claim: Claim,
@@ -294,6 +294,12 @@ function storagePresetWarnings(
   edited: Environment,
   s: EnvironmentSources,
 ): ReferenceWarning[] {
+  const requests = s.requests.filter(
+    (r) =>
+      r.metadata?.namespace === ref.namespace &&
+      r.spec.claimRef.kind === ref.kind &&
+      r.spec.claimRef.name === ref.name,
+  );
   const selections = claim.spec.plugins ?? [];
   const resolved = resolve({
     recorded: claim.status?.resolvedPolicy,
@@ -301,32 +307,45 @@ function storagePresetWarnings(
     registrations: s.registrations,
     selections,
   });
-  if (!("value" in resolved)) return [];
-  return selections.flatMap((selection, i): ReferenceWarning[] => {
-    const kind = own(BUILTIN_OPTIONS, selection.registration)?.lists.preset;
+  const presets = [
+    ...requests.map((r) => ({
+      registration: r.spec.registration,
+      preset: decodeObject(r.spec.parameters)?.preset,
+    })),
+    ...selections
+      .map((selection, i) => ({
+        selection,
+        preset:
+          "value" in resolved
+            ? resolved.value.requests?.[i]?.parameters?.preset
+            : undefined,
+      }))
+      .filter(
+        ({ selection }) =>
+          !requests.some(
+            (r) =>
+              r.spec.section === selection.section &&
+              r.spec.registration === selection.registration,
+          ),
+      )
+      .map(({ selection, preset }) => ({
+        registration: selection.registration,
+        preset,
+      })),
+  ];
+  return presets.flatMap(({ registration, preset }): ReferenceWarning[] => {
+    const kind = own(BUILTIN_OPTIONS, registration)?.lists.preset;
+    const name = nameOf(preset);
     if (
-      kind !== "ElasticsearchClusterPreset" &&
-      kind !== "DatabaseServerPreset"
+      (kind !== "ElasticsearchClusterPreset" &&
+        kind !== "DatabaseServerPreset") ||
+      name === undefined
     )
       return [];
-    const request = s.requests.find(
-      (r) =>
-        r.metadata?.namespace === ref.namespace &&
-        r.spec.claimRef.kind === ref.kind &&
-        r.spec.claimRef.name === ref.name &&
-        r.spec.section === selection.section &&
-        r.spec.registration === selection.registration,
-    );
-    const name = nameOf(
-      request
-        ? decodeObject(request.spec.parameters)?.preset
-        : resolved.value.requests?.[i]?.parameters?.preset,
-    );
     const list = STORAGE_PRESET_LISTS[kind];
     const allows = (environment: Environment) =>
-      name !== undefined &&
       (environment.spec.presets?.[list] ?? []).includes(name);
-    return name !== undefined && allows(live) && !allows(edited)
+    return allows(live) && !allows(edited)
       ? [{ claim: ref, kind, name, removed: true }]
       : [];
   });
