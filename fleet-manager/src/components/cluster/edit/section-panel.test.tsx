@@ -55,20 +55,22 @@ const harness = {
   },
 } as unknown as Resource<"PluginRegistration">;
 
+const PARAMETERS = { hostPrefix: "orders", tier: "gold", policies: ["sqs"] };
+
 // contextOf gives the claim orders the access option fleet-harness, whose
 // hostPrefix the claim sets and may change, whose zone the admin sets, and
-// whose tier is a choice of the environment.
-function contextOf(): ClusterSlotContext {
+// whose tier is a choice of the environment. version and parameters are
+// those of the claim.
+function contextOf(
+  version = "41",
+  parameters: object = PARAMETERS,
+): ClusterSlotContext {
   const plugins = [
-    {
-      section: "access",
-      registration: "fleet-harness",
-      parameters: { hostPrefix: "orders", tier: "gold", policies: ["sqs"] },
-    },
+    { section: "access", registration: "fleet-harness", parameters },
   ];
   return slotContext({
     claim: {
-      ...claim("41", { plugins }),
+      ...claim(version, { plugins }),
       status: {
         resolvedPolicy: {
           sections: { access: { allowed: ["fleet-harness"] } },
@@ -108,16 +110,24 @@ function contextOf(): ClusterSlotContext {
   });
 }
 
+// panel renders the panels of context. update gives the page a newer
+// context, as when the claim updates.
 function panel(context: ClusterSlotContext = contextOf()) {
-  return render(
-    <QueryClientProvider client={new QueryClient()}>
+  const client = new QueryClient();
+  const tree = (c: ClusterSlotContext) => (
+    <QueryClientProvider client={client}>
       <GitPushesProvider>
-        <ClusterEditProvider context={context} actions={actions}>
-          <ClaimEditorPanels context={context} requested="section:access" />
+        <ClusterEditProvider context={c} actions={actions}>
+          <ClaimEditorPanels context={c} requested="section:access" />
         </ClusterEditProvider>
       </GitPushesProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const result = render(tree(context));
+  return {
+    ...result,
+    update: (c: ClusterSlotContext) => result.rerender(tree(c)),
+  };
 }
 
 const sectionPanel = () =>
@@ -206,6 +216,31 @@ describe("a section panel", () => {
     ).toBeNull();
     expect(input.isConnected).toBe(true);
     expect(document.activeElement).toBe(input);
+  });
+
+  it("a claim update with an unrelated pending change shows the new values in the editors that the user did not touch", () => {
+    const { update } = panel();
+    fireEvent.change(within(row("tier")).getByRole("combobox"), {
+      target: { value: "silver" },
+    });
+    update(
+      contextOf("42", {
+        ...PARAMETERS,
+        hostPrefix: "billing",
+        policies: ["sqs", "sns"],
+      }),
+    );
+    expect(
+      within(row("hostPrefix")).getByRole<HTMLInputElement>("textbox").value,
+    ).toBe("billing");
+    expect(
+      within(row("policies"))
+        .getByRole("checkbox", { name: "sns" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      within(row("tier")).getByRole<HTMLSelectElement>("combobox").value,
+    ).toBe("silver");
   });
 
   it("a parameter that the admin set stays locked", () => {

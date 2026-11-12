@@ -306,12 +306,44 @@ function CountField({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
 }) {
-  const edit = useClusterEdit();
+  const { invalid } = useClusterEdit();
+  // The panel remounts the counts when the pending changes end.
+  const { generation, own } = useEditorGeneration(0, value);
+  useEffect(() => () => invalid(steps, undefined), [invalid, steps]);
+  return (
+    <CountInput
+      key={generation}
+      label={label}
+      minimum={minimum}
+      value={value}
+      errors={errors}
+      onChange={own((next: string) => {
+        const nextError = countError(next, minimum);
+        invalid(steps, nextError && `${label}: ${nextError}`);
+        if (nextError) return;
+        if (next === "") reset(steps);
+        else set(steps, Number(next));
+      })}
+    />
+  );
+}
+
+function CountInput({
+  label,
+  minimum,
+  value,
+  errors,
+  onChange,
+}: {
+  label: string;
+  minimum: number;
+  value: number | undefined;
+  errors: string[];
+  onChange: (text: string) => void;
+}) {
   const id = useId();
   const [text, setText] = useState(value === undefined ? "" : String(value));
   const error = countError(text, minimum) ?? (errors.join(" ") || undefined);
-  const { invalid } = edit;
-  useEffect(() => () => invalid(steps, undefined), [invalid, steps]);
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium text-text">
@@ -327,13 +359,8 @@ function CountField({
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
         onChange={(event) => {
-          const next = event.target.value;
-          setText(next);
-          const nextError = countError(next, minimum);
-          edit.invalid(steps, nextError && `${label}: ${nextError}`);
-          if (nextError) return;
-          if (next === "") reset(steps);
-          else set(steps, Number(next));
+          setText(event.target.value);
+          onChange(event.target.value);
         }}
       />
       {error && (

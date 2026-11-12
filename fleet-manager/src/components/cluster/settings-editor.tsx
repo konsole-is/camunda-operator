@@ -36,6 +36,7 @@ import {
 } from "@/lib/fields";
 import type { ValidationError } from "@/lib/schema";
 import type { FieldError } from "@/lib/session";
+import { useEditorGeneration } from "./edit/editor-generation";
 import {
   editorValueOf,
   type Setting,
@@ -132,6 +133,8 @@ export function SettingRow({
   onReset: () => void;
 }) {
   const [mounted] = useState(setting.value);
+  // The caller remounts the rows when the pending changes end.
+  const { generation, own } = useEditorGeneration(0, setting.value);
   const { editor, steps } = setting;
   const shows = useShownError(
     steps && setting.holder ? [...steps, ...setting.holder.rest] : steps,
@@ -151,28 +154,30 @@ export function SettingRow({
         />
       </div>
     );
-  const change = (value: unknown) => {
+  const change = own((value: unknown) => {
     const next = settingChange(setting, value);
     if (next.value === undefined) reset(next.steps);
     else set(next.steps, next.value);
-  };
+  });
   const note = setting.state && stateNote(setting.state);
   return (
     <div
       role="group"
       aria-label={setting.label}
       className="flex min-w-0 flex-col gap-2 py-3"
+      onChange={own(() => {})}
     >
       <Editor
+        key={generation}
         label={setting.label}
         editor={editor}
         value={setting.value}
         current={"current" in setting ? setting.current : mounted}
         secrets={secrets ?? []}
         onChange={change}
-        onInvalid={(message) =>
-          shows(message && `${setting.label}: ${message}`)
-        }
+        onInvalid={own((message: string | undefined) =>
+          shows(message && `${setting.label}: ${message}`),
+        )}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span>{setting.state ? stateLabel(setting.state) : "Not set"}</span>

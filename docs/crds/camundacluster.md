@@ -79,7 +79,7 @@ The operator creates no Ingress. You route traffic to the cluster. `spec.externa
 
 The authentication method, basic or OIDC, comes from the [CamundaPlatformConfig](camundaplatformconfig.md) that `platformConfigRef` names. A cluster cannot choose its own method.
 
-Under basic authentication the operator creates the admin user `admin`. It stores the credentials in the Secret `<name>-camunda-admin`, under the keys `username`, `password`, and `email`. To rotate the password, set `spec.auth.basic.passwordRotation` to a new value. `status.adminPassword.rotation` records the value that the operator applied.
+Under basic authentication the operator creates the admin user `admin`. It stores the credentials in the Secret `<name>-camunda-admin`, under the keys `username`, `password`, and `email`. To rotate the password, set `spec.auth.basic.passwordRotation` to a new value. The rotation restarts the connectors pods, and no other pod. `status.adminPassword.rotation` records the value that the operator applied.
 
 Under OIDC the identity provider authenticates every caller, and `spec.auth.admin` names the identities that get the `admin` role. An OIDC cluster without `spec.auth.admin` has no administrator.
 

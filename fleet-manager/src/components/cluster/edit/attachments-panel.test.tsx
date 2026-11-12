@@ -54,21 +54,31 @@ const rdbmsBackups: BackupStorage = {
 const withOptimize = (optimize: object) =>
   claim("41", { attachments: { optimize } });
 
+// panel renders the panels of the context with over. update gives the
+// page the context with newer over, as when the claim updates.
 function panel(over: Partial<ClusterSlotContext> = {}) {
-  const context = slotContext({
-    storage: storage("elasticsearch"),
-    managementAuthConfigs: [authConfig("keycloak"), authConfig("camunda")],
-    ...over,
-  });
-  return render(
-    <QueryClientProvider client={new QueryClient()}>
+  const contextOf = (o: Partial<ClusterSlotContext>) =>
+    slotContext({
+      storage: storage("elasticsearch"),
+      managementAuthConfigs: [authConfig("keycloak"), authConfig("camunda")],
+      ...o,
+    });
+  const client = new QueryClient();
+  const tree = (context: ClusterSlotContext) => (
+    <QueryClientProvider client={client}>
       <GitPushesProvider>
         <ClusterEditProvider context={context} actions={actions}>
           <ClaimEditorPanels context={context} requested="attachments" />
         </ClusterEditProvider>
       </GitPushesProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const result = render(tree(contextOf(over)));
+  return {
+    ...result,
+    update: (o: Partial<ClusterSlotContext>) =>
+      result.rerender(tree(contextOf(o))),
+  };
 }
 
 const attachments = () => screen.getByRole("region", { name: "Attachments" });
@@ -316,6 +326,43 @@ describe("the Attachments panel", () => {
       within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
         .disabled,
     ).toBe(false);
+  });
+
+  it("a claim update with an unrelated pending change shows the new count", async () => {
+    const scheduled = (version: string, completed: number) =>
+      claim(version, {
+        attachments: {
+          backupSchedule: { schedule: "0 2 * * *", retained: { completed } },
+        },
+      });
+    const { update } = panel({
+      backupStorage: rdbmsBackups,
+      claim: scheduled("41", 7),
+    });
+    await userEvent.clear(field("Schedule (cron, UTC)"));
+    await userEvent.type(field("Schedule (cron, UTC)"), "0 3 * * *");
+    update({ backupStorage: rdbmsBackups, claim: scheduled("42", 9) });
+    expect(field("Completed backups to keep").value).toBe("9");
+    expect(field("Schedule (cron, UTC)").value).toBe("0 3 * * *");
+  });
+
+  it("a claim update keeps the text and the focus of a count that the user typed", async () => {
+    const scheduled = (version: string, completed: number) =>
+      claim(version, {
+        attachments: {
+          backupSchedule: { schedule: "0 2 * * *", retained: { completed } },
+        },
+      });
+    const { update } = panel({
+      backupStorage: rdbmsBackups,
+      claim: scheduled("41", 7),
+    });
+    const input = field("Completed backups to keep");
+    await userEvent.type(input, ".5");
+    update({ backupStorage: rdbmsBackups, claim: scheduled("42", 9) });
+    expect(input.isConnected).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("7.5");
   });
 
   it("a completed count of 0 is an error, and a failed count of 0 is not", async () => {

@@ -93,17 +93,25 @@ function Probe() {
   );
 }
 
+// renderSlot renders the slot of context. update gives the page a newer
+// context, as when the claim updates.
 function renderSlot(context: ClusterSlotContext) {
-  return render(
-    <QueryClientProvider client={new QueryClient()}>
+  const client = new QueryClient();
+  const tree = (c: ClusterSlotContext) => (
+    <QueryClientProvider client={client}>
       <GitPushesProvider>
-        <ClusterEditProvider context={context} actions={actions}>
-          <ComponentSettingsEditor ctx={context} />
+        <ClusterEditProvider context={c} actions={actions}>
+          <ComponentSettingsEditor ctx={c} />
           <Probe />
         </ClusterEditProvider>
       </GitPushesProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const result = render(tree(context));
+  return {
+    ...result,
+    update: (c: ClusterSlotContext) => result.rerender(tree(c)),
+  };
 }
 
 function claimSpec() {
@@ -281,6 +289,149 @@ describe("ComponentSettingsEditor", () => {
     expect(input.isConnected).toBe(true);
     expect(document.activeElement).toBe(input);
     expect(input).toHaveProperty("value", "");
+  });
+
+  describe("a claim update with an unrelated pending change", () => {
+    // brokers gives the brokers of orders the CPU limit limit, in the claim
+    // of resourceVersion version.
+    const brokers = (version: string, limit: string) => {
+      const spec = {
+        zeebe: {
+          replicas: 3,
+          resources: { requests: { cpu: "1" }, limits: { cpu: limit } },
+        },
+        gateway: { mode: "Standalone" },
+      };
+      return contextOf({
+        openId: "zeebe",
+        cluster: cluster(spec),
+        claim: claim(version, { cluster: spec }),
+      });
+    };
+    const amount = (label: string) =>
+      within(
+        within(settingRow(group("Brokers"), "resources")).getByRole("group", {
+          name: label,
+        }),
+      ).getByRole("textbox", { name: "Amount" });
+    const replicas = () =>
+      within(settingRow(group("Brokers"), "replicas")).getByRole("spinbutton");
+
+    it("shows the new value in an editor that the user did not touch", async () => {
+      const { update } = renderSlot(brokers("41", "2"));
+      await openEditors();
+      await userEvent.clear(replicas());
+      await userEvent.type(replicas(), "5");
+      update(brokers("42", "4"));
+      expect(amount("CPU limit")).toHaveProperty("value", "4");
+    });
+
+    it("an edit of one field of a block keeps the new value of the others", async () => {
+      const { update } = renderSlot(brokers("41", "2"));
+      await openEditors();
+      await userEvent.clear(replicas());
+      await userEvent.type(replicas(), "5");
+      update(brokers("42", "4"));
+      await userEvent.clear(amount("CPU request"));
+      await userEvent.type(amount("CPU request"), "2");
+      expect(claimSpec().cluster.zeebe).toEqual({
+        replicas: 5,
+        resources: { requests: { cpu: "2" }, limits: { cpu: "4" } },
+      });
+    });
+
+    it("keeps the text, the editor, and the focus of an editor that the user touched", async () => {
+      const { update } = renderSlot(brokers("41", "2"));
+      await openEditors();
+      const input = replicas();
+      await userEvent.clear(input);
+      await userEvent.type(input, "5");
+      update(brokers("42", "4"));
+      expect(input.isConnected).toBe(true);
+      expect(document.activeElement).toBe(input);
+      expect(input).toHaveProperty("value", "5");
+    });
+  });
+
+  it("a claim update keeps the text and the focus of a YAML editor after an edit that keeps its value", async () => {
+    const affinityOf = (pool: string) => ({
+      zeebe: {
+        replicas: 3,
+        scheduling: {
+          nodeAffinity: {
+            requiredDuringSchedulingIgnoredDuringExecution: {
+              nodeSelectorTerms: [
+                {
+                  matchExpressions: [
+                    { key: "pool", operator: "In", values: [pool] },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+      gateway: { mode: "Standalone" },
+    });
+    const contextAt = (version: string, pool: string) =>
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(affinityOf(pool)),
+        claim: claim(version, { cluster: affinityOf(pool) }),
+      });
+    const { update } = renderSlot(contextAt("41", "camunda"));
+    await openEditors();
+    const replicas = within(settingRow(group("Brokers"), "replicas")).getByRole(
+      "spinbutton",
+    );
+    await userEvent.clear(replicas);
+    await userEvent.type(replicas, "5");
+    const affinity = within(
+      settingRow(group("Brokers"), "scheduling.nodeAffinity"),
+    ).getByRole("textbox");
+    await userEvent.type(affinity, "{Enter}# a note");
+    update(contextAt("42", "batch"));
+    expect(affinity.isConnected).toBe(true);
+    expect(document.activeElement).toBe(affinity);
+    expect(affinity).toHaveProperty(
+      "value",
+      expect.stringContaining("# a note"),
+    );
+  });
+
+  it("a claim update keeps a variable that the user added and that is not valid yet", async () => {
+    const envOf = (env: object[]) => ({
+      zeebe: { replicas: 3, extraEnv: env },
+      gateway: { mode: "Standalone" },
+    });
+    const contextAt = (version: string, env: object[]) =>
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(envOf(env)),
+        claim: claim(version, { cluster: envOf(env) }),
+      });
+    const { update } = renderSlot(
+      contextAt("41", [{ name: "LOG_LEVEL", value: "info" }]),
+    );
+    await openEditors();
+    const replicas = within(settingRow(group("Brokers"), "replicas")).getByRole(
+      "spinbutton",
+    );
+    await userEvent.clear(replicas);
+    await userEvent.type(replicas, "5");
+    const env = () => settingRow(group("Brokers"), "extraEnv");
+    await userEvent.click(
+      within(env()).getByRole("button", { name: "Add a variable" }),
+    );
+    update(contextAt("42", [{ name: "LOG_LEVEL", value: "debug" }]));
+    expect(
+      within(env()).getByRole("group", { name: "Variable 2" }),
+    ).toBeTruthy();
+    expect(
+      within(
+        within(env()).getByRole("group", { name: "Variable 1" }),
+      ).getByRole("textbox", { name: "Value" }),
+    ).toHaveProperty("value", "info");
   });
 
   it("a smaller pending size still says volumes cannot shrink when the editors open again", async () => {
