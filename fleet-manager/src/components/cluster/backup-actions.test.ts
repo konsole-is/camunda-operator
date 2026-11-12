@@ -689,9 +689,7 @@ describe("restore confirm", () => {
   });
 
   it("a point-in-time restore says that everything after the point is lost", () => {
-    expect(
-      pointInTimeConfirm(context(), "2026-11-09 09:30:15 UTC").lead,
-    ).toBe(
+    expect(pointInTimeConfirm(context(), "2026-11-09 09:30:15 UTC").lead).toBe(
       "The cluster goes back to 2026-11-09 09:30:15 UTC. Everything that it wrote after that time is lost.",
     );
   });
@@ -725,7 +723,11 @@ describe("restore confirm", () => {
     ["a running cluster", undefined, STARTS],
     ["a cluster that its owner suspended", "requested", OWNER],
     ["a cluster under a suspension hold", "held", OTHER],
-    ["a cluster whose storage another cluster holds", "StorageAlreadyAttached", OTHER],
+    [
+      "a cluster whose storage another cluster holds",
+      "StorageAlreadyAttached",
+      OTHER,
+    ],
     ["a cluster that waits for a handover", "WaitingForHandover", OTHER],
   ])("each confirm says whether %s starts again", (_, suspension, line) => {
     const c = context(suspension ? { suspension } : {});
