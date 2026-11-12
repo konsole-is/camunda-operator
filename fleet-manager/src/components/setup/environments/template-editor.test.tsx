@@ -195,4 +195,21 @@ describe("TemplateEditor", () => {
       { path: "", message: "Use a finite number, not .nan or .inf" },
     ]);
   });
+
+  it("shows the error of the parent at the field while the text has none", () => {
+    render(
+      <TemplateEditor
+        label="Inline policy"
+        value={{ Version: "2012-10-17" }}
+        object
+        parameters={[]}
+        error="must have required property 'Statement'"
+        onChange={() => {}}
+      />,
+    );
+    expect(field().getAttribute("aria-invalid")).toBe("true");
+    expect(
+      screen.getByText("must have required property 'Statement'"),
+    ).toBeTruthy();
+  });
 });

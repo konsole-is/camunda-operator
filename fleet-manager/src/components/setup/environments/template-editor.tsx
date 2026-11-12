@@ -28,19 +28,24 @@ export function TemplateEditor({
   value,
   object,
   parameters,
+  error,
   onChange,
 }: {
   label: string;
   value: unknown;
   object: boolean;
   parameters: string[];
+  /** error is an error of the parent, such as one of the schema, which shows while the text has no error of its own. */
+  error?: string;
   onChange: (value: unknown, errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const field = useRef<HTMLTextAreaElement>(null);
   const cursor = useRef<number | undefined>(undefined);
   const [text, setText] = useState(() => textOf(value, object));
-  const [, errors] = check(text, object);
+  const [, own] = check(text, object);
+  const errors =
+    own.length > 0 || !error ? own : [{ path: "", message: error }];
   useLayoutEffect(() => {
     if (cursor.current === undefined) return;
     field.current?.setSelectionRange(cursor.current, cursor.current);

@@ -190,6 +190,20 @@ describe("draftErrors", () => {
     ]);
   });
 
+  it("refuses a required section without an allowed option", () => {
+    expect(
+      draftErrors(
+        draft({ sections: { "backup-storage": { required: true } } }),
+        NEW,
+      ),
+    ).toEqual([
+      {
+        path: "spec.sections.backup-storage.allowed",
+        message: "A required section needs at least one allowed option.",
+      },
+    ]);
+  });
+
   it("refuses a duplicate name in the allowed values of a parameter", () => {
     expect(
       draftErrors(

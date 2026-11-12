@@ -412,4 +412,29 @@ describe("OptionSettings", () => {
     const spec = await save(actions);
     expect(spec.parameters?.rustfs?.tls).toEqual({ claimEditable: true });
   });
+
+  it("shows the schema error of a template parameter at its field", () => {
+    const sources = sectionFixtures();
+    const role = sources.registrations.find(
+      (r) => r.metadata.name === "aws-connectors-role",
+    )!;
+    role.spec.parameters = {
+      type: "object",
+      properties: {
+        inlinePolicy: {
+          type: "object",
+          required: ["Statement"],
+          "x-fleet-template": true,
+        },
+      },
+    };
+    sources.environments[0].spec.parameters = {
+      "aws-connectors-role": { inlinePolicy: { value: { Version: "x" } } },
+    };
+    renderEditor("production", sources);
+    const field = within(
+      group("Role for each cluster", "inlinePolicy"),
+    ).getByLabelText("inlinePolicy");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+  });
 });

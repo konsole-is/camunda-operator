@@ -109,6 +109,11 @@ export function draftErrors(
     );
 
   for (const [section, policy] of Object.entries(spec.sections ?? {})) {
+    if (policy.required && (policy.allowed ?? []).length === 0)
+      add(
+        `spec.sections.${section}.allowed`,
+        "A required section needs at least one allowed option.",
+      );
     if (policy.default && !(policy.allowed ?? []).includes(policy.default))
       add(
         `spec.sections.${section}.default`,

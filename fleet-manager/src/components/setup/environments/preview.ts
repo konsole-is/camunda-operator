@@ -82,6 +82,35 @@ export function previewClaims(
 }
 
 /**
+ * previewSection returns the section of registration that a preview of
+ * claim renders for: the section of the selection of registration in the
+ * claim, else a section whose policy in spec allows registration, else any
+ * section of registration. Each one applies to the kind of the claim. It
+ * returns undefined when no section of registration applies to that kind.
+ */
+export function previewSection(
+  claim: PreviewClaim,
+  registration: PluginRegistration,
+  sections: readonly PluginSection[],
+  spec: Environment["spec"],
+): PluginSection | undefined {
+  const name = registration.metadata.name ?? "";
+  const applying = sections.filter(
+    (s) =>
+      registration.spec.sections.includes(s.metadata.name ?? "") &&
+      s.spec.appliesTo.includes(claim.kind),
+  );
+  const selected = claim.plugins.find((p) => p.registration === name)?.section;
+  return (
+    applying.find((s) => s.metadata.name === selected) ??
+    applying.find((s) =>
+      (spec.sections?.[s.metadata.name ?? ""]?.allowed ?? []).includes(name),
+    ) ??
+    applying[0]
+  );
+}
+
+/**
  * templateData returns the placeholder values of claim for the request of
  * registration in section. A live request of the claim gives its name and
  * its target account; else requestName and targetServiceAccount give them.

@@ -9,7 +9,7 @@ import { accessPatterns, renderHosts } from "@/lib/claims/hosts";
 import { renderJSON } from "@/lib/gotemplate";
 import type { ValidationError } from "@/lib/schema";
 import { AllowedEditor } from "./allowed-editor";
-import { previewClaims, templateData } from "./preview";
+import { previewClaims, previewSection, templateData } from "./preview";
 import {
   type NamedValue,
   type OptionSettings,
@@ -191,6 +191,7 @@ function ParameterSettingRow({
           label={setting.label}
           value={setting.value}
           object={isStructured(setting.schema)}
+          error={errors.find((e) => e.path === `${base}.value`)?.message}
           parameters={others}
           onChange={(value, found) => {
             valueErrors.current = value === undefined ? found : [];
@@ -259,10 +260,11 @@ function ParameterSettingRow({
         <TemplatePreview
           claims={claims}
           render={(claim) => {
-            const section = sources.sections.find(
-              (s) =>
-                registration.spec.sections.includes(s.metadata.name ?? "") &&
-                s.spec.appliesTo.includes(claim.kind),
+            const section = previewSection(
+              claim,
+              registration,
+              sources.sections,
+              spec,
             );
             if (!section)
               return { error: "No section of this option applies.", path: "" };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId } from "react";
-import { SelectField } from "@/components/setup/form-parts";
+import { ErrorText, SelectField } from "@/components/setup/form-parts";
 import type { ValidationError } from "@/lib/schema";
 import type { SectionGroup, SectionPolicyForm, SectionRow } from "./sections";
 
@@ -49,6 +49,11 @@ export function SectionsTable({
                   (e) => e.path === `spec.sections.${row.name}.default`,
                 )?.message
               }
+              allowedError={
+                errors.find(
+                  (e) => e.path === `spec.sections.${row.name}.allowed`,
+                )?.message
+              }
               onPolicy={(policy) => onPolicy(row.name, policy)}
             />
           ))}
@@ -61,10 +66,12 @@ export function SectionsTable({
 function SectionPolicyRow({
   row,
   error,
+  allowedError,
   onPolicy,
 }: {
   row: SectionRow;
   error?: string;
+  allowedError?: string;
   onPolicy: (policy: SectionPolicyForm) => void;
 }) {
   const id = useId();
@@ -172,6 +179,7 @@ function SectionPolicyRow({
             </li>
           ))}
         </ul>
+        <ErrorText error={allowedError} />
         {row.emptyOptionLabel ? (
           <p className="text-xs text-muted">
             A claim can also pick {row.emptyOptionLabel}.

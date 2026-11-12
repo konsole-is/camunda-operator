@@ -14,13 +14,13 @@ const MAX_CHOICES = 32;
 
 /**
  * AllowedEditor edits the allowed choices of a claim-editable parameter: a
- * row of name, label, and value for each. The value editor of an array
- * parameter edits one item, by the items schema. A template parameter
- * edits each value with TemplateEditor. errors are the errors of the
- * editor, by path "<row>.name", "<row>.label", or "<row>.value".
- * onTextErrors gets the errors of each value text that does not parse,
- * which the choices cannot hold. The editor keeps its rows, so a parent remounts
- * it to discard them.
+ * row of name, label, and value for each. The value of a choice of an
+ * array parameter is one item or a whole list. A template parameter edits
+ * each value with TemplateEditor. errors are the errors of the editor, by
+ * path "<row>.name", "<row>.label", or "<row>.value". onTextErrors gets
+ * the errors of each value text that does not parse, which the choices
+ * cannot hold. The editor keeps its rows, so a parent remounts it to
+ * discard them.
  */
 export function AllowedEditor({
   setting,
@@ -38,6 +38,14 @@ export function AllowedEditor({
 }) {
   const prefix = useId();
   const [ids, setIds] = useState(() => setting.allowed.map((_, i) => i));
+  // A choice that holds a whole list keeps the editor of a list while its
+  // text does not parse.
+  const [lists] = useState(
+    () =>
+      new Set(
+        setting.allowed.flatMap((c, i) => (Array.isArray(c.value) ? [i] : [])),
+      ),
+  );
   const next = useRef(ids.length);
   const textErrors = useRef<Record<number, ValidationError[]>>({});
   const { allowed } = setting;
@@ -57,6 +65,7 @@ export function AllowedEditor({
       </p>
       {allowed.map((choice, row) => {
         const id = ids[row] ?? row;
+        const valueSchema = lists.has(id) ? setting.schema : schema;
         return (
           <fieldset key={id} className="flex min-w-0 flex-col gap-2">
             <legend className="sr-only">{`Choice ${row + 1}`}</legend>
@@ -93,7 +102,8 @@ export function AllowedEditor({
               <TemplateEditor
                 label="Value"
                 value={choice.value}
-                object={isStructured(schema)}
+                object={isStructured(valueSchema)}
+                error={errorAt(`${row}.value`)}
                 parameters={parameters}
                 onChange={(value, found) => {
                   textErrors.current[id] = value === undefined ? found : [];
@@ -108,7 +118,7 @@ export function AllowedEditor({
                   name: "value",
                   label: "Value",
                   claimEditable: true,
-                  ...(schema && { schema }),
+                  ...(valueSchema && { schema: valueSchema }),
                 }}
                 value={choice.value}
                 error={errorAt(`${row}.value`)}

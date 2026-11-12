@@ -234,4 +234,35 @@ describe("AllowedEditor", () => {
       { name: "none", label: "No tier", value: "" },
     ]);
   });
+
+  it("edits a choice that is a whole list as a list", async () => {
+    const sources = sectionFixtures();
+    sources.environments[0].spec.parameters![
+      "aws-connectors-role"
+    ].extraPolicyArns = {
+      claimEditable: true,
+      allowed: [
+        { name: "both", label: "Both", value: ["arn:aws:iam::aws:policy/a"] },
+      ],
+    };
+    const actions = renderEditor("production", sources);
+    const choice = within(extra()).getByRole("group", { name: "Choice 1" });
+    const value = within(choice).getByLabelText("Value") as HTMLTextAreaElement;
+    expect(value.value).toBe("- arn:aws:iam::aws:policy/a\n");
+    fireEvent.change(value, {
+      target: {
+        value: "- arn:aws:iam::aws:policy/a\n- arn:aws:iam::aws:policy/b\n",
+      },
+    });
+    const spec = await save(actions);
+    expect(
+      spec.parameters?.["aws-connectors-role"]?.extraPolicyArns?.allowed,
+    ).toEqual([
+      {
+        name: "both",
+        label: "Both",
+        value: ["arn:aws:iam::aws:policy/a", "arn:aws:iam::aws:policy/b"],
+      },
+    ]);
+  });
 });

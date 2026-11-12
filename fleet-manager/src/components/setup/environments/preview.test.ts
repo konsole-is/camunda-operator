@@ -3,7 +3,12 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
 import { environmentFixtures, sectionFixtures } from "./fixtures";
-import { previewClaims, templateData, templateErrors } from "./preview";
+import {
+  previewClaims,
+  previewSection,
+  templateData,
+  templateErrors,
+} from "./preview";
 
 const sources = sectionFixtures();
 const production = sources.environments[0];
@@ -202,5 +207,58 @@ describe("templateErrors", () => {
     expect(
       templateErrors({ a: "{{ .namespace }}-{{ .parameters.x }}" }),
     ).toEqual([]);
+  });
+});
+
+describe("previewSection", () => {
+  const twoSections = {
+    ...registration("aws-connectors-role"),
+    spec: {
+      ...registration("aws-connectors-role").spec,
+      sections: ["encryption-key", "connectors-permissions"],
+    },
+  };
+  const claim = { ...orders, plugins: [] };
+
+  it("takes the section of the selection of the claim", () => {
+    expect(
+      previewSection(
+        {
+          ...claim,
+          plugins: [
+            {
+              section: "connectors-permissions",
+              registration: "aws-connectors-role",
+            },
+          ],
+        },
+        twoSections,
+        sources.sections,
+        {
+          sections: { "encryption-key": { allowed: ["aws-connectors-role"] } },
+        },
+      )?.metadata.name,
+    ).toBe("connectors-permissions");
+  });
+
+  it("takes a section that allows the option when the claim does not select it", () => {
+    expect(
+      previewSection(claim, twoSections, sources.sections, {
+        sections: {
+          "connectors-permissions": { allowed: ["aws-connectors-role"] },
+        },
+      })?.metadata.name,
+    ).toBe("connectors-permissions");
+  });
+
+  it("gives no section when no section of the option applies to the claim", () => {
+    expect(
+      previewSection(
+        { ...claim, kind: "CamundaManagementClusterClaim" },
+        twoSections,
+        sources.sections,
+        {},
+      ),
+    ).toBeUndefined();
   });
 });

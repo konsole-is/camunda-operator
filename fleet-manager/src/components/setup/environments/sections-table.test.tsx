@@ -197,4 +197,21 @@ describe("SectionsTable", () => {
     const spec = await save(actions);
     expect(spec.sections).toBeUndefined();
   });
+
+  it("shows at the row that a required section needs an allowed option, and blocks Review", () => {
+    const { previewChange } = renderEditor("staging", environmentFixtures());
+    const backups = row("Clusters", "Backup storage");
+    fireEvent.click(
+      within(backups).getByRole("checkbox", { name: "Required" }),
+    );
+    expect(
+      within(backups).getByText(
+        "A required section needs at least one allowed option.",
+      ),
+    ).toBeTruthy();
+    const review = screen.getByRole("button", { name: "Review" });
+    expect(review).toHaveProperty("disabled", true);
+    fireEvent.click(review);
+    expect(previewChange).not.toHaveBeenCalled();
+  });
 });
