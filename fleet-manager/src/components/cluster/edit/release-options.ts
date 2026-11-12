@@ -2,6 +2,7 @@ import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import type { Resource } from "@/lib/k8s/kinds";
 import { releaseAllowed, releaseMove } from "@/lib/policy";
+import { parseVersion } from "@/lib/policy/release";
 import type { BackupObject } from "../backups";
 import type { ClusterClaim } from "./cluster-edit";
 
@@ -82,12 +83,9 @@ export function releaseChoices(input: {
   return { options, ...(note && { note }) };
 }
 
+// A version that parseVersion cannot read is lower than every other.
 function compareVersions(a: string, b: string): number {
-  const parts = (v: string) => v.split(".").map((n) => Number(n) || 0);
-  const [x, y] = [parts(a), parts(b)];
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    const d = (x[i] ?? 0) - (y[i] ?? 0);
-    if (d !== 0) return d;
-  }
-  return 0;
+  const x = parseVersion(a) ?? [-1, -1, -1];
+  const y = parseVersion(b) ?? [-1, -1, -1];
+  return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
 }
