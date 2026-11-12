@@ -7,7 +7,7 @@ import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
 import { claimView } from "./claim";
-import { ClaimTab } from "./claim-tab";
+import { ClaimTab, type ClaimTabEdit } from "./claim-tab";
 
 afterEach(cleanup);
 
@@ -137,7 +137,10 @@ const CLAIM_REASONS = new Set([
   "Down",
 ]);
 
-function renderTab(claim: Resource<"CamundaClusterClaim">) {
+function renderTab(
+  claim: Resource<"CamundaClusterClaim">,
+  edit?: ClaimTabEdit,
+) {
   render(
     <ClaimTab
       view={claimView({
@@ -168,6 +171,7 @@ function renderTab(claim: Resource<"CamundaClusterClaim">) {
       })}
       stored={claim}
       now={now}
+      edit={edit}
     />,
   );
 }
@@ -342,5 +346,62 @@ describe("ClaimTab", () => {
     renderTab(MISSING_INPUT);
     const attachments = screen.getByRole("region", { name: "Attachments" });
     expect(within(attachments).getAllByText("Not attached")).toHaveLength(2);
+  });
+
+  it("says in Basics whether the claim suspends the cluster", () => {
+    renderTab(MISSING_INPUT);
+    const basics = screen.getByRole("region", { name: "Basics" });
+    expect(within(basics).getByText("Suspended")).toBeTruthy();
+    expect(within(basics).getByText("No")).toBeTruthy();
+    cleanup();
+    renderTab({
+      ...MISSING_INPUT,
+      spec: { ...MISSING_INPUT.spec, suspend: true },
+    });
+    expect(
+      within(screen.getByRole("region", { name: "Basics" })).getByText("Yes"),
+    ).toBeTruthy();
+  });
+
+  it("an edit panel shows in place of its read panel", () => {
+    renderTab(MISSING_INPUT, {
+      panels: {
+        release: <p>Release editor</p>,
+        "section:access": <p>Access editor</p>,
+      },
+    });
+    expect(
+      screen.queryByRole("region", { name: "Release and preset" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Access: Gateway" }),
+    ).toBeNull();
+    expect(screen.getByText("Release editor")).toBeTruthy();
+    expect(screen.getByText("Access editor")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Basics" })).toBeTruthy();
+  });
+
+  it("a read panel shows its action in its header", () => {
+    renderTab(MISSING_INPUT, {
+      actions: {
+        basics: <button>Edit basics</button>,
+        "section:access": <button>Edit access</button>,
+      },
+    });
+    const basics = screen.getByRole("region", { name: "Basics" });
+    expect(
+      within(basics).getByRole("button", { name: "Edit basics" }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "Access: Gateway" })).getByRole(
+        "button",
+        { name: "Edit access" },
+      ),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "Conditions" })).queryByRole(
+        "button",
+      ),
+    ).toBeNull();
   });
 });

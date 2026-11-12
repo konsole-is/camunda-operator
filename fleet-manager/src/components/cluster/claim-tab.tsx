@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { ConditionsTable } from "@/components/fleet/conditions-table";
 import { FieldState, FieldValue } from "@/components/fleet/field-state";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import {
   type ClaimView,
   storedYaml,
 } from "./claim";
+import type { ClaimPanel } from "./tabs";
 
 const PANEL =
   "flex flex-col gap-3 rounded-lg border border-border bg-panel p-4";
@@ -27,92 +28,124 @@ const HEADING = "font-heading text-base font-semibold";
 const NOTE = "block text-xs text-muted";
 
 /**
- * ClaimTab shows the claim of a cluster read only. view is claimView of
- * stored, and stored is the claim as the API server returns it, for Show
- * YAML. now is the time that the condition ages count to.
+ * ClaimTabEdit puts the Claim tab in edit. panels holds the edit panel that
+ * shows in place of the read panel of each name. actions holds the control,
+ * such as an Edit button, in the header of the read panel of each name. A
+ * section panel has the name of the id of its ClaimSection.
+ */
+export type ClaimTabEdit = {
+  panels?: Partial<Record<ClaimPanel, ReactNode>>;
+  actions?: Partial<Record<ClaimPanel, ReactNode>>;
+};
+
+/**
+ * ClaimTab shows the claim of a cluster. view is claimView of stored, and
+ * stored is the claim as the API server returns it, for Show YAML. now is
+ * the time that the condition ages count to. Without edit, the tab is read
+ * only. Conditions, Requests, and the YAML have no edit panel.
  */
 export function ClaimTab({
   view,
   stored,
   now,
+  edit,
 }: {
   view: ClaimView;
   stored: Resource<"CamundaClusterClaim">;
   now: string;
+  edit?: ClaimTabEdit;
 }) {
+  const panel = (name: ClaimPanel, read: (action: ReactNode) => ReactNode) =>
+    edit?.panels?.[name] ?? read(edit?.actions?.[name]);
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel label="Basics">
-          <Terms>
-            <Term label="Name" note={lockLabel({ reason: "atCreation" })}>
-              {view.name}
-            </Term>
-            <Term label="Namespace" note={lockLabel({ reason: "atCreation" })}>
-              {view.namespace}
-            </Term>
-            <Term
-              label="Environment"
-              note={lockLabel({ reason: "atCreation" })}
-            >
-              {view.environment ?? (
-                <span className="text-muted">No environment</span>
-              )}
-            </Term>
-          </Terms>
-        </Panel>
-        <Panel label="Release and preset">
-          <Terms>
-            <RefTerm label="Release" value={view.release} />
-            <Term label="Preset">{view.preset ?? "-"}</Term>
-            <RefTerm label="Platform config" value={view.platformConfig} />
-          </Terms>
-        </Panel>
+        {panel("basics", (action) => (
+          <Panel label="Basics" action={action}>
+            <Terms>
+              <Term label="Name" note={lockLabel({ reason: "atCreation" })}>
+                {view.name}
+              </Term>
+              <Term
+                label="Namespace"
+                note={lockLabel({ reason: "atCreation" })}
+              >
+                {view.namespace}
+              </Term>
+              <Term
+                label="Environment"
+                note={lockLabel({ reason: "atCreation" })}
+              >
+                {view.environment ?? (
+                  <span className="text-muted">No environment</span>
+                )}
+              </Term>
+              <Term label="Suspended">{view.suspend ? "Yes" : "No"}</Term>
+            </Terms>
+          </Panel>
+        ))}
+        {panel("release", (action) => (
+          <Panel label="Release and preset" action={action}>
+            <Terms>
+              <RefTerm label="Release" value={view.release} />
+              <Term label="Preset">{view.preset ?? "-"}</Term>
+              <RefTerm label="Platform config" value={view.platformConfig} />
+            </Terms>
+          </Panel>
+        ))}
       </div>
       {view.sections.map((s) => (
-        <SectionPanel key={`${s.section}/${s.registration}`} section={s} />
+        <Fragment key={s.id}>
+          {panel(s.id, (action) => (
+            <SectionPanel section={s} action={action} />
+          ))}
+        </Fragment>
       ))}
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel label="Attachments">
-          <Terms>
-            <Term label="Optimize">
-              {view.optimize ? (
-                <>
-                  {view.optimize.externalUrl ?? "Attached"}
-                  <span className={NOTE}>
-                    Auth config {view.optimize.managementAuthConfigRef}
-                  </span>
-                </>
-              ) : (
-                <span className="text-muted">Not attached</span>
-              )}
-            </Term>
-            <Term label="Backup schedule">
-              {view.backupSchedule ? (
-                <>
-                  <code className="rounded bg-panel-2 px-1 text-xs">
-                    {view.backupSchedule.schedule}
-                  </code>
-                  {retained(view.backupSchedule) && (
+        {panel("attachments", (action) => (
+          <Panel label="Attachments" action={action}>
+            <Terms>
+              <Term label="Optimize">
+                {view.optimize ? (
+                  <>
+                    {view.optimize.externalUrl ?? "Attached"}
                     <span className={NOTE}>
-                      {retained(view.backupSchedule)}
+                      Auth config {view.optimize.managementAuthConfigRef}
                     </span>
-                  )}
-                </>
-              ) : (
-                <span className="text-muted">Not attached</span>
-              )}
-            </Term>
-          </Terms>
-        </Panel>
-        <Panel label="Deletion policy">
-          <Terms>
-            <RefTerm
-              label="When the claim is deleted"
-              value={view.deletionPolicy}
-            />
-          </Terms>
-        </Panel>
+                  </>
+                ) : (
+                  <span className="text-muted">Not attached</span>
+                )}
+              </Term>
+              <Term label="Backup schedule">
+                {view.backupSchedule ? (
+                  <>
+                    <code className="rounded bg-panel-2 px-1 text-xs">
+                      {view.backupSchedule.schedule}
+                    </code>
+                    {retained(view.backupSchedule) && (
+                      <span className={NOTE}>
+                        {retained(view.backupSchedule)}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-muted">Not attached</span>
+                )}
+              </Term>
+            </Terms>
+          </Panel>
+        ))}
+        {panel("deletion", (action) => (
+          <Panel label="Deletion policy" action={action}>
+            <Terms>
+              <RefTerm
+                label="When the claim is deleted"
+                value={view.deletionPolicy}
+              />
+            </Terms>
+          </Panel>
+        ))}
       </div>
       <Panel label="Conditions">
         <ConditionsTable
@@ -129,24 +162,34 @@ export function ClaimTab({
   );
 }
 
-function Panel({
+/**
+ * Panel is one panel of the Claim tab. name is its accessible name, label
+ * by default. action shows at the end of its header.
+ */
+export function Panel({
   label,
   name = label,
+  action,
   children,
 }: {
   label: string;
   name?: string;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section aria-label={name} className={PANEL}>
-      <h2 className={HEADING}>{label}</h2>
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        <h2 className={HEADING}>{label}</h2>
+        {action}
+      </div>
       {children}
     </section>
   );
 }
 
-function Terms({ children }: { children: ReactNode }) {
+/** Terms holds the Term rows of a panel. */
+export function Terms({ children }: { children: ReactNode }) {
   return (
     <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
       {children}
@@ -154,7 +197,8 @@ function Terms({ children }: { children: ReactNode }) {
   );
 }
 
-function Term({
+/** Term is one labelled value of a panel. note shows under the value. */
+export function Term({
   label,
   note,
   children,
@@ -193,10 +237,16 @@ function retained(schedule: { completed?: number; failed?: number }) {
   return parts.length > 0 ? `Keeps ${parts.join(" and ")}` : undefined;
 }
 
-function SectionPanel({ section }: { section: ClaimSection }) {
+function SectionPanel({
+  section,
+  action,
+}: {
+  section: ClaimSection;
+  action: ReactNode;
+}) {
   const name = `${section.sectionLabel}: ${section.optionLabel}`;
   return (
-    <Panel label={section.sectionLabel} name={name}>
+    <Panel label={section.sectionLabel} name={name} action={action}>
       <p className="text-sm">
         <span className="font-medium">{section.optionLabel}</span>
         <span className={NOTE}>

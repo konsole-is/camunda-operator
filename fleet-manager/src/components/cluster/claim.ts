@@ -2,6 +2,10 @@ import { stringify } from "yaml";
 import type { ConditionRow } from "@/components/fleet/conditions-table";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import { fleetCamundaClusterClaimConditionTypes } from "@/generated/conditions";
+import {
+  sectionComponentId,
+  type SectionComponentId,
+} from "@/lib/claims/sections";
 import { CLAIM_PLACEMENT, placementOf } from "@/lib/conditions";
 import { type ClusterField, parameterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
@@ -9,10 +13,12 @@ import type { Merged } from "@/lib/merge";
 
 /**
  * ClaimSection is one selection of the claim: a section with the option
- * picked for it. A label falls back to the object name when the
- * PluginSection or PluginRegistration is not found.
+ * picked for it. id is the sectionComponentId of the selection. A label
+ * falls back to the object name when the PluginSection or
+ * PluginRegistration is not found.
  */
 export type ClaimSection = {
+  id: SectionComponentId;
   section: string;
   sectionLabel: string;
   registration: string;
@@ -34,12 +40,13 @@ export type ClaimRequestRow = {
 
 /**
  * ClaimView is the claim as the Claim tab reads it. environment is
- * undefined when the status names none.
+ * undefined when the status names none. suspend is spec.suspend.
  */
 export type ClaimView = {
   name: string;
   namespace: string;
   environment?: string;
+  suspend: boolean;
   preset?: string;
   release: ClaimRef;
   platformConfig: ClaimRef;
@@ -82,7 +89,15 @@ export function claimView(input: {
     sections,
     registrations,
   });
-  const selections = (spec.plugins ?? []).map((s): ClaimSection => ({
+  const plugins = spec.plugins ?? [];
+  const many = (name: string) => {
+    const known = sectionOf(name);
+    return known
+      ? known.spec.selection === "Many"
+      : plugins.filter((p) => p.section === name).length > 1;
+  };
+  const selections = plugins.map((s): ClaimSection => ({
+    id: sectionComponentId(s, many(s.section)),
     section: s.section,
     sectionLabel: sectionLabel(s.section),
     registration: s.registration,
@@ -114,6 +129,7 @@ export function claimView(input: {
       (input.environments.find((e) => e.metadata?.name === environmentName)
         ?.spec?.displayName ||
         environmentName),
+    suspend: spec.suspend === true,
     preset: spec.presetRef,
     release: ref(spec.releaseRef, cluster.spec.releaseRef),
     platformConfig: ref(spec.platformConfigRef, cluster.spec.platformConfigRef),
