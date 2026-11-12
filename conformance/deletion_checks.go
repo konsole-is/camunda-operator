@@ -90,8 +90,8 @@ var deletionChecks = []Check{
 	},
 	{
 		ID: DeleteOrphan,
-		Description: "With the deletion policy Orphan, each row with onOrphan Kept stays with both writer " +
-			"labels and no owner reference to the request, and each row with onOrphan Deleted is gone.",
+		Description: "With the deletion policy Orphan, each row with onOrphan Kept stays, with both writer " +
+			"labels and no owner reference to the request. Each row with onOrphan Deleted is gone.",
 		run: checkDeleteOrphan,
 	},
 	{

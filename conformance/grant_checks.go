@@ -63,8 +63,8 @@ const (
 var grantChecks = []Check{
 	{
 		ID: GrantMatch,
-		Description: "Each grant template whose required inputs have values has one Grant of the request, with " +
-			"the labels, the owner, the format, and the fragment of the filled-in template.",
+		Description: "Each grant template whose required inputs have values has one Grant of the request. The " +
+			"Grant has the labels, the owner, the format, and the fragment of the filled-in template.",
 		run: checkGrantMatch,
 	},
 	{
