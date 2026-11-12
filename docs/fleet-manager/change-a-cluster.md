@@ -94,7 +94,7 @@ Each storage and access option has its own panel. The option shows **Chosen at c
 
 **Change schedule** on the **Backups** tab opens the **Attachments** panel.
 
-**Deletion policy** decides if the resources of the storage and access options stay when the claim is deleted. **Keep the resources** writes `Orphan`, and **Delete the resources** writes `Delete`. The policy that the claim gets without a choice has the word **Default**. When an option always deletes what it made, **Keep the resources** is disabled, and the panel shows that option with **Always deleted**.
+**Deletion policy** decides if the resources of the storage and access options stay when the claim is deleted. **Keep the resources** writes `Orphan`, and **Delete the resources** writes `Delete`. The policy that the claim gets without a choice has the word **Default**. When an option always deletes what it made, **Keep the resources** is disabled. The panel shows that option with **Always deleted**.
 
 ## Save or discard the changes
 
