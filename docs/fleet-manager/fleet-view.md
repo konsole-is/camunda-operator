@@ -115,8 +115,9 @@ Three filters apply to every table of clusters on the tab:
 
 - **Search clusters** keeps the clusters whose name holds the text. Upper case and lower case are the same.
 - **Namespace** keeps the clusters of one namespace.
-- **Status** with **Not ready** keeps the clusters whose `Ready` condition is not `True`, also a cluster that has no status yet.
-- **Status** with **With warnings** keeps the clusters that have at least one warning.
+- **Status** keeps the clusters of one state:
+    - **Not ready** keeps the clusters whose `Ready` condition is not `True`, also a cluster that has no status yet.
+    - **With warnings** keeps the clusters that have at least one warning.
 
 The filters do not apply to the management planes. When no cluster passes the filters, the page says "No cluster matches the search and the filters."
 
