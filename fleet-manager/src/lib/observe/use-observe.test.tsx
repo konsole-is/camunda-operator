@@ -8,6 +8,7 @@ import {
   useMetrics,
   usePartitions,
   usePodUsage,
+  useWarnings,
 } from "./use-observe";
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -216,6 +217,37 @@ describe("useMetrics", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result.current).toBeUndefined();
+  });
+});
+
+describe("useWarnings", () => {
+  const warnings = { clusters: {}, missing: ["metrics-server"] };
+
+  it("polls the warnings route", async () => {
+    const fetchMock = stubFetch(async () => Response.json({ warnings }));
+
+    const { result } = renderHook(() => useWarnings(), { wrapper });
+
+    await waitFor(() => expect(result.current).toEqual(warnings));
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/warnings");
+  });
+
+  it("is unavailable when the route refuses", async () => {
+    stubFetch(async () => new Response("no", { status: 502 }));
+
+    const { result } = renderHook(() => useWarnings(), { wrapper });
+
+    await waitFor(() => expect(result.current).toBe("unavailable"));
+  });
+
+  it("is unavailable when the fetch fails", async () => {
+    stubFetch(async () => {
+      throw new TypeError("network");
+    });
+
+    const { result } = renderHook(() => useWarnings(), { wrapper });
+
+    await waitFor(() => expect(result.current).toBe("unavailable"));
   });
 });
 

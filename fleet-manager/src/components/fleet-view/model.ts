@@ -17,7 +17,14 @@ import type { Resource } from "@/lib/k8s/kinds";
 import type { RefKey } from "@/lib/write/types";
 import { CLAIM_LABEL, isManaged } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
+import type { Unavailable } from "@/lib/observe/types";
 import { byCodeUnit, environmentNameOf } from "@/lib/policy";
+import {
+  type PodWarnings,
+  type Warning,
+  backupWarning,
+  requestWarnings,
+} from "@/lib/warnings";
 
 /** FleetSources are the lists that the fleet view follows. */
 export type FleetSources = {
@@ -76,6 +83,7 @@ export type WaitingRow = {
 };
 
 const STORAGE_DOT = "Secondary storage";
+const CLUSTER_ROW = "cluster/";
 
 /**
  * componentDots returns the dots of cluster: one for each Camunda process
@@ -187,7 +195,7 @@ export function clusterRows(sources: FleetSources, now: string): ClusterRow[] {
       now,
     );
     return {
-      id: `cluster/${key(namespace, name)}`,
+      id: `${CLUSTER_ROW}${key(namespace, name)}`,
       namespace,
       name,
       environment: environment(namespace),
@@ -342,7 +350,7 @@ export function groupRows(
   return environment ? [groupOf(environment)] : [];
 }
 
-export type StatusFilter = "all" | "not-ready";
+export type StatusFilter = "all" | "not-ready" | "with-warnings";
 
 /** RowFilter is the filter bar: search matches the name, and namespace "" is every namespace. */
 export type RowFilter = {
@@ -353,21 +361,47 @@ export type RowFilter = {
 
 /**
  * filterRows keeps the rows whose name holds search, without case and
- * without the spaces around search, that are in namespace, and, for
- * "not-ready", for which isReady is false.
+ * without the spaces around search, that are in namespace, for
+ * "not-ready" for which isReady is false, and for "with-warnings" for
+ * which hasWarnings is true. Without hasWarnings, "with-warnings" keeps no
+ * row.
  */
 export function filterRows<R extends { name: string; namespace: string }>(
   rows: readonly R[],
   filter: RowFilter,
   isReady: (row: R) => boolean,
+  hasWarnings: (row: R) => boolean = () => false,
 ): R[] {
   const search = filter.search.trim().toLowerCase();
   return rows.filter(
     (row) =>
       row.name.toLowerCase().includes(search) &&
       (filter.namespace === "" || row.namespace === filter.namespace) &&
-      (filter.status !== "not-ready" || !isReady(row)),
+      (filter.status !== "not-ready" || !isReady(row)) &&
+      (filter.status !== "with-warnings" || hasWarnings(row)),
   );
+}
+
+/**
+ * rowWarnings returns the warnings of row: the pod warnings of its
+ * CamundaCluster, then the backup and request warnings. A claim without a
+ * cluster has no pod warnings, and neither has a row while pods is
+ * undefined or "unavailable".
+ */
+export function rowWarnings(
+  row: ClusterRow,
+  pods: PodWarnings | Unavailable | undefined,
+): Warning[] {
+  const own =
+    pods && pods !== "unavailable" && row.id.startsWith(CLUSTER_ROW)
+      ? (pods.clusters[key(row.namespace, row.name)] ?? [])
+      : [];
+  const backup = backupWarning(row.lastBackup);
+  return [
+    ...own,
+    ...(backup ? [backup] : []),
+    ...requestWarnings(row.sections),
+  ];
 }
 
 /** rowNamespaces returns the namespaces of rows, each once, sorted. */
