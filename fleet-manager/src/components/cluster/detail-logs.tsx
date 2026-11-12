@@ -26,8 +26,6 @@ export type ControllerLogs = {
   request: { namespace: string; name: string };
 };
 
-export { MAX_LOG_STREAMS };
-
 /** LOG_TAIL_LINES is the number of earlier lines that each stream starts with. */
 export const LOG_TAIL_LINES = 200;
 

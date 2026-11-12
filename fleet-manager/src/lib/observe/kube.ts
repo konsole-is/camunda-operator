@@ -9,8 +9,6 @@ import type { PodUsage, Unavailable } from "./types";
 
 const TIMEOUT_MS = 10_000;
 
-export type { EventRef } from "./events";
-
 /** PodMetrics is a list of metrics.k8s.io PodMetrics, with the fields that podUsageFrom reads. */
 export type PodMetrics = {
   items?: {

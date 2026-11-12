@@ -2,8 +2,8 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parseLogLine } from "@/lib/observe/logs";
-import { DetailLogs, LOG_TAIL_LINES, MAX_LOG_STREAMS } from "./detail-logs";
+import { MAX_LOG_STREAMS, parseLogLine } from "@/lib/observe/logs";
+import { DetailLogs, LOG_TAIL_LINES } from "./detail-logs";
 
 const live = vi.hoisted(() => ({
   sources: [] as unknown[][],
