@@ -33,15 +33,20 @@ const preset = (name: string) =>
     spec: { cluster: {} },
   }) as unknown as Resource<"CamundaClusterPreset">;
 
-/** StoryCluster changes the cluster and the claim of a story. */
+/**
+ * StoryCluster changes the cluster and the claim of a story. version is the
+ * reported version, none when empty. suspended suspends both.
+ */
 export type StoryCluster = {
   version?: string;
+  suspended?: boolean;
   claimSpec?: Record<string, unknown>;
   over?: Partial<ClusterSlotContext>;
 };
 
 function contextOf({
   version = "8.9.3",
+  suspended = false,
   claimSpec = {},
   over = {},
 }: StoryCluster): ClusterSlotContext {
@@ -50,6 +55,7 @@ function contextOf({
     presetRef: "medium",
     releaseRef: "camunda-8-9-3",
     zeebe: { replicas: 3 },
+    ...(suspended && { suspend: true }),
   };
   const cluster = {
     apiVersion: "core.camunda.io/v1",
@@ -66,6 +72,7 @@ function contextOf({
       presetRef: "medium",
       releaseRef: "camunda-8-9-3",
       cluster: { zeebe: { replicas: 3 } },
+      ...(suspended && { suspend: true }),
       ...claimSpec,
     },
     status: { environment: "prod" },

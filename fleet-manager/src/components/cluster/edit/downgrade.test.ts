@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Step } from "@/lib/fields";
+import type { Resource } from "@/lib/k8s/kinds";
 import { openSession, setValue, type Session } from "@/lib/session";
 import {
   claim,
@@ -15,7 +16,10 @@ const suspend: Step[] = [{ field: "spec" }, { field: "suspend" }];
 
 function atVersion(version: string | undefined) {
   const c = cluster();
-  return { ...c, status: version ? { management: { version } } : {} };
+  return {
+    ...c,
+    status: version ? { management: { version } } : {},
+  } as Resource<"CamundaCluster">;
 }
 
 function sessionOf(

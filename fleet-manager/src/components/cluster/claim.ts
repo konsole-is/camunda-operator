@@ -97,7 +97,10 @@ export function claimView(input: {
       : plugins.filter((p) => p.section === name).length > 1;
   };
   const selections = plugins.map((s): ClaimSection => ({
-    id: sectionComponentId(s, many(s.section)),
+    id: sectionComponentId(
+      { section: s.section, registration: s.registration },
+      many(s.section),
+    ),
     section: s.section,
     sectionLabel: sectionLabel(s.section),
     registration: s.registration,

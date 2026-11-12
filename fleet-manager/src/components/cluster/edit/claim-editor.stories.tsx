@@ -23,6 +23,29 @@ export const claimEditorStories: Story[] = [
     ),
   },
   {
+    component: "Claim editor",
+    name: "Release with a downgrade",
+    render: () => (
+      <ClaimEditorStory
+        panel="release"
+        changes={[
+          [[{ field: "spec" }, { field: "releaseRef" }], "camunda-8-9-1"],
+          [[{ field: "spec" }, { field: "allowVersionDowngrade" }], "8.9.1"],
+        ]}
+      />
+    ),
+  },
+  {
+    component: "Claim editor",
+    name: "Release while suspended",
+    render: () => (
+      <ClaimEditorStory
+        panel="release"
+        cluster={{ version: "", suspended: true }}
+      />
+    ),
+  },
+  {
     component: "WaitingPanel",
     name: "A push of this page",
     render: () => (

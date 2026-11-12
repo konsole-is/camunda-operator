@@ -13,6 +13,7 @@ import { type ClaimPanel, claimPanelOf } from "../tabs";
 import { BasicsPanel } from "./basics-panel";
 import { changeInputOf } from "./change-input";
 import { type ClusterClaim, useClusterEdit } from "./cluster-edit";
+import { ReleasePanel } from "./release-panel";
 
 // EditDef is one panel of the Claim tab that has an editor. label is the
 // heading, name the accessible name of the panel.
@@ -67,7 +68,7 @@ export function ClaimEditorPanels({
 
   const panels: ClaimTabEdit["panels"] = {};
   const actions: ClaimTabEdit["actions"] = {};
-  for (const def of editDefs(view)) {
+  for (const def of editDefs(context, view)) {
     const focused = focus?.panel === def.panel ? focus.on : undefined;
     if (def.panel === open)
       panels[def.panel] = (
@@ -112,13 +113,19 @@ export function ClaimEditorPanels({
 // panel, or to its Edit button.
 type Focus = "panel" | "button";
 
-function editDefs(view: ClaimView): EditDef[] {
+function editDefs(context: ClusterSlotContext, view: ClaimView): EditDef[] {
   return [
     {
       panel: "basics",
       label: "Basics",
       name: "Basics",
       render: () => <BasicsPanel view={view} />,
+    },
+    {
+      panel: "release",
+      label: "Release and preset",
+      name: "Release and preset",
+      render: () => <ReleasePanel context={context} />,
     },
   ];
 }
