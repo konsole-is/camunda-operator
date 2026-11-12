@@ -35,10 +35,11 @@ const MANAGEMENT_DATABASE_SERVER = "management-database-server";
  * option, the access option with the URLs of the running apps, the other
  * sections of planeSectionViews, the deletion choice of planeDeletion, and
  * the contract name. A section that the step showed before restores its
- * selections from draft.storage; any other preselects its default. Each section reports its selections to
- * draft.storage and its errors to onSectionErrors. A pick of a section that
- * no PluginSection holds any more gets a button that empties it and its
- * errors. objects are the source kinds of builtinOption, in every namespace.
+ * selections from draft.storage; any other preselects its default. Each
+ * section reports its selections to draft.storage and its errors to
+ * onSectionErrors. A pick of a section that no PluginSection holds any more
+ * gets a button that empties it and its errors. objects are the source
+ * kinds of builtinOption, in every namespace.
  */
 export function StorageAccessStep({
   draft,

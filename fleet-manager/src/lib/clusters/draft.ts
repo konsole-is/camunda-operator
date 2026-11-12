@@ -171,12 +171,12 @@ export function releaseOf(
 
 /**
  * clusterClaimOf returns the claim that draft writes. releaseRef is
- * releaseOf, set when one is known. platformConfigRef is set only when the pick differs from
- * spec.platformConfigRef of environment. plugins are draftSelections, left
- * out when empty. cluster and attachments are copied when the draft sets
- * them. deletionPolicy is deletion.policy, set only when it differs from
- * deletion.defaultPolicy. The deletion pick of draft counts only through
- * deletion.
+ * releaseOf, set when one is known. platformConfigRef is set only when the
+ * pick differs from spec.platformConfigRef of environment. plugins are
+ * draftSelections, left out when empty. cluster and attachments are copied
+ * when the draft sets them. deletionPolicy is deletion.policy, set only when
+ * it differs from deletion.defaultPolicy. The deletion pick of draft counts
+ * only through deletion.
  */
 export function clusterClaimOf(
   draft: ClusterDraft,
