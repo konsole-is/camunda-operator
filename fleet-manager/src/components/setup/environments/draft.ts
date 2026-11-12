@@ -188,11 +188,14 @@ export function createChange(draft: EnvironmentDraft): Change {
  * resourceVersion of live as its precondition, and with force, so a field
  * that kubectl apply set changes too. When the edit turns namespace
  * creation off, the spec holds namespaceCreation.allowed false. It leaves
- * out the last applied file of kubectl.
+ * out the last applied file of kubectl. existing names the PluginSections
+ * and PluginRegistrations that exist: an edit that removes the entry of
+ * one that does not exist leaves it out of the spec.
  */
 export function updateChange(
   live: Environment,
   draft: EnvironmentDraft,
+  existing: { sections: readonly string[]; registrations: readonly string[] },
 ): Change {
   const name = live.metadata.name ?? "";
   const { labels, annotations } = live.metadata;
@@ -209,7 +212,7 @@ export function updateChange(
       ...(labels && { labels }),
       ...(Object.keys(kept).length > 0 && { annotations: kept }),
     },
-    spec: updatedSpec(live, draft),
+    spec: updatedSpec(live, draft, existing),
   };
   return {
     intent: `Change the environment ${name}`,
@@ -225,13 +228,15 @@ export function updateChange(
 function updatedSpec(
   live: Environment,
   draft: EnvironmentDraft,
+  existing: { sections: readonly string[]; registrations: readonly string[] },
 ): Environment["spec"] {
   const spec = specOf(draft);
   if (live.spec.namespaceCreation?.allowed && !spec.namespaceCreation?.allowed)
     spec.namespaceCreation = { ...spec.namespaceCreation, allowed: false };
   for (const [section, policy] of Object.entries(live.spec.sections ?? {})) {
     const edited = own(spec.sections ?? {}, section);
-    if (policy.required && edited && !edited.required)
+    const kept = edited || existing.sections.includes(section);
+    if (policy.required && kept && !edited?.required)
       spec.sections = setEntry(spec.sections, section, {
         ...edited,
         required: false,
@@ -245,7 +250,8 @@ function updatedSpec(
         own(spec.parameters ?? {}, registration) ?? {},
         parameter,
       );
-      if (!policy.claimEditable || !edited || edited.claimEditable) continue;
+      const kept = edited || existing.registrations.includes(registration);
+      if (!policy.claimEditable || !kept || edited?.claimEditable) continue;
       spec.parameters = setEntry(
         spec.parameters,
         registration,

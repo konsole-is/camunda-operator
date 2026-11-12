@@ -16,6 +16,8 @@ vi.mock("@/lib/write/writer", () => ({ getWriter: vi.fn() }));
 const { namespaceLabelChangeSchema } = await import("@/lib/write/run-change");
 
 const NEW = { isNew: true, taken: [] };
+// MISSING says that no PluginSection and no PluginRegistration exists.
+const MISSING = { sections: [], registrations: [] };
 
 function draft(
   spec: Environment["spec"] = {},
@@ -354,7 +356,7 @@ describe("the changes", () => {
       displayName: "Stage",
       presets: { camundaCluster: [] },
     });
-    const change = updateChange(live, edited);
+    const change = updateChange(live, edited, MISSING);
     expect(change.apply).toHaveLength(1);
     expect(change.apply[0].metadata.labels).toEqual(live.metadata.labels);
     expect(change.apply[0].spec).toEqual(specOf(edited));
@@ -377,7 +379,8 @@ describe("the changes", () => {
     const off = draftOf(on);
     off.spec.sections = { "backup-storage": { allowed: ["rustfs"] } };
     expect(
-      (updateChange(on, off).apply[0].spec as Environment["spec"]).sections,
+      (updateChange(on, off, MISSING).apply[0].spec as Environment["spec"])
+        .sections,
     ).toEqual({
       "backup-storage": { required: false, allowed: ["rustfs"] },
     });
@@ -396,13 +399,30 @@ describe("the changes", () => {
     const off = draftOf(on);
     off.spec.parameters = { rustfs: { tier: { value: "gold" } } };
     expect(
-      (updateChange(on, off).apply[0].spec as Environment["spec"]).parameters,
+      (updateChange(on, off, MISSING).apply[0].spec as Environment["spec"])
+        .parameters,
     ).toEqual({
       rustfs: { tier: { value: "gold", claimEditable: false } },
     });
   });
 
-  it("updateChange keeps out a section and an option that the edit removes", () => {
+  it("updateChange sends claimEditable false for the last policy of an option that exists", () => {
+    const on: Environment = {
+      ...live,
+      spec: { parameters: { rustfs: { tier: { claimEditable: true } } } },
+    };
+    const off = draftOf(on);
+    off.spec.parameters = undefined;
+    const spec = updateChange(on, off, {
+      sections: [],
+      registrations: ["rustfs"],
+    }).apply[0].spec as Environment["spec"];
+    expect(spec.parameters).toEqual({
+      rustfs: { tier: { claimEditable: false } },
+    });
+  });
+
+  it("updateChange keeps out a section and an option that do not exist when the edit removes them", () => {
     const on: Environment = {
       ...live,
       spec: {
@@ -413,7 +433,8 @@ describe("the changes", () => {
     const off = draftOf(on);
     off.spec.sections = undefined;
     off.spec.parameters = undefined;
-    const spec = updateChange(on, off).apply[0].spec as Environment["spec"];
+    const spec = updateChange(on, off, MISSING).apply[0]
+      .spec as Environment["spec"];
     expect(spec.sections).toBeUndefined();
     expect(spec.parameters).toBeUndefined();
   });
@@ -425,7 +446,7 @@ describe("the changes", () => {
     };
     const off = draftOf(on);
     off.spec.namespaceCreation = { allowed: false };
-    expect(updateChange(on, off).apply[0].spec).toMatchObject({
+    expect(updateChange(on, off, MISSING).apply[0].spec).toMatchObject({
       namespaceCreation: { allowed: false },
     });
   });
@@ -442,7 +463,8 @@ describe("the changes", () => {
       },
     };
     expect(
-      updateChange(applied, draftOf(applied)).apply[0].metadata.annotations,
+      updateChange(applied, draftOf(applied), MISSING).apply[0].metadata
+        .annotations,
     ).toEqual({ note: "kept" });
   });
 

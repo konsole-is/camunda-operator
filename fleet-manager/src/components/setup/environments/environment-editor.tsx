@@ -374,7 +374,15 @@ export function EnvironmentEditor({
               onReview={() => {
                 const change = isNew
                   ? createChange(draft)
-                  : base && updateChange(base, draft);
+                  : base &&
+                    updateChange(base, draft, {
+                      sections: sources.sections.map(
+                        (x) => x.metadata.name ?? "",
+                      ),
+                      registrations: sources.registrations.map(
+                        (x) => x.metadata.name ?? "",
+                      ),
+                    });
                 if (change) editor.review({ change, kind: "save" });
               }}
             />
