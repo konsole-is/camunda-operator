@@ -281,8 +281,7 @@ function effectiveSelection(
 
 /**
  * planeStorageDraft returns the storage part of draft in the shape of the
- * draft checks. objects are the source kinds of builtinOption, in every
- * namespace. Without them, the config names are not checked.
+ * draft checks, with objects, the source kinds of builtinOption.
  */
 export function planeStorageDraft(
   draft: PlaneDraft,
@@ -372,8 +371,8 @@ export function contractNameErrors(
  * When there are none, it returns resolvedErrors of the plugins of the
  * claim, so a value that the claim controller would refuse blocks the
  * step too. With objects, the source kinds of builtinOption in every
- * namespace, each config name of a request must be in the namespace of
- * draft.
+ * namespace, each preset and config that a request names must exist, a
+ * config in the namespace of draft.
  */
 export function storageErrors(
   draft: PlaneDraft,

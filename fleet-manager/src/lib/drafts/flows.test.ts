@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
 import type {
   PluginRegistration,
@@ -94,6 +95,13 @@ const REGISTRATIONS = [
       },
     },
   }),
+  registration("elasticsearch", "New Elasticsearch cluster", {
+    controller: { name: "camunda-operator", version: "0.0.0" },
+    parameters: {
+      type: "object",
+      properties: { preset: { type: "string", title: "Preset" } },
+    },
+  }),
   registration("server", "New PostgreSQL server", {
     sections: ["management-database"],
   }),
@@ -112,6 +120,7 @@ function environment(
         "secondary-storage": { allowed },
         "management-database": { allowed: ["server"] },
       },
+      presets: { elasticsearchCluster: ["small", "large"] },
       parameters: parameters as Environment["spec"]["parameters"],
     },
   };
@@ -135,6 +144,15 @@ type Case = {
   objects?: BuiltinObjects;
   refusal: unknown[];
 };
+
+function preset(name: string): ElasticsearchClusterPreset {
+  return {
+    apiVersion: "core.camunda.io/v1",
+    kind: "ElasticsearchClusterPreset",
+    metadata: { name },
+    spec: { cluster: { replicas: 1 } },
+  } as ElasticsearchClusterPreset;
+}
 
 const NAMED = {
   "existing-secondary-storage": { name: { claimEditable: true } },
@@ -193,6 +211,23 @@ const CASES: Case[] = [
     objects: ORDERS_GONE,
     refusal: [
       "The SecondaryStorageConfig orders that the policy gives Name is not in team-a. Ask your admin to change the policy of the Environment.",
+    ],
+  },
+  {
+    name: "a preset behind an Environment alias that was deleted",
+    pick: { registration: "elasticsearch", parameters: { preset: "fast" } },
+    allowed: ["elasticsearch"],
+    parameters: {
+      elasticsearch: {
+        preset: {
+          claimEditable: true,
+          allowed: [{ name: "fast", label: "Fast", value: "small" }],
+        },
+      },
+    },
+    objects: { ElasticsearchClusterPreset: [preset("large")] },
+    refusal: [
+      "Pick another ElasticsearchClusterPreset for Preset. small does not exist.",
     ],
   },
   {

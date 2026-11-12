@@ -1036,6 +1036,28 @@ describe("storageErrors and a live choice that is gone", () => {
     ]);
   });
 
+  it("refuses a preset that a locked policy value gives once the preset is deleted", () => {
+    const d = draft({
+      storage: { "management-database": [database] },
+    });
+    const c = live({
+      parameters: {
+        "management-database-server": { preset: { value: "small" } },
+      },
+      presets: { databaseServer: ["small", "large"] },
+    });
+    expect(
+      errorsOf(d, c, {
+        DatabaseServerPreset: [preset("small"), preset("large")],
+      }),
+    ).toEqual([]);
+    expect(errorsOf(d, c, { DatabaseServerPreset: [preset("large")] })).toEqual(
+      [
+        "The DatabaseServerPreset small that the policy gives Preset does not exist. Ask your admin to change the policy of the Environment.",
+      ],
+    );
+  });
+
   it("refuses a policy value that its schema refuses", () => {
     const d = draft({
       storage: {

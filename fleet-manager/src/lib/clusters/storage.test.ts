@@ -560,6 +560,34 @@ describe("storageErrors and a live list that changed after the pick", () => {
     ]);
   });
 
+  it("refuses a preset that an allowed name of the Environment gives once the preset is deleted", () => {
+    const data = (presets: ElasticsearchClusterPreset[]) =>
+      dataOf(
+        {
+          presets: { elasticsearchCluster: ["small", "large"] },
+          parameters: {
+            elasticsearch: {
+              preset: {
+                claimEditable: true,
+                allowed: [
+                  { name: "small-option", label: "Small", value: "small" },
+                ],
+              },
+            },
+          },
+        },
+        { ElasticsearchClusterPreset: presets },
+      );
+    const draft = picking("elasticsearch", { preset: "small-option" });
+
+    expect(
+      storageErrors(draft, data([preset("small"), preset("large")]), {}, []),
+    ).toEqual([]);
+    expect(storageErrors(draft, data([preset("large")]), {}, [])).toEqual([
+      "Pick another ElasticsearchClusterPreset for Preset. small does not exist.",
+    ]);
+  });
+
   it("refuses a locked policy value that the schema of its registration refuses", () => {
     const locked = (replicas: number) =>
       dataOf(

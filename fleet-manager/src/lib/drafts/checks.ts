@@ -22,8 +22,8 @@ import { type ValidationError, validate } from "@/lib/schema";
  * section by section name, as the storage step last reported them: a
  * section that has a key was shown, and an empty list is a picked empty
  * option. namespace is the namespace of the claim. objects are the source
- * kinds of builtinOption, in every namespace. Without them, no config name
- * of a request is checked.
+ * kinds of builtinOption, in every namespace. A kind that objects does not
+ * hold is not checked against the names of a request.
  */
 export type StorageDraft = {
   kind: ClaimKind;
@@ -213,12 +213,12 @@ export function valueErrors(
 /**
  * resolvedErrors returns the errors of the requests that selections, the
  * plugins of the claim, resolve to under draft.environment, as the claim
- * controller finds them: each config name of a built-in request that is
- * not in draft.namespace, then the first refusal of checkAllowed, then
- * each request whose parameters, with those of controllerParameters, the
- * schema of its registration refuses. views give the words of a config
- * name: one that a claim can pick in views asks for another pick, any
- * other asks for the admin. The messages of checkAllowed are its own, so
+ * controller finds them: each preset or config that a built-in request
+ * names and that is not there (a config must be in draft.namespace), then
+ * the first refusal of checkAllowed, then each request whose parameters,
+ * with those of controllerParameters, the schema of its registration
+ * refuses. views give the words of a missing object: one that a claim can
+ * pick in views asks for another pick, any other asks for the admin. The messages of checkAllowed are its own, so
  * a flow runs this after draftErrors passes.
  */
 export function resolvedErrors(
@@ -249,18 +249,19 @@ export function resolvedErrors(
       : "error" in allowed
         ? [allowed.error]
         : schemaErrors(draft, requests, controllerParameters);
-  return [...missingConfigErrors(draft, views, requests), ...policy];
+  return [...missingObjectErrors(draft, views, requests), ...policy];
 }
 
-// The kinds of BUILTIN_OPTIONS that live in the namespace of the claim. The
-// claim controller waits for each name of a request.
-const CONFIG_KINDS = [
-  "SecondaryStorageConfig",
-  "ObjectStorageConfig",
-  "DatabaseConfig",
-] as const;
+// The kinds of BUILTIN_OPTIONS that are cluster-scoped. Any other kind lives
+// in the namespace of the claim.
+const CLUSTER_KINDS: readonly string[] = [
+  "ElasticsearchClusterPreset",
+  "DatabaseServerPreset",
+];
 
-function missingConfigErrors(
+// The built-in controller waits for, or fails on, each object that a
+// request names and that does not exist.
+function missingObjectErrors(
   draft: StorageDraft,
   views: readonly SectionView[],
   requests: readonly RequestParameters[],
@@ -275,32 +276,33 @@ function missingConfigErrors(
     if (!entry) return [];
     return Object.entries(entry.lists).flatMap(([parameter, kind]) => {
       const name = request.parameters?.[parameter];
+      const clustered = CLUSTER_KINDS.includes(kind);
       if (
-        !(CONFIG_KINDS as readonly string[]).includes(kind) ||
+        !Object.hasOwn(objects, kind) ||
         typeof name !== "string" ||
         name === "" ||
-        (objects[kind as (typeof CONFIG_KINDS)[number]] ?? []).some(
+        (objects[kind] ?? []).some(
           (o) =>
-            o.metadata?.namespace === namespace && o.metadata?.name === name,
+            o.metadata?.name === name &&
+            (clustered || o.metadata?.namespace === namespace),
         )
       ) {
         return [];
       }
+      const where = clustered ? "does not exist" : `is not in ${namespace}`;
       const shown = views
         .find((v) => v.name === request.section)
         ?.options.find((o) => o.registration === request.registration)
         ?.parameters.find((p) => p.name === parameter);
       if (shown?.claimEditable) {
-        return [
-          `Pick another ${kind} for ${shown.label}. ${name} is not in ${namespace}.`,
-        ];
+        return [`Pick another ${kind} for ${shown.label}. ${name} ${where}.`];
       }
       const label =
         claimEditable(registration, draft.environment).find(
           (p) => p.name === parameter,
         )?.label ?? parameter;
       return [
-        `The ${kind} ${name} that the policy gives ${label} is not in ${namespace}. Ask your admin to change the policy of the Environment.`,
+        `The ${kind} ${name} that the policy gives ${label} ${where}. Ask your admin to change the policy of the Environment.`,
       ];
     });
   });
