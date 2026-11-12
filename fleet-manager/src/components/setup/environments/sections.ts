@@ -184,3 +184,14 @@ export function withSectionPolicy(
   if (Object.keys(sections).length === 0) delete next.sections;
   return next;
 }
+
+/** unknownSections returns the names of spec.sections that no PluginSection of sections has, sorted. */
+export function unknownSections(
+  sections: readonly PluginSection[],
+  spec: Spec,
+): string[] {
+  const known = new Set(sections.map((s) => s.metadata.name ?? ""));
+  return Object.keys(spec.sections ?? {})
+    .filter((name) => !known.has(name))
+    .sort(byCodeUnit);
+}

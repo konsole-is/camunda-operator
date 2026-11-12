@@ -126,6 +126,23 @@ export const environmentStories: Story[] = [
     ),
   },
   {
+    component: "EnvironmentEditor",
+    name: "Names that do not exist",
+    render: () => {
+      const sources = sectionFixtures();
+      const spec = sources.environments[0].spec;
+      spec.sections = { ...spec.sections, "old-section": { allowed: ["x"] } };
+      spec.parameters = { ...spec.parameters, "old-option": {} };
+      return (
+        <EnvironmentEditorStory
+          sources={sources}
+          name="production"
+          mode="direct"
+        />
+      );
+    },
+  },
+  {
     component: "SectionsTable",
     name: "Platform environment",
     render: () => {

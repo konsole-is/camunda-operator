@@ -214,4 +214,18 @@ describe("SectionsTable", () => {
     fireEvent.click(review);
     expect(previewChange).not.toHaveBeenCalled();
   });
+
+  it("names a section that does not exist and removes it", async () => {
+    const sources = environmentFixtures();
+    sources.environments[1].spec.sections = {
+      gone: { allowed: ["rustfs"] },
+    };
+    const actions = renderEditor("staging", sources);
+    const note = screen.getByRole("group", {
+      name: "Sections that do not exist",
+    });
+    fireEvent.click(within(note).getByRole("button", { name: "Remove gone" }));
+    const spec = await save(actions);
+    expect(spec.sections).toBeUndefined();
+  });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import { sectionGroups, withSectionPolicy } from "./sections";
+import { sectionGroups, unknownSections, withSectionPolicy } from "./sections";
 
 const CLUSTER = "CamundaClusterClaim" as const;
 const PLANE = "CamundaManagementClusterClaim" as const;
@@ -302,5 +302,19 @@ describe("withSectionPolicy", () => {
     };
     withSectionPolicy(spec, "access", { required: true, allowed: [] });
     expect(spec).toEqual({ sections: { access: { allowed: ["a"] } } });
+  });
+});
+
+describe("unknownSections", () => {
+  it("names each section of the spec that no PluginSection has, sorted", () => {
+    expect(
+      unknownSections([section("access", [CLUSTER])], {
+        sections: { zeta: {}, access: {}, alpha: { allowed: ["x"] } },
+      }),
+    ).toEqual(["alpha", "zeta"]);
+  });
+
+  it("names none without spec.sections", () => {
+    expect(unknownSections([], {})).toEqual([]);
   });
 });

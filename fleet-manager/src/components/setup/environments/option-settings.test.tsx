@@ -497,4 +497,19 @@ describe("OptionSettings", () => {
         .getAttribute("aria-invalid"),
     ).toBe("true");
   });
+
+  it("names the settings of an option that does not exist and removes them", async () => {
+    const sources = sectionFixtures();
+    sources.environments[0].spec.parameters = {
+      ...sources.environments[0].spec.parameters,
+      gone: { region: { value: "eu-west-1" } },
+    };
+    const actions = renderEditor("production", sources);
+    const note = screen.getByRole("group", {
+      name: "Settings of options that do not exist",
+    });
+    fireEvent.click(within(note).getByRole("button", { name: "Remove gone" }));
+    const spec = await save(actions);
+    expect(Object.keys(spec.parameters ?? {})).toEqual(["aws-connectors-role"]);
+  });
 });

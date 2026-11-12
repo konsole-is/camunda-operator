@@ -273,3 +273,24 @@ export function presetsOf(
 export function presetMessage(name: string): string {
   return `The environment does not allow the preset ${name}. Check it under Presets, or pick another.`;
 }
+
+/** unknownOptions returns the names of spec.parameters that no registration has, sorted. */
+export function unknownOptions(
+  registrations: readonly PluginRegistration[],
+  spec: Spec,
+): string[] {
+  const known = new Set(registrations.map((r) => r.metadata.name ?? ""));
+  return Object.keys(spec.parameters ?? {})
+    .filter((name) => !known.has(name))
+    .sort(byCodeUnit);
+}
+
+/** withoutOption returns spec without the parameters of registration, and without spec.parameters when no registration is left. */
+export function withoutOption(spec: Spec, registration: string): Spec {
+  const parameters = Object.fromEntries(
+    Object.entries(spec.parameters ?? {}).filter(([n]) => n !== registration),
+  );
+  const next: Spec = { ...spec, parameters };
+  if (Object.keys(parameters).length === 0) delete next.parameters;
+  return next;
+}

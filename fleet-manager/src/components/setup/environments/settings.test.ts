@@ -6,6 +6,8 @@ import {
   allowedErrors,
   optionSettings,
   settingErrors,
+  unknownOptions,
+  withoutOption,
   withParameterPolicy,
 } from "./settings";
 
@@ -479,5 +481,33 @@ describe("optionSettings of an option that no section allows", () => {
         allowing({ "connectors-permissions": ["aws-connectors-role"] }),
       )[0].allowedBySection,
     ).toBe(true);
+  });
+});
+
+describe("unknownOptions", () => {
+  it("names each registration of spec.parameters that does not exist, sorted", () => {
+    expect(
+      unknownOptions([role], {
+        parameters: { zeta: {}, "aws-connectors-role": {}, alpha: {} },
+      }),
+    ).toEqual(["alpha", "zeta"]);
+  });
+});
+
+describe("withoutOption", () => {
+  it("removes the parameters of one registration and keeps the rest of spec", () => {
+    expect(
+      withoutOption(
+        {
+          displayName: "Staging",
+          parameters: { a: { x: { value: 1 } }, b: {} },
+        },
+        "a",
+      ),
+    ).toEqual({ displayName: "Staging", parameters: { b: {} } });
+  });
+
+  it("removes spec.parameters without registrations", () => {
+    expect(withoutOption({ parameters: { a: {} } }, "a")).toEqual({});
   });
 });

@@ -45,9 +45,15 @@ import { NamespacesSection } from "./namespaces-section";
 import { ReferencesSection } from "./references-section";
 import { labelledNamespaces } from "./rows";
 import { OptionSettingsSection } from "./option-settings";
-import { sectionGroups, withSectionPolicy } from "./sections";
+import { sectionGroups, unknownSections, withSectionPolicy } from "./sections";
 import { SectionsTable } from "./sections-table";
-import { optionSettings, settingErrors } from "./settings";
+import {
+  optionSettings,
+  settingErrors,
+  unknownOptions,
+  withoutOption,
+} from "./settings";
+import { UnknownNames } from "./unknown-names";
 import { type EnvironmentSources, useEnvironmentSources } from "./sources";
 
 const READY: FleetEnvironmentConditionType = "Ready";
@@ -234,6 +240,19 @@ export function EnvironmentEditor({
           />
         </EditorSection>
         <EditorSection title="Sections">
+          <UnknownNames
+            label="Sections that do not exist"
+            text="The environment names sections that do not exist. Remove them, so the environment can be ready."
+            names={unknownSections(sources.sections, draft.spec)}
+            onRemove={(section) =>
+              setSpec(
+                withSectionPolicy(draft.spec, section, {
+                  required: false,
+                  allowed: [],
+                }),
+              )
+            }
+          />
           <SectionsTable
             groups={sectionGroups(
               sources.sections,
@@ -247,6 +266,14 @@ export function EnvironmentEditor({
           />
         </EditorSection>
         <EditorSection title="Settings of the options">
+          <UnknownNames
+            label="Settings of options that do not exist"
+            text="The environment has settings for options that do not exist. Remove them, so the environment can be ready."
+            names={unknownOptions(sources.registrations, draft.spec)}
+            onRemove={(registration) =>
+              setSpec(withoutOption(draft.spec, registration))
+            }
+          />
           <OptionSettingsSection
             key={editor.generation}
             settings={settings}
