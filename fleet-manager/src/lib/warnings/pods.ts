@@ -17,16 +17,19 @@ const OOM_KILLED = "OOMKilled";
 
 /**
  * containerWarnings returns the out of memory and restarts warnings of the
- * containers of pod whose last termination finished less than RECENT_MS
- * before now. It reads status.containerStatuses only, because the app has
- * no kube-state-metrics to count the restarts of the last hour.
+ * containers and init containers of pod whose last termination finished
+ * less than RECENT_MS before now. It reads the pod status only, because the
+ * app has no kube-state-metrics to count the restarts of the last hour.
  */
 export function containerWarnings(
   pod: Resource<"Pod">,
   now: string,
 ): Warning[] {
   const name = pod.metadata?.name ?? "";
-  return (pod.status?.containerStatuses ?? []).flatMap((status) => {
+  return [
+    ...(pod.status?.initContainerStatuses ?? []),
+    ...(pod.status?.containerStatuses ?? []),
+  ].flatMap((status) => {
     const terminated = status.lastState?.terminated;
     const finishedAt = terminated?.finishedAt;
     if (!finishedAt || Date.parse(now) - Date.parse(finishedAt) >= RECENT_MS) {

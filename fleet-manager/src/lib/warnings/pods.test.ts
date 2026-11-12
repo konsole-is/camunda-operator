@@ -26,39 +26,45 @@ const usage = ({
       : { usedBytes: memoryShare * 1000, limitBytes: 1000 },
 });
 
+type ContainerState = {
+  name: string;
+  restartCount: number;
+  reason?: string;
+  finishedAt?: string;
+};
+
 const pod = (
-  containers: {
-    name: string;
-    restartCount: number;
-    reason?: string;
-    finishedAt?: string;
-  }[],
+  containers: ContainerState[],
+  initContainers: ContainerState[] = [],
 ): Resource<"Pod"> =>
   ({
     apiVersion: "v1",
     kind: "Pod",
     metadata: { namespace: "team-a", name: "orders-zeebe-0" },
     status: {
-      containerStatuses: containers.map((c) => ({
-        name: c.name,
-        image: "camunda/camunda",
-        imageID: "",
-        ready: true,
-        restartCount: c.restartCount,
-        ...(c.finishedAt
-          ? {
-              lastState: {
-                terminated: {
-                  exitCode: 137,
-                  reason: c.reason ?? "Error",
-                  finishedAt: c.finishedAt,
-                },
-              },
-            }
-          : {}),
-      })),
+      initContainerStatuses: initContainers.map(containerStatus),
+      containerStatuses: containers.map(containerStatus),
     },
   }) as Resource<"Pod">;
+
+const containerStatus = (c: ContainerState) => ({
+  name: c.name,
+  image: "camunda/camunda",
+  imageID: "",
+  ready: true,
+  restartCount: c.restartCount,
+  ...(c.finishedAt
+    ? {
+        lastState: {
+          terminated: {
+            exitCode: 137,
+            reason: c.reason ?? "Error",
+            finishedAt: c.finishedAt,
+          },
+        },
+      }
+    : {}),
+});
 
 const kinds = (warnings: { kind: string; severity: string }[]) =>
   warnings.map((w) => [w.kind, w.severity]);
@@ -181,6 +187,31 @@ describe("containerWarnings", () => {
     expect(
       containerWarnings(pod([{ name: "zeebe", restartCount: 10 }]), NOW),
     ).toEqual([]);
+  });
+
+  it("reads the init containers too, such as a native sidecar", () => {
+    const finishedAt = minutesAgo(5);
+    expect(
+      kinds(
+        containerWarnings(
+          pod(
+            [{ name: "zeebe", restartCount: 0 }],
+            [
+              {
+                name: "proxy",
+                restartCount: 5,
+                reason: "OOMKilled",
+                finishedAt,
+              },
+            ],
+          ),
+          NOW,
+        ),
+      ),
+    ).toEqual([
+      ["oom", "Error"],
+      ["restarts", "Warning"],
+    ]);
   });
 
   it("gives a warning for each container", () => {
