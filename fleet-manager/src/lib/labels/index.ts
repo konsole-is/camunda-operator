@@ -70,6 +70,13 @@ export const BACKUP_SCHEDULE_LABEL = "camunda.io/backup-schedule";
 export const MANAGEMENT_CLUSTER_ANNOTATION = "camunda.io/management-cluster";
 
 /**
+ * SUSPENSION_HOLD_PREFIX starts the key of an annotation that suspends a
+ * CamundaCluster, whatever spec.suspend says. It is SuspensionHoldPrefix of
+ * api/v1.
+ */
+export const SUSPENSION_HOLD_PREFIX = "suspension-hold.camunda.io/";
+
+/**
  * DESCRIPTION_ANNOTATION holds a short text that says what an object is
  * for. It is a well-known Kubernetes annotation. The operator does not read it.
  */
