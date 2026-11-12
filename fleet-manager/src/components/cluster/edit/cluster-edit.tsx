@@ -86,6 +86,13 @@ export type ClusterEdit = {
 
 const ClusterEditContext = createContext<ClusterEdit | undefined>(undefined);
 
+/**
+ * CHANGES_OFF is the reason that the page shows when it cannot write: the
+ * fleet manager could not read its settings, so the write mode is unknown.
+ */
+export const CHANGES_OFF =
+  "Changes are off: the fleet manager could not read its settings.";
+
 const WAITING_FOR_GITOPS = "Waiting for GitOps to apply your last change.";
 const WAITING_ON_LIVE = `${WAITING_FOR_GITOPS} The page shows the live claim until GitOps applies it.`;
 const PUSH_DROPPED =
@@ -362,7 +369,7 @@ export function ClusterEditProvider({
     <ClusterEditContext.Provider value={value}>
       {off && (
         <p role="alert" className="text-sm text-bad">
-          Changes are off: the fleet manager could not read its settings.
+          {CHANGES_OFF}
         </p>
       )}
       {edit.dropped && (
