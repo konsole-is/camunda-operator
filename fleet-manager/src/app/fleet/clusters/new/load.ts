@@ -1,7 +1,6 @@
 import "server-only";
 import type { ClusterCreateData } from "@/components/create/cluster-create-flow";
-import type { KindName, Resource } from "@/lib/k8s/kinds";
-import { list, type ListOptions } from "@/lib/k8s/read";
+import { listOrEmpty } from "@/lib/k8s/list-or-empty";
 import { ACCESS_SECTION, SECTION_LABEL } from "@/lib/labels";
 
 /**
@@ -53,13 +52,6 @@ export async function loadCreateCluster(): Promise<ClusterCreateData> {
     secondaryStorageConfigs,
     objectStorageConfigs,
   };
-}
-
-function listOrEmpty<K extends KindName>(
-  kind: K,
-  opts: ListOptions,
-): Promise<Resource<K>[]> {
-  return list(kind, opts).catch(() => []);
 }
 
 export type { ClusterCreateData };

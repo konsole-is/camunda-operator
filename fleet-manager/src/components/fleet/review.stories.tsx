@@ -3,6 +3,7 @@ import { objectDiff } from "@/lib/diff";
 import type { Step } from "@/lib/fields";
 import { STALE_CLAIM_MESSAGE } from "@/lib/session";
 import { ChangeBar } from "./change-bar";
+import { ChangeReviewStory } from "./change-review-story";
 import { ClaimReviewStory } from "./claim-review-story";
 import { DiffView } from "./diff-view";
 import { GitWaitingLine } from "./git-waiting-line";
@@ -20,6 +21,43 @@ const after = {
   spec: { cluster: { zeebe: { replicas: 5, partitions: 3 } } },
 };
 const lines = objectDiff(before, after);
+
+const sections = { "backup-storage": { allowed: ["rustfs"] } };
+const environmentBefore = {
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "Environment",
+  metadata: { name: "staging" },
+  spec: { displayName: "Staging", deletionPolicy: "Delete", sections },
+};
+const environmentAfter = {
+  ...environmentBefore,
+  spec: { displayName: "Stage", deletionPolicy: "Orphan" },
+};
+const environmentKept = {
+  ...environmentAfter,
+  spec: { ...environmentAfter.spec, sections },
+};
+const environmentChange = {
+  intent: "Change the environment staging",
+  apply: [environmentAfter],
+  preconditions: { "Environment//staging": "12" as const },
+  force: true,
+};
+const keptPreview = {
+  objects: [
+    {
+      ref: {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        name: "staging",
+      },
+      before: environmentBefore,
+      after: environmentKept,
+      diff: objectDiff(environmentBefore, environmentKept),
+    },
+  ],
+  errors: [],
+};
 
 const claim = {
   ...before,
@@ -220,6 +258,30 @@ export const reviewStories: Story[] = [
     ),
   },
   {
+    component: "ChangeReview",
+    name: "Kept field",
+    render: () => (
+      <ChangeReviewStory
+        change={environmentChange}
+        preview={keptPreview}
+        mode="direct"
+        effects={["Changes apply to new claims only."]}
+      />
+    ),
+  },
+  {
+    component: "ChangeReview",
+    name: "Git",
+    render: () => (
+      <ChangeReviewStory
+        change={environmentChange}
+        preview={keptPreview}
+        mode="git"
+        effects={["Changes apply to new claims only."]}
+      />
+    ),
+  },
+  {
     component: "ChangeBar",
     name: "One change",
     render: () => <ChangeBar count={1} />,
@@ -245,6 +307,16 @@ export const reviewStories: Story[] = [
               "The section access does not allow the registration aws-alb.",
           },
         ]}
+      />
+    ),
+  },
+  {
+    component: "ChangeBar",
+    name: "Blocked",
+    render: () => (
+      <ChangeBar
+        count={1}
+        blocked="The default release must be one of the allowed releases."
       />
     ),
   },

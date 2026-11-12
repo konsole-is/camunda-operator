@@ -4,8 +4,8 @@ import { clusterOptimize } from "@/components/cluster/optimize";
 import { clusterFieldsInputOf } from "@/components/cluster/settings";
 import { fieldDocsOf } from "@/lib/fielddocs";
 import { clusterFields } from "@/lib/fields";
-import type { KindName, Resource } from "@/lib/k8s/kinds";
-import { get, list, type ListOptions } from "@/lib/k8s/read";
+import { listOrEmpty } from "@/lib/k8s/list-or-empty";
+import { get } from "@/lib/k8s/read";
 import {
   ACCESS_SECTION,
   CLAIM_LABEL,
@@ -138,11 +138,4 @@ export async function loadClusterPage(
     managementAuthConfigs,
     fieldDocs: fieldDocsOf(fields),
   };
-}
-
-function listOrEmpty<K extends KindName>(
-  kind: K,
-  opts: ListOptions,
-): Promise<Resource<K>[]> {
-  return list(kind, opts).catch(() => []);
 }
