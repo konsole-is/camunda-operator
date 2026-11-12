@@ -172,4 +172,24 @@ describe("ClusterPage", () => {
       screen.queryByRole("button", { name: "Change topology" }),
     ).toBeNull();
   });
+
+  it("the Claim tab of a managed cluster has the Claim editor", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    page("direct");
+    expect(
+      within(screen.getByRole("region", { name: "Basics" })).getByRole(
+        "button",
+        { name: "Edit Basics" },
+      ),
+    ).toBeTruthy();
+  });
+
+  it("the Claim tab of an unmanaged cluster says so and has no editor", () => {
+    window.history.replaceState(null, "", "?tab=claim");
+    page("direct", undefined, data(false));
+    expect(
+      screen.getByText("This cluster was not made from a claim."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Edit/ })).toBeNull();
+  });
 });
