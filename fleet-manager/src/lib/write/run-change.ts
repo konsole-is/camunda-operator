@@ -2,6 +2,8 @@ import "server-only";
 import { z } from "zod";
 import { apiVersionOf, KindMap, type KindName } from "@/lib/k8s/kinds";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
+import { equalJSON } from "@/lib/policy";
+import { existsError } from "./errors";
 import { refKey, refOf } from "./refs";
 import type {
   ApiError,
@@ -12,7 +14,7 @@ import type {
   Preview,
   WriteResult,
 } from "./types";
-import { getWriter } from "./writer";
+import { firstExisting, getWriter, listObjects } from "./writer";
 
 /** kubeObjectSchema accepts an object with apiVersion, kind, and metadata.name, and keeps every other field. */
 export const kubeObjectSchema: z.ZodType<KubeObject> = z.looseObject({
@@ -99,6 +101,149 @@ export const claimChangeSchema: z.ZodType<Change> = changeSchema.refine(
     c.directOnly === undefined,
   { message: "The change must apply one claim and nothing else." },
 );
+
+const BACKUP_KINDS: readonly string[] = [
+  "LogicalBackupElasticsearch",
+  "LogicalBackupRDBMS",
+];
+const BACKUP_API_VERSION = "core.camunda.io/v1";
+const BACKUP_METADATA: readonly string[] = [
+  "name",
+  "namespace",
+  "labels",
+  "annotations",
+];
+
+/**
+ * backupChangeSchema accepts a Change with directOnly, no force, and no
+ * preconditions that does one of two things for cluster. It creates one
+ * backup of either kind in the namespace of cluster, listed in create, with
+ * only name, namespace, labels, and annotations in its metadata and a spec
+ * of exactly { clusterRef: { name: cluster.name } }. Or it deletes one
+ * backup of either kind in that namespace. A delete has no precondition,
+ * because the status of a running backup changes its resourceVersion.
+ */
+export function backupChangeSchema(cluster: {
+  namespace: string;
+  name: string;
+}): z.ZodType<Change> {
+  return changeSchema.refine(
+    (c) => {
+      const plain =
+        c.directOnly === true &&
+        c.force === undefined &&
+        c.preconditions === undefined;
+      if (!plain) return false;
+      if (c.apply.length === 1 && c.delete === undefined) {
+        const object = c.apply[0];
+        return (
+          isClusterBackup(object, cluster) &&
+          c.create?.length === 1 &&
+          c.create[0] === refKey(refOf(object))
+        );
+      }
+      const ref = c.delete?.[0];
+      return (
+        c.apply.length === 0 &&
+        c.delete?.length === 1 &&
+        c.create === undefined &&
+        ref !== undefined &&
+        ref.apiVersion === BACKUP_API_VERSION &&
+        BACKUP_KINDS.includes(ref.kind) &&
+        ref.namespace === cluster.namespace
+      );
+    },
+    {
+      message:
+        "The change must create one backup of the cluster, or delete one backup in its namespace, straight to the cluster.",
+    },
+  );
+}
+
+/**
+ * runBackupChange is runChange with backupChangeSchema(cluster). A new
+ * backup also fails with Stale, and writes nothing, when a backup of either
+ * kind in the namespace has its name. A delete fails with Stale while a
+ * logical restore that is not Completed or Failed reads the backup. When
+ * these checks cannot read the backups or the restores, it gives
+ * Unavailable and writes nothing.
+ */
+export async function runBackupChange(
+  cluster: { namespace: string; name: string },
+  input: unknown,
+): Promise<WriteResult> {
+  const schema = backupChangeSchema(cluster);
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
+  try {
+    const refusal = await backupRefusalOf(cluster.namespace, parsed.data);
+    if (refusal !== undefined) return { ok: false, errors: [refusal] };
+  } catch (error) {
+    return { ok: false, errors: [unavailable(error)] };
+  }
+  return runChange(parsed.data, schema);
+}
+
+const RESTORE_OF = {
+  LogicalBackupElasticsearch: "LogicalRestoreElasticsearch",
+  LogicalBackupRDBMS: "LogicalRestoreRDBMS",
+} as const;
+
+async function backupRefusalOf(
+  namespace: string,
+  change: Change,
+): Promise<ApiError | undefined> {
+  const [backup] = change.apply;
+  if (backup !== undefined) {
+    const taken = await firstExisting(
+      BACKUP_KINDS.map((kind) => ({
+        apiVersion: BACKUP_API_VERSION,
+        kind,
+        namespace,
+        name: backup.metadata.name,
+      })),
+    );
+    return taken === undefined ? undefined : existsError(taken);
+  }
+  const ref = change.delete![0];
+  const restores = await listObjects(
+    RESTORE_OF[ref.kind as keyof typeof RESTORE_OF],
+    namespace,
+  );
+  const reader = restores.find((r) => {
+    const { spec, status } = r as {
+      spec?: { backupRef?: { name?: string } };
+      status?: { phase?: string };
+    };
+    return (
+      spec?.backupRef?.name === ref.name &&
+      status?.phase !== "Completed" &&
+      status?.phase !== "Failed"
+    );
+  });
+  return reader === undefined
+    ? undefined
+    : {
+        code: "Stale",
+        message: `Restore ${reader.metadata.name} reads the backup ${ref.name}. Delete the backup after the restore ends.`,
+        ref,
+      };
+}
+
+function isClusterBackup(
+  object: KubeObject,
+  cluster: { namespace: string; name: string },
+): boolean {
+  const { apiVersion, kind, metadata, spec, ...rest } = object;
+  return (
+    Object.keys(rest).length === 0 &&
+    apiVersion === BACKUP_API_VERSION &&
+    BACKUP_KINDS.includes(kind) &&
+    metadata.namespace === cluster.namespace &&
+    Object.keys(metadata).every((key) => BACKUP_METADATA.includes(key)) &&
+    equalJSON(spec, { clusterRef: { name: cluster.name } })
+  );
+}
 
 /**
  * createChangeSchema accepts a Change that applies one claim of either

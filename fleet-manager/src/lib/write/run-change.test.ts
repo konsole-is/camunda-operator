@@ -10,6 +10,7 @@ vi.mock("./writer", () => ({ getWriter: async () => fake }));
 
 const {
   adminChangeSchema,
+  backupChangeSchema,
   changeSchema,
   claimChangeSchema,
   createChangeSchema,
@@ -365,6 +366,166 @@ describe("createChangeSchema", () => {
     ],
   ])("refuses %s", (_, input) => {
     expect(createChangeSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe("backupChangeSchema", () => {
+  const core = "core.camunda.io/v1";
+  const schema = backupChangeSchema({ namespace: "team-a", name: "orders" });
+  const backup = (kind = "LogicalBackupElasticsearch", over: object = {}) => ({
+    apiVersion: core,
+    kind,
+    metadata: { name: "orders-manual-1", namespace: "team-a" },
+    spec: { clusterRef: { name: "orders" } },
+    ...over,
+  });
+  const created = (object: { kind: string; metadata: object }, over = {}) => {
+    const { name, namespace } = object.metadata as {
+      name: string;
+      namespace?: string;
+    };
+    return {
+      intent: "Back up orders",
+      apply: [object],
+      create: [`${object.kind}/${namespace ?? ""}/${name}`],
+      directOnly: true,
+      ...over,
+    };
+  };
+  const ref = (kind = "LogicalBackupElasticsearch", over: object = {}) => ({
+    apiVersion: core,
+    kind,
+    namespace: "team-a",
+    name: "orders-manual-1",
+    ...over,
+  });
+  const deleted = (r: object, over = {}) => ({
+    intent: "Delete backup orders-manual-1",
+    apply: [],
+    delete: [r],
+    directOnly: true,
+    ...over,
+  });
+  const ok = (c: unknown) => schema.safeParse(c).success;
+
+  it.each(["LogicalBackupElasticsearch", "LogicalBackupRDBMS"])(
+    "accepts one new %s of the cluster, straight to the cluster",
+    (kind) => {
+      expect(ok(created(backup(kind)))).toBe(true);
+    },
+  );
+
+  it("accepts labels and annotations on a new backup", () => {
+    const metadata = {
+      name: "orders-manual-1",
+      namespace: "team-a",
+      labels: { team: "a" },
+      annotations: { note: "before the upgrade" },
+    };
+    expect(ok(created(backup(undefined, { metadata })))).toBe(true);
+  });
+
+  it.each(["LogicalBackupElasticsearch", "LogicalBackupRDBMS"])(
+    "accepts the delete of one %s in the namespace of the cluster",
+    (kind) => {
+      expect(ok(deleted(ref(kind)))).toBe(true);
+    },
+  );
+
+  const other = { name: "orders-manual-2", namespace: "team-a" };
+  it.each([
+    ["no directOnly", created(backup(), { directOnly: undefined })],
+    ["directOnly false", created(backup(), { directOnly: false })],
+    ["force", created(backup(), { force: true })],
+    ["a create without create", created(backup(), { create: undefined })],
+    [
+      "a precondition on a delete",
+      deleted(ref(), {
+        preconditions: {
+          "LogicalBackupElasticsearch/team-a/orders-manual-1": "7",
+        },
+      }),
+    ],
+    [
+      "two new backups",
+      {
+        ...created(backup()),
+        apply: [backup(), backup(undefined, { metadata: other })],
+        create: [
+          "LogicalBackupElasticsearch/team-a/orders-manual-1",
+          "LogicalBackupElasticsearch/team-a/orders-manual-2",
+        ],
+      },
+    ],
+    ["a create and a delete", created(backup(), { delete: [ref()] })],
+    [
+      "two deletes",
+      deleted(ref(), { delete: [ref(), ref(undefined, { name: "b" })] }),
+    ],
+    [
+      "a restore",
+      created(
+        backup("LogicalRestoreElasticsearch", {
+          spec: {
+            backupRef: { name: "orders-manual-1" },
+            targetClusterRef: { name: "orders" },
+          },
+        }),
+      ),
+    ],
+    ["a claim", created(backup("CamundaClusterClaim"))],
+    ["another apiVersion", created(backup(undefined, { apiVersion: "v1" }))],
+    [
+      "a metadata field other than name, namespace, labels, and annotations",
+      created(
+        backup(undefined, {
+          metadata: {
+            name: "orders-manual-1",
+            namespace: "team-a",
+            finalizers: ["x"],
+          },
+        }),
+      ),
+    ],
+    [
+      "a field next to spec",
+      created(backup(undefined, { status: { phase: "Completed" } })),
+    ],
+    [
+      "a spec field next to clusterRef",
+      created(
+        backup("LogicalBackupRDBMS", {
+          spec: { clusterRef: { name: "orders" }, extraEnv: [] },
+        }),
+      ),
+    ],
+    [
+      "a backup of another cluster",
+      created(backup(undefined, { spec: { clusterRef: { name: "billing" } } })),
+    ],
+    [
+      "a backup in another namespace",
+      created(
+        backup(undefined, {
+          metadata: { name: "orders-manual-1", namespace: "team-b" },
+        }),
+      ),
+    ],
+    [
+      "a backup without a namespace",
+      created(backup(undefined, { metadata: { name: "orders-manual-1" } })),
+    ],
+    ["the delete of a restore", deleted(ref("LogicalRestoreRDBMS"))],
+    [
+      "the delete of a backup in another namespace",
+      deleted(ref(undefined, { namespace: "team-b" })),
+    ],
+    [
+      "the delete of a backup with another apiVersion",
+      deleted(ref(undefined, { apiVersion: "v1" })),
+    ],
+  ])("refuses %s", (_, change) => {
+    expect(ok(change)).toBe(false);
   });
 });
 

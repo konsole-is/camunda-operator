@@ -9,7 +9,13 @@ import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 import { namespaceLabelChange } from "@/components/setup/environments/draft";
 import { createChangeOf } from "@/lib/write/create";
 import type { KubeObject } from "@/lib/write/types";
-import { directWriter, readObject, refKey } from "@/lib/write/writer";
+import {
+  directWriter,
+  firstExisting,
+  listObjects,
+  readObject,
+  refKey,
+} from "@/lib/write/writer";
 import { createClientSideApplied } from "./client-side-apply";
 
 const kc = new KubeConfig();
@@ -927,5 +933,68 @@ describe("the direct writer against envtest", () => {
       expect(shown).not.toContain(Buffer.from(value).toString("base64"));
     }
     expect(preview.objects[0].diff.some((l) => l.op !== "same")).toBe(true);
+  });
+
+  it("firstExisting gives the first ref whose object exists, or nothing when none exists", async () => {
+    const backupRef = (kind: string) => ({
+      apiVersion: "core.camunda.io/v1",
+      kind,
+      namespace,
+      name,
+    });
+    expect(
+      await writer.apply({
+        intent: "Back up",
+        apply: [
+          {
+            apiVersion: "core.camunda.io/v1",
+            kind: "LogicalBackupRDBMS",
+            metadata: { name, namespace },
+            spec: { clusterRef: { name: "orders" } },
+          },
+        ],
+      }),
+    ).toEqual({ ok: true, mode: "direct" });
+
+    expect(
+      await firstExisting(
+        [
+          backupRef("LogicalBackupElasticsearch"),
+          backupRef("LogicalBackupRDBMS"),
+        ],
+        kc,
+      ),
+    ).toEqual(backupRef("LogicalBackupRDBMS"));
+    expect(
+      await firstExisting([backupRef("LogicalBackupElasticsearch")], kc),
+    ).toBeUndefined();
+  });
+
+  it("listObjects gives the objects of a kind in one namespace", async () => {
+    const restore = (ns: string): KubeObject => ({
+      apiVersion: "core.camunda.io/v1",
+      kind: "LogicalRestoreRDBMS",
+      metadata: { name, namespace: ns },
+      spec: {
+        backupRef: { name: "dump-1" },
+        targetClusterRef: { name: "orders" },
+      },
+    });
+    const other = `write-${randomUUID().slice(0, 8)}`;
+    await api.create({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: other },
+    });
+    for (const ns of [namespace, other]) {
+      expect(
+        await writer.apply({ intent: "Restore", apply: [restore(ns)] }),
+      ).toEqual({ ok: true, mode: "direct" });
+    }
+
+    const listed = await listObjects("LogicalRestoreRDBMS", namespace, kc);
+    expect(
+      listed.map((o) => [o.metadata.namespace, o.metadata.name, o.spec]),
+    ).toEqual([[namespace, name, restore(namespace).spec]]);
   });
 });
