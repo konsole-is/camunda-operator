@@ -87,7 +87,7 @@ func TestDatabaseConfigsReadEachNamedConfig(t *testing.T) {
 	}
 }
 
-func TestDatabaseConfigsRefuseEqualNames(t *testing.T) {
+func TestDatabaseConfigsWithoutDatabasesRefuseEqualNames(t *testing.T) {
 	request := requestFor(
 		pluginstartup.RegistrationExistingDatabaseConfigs,
 		`{"keycloak":"shared","identity":"shared","webModeler":"wm"}`,
@@ -102,6 +102,67 @@ func TestDatabaseConfigsRefuseEqualNames(t *testing.T) {
 	assert.Contains(t, failure.Message, "spec.parameters.identity")
 	assert.Contains(t, failure.Message, "shared")
 	assert.NotContains(t, failure.Message, "spec.parameters.webModeler")
+}
+
+func TestDatabaseConfigsReadOnlyTheListedDatabases(t *testing.T) {
+	tests := []struct {
+		name, parameters string
+		want             []adapter.ContractRef
+	}{
+		{
+			"a name of a component that gets no database",
+			`{"databases":["identity"],"keycloak":"db","identity":"db"}`,
+			[]adapter.ContractRef{{Output: "identityDatabaseConfig", Kind: adapter.KindDatabaseConfig, Name: "db"}},
+		},
+		{
+			"an empty list",
+			`{"databases":[],"keycloak":"kc","identity":"id"}`,
+			nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			request := requestFor(pluginstartup.RegistrationExistingDatabaseConfigs, tt.parameters)
+			h := handlerFor(pluginstartup.RegistrationExistingDatabaseConfigs)
+
+			_, err := h.Build(request, nil)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.want, h.Contracts(request))
+		})
+	}
+}
+
+func TestDatabaseConfigsRefuseEqualNamesOfListedDatabases(t *testing.T) {
+	request := requestFor(
+		pluginstartup.RegistrationExistingDatabaseConfigs,
+		`{"databases":["keycloak","identity"],"keycloak":"db","identity":"db"}`,
+	)
+
+	_, err := handlerFor(pluginstartup.RegistrationExistingDatabaseConfigs).Build(request, nil)
+
+	var failure *conditions.PreCheckFailure
+	require.ErrorAs(t, err, &failure)
+	assert.Equal(t, pluginsv1alpha1.ReasonInvalidParameters, failure.Reason)
+	assert.Contains(t, failure.Message, "spec.parameters.keycloak")
+	assert.Contains(t, failure.Message, "spec.parameters.identity")
+}
+
+func TestDatabaseConfigsRefuseDatabasesThatAreNotAListOfStrings(t *testing.T) {
+	for _, databases := range []string{`"identity"`, `[1]`} {
+		t.Run(databases, func(t *testing.T) {
+			request := requestFor(
+				pluginstartup.RegistrationExistingDatabaseConfigs,
+				`{"databases":`+databases+`,"identity":"db"}`,
+			)
+
+			_, err := handlerFor(pluginstartup.RegistrationExistingDatabaseConfigs).Build(request, nil)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "spec.parameters.databases")
+		})
+	}
 }
 
 func TestDatabaseConfigsWithoutNamesReadNothing(t *testing.T) {

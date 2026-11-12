@@ -20,7 +20,9 @@ package existing
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -47,7 +49,8 @@ func OneContract(output, kind string) Handler {
 
 // DatabaseConfigs returns the handler of existing-database-configs, which
 // publishes a DatabaseConfig for each component of planedatabases.All that
-// the parameters name.
+// the parameters name. When the parameters hold databases, it publishes only
+// the components that databases lists.
 func DatabaseConfigs() Handler {
 	return Handler{parse: databaseConfigs}
 }
@@ -115,8 +118,11 @@ func oneContract(output, kind string) func(*apiextensionsv1.JSON) ([]adapter.Con
 }
 
 // databaseConfigs returns a contract for each DatabaseConfig name that the
-// parameters set, in the order of planedatabases.All. Two fields with one
-// name return a *conditions.PreCheckFailure with reason InvalidParameters.
+// parameters set, in the order of planedatabases.All. When the parameters hold
+// databases, the name of a component that databases does not list is left
+// out. Two contracts with one name return a *conditions.PreCheckFailure with
+// reason InvalidParameters. A databases value that is not a list of strings
+// is an error.
 func databaseConfigs(parameters *apiextensionsv1.JSON) ([]adapter.ContractRef, error) {
 	fields := make([]string, 0, len(planedatabases.All))
 	for _, c := range planedatabases.Components() {
@@ -128,13 +134,18 @@ func databaseConfigs(parameters *apiextensionsv1.JSON) ([]adapter.ContractRef, e
 		return nil, err
 	}
 
+	listed, err := decodeDatabases(parameters)
+	if err != nil {
+		return nil, err
+	}
+
 	var refs []adapter.ContractRef
 	fieldsOf := map[string][]string{}
 	var names []string
 	for _, d := range planedatabases.All {
 		field := string(d.Component)
 		name := p[field]
-		if name == "" {
+		if name == "" || (listed != nil && !slices.Contains(listed, field)) {
 			continue
 		}
 		refs = append(refs, adapter.ContractRef{Output: d.Output, Kind: adapter.KindDatabaseConfig, Name: name})
@@ -158,6 +169,27 @@ func databaseConfigs(parameters *apiextensionsv1.JSON) ([]adapter.ContractRef, e
 	}
 
 	return refs, nil
+}
+
+// decodeDatabases returns the databases list of parameters, matched by exact
+// name. It is nil when the parameters do not hold databases, and empty, not
+// nil, for an empty list.
+func decodeDatabases(parameters *apiextensionsv1.JSON) ([]string, error) {
+	if parameters == nil || len(parameters.Raw) == 0 {
+		return nil, nil
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(parameters.Raw, &object); err != nil {
+		return nil, fmt.Errorf("decoding the parameters: %w", err)
+	}
+
+	var listed []string
+	if raw, ok := object["databases"]; ok && json.Unmarshal(raw, &listed) != nil {
+		return nil, errors.New("decoding the parameters: spec.parameters.databases is not a list of strings")
+	}
+
+	return listed, nil
 }
 
 // decodeParameters returns the string value of each of keys in parameters,

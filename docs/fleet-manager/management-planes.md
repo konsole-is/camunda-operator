@@ -53,7 +53,7 @@ When the images table has no versions for the minor, the note says so. Enter eac
 **Databases** shows the database options that the policy of the environment allows. The option with the **Default** label is the default of the policy:
 
 - **New PostgreSQL server** creates one `DatabaseServer` `<plane>-db` and one `Database` for each component that runs, for example `my-plane-keycloak` and `my-plane-identity`.
-- **Existing databases** uses `DatabaseConfig` objects of the namespace of the plane. Pick one for each component that runs. Two components cannot use the same `DatabaseConfig`. A new namespace has no `DatabaseConfig`, so this option is off for it.
+- **Existing databases** uses `DatabaseConfig` objects of the namespace of the plane. Pick one for each component that runs. Two components that run cannot use the same `DatabaseConfig`. A new namespace has no `DatabaseConfig`, so this option is off for it.
 
 **Access** shows the access options that the policy allows, and **No access from outside**.
 
