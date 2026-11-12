@@ -344,9 +344,15 @@ export function EnvironmentEditor({
                       withoutKept(impact, keptSpec(preview, draft.name)),
                     )
             }
-            danger={deleting}
-            confirmLabel={deleting ? "Delete the environment" : "Save"}
-            gitConfirmLabel={deleting ? "Push the delete to Git" : undefined}
+            confirm={
+              deleting
+                ? {
+                    label: "Delete the environment",
+                    gitLabel: "Push the delete to Git",
+                    danger: true,
+                  }
+                : { label: "Save" }
+            }
             savedMessage={
               deleting
                 ? `The environment ${name} is deleted.`
