@@ -7,6 +7,10 @@ logs:
     lines:
       - "Broker 0 is ready"
       - "Partition 1 is healthy"
+  - namespace: team-a
+    pod: camundacluster-sample-zeebe-1
+    lines:
+      - "Broker 1 is ready"
 usage:
   - namespace: team-a
     pod: camundacluster-sample-zeebe-0
