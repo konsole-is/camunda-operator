@@ -20,7 +20,7 @@ import { claim, slotContext } from "../../../../test/fakes/slot-context";
 import { fakeWriter } from "../../../../test/fakes/writer";
 import type { ClusterSlotContext } from "../slots";
 import { ClaimEditorPanels } from "./claim-editor";
-import { ClusterEditProvider } from "./cluster-edit";
+import { ClusterEditProvider, useClusterEdit } from "./cluster-edit";
 
 vi.mock("@/lib/write/writer", () => import("../../../../test/fakes/writer"));
 
@@ -68,12 +68,26 @@ function contextOf(
   });
 }
 
+// Suspend makes a change outside the panel, so that the change bar shows.
+function Suspend() {
+  const { set } = useClusterEdit();
+  return (
+    <button
+      type="button"
+      onClick={() => set([{ field: "spec" }, { field: "suspend" }], true)}
+    >
+      Suspend
+    </button>
+  );
+}
+
 function panel(context: ClusterSlotContext) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <GitPushesProvider>
         <ClusterEditProvider context={context} actions={actions}>
           <ClaimEditorPanels context={context} requested="deletion" />
+          <Suspend />
         </ClusterEditProvider>
       </GitPushesProvider>
     </QueryClientProvider>,
@@ -86,6 +100,10 @@ const radio = (name: RegExp) =>
 const KEEP = /^Keep the resources/;
 const DELETE = /^Delete the resources/;
 const bar = () => screen.queryByRole("region", { name: "Unsaved changes" });
+const barButton = (name: string) =>
+  within(bar()!).getByRole<HTMLButtonElement>("button", { name });
+const REFUSED =
+  "The claim keeps its resources, but an option below cannot keep them. Choose Delete, or remove that option.";
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = () => {};
@@ -128,18 +146,47 @@ describe("the Deletion policy panel", () => {
     expect(radio(KEEP).closest("label")?.textContent).not.toContain("Default");
   });
 
-  it("a recorded default of Keep falls back to Delete while Keep is refused", () => {
+  it("a claim that keeps its resources with an option that cannot keep them shows Keep and blocks Review", () => {
     panel(contextOf(["Delete"], "Orphan"));
+    expect(radio(KEEP).checked).toBe(true);
     expect(radio(KEEP).disabled).toBe(true);
-    expect(radio(KEEP).closest("label")?.textContent).toContain("Default");
-    expect(radio(DELETE).checked).toBe(true);
+    expect(radio(DELETE).checked).toBe(false);
     expect(radio(DELETE).disabled).toBe(false);
-    expect(
-      within(deletion()).getByText(
-        "The default keeps the resources, but the options below cannot keep them.",
-      ),
-    ).toBeTruthy();
+    expect(within(deletion()).getByText(REFUSED)).toBeTruthy();
     expect(bar()).toBeNull();
+    expect(fakeWriter.applied).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
+    expect(barButton("Review").disabled).toBe(true);
+    expect(bar()!.textContent).toContain(`Deletion policy: ${REFUSED}`);
+  });
+
+  it("choosing Delete for a refused Keep makes one change that writes Delete", async () => {
+    const context = contextOf(["Delete"], "Orphan");
+    panel(context);
+    fireEvent.click(radio(DELETE));
+    expect(within(deletion()).queryByText(REFUSED)).toBeNull();
+    expect(barButton("Review").disabled).toBe(false);
+    fireEvent.click(barButton("Review"));
+    const save = within(
+      screen.getByRole("dialog", { name: "Review the change" }),
+    ).getByRole<HTMLButtonElement>("button", { name: "Save" });
+    await waitFor(() => expect(save.disabled).toBe(false));
+    fireEvent.click(save);
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+    expect(
+      (fakeWriter.applied[0].apply[0] as Resource<"CamundaClusterClaim">).spec,
+    ).toEqual({ ...context.claim!.spec, deletionPolicy: "Delete" });
+  });
+
+  it("Discard returns a refused Keep to the blocked state without a write", () => {
+    panel(contextOf(["Delete"], "Orphan"));
+    fireEvent.click(radio(DELETE));
+    fireEvent.click(barButton("Discard"));
+    expect(radio(KEEP).checked).toBe(true);
+    expect(within(deletion()).getByText(REFUSED)).toBeTruthy();
+    expect(fakeWriter.applied).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Suspend" }));
+    expect(barButton("Review").disabled).toBe(true);
   });
 
   it("takes Delete as the default when the resolved policy names none", () => {
