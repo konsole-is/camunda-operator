@@ -1,16 +1,14 @@
 import type { Story } from "@/gallery/registry";
-import { renderJSON } from "@/lib/gotemplate";
 import { EnvironmentEditorStory } from "./editor-story";
 import { EnvironmentList } from "./environment-list";
 import { environmentFixtures, sectionFixtures } from "./fixtures";
 import { ImpactLine } from "./impact-line";
-import { OptionSettingsSection } from "./option-settings";
-import { previewClaims, templateData } from "./preview";
 import { environmentRows, unassignedNamespaces } from "./rows";
-import { sectionGroups } from "./sections";
-import { SectionsTable } from "./sections-table";
-import { optionSettings } from "./settings";
-import { TemplatePreview } from "./template-preview";
+import {
+  OptionSettingsStory,
+  SectionsTableStory,
+  TemplatePreviewStory,
+} from "./settings-story";
 
 function notReady() {
   const sources = environmentFixtures();
@@ -32,19 +30,6 @@ function notReady() {
     ],
   };
   return sources;
-}
-
-// production of sectionFixtures, with the Connectors role only.
-function connectorsRole() {
-  const sources = sectionFixtures();
-  const production = sources.environments[0];
-  return {
-    sources,
-    production,
-    settings: optionSettings(sources.registrations, production.spec).filter(
-      (s) => s.registration === "aws-connectors-role",
-    ),
-  };
 }
 
 const orders = {
@@ -146,14 +131,9 @@ export const environmentStories: Story[] = [
     render: () => {
       const sources = environmentFixtures();
       return (
-        <SectionsTable
-          groups={sectionGroups(
-            sources.sections,
-            sources.registrations,
-            sources.environments[2].spec,
-          )}
-          errors={[]}
-          onPolicy={() => {}}
+        <SectionsTableStory
+          sources={sources}
+          spec={sources.environments[2].spec}
         />
       );
     },
@@ -164,20 +144,15 @@ export const environmentStories: Story[] = [
     render: () => {
       const sources = sectionFixtures();
       return (
-        <SectionsTable
-          groups={sectionGroups(sources.sections, sources.registrations, {
+        <SectionsTableStory
+          sources={sources}
+          spec={{
             sections: {
               ...sources.environments[0].spec.sections,
               "encryption-key": { allowed: ["aws-kms", "vault-transit"] },
             },
-          }).map((g) => ({
-            ...g,
-            rows: g.rows.filter((r) =>
-              ["encryption-key", "volume-encryption"].includes(r.name),
-            ),
-          }))}
-          errors={[]}
-          onPolicy={() => {}}
+          }}
+          sections={["encryption-key", "volume-encryption"]}
         />
       );
     },
@@ -186,15 +161,12 @@ export const environmentStories: Story[] = [
     component: "OptionSettings",
     name: "Connectors role with allowed values",
     render: () => {
-      const { sources, production, settings } = connectorsRole();
+      const sources = sectionFixtures();
       return (
-        <OptionSettingsSection
-          settings={settings}
+        <OptionSettingsStory
           sources={sources}
-          environment={production}
-          errors={[]}
-          onSpec={() => {}}
-          onTextErrors={() => {}}
+          environment={sources.environments[0]}
+          registration="aws-connectors-role"
         />
       );
     },
@@ -203,33 +175,14 @@ export const environmentStories: Story[] = [
     component: "TemplatePreview",
     name: "Inline policy",
     render: () => {
-      const { sources, production } = connectorsRole();
-      const registration = sources.registrations.find(
-        (r) => r.metadata.name === "aws-connectors-role",
-      )!;
-      const section = sources.sections.find(
-        (s) => s.metadata.name === "connectors-permissions",
-      )!;
-      const value =
-        production.spec.parameters?.["aws-connectors-role"]?.inlinePolicy
-          ?.value;
+      const sources = sectionFixtures();
       return (
-        <TemplatePreview
-          claims={previewClaims(sources, "production", "aws-connectors-role")}
-          render={(claim) =>
-            renderJSON(
-              value,
-              templateData({
-                claim,
-                section,
-                registration,
-                environment: production,
-                registrations: sources.registrations,
-                requests: sources.requests,
-              }),
-              "parameter",
-            )
-          }
+        <TemplatePreviewStory
+          sources={sources}
+          environment={sources.environments[0]}
+          registration="aws-connectors-role"
+          section="connectors-permissions"
+          parameter="inlinePolicy"
         />
       );
     },
