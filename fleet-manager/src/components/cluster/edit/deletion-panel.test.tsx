@@ -119,6 +119,29 @@ describe("the Deletion policy panel", () => {
     );
   });
 
+  it("the default that the claim recorded wins over the default of the environment", () => {
+    const context = contextOf(["Delete", "Orphan"], "Delete");
+    context.environment!.spec.deletionPolicy = "Orphan";
+    panel(context);
+    expect(radio(DELETE).checked).toBe(true);
+    expect(radio(DELETE).closest("label")?.textContent).toContain("Default");
+    expect(radio(KEEP).closest("label")?.textContent).not.toContain("Default");
+  });
+
+  it("a recorded default of Keep falls back to Delete while Keep is refused", () => {
+    panel(contextOf(["Delete"], "Orphan"));
+    expect(radio(KEEP).disabled).toBe(true);
+    expect(radio(KEEP).closest("label")?.textContent).toContain("Default");
+    expect(radio(DELETE).checked).toBe(true);
+    expect(radio(DELETE).disabled).toBe(false);
+    expect(
+      within(deletion()).getByText(
+        "The default keeps the resources, but the options below cannot keep them.",
+      ),
+    ).toBeTruthy();
+    expect(bar()).toBeNull();
+  });
+
   it("takes Delete as the default when the resolved policy names none", () => {
     panel(contextOf(["Delete", "Orphan"]));
     expect(radio(DELETE).checked).toBe(true);

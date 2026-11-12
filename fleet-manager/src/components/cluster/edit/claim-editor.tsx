@@ -146,7 +146,7 @@ function editDefs(context: ClusterSlotContext, view: ClaimView): EditDef[] {
       panel: "deletion",
       label: "Deletion policy",
       name: "Deletion policy",
-      render: () => <DeletionPanel context={context} view={view} />,
+      render: () => <DeletionPanel context={context} />,
     },
   ];
 }
