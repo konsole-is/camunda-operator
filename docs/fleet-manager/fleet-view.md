@@ -62,7 +62,7 @@ Each table of clusters has these columns:
 
 | Column | What it shows |
 | --- | --- |
-| Cluster | The name, which opens the cluster page, and the namespace below it. A cluster that no claim made shows **Not managed**. |
+| Cluster | The name, which opens [the cluster page](cluster-page.md), and the namespace below it. A cluster that no claim made shows **Not managed**. |
 | Status | The `Ready` condition of the cluster, such as `Ready` or `Not ready · Degraded`. A ready cluster shows its reason too when the reason is not `Healthy`, such as `Ready · Suspended`. The message of the condition shows when you hold the pointer on the status. |
 | Version | The Camunda version that the cluster runs, from `status.management.version`, and the preset below it. A suspended cluster shows `-`. |
 | Components | One dot for each component of the cluster, as the next section shows. |
