@@ -517,10 +517,16 @@ export function FleetViewLive({
       ),
     ...planes.errors,
   ];
-  const answered = useAnswered(watched.map(([kind]) => kind));
+  // usePlanes watches the two management kinds.
+  const followed: KindName[] = [
+    ...watched.map(([kind]) => kind),
+    "CamundaManagementCluster",
+    "CamundaManagementClusterClaim",
+  ];
+  const answered = useAnswered(followed);
   const firstErrors = (initial.readErrors ?? []).filter(
     (e) =>
-      watched.some(([kind]) => kind === e.kind) &&
+      followed.includes(e.kind as KindName) &&
       !answered.has(e.kind) &&
       !liveErrors.some((l) => l.kind === e.kind),
   );

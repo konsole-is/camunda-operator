@@ -696,6 +696,25 @@ describe("FleetViewLive", () => {
     expect(screen.getByText(/No Camunda cluster yet/)).toBeTruthy();
   });
 
+  it("says that Needs attention can miss entries until a failed management list arrives", () => {
+    const failed: FleetPageData = {
+      ...sources(),
+      planes: { clusters: [], claims: [], namespaces: [], environments: [] },
+      readErrors: [
+        { kind: "CamundaManagementClusterClaim", message: "forbidden" },
+      ],
+    };
+    const { rerender } = render(<FleetViewLive initial={failed} now={NOW} />);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read CamundaManagementClusterClaim: forbidden",
+    );
+    expect(screen.getByText(/this list can miss entries/)).toBeTruthy();
+    live.fresh = ["CamundaManagementClusterClaim"];
+    rerender(<FleetViewLive initial={failed} now={NOW} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/this list can miss entries/)).toBeNull();
+  });
+
   it("stops waiting for a push of this browser tab", async () => {
     live.pushes = [push("team-x", "returns")];
     render(<FleetViewLive initial={initial} now={NOW} />);
