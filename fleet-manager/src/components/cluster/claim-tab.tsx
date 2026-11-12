@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, type Ref, useState } from "react";
 import { ConditionsTable } from "@/components/fleet/conditions-table";
 import { FieldState, FieldValue } from "@/components/fleet/field-state";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { lockLabel } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
+import { cn } from "@/lib/utils";
 import {
   type ClaimRef,
   type ClaimSection,
@@ -164,21 +165,34 @@ export function ClaimTab({
 
 /**
  * Panel is one panel of the Claim tab. name is its accessible name, label
- * by default. action shows at the end of its header.
+ * by default. action shows at the end of its header. editing marks a panel
+ * whose fields can change.
  */
 export function Panel({
   label,
   name = label,
   action,
+  editing = false,
+  ref,
   children,
 }: {
   label: string;
   name?: string;
   action?: ReactNode;
+  editing?: boolean;
+  ref?: Ref<HTMLElement>;
   children: ReactNode;
 }) {
   return (
-    <section aria-label={name} className={PANEL}>
+    <section
+      ref={ref}
+      aria-label={name}
+      tabIndex={editing ? -1 : undefined}
+      className={cn(
+        PANEL,
+        editing && "border-accent/60 ring-1 ring-accent/20 outline-none",
+      )}
+    >
       <div className="flex min-h-8 items-center justify-between gap-3">
         <h2 className={HEADING}>{label}</h2>
         {action}
