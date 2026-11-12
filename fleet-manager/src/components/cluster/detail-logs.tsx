@@ -42,10 +42,12 @@ const CONTROLLER = "controller/";
 export function DetailLogs({
   namespace,
   pods,
+  podsError,
   controller,
 }: {
   namespace: string;
   pods: PodLike[];
+  podsError?: string;
   controller?: ControllerLogs;
 }) {
   const [picked, setPicked] = useState(ALL);
@@ -72,6 +74,7 @@ export function DetailLogs({
   return (
     <DetailLogsView
       pods={own.map((s) => s.pod)}
+      podsError={podsError}
       controllerPods={controller && controllers.map((s) => s.pod)}
       controllerUnavailable={
         controller !== undefined && found === "unavailable"
@@ -92,6 +95,7 @@ export function DetailLogs({
  */
 export function DetailLogsView({
   pods,
+  podsError,
   controllerPods,
   controllerUnavailable = false,
   picked,
@@ -100,6 +104,7 @@ export function DetailLogsView({
   errors,
 }: {
   pods: string[];
+  podsError?: string;
   controllerPods?: string[];
   controllerUnavailable?: boolean;
   picked: string;
@@ -109,8 +114,12 @@ export function DetailLogsView({
 }) {
   const id = useId();
   const total = pods.length + (controllerPods?.length ?? 0);
+  const podsFailed =
+    podsError === undefined ? undefined : `Could not read Pod: ${podsError}`;
   if (total === 0 && !controllerUnavailable) {
-    return (
+    return podsFailed ? (
+      <p className="pt-2 text-sm text-warn">{podsFailed}</p>
+    ) : (
       <p className="pt-2 text-sm text-muted">
         This component has no pods, so it has no logs.
       </p>
@@ -159,6 +168,7 @@ export function DetailLogsView({
           {`Showing the logs of ${MAX_LOG_STREAMS} of ${total} pods. Pick a pod to see the others.`}
         </p>
       )}
+      {podsFailed && <p className="text-sm text-warn">{podsFailed}</p>}
       {controllerUnavailable && (
         <p className="text-sm text-warn">Could not read the controller pods.</p>
       )}

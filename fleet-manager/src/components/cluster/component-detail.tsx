@@ -88,6 +88,7 @@ export function ComponentDetail({
         <DetailLogs
           namespace={namespace}
           pods={pods.items}
+          podsError={pods.error}
           controller={controllerLogs}
         />
       }
@@ -96,6 +97,7 @@ export function ComponentDetail({
           namespace={namespace}
           selector={relatedSelector ?? podSelector}
           pods={pods.items}
+          podsError={pods.error}
           refs={eventRefs ?? []}
           now={props.now}
         />

@@ -10,6 +10,7 @@ import {
 
 const live = vi.hoisted(() => ({
   pods: [] as unknown[],
+  podsError: undefined as string | undefined,
   usage: undefined as unknown,
   calls: [] as { kind: string; opts: unknown }[],
   usageCalls: [] as string[][],
@@ -23,6 +24,9 @@ vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, opts: unknown, initial: unknown[]) => {
     live.calls.push({ kind, opts });
     if (kind === "Event") return { items: live.events };
+    if (kind === "Pod" && live.podsError) {
+      return { items: live.pods, error: live.podsError };
+    }
     return { items: kind === "Pod" && live.pods.length ? live.pods : initial };
   },
 }));
@@ -49,6 +53,7 @@ vi.mock("@/lib/observe/use-observe", () => ({
 
 beforeEach(() => {
   live.pods = [];
+  live.podsError = undefined;
   live.usage = undefined;
   live.calls = [];
   live.usageCalls = [];
@@ -152,6 +157,28 @@ describe("ComponentDetail", () => {
       { namespace: "mgmt", pod: "plane-a-keycloak-0" },
     ]);
     expect(live.registrations.every((r) => r === undefined)).toBe(true);
+  });
+
+  it("names a failed read of its pods on the Logs and Events tabs", async () => {
+    live.podsError = "The API server refused the list of Pod";
+    render(keycloak());
+
+    await userEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    expect(
+      screen.getByText(
+        "Could not read Pod: The API server refused the list of Pod",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("This component has no pods, so it has no logs."),
+    ).toBeNull();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Events" }));
+    expect(
+      screen.getByText(
+        "Could not read Pod: The API server refused the list of Pod",
+      ),
+    ).toBeTruthy();
   });
 
   it("asks the controller pods of its controller logs on the Logs tab", async () => {

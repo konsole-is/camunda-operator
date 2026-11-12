@@ -213,6 +213,24 @@ describe("DetailLogs", () => {
     expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
   });
 
+  it("names a failed read of the pods and does not say that the component has no pods", () => {
+    render(<DetailLogs namespace="team-a" pods={[]} podsError="watch broke" />);
+
+    expect(screen.getByText("Could not read Pod: watch broke")).toBeTruthy();
+    expect(
+      screen.queryByText("This component has no pods, so it has no logs."),
+    ).toBeNull();
+  });
+
+  it("follows the pods it has when a read of the pods failed", () => {
+    render(
+      <DetailLogs namespace="team-a" pods={brokers} podsError="watch broke" />,
+    );
+
+    expect(lastSources()).toHaveLength(brokers.length);
+    expect(screen.getByText("Could not read Pod: watch broke")).toBeTruthy();
+  });
+
   it("says so when the component has no pods", () => {
     render(<DetailLogs namespace="team-a" pods={[]} />);
 

@@ -17,12 +17,14 @@ export function DetailEvents({
   namespace,
   selector,
   pods,
+  podsError,
   refs,
   now,
 }: {
   namespace: string;
   selector: string;
   pods: readonly Resource<"Pod">[];
+  podsError?: string;
   refs: readonly EventRef[];
   now: string;
 }) {
@@ -39,6 +41,7 @@ export function DetailEvents({
   });
   const failed = (
     [
+      ["Pod", { error: podsError }],
       ["Event", events],
       ["Service", services],
       ["PersistentVolumeClaim", claims],

@@ -49,10 +49,11 @@ const event = (reason: string, kind: string, name: string, uid?: string) => ({
   regarding: { kind, name, namespace: "team-a", ...(uid && { uid }) },
 });
 
-function show() {
+function show(podsError?: string) {
   render(
     <DetailEvents
       namespace="team-a"
+      podsError={podsError}
       selector={SELECTOR}
       pods={brokers}
       refs={[
@@ -140,6 +141,15 @@ describe("DetailEvents", () => {
         .map((li) => li.textContent)
         .join(),
     ).toContain("Pod/orders-zeebe-0");
+  });
+
+  it("says that the list can be incomplete when the read of the pods failed", () => {
+    show("watch broke");
+
+    expect(screen.getByText("Could not read Pod: watch broke")).toBeTruthy();
+    expect(
+      screen.getByText("The list can miss events, because a read failed."),
+    ).toBeTruthy();
   });
 
   it("says so when the component has no events", () => {
