@@ -418,6 +418,18 @@ describe("FleetView", () => {
     ).toBeTruthy();
   });
 
+  it("does not say that nothing needs attention while a list it reads failed", () => {
+    render(
+      view({
+        sources: sources(),
+        planes: [],
+        errors: [{ kind: "PluginRegistration", message: "forbidden" }],
+      }),
+    );
+    const panel = screen.getByRole("region", { name: "Needs attention" });
+    expect(within(panel).queryByText("Nothing needs attention.")).toBeNull();
+  });
+
   it("shows Needs attention on every tab", async () => {
     render(view());
     const panel = () => screen.getByRole("region", { name: "Needs attention" });

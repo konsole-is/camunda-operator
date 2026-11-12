@@ -5,12 +5,14 @@ import type { AttentionItem } from "./attention";
 /**
  * AttentionPanel lists each item with its reason and message, and links an
  * item with href to its page. Without items it says that nothing needs
- * attention.
+ * attention, unless incomplete says that a list it reads could not be read.
  */
 export function AttentionPanel({
   items,
+  incomplete = false,
 }: {
   items: AttentionItem[];
+  incomplete?: boolean;
 }): ReactNode {
   return (
     <section
@@ -20,8 +22,15 @@ export function AttentionPanel({
       <h2 className="font-heading text-sm font-semibold text-text-2">
         Needs attention
       </h2>
+      {incomplete && (
+        <p className="text-sm text-muted">
+          Some lists could not be read, so this list can miss entries.
+        </p>
+      )}
       {items.length === 0 ? (
-        <p className="text-sm text-muted">Nothing needs attention.</p>
+        !incomplete && (
+          <p className="text-sm text-muted">Nothing needs attention.</p>
+        )
       ) : (
         <ul className="flex flex-col gap-1.5 text-sm">
           {items.map((item) => {

@@ -40,6 +40,17 @@ describe("AttentionPanel", () => {
     ).toBeTruthy();
   });
 
+  it("says that the list can be incomplete when a list could not be read", () => {
+    render(<AttentionPanel items={[]} incomplete />);
+    const panel = screen.getByRole("region", { name: "Needs attention" });
+    expect(within(panel).queryByText("Nothing needs attention.")).toBeNull();
+    expect(
+      within(panel).getByText(
+        "Some lists could not be read, so this list can miss entries.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("says that nothing needs attention", () => {
     render(<AttentionPanel items={[]} />);
     expect(

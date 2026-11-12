@@ -68,6 +68,16 @@ const isReady = (row: ClusterRow) => row.ready?.status === "True";
 // page does not say that the fleet is empty.
 const UNREAD_EMPTY = ["CamundaCluster", "CamundaClusterClaim"];
 
+// A failed read of one of these kinds can hide an entry of Needs attention.
+const ATTENTION_KINDS = [
+  ...UNREAD_EMPTY,
+  "LogicalBackupElasticsearch",
+  "LogicalBackupRDBMS",
+  "PluginRegistration",
+  "CamundaManagementCluster",
+  "CamundaManagementClusterClaim",
+];
+
 /**
  * FleetView is the fleet page on the given lists and pod warnings. It
  * fetches nothing. Without podWarnings a row shows only the warnings of its
@@ -144,7 +154,10 @@ export function FleetView({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
-      <AttentionPanel items={attention} />
+      <AttentionPanel
+        items={attention}
+        incomplete={errors.some((e) => ATTENTION_KINDS.includes(e.kind))}
+      />
       {tabs.length === 0 ? (
         content
       ) : (
