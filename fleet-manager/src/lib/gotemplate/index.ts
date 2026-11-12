@@ -65,8 +65,8 @@ const ONLY_FIELDS = "a template holds field references only";
  * parseTemplate checks a template of the plugin contract. A template
  * holds plain text and field references only: {{ .namespace }},
  * {{ .claim }}, {{ .request }}, {{ .serviceAccount }},
- * {{ .parameters.<name> }}, {{ .outputs.<key> }}, and in a metric query
- * also {{ .pods }}. {{- and -}} trim the white space around an action, as
+ * {{ .parameters.<name> }}, {{ .outputs.<key> }} except in a template
+ * parameter, and in a metric query also {{ .pods }}. {{- and -}} trim the white space around an action, as
  * in Go. Each other construct, an unknown name, and an action that is not
  * closed is an error that names it, with the messages of pluginkit. It does
  * not check the values of a metric query; render does.
@@ -128,6 +128,65 @@ export function render(
     .map((part) => (typeof part === "string" ? part : value(part, data)))
     .join("");
   return { text };
+}
+
+/**
+ * renderJSON renders each string of value as a template of kind, as
+ * RenderJSON of pluginkit renders a template parameter: keys are not
+ * rendered, and every other value stays. value itself does not change. An
+ * error of a string carries path, the path of that string in value, such as
+ * "Statement[0].Resource", or "" for a string value.
+ */
+export function renderJSON(
+  value: unknown,
+  data: TemplateData,
+  kind: TemplateKind,
+): { value: unknown } | (TemplateError & { path: string }) {
+  return renderValue(value, data, kind, "");
+}
+
+function renderValue(
+  value: unknown,
+  data: TemplateData,
+  kind: TemplateKind,
+  path: string,
+): { value: unknown } | (TemplateError & { path: string }) {
+  if (typeof value === "string") {
+    const rendered = render(value, data, kind);
+    return "error" in rendered
+      ? { ...rendered, path }
+      : { value: rendered.text };
+  }
+  if (Array.isArray(value)) {
+    const items: unknown[] = [];
+    for (const [i, item] of value.entries()) {
+      const rendered = renderValue(item, data, kind, `${path}[${i}]`);
+      if ("error" in rendered) return rendered;
+      items.push(rendered.value);
+    }
+    return { value: items };
+  }
+  if (typeof value === "object" && value !== null) {
+    const object: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      const rendered = renderValue(
+        item,
+        data,
+        kind,
+        path === "" ? key : `${path}.${key}`,
+      );
+      if ("error" in rendered) return rendered;
+      // An assignment to the key __proto__ would set the prototype.
+      Object.defineProperty(object, key, {
+        value: rendered.value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+    return { value: object };
+  }
+  return { value };
 }
 
 // A value can change the structure of a PromQL query unless it is a number,
@@ -354,6 +413,12 @@ function checkField(
     if (["namespace", "claim", "request", "serviceAccount"].includes(head)) {
       return { path };
     }
+  }
+  if (path.length === 2 && head === "outputs" && kind === "parameter") {
+    return {
+      error: `the placeholder ${name} is not allowed: a template parameter cannot read the outputs`,
+      field,
+    };
   }
   if (path.length === 2 && (head === "parameters" || head === "outputs")) {
     return { path };
