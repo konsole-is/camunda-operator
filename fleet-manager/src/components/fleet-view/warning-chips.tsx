@@ -57,8 +57,8 @@ export function WarningChips({
               </TooltipTrigger>
               <TooltipContent>
                 {warning.since
-                  ? `${warning.detail}, ${age(warning.since, now)} ago.`
-                  : `${warning.detail}.`}
+                  ? `${sentence(warning.detail)}, ${age(warning.since, now)} ago.`
+                  : `${sentence(warning.detail)}.`}
               </TooltipContent>
             </Tooltip>
           );
@@ -66,6 +66,11 @@ export function WarningChips({
       </span>
     </TooltipProvider>
   );
+}
+
+// A detail can be a condition message that ends with its own period.
+function sentence(detail: string): string {
+  return detail.endsWith(".") ? detail.slice(0, -1) : detail;
 }
 
 /**

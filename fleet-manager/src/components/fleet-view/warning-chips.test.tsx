@@ -87,6 +87,29 @@ describe("WarningChips", () => {
     );
   });
 
+  it("does not double the period of a detail that ends with one", async () => {
+    const failing: Warning = {
+      kind: "request",
+      severity: "Error",
+      label: "Storage not ready",
+      detail: "The bucket is failing.",
+    };
+    render(
+      <WarningChips
+        warnings={[{ ...failing, since: "2026-11-10T11:55:00Z" }, failing]}
+        now={NOW}
+      />,
+    );
+    await userEvent.tab();
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      "The bucket is failing, 5m ago.",
+    );
+    await userEvent.tab();
+    expect((await screen.findByRole("tooltip")).textContent).toBe(
+      "The bucket is failing.",
+    );
+  });
+
   it("shows a dash without warnings", () => {
     const { container } = render(<WarningChips warnings={[]} now={NOW} />);
     expect(container.textContent).toBe("-");
