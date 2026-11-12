@@ -333,13 +333,22 @@ function schemaErrors(
   });
 }
 
+// lib/schema compiles each schema object once, and the check runs on each
+// render, so each schema and its left-out names keep one derived object.
+const derived = new WeakMap<object, Map<string, Record<string, unknown>>>();
+
 function withoutProperties(
   schema: Record<string, unknown>,
   names: readonly string[],
 ): Record<string, unknown> {
   if (names.length === 0) return schema;
+  const key = JSON.stringify(names);
+  const known = derived.get(schema) ?? new Map();
+  derived.set(schema, known);
+  const cached = known.get(key);
+  if (cached) return cached;
   const properties = isObject(schema.properties) ? schema.properties : {};
-  return {
+  const result = {
     ...schema,
     properties: Object.fromEntries(
       Object.entries(properties).filter(([k]) => !names.includes(k)),
@@ -348,4 +357,6 @@ function withoutProperties(
       required: schema.required.filter((k) => !names.includes(k)),
     }),
   };
+  known.set(key, result);
+  return result;
 }
