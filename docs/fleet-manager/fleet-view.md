@@ -2,7 +2,20 @@
 
 The **Fleet** page of the fleet manager lists each Camunda cluster of this Kubernetes cluster, grouped by environment. Above the clusters, it lists the management planes that serve them. The button **New cluster** opens the create flow.
 
-The page updates live. A new cluster, a change of status, or a new backup shows without a reload.
+The page updates live. A new cluster, a change of status, or a new backup shows without a reload. The warnings of the pods update every 15 seconds.
+
+## Needs attention
+
+The panel **Needs attention** is at the top of the page, above the tabs. It shows the same list on every tab, and the filters do not apply to it. It lists, in this order:
+
+| Entry | When it shows | Link |
+| --- | --- | --- |
+| Cluster | The `Ready` condition of the cluster, or of a claim without a cluster, is `False`. | The cluster page. A claim without a cluster has no link. |
+| Backup | A backup has the phase `Failed`, and it finished in the last 24 hours. A backup without a completion time counts from the time it was created. | The **Backups** tab of its cluster. |
+| Option | The `Accepted` or the `Ready` condition of a `PluginRegistration` is `False`. The entry shows the label of the option, or its name. | No link. |
+| Management plane | The `Ready` condition of the plane is `False`. | No link. |
+
+Each entry shows the reason and the message of the condition. A backup shows its failure message. When nothing needs attention, the panel says "Nothing needs attention." When the page cannot read one of these lists, the panel says "Some lists could not be read, so this list can miss entries."
 
 ## Environments and tabs
 
@@ -54,6 +67,7 @@ Each table of clusters has these columns:
 | Version | The Camunda version that the cluster runs, from `status.management.version`, and the preset below it. A suspended cluster shows `-`. |
 | Components | One dot for each component of the cluster, as the next section shows. |
 | Last backup | The phase and the start time of the newest backup of the cluster, or **No backups**. |
+| Warnings | One chip for each warning of the cluster, errors first, as [Warnings](#warnings) shows. A cluster without a warning shows `-`. |
 
 A cluster shows **Not managed** when you applied the `CamundaCluster` with `kubectl` or a GitOps tool, and not through a `CamundaClusterClaim`. You can read such a cluster in the fleet manager, but you cannot change it there.
 
@@ -70,6 +84,31 @@ The dots show the components of the cluster in this order:
 
 The color of a dot is the `Ready` state of its component. Green is ready, red is not ready, and yellow is unknown. Disabled Connectors, and Optimize for a cluster without a `CamundaOptimize`, show a grey dot. A component that has no status yet also shows a grey dot. Hold the pointer on the dots, or move the keyboard focus to them, to see a list of the components. The list gives the state of each component and the message of its condition.
 
+## Warnings
+
+A warning is a fact that needs your attention, also while the cluster is ready. The column **Warnings** shows one chip for each warning. Hold the pointer on a chip, or move the keyboard focus to it, to see the details. The details say what happened and, when the fact has a time, how long ago it happened.
+
+| Warning | When it shows | Severity | Source |
+| --- | --- | --- | --- |
+| Out of memory | A container or an init container of the cluster stopped with the reason `OOMKilled` in the last hour. | Error | The [state of the container](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-states) in the pod status |
+| Restarts | A container or an init container restarted more than 3 times, and its last restart was in the last hour. | Warning | The restart count and the last state of the container in the pod status |
+| Near memory limit, near CPU limit | A pod uses 75 % or more of its memory or CPU limit. At 90 % or more the chip is an error. A pod without a limit has no such warning. | Warning or Error | metrics-server, through the [resource metrics pipeline](https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/) |
+| Backpressure | The brokers dropped more than 1 % of the requests in the last 5 minutes. | Warning | Prometheus |
+| Backup failed | The newest backup of the cluster has the phase `Failed`. The chip stays until a newer backup of the cluster exists. | Warning | The backup |
+| An item of a request summary | An option reports an item with the severity `Warning` or `Error` in the summary of its request. The chip shows the label of the item. | The severity of the item | The `PluginRequest` |
+| `<section>` not ready | The `Ready` condition of the request of a section is `False`. The tooltip shows its reason and its message. | Error | The `PluginRequest` |
+
+The restart count of a container counts every restart since the pod started. So the Restarts warning uses the time of the last restart, and it goes away one hour after the last restart.
+
+The backpressure share is `zeebe_dropped_request_count_total` divided by `zeebe_received_request_count_total` of the brokers of the cluster. Camunda documents both metrics in [Backpressure tuning](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/zeebe/operations/backpressure/#backpressure-tuning). Prometheus must keep the labels `namespace` and `pod` on these metrics, as [Metrics of the charts](settings.md#metrics-of-the-charts) shows. The fleet manager reads the backpressure share for each Camunda 8.9 patch release. A cluster that reports another version, or no version, has no Backpressure warning.
+
+The near limit warnings need metrics-server. The Backpressure warning needs Prometheus at the address that **Prometheus URL** (`prometheus.url`) of [Fleet manager settings](settings.md) gives. When one of them does not answer, its warnings do not show, and the page says so once, above the clusters:
+
+- `metrics-server is not found, so the near memory and CPU limit warnings do not show.`
+- `Prometheus is not set or does not answer, so the backpressure warning does not show.`
+
+The other warnings still show. When the fleet manager cannot read the pods, the page says `The warnings of the pods do not show, because the fleet manager could not read them.` The warnings of the backups and of the requests still show then.
+
 ## Filters
 
 Three filters apply to every table of clusters on the tab:
@@ -77,6 +116,7 @@ Three filters apply to every table of clusters on the tab:
 - **Search clusters** keeps the clusters whose name holds the text. Upper case and lower case are the same.
 - **Namespace** keeps the clusters of one namespace.
 - **Status** with **Not ready** keeps the clusters whose `Ready` condition is not `True`, also a cluster that has no status yet.
+- **Status** with **With warnings** keeps the clusters that have at least one warning.
 
 The filters do not apply to the management planes. When no cluster passes the filters, the page says "No cluster matches the search and the filters."
 

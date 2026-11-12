@@ -15,6 +15,8 @@ const CADVISOR =
 const KUBELET = "https://kubernetes.io/docs/reference/instrumentation/metrics/";
 const CAMUNDA =
   "https://docs.camunda.io/docs/8.9/self-managed/operational-guides/monitoring/metrics/#available-metrics";
+const BACKPRESSURE =
+  "https://docs.camunda.io/docs/8.9/self-managed/components/orchestration-cluster/zeebe/operations/backpressure/#backpressure-tuning";
 const OUTPUTS_READY: PluginsPluginRequestConditionType = "OutputsReady";
 const SELECT = 'namespace="{{ .namespace }}", pod=~"{{ .pods }}"';
 const SELECT_VOLUMES =
@@ -116,6 +118,21 @@ export const PARTITION_HEALTH: CoreQuery = {
   query: `min by (partition) (zeebe_health{${SELECT}})`,
   metric: "zeebe_health",
   source: CAMUNDA,
+  versions: CAMUNDA_8_9,
+};
+
+/**
+ * BACKPRESSURE_RATES gives the requests that each pod received and dropped
+ * by backpressure, per second over 5 minutes. A series has the labels kind
+ * ("received" or "dropped"), namespace, and pod. It reads every namespace,
+ * so it has no template field.
+ */
+export const BACKPRESSURE_RATES: CoreQuery = {
+  label: "Requests received and dropped by backpressure",
+  query: `label_replace(sum by (namespace, pod) (rate(zeebe_received_request_count_total[5m])), "kind", "received", "", "") or label_replace(sum by (namespace, pod) (rate(zeebe_dropped_request_count_total[5m])), "kind", "dropped", "", "")`,
+  metric: "zeebe_dropped_request_count_total",
+  // The metrics page does not name zeebe_received_request_count_total.
+  source: BACKPRESSURE,
   versions: CAMUNDA_8_9,
 };
 
