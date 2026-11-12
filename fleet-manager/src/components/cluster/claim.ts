@@ -10,6 +10,7 @@ import { CLAIM_PLACEMENT, placementOf } from "@/lib/conditions";
 import { type ClusterField, parameterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import type { Merged } from "@/lib/merge";
+import { deletionPolicyOf } from "@/lib/policy";
 
 /**
  * ClaimSection is one selection of the claim: a section with the option
@@ -136,10 +137,9 @@ export function claimView(input: {
     preset: spec.presetRef,
     release: ref(spec.releaseRef, cluster.spec.releaseRef),
     platformConfig: ref(spec.platformConfigRef, cluster.spec.platformConfigRef),
-    // The claim controller falls back to Delete (claimpolicy.DeletionPolicy).
     deletionPolicy: ref(
       spec.deletionPolicy,
-      status?.resolvedPolicy?.deletionPolicy || "Delete",
+      deletionPolicyOf(undefined, status?.resolvedPolicy),
     ),
     sections: selections,
     ...(optimize && {

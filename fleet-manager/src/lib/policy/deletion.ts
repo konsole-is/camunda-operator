@@ -1,10 +1,25 @@
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
+import type { ResolvedPolicy } from "./resolve";
 import type { PluginSelection, PolicyResult, SectionView } from "./types";
 
 /** DeletionPolicy is a deletion policy of a claim or of a request. */
 export type DeletionPolicy =
   PluginRegistration["spec"]["deletionPolicies"][number];
+
+/**
+ * deletionPolicyOf returns the deletion policy that the requests of a claim
+ * get, by the rule of DeletionPolicy of pkg/claimpolicy: own, the
+ * spec.deletionPolicy of the claim, when it is set, else the default of
+ * resolved, its status.resolvedPolicy, else Delete. A claim falls back to
+ * Delete, not to the current default of its Environment.
+ */
+export function deletionPolicyOf(
+  own: DeletionPolicy | "" | undefined,
+  resolved: ResolvedPolicy | undefined,
+): DeletionPolicy {
+  return own || resolved?.deletionPolicy || "Delete";
+}
 
 /**
  * checkDeletionPolicy refuses with NotAllowed the deletion policy Orphan when

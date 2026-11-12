@@ -269,6 +269,28 @@ describe("a section panel", () => {
     ).toBeTruthy();
   });
 
+  it("emptying a required parameter that the policy does not give blocks Review and shows the error beside it", async () => {
+    const context = contextOf();
+    const registration = structuredClone(harness);
+    (registration.spec.parameters as { required: string[] }).required = [
+      "hostPrefix",
+    ];
+    context.registrations = [registration];
+    context.claim!.status!.resolvedPolicy!.parameters![
+      "fleet-harness"
+    ].hostPrefix!.value = undefined;
+    panel(context);
+    await userEvent.clear(within(row("hostPrefix")).getByRole("textbox"));
+    expect(within(row("hostPrefix")).getByRole("alert").textContent).toContain(
+      "is required",
+    );
+    expect(
+      within(
+        screen.getByRole("region", { name: "Unsaved changes" }),
+      ).getByRole<HTMLButtonElement>("button", { name: "Review" }).disabled,
+    ).toBe(true);
+  });
+
   it("says when no parameter can change", () => {
     const context = contextOf();
     context.claim!.status!.resolvedPolicy!.parameters!["fleet-harness"] = {
