@@ -467,6 +467,32 @@ describe("componentsErrors", () => {
     ]);
   });
 
+  it("refuses an SMTP Secret that is gone or lacks the username or password key", () => {
+    const d: PlaneDraft = {
+      ...ready(),
+      admin: { ...EMPTY_ADMIN, username: "admin", email: "admin@example.com" },
+      webModeler: true,
+      mail: {
+        ...EMPTY_MAIL,
+        smtpHost: "smtp.example.com",
+        fromAddress: "modeler@example.com",
+        credentialsSecret: "smtp",
+      },
+    };
+    const refused = [
+      "Pick another SMTP credentials Secret. smtp is gone, or it lacks the key username or password.",
+    ];
+    expect(
+      componentsErrors(d, ctx, [
+        { name: "smtp", keys: ["username", "password"] },
+      ]),
+    ).toEqual([]);
+    expect(componentsErrors(d, ctx, [])).toEqual(refused);
+    expect(
+      componentsErrors(d, ctx, [{ name: "smtp", keys: ["username"] }]),
+    ).toEqual(refused);
+  });
+
   it("asks for each version when the served environment has no default release", () => {
     expect(componentsErrors({ ...ready(), served: ["staging"] }, ctx)).toEqual([
       "Enter the Management Identity version.",
@@ -701,6 +727,34 @@ describe("planeCreateChange", () => {
       "Namespace//team-new",
       "CamundaManagementClusterClaim/team-new/plane-a",
     ]);
+  });
+
+  it("planeCreateChange gives a new namespace the current fixed labels of the Environment", () => {
+    const d: PlaneDraft = {
+      ...ready(),
+      environment: "open",
+      namespace: {
+        kind: "new",
+        name: "team-new",
+        labels: {
+          "fleet.camunda.io/environment": "open",
+          tier: "silver",
+          team: "a",
+        },
+      },
+    };
+    expect(planeCreateChange(d, ctx).apply[0]).toEqual({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: {
+        name: "team-new",
+        labels: {
+          "fleet.camunda.io/environment": "open",
+          tier: "gold",
+          team: "a",
+        },
+      },
+    });
   });
 
   it("planeCreateChange in an existing namespace holds only the claim", () => {

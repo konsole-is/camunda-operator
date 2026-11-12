@@ -1,5 +1,6 @@
 // This module runs in the browser and on the server.
 import type { NamespaceChoice } from "@/components/fleet/namespace-picker";
+import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import type {
   CamundaManagementClusterClaim,
   CamundaManagementClusterClaimSpec,
@@ -11,6 +12,7 @@ import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import { claimNameErrors } from "@/lib/claims/names";
+import { syncedNamespace } from "@/lib/clusters/draft";
 import { environmentReady } from "@/lib/environments";
 import type { LabelSelector } from "@/lib/labels";
 import type { PluginSelection } from "@/lib/policy";
@@ -25,6 +27,7 @@ import {
   type MailDraft,
   adminErrors,
   mailErrors,
+  mailSecretErrors,
   runningOf,
 } from "./components";
 import {
@@ -242,14 +245,21 @@ export function planeVersions(
 /**
  * componentsErrors returns the errors of step 3: the admin fields of the
  * mode, the mail while Web Modeler is on, then the errors of planeVersions.
+ * With secrets, the Secrets of the namespace of draft, a credentials Secret
+ * that the mail names while Web Modeler is on must be among smtpSecrets of
+ * them.
  */
 export function componentsErrors(
   draft: PlaneDraft,
   ctx: PlaneContext,
+  secrets?: SecretRefs,
 ): string[] {
   return [
     ...adminErrors(draft),
     ...(draft.webModeler ? mailErrors(draft.mail) : []),
+    ...(draft.webModeler && secrets
+      ? mailSecretErrors(draft.mail, secrets)
+      : []),
     ...versionErrors(planeVersions(draft, ctx), runningOf(draft)),
   ];
 }
@@ -315,8 +325,8 @@ export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
 
 /**
  * planeCreateChange returns the create change of draft: the new namespace
- * with its labels when the draft makes one, then the claim of
- * planeClaimOf.
+ * with the labels of syncedNamespace under its environment when the draft
+ * makes one, then the claim of planeClaimOf.
  */
 export function planeCreateChange(
   draft: PlaneDraft,
@@ -324,7 +334,7 @@ export function planeCreateChange(
 ): Change {
   const claim = planeClaimOf(draft, ctx);
   const { namespace } = claim.metadata;
-  const choice = draft.namespace;
+  const choice = syncedNamespace(draft.namespace, environmentOf(draft, ctx));
   return createChangeOf(
     `Create the management plane ${claim.metadata.name} in ${namespace}`,
     claim,

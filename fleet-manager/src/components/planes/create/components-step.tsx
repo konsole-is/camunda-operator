@@ -13,7 +13,11 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import { type MailDraft, runningOf } from "@/lib/planes/components";
+import {
+  type MailDraft,
+  runningOf,
+  smtpSecrets,
+} from "@/lib/planes/components";
 import {
   type PlaneContext,
   type PlaneDraft,
@@ -160,9 +164,6 @@ export function ComponentsStep({
   );
 }
 
-// The claim names no keys of the SMTP Secret, so the operator reads these.
-const SMTP_KEYS = ["username", "password"];
-
 function MailFields({
   mail,
   secrets,
@@ -173,9 +174,7 @@ function MailFields({
   onChange: (key: keyof MailDraft, value: unknown) => void;
 }) {
   const id = useId();
-  const usable = secrets.filter((s) =>
-    SMTP_KEYS.every((key) => s.keys.includes(key)),
-  );
+  const usable = smtpSecrets(secrets);
   const stale =
     mail.credentialsSecret !== "" &&
     !usable.some((s) => s.name === mail.credentialsSecret);

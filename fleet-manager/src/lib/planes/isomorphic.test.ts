@@ -5,6 +5,7 @@ describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/labels",
   "@/lib/claims/names",
   "@/lib/claims/hosts",
+  "@/lib/clusters/draft",
   "@/lib/environments",
   "@/lib/fields/slots",
   "@/lib/policy",

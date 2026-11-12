@@ -83,6 +83,32 @@ export function adminErrors(draft: PlaneDraft): string[] {
   ];
 }
 
+// The claim names no keys of the SMTP Secret, so the operator reads these.
+const SMTP_KEYS = ["username", "password"];
+
+/** smtpSecrets returns the Secrets of secrets that hold the keys username and password. */
+export function smtpSecrets<S extends { keys: readonly string[] }>(
+  secrets: readonly S[],
+): S[] {
+  return secrets.filter((s) => SMTP_KEYS.every((key) => s.keys.includes(key)));
+}
+
+/**
+ * mailSecretErrors returns an error when mail names a credentials Secret
+ * that smtpSecrets of secrets does not hold.
+ */
+export function mailSecretErrors(
+  mail: MailDraft,
+  secrets: readonly { name: string; keys: readonly string[] }[],
+): string[] {
+  const name = mail.credentialsSecret;
+  return name !== "" && !smtpSecrets(secrets).some((s) => s.name === name)
+    ? [
+        `Pick another SMTP credentials Secret. ${name} is gone, or it lacks the key username or password.`,
+      ]
+    : [];
+}
+
 /** mailErrors returns the errors of the mail of Web Modeler. */
 export function mailErrors(mail: MailDraft): string[] {
   const port = mail.smtpPort;

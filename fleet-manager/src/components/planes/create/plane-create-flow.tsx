@@ -168,13 +168,15 @@ export function planeContextOf(
  * planeSteps returns PLANE_STEPS with the check of each step.
  * selectorErrors are the errors of the cluster labels, and sectionErrors
  * those of the sections of the storage step. failures are the lists that
- * cannot be read.
+ * cannot be read. secrets are the Secrets of the existing namespace of the
+ * draft.
  */
 export function planeSteps(
   models: PlaneModels,
   selectorErrors: readonly ValidationError[],
   failures: readonly ReadError[] = [],
   sectionErrors: readonly ValidationError[] = [],
+  secrets?: SecretRefs,
 ): CreateStep<PlaneDraft>[] {
   const message = (f: ReadError) =>
     `The fleet manager could not read the ${f.kind} objects: ${f.message}`;
@@ -196,7 +198,11 @@ export function planeSteps(
         case "served":
           return servedErrors(draft, ctx, selectorErrors);
         case "components":
-          return componentsErrors(draft, ctx);
+          return componentsErrors(
+            draft,
+            ctx,
+            secrets && (draft.namespace?.kind === "existing" ? secrets : []),
+          );
         case "storage":
           return [
             ...storageFailures.map(message),
@@ -404,16 +410,17 @@ export function PlaneCreateFlow({
       setSectionErrors((current) => ({ ...current, [section]: errors })),
     [],
   );
+  const [secrets, setSecrets] = useState<SecretRefs>([]);
   const steps = planeSteps(
     models,
     selectorErrors,
     readErrors,
     Object.values(sectionErrors).flat(),
+    secrets,
   );
   const flow = useCreateFlow({ steps, initial: EMPTY_PLANE_DRAFT });
   const namespace = flow.draft.namespace;
   const existing = namespace?.kind === "existing" ? namespace.name : undefined;
-  const [secrets, setSecrets] = useState<SecretRefs>([]);
   const { toast, show, dismiss } = useWriteToast();
   const [written, setWritten] = useState<CamundaManagementClusterClaim>();
   const [keptNamespace, setKeptNamespace] = useState<string>();
