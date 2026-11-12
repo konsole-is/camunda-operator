@@ -21,9 +21,7 @@ import (
 	"fmt"
 	"slices"
 
-	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -154,60 +152,6 @@ func (r *DatabaseServerReconciler) serviceAccountTaken(
 	}
 
 	return fmt.Sprintf("ServiceAccount %q is controlled by %s %q", key.Name, holder.Kind, holder.Name), nil
-}
-
-// archivePluginRoles returns every CloudNativePG cluster that the server
-// controls, and whether each is granted the Role that the Barman Cloud plugin
-// creates for it.
-//
-// A cluster is not granted until its Role exists: the API server refuses a
-// RoleBinding to a missing Role unless the writer may bind any Role. It is not
-// granted while the Role is not the cluster's or the ServiceAccount is not the
-// server's either: the binding would hand the objects of one owner to another.
-func (r *DatabaseServerReconciler) archivePluginRoles(
-	ctx context.Context,
-	server *v1.DatabaseServer,
-	serviceAccountTaken string,
-) ([]components.ArchivePluginRole, error) {
-	// Every cluster, because one that a rollback left can outlive its record.
-	// Live, because a stale answer keeps a binding on a Role of the same name
-	// that another owner made again.
-	var clusters cnpgv1.ClusterList
-	if err := r.APIReader.List(
-		ctx, &clusters,
-		client.InNamespace(server.Namespace),
-		client.MatchingLabels{labels.DatabaseServerKey: labels.OwnerName(server.Name)},
-	); err != nil {
-		return nil, fmt.Errorf("listing the CloudNativePG clusters of the server: %w", err)
-	}
-
-	var roles []components.ArchivePluginRole
-	for i := range clusters.Items {
-		cluster := &clusters.Items[i]
-		if !ownedByServer(server, cluster) {
-			continue
-		}
-		name := cluster.Name
-
-		role := &metav1.PartialObjectMetadata{}
-		role.SetGroupVersionKind(rbacv1.SchemeGroupVersion.WithKind("Role"))
-		key := types.NamespacedName{Namespace: server.Namespace, Name: components.ArchivePluginRoleName(name)}
-		granted := serviceAccountTaken == ""
-		if err := r.APIReader.Get(ctx, key, role); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return nil, fmt.Errorf("reading the Role %s: %w", key, err)
-			}
-			granted = false
-		} else if !metav1.IsControlledBy(role, cluster) {
-			granted = false
-		}
-
-		roles = append(roles, components.ArchivePluginRole{
-			Cluster: name, ClusterUID: cluster.UID, Granted: granted,
-		})
-	}
-
-	return roles, nil
 }
 
 // removeSupersededContracts deletes every DatabaseServerConfig that the server

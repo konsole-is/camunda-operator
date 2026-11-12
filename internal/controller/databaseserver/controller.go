@@ -105,9 +105,6 @@ type resolvedSpec struct {
 	// is the server's own. A rollback is refused while it is set: see
 	// serviceAccountTaken.
 	serviceAccountTaken string
-	// archivePluginRoles are the clusters of the server that the Role of the
-	// Barman Cloud plugin is bound for: see archivePluginRoles.
-	archivePluginRoles []components.ArchivePluginRole
 	// clusterTaken says why a CloudNativePG cluster of the name the server
 	// derives is not this server's to write, and it is empty when the name is
 	// free or the cluster is the server's own. The recovery decides the name,
@@ -211,11 +208,6 @@ type DatabaseServerReconciler struct {
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters;scheduledbackups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups,verbs=get;list;watch
 // +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores,verbs=get;list;watch;create;update;patch;delete
-// Writes no ObjectStore status. The Role of the Barman Cloud plugin grants it, and the
-// API server lets the operator bind that Role only while it holds every rule of it.
-// +kubebuilder:rbac:groups=barmancloud.cnpg.io,resources=objectstores/status,verbs=update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch
@@ -336,12 +328,6 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-	}
-
-	// After the recovery, which records the cluster that a rollback builds.
-	resolved.archivePluginRoles, err = r.archivePluginRoles(ctx, &server, resolved.serviceAccountTaken)
-	if err != nil {
-		return ctrl.Result{}, err
 	}
 
 	// After the recovery, because the recovery is what moves status.cluster:
@@ -482,7 +468,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 
 	cluster, systemIdentifier, err := components.ClusterComponent(
 		server, merged, resolved.requested, resolved.archive, resolved.archiveTaken,
-		resolved.platform, resolved.clusterBlocked, resolved.archivePluginRoles, r.GracePeriods.Datastore,
+		resolved.platform, resolved.clusterBlocked, r.GracePeriods.Datastore,
 	)
 	if err != nil {
 		return built, fmt.Errorf("building cluster component: %w", err)

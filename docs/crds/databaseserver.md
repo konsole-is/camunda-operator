@@ -4,7 +4,7 @@
 
 The server is the relational secondary storage of the clusters that use it. A [Database](database.md) creates a logical database and its users on the published contract, and a `CamundaCluster` connects through that `Database`. An archive lets a [PointInTimeRestore](pointintimerestore.md) roll the server back to a point in time.
 
-The operator needs the [CloudNativePG](https://cloudnative-pg.io/) operator on the Kubernetes cluster. An archive also needs the [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/) and cert-manager. See [Installation](../installation.md).
+The operator needs the [CloudNativePG](https://cloudnative-pg.io/) operator on the Kubernetes cluster. An archive also needs the [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/), version 0.16 or later, and cert-manager. See [Installation](../installation.md).
 
 The smallest server names a PostgreSQL major, a volume size, and the contract to publish:
 
@@ -215,7 +215,7 @@ While a rollback runs, an edit of `spec.databaseServerConfig`, of `spec.archive`
 
 If the `ObjectStorageConfig` holds static credentials, the operator copies them into the Secret `my-db-archive` next to the server. Anyone who can read Secrets in that namespace can then read the bucket credentials. Use workload identity to keep them out of the namespace.
 
-The instance pods run under the ServiceAccount `my-db-postgres`, the server name and `-postgres`. The operator creates it. A rollback does not change it, so a cloud binding that names it stays valid. The principal to bind is `system:serviceaccount:my-cluster-ns:my-db-postgres`. While the server archives, the operator also binds the Role of the Barman Cloud plugin to this ServiceAccount. The pods can then read the archive settings.
+The instance pods run under the ServiceAccount `my-db-postgres`, the server name and `-postgres`. The operator creates it. A rollback does not change it, so a cloud binding that names it stays valid. The principal to bind is `system:serviceaccount:my-cluster-ns:my-db-postgres`. While the server archives, the Barman Cloud plugin gives this ServiceAccount access to the archive settings. You do not add RBAC for it.
 
 If the `ObjectStorageConfig` uses workload identity, the operator puts its annotation on that ServiceAccount. Add your own annotations with `spec.serviceAccount.annotations`. A value that you set wins over the derived value of the same key.
 
@@ -334,11 +334,10 @@ The server never writes on an object that another owner holds under a name that 
 - A CloudNativePG cluster of the server name that this server does not own: `ClusterReady` reports `ClusterTaken`. The server runs nothing, and it removes its contract, its base backup schedule, and its `PodMonitor`.
 - A `DatabaseServerConfig` of the name in `spec.databaseServerConfig` that this server did not publish: `ContractReady` reports `ContractTaken`. The server publishes nothing, and the contract keeps its endpoint and credentials.
 - A Barman Cloud `ObjectStore` of the server name that another owner controls: `ArchiveReady` reports `ArchiveTaken`. The server writes no archive, its contract declares `pitr.enabled: false`, and it refuses rollbacks.
-- A ServiceAccount of the name `my-db-postgres` that another owner controls: `ClusterReady` reports `Blocked`. The server does not write its CloudNativePG cluster, removes its bindings to the Role of the Barman Cloud plugin, and refuses rollbacks.
-- A RoleBinding of the name `<cluster>-barman-cloud-postgres` that another owner controls: `ClusterReady` reports `Blocked`, and the server does not write its CloudNativePG cluster. The name is `my-db-barman-cloud-postgres`, or `my-db-r1-barman-cloud-postgres` after the first rollback.
+- A ServiceAccount of the name `my-db-postgres` that another owner controls: `ClusterReady` reports `Blocked`. The server does not write its CloudNativePG cluster, and it refuses rollbacks.
 - The archive Secret, the base backup schedule, or the `PodMonitor` under another owner: `ArchiveReady` or `MonitoringReady` reports `False`.
 
-While the server is suspended, a ServiceAccount or a RoleBinding under another owner does not change `ClusterReady`, which reports `Suspended`. The collision shows when you resume the server.
+While the server is suspended, a ServiceAccount under another owner does not change `ClusterReady`, which reports `Suspended`. The collision shows when you resume the server.
 
 Remove the other object, or give this server a name of its own. The server then continues with the archive history that it had. While the `ObjectStore` name was held, the server wrote no archive, so no restore can reach a point in that time.
 
@@ -409,7 +408,7 @@ status:
 | `ClusterReady` | `Degraded` | At the end of the [grace period](../architecture.md#status-conventions), 30 minutes by default, the cluster is not in its desired state. At least one instance is ready. Not every instance is ready, or CloudNativePG reports a phase other than healthy. The message names the ready count and the phase. | Read the phase and the instances in the status of the CloudNativePG cluster. |
 | `ClusterReady` | `Down` | At the end of the grace period, no instance is ready, or a wait that `Blocked` reported still holds. The message says which. A blocked wait can stand while the existing instances still serve. | Read the message. For no ready instance, read the CloudNativePG cluster and the pods of its instances. For a wait, read the `Blocked` row. |
 | `ClusterReady` | `Suspending`, `Suspended` | `spec.suspend` is true. | Nothing. |
-| `ClusterReady` | `Blocked` | The ServiceAccount `my-db-postgres` or a RoleBinding `<cluster>-barman-cloud-postgres` belongs to another owner, or the cluster that a rollback moved to is gone. The message says which. At the end of the grace period, the reason changes to `Down`, and the message still names the owner. | See [Name collisions](#name-collisions), or [Recovery](#recovery). |
+| `ClusterReady` | `Blocked` | The ServiceAccount `my-db-postgres` belongs to another owner, or the cluster that a rollback moved to is gone. The message says which. At the end of the grace period, the reason changes to `Down`, and the message still names the owner. | See [Name collisions](#name-collisions), or [Recovery](#recovery). |
 | `ClusterReady` | `ClusterTaken` | A CloudNativePG cluster of the server name belongs to another owner. | See [Name collisions](#name-collisions). |
 | `ArchiveReady` | `Disabled` | The server has no `archive` block. | Nothing. |
 | `ArchiveReady` | `Blocked` | The archive holds no base backup yet. | Wait. If it never completes, read the CloudNativePG `Backup` for the cause. |

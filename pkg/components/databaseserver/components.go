@@ -32,7 +32,6 @@ import (
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/component/concepts"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
-	"github.com/sourcehawk/operator-component-framework/pkg/primitives/rolebinding"
 	"github.com/sourcehawk/operator-component-framework/pkg/primitives/serviceaccount"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -147,10 +146,6 @@ func (r RequestedStorage) annotations() map[string]string {
 // larger volumes. The cluster carries it in RequestedStorageSizeAnnotation and
 // RequestedWALStorageSizeAnnotation.
 //
-// While the server archives, each pluginRoles entry with Granted set gets a
-// RoleBinding from the Role of the Barman Cloud plugin to the ServiceAccount of
-// the server: see pluginbinding.go.
-//
 // gracePeriod is how long the cluster may take to become ready before
 // ClusterReady reports Degraded or Down. Zero keeps the progress reason.
 func ClusterComponent(
@@ -161,7 +156,6 @@ func ClusterComponent(
 	archiveTaken string,
 	platform *v1.CamundaPlatformConfigSpec,
 	blocked string,
-	pluginRoles []ArchivePluginRole,
 	gracePeriod time.Duration,
 ) (*component.Component, *concepts.Data[string], error) {
 	systemIdentifier := concepts.NewData[string]("postgres-system-identifier")
@@ -183,29 +177,12 @@ func ClusterComponent(
 		return nil, nil, err
 	}
 
-	compBuilder := component.NewComponentBuilder().
+	comp, err := component.NewComponentBuilder().
 		WithName("cluster").
 		WithConditionType(v1.ConditionClusterReady).
 		// CloudNativePG does not start a cluster whose ServiceAccount is
 		// missing, so the account goes first.
-		WithResource(keptServiceAccount{account}, component.BlockOnForeignController())
-
-	archiving := Archiving(merged) && archiveTaken == ""
-	for _, role := range pluginRoles {
-		binding, err := rolebinding.NewBuilder(archivePluginBinding(server, role)).Build()
-		if err != nil {
-			return nil, nil, err
-		}
-		// Unowned, because the owner reference is the cluster's.
-		compBuilder = compBuilder.WithResource(
-			binding,
-			component.Unowned(),
-			component.GatedBy(feature.NewBooleanGate(archiving && role.Granted)),
-			component.BlockOnForeignController(),
-		)
-	}
-
-	comp, err := compBuilder.
+		WithResource(keptServiceAccount{account}, component.BlockOnForeignController()).
 		WithResource(postgres, component.BlockOnForeignController()).
 		WithGracePeriod(gracePeriod).
 		Suspend(merged.Suspend && blocked == "").

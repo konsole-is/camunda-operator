@@ -53,7 +53,7 @@ func addKnownTypes(s *runtime.Scheme) error {
 type CompressionType string
 
 // The compression algorithms that barman-cloud accepts. WAL files accept
-// every value; a base backup accepts every value except xz and zstd.
+// every value; a base backup accepts every value except xz.
 const (
 	CompressionTypeGzip   CompressionType = "gzip"
 	CompressionTypeBzip2  CompressionType = "bzip2"
@@ -264,7 +264,7 @@ type WalBackupConfiguration struct {
 type DataBackupConfiguration struct {
 	// Compression is the algorithm that compresses the base backup before it
 	// is uploaded. An empty value uploads it uncompressed. The plugin
-	// rejects xz and zstd here.
+	// rejects xz here.
 	// +optional
 	Compression CompressionType `json:"compression,omitempty"`
 	// Encryption is the server-side encryption that the object storage
