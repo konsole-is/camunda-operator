@@ -18,11 +18,23 @@ test("a release change in the Claim tab reaches the CamundaCluster", async ({
     namespace && name,
     "FLEET_JOURNEYS_CLUSTER is <namespace>/<name>",
   ).toBeTruthy();
+  // An earlier run on the same harness can have saved either release.
+  const current = kubectl(
+    "get",
+    "camundaclusterclaim",
+    name,
+    "-n",
+    namespace,
+    "-o",
+    "jsonpath={.spec.releaseRef}",
+  );
+  const target =
+    current === "fleet-harness-8-9-1"
+      ? "fleet-harness-8-9-0"
+      : "fleet-harness-8-9-1";
   await page.goto(`/fleet/clusters/${namespace}/${name}?tab=claim`);
   await page.getByRole("button", { name: "Edit Release and preset" }).click();
-  await page
-    .getByLabel("Release", { exact: true })
-    .selectOption("fleet-harness-8-9-1");
+  await page.getByLabel("Release", { exact: true }).selectOption(target);
   await page
     .getByRole("region", { name: "Unsaved changes" })
     .getByRole("button", { name: "Review" })
@@ -52,6 +64,6 @@ test("a release change in the Claim tab reaches the CamundaCluster", async ({
         ),
       { timeout: 120_000 },
     )
-    .toBe("fleet-harness-8-9-1");
+    .toBe(target);
   await shot(page, "claim-saved", { dir: JOURNEYS_DIR });
 });
