@@ -269,25 +269,32 @@ describe("storageErrors", () => {
     ]);
   });
 
-  it("counts the default of a required section that the step has not reported yet", () => {
-    const withDefault = {
-      ...data,
-      environment: {
-        ...required,
-        spec: {
-          sections: {
-            "secondary-storage": {
-              allowed: ["existing-secondary-storage"],
-              default: "existing-secondary-storage",
-              required: true,
-            },
+  const withDefault = {
+    ...data,
+    environment: {
+      ...required,
+      spec: {
+        sections: {
+          "secondary-storage": {
+            allowed: ["existing-secondary-storage"],
+            default: "existing-secondary-storage",
+            required: true,
           },
         },
       },
-    };
-    const draft = draftWith();
+    },
+  };
 
-    expect(storageErrors(draft, withDefault, {}, [])).toEqual([]);
+  it("counts the default of a required section before the step showed any section", () => {
+    expect(storageErrors(draftWith(), withDefault, {}, [])).toEqual([]);
+  });
+
+  it("refuses a required section with a default that appeared after the step, because the claim carries no pick of it", () => {
+    const draft = draftWith({ "volume-encryption": [] });
+
+    expect(storageErrors(draft, withDefault, {}, [])).toEqual([
+      'section "secondary-storage" is required, and the claim selects nothing in it',
+    ]);
   });
 
   it("asks for another option when the picked one is disabled now", () => {

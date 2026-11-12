@@ -31,7 +31,7 @@ import {
   withMissingInputs,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
-import { type ClusterDraft, releaseOf } from "./draft";
+import { type ClusterDraft, draftSelections, releaseOf } from "./draft";
 
 /** StorageData is the live data that step 2 reads. objects are the source kinds of builtinOption, in every namespace. */
 export type StorageData = {
@@ -126,7 +126,9 @@ export function storageErrors(
   return resolvedErrors(
     storage,
     views,
-    viewSelections(storage, views),
+    // The step reports each section that it shows in its first render, so a
+    // draft that never showed the step takes the defaults that it preselects.
+    draft.storage ? draftSelections(draft) : viewSelections(storage, views),
     (_, registration) =>
       declaresRelease(registration) ? { releaseRef: release } : {},
   );
