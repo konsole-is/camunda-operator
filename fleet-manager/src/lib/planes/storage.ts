@@ -15,6 +15,7 @@ import {
   builtinOption,
   byCodeUnit,
   checkAllowed,
+  checkDeletionPolicy,
   offeredSection,
   resolve,
   withMissingInputs,
@@ -408,6 +409,25 @@ function policyErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
   return "error" in result ? [result.error] : [];
 }
 
+// The flow writes no deletionPolicy, so the claim takes the default of the
+// Environment, and the claim controller runs CheckDeletionPolicy on it.
+function deletionPolicyErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
+  const environment = ctx.environments.find(
+    (e) => e.metadata.name === draft.environment,
+  );
+  const policy = environment?.spec.deletionPolicy || "Delete";
+  return planeSelections(draft).flatMap((selection) => {
+    if ("value" in checkDeletionPolicy(policy, [selection], ctx.registrations))
+      return [];
+    const label =
+      ctx.registrations.find((r) => r.metadata.name === selection.registration)
+        ?.spec.label ?? selection.registration;
+    return [
+      `${label} (${selection.registration}) does not support the deletion policy ${policy}, the default of the Environment ${draft.environment}. Pick another option, or ask your admin to change the default deletion policy of the Environment.`,
+    ];
+  });
+}
+
 /**
  * goneSections returns the name of each section that holds a pick in
  * draft.storage and that sections do not offer to a plane claim: it is
@@ -519,6 +539,7 @@ export function storageErrors(
     database &&
     effectiveSelection(runningSelection(database, running), draft, ctx);
   errors.push(...databaseConfigErrors(request, running));
+  errors.push(...deletionPolicyErrors(draft, ctx));
   errors.push(...contractNameErrors(draft, ctx));
   if (errors.length > 0) return errors;
   // valueErrors does not check a DatabaseConfig against the namespace when

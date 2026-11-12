@@ -290,6 +290,30 @@ describe("storageErrors", () => {
     expect(storageErrors(draft(), ctx, [], {})).toEqual([]);
   });
 
+  describe("and the default deletion policy of the Environment", () => {
+    const orphan = {
+      ...ctx,
+      environments: [production({ deletionPolicy: "Orphan" })],
+    };
+
+    it("refuses an option that does not support Orphan, the default", () => {
+      expect(storageErrors(draft(), orphan, [], {})).toEqual([
+        "New PostgreSQL server (management-database-server) does not support the deletion policy Orphan, the default of the Environment production. Pick another option, or ask your admin to change the default deletion policy of the Environment.",
+      ]);
+    });
+
+    it("passes an option that supports Orphan", () => {
+      const c = {
+        ...orphan,
+        registrations: registrations.map((r) => ({
+          ...r,
+          spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] },
+        })) as PluginRegistration[],
+      };
+      expect(storageErrors(draft(), c, [], {})).toEqual([]);
+    });
+  });
+
   it("asks for a database option", () => {
     expect(storageErrors(draft({ storage: {} }), ctx, [], {})).toEqual([
       "Pick a database option.",
