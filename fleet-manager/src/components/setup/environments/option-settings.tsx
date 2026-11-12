@@ -93,6 +93,12 @@ export function OptionSettingsSection({
               {option.registration}
             </span>
           </header>
+          {!option.allowedBySection && (
+            <p className="text-sm text-warn">
+              No section allows this option. Clear its settings to remove them
+              from the environment.
+            </p>
+          )}
           <LimitsList limits={option.limits} />
           {option.parameters.length === 0 && (
             <p className="text-sm text-muted">This option has no parameters.</p>
@@ -153,9 +159,16 @@ function ParameterSettingRow({
         ...policy,
       }),
     );
+  // A template can read only a parameter that is a string, a number, or a
+  // boolean.
   const others = option.parameters
-    .map((p) => p.name)
-    .filter((n) => n !== setting.name);
+    .filter(
+      (p) =>
+        p.name !== setting.name &&
+        p.schema?.type !== "object" &&
+        p.schema?.type !== "array",
+    )
+    .map((p) => p.name);
   const registration = sources.registrations.find(
     (r) => r.metadata.name === option.registration,
   );

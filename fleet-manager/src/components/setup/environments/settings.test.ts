@@ -460,3 +460,24 @@ describe("settingErrors of a preset parameter", () => {
     ).toEqual(["spec.parameters.database-server.preset.value"]);
   });
 });
+
+describe("optionSettings of an option that no section allows", () => {
+  it("returns an entry for a registration with a policy in spec.parameters and marks it", () => {
+    const settings = optionSettings(
+      [role],
+      allowing({}, { "aws-connectors-role": { tier: { value: "gold" } } }),
+    );
+    expect(settings.map((s) => [s.registration, s.allowedBySection])).toEqual([
+      ["aws-connectors-role", false],
+    ]);
+  });
+
+  it("marks an option that a section allows", () => {
+    expect(
+      optionSettings(
+        [role],
+        allowing({ "connectors-permissions": ["aws-connectors-role"] }),
+      )[0].allowedBySection,
+    ).toBe(true);
+  });
+});

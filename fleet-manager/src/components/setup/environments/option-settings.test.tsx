@@ -304,7 +304,12 @@ describe("OptionSettings", () => {
   });
 
   it("drops the error of a removed option, so Review opens again", () => {
-    renderEditor("production", sectionFixtures());
+    const sources = sectionFixtures();
+    sources.environments[0].spec.parameters = undefined;
+    renderEditor("production", sources);
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Prod" },
+    });
     fireEvent.change(
       within(group("Role for each cluster", "inlinePolicy")).getByLabelText(
         "inlinePolicy",
@@ -436,5 +441,35 @@ describe("OptionSettings", () => {
       group("Role for each cluster", "inlinePolicy"),
     ).getByLabelText("inlinePolicy");
     expect(field.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("keeps the settings of an option that no section allows while the environment has a policy for it", () => {
+    renderEditor("production", sectionFixtures());
+    const permissions = within(
+      screen.getByRole("region", { name: "Clusters" }),
+    ).getByRole("group", { name: "Connectors permissions" });
+    fireEvent.change(within(permissions).getByLabelText("Default option"), {
+      target: { value: "" },
+    });
+    fireEvent.click(
+      within(permissions).getByRole("checkbox", {
+        name: "Role for each cluster",
+      }),
+    );
+    const role = screen.getByRole("region", { name: "Role for each cluster" });
+    expect(
+      within(role).getByText(
+        "No section allows this option. Clear its settings to remove them from the environment.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("offers a chip only for a parameter that a template can read", () => {
+    renderEditor("production", sectionFixtures());
+    const chips = within(group("Role for each cluster", "inlinePolicy"))
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+    expect(chips).not.toContain("{{ .parameters.managedPolicyArns }}");
+    expect(chips).not.toContain("{{ .parameters.extraPolicyArns }}");
   });
 });

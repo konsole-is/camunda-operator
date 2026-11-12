@@ -96,7 +96,7 @@ An allowed name that no accepted registration of the section has shows checked, 
 
 ## Settings of the options
 
-The section **Settings of the options** has an entry for each option that a section allows. Each entry lists the parameters of the option. A field follows the type of the parameter. A number field shows its range, and a parameter with a fixed set of values is a select.
+The section **Settings of the options** has an entry for each option that a section allows. An option that no section allows keeps its entry while the environment has settings for it, so that you can clear them. Each entry lists the parameters of the option. A field follows the type of the parameter. A number field shows its range, and a parameter with a fixed set of values is a select.
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1

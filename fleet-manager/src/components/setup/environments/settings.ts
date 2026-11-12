@@ -46,13 +46,16 @@ export type ParameterSetting = {
 export type OptionSettings = {
   registration: string;
   label: string;
+  /** allowedBySection is false for an option that only spec.parameters names. */
+  allowedBySection: boolean;
   limits: { label: string; value: string; description?: string }[];
   parameters: ParameterSetting[];
 };
 
 /**
  * optionSettings returns one entry for each registration that a section of
- * spec allows, by name. A name that no registration has gives no entry.
+ * spec allows or that spec.parameters names, by name. A name that no
+ * registration has gives no entry.
  * parameters are the properties of the schema in schema order, then the
  * keys of the environment policy and of the values of the registration that
  * are not properties in code-unit order, without the parameters that the
@@ -65,16 +68,23 @@ export function optionSettings(
   const allowed = new Set(
     Object.values(spec.sections ?? {}).flatMap((s) => s.allowed ?? []),
   );
+  const named = new Set(Object.keys(spec.parameters ?? {}));
   return registrations
-    .filter((r) => allowed.has(r.metadata.name ?? ""))
+    .filter((r) => {
+      const name = r.metadata.name ?? "";
+      return allowed.has(name) || named.has(name);
+    })
     .sort((a, b) => byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""))
-    .map((r) => settingsOf(r, spec));
+    .map((r) => ({
+      ...settingsOf(r, spec),
+      allowedBySection: allowed.has(r.metadata.name ?? ""),
+    }));
 }
 
 function settingsOf(
   registration: PluginRegistration,
   spec: Spec,
-): OptionSettings {
+): Omit<OptionSettings, "allowedBySection"> {
   const name = registration.metadata.name ?? "";
   const schema = isObject(registration.spec.parameters)
     ? (registration.spec.parameters as OpenAPISchema)
