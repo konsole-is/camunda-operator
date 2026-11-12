@@ -164,8 +164,8 @@ describe("fleetPodWarnings", () => {
       {
         name: "share",
         points: [
-          [1, 0.005],
-          [2, 0.02],
+          [NOW.getTime() - 60_000, 0.005],
+          [NOW.getTime(), 0.02],
         ],
       },
     ]);
@@ -196,6 +196,22 @@ describe("fleetPodWarnings", () => {
 
     expect(kinds(answer.clusters["team-a/orders"])).toEqual([]);
     expect(answer.missing).toEqual([]);
+  });
+
+  it("gives no backpressure warning from a point older than the last step", async () => {
+    fleet(
+      [cluster("team-a", "orders", VERSION)],
+      [pod("team-a", "orders", "orders-zeebe-0")],
+    );
+    // The brokers got no request in the last two minutes, so the newest
+    // points have no value and Prometheus leaves them out.
+    vi.mocked(promRange).mockResolvedValue([
+      { name: "share", points: [[NOW.getTime() - 120_000, 0.5]] },
+    ]);
+
+    const answer = await fleetPodWarnings(NOW);
+
+    expect(kinds(answer.clusters["team-a/orders"])).toEqual([]);
   });
 
   it("names metrics-server when the usage is unavailable and gives no near limit warning", async () => {

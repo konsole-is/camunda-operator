@@ -118,7 +118,10 @@ async function backpressureOf(
     },
   ).catch(() => "unavailable" as const);
   if (series === "unavailable") return series;
-  const points = series[0]?.points ?? [];
-  const last = points.findLast(([, value]) => Number.isFinite(value));
-  return last ? backpressureWarning(last[1]) : undefined;
+  // promRange leaves out a point without a value, so an older point can be
+  // the last one while the brokers get no request.
+  const last = series[0]?.points.at(-1);
+  return last && last[0] >= now.getTime() - BACKPRESSURE_STEP_SECONDS * 1000
+    ? backpressureWarning(last[1])
+    : undefined;
 }
