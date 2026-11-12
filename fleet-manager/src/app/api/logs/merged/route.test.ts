@@ -66,9 +66,10 @@ describe("GET /api/logs/merged", () => {
   it("follows each log with the shared parameters and the signal of the request", async () => {
     vi.mocked(followPodLog).mockImplementation(async () => lines());
 
-    const response = await call(
-      "log=team-a%2Forders-zeebe-0&log=plugins%2Fctl-0%2Fmanager&tailLines=200&sinceSeconds=60",
+    const request = new Request(
+      "http://localhost/api/logs/merged?log=team-a%2Forders-zeebe-0&log=plugins%2Fctl-0%2Fmanager&tailLines=200&sinceSeconds=60",
     );
+    const response = await GET(request);
     await response.text();
 
     expect(response.headers.get("Content-Type")).toContain("text/event-stream");
@@ -87,9 +88,9 @@ describe("GET /api/logs/merged", () => {
         sinceSeconds: 60,
       },
     ]);
-    expect(vi.mocked(followPodLog).mock.calls[0][1]).toBeInstanceOf(
-      AbortSignal,
-    );
+    for (const [, signal] of vi.mocked(followPodLog).mock.calls) {
+      expect(signal).toBe(request.signal);
+    }
   });
 
   it("sends the lines of each log with the index of its log, then an end for each", async () => {
@@ -173,6 +174,28 @@ describe("GET /api/logs/merged", () => {
         data: { source: 0, message: "The log stream of pod a broke" },
       },
     ]);
+  });
+
+  it("cancels each log when the client cancels, also a log that opens after it", async () => {
+    const cancelled: string[] = [];
+    const open = (name: string) =>
+      new ReadableStream<string>({
+        cancel() {
+          cancelled.push(name);
+        },
+      });
+    let late!: (stream: ReadableStream<string>) => void;
+    vi.mocked(followPodLog)
+      .mockResolvedValueOnce(open("a"))
+      .mockReturnValueOnce(new Promise((resolve) => (late = resolve)));
+
+    const response = await call("log=n%2Fa&log=n%2Fb");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await response.body!.cancel();
+    late(open("b"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(cancelled.sort()).toEqual(["a", "b"]);
   });
 
   it("reads a log only as fast as the client reads the answer", async () => {

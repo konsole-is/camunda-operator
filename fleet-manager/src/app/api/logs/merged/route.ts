@@ -125,7 +125,11 @@ function merged(
             readers.push(reader);
             for (;;) {
               await demand();
-              if (cancelled) return;
+              if (cancelled) {
+                // cancel() can run before this reader is pushed.
+                await reader.cancel();
+                return;
+              }
               const { done, value } = await reader.read();
               if (done) break;
               frame("line", { source, line: value });
