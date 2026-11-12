@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseTemplate, render } from "@/lib/gotemplate";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
+  BACKPRESSURE_RATES,
   CAMUNDA_8_9,
   PARTITION_HEALTH,
   POD_QUERIES,
@@ -332,4 +333,21 @@ describe("PARTITION_HEALTH", () => {
 
   it("applies to the Camunda versions of its metrics page", () =>
     expect(PARTITION_HEALTH.versions).toEqual(CAMUNDA_8_9));
+});
+
+describe("BACKPRESSURE_RATES", () => {
+  it("gives the received and the dropped requests of each pod of every namespace", () =>
+    expect(BACKPRESSURE_RATES.query).toBe(
+      'label_replace(sum by (namespace, pod) (rate(zeebe_received_request_count_total[5m])), "kind", "received", "", "") or label_replace(sum by (namespace, pod) (rate(zeebe_dropped_request_count_total[5m])), "kind", "dropped", "", "")',
+    ));
+
+  it("names its documented source", () => {
+    expect(BACKPRESSURE_RATES.metric).toBe("zeebe_dropped_request_count_total");
+    expect(BACKPRESSURE_RATES.source).toBe(
+      "https://docs.camunda.io/docs/8.9/self-managed/components/orchestration-cluster/zeebe/operations/backpressure/#backpressure-tuning",
+    );
+  });
+
+  it("applies to the Camunda versions of its source", () =>
+    expect(BACKPRESSURE_RATES.versions).toEqual(CAMUNDA_8_9));
 });

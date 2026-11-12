@@ -8,6 +8,7 @@ import { type Plane, planesOf } from "@/components/planes/plane";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
 import { type FleetPageData, FleetView, FleetViewLive } from "./fleet-view";
+import type { PodWarnings } from "@/lib/warnings";
 import type { FleetSources } from "./model";
 
 const live = vi.hoisted(() => ({
@@ -16,6 +17,10 @@ const live = vi.hoisted(() => ({
   pushes: [] as unknown[],
   settled: [] as string[],
   fresh: [] as string[],
+  warnings: undefined as unknown,
+}));
+vi.mock("@/lib/observe/use-observe", () => ({
+  useWarnings: () => live.warnings,
 }));
 vi.mock("@/lib/k8s/hooks", () => ({
   useResources: (kind: string, _opts: unknown, initial: unknown[]) => {
@@ -38,6 +43,7 @@ beforeEach(() => {
   live.pushes = [];
   live.settled = [];
   live.fresh = [];
+  live.warnings = undefined;
 });
 afterEach(cleanup);
 
@@ -190,15 +196,33 @@ function view(over: Partial<Parameters<typeof FleetView>[0]> = {}) {
   );
 }
 
-const clusterNames = () =>
-  screen
+// The links of the cluster tables, not those of Needs attention.
+const clusterNames = () => {
+  const attention = screen.queryByRole("region", { name: "Needs attention" });
+  return screen
     .queryAllByRole("link")
+    .filter((l) => !attention?.contains(l))
     .map((l) => l.getAttribute("href") ?? "")
     .filter(
       (href) =>
         href.startsWith("/fleet/clusters/") && href !== "/fleet/clusters/new",
     )
     .map((href) => href.split("/").slice(3).join("/"));
+};
+
+const podWarnings: PodWarnings = {
+  clusters: {
+    "prod/orders": [
+      {
+        kind: "oom",
+        severity: "Error",
+        label: "Out of memory",
+        detail: "Container zeebe of pod orders-zeebe-0 ran out of memory",
+      },
+    ],
+  },
+  missing: ["prometheus"],
+};
 
 const regions = () =>
   screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"));
@@ -231,6 +255,7 @@ describe("FleetView", () => {
   it("shows one table for each environment group on All, then No environment", () => {
     render(view());
     expect(regions()).toEqual([
+      "Needs attention",
       "Management planes",
       "Development",
       "Production",
@@ -342,6 +367,80 @@ describe("FleetView", () => {
     expect(waiting().some((t) => t.includes("p00"))).toBe(true);
   });
 
+  it("shows the warning chips of each cluster", () => {
+    render(view({ podWarnings }));
+    expect(
+      within(screen.getByRole("row", { name: /orders/ })).getByRole("button", {
+        name: "Error: Out of memory",
+      }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("row", { name: /billing/ })).queryByRole(
+        "button",
+        { name: "Error: Out of memory" },
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps the clusters with warnings", async () => {
+    render(view({ podWarnings }));
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Status" }),
+      "with-warnings",
+    );
+    expect(clusterNames()).toEqual(["prod/orders"]);
+  });
+
+  it("says which source is missing above the clusters", () => {
+    render(view({ podWarnings }));
+    const note = screen.getByText(/Prometheus is not set or does not answer/);
+    const firstGroup = screen.getByRole("region", { name: "Development" });
+    expect(
+      note.compareDocumentPosition(firstGroup) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getAllByText(/Prometheus is not set or does not answer/),
+    ).toHaveLength(1);
+  });
+
+  it("shows a management plane that is not ready in Needs attention", () => {
+    const down = planesOf({
+      ...planeSources,
+      clusters: [managementCluster("plane-a", "False")],
+      claims: [managementClaim("plane-a", ["production"])],
+    });
+    render(view({ planes: down }));
+    expect(
+      within(screen.getByRole("region", { name: "Needs attention" })).getByText(
+        "Management plane platform/plane-a",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("does not say that nothing needs attention while a list it reads failed", () => {
+    render(
+      view({
+        sources: sources(),
+        planes: [],
+        errors: [{ kind: "PluginRegistration", message: "forbidden" }],
+      }),
+    );
+    const panel = screen.getByRole("region", { name: "Needs attention" });
+    expect(within(panel).queryByText("Nothing needs attention.")).toBeNull();
+  });
+
+  it("shows Needs attention on every tab", async () => {
+    render(view());
+    const panel = () => screen.getByRole("region", { name: "Needs attention" });
+    expect(within(panel()).getByText("Cluster prod/legacy")).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: /Staging/ }));
+    expect(within(panel()).getByText("Cluster prod/legacy")).toBeTruthy();
+    expect(
+      screen.getAllByRole("region", { name: "Needs attention" }),
+    ).toHaveLength(1);
+  });
+
   it("says that no cluster matches the filters", async () => {
     render(view());
     await userEvent.type(
@@ -364,7 +463,7 @@ describe("FleetView", () => {
       }),
     );
     expect(screen.queryAllByRole("tab")).toEqual([]);
-    expect(regions()).toEqual(["Clusters"]);
+    expect(regions()).toEqual(["Needs attention", "Clusters"]);
     expect(clusterNames()).toEqual(["team-a/orders", "team-b/billing"]);
     expect(screen.getByText("No management plane yet.")).toBeTruthy();
   });
@@ -597,6 +696,25 @@ describe("FleetViewLive", () => {
     expect(screen.getByText(/No Camunda cluster yet/)).toBeTruthy();
   });
 
+  it("says that Needs attention can miss entries until a failed management list arrives", () => {
+    const failed: FleetPageData = {
+      ...sources(),
+      planes: { clusters: [], claims: [], namespaces: [], environments: [] },
+      readErrors: [
+        { kind: "CamundaManagementClusterClaim", message: "forbidden" },
+      ],
+    };
+    const { rerender } = render(<FleetViewLive initial={failed} now={NOW} />);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not read CamundaManagementClusterClaim: forbidden",
+    );
+    expect(screen.getByText(/this list can miss entries/)).toBeTruthy();
+    live.fresh = ["CamundaManagementClusterClaim"];
+    rerender(<FleetViewLive initial={failed} now={NOW} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/this list can miss entries/)).toBeNull();
+  });
+
   it("stops waiting for a push of this browser tab", async () => {
     live.pushes = [push("team-x", "returns")];
     render(<FleetViewLive initial={initial} now={NOW} />);
@@ -618,6 +736,14 @@ describe("FleetViewLive", () => {
     ];
     rerender(<FleetViewLive initial={initial} now={NOW} />);
     expect(clusterNames()).toContain("loose/fresh");
+  });
+
+  it("shows the warnings of the route", () => {
+    live.warnings = podWarnings;
+    render(<FleetViewLive initial={initial} now={NOW} />);
+    expect(
+      screen.getByRole("button", { name: "Error: Out of memory" }),
+    ).toBeTruthy();
   });
 
   it("shows a pushed claim of this browser tab", () => {

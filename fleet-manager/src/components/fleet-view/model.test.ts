@@ -14,8 +14,12 @@ import {
   filterRows,
   groupRows,
   rowNamespaces,
+  rowWarnings,
   waitingRows,
 } from "./model";
+import type { BackupRow } from "@/components/cluster/backups";
+import type { SectionComponent } from "@/lib/claims/sections";
+import type { PodWarnings, Warning } from "@/lib/warnings";
 
 const NOW = "2026-11-10T12:00:00Z";
 
@@ -872,6 +876,64 @@ describe("filterRows", () => {
         (r) => r.name,
       ),
     ).toEqual(["false", "unknown", "none"]);
+  });
+
+  it("keeps the rows with warnings", () => {
+    const warned = new Set(["b"]);
+    expect(
+      filterRows(rows, { ...all, status: "with-warnings" }, isReady, (r) =>
+        warned.has(r.name),
+      ).map((r) => r.name),
+    ).toEqual(["b"]);
+  });
+});
+
+describe("rowWarnings", () => {
+  const oom: Warning = {
+    kind: "oom",
+    severity: "Error",
+    label: "Out of memory",
+    detail: "Container zeebe of pod orders-zeebe-0 ran out of memory",
+  };
+  const pods: PodWarnings = {
+    clusters: { "prod/orders": [oom] },
+    missing: [],
+  };
+  const storage: SectionComponent = {
+    id: "section:secondary-storage",
+    section: "secondary-storage",
+    label: "Secondary storage",
+    order: 0,
+    selection: { section: "secondary-storage", registration: "es" },
+    condition: { status: "False", reason: "GrantRejected" },
+  };
+  const failed = row("prod", "orders", {
+    lastBackup: { name: "orders-nightly", phase: "Failed" } as BackupRow,
+    sections: [storage],
+  });
+
+  it("joins the pod warnings of the cluster and the warnings of its backups and requests", () => {
+    expect(rowWarnings(failed, pods).map((w) => w.kind)).toEqual([
+      "oom",
+      "backup",
+      "request",
+    ]);
+  });
+
+  it("gives only the backup and request warnings while the route is unavailable", () => {
+    expect(rowWarnings(failed, "unavailable").map((w) => w.kind)).toEqual([
+      "backup",
+      "request",
+    ]);
+    expect(rowWarnings(failed, undefined).map((w) => w.kind)).toEqual([
+      "backup",
+      "request",
+    ]);
+  });
+
+  it("gives a claim without a cluster no pod warnings of a cluster of the same name", () => {
+    const claimRow = row("prod", "orders", { id: "claim/prod/orders" });
+    expect(rowWarnings(claimRow, pods)).toEqual([]);
   });
 });
 

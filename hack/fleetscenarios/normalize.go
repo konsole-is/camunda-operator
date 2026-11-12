@@ -50,6 +50,13 @@ const eventAPIVersion = "events.k8s.io/v1"
 
 const apiServerManager = "kube-apiserver"
 
+// The action and the start of the reason of the Event that the framework
+// records for an apply that updated an object.
+const (
+	applyUpdateAction = "Update"
+	applyUpdateReason = "Updated"
+)
+
 // The kinds that the generator treats apart from the others.
 const (
 	kindEvent     = "Event"
@@ -60,7 +67,8 @@ const (
 // second run writes the same bytes:
 //
 //  1. An Event stays only when the object it is about, by UID, is in objs,
-//     and apiServerManager did not write it. Its name comes from that
+//     apiServerManager did not write it, and it does not report that an
+//     apply of the framework updated an object. Its name comes from that
 //     object, its reason, and its note, and one Event stays for each of
 //     them. It has no series, and its reporting instance names scenarioNode
 //     in place of the host.
@@ -153,7 +161,7 @@ func normalizeEvents(objs []unstructured.Unstructured) []unstructured.Unstructur
 		namespace, _, _ := unstructured.NestedString(e.Object, "regarding", "namespace")
 		name, _, _ := unstructured.NestedString(e.Object, "regarding", "name")
 		uid, _, _ := unstructured.NestedString(e.Object, "regarding", "uid")
-		if !held[uid] || writtenBy(e, apiServerManager) {
+		if !held[uid] || writtenBy(e, apiServerManager) || isApplyUpdate(e) {
 			continue
 		}
 
@@ -193,6 +201,18 @@ func writtenBy(obj *unstructured.Unstructured, manager string) bool {
 	return slices.ContainsFunc(obj.GetManagedFields(), func(f metav1.ManagedFieldsEntry) bool {
 		return f.Manager == manager
 	})
+}
+
+// isApplyUpdate reports whether e is the Event that the framework records
+// for an apply that updated an object.
+// TODO(#1018): remove it with the framework fix. The framework records a
+// write of another controller between its read and its apply as an update,
+// so whether this Event exists depends on timing.
+func isApplyUpdate(e *unstructured.Unstructured) bool {
+	action, _, _ := unstructured.NestedString(e.Object, "action")
+	reason, _, _ := unstructured.NestedString(e.Object, "reason")
+	kind, _, _ := unstructured.NestedString(e.Object, "related", "kind")
+	return action == applyUpdateAction && kind != "" && reason == applyUpdateReason+kind
 }
 
 // isEvent reports whether obj is an Event of the events.k8s.io API.

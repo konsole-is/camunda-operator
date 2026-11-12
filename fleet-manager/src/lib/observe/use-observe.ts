@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import type { PodWarnings } from "@/lib/warnings";
 import type {
   MetricsAnswer,
   MetricsRange,
@@ -45,6 +46,16 @@ export function usePartitions(
     `/api/partitions?${new URLSearchParams({ namespace, name })}`,
     "partitions",
   );
+}
+
+/**
+ * useWarnings polls /api/warnings every 15 seconds for the pod and metric
+ * warnings of the fleet. It is undefined until the first answer, and
+ * "unavailable" when the route refuses or the fetch fails. It needs a
+ * QueryClientProvider above it.
+ */
+export function useWarnings(): PodWarnings | Unavailable | undefined {
+  return usePolled(["warnings"], "/api/warnings", "warnings");
 }
 
 /**

@@ -9,7 +9,7 @@ import {
   KubernetesObjectApi,
   PatchStrategy,
 } from "@kubernetes/client-node";
-import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, inject, it, vi } from "vitest";
 import { ping } from "@/app/dev/watch-probe/actions";
 import {
   applyBackupChange,
@@ -38,11 +38,14 @@ import { GET as mergedLogsRoute } from "@/app/api/logs/merged/route";
 import { GET as metricsRoute } from "@/app/api/metrics/route";
 import { GET as partitionsRoute } from "@/app/api/partitions/route";
 import { GET as usageRoute } from "@/app/api/usage/route";
+import { GET as warningsRoute } from "@/app/api/warnings/route";
 import { GET as watchRoute } from "@/app/api/watch/route";
 import { defaultCache } from "@/lib/k8s/cache";
+import { get } from "@/lib/k8s/read";
 import * as secrets from "@/lib/secrets";
 import * as settings from "@/lib/settings";
 import { createChangeOf } from "@/lib/write/create";
+import { kubeRequest } from "../scenarios/kube";
 
 // The data layer reads KUBECONFIG through kubeConfig, on its first call.
 process.env.KUBECONFIG = inject("kubeconfig");
@@ -73,12 +76,14 @@ function assertNoValue(text: string): void {
 // address is http://, so testGit stops before a request: connections.test.ts
 // covers the Git answer.
 let echo: http.Server;
+const echoed: string[] = [];
 
 beforeAll(async () => {
   echo = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
+      echoed.push(req.url ?? "");
       res.writeHead(401, { "WWW-Authenticate": 'Basic realm="x"' });
       res.end(
         `${req.headers.authorization ?? ""} ${Buffer.concat(chunks).toString()}`,
@@ -105,6 +110,24 @@ beforeAll(async () => {
     metadata: { name: "leak", namespace },
     spec: { storageRef: "storage", platformConfigRef: "platform" },
   });
+  // A version in the range of the backpressure query makes the warnings
+  // route ask Prometheus.
+  await kubeRequest(
+    kc,
+    "PATCH",
+    `/apis/core.camunda.io/v1/namespaces/${namespace}/camundaclusters/leak/status`,
+    {
+      status: {
+        management: {
+          auth: { method: "none" },
+          endpoint: "http://leak-gateway:9600",
+          partitions: 1,
+          version: "8.9.0",
+        },
+      },
+    },
+    "application/merge-patch+json",
+  );
   await api.create({
     apiVersion: "v1",
     kind: "Pod",
@@ -229,6 +252,20 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
         ),
       )
     ).text(),
+  "api/warnings": async () => {
+    await vi.waitFor(async () =>
+      expect(
+        (await get("CamundaCluster", namespace, "leak"))?.status?.management
+          ?.version,
+      ).toBe("8.9.0"),
+    );
+    const before = echoed.length;
+    const text = await (await warningsRoute()).text();
+    expect(
+      echoed.slice(before).some((url) => url.includes("zeebe_received")),
+    ).toBe(true);
+    return text;
+  },
   "api/watch": () => watchText(`kind=Secret&namespace=${namespace}`),
 };
 // "<file under src>#<export>".

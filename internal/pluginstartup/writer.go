@@ -67,7 +67,7 @@ func (w *Writer) Start(ctx context.Context) error {
 	delay := w.retryDelay
 
 	for {
-		err := w.apply(ctx)
+		err := w.Apply(ctx)
 		if err == nil {
 			log.Info("Applied the core PluginSections and the built-in PluginRegistrations")
 			return nil
@@ -94,7 +94,9 @@ func (w *Writer) NeedLeaderElection() bool {
 	return true
 }
 
-func (w *Writer) apply(ctx context.Context) error {
+// Apply applies every core section and built-in registration once, with the
+// field manager of Start, and stops at the first error.
+func (w *Writer) Apply(ctx context.Context) error {
 	sections := Sections()
 	registrations := Registrations(w.operatorVersion, w.serviceAccount)
 	objs := make([]client.Object, 0, len(sections)+len(registrations))
