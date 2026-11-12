@@ -204,6 +204,103 @@ describe("SettingsEditor", () => {
     expect(reset).not.toHaveBeenCalled();
   });
 
+  it("a late Secret list does not write the variables of a Secret", () => {
+    const set = vi.fn();
+    const reset = vi.fn();
+    const { group, settings } = settingsGroupOf("zeebe", "zeebe", {
+      preset: { zeebe: { extraEnv: [{ name: "LOG_LEVEL", value: "info" }] } },
+      claim: {
+        cluster: {
+          zeebe: {
+            extraEnv: [
+              {
+                name: "CLIENT_SECRET",
+                valueFrom: {
+                  secretKeyRef: { name: "orders-oidc", key: "secret" },
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const editor = (secrets: SecretRefs) => (
+      <SettingsEditor
+        group={group}
+        settings={settings}
+        secrets={secrets}
+        set={set}
+        reset={reset}
+      />
+    );
+    const { rerender } = render(editor([]));
+    rerender(editor(SECRETS));
+    expect(set).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  it("a variable from a Secret writes its reference", async () => {
+    const { set } = renderEditor("zeebe", "zeebe");
+    const env = settingRow("extraEnv");
+    await userEvent.click(
+      within(env).getByRole("button", { name: "Add a variable" }),
+    );
+    await userEvent.type(
+      within(env).getByRole("textbox", { name: "Name" }),
+      "S",
+    );
+    await userEvent.selectOptions(
+      within(env).getByRole("combobox", { name: "Source" }),
+      "secret",
+    );
+    await userEvent.selectOptions(
+      within(env).getByRole("combobox", { name: "Secret" }),
+      "orders-oidc",
+    );
+    await userEvent.selectOptions(
+      within(env).getByRole("combobox", { name: "Key" }),
+      "secret",
+    );
+    expect(set).toHaveBeenLastCalledWith(
+      steps("spec", "cluster", "zeebe", "extraEnv"),
+      [
+        {
+          name: "S",
+          valueFrom: { secretKeyRef: { name: "orders-oidc", key: "secret" } },
+        },
+      ],
+    );
+  });
+
+  it("a picked Secret reference survives a Secret that goes away", async () => {
+    const set = vi.fn();
+    const reset = vi.fn();
+    const { group, settings } = settingsGroupOf("cluster", "cluster", {});
+    const editor = (secrets: SecretRefs) => (
+      <SettingsEditor
+        group={group}
+        settings={settings}
+        secrets={secrets}
+        set={set}
+        reset={reset}
+      />
+    );
+    const { rerender } = render(editor(SECRETS));
+    const ref = settingRow("auth.clientSecretRef");
+    await userEvent.selectOptions(
+      within(ref).getByRole("combobox", { name: "Secret" }),
+      "orders-oidc",
+    );
+    await userEvent.selectOptions(
+      within(ref).getByRole("combobox", { name: "Key" }),
+      "secret",
+    );
+    expect(set).toHaveBeenCalledTimes(1);
+    reset.mockClear();
+    rerender(editor([]));
+    expect(reset).not.toHaveBeenCalled();
+  });
+
   it("a reset inside a block names the block that it resets", async () => {
     const tolerations = [{ key: "dedicated", operator: "Exists" }];
     const { reset } = renderEditor("zeebe", "zeebe", {

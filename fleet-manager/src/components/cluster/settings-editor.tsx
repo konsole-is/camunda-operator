@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { EnvEditor, type EnvVar } from "@/components/fleet/env-editor";
 import { FieldValue } from "@/components/fleet/field-state";
 import { KeyValueEditor } from "@/components/fleet/key-value-editor";
@@ -268,7 +268,7 @@ function Editor({
       );
     case "env":
       return (
-        <EnvEditor
+        <EnvSetting
           label={label}
           secrets={secrets}
           defaultValue={initial as EnvVar[]}
@@ -314,9 +314,52 @@ function Editor({
   }
 }
 
-// SecretRefEditor passes on a change only after the user picks: the picker
-// also reports undefined while secrets do not hold its value, as before
-// they load.
+// useUserEdit passes on one change after each user edit inside the element
+// that gets mark. A Secret picker also reports a change when secrets change,
+// as when they load, and such a change must not reach the claim.
+function useUserEdit(secrets: SecretRefs) {
+  const edited = useRef(false);
+  const secretsKey = JSON.stringify(secrets);
+  useEffect(() => {
+    edited.current = false;
+  }, [secretsKey]);
+  const mark = () => {
+    edited.current = true;
+  };
+  const only =
+    <A extends unknown[]>(f: (...args: A) => void) =>
+    (...args: A) => {
+      if (!edited.current) return;
+      edited.current = false;
+      f(...args);
+    };
+  return { mark, only };
+}
+
+function EnvSetting({
+  label,
+  secrets,
+  defaultValue,
+  onChange,
+}: {
+  label: string;
+  secrets: SecretRefs;
+  defaultValue: EnvVar[];
+  onChange: (env: EnvVar[], errors: ValidationError[]) => void;
+}) {
+  const { mark, only } = useUserEdit(secrets);
+  return (
+    <div className="min-w-0" onChange={mark} onClick={mark}>
+      <EnvEditor
+        label={label}
+        secrets={secrets}
+        defaultValue={defaultValue}
+        onChange={only(onChange)}
+      />
+    </div>
+  );
+}
+
 function SecretRefEditor({
   label,
   secrets,
@@ -328,22 +371,15 @@ function SecretRefEditor({
   defaultValue: SecretKeyRef | undefined;
   onChange: (value: unknown) => void;
 }) {
-  const picked = useRef(false);
+  const { mark, only } = useUserEdit(secrets);
   return (
-    <div
-      className="flex min-w-0 flex-col gap-1"
-      onChange={() => {
-        picked.current = true;
-      }}
-    >
+    <div className="flex min-w-0 flex-col gap-1" onChange={mark}>
       <span className="text-sm font-medium text-muted">{label}</span>
       <SecretRefPicker
         label={label}
         secrets={secrets}
         defaultValue={defaultValue}
-        onChange={(ref) => {
-          if (picked.current) onChange(ref);
-        }}
+        onChange={only(onChange)}
       />
     </div>
   );

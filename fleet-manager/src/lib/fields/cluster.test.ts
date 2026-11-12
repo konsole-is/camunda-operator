@@ -687,6 +687,34 @@ describe("clusterFields", () => {
     expect(field("spec.webapp.replicas").group).toBe("optimize");
   });
 
+  it("a field that only the claim of an attachment sets is a claim field", () => {
+    const spec = { clusterRef: { name: "orders" }, managementAuthRef: "auth" };
+    const fields = fieldsOf({
+      spec: {},
+      claim: claim({
+        attachments: {
+          optimize: {
+            managementAuthConfigRef: "auth",
+            webapp: { replicas: 3 },
+          },
+        },
+      }),
+      optimize: {
+        kind: "CamundaOptimize",
+        metadata: { name: "orders", managedFields: [owns(CLAIM, { spec })] },
+        spec,
+      } as unknown as Resource<"CamundaOptimize">,
+    });
+    const field = (path: string) => at(fields, path, "CamundaOptimize");
+    expect(view(field("spec.webapp.replicas"))).toMatchObject({
+      value: 3,
+      state: "Changed in the claim",
+    });
+    expect(field("spec.webapp.replicas").claimPath).toBe(
+      "spec.attachments.optimize.webapp.replicas",
+    );
+  });
+
   it("the backup schedule fields follow the attachment of the claim", () => {
     const spec = { clusterRef: { name: "orders" }, schedule: "0 2 * * *" };
     const fields = fieldsOf({

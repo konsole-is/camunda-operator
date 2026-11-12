@@ -332,6 +332,7 @@ type Attachment = {
 function attachmentFields(ctx: Context, a: Attachment): ClusterField[] {
   if (a.live === undefined) return [];
   const nodes = walk(a.live.spec, "spec");
+  const claimNodes = walk(ctx.managed ? (a.claimed ?? {}) : {}, "spec");
   const filled = ctx.filled(a.kind);
   const locks = lockPaths(a.kind);
 
@@ -340,11 +341,14 @@ function attachmentFields(ctx: Context, a: Attachment): ClusterField[] {
   const fieldOf = (path: FieldPath): FieldPath | undefined => {
     for (let at: FieldPath | undefined = path; at !== undefined;) {
       if (fields.has(at)) return at;
-      at = nodes.get(at)?.parent;
+      at = (nodes.get(at) ?? claimNodes.get(at))?.parent;
     }
     return undefined;
   };
-  for (const node of nodes.values()) {
+  // The claim can set a field before the live object holds it, as a pending
+  // change does.
+  const claimOnly = [...claimNodes.values()].filter((n) => !nodes.has(n.path));
+  for (const node of [...nodes.values(), ...claimOnly]) {
     if (node.parent === undefined) continue;
     const last = node.steps[node.steps.length - 1];
     if (!node.leaf && "field" in last) continue;
@@ -353,7 +357,7 @@ function attachmentFields(ctx: Context, a: Attachment): ClusterField[] {
     fields.add(node.path);
   }
   for (const [path, selected] of filled) {
-    if (!nodes.has(path)) {
+    if (!nodes.has(path) && !fields.has(path)) {
       units.push({
         path,
         steps: stepsOf(selected.names),
@@ -371,7 +375,6 @@ function attachmentFields(ctx: Context, a: Attachment): ClusterField[] {
     units.map((u) => u.path),
     () => true,
   );
-  const claimNodes = walk(ctx.managed ? (a.claimed ?? {}) : {}, "spec");
 
   return units.map((unit) => {
     const own = managers.get(unit.path) ?? [];

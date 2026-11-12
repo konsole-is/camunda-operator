@@ -153,6 +153,16 @@ describe("ComponentSettingsEditor", () => {
     });
   });
 
+  it("a new Optimize field shows that the claim sets it", async () => {
+    renderSlot(contextOf({ openId: "optimize" }));
+    await openEditors();
+    const row = settingRow(group("Optimize"), "webapp.replicas");
+    expect(within(row).getByText("Not set")).toBeDefined();
+    await userEvent.type(within(row).getByRole("spinbutton"), "2");
+    expect(within(row).getByText("Changed in the claim")).toBeDefined();
+    expect(within(row).getByRole("button", { name: /^Reset/ })).toBeDefined();
+  });
+
   it("a locked field shows its reason and no editor", async () => {
     renderSlot(
       contextOf({
