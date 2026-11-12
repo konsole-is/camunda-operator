@@ -64,11 +64,12 @@ The operator removes the artifacts before the resource goes. When it cannot reac
 
 ## Restore from a backup
 
-Each row of a `Completed` backup has **Restore**. A backup in another phase has no **Restore**. **Restore** opens a confirm with these lines:
+Each row of a `Completed` backup has **Restore**. A backup in another phase has no **Restore**. **Restore** opens a confirm. Its first sentence says that the cluster goes back to the backup, and that everything that the cluster wrote after the backup is lost. Under it, the confirm lists these facts:
 
-- The Camunda version of the backup, and the Camunda version of the cluster.
-- The restore replaces the data of the cluster and sets its version to the version of the backup.
-- The restore suspends the cluster while it runs, and starts it again when it completes. A failed restore leaves the cluster suspended.
+- The Camunda version of the backup and the Camunda version of the cluster. The restore sets the version of the cluster to the version of the backup.
+- What the restore deletes. A restore of an Elasticsearch backup deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. A restore of a PostgreSQL backup runs `pg_restore` over the database of the cluster, which drops each table of the dump and creates it again. Both kinds delete the broker volumes and create them again from the Zeebe data of the backup.
+- Whether the cluster starts again. The restore suspends a running cluster while it runs, and starts it again when it completes. A cluster that its owner suspended stays suspended after the restore, and the owner resumes it. A cluster that something else keeps suspended stays suspended until that suspension ends.
+- What a failed restore leaves. The Camunda indices or the database, and the broker volumes, can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and create a new restore, as [When the cluster starts again](../guides/operations.md#when-the-cluster-starts-again) shows.
 
 Type the name of the cluster, then select **Restore**. The fleet manager creates one restore of the kind that the backup needs. A `LogicalBackupElasticsearch` gets a [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md). A `LogicalBackupRDBMS` gets a [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md). The name is the cluster, `restore`, and the current time in UTC:
 
@@ -123,11 +124,12 @@ The confirm lists the restore window. The window holds the times that are inside
 
 Each interval of the window shows its start and its end in UTC. An interval that ends where the uploads of the archive started to fail says "Uploads are failing after this point."
 
-Enter a time in UTC in **Time (UTC)**. A time outside the window, or a time in the future, shows an error. A time inside the window shows the confirm:
+Enter a time in UTC in **Time (UTC)**. A time outside the window, or a time in the future, shows an error. A time inside the window shows the confirm. Its first sentence says that the cluster goes back to that time, and that everything that the cluster wrote after it is lost. Under it, the confirm lists these facts:
 
-- The database server rolls back to the time, and the Zeebe data goes back to the backup that covers it.
-- The restore suspends the cluster while it runs, and starts it again when it completes.
+- The database server rolls back to the time. The restore deletes the broker volumes and creates them again from the Zeebe backup that covers the point.
+- Whether the cluster starts again, as for **Restore**.
 - If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.
+- What a failed restore leaves, as for **Restore**. The broker volumes can be empty or half written.
 
 Type the name of the cluster, then select **Restore**. The fleet manager creates a [PointInTimeRestore](../crds/pointintimerestore.md). The name is the cluster, `pitr`, and the current time in UTC:
 
@@ -147,7 +149,7 @@ The window shows where a restore can reach. The fleet manager cannot see the Zee
 
 CAUTION: Choose a point at least one period of `spec.backup.primaryStorage.schedule` before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. [PointInTimeRestore: Choose the point to restore to](../crds/pointintimerestore.md#choose-the-point-to-restore-to) shows how to read the real window.
 
-A point-in-time restore writes no version on the cluster. A failed restore leaves the cluster suspended, as for **Restore**. While a backup of the cluster runs, **Restore to a point in time** stays on, and the confirm says that the new restore waits.
+A point-in-time restore writes no version on the cluster. While a backup of the cluster runs, **Restore to a point in time** stays on, and the confirm says that the new restore waits.
 
 **Restore to a point in time** is off, with the reason under it, in these cases:
 
@@ -155,8 +157,8 @@ A point-in-time restore writes no version on the cluster. A failed restore leave
 | --- | --- |
 | "The archive has no restore point yet." | Wait until the database server archives its first base backup. |
 | "No point is inside both the archive window and the P7D in which Zeebe keeps its backups." | The archive holds no point that Zeebe still covers. `P7D` is the `retention.window` of the cluster. Use **Restore** with a backup instead. |
-| "The cluster keeps its Zeebe backups for P1W, which the fleet manager cannot read, so it cannot offer a point." | Write `retention.window` in days and time, such as `P7D`. Camunda reads no week, month, or year units. |
 | "Restore my-cluster-restore-1 of this cluster has not ended. Start a new restore after it ends." | Wait until the restore is `Completed` or `Failed`. |
+| "Changes are off: the fleet manager could not read its settings." | Make sure that the fleet manager can read the ConfigMap `fleet-manager-settings`, as [Fleet manager settings](settings.md) shows. |
 
 ## Change the schedule
 
