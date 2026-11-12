@@ -15,7 +15,7 @@ The panel **Needs attention** is at the top of the page, above the tabs. It show
 | Option | The `Accepted` or the `Ready` condition of a `PluginRegistration` is `False`. The entry shows the label of the option, or its name. | No link. |
 | Management plane | The `Ready` condition of the plane is `False`. | No link. |
 
-Each entry shows the reason and the message of the condition. A backup shows its failure message. When nothing needs attention, the panel says "Nothing needs attention."
+Each entry shows the reason and the message of the condition. A backup shows its failure message. When nothing needs attention, the panel says "Nothing needs attention." When the page cannot read one of these lists, the panel says "Some lists could not be read, so this list can miss entries."
 
 ## Environments and tabs
 
@@ -86,12 +86,12 @@ The color of a dot is the `Ready` state of its component. Green is ready, red is
 
 ## Warnings
 
-A warning is a fact that needs your attention, also while the cluster is ready. The column **Warnings** shows one chip for each warning. Hold the pointer on a chip, or move the keyboard focus to it, to see the details. The details name the pod, the container, or the request, and say how long ago it happened.
+A warning is a fact that needs your attention, also while the cluster is ready. The column **Warnings** shows one chip for each warning. Hold the pointer on a chip, or move the keyboard focus to it, to see the details. The details say what happened and, when the fact has a time, how long ago it happened.
 
 | Warning | When it shows | Severity | Source |
 | --- | --- | --- | --- |
-| Out of memory | A container of the cluster stopped with the reason `OOMKilled` in the last hour. | Error | The [state of the container](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-states) in the pod status |
-| Restarts | A container restarted more than 3 times, and its last restart was in the last hour. | Warning | The restart count and the last state of the container in the pod status |
+| Out of memory | A container or an init container of the cluster stopped with the reason `OOMKilled` in the last hour. | Error | The [state of the container](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-states) in the pod status |
+| Restarts | A container or an init container restarted more than 3 times, and its last restart was in the last hour. | Warning | The restart count and the last state of the container in the pod status |
 | Near memory limit, near CPU limit | A pod uses 75 % or more of its memory or CPU limit. At 90 % or more the chip is an error. A pod without a limit has no such warning. | Warning or Error | metrics-server, through the [resource metrics pipeline](https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/) |
 | Backpressure | The brokers dropped more than 1 % of the requests in the last 5 minutes. | Warning | Prometheus |
 | Backup failed | The newest backup of the cluster has the phase `Failed`. The chip stays until a newer backup of the cluster exists. | Warning | The backup |
