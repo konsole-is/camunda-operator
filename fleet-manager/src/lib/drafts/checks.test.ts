@@ -148,6 +148,48 @@ describe("valueErrors", () => {
   });
 });
 
+describe("valueErrors and an empty list of names", () => {
+  const zones = (minItems?: number) =>
+    view({
+      options: [
+        {
+          registration: "store",
+          label: "Store",
+          isDefault: true,
+          parameters: [
+            {
+              name: "zones",
+              label: "Zones",
+              claimEditable: true,
+              allowed: [
+                { name: "a", label: "a" },
+                { name: "b", label: "b" },
+              ],
+              schema: {
+                type: "array",
+                items: { type: "string" },
+                ...(minItems !== undefined && { minItems }),
+              },
+            },
+          ],
+        },
+      ],
+    });
+  const draft = draftOf({
+    storage: [
+      { section: "storage", registration: "store", parameters: { zones: [] } },
+    ],
+  });
+
+  it("refuses it when the schema asks for more items", () => {
+    expect(valueErrors(draft, [zones(1)])).toEqual(["Fix the Zones of Store."]);
+  });
+
+  it("passes it when the schema allows it", () => {
+    expect(valueErrors(draft, [zones()])).toEqual([]);
+  });
+});
+
 describe("resolvedErrors", () => {
   const selections = [{ section: "storage", registration: "store" }];
 

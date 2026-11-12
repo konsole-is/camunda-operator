@@ -183,8 +183,8 @@ export function valueErrors(
         if (!names) {
           return rule.schema && !validate(rule.schema, value).ok ? fix : [];
         }
-        if (empty) return [];
         const list = Array.isArray(value) && !rule.allowedLists;
+        if (empty && !list) return [];
         const picked = list ? value : [value];
         const gone = picked
           .filter((v) => !names.includes(v as string))
