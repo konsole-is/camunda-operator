@@ -5,9 +5,12 @@ import {
   ENVIRONMENT_LABEL,
 } from "@/lib/labels";
 import {
+  BUILTIN_OPTIONS,
   byCodeUnit,
   type ClaimKind,
   equalJSON,
+  nameOf,
+  own,
   type PluginSelection,
   releaseAllowed,
   resolve,
@@ -16,6 +19,17 @@ import {
 import { specOf, type EnvironmentDraft } from "./draft";
 import { labelledNamespaces } from "./rows";
 import type { EnvironmentSources } from "./sources";
+
+/** StoragePresetKind is the preset kind of the built-in Elasticsearch or PostgreSQL. */
+export type StoragePresetKind =
+  | "ElasticsearchClusterPreset"
+  | "DatabaseServerPreset";
+
+// The Environment list of each preset kind of the built-in storage.
+const STORAGE_PRESET_LISTS = {
+  ElasticsearchClusterPreset: "elasticsearchCluster",
+  DatabaseServerPreset: "databaseServer",
+} as const;
 
 /** ClaimRef names one claim of either kind. */
 export type ClaimRef = { kind: ClaimKind; namespace: string; name: string };
@@ -34,7 +48,10 @@ export type ClaimRef = { kind: ClaimKind; namespace: string; name: string };
 export type ReferenceWarning =
   | {
       claim: ClaimRef;
-      kind: "CamundaRelease" | "CamundaClusterPreset";
+      kind:
+        | "CamundaRelease"
+        | "CamundaClusterPreset"
+        | StoragePresetKind;
       name: string;
       removed: true;
     }
@@ -119,6 +136,7 @@ export function environmentImpact(
       ...warningsOf(ref, claim, before, edited).map((w) =>
         refusedMove(w, claim, runningVersion(claim, before, s), s),
       ),
+      ...storagePresetWarnings(ref, claim, before, edited, s),
     );
   }
   if (!live && s.environments.length === 0) {
@@ -270,6 +288,41 @@ function warningsOf(
   return warnings;
 }
 
+// The preset of a built-in storage selection is the preset parameter of its
+// request, from the claim or from the policy that the claim recorded.
+function storagePresetWarnings(
+  ref: ClaimRef,
+  claim: Claim,
+  live: Environment,
+  edited: Environment,
+  s: EnvironmentSources,
+): ReferenceWarning[] {
+  const selections = claim.spec.plugins ?? [];
+  const resolved = resolve({
+    recorded: claim.status?.resolvedPolicy,
+    environment: live,
+    registrations: s.registrations,
+    selections,
+  });
+  if (!("value" in resolved)) return [];
+  return selections.flatMap((selection, i): ReferenceWarning[] => {
+    const kind = own(BUILTIN_OPTIONS, selection.registration)?.lists.preset;
+    if (
+      kind !== "ElasticsearchClusterPreset" &&
+      kind !== "DatabaseServerPreset"
+    )
+      return [];
+    const name = nameOf(resolved.value.requests?.[i]?.parameters?.preset);
+    const list = STORAGE_PRESET_LISTS[kind];
+    const allows = (environment: Environment) =>
+      name !== undefined &&
+      (environment.spec.presets?.[list] ?? []).includes(name);
+    return name !== undefined && allows(live) && !allows(edited)
+      ? [{ claim: ref, kind, name, removed: true }]
+      : [];
+  });
+}
+
 function defaultWarnings(
   claim: ClaimRef,
   kind: "CamundaRelease" | "CamundaPlatformConfig",
@@ -327,9 +380,9 @@ function parseVersion(version: string | undefined): number[] | undefined {
 
 /**
  * withoutKept returns impact without each removed warning whose release or
- * cluster preset kept, the spec that the dry run of the save gives, still
- * allows, and without each cleared warning whose default kept still has. Another field manager keeps such a member. Without kept it
- * returns impact.
+ * preset kept, the spec that the dry run of the save gives, still allows,
+ * and without each cleared warning whose default kept still has. Another
+ * field manager keeps such a member. Without kept it returns impact.
  */
 export function withoutKept(
   impact: EnvironmentImpact,
@@ -341,13 +394,14 @@ export function withoutKept(
       return w.kind === "CamundaRelease"
         ? Boolean(kept.releases?.default)
         : Boolean(kept.platformConfigRef);
-    return (
-      "removed" in w &&
-      (w.kind === "CamundaRelease"
-        ? (kept.releases?.allowed ?? [])
-        : (kept.presets?.camundaCluster ?? [])
-      ).includes(w.name)
-    );
+    if (!("removed" in w)) return false;
+    const list =
+      w.kind === "CamundaRelease"
+        ? kept.releases?.allowed
+        : w.kind === "CamundaClusterPreset"
+          ? kept.presets?.camundaCluster
+          : kept.presets?.[STORAGE_PRESET_LISTS[w.kind]];
+    return (list ?? []).includes(w.name);
   };
   return { ...impact, warnings: impact.warnings.filter((w) => !still(w)) };
 }

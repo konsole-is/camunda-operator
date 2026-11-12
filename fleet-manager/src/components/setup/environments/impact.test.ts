@@ -575,6 +575,141 @@ describe("namespaceImpact", () => {
   });
 });
 
+describe("environmentImpact for the presets of the built-in storage", () => {
+  const STORAGE = { section: "secondary-storage", registration: "elasticsearch" };
+  const DATABASE = {
+    section: "management-database",
+    registration: "management-database-server",
+  };
+  const registration = (name: string) =>
+    ({
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginRegistration",
+      metadata: { name },
+      spec: {
+        label: name,
+        sections: [],
+        mode: "Optional",
+        deletionPolicies: ["Delete"],
+        serviceAccount: { name: "sa", namespace: "ns" },
+        controller: { name: "camunda-operator" },
+        claimEditable: ["preset"],
+      },
+    }) as unknown as EnvironmentSources["registrations"][number];
+  const registrations = [
+    registration("elasticsearch"),
+    registration("management-database-server"),
+  ];
+  const editable = (registrationName: string, preset?: string): Recorded => ({
+    deletionPolicy: "Delete",
+    parameters: {
+      [registrationName]: {
+        preset: { claimEditable: true, ...(preset && { value: preset }) },
+      },
+    },
+  });
+
+  it("lists a claim whose Elasticsearch preset the edit removes", () => {
+    expect(
+      environmentImpact(
+        environment({ presets: { elasticsearchCluster: ["es-small", "es-large"] } }),
+        edit({ presets: { elasticsearchCluster: ["es-large"] } }),
+        sources({
+          registrations,
+          clusterClaims: [
+            clusterClaim(
+              "orders",
+              {
+                presetRef: undefined,
+                plugins: [{ ...STORAGE, parameters: { preset: "es-small" } }],
+              },
+              editable("elasticsearch"),
+            ),
+          ],
+        }),
+      ).warnings,
+    ).toEqual([
+      {
+        claim: { kind: "CamundaClusterClaim", namespace: "team-a", name: "orders" },
+        kind: "ElasticsearchClusterPreset",
+        name: "es-small",
+        removed: true,
+      },
+    ]);
+  });
+
+  it("lists a plane claim whose PostgreSQL preset the edit removes", () => {
+    expect(
+      environmentImpact(
+        environment({ presets: { databaseServer: ["pg-small"] } }),
+        edit({}),
+        sources({
+          registrations,
+          planeClaims: [
+            planeClaim(
+              "plane-a",
+              { plugins: [{ ...DATABASE, parameters: { preset: "pg-small" } }] },
+              editable("management-database-server"),
+            ),
+          ],
+        }),
+      ).warnings,
+    ).toEqual([
+      {
+        claim: {
+          kind: "CamundaManagementClusterClaim",
+          namespace: "team-a",
+          name: "plane-a",
+        },
+        kind: "DatabaseServerPreset",
+        name: "pg-small",
+        removed: true,
+      },
+    ]);
+  });
+
+  it("reads the preset of the recorded policy when the claim sets none", () => {
+    expect(
+      environmentImpact(
+        environment({ presets: { elasticsearchCluster: ["es-small"] } }),
+        edit({}),
+        sources({
+          registrations,
+          clusterClaims: [
+            clusterClaim(
+              "orders",
+              { presetRef: undefined, plugins: [STORAGE] },
+              editable("elasticsearch", "es-small"),
+            ),
+          ],
+        }),
+      ).warnings.map((w) => ("removed" in w ? w.name : undefined)),
+    ).toEqual(["es-small"]);
+  });
+
+  it("does not list a preset that the live environment already did not allow", () => {
+    expect(
+      environmentImpact(
+        environment({ presets: { elasticsearchCluster: ["es-large"] } }),
+        edit({}),
+        sources({
+          registrations,
+          clusterClaims: [
+            clusterClaim(
+              "orders",
+              {
+                presetRef: undefined,
+                plugins: [{ ...STORAGE, parameters: { preset: "es-small" } }],
+              },
+              editable("elasticsearch"),
+            ),
+          ],
+        }),
+      ).warnings,
+    ).toEqual([]);
+  });
+});
+
 describe("withoutKept", () => {
   const orders = {
     kind: "CamundaClusterClaim" as const,

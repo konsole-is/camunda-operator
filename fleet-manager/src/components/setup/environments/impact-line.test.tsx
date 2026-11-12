@@ -45,6 +45,46 @@ describe("impactLines", () => {
     expect(line).not.toContain("refused");
   });
 
+  it("names the Elasticsearch preset in the warning", () => {
+    const [, line] = impactLines({
+      clusters: 0,
+      planes: 0,
+      warnings: [
+        {
+          claim: orders,
+          kind: "ElasticsearchClusterPreset",
+          name: "es-small",
+          removed: true,
+        },
+      ],
+    });
+    expect(line).toBe(
+      "orders in team-a uses Elasticsearch preset es-small, which this change no longer allows. The cluster keeps running. A later change of its preset must pick an allowed one.",
+    );
+  });
+
+  it("says that a management plane keeps running when its PostgreSQL preset goes", () => {
+    const [, line] = impactLines({
+      clusters: 0,
+      planes: 0,
+      warnings: [
+        {
+          claim: {
+            kind: "CamundaManagementClusterClaim",
+            namespace: "platform",
+            name: "plane-a",
+          },
+          kind: "DatabaseServerPreset",
+          name: "pg-small",
+          removed: true,
+        },
+      ],
+    });
+    expect(line).toBe(
+      "plane-a in platform uses PostgreSQL preset pg-small, which this change no longer allows. The management plane keeps running. A later change of its preset must pick an allowed one.",
+    );
+  });
+
   it("names the claims whose cluster preset the edit removes", () => {
     expect(
       impactLines({

@@ -59,11 +59,12 @@ function countLine({ clusters, planes }: EnvironmentImpact): string {
 export function warningLine(warning: ReferenceWarning): string {
   const claim = `${warning.claim.name} in ${warning.claim.namespace}`;
   if ("removed" in warning) {
-    const [what, field] =
-      warning.kind === "CamundaRelease"
-        ? ["release", "release"]
-        : ["cluster preset", "preset"];
-    return `${claim} uses ${what} ${warning.name}, which this change no longer allows. The cluster keeps running. A later change of its ${field} must pick an allowed one.`;
+    const [what, field] = REMOVED_WORDS[warning.kind];
+    const running =
+      warning.claim.kind === "CamundaClusterClaim"
+        ? "The cluster keeps running."
+        : "The management plane keeps running.";
+    return `${claim} uses ${what} ${warning.name}, which this change no longer allows. ${running} A later change of its ${field} must pick an allowed one.`;
   }
   if ("cleared" in warning) {
     const what =
@@ -79,6 +80,13 @@ export function warningLine(warning: ReferenceWarning): string {
     ? `${claim} names no release and moves to ${warning.name}. Its brokers restart one at a time.`
     : `${claim} names no platform config and moves to ${warning.name}.`;
 }
+
+const REMOVED_WORDS = {
+  CamundaRelease: ["release", "release"],
+  CamundaClusterPreset: ["cluster preset", "preset"],
+  ElasticsearchClusterPreset: ["Elasticsearch preset", "preset"],
+  DatabaseServerPreset: ["PostgreSQL preset", "preset"],
+} as const;
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
