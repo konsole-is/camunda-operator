@@ -202,7 +202,9 @@ describe("ClusterTable", () => {
       />,
     );
     expect(
-      within(rowOf("orders")).getByRole("button", { name: "Backup failed" }),
+      within(rowOf("orders")).getByRole("button", {
+        name: "Warning: Backup failed",
+      }),
     ).toBeTruthy();
     expect(within(rowOf("billing")).getAllByRole("cell")[5].textContent).toBe(
       "-",

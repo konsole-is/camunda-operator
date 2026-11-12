@@ -371,13 +371,13 @@ describe("FleetView", () => {
     render(view({ podWarnings }));
     expect(
       within(screen.getByRole("row", { name: /orders/ })).getByRole("button", {
-        name: "Out of memory",
+        name: "Error: Out of memory",
       }),
     ).toBeTruthy();
     expect(
       within(screen.getByRole("row", { name: /billing/ })).queryByRole(
         "button",
-        { name: "Out of memory" },
+        { name: "Error: Out of memory" },
       ),
     ).toBeNull();
   });
@@ -722,7 +722,9 @@ describe("FleetViewLive", () => {
   it("shows the warnings of the route", () => {
     live.warnings = podWarnings;
     render(<FleetViewLive initial={initial} now={NOW} />);
-    expect(screen.getByRole("button", { name: "Out of memory" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Error: Out of memory" }),
+    ).toBeTruthy();
   });
 
   it("shows a pushed claim of this browser tab", () => {

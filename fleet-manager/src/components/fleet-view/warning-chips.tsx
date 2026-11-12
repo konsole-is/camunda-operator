@@ -51,6 +51,7 @@ export function WarningChips({
                   )}
                 >
                   <Icon aria-hidden className="size-3 shrink-0" />
+                  <span className="sr-only">{warning.severity}:</span>{" "}
                   <span className="truncate">{warning.label}</span>
                 </button>
               </TooltipTrigger>

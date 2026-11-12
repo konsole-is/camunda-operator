@@ -41,16 +41,39 @@ describe("WarningChips", () => {
   it("shows an Error before a Warning", () => {
     render(<WarningChips warnings={[restarts, oom, backup]} now={NOW} />);
     expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
-      "Out of memory",
-      "Restarts",
-      "Backup failed",
+      "Error: Out of memory",
+      "Warning: Restarts",
+      "Warning: Backup failed",
     ]);
+  });
+
+  it("names the severity in the accessible name of a chip", () => {
+    render(
+      <WarningChips
+        warnings={[
+          { ...oom, kind: "memory", label: "Near memory limit" },
+          {
+            ...backup,
+            kind: "memory",
+            label: "Near memory limit",
+            detail: "Pod orders-zeebe-1 uses 80 % of its memory limit",
+          },
+        ]}
+        now={NOW}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Error: Near memory limit" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Warning: Near memory limit" }),
+    ).toBeTruthy();
   });
 
   it("shows the detail and the age in the tooltip", async () => {
     render(<WarningChips warnings={[oom]} now={NOW} />);
     await userEvent.tab();
-    expect(document.activeElement?.textContent).toBe("Out of memory");
+    expect(document.activeElement?.textContent).toBe("Error: Out of memory");
     expect((await screen.findByRole("tooltip")).textContent).toBe(
       "Container zeebe of pod orders-zeebe-0 ran out of memory, 12m ago.",
     );
