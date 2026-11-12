@@ -7,8 +7,10 @@ import { CHIP_TONE } from "@/components/fleet/status";
 import { StatusChip } from "@/components/fleet/status-chip";
 import { cn } from "@/lib/utils";
 import type { RefKey } from "@/lib/write/types";
+import type { Warning } from "@/lib/warnings";
 import { ComponentDots } from "./component-dots";
 import type { ClusterRow, WaitingRow } from "./model";
+import { WarningChips } from "./warning-chips";
 
 const CHIP =
   "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap";
@@ -16,7 +18,7 @@ const CHIP =
 // The groups of the fleet view stack several cluster tables. Fixed column
 // widths keep their columns in line from one table to the next.
 const COLUMN_WIDTHS =
-  "md:[&_table]:table-fixed md:[&_th:nth-child(1)]:w-[24%] md:[&_th:nth-child(2)]:w-[22%] md:[&_th:nth-child(3)]:w-[14%] md:[&_th:nth-child(4)]:w-[22%]";
+  "md:[&_table]:table-fixed md:[&_th:nth-child(1)]:w-[19%] md:[&_th:nth-child(2)]:w-[17%] md:[&_th:nth-child(3)]:w-[11%] md:[&_th:nth-child(4)]:w-[17%] md:[&_th:nth-child(5)]:w-[13%]";
 
 // The cells of a fixed column break a long name, which has no spaces.
 const WRAP = "min-w-0 whitespace-normal break-words";
@@ -27,16 +29,24 @@ const CLUSTER_COLUMNS = [
   { key: "version", label: "Version" },
   { key: "components", label: "Components" },
   { key: "backup", label: "Last backup" },
+  { key: "warnings", label: "Warnings" },
 ];
 
-/** ClusterTable is one cluster table. A row with href links its name to the cluster page. */
+/**
+ * ClusterTable is one cluster table. A row with href links its name to the
+ * cluster page. warnings holds the warnings of each row by its id.
+ */
 export function ClusterTable({
   label,
   rows,
+  warnings,
+  now,
   emptyText,
 }: {
   label: string;
   rows: ClusterRow[];
+  warnings: ReadonlyMap<string, Warning[]>;
+  now: string;
   emptyText?: string;
 }): ReactNode {
   return (
@@ -82,6 +92,9 @@ export function ClusterTable({
               </span>
             ) : (
               <span className="text-muted">No backups</span>
+            ),
+            warnings: (
+              <WarningChips warnings={warnings.get(row.id) ?? []} now={now} />
             ),
           },
         }))}

@@ -445,3 +445,66 @@ func TestNormalizeLeavesOutAnEventThatTheAPIServerWrote(t *testing.T) {
 
 	assert.Len(t, out, 1, "the repair loop of the API server writes this Event at a time that no scenario sets")
 }
+
+// applyEvent returns the Event that the framework records on owner when an
+// apply of applied ends with verb, such as "Create" or "Update".
+func applyEvent(owner, applied unstructured.Unstructured, verb string) unstructured.Unstructured {
+	past := verb + "d"
+	note := past + " " + applied.GetKind() + " '" + applied.GetName() + "'"
+	e := event(owner.GetName()+"."+verb, owner, past+applied.GetKind(), note)
+	e.Object["action"] = verb
+	e.Object["reportingController"] = "camundaclusterclaim"
+	e.Object["related"] = map[string]any{
+		"apiVersion": applied.GetAPIVersion(),
+		"kind":       applied.GetKind(),
+		"namespace":  applied.GetNamespace(),
+		"name":       applied.GetName(),
+		"uid":        string(applied.GetUID()),
+	}
+	return e
+}
+
+func TestNormalizeLeavesOutTheEventOfAnApplyThatUpdatedAnObject(t *testing.T) {
+	claim := object("fleet.camunda.io/v1alpha1", "CamundaClusterClaim", "team-a", "orders", "claim")
+	request := object("plugins.camunda.io/v1alpha1", "PluginRequest", "team-a", "orders-storage", "request")
+	out, err := normalize(
+		newServiceIPs(),
+		[]unstructured.Unstructured{claim, request, applyEvent(claim, request, "Update")},
+	)
+	require.NoError(t, err)
+
+	assert.Len(t, out, 2, "a finalizer that another controller adds before the apply returns also records this Event")
+}
+
+func TestNormalizeKeepsTheEventsThatNoApplyUpdateRecorded(t *testing.T) {
+	claim := object("fleet.camunda.io/v1alpha1", "CamundaClusterClaim", "team-a", "orders", "claim")
+	request := object("plugins.camunda.io/v1alpha1", "PluginRequest", "team-a", "orders-storage", "request")
+	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "cluster")
+
+	rotated := event("orders.rotated", cluster, "UpdatedAdminPassword", "Updated the admin password")
+	rotated.Object["action"] = "Rotate"
+	otherKind := applyEvent(claim, request, "Update")
+	otherKind.Object["reason"] = "UpdatedOutputs"
+
+	tests := map[string]unstructured.Unstructured{
+		"an apply that created an object":                         applyEvent(claim, request, "Create"),
+		"another action with a reason that starts with Updated":   rotated,
+		"an update whose reason does not name the related object": otherKind,
+	}
+	for name, e := range tests {
+		t.Run(name, func(t *testing.T) {
+			out, err := normalize(newServiceIPs(), []unstructured.Unstructured{claim, request, cluster, e})
+			require.NoError(t, err)
+
+			reason, _, _ := unstructured.NestedString(e.Object, "reason")
+			var reasons []string
+			for _, obj := range out {
+				if isEvent(&obj) {
+					r, _, _ := unstructured.NestedString(obj.Object, "reason")
+					reasons = append(reasons, r)
+				}
+			}
+			assert.Equal(t, []string{reason}, reasons)
+		})
+	}
+}

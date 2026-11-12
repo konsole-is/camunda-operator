@@ -3,6 +3,9 @@ import { planesOf } from "@/components/planes/plane";
 import type { Story } from "@/gallery/registry";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
+import type { PodWarnings } from "@/lib/warnings";
+import { attentionItems } from "./attention";
+import { AttentionPanel } from "./attention-panel";
 import { ClusterTable } from "./cluster-table";
 import { ComponentDots } from "./component-dots";
 import { FleetView } from "./fleet-view";
@@ -261,7 +264,113 @@ const pushes: PendingPush[] = [
   },
 ];
 
+const podWarnings: PodWarnings = {
+  clusters: {
+    "team-orders/orders": [
+      {
+        kind: "restarts",
+        severity: "Warning",
+        label: "Restarts",
+        detail: "Container zeebe of pod orders-zeebe-2 restarted 6 times",
+        since: "2026-11-10T11:41:00Z",
+      },
+      {
+        kind: "memory",
+        severity: "Error",
+        label: "Near memory limit",
+        detail: "Pod orders-zeebe-2 uses 93 % of its memory limit",
+      },
+      {
+        kind: "backpressure",
+        severity: "Warning",
+        label: "Backpressure",
+        detail:
+          "4 % of the requests were dropped by backpressure in the last 5 minutes",
+      },
+    ],
+    "team-orders/returns": [
+      {
+        kind: "oom",
+        severity: "Error",
+        label: "Out of memory",
+        detail: "Container zeebe of pod returns-zeebe-1 ran out of memory",
+        since: "2026-11-10T11:48:00Z",
+      },
+    ],
+  },
+  missing: [],
+};
+
+const downPlanes = planes.map((plane) => ({
+  ...plane,
+  ready: {
+    status: "False" as const,
+    reason: "Degraded",
+    message: "The Keycloak pod is not ready",
+  },
+}));
+
+const failingRegistration = {
+  kind: "PluginRegistration",
+  metadata: { name: "aws-s3-bucket" },
+  spec: { label: "Bucket on Amazon S3" },
+  status: {
+    conditions: [
+      {
+        type: "Ready",
+        status: "False",
+        reason: "ControllerNotRunning",
+        message: "No controller pod of the plugin is ready",
+      },
+    ],
+  },
+} as unknown as Resource<"PluginRegistration">;
+
 export const fleetViewStories: Story[] = [
+  {
+    component: "FleetView",
+    name: "Warnings",
+    render: () => (
+      <FleetView
+        sources={fleet}
+        planes={planes}
+        pushes={[]}
+        podWarnings={podWarnings}
+        now={NOW}
+      />
+    ),
+  },
+  {
+    component: "FleetView",
+    name: "Missing sources",
+    render: () => (
+      <FleetView
+        sources={fleet}
+        planes={planes}
+        pushes={[]}
+        podWarnings={{
+          ...podWarnings,
+          missing: ["metrics-server", "prometheus"],
+        }}
+        now={NOW}
+      />
+    ),
+  },
+  {
+    component: "AttentionPanel",
+    name: "Mixed",
+    render: () => (
+      <AttentionPanel
+        items={attentionItems({
+          rows: clusterRows(fleet, NOW),
+          backups: fleet.backups,
+          registrations: [failingRegistration],
+          planes: downPlanes,
+          now: NOW,
+        })}
+      />
+    ),
+  },
   {
     component: "FleetView",
     name: "Environments",
@@ -338,7 +447,12 @@ export const fleetViewStories: Story[] = [
     component: "ClusterTable",
     name: "Mixed states",
     render: () => (
-      <ClusterTable label="Production" rows={clusterRows(fleet, NOW)} />
+      <ClusterTable
+        label="Production"
+        rows={clusterRows(fleet, NOW)}
+        warnings={new Map()}
+        now={NOW}
+      />
     ),
   },
 ];

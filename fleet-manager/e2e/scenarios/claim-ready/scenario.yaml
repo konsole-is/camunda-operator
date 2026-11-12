@@ -1,0 +1,172 @@
+schemaVersion: 1
+description: >-
+  A CamundaCluster made from the CamundaClusterClaim orders in the
+  Environment Production, with the built-in option for an existing
+  secondary storage, and every workload ready. The Environment lets a
+  claim name its SecondaryStorageConfig. The platform config, the
+  preset medium, and the release camunda-8-9-0 are those of
+  cluster-ready. The claim selects no other option, because envtest runs
+  no plugin controller.
+seed:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: team-orders
+      labels:
+        fleet.camunda.io/environment: production
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: oidc-credentials
+      namespace: camunda-system
+    stringData:
+      client-secret: scenario
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: camunda-license
+      namespace: camunda-system
+    stringData:
+      license-key: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaPlatformConfig
+    metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
+      name: camundaplatformconfig-sample
+    spec:
+      auth:
+        method: oidc
+        oidc:
+          issuerUrl: "https://login.example.com/realms/camunda"
+          clientId: "camunda-orchestration"
+          audience: "camunda-orchestration"
+          clientSecretRef:
+            name: "oidc-credentials"
+            namespace: "camunda-system"
+            key: "client-secret"
+      licenseSecretRef:
+        name: "camunda-license"
+        namespace: "camunda-system"
+        key: "license-key"
+      images:
+        camunda: "registry.example.com/camunda/camunda"
+        optimize: "registry.example.com/camunda/optimize"
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaClusterPreset
+    metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
+      name: medium
+    spec:
+      cluster:
+        podLabels:
+          company.com/team: "automation-ops"
+        podAnnotations:
+          company.com/cluster-preset: "medium"
+        zeebe:
+          replicas: 3
+          partitions: 3
+          replicationFactor: 3
+          resources:
+            requests: { cpu: "1", memory: "2Gi" }
+            limits: { cpu: "2", memory: "4Gi" }
+          storageClassName: "ssd"
+          storageSize: "32Gi"
+          extraEnv:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:+ExitOnOutOfMemoryError -Xmx1g"
+        gateway:
+          mode: Standalone
+          replicas: 2
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+        operate:
+          mode: Embedded
+        tasklist:
+          mode: Embedded
+        admin:
+          mode: Embedded
+        connectors:
+          enabled: true
+          replicas: 1
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+  - apiVersion: core.camunda.io/v1
+    kind: CamundaRelease
+    metadata:
+      labels:
+        app.kubernetes.io/name: camunda-operator
+        app.kubernetes.io/managed-by: kustomize
+      name: camunda-8-9-0
+    spec:
+      version: "8.9.0"
+      connectors:
+        version: "8.9.7"
+      elasticsearch:
+        version: "9.2.4"
+      databaseServer:
+        version: "17"
+      extraEnv:
+        - name: CAMUNDA_FEATURE_FLAG
+          value: "true"
+  - apiVersion: fleet.camunda.io/v1alpha1
+    kind: Environment
+    metadata:
+      name: production
+    spec:
+      displayName: Production
+      color: "#2E7D32"
+      platformConfigRef: camundaplatformconfig-sample
+      presets:
+        camundaCluster:
+          - medium
+      releases:
+        allowed:
+          - camunda-8-9-0
+        default: camunda-8-9-0
+      sections:
+        secondary-storage:
+          allowed:
+            - existing-secondary-storage
+      parameters:
+        existing-secondary-storage:
+          name:
+            claimEditable: true
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: orders-storage-credentials
+      namespace: team-orders
+    stringData:
+      username: camunda
+      password: scenario
+  - apiVersion: core.camunda.io/v1
+    kind: SecondaryStorageConfig
+    metadata:
+      name: orders-storage
+      namespace: team-orders
+    spec:
+      type: elasticsearch
+      elasticsearch:
+        endpoint: "https://orders-es-http:9200"
+        credentialsSecretRef:
+          name: orders-storage-credentials
+          usernameKey: username
+          passwordKey: password
+  - apiVersion: fleet.camunda.io/v1alpha1
+    kind: CamundaClusterClaim
+    metadata:
+      name: orders
+      namespace: team-orders
+    spec:
+      presetRef: medium
+      releaseRef: camunda-8-9-0
+      platformConfigRef: camundaplatformconfig-sample
+      plugins:
+        - section: secondary-storage
+          registration: existing-secondary-storage
+          parameters:
+            name: orders-storage
