@@ -168,8 +168,8 @@ export function backupChangeSchema(cluster: {
  * backup of either kind in the namespace has its name, and a new restore
  * when a restore of any kind there has its name. A new restore also fails
  * while a restore of the cluster is not Completed or Failed, and a new
- * logical restore when its backup does not exist, is not Completed, or is
- * a backup of another cluster. A delete fails while a logical restore that
+ * logical restore when its backup does not exist, is not Completed, is
+ * being deleted, or is a backup of another cluster. A delete fails while a logical restore that
  * is not Completed or Failed reads the backup. When these checks cannot
  * read the backups or the restores, it gives Unavailable and writes
  * nothing.
@@ -302,6 +302,8 @@ async function restoreRefusalOf(
     message = `Backup ${name} is a backup of the cluster ${of}. A restore writes only into the cluster of its backup.`;
   } else if (phase !== "Completed") {
     message = `Backup ${name} is ${phase}, and a restore reads only a Completed backup.`;
+  } else if (backup.metadata.deletionTimestamp) {
+    message = `Backup ${name} is being deleted, so a restore cannot read it.`;
   }
   return message === undefined ? undefined : { code: "Stale", message, ref };
 }

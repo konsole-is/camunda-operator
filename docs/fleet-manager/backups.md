@@ -109,7 +109,7 @@ When you select **Restore**, the fleet manager reads the backup and the restores
 
 - After the page chose the name, another restore took that name.
 - A restore of the cluster has not ended.
-- The backup does not exist, or it is not `Completed`.
+- The backup does not exist, it is not `Completed`, or it is being deleted.
 - The backup is a backup of another cluster.
 
 ## Restore to a point in time

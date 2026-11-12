@@ -379,6 +379,19 @@ describe("applyBackupChange, restores", () => {
     ],
     [
       [
+        {
+          ...backupOf("LogicalBackupRDBMS", "orders-manual-1", "Completed"),
+          metadata: {
+            name: "orders-manual-1",
+            namespace: "team-a",
+            deletionTimestamp: "2026-11-12T00:00:00Z",
+          },
+        },
+      ],
+      "Backup orders-manual-1 is being deleted, so a restore cannot read it.",
+    ],
+    [
+      [
         backupOf(
           "LogicalBackupRDBMS",
           "orders-manual-1",
@@ -389,7 +402,7 @@ describe("applyBackupChange, restores", () => {
       "Backup orders-manual-1 is a backup of the cluster billing. A restore writes only into the cluster of its backup.",
     ],
   ])(
-    "applyBackupChange refuses a logical restore of a backup that is missing, not Completed, or of another cluster: %#",
+    "applyBackupChange refuses a logical restore of a backup that is missing, not Completed, being deleted, or of another cluster: %#",
     async (objects, message) => {
       fakeWriter.objects = objects;
       expect(await applyBackupChange(orders, restore())).toEqual({
