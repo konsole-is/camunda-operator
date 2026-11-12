@@ -17,6 +17,10 @@ import {
   previewClaimChange,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import {
+  createPlane,
+  previewPlaneCreate,
+} from "@/app/fleet/planes/new/actions";
+import {
   applyEnvironmentChange,
   applyNamespaceLabel,
   previewEnvironmentChange,
@@ -40,6 +44,7 @@ import { defaultCache } from "@/lib/k8s/cache";
 import { get } from "@/lib/k8s/read";
 import * as secrets from "@/lib/secrets";
 import * as settings from "@/lib/settings";
+import { createChangeOf } from "@/lib/write/create";
 import { kubeRequest } from "../scenarios/kube";
 
 // The data layer reads KUBECONFIG through kubeConfig, on its first call.
@@ -293,6 +298,12 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
       ...claimChange(),
       preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
     }),
+  "app/fleet/planes/new/actions.ts#previewPlaneCreate": () =>
+    previewPlaneCreate(planeCreate()),
+  // The claim has no spec that the API server accepts, so the write
+  // refuses it and leaves nothing behind.
+  "app/fleet/planes/new/actions.ts#createPlane": () =>
+    createPlane(planeCreate()),
   "app/setup/environments/actions.ts#previewEnvironmentChange": () =>
     previewEnvironmentChange(environmentChange()),
   // A precondition for an object that does not exist refuses with Stale,
@@ -363,6 +374,15 @@ function claimChange() {
     ],
   };
 }
+function planeCreate() {
+  return createChangeOf("Create the management plane leak", {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaManagementClusterClaim",
+    metadata: { name: "leak", namespace },
+    spec: {},
+  });
+}
+
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
   "settings#appPermissions": () => settings.appPermissions(),
   "settings#getSettings": () => settings.getSettings(),
