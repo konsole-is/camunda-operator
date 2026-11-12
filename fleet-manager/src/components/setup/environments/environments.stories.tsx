@@ -1,9 +1,14 @@
 import type { Story } from "@/gallery/registry";
 import { EnvironmentEditorStory } from "./editor-story";
 import { EnvironmentList } from "./environment-list";
-import { environmentFixtures } from "./fixtures";
+import { environmentFixtures, sectionFixtures } from "./fixtures";
 import { ImpactLine } from "./impact-line";
 import { environmentRows, unassignedNamespaces } from "./rows";
+import {
+  OptionSettingsStory,
+  SectionsTableStory,
+  TemplatePreviewStory,
+} from "./settings-story";
 
 function notReady() {
   const sources = environmentFixtures();
@@ -110,6 +115,96 @@ export const environmentStories: Story[] = [
     ),
   },
   {
+    component: "EnvironmentEditor",
+    name: "Sections and settings of the options",
+    render: () => (
+      <EnvironmentEditorStory
+        sources={sectionFixtures()}
+        name="production"
+        mode="direct"
+      />
+    ),
+  },
+  {
+    component: "EnvironmentEditor",
+    name: "Names that do not exist",
+    render: () => {
+      const sources = sectionFixtures();
+      const spec = sources.environments[0].spec;
+      spec.sections = { ...spec.sections, "old-section": { allowed: ["x"] } };
+      spec.parameters = { ...spec.parameters, "old-option": {} };
+      return (
+        <EnvironmentEditorStory
+          sources={sources}
+          name="production"
+          mode="direct"
+        />
+      );
+    },
+  },
+  {
+    component: "SectionsTable",
+    name: "Platform environment",
+    render: () => {
+      const sources = environmentFixtures();
+      return (
+        <SectionsTableStory
+          sources={sources}
+          spec={sources.environments[2].spec}
+        />
+      );
+    },
+  },
+  {
+    component: "SectionsTable",
+    name: "Notes",
+    render: () => {
+      const sources = sectionFixtures();
+      return (
+        <SectionsTableStory
+          sources={sources}
+          spec={{
+            sections: {
+              ...sources.environments[0].spec.sections,
+              "encryption-key": { allowed: ["aws-kms", "vault-transit"] },
+            },
+          }}
+          sections={["encryption-key", "volume-encryption"]}
+        />
+      );
+    },
+  },
+  {
+    component: "OptionSettings",
+    name: "Connectors role with allowed values",
+    render: () => {
+      const sources = sectionFixtures();
+      return (
+        <OptionSettingsStory
+          sources={sources}
+          environment={sources.environments[0]}
+          registration="aws-connectors-role"
+        />
+      );
+    },
+  },
+  {
+    component: "TemplatePreview",
+    name: "Inline policy",
+    render: () => {
+      const sources = sectionFixtures();
+      return (
+        <TemplatePreviewStory
+          sources={sources}
+          environment={sources.environments[0]}
+          registration="aws-connectors-role"
+          section="connectors-permissions"
+          parameter="inlinePolicy"
+        />
+      );
+    },
+  },
+  {
     component: "ImpactLine",
     name: "Warnings",
     render: () => (
@@ -135,6 +230,12 @@ export const environmentStories: Story[] = [
               kind: "CamundaRelease",
               name: "8.9.23",
               followsDefault: true,
+            },
+            {
+              claim: { ...orders, name: "search" },
+              kind: "ElasticsearchClusterPreset",
+              name: "es-small",
+              removed: true,
             },
           ],
         }}

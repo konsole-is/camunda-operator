@@ -6,7 +6,15 @@ import {
   PatchStrategy,
 } from "@kubernetes/client-node";
 import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
-import { namespaceLabelChange } from "@/components/setup/environments/draft";
+import { keptPaths } from "@/components/fleet/change-review";
+import {
+  draftOf,
+  namespaceLabelChange,
+  updateChange,
+} from "@/components/setup/environments/draft";
+import { withSectionPolicy } from "@/components/setup/environments/sections";
+import { withParameterPolicy } from "@/components/setup/environments/settings";
+import type { Environment } from "@/generated/crds/environment";
 import { createChangeOf } from "@/lib/write/create";
 import type { KubeObject } from "@/lib/write/types";
 import {
@@ -996,5 +1004,97 @@ describe("the direct writer against envtest", () => {
     expect(
       listed.map((o) => [o.metadata.namespace, o.metadata.name, o.spec]),
     ).toEqual([[namespace, name, restore(namespace).spec]]);
+  });
+});
+
+describe("a save of the Environment editor against envtest", () => {
+  const EXISTING = { sections: ["object-storage"], registrations: ["aws-s3"] };
+  const kubectlChoice = { name: "kubectl", label: "Kubectl", value: "k" };
+  const appChoice = { name: "app", label: "App", value: "a" };
+  const policyOf = (env: Environment) => env.spec.parameters?.["aws-s3"]?.tier;
+  const read = async () => (await live(name)) as unknown as Environment;
+  const save = async (draft: Environment["spec"]) => {
+    const change = updateChange(await read(), { name, spec: draft }, EXISTING);
+    return { change, preview: await writer.preview(change) };
+  };
+
+  const createByKubectl = (tier: object) =>
+    createClientSideApplied(
+      api,
+      environment(name, {
+        sections: {
+          "object-storage": { required: true, allowed: ["aws-s3"] },
+        },
+        parameters: { "aws-s3": { tier } },
+      }),
+    );
+
+  it("removes the last choice that the app applied, and keeps a choice of kubectl, which the review names", async () => {
+    await createByKubectl({ claimEditable: true, allowed: [kubectlChoice] });
+    const withApp = withParameterPolicy(
+      draftOf(await read()).spec,
+      "aws-s3",
+      "tier",
+      { claimEditable: true, allowed: [appChoice] },
+    );
+    const first = await save(withApp);
+    expect(await writer.apply(first.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(
+      policyOf(await read())
+        ?.allowed?.map((c) => c.name)
+        .sort(),
+    ).toEqual(["app", "kubectl"]);
+
+    const none = withParameterPolicy(
+      draftOf(await read()).spec,
+      "aws-s3",
+      "tier",
+      { claimEditable: true, allowed: [] },
+    );
+    const { change, preview } = await save(none);
+    expect(preview.errors).toEqual([]);
+    expect(keptPaths(change.apply[0], preview.objects[0].after)).toEqual([
+      "spec.parameters.aws-s3.tier.allowed",
+    ]);
+    expect(await writer.apply(change)).toEqual({ ok: true, mode: "direct" });
+    expect(policyOf(await read())?.allowed).toEqual([kubectlChoice]);
+  });
+
+  it("refuses to turn A claim can change it off while kubectl owns a choice", async () => {
+    await createByKubectl({ claimEditable: true, allowed: [kubectlChoice] });
+    const off = withParameterPolicy(
+      draftOf(await read()).spec,
+      "aws-s3",
+      "tier",
+      {},
+    );
+    const { preview } = await save(off);
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        code: "Invalid",
+        message: expect.stringContaining("allowed needs claimEditable: true"),
+      }),
+    ]);
+  });
+
+  it("turns Required and A claim can change it off, which kubectl set", async () => {
+    await createByKubectl({ claimEditable: true });
+    const spec = withParameterPolicy(
+      withSectionPolicy(draftOf(await read()).spec, "object-storage", {
+        required: false,
+        allowed: ["aws-s3"],
+      }),
+      "aws-s3",
+      "tier",
+      {},
+    );
+    const { change } = await save(spec);
+    expect(await writer.apply(change)).toEqual({ ok: true, mode: "direct" });
+    const saved = await read();
+    expect(saved.spec.sections?.["object-storage"]?.required).toBe(false);
+    expect(policyOf(saved)?.claimEditable).toBe(false);
   });
 });

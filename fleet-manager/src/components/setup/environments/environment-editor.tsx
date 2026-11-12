@@ -44,6 +44,16 @@ import { NamespaceCreationSection } from "./namespace-creation-section";
 import { NamespacesSection } from "./namespaces-section";
 import { ReferencesSection } from "./references-section";
 import { labelledNamespaces } from "./rows";
+import { OptionSettingsSection } from "./option-settings";
+import { sectionGroups, unknownSections, withSectionPolicy } from "./sections";
+import { SectionsTable } from "./sections-table";
+import {
+  optionSettings,
+  settingErrors,
+  unknownOptions,
+  withoutOption,
+} from "./settings";
+import { UnknownNames } from "./unknown-names";
 import { type EnvironmentSources, useEnvironmentSources } from "./sources";
 
 const READY: FleetEnvironmentConditionType = "Ready";
@@ -81,6 +91,7 @@ export function EnvironmentEditor({
     ? undefined
     : sources.environments.find((e) => e.metadata.name === name);
   const [labelErrors, setLabelErrors] = useState<ValidationError[]>([]);
+  const [textErrors, setTextErrors] = useState<ValidationError[]>([]);
   const [labelReview, setLabelReview] = useState(false);
   const [writing, setWriting] = useState(false);
   const editor = useSetupEditor({
@@ -90,15 +101,22 @@ export function EnvironmentEditor({
     draftOf,
     listHref: LIST_HREF,
     hrefOf,
-    onReset: () => setLabelErrors([]),
+    onReset: () => {
+      setLabelErrors([]);
+      setTextErrors([]);
+    },
   });
   const { base, draft, reviewing, locked } = editor;
   const { toast, show, dismiss } = useWriteToast();
 
-  const errors = draftErrors(draft, {
-    isNew,
-    taken: sources.environments.map((e) => e.metadata.name ?? ""),
-  });
+  const settings = optionSettings(sources.registrations, draft.spec);
+  const errors = [
+    ...draftErrors(draft, {
+      isNew,
+      taken: sources.environments.map((e) => e.metadata.name ?? ""),
+    }),
+    ...settingErrors(settings, draft.spec),
+  ];
   const count = changeCount(base, draft, isNew);
   const impact = useMemo(
     () => environmentImpact(base, draft, sources),
@@ -112,7 +130,9 @@ export function EnvironmentEditor({
     errors[0]?.message ??
     (labelErrors.length > 0
       ? "Correct the fixed labels of a new namespace."
-      : undefined);
+      : textErrors.length > 0
+        ? "Correct the text of the settings of the options."
+        : undefined);
   const setSpec = (spec: EnvironmentDraft["spec"]) =>
     editor.setDraft((d) => ({ ...d, spec }));
 
@@ -219,6 +239,56 @@ export function EnvironmentEditor({
             }
           />
         </EditorSection>
+        <EditorSection title="Sections">
+          <UnknownNames
+            label="Sections that do not exist"
+            text="The environment names sections that do not exist. Remove them, so the environment can be ready."
+            names={unknownSections(sources.sections, draft.spec)}
+            onRemove={(section) =>
+              setSpec(
+                withSectionPolicy(draft.spec, section, {
+                  required: false,
+                  allowed: [],
+                }),
+              )
+            }
+          />
+          <SectionsTable
+            groups={sectionGroups(
+              sources.sections,
+              sources.registrations,
+              draft.spec,
+            )}
+            errors={errors}
+            onPolicy={(section, policy) =>
+              setSpec(withSectionPolicy(draft.spec, section, policy))
+            }
+          />
+        </EditorSection>
+        <EditorSection title="Settings of the options">
+          <UnknownNames
+            label="Settings of options that do not exist"
+            text="The environment has settings for options that do not exist. Remove them, so the environment can be ready."
+            names={unknownOptions(sources.registrations, draft.spec)}
+            onRemove={(registration) =>
+              setSpec(withoutOption(draft.spec, registration))
+            }
+          />
+          <OptionSettingsSection
+            key={editor.generation}
+            settings={settings}
+            sources={sources}
+            environment={{
+              apiVersion: "fleet.camunda.io/v1alpha1",
+              kind: "Environment",
+              metadata: { name: draft.name },
+              spec: draft.spec,
+            }}
+            errors={errors}
+            onSpec={setSpec}
+            onTextErrors={setTextErrors}
+          />
+        </EditorSection>
         {!isNew && live && (
           <EditorSection title="Delete the environment">
             {labelReview ? (
@@ -304,7 +374,15 @@ export function EnvironmentEditor({
               onReview={() => {
                 const change = isNew
                   ? createChange(draft)
-                  : base && updateChange(base, draft);
+                  : base &&
+                    updateChange(base, draft, {
+                      sections: sources.sections.map(
+                        (x) => x.metadata.name ?? "",
+                      ),
+                      registrations: sources.registrations.map(
+                        (x) => x.metadata.name ?? "",
+                      ),
+                    });
                 if (change) editor.review({ change, kind: "save" });
               }}
             />

@@ -37,7 +37,7 @@ export function EnvironmentList({
           Environments
         </h1>
         <Button asChild>
-          <Link href="/setup/environments/new">New environment</Link>
+          <Link href="/setup/new-environment">New environment</Link>
         </Button>
       </div>
       {errors.map((e) => (

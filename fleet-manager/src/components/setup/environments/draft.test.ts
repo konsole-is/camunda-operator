@@ -16,6 +16,8 @@ vi.mock("@/lib/write/writer", () => ({ getWriter: vi.fn() }));
 const { namespaceLabelChangeSchema } = await import("@/lib/write/run-change");
 
 const NEW = { isNew: true, taken: [] };
+// MISSING says that no PluginSection and no PluginRegistration exists.
+const MISSING = { sections: [], registrations: [] };
 
 function draft(
   spec: Environment["spec"] = {},
@@ -103,11 +105,14 @@ describe("draftErrors", () => {
     ["", "Give the environment a name."],
     ["Bad_Name", "The name must be a DNS name of at most 63 characters."],
     ["a".repeat(64), "The name must be a DNS name of at most 63 characters."],
-    ["new", "The name new is kept for the page of a new environment."],
   ])("refuses the name %j of a new environment", (name, message) => {
     expect(draftErrors(draft({}, name), NEW)).toEqual([
       { path: "name", message },
     ]);
+  });
+
+  it("accepts the name new, because the create page has a path of its own", () => {
+    expect(draftErrors(draft({}, "new"), NEW)).toEqual([]);
   });
 
   it("refuses the name of an environment that exists", () => {
@@ -164,6 +169,65 @@ describe("draftErrors", () => {
       {
         path: "spec.releases.default",
         message: "The default release must be one of the allowed releases.",
+      },
+    ]);
+  });
+
+  it("refuses a section default that is not an allowed option", () => {
+    expect(
+      draftErrors(
+        draft({
+          sections: {
+            access: { allowed: ["gateway"], default: "gateway" },
+            "backup-storage": { allowed: ["s3"], default: "rustfs" },
+          },
+        }),
+        NEW,
+      ),
+    ).toEqual([
+      {
+        path: "spec.sections.backup-storage.default",
+        message: "The default option must be one of the allowed options.",
+      },
+    ]);
+  });
+
+  it("refuses a required section without an allowed option", () => {
+    expect(
+      draftErrors(
+        draft({ sections: { "backup-storage": { required: true } } }),
+        NEW,
+      ),
+    ).toEqual([
+      {
+        path: "spec.sections.backup-storage.allowed",
+        message: "A required section needs at least one allowed option.",
+      },
+    ]);
+  });
+
+  it("refuses a duplicate name in the allowed values of a parameter", () => {
+    expect(
+      draftErrors(
+        draft({
+          parameters: {
+            "aws-connectors-role": {
+              extraPolicyArns: {
+                claimEditable: true,
+                allowed: [
+                  { name: "sqs", label: "SQS access", value: "a" },
+                  { name: "sqs", label: "SQS read", value: "b" },
+                ],
+              },
+            },
+          },
+        }),
+        NEW,
+      ),
+    ).toEqual([
+      {
+        path: "spec.parameters.aws-connectors-role.extraPolicyArns.allowed.1.name",
+        message: "Each name is used once.",
       },
     ]);
   });
@@ -292,7 +356,7 @@ describe("the changes", () => {
       displayName: "Stage",
       presets: { camundaCluster: [] },
     });
-    const change = updateChange(live, edited);
+    const change = updateChange(live, edited, MISSING);
     expect(change.apply).toHaveLength(1);
     expect(change.apply[0].metadata.labels).toEqual(live.metadata.labels);
     expect(change.apply[0].spec).toEqual(specOf(edited));
@@ -302,6 +366,79 @@ describe("the changes", () => {
     expect(change.intent).toBe("Change the environment staging");
   });
 
+  it("updateChange sends required false when the edit turns Required off", () => {
+    const on: Environment = {
+      ...live,
+      spec: {
+        sections: {
+          "backup-storage": { required: true, allowed: ["rustfs"] },
+          access: { required: true, allowed: ["gateway"] },
+        },
+      },
+    };
+    const off = draftOf(on);
+    off.spec.sections = { "backup-storage": { allowed: ["rustfs"] } };
+    expect(
+      (updateChange(on, off, MISSING).apply[0].spec as Environment["spec"])
+        .sections,
+    ).toEqual({
+      "backup-storage": { required: false, allowed: ["rustfs"] },
+    });
+  });
+
+  it("updateChange sends claimEditable false when the edit turns A claim can change it off", () => {
+    const on: Environment = {
+      ...live,
+      spec: {
+        parameters: {
+          rustfs: { tier: { value: "gold", claimEditable: true } },
+          s3: { region: { claimEditable: true } },
+        },
+      },
+    };
+    const off = draftOf(on);
+    off.spec.parameters = { rustfs: { tier: { value: "gold" } } };
+    expect(
+      (updateChange(on, off, MISSING).apply[0].spec as Environment["spec"])
+        .parameters,
+    ).toEqual({
+      rustfs: { tier: { value: "gold", claimEditable: false } },
+    });
+  });
+
+  it("updateChange sends claimEditable false for the last policy of an option that exists", () => {
+    const on: Environment = {
+      ...live,
+      spec: { parameters: { rustfs: { tier: { claimEditable: true } } } },
+    };
+    const off = draftOf(on);
+    off.spec.parameters = undefined;
+    const spec = updateChange(on, off, {
+      sections: [],
+      registrations: ["rustfs"],
+    }).apply[0].spec as Environment["spec"];
+    expect(spec.parameters).toEqual({
+      rustfs: { tier: { claimEditable: false } },
+    });
+  });
+
+  it("updateChange keeps out a section and an option that do not exist when the edit removes them", () => {
+    const on: Environment = {
+      ...live,
+      spec: {
+        sections: { gone: { required: true, allowed: ["x"] } },
+        parameters: { "old-option": { tier: { claimEditable: true } } },
+      },
+    };
+    const off = draftOf(on);
+    off.spec.sections = undefined;
+    off.spec.parameters = undefined;
+    const spec = updateChange(on, off, MISSING).apply[0]
+      .spec as Environment["spec"];
+    expect(spec.sections).toBeUndefined();
+    expect(spec.parameters).toBeUndefined();
+  });
+
   it("updateChange sends allowed false when the edit turns namespace creation off", () => {
     const on: Environment = {
       ...live,
@@ -309,7 +446,7 @@ describe("the changes", () => {
     };
     const off = draftOf(on);
     off.spec.namespaceCreation = { allowed: false };
-    expect(updateChange(on, off).apply[0].spec).toMatchObject({
+    expect(updateChange(on, off, MISSING).apply[0].spec).toMatchObject({
       namespaceCreation: { allowed: false },
     });
   });
@@ -326,7 +463,8 @@ describe("the changes", () => {
       },
     };
     expect(
-      updateChange(applied, draftOf(applied)).apply[0].metadata.annotations,
+      updateChange(applied, draftOf(applied), MISSING).apply[0].metadata
+        .annotations,
     ).toEqual({ note: "kept" });
   });
 

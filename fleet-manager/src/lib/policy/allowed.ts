@@ -44,8 +44,8 @@ export type AllowedInput = (
   requests?: readonly PluginRequest[];
 };
 
-// The Environment list of each preset kind of a built-in registration.
-const PRESET_LISTS = {
+/** PRESET_LISTS names the list under spec.presets of an Environment for each preset kind of a built-in storage option. */
+export const PRESET_LISTS = {
   ElasticsearchClusterPreset: "elasticsearchCluster",
   DatabaseServerPreset: "databaseServer",
 } as const;

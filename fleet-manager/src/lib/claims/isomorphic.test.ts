@@ -4,4 +4,6 @@ import { describeIsomorphic } from "../../../test/imports/scan";
 describeIsomorphic(new URL(".", import.meta.url), [
   "@/lib/labels",
   "@/lib/policy",
+  "@noble/hashes/sha2.js",
+  "@noble/hashes/utils.js",
 ]);

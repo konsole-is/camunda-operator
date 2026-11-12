@@ -128,6 +128,22 @@ describe("environmentImpact", () => {
     ).toEqual({ clusters: 0, planes: 0, warnings: [] });
   });
 
+  it("names each list that it reads and that could not be read, and the namespaces while their list is stale", () => {
+    const impact = environmentImpact(
+      environment({}),
+      edit({ deletionPolicy: "Orphan" }),
+      {
+        ...sources({}),
+        errors: [
+          { kind: "CamundaClusterClaim", message: "forbidden" },
+          { kind: "CamundaPlatformConfig", message: "forbidden" },
+        ],
+        namespacesStale: true,
+      },
+    );
+    expect(impact.unread).toEqual(["Namespace", "CamundaClusterClaim"]);
+  });
+
   it("lists a claim whose release the edit removes, with removed true", () => {
     expect(
       environmentImpact(
@@ -571,6 +587,231 @@ describe("namespaceImpact", () => {
           clusterClaims: [clusterClaim("orders", {}, undefined, "team-b")],
         }),
       ),
+    ).toEqual([]);
+  });
+});
+
+describe("environmentImpact for the presets of the built-in storage", () => {
+  const STORAGE = {
+    section: "secondary-storage",
+    registration: "elasticsearch",
+  };
+  const DATABASE = {
+    section: "management-database",
+    registration: "management-database-server",
+  };
+  const registration = (name: string) =>
+    ({
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginRegistration",
+      metadata: { name },
+      spec: {
+        label: name,
+        sections: [],
+        mode: "Optional",
+        deletionPolicies: ["Delete"],
+        serviceAccount: { name: "sa", namespace: "ns" },
+        controller: { name: "camunda-operator" },
+        claimEditable: ["preset"],
+      },
+    }) as unknown as EnvironmentSources["registrations"][number];
+  const registrations = [
+    registration("elasticsearch"),
+    registration("management-database-server"),
+  ];
+  const editable = (registrationName: string, preset?: string): Recorded => ({
+    deletionPolicy: "Delete",
+    parameters: {
+      [registrationName]: {
+        preset: { claimEditable: true, ...(preset && { value: preset }) },
+      },
+    },
+  });
+
+  it("lists a claim whose Elasticsearch preset the edit removes", () => {
+    expect(
+      environmentImpact(
+        environment({
+          presets: { elasticsearchCluster: ["es-small", "es-large"] },
+        }),
+        edit({ presets: { elasticsearchCluster: ["es-large"] } }),
+        sources({
+          registrations,
+          clusterClaims: [
+            clusterClaim(
+              "orders",
+              {
+                presetRef: undefined,
+                plugins: [{ ...STORAGE, parameters: { preset: "es-small" } }],
+              },
+              editable("elasticsearch"),
+            ),
+          ],
+        }),
+      ).warnings,
+    ).toEqual([
+      {
+        claim: {
+          kind: "CamundaClusterClaim",
+          namespace: "team-a",
+          name: "orders",
+        },
+        kind: "ElasticsearchClusterPreset",
+        name: "es-small",
+        removed: true,
+      },
+    ]);
+  });
+
+  it("lists a plane claim whose PostgreSQL preset the edit removes", () => {
+    expect(
+      environmentImpact(
+        environment({ presets: { databaseServer: ["pg-small"] } }),
+        edit({}),
+        sources({
+          registrations,
+          planeClaims: [
+            planeClaim(
+              "plane-a",
+              {
+                plugins: [{ ...DATABASE, parameters: { preset: "pg-small" } }],
+              },
+              editable("management-database-server"),
+            ),
+          ],
+        }),
+      ).warnings,
+    ).toEqual([
+      {
+        claim: {
+          kind: "CamundaManagementClusterClaim",
+          namespace: "team-a",
+          name: "plane-a",
+        },
+        kind: "DatabaseServerPreset",
+        name: "pg-small",
+        removed: true,
+      },
+    ]);
+  });
+
+  it("reads the preset of the recorded policy when the claim sets none", () => {
+    expect(
+      environmentImpact(
+        environment({ presets: { elasticsearchCluster: ["es-small"] } }),
+        edit({}),
+        sources({
+          registrations,
+          clusterClaims: [
+            clusterClaim(
+              "orders",
+              { presetRef: undefined, plugins: [STORAGE] },
+              editable("elasticsearch", "es-small"),
+            ),
+          ],
+        }),
+      ).warnings.map((w) => ("removed" in w ? w.name : undefined)),
+    ).toEqual(["es-small"]);
+  });
+
+  it("reads the preset of the live request before the preset that the claim asks for", () => {
+    const request = (namespace: string, preset: string) =>
+      ({
+        apiVersion: "plugins.camunda.io/v1alpha1",
+        kind: "PluginRequest",
+        metadata: { namespace, name: "orders-secondary-storage" },
+        spec: {
+          claimRef: { kind: "CamundaClusterClaim", name: "orders" },
+          ...STORAGE,
+          deletionPolicy: "Delete",
+          target: { kind: "CamundaCluster", name: "orders" },
+          parameters: { preset },
+        },
+      }) as unknown as EnvironmentSources["requests"][number];
+    expect(
+      environmentImpact(
+        environment({ presets: { elasticsearchCluster: ["es-small"] } }),
+        edit({}),
+        sources({
+          registrations,
+          requests: [
+            request("team-b", "es-other"),
+            request("team-a", "es-small"),
+          ],
+          clusterClaims: [
+            clusterClaim(
+              "orders",
+              {
+                presetRef: undefined,
+                plugins: [{ ...STORAGE, parameters: { preset: "es-large" } }],
+              },
+              editable("elasticsearch"),
+            ),
+          ],
+        }),
+      ).warnings.map((w) => ("removed" in w ? w.name : undefined)),
+    ).toEqual(["es-small"]);
+  });
+
+  it("lists the preset of a live request that the claim no longer selects", () => {
+    const request = {
+      apiVersion: "plugins.camunda.io/v1alpha1",
+      kind: "PluginRequest",
+      metadata: { namespace: "team-a", name: "orders-secondary-storage" },
+      spec: {
+        claimRef: { kind: "CamundaClusterClaim", name: "orders" },
+        ...STORAGE,
+        deletionPolicy: "Delete",
+        target: { kind: "CamundaCluster", name: "orders" },
+        parameters: { preset: "es-small" },
+      },
+    } as unknown as EnvironmentSources["requests"][number];
+    expect(
+      environmentImpact(
+        environment({ presets: { elasticsearchCluster: ["es-small"] } }),
+        edit({}),
+        sources({
+          registrations,
+          requests: [request],
+          clusterClaims: [
+            clusterClaim(
+              "orders",
+              {
+                presetRef: undefined,
+                plugins: [
+                  {
+                    section: "secondary-storage",
+                    registration: "other-storage",
+                  },
+                ],
+              },
+              editable("elasticsearch"),
+            ),
+          ],
+        }),
+      ).warnings.map((w) => ("removed" in w ? w.name : undefined)),
+    ).toEqual(["es-small"]);
+  });
+
+  it("does not list a preset that the live environment already did not allow", () => {
+    expect(
+      environmentImpact(
+        environment({ presets: { elasticsearchCluster: ["es-large"] } }),
+        edit({}),
+        sources({
+          registrations,
+          clusterClaims: [
+            clusterClaim(
+              "orders",
+              {
+                presetRef: undefined,
+                plugins: [{ ...STORAGE, parameters: { preset: "es-small" } }],
+              },
+              editable("elasticsearch"),
+            ),
+          ],
+        }),
+      ).warnings,
     ).toEqual([]);
   });
 });
