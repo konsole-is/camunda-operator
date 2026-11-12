@@ -122,6 +122,8 @@ A value of the environment replaces the value of the option. While the field is 
 
 When **A claim can change it** is on, the parameter can get a list of choices, `allowed` in the YAML. Select **Add a choice** and give each choice a name, a label, and a value. A claim can then pick only a name of the list. A claim stores the name, and the create flow shows the label. Only the request of the claim gets the value, for example the ARN of a policy. Each name and each label is used once. A parameter can have 32 choices at most. When you turn **A claim can change it** off, the choices go too.
 
+A choice that another field manager set stays when you remove it, and the review names it, as [Changes apply to new claims only](#changes-apply-to-new-claims-only) says. While such a choice is in the list, a save that turns **A claim can change it** off fails with `allowed needs claimEditable: true`. Remove the choice with the tool that set it first.
+
 A host pattern of an access option shows the host that it gives the first claim of the environment, for example `orders in team-a gets orders.team-a.example.com`. The preset of a built-in Elasticsearch or PostgreSQL option offers only the presets that the section **Presets** allows. With an empty list, a new claim of the option is refused with `NotAllowed`, and the page says so.
 
 ## Template parameters
@@ -138,7 +140,9 @@ Some parameters are templates, for example the inline policy of the Connectors r
 
 A template parameter cannot read `.outputs`. The editor shows `the placeholder .outputs.bucket is not allowed: a template parameter cannot read the outputs` at the field. An unknown placeholder shows an error such as `unknown placeholder .claimName`. The page refuses a save while a template has an error.
 
-The preview under the editor renders the template for a claim of the environment, which you pick. A parameter that holds an object renders as YAML. If the environment has no claim yet, the preview uses the example claim `example` in the first namespace by name. If the environment has no namespace, the preview asks you to add one first.
+The preview under the editor renders the template for a claim of the environment, which you pick. It shows what a new claim gets. An existing claim keeps the policy it recorded. A parameter that holds an object renders as YAML. If the environment has no claim yet, the preview uses the example claim `example` in the first namespace by name. If the environment has no namespace, the preview asks you to add one first. If no section of the option applies to a cluster claim or a management plane claim, the preview says so.
+
+The preview cannot show a template that reads a parameter whose value is an object, a list, or null. It shows `parameter "<name>" is not a string, a number, or a boolean, and the plugin prints such a value in another form`.
 
 ## Limits set at install
 
@@ -193,6 +197,7 @@ The note also names each claim that the change touches:
 | `orders in team-a names no release and moves to 8.9.23.` | The claim follows the default release, so its cluster moves to the new release. Its brokers restart one at a time. |
 | `orders in team-a names no release, and its cluster refuses the move to 8.9.0 (VersionDowngradeRefused).` | The new default release is older than the version that the cluster reports, or skips a minor after that version (`VersionSkipRefused`). A downgrade that the claim or the cluster approves gets no such note, see [Downgrade](../crds/camundaclusterclaim.md#downgrade). If the cluster reports no version, the note compares the new default with the old default. The cluster keeps running and takes no further change. |
 | `orders in team-a names no platform config and moves to shared.` | The claim follows the default platform config. |
+| `The fleet manager cannot read CamundaClusterClaim, so the claims that this change touches can be more than this note names.` | The fleet manager cannot read a list that the note counts, so the count and the other notes can be incomplete. This note takes the place of `Changes apply to new claims only.` An alert at the top of the page shows the error. |
 | `This is the first environment. The claims in legacy have no environment label, …` | Once an environment exists, the claims of a namespace without the label take no change. Add those namespaces to an environment. |
 | `orders in team-a names no release, and this change removes the default release.` | The cluster keeps running, but the claim is not ready and its cluster takes no further change. The same note exists for the platform config. A management plane without a platform config keeps running, and its claim reports `MissingInput` and takes no further change. |
 
