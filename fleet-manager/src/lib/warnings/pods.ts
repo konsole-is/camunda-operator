@@ -98,7 +98,12 @@ export function limitWarnings(usage: PodUsage): Warning[] {
  * BACKPRESSURE_ABOVE. A share that is not a finite number gives none.
  */
 export function backpressureWarning(share: number): Warning | undefined {
-  if (!Number.isFinite(share) || share <= BACKPRESSURE_ABOVE) return undefined;
+  if (
+    !Number.isFinite(share) ||
+    millionths(share) <= millionths(BACKPRESSURE_ABOVE)
+  ) {
+    return undefined;
+  }
   return {
     kind: "backpressure",
     severity: "Warning",
@@ -112,14 +117,20 @@ function nearLimit(
   limit: number | undefined,
 ): { severity: WarningSeverity; percent: number } | undefined {
   if (!limit) return undefined;
-  const share = used / limit;
-  if (share < LIMIT_WARNING) return undefined;
+  const share = millionths(used / limit);
+  if (share < millionths(LIMIT_WARNING)) return undefined;
   return {
-    severity: share >= LIMIT_ERROR ? "Error" : "Warning",
-    percent: percentOf(share),
+    severity: share >= millionths(LIMIT_ERROR) ? "Error" : "Warning",
+    percent: percentOf(used / limit),
   };
 }
 
+// Binary fractions make 0.075 / 0.1 a little less than 0.75, so a share is
+// compared and shown in millionths.
+function millionths(share: number): number {
+  return Math.round(share * 1e6);
+}
+
 function percentOf(share: number): number {
-  return Math.floor(share * 100);
+  return Math.floor(millionths(share) / 1e4);
 }

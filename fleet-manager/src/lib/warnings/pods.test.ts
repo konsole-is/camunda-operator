@@ -90,6 +90,26 @@ describe("limitWarnings", () => {
     expect(kinds(limitWarnings(usage({ cpuShare: share })))).toEqual(expected);
   });
 
+  it.each([
+    [0.075, 0.1, "Warning", 75],
+    [0.09, 0.1, "Error", 90],
+    [0.825, 1.1, "Warning", 75],
+    [1.17, 1.3, "Error", 90],
+  ])(
+    "a CPU use of %s cores of a %s core limit gives %s at %s percent",
+    (usedCores, limitCores, severity, percent) => {
+      const [warning] = limitWarnings({
+        pod: "orders-zeebe-0",
+        cpu: { usedCores, limitCores },
+        memory: { usedBytes: 100 },
+      });
+      expect(warning?.severity).toBe(severity);
+      expect(warning?.detail).toBe(
+        `Pod orders-zeebe-0 uses ${percent} % of its CPU limit`,
+      );
+    },
+  );
+
   it("gives no limit warning without a limit", () => {
     expect(limitWarnings(usage({}))).toEqual([]);
   });
