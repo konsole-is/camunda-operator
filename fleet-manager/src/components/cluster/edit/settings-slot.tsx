@@ -83,7 +83,7 @@ function Editors({
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
 }) {
-  const { errors } = useClusterEdit();
+  const { errors, invalid } = useClusterEdit();
   const namespace = ctx.cluster.metadata?.namespace ?? "";
   const secrets = secretRefsOf(useResources("Secret", { namespace }, []).items);
   const { before, after: merged } = mergedSpecs(changeInputOf(ctx, session));
@@ -123,6 +123,7 @@ function Editors({
           errors={errors}
           set={set}
           reset={reset}
+          invalid={invalid}
         />
       ))}
     </div>

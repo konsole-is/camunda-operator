@@ -52,6 +52,21 @@ function Other() {
   );
 }
 
+// Breaker is a second editor of the page, which names a release that does
+// not exist, so that the page blocks the review.
+function Breaker() {
+  const edit = useClusterEdit();
+  return (
+    <button
+      onClick={() =>
+        edit.set([{ field: "spec" }, { field: "releaseRef" }], "missing")
+      }
+    >
+      Name a missing release
+    </button>
+  );
+}
+
 function editor(
   context: ClusterSlotContext = slotContext(),
   extra?: ReactNode,
@@ -207,6 +222,23 @@ describe("TopologyEditor", () => {
       expect(document.activeElement).toBe(
         screen.getByRole("button", { name: "Change topology" }),
       ),
+    );
+  });
+
+  it("stays open with a note when the page blocks the review", () => {
+    editor(slotContext(), <Breaker />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Name a missing release" }),
+    );
+    open();
+    pick("Gateway", "Embedded");
+    fireEvent.click(reviewButton());
+    expect(editorDialog()).toBeTruthy();
+    expect(
+      screen.queryByRole("dialog", { name: "Review the change" }),
+    ).toBeNull();
+    expect(within(editorDialog()).getByRole("alert").textContent).toBe(
+      "Review is blocked. The change bar says why.",
     );
   });
 

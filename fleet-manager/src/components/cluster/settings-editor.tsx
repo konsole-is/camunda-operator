@@ -50,7 +50,8 @@ import type { SettingsGroup } from "./settings";
  * the claim sets has a reset link. An embedded group notes that its
  * settings apply when the app runs standalone. A change with errors is not
  * passed on. errors are the field errors of the claim, such as a refusal of
- * the server, and each shows at the setting whose claim path holds it. It
+ * the server, and each shows at the setting whose claim path holds it.
+ * invalid gets the error that a setting shows, as SettingRow gives it. It
  * holds no session.
  */
 export function SettingsEditor({
@@ -60,6 +61,7 @@ export function SettingsEditor({
   errors = [],
   set,
   reset,
+  invalid,
 }: {
   group: SettingsGroup;
   settings: readonly Setting[];
@@ -67,6 +69,7 @@ export function SettingsEditor({
   errors?: readonly FieldError[];
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
+  invalid?: (steps: Step[], message: string | undefined) => void;
 }) {
   const [resets, setResets] = useState(0);
   return (
@@ -92,6 +95,7 @@ export function SettingsEditor({
             errors={errorsAt(errors, setting.steps)}
             set={set}
             reset={reset}
+            invalid={invalid}
             onReset={() => setResets((n) => n + 1)}
           />
         ))}
@@ -105,7 +109,9 @@ export function SettingsEditor({
  * its lock reason. A change with errors shows them and is not passed on. A
  * claim value of undefined resets the field. errors are field errors from
  * outside the row. onReset runs after a click on the reset link: the caller
- * remounts the rows, so that they show the values below the claim.
+ * remounts the rows, so that they show the values below the claim. invalid
+ * gets the steps of the setting and "<label>: <error>" while the editor
+ * shows an error, and undefined once the error goes or the row unmounts.
  */
 export function SettingRow({
   setting,
@@ -113,6 +119,7 @@ export function SettingRow({
   errors = [],
   set,
   reset,
+  invalid,
   onReset,
 }: {
   setting: Setting;
@@ -120,10 +127,12 @@ export function SettingRow({
   errors?: readonly FieldError[];
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
+  invalid?: (steps: Step[], message: string | undefined) => void;
   onReset: () => void;
 }) {
   const [mounted] = useState(setting.value);
   const { editor, steps } = setting;
+  const shows = useShownError(steps, invalid);
   if (!editor || !steps)
     return (
       <div className="py-3">
@@ -157,6 +166,9 @@ export function SettingRow({
         current={"current" in setting ? setting.current : mounted}
         secrets={secrets ?? []}
         onChange={change}
+        onInvalid={(message) =>
+          shows(message && `${setting.label}: ${message}`)
+        }
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span>{setting.state ? stateLabel(setting.state) : "Not set"}</span>
@@ -192,9 +204,26 @@ export function SettingRow({
   );
 }
 
+// useShownError returns the function that reports the error of the editor
+// at steps to invalid. The row clears a reported error when it unmounts.
+function useShownError(
+  steps: Step[] | undefined,
+  invalid: ((steps: Step[], message: string | undefined) => void) | undefined,
+) {
+  const clear = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => clear.current?.(), []);
+  return (message: string | undefined) => {
+    if (!steps || !invalid) return;
+    invalid(steps, message);
+    clear.current =
+      message === undefined ? undefined : () => invalid(steps, undefined);
+  };
+}
+
 // Editor is the input of one editor kind. It is uncontrolled: it starts
 // from value and reports each valid change. A change with errors is not
-// reported. current is the value before the pending changes.
+// reported; onInvalid gets its first error, and undefined after a valid
+// change. current is the value before the pending changes.
 function Editor({
   label,
   editor,
@@ -202,6 +231,7 @@ function Editor({
   current,
   secrets,
   onChange,
+  onInvalid,
 }: {
   label: string;
   editor: SettingEditor;
@@ -209,9 +239,11 @@ function Editor({
   current: unknown;
   secrets: SecretRefs;
   onChange: (value: unknown) => void;
+  onInvalid: (message: string | undefined) => void;
 }) {
   const initial = editorValueOf(editor, value);
   const valid = (v: unknown, errors: readonly ValidationError[]) => {
+    onInvalid(errors[0]?.message);
     if (errors.length === 0) onChange(v);
   };
   switch (editor.kind) {
@@ -222,6 +254,7 @@ function Editor({
           editor={editor}
           defaultValue={initial as number | undefined}
           onChange={onChange}
+          onInvalid={onInvalid}
         />
       );
     case "text":
@@ -394,11 +427,13 @@ function NumberEditor({
   editor,
   defaultValue,
   onChange,
+  onInvalid,
 }: {
   label: string;
   editor: Extract<SettingEditor, { kind: "number" }>;
   defaultValue: number | undefined;
   onChange: (value: unknown) => void;
+  onInvalid: (message: string | undefined) => void;
 }) {
   const id = useId();
   const [text, setText] = useState(
@@ -423,8 +458,9 @@ function NumberEditor({
         onChange={(event) => {
           const next = event.target.value;
           setText(next);
-          if (!numberError(next, editor))
-            onChange(next === "" ? undefined : Number(next));
+          const nextError = numberError(next, editor);
+          onInvalid(nextError);
+          if (!nextError) onChange(next === "" ? undefined : Number(next));
         }}
       />
       {error && (

@@ -36,15 +36,23 @@ type Refusal = { process: ModeProcess; lock: FieldLock };
 /**
  * TopologyEditor is the Change topology action of a managed cluster. Its
  * picks join the session of the ClusterEditProvider above it, and Review
- * opens the review of that provider. It renders nothing while the page has
+ * opens the review of that provider. When the provider blocks the review,
+ * the editor stays open and says so. It renders nothing while the page has
  * no session.
  */
 export function TopologyEditor({ context }: { context: ClusterSlotContext }) {
   const edit = useClusterEdit();
   const [open, setOpen] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   if (!edit.session) return null;
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        setBlocked(false);
+      }}
+    >
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           Change topology
@@ -62,12 +70,18 @@ export function TopologyEditor({ context }: { context: ClusterSlotContext }) {
           </DialogDescription>
         </DialogHeader>
         <EditorBody context={context} />
+        {blocked && (
+          <p role="alert" className="text-sm text-bad">
+            Review is blocked. The change bar says why.
+          </p>
+        )}
         <DialogFooter showCloseButton>
           <Button
             disabled={edit.pending === 0}
             onClick={() => {
-              setOpen(false);
-              edit.review();
+              const opens = edit.review();
+              setBlocked(!opens);
+              if (opens) setOpen(false);
             }}
           >
             Review

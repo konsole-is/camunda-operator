@@ -10,18 +10,22 @@ import {
   useRef,
   useState,
 } from "react";
-import { GitCommitHorizontal } from "lucide-react";
 import { ChangeBar } from "@/components/fleet/change-bar";
 import { ClaimReview } from "@/components/fleet/claim-review";
 import { useGitPushes } from "@/components/fleet/git-pushes";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
-import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { objectDiff } from "@/lib/diff";
-import type { ClusterField, FieldLock, Step } from "@/lib/fields";
+import {
+  pathFrom,
+  type ClusterField,
+  type FieldLock,
+  type Step,
+} from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { useGitSync } from "@/lib/k8s/hooks";
 import { isManaged, REVISION_ANNOTATION } from "@/lib/labels";
+import type { FieldPath } from "@/lib/merge";
 import { equalJSON } from "@/lib/policy";
 import {
   claimAfter,
@@ -50,6 +54,11 @@ import { backupReview } from "../backup-caution";
 import { mergedSpecs, showsMergedDiff } from "../impacts";
 import type { ClusterSlotContext } from "../slots";
 import { changeInputOf } from "./change-input";
+import {
+  WAITING_FOR_GITOPS,
+  WAITING_ON_LIVE,
+  WaitingPanel,
+} from "./waiting-panel";
 
 export type ClusterClaim = Resource<"CamundaClusterClaim">;
 
@@ -64,21 +73,27 @@ export type ClaimActions = {
  * when the page has none: an unmanaged cluster, a cluster without its claim,
  * a claim without a resourceVersion, or no write mode. set and reset return
  * the lock that refused the change, else undefined, and do nothing without a
- * session. Two calls in one event handler build on each other. discard drops
- * every pending change. review opens the review on the next render when a
- * change is pending and errors is empty. pending is the count of pending
- * changes. show is the show function of useWriteToast of the page: a write
- * that is not a claim change, such as a backup or a restore, reports its
- * result through it, so that the page has one toast. errors are the errors
- * of the session before review, then the field errors of a refused preview
- * or write of that session.
+ * session. Two calls in one event handler build on each other. invalid
+ * says that the editor of steps shows message, an error that it did not
+ * pass on, so that the session can still hold an older value there; an
+ * undefined message clears it. An editor clears its error when it
+ * unmounts. While an editor shows an error, the change bar blocks Review
+ * with the message. discard drops every pending change. review opens the
+ * review on the next render when a change is pending, errors is empty, and
+ * no editor shows an error, and returns whether it opens it. pending is the
+ * count of pending changes. show is the show function of useWriteToast of
+ * the page: a write that is not a claim change, such as a backup or a
+ * restore, reports its result through it, so that the page has one toast.
+ * errors are the errors of the session before review, then the field
+ * errors of a refused preview or write of that session.
  */
 export type ClusterEdit = {
   session: Session<ClusterClaim> | undefined;
   set(steps: Step[], value: unknown): FieldLock | undefined;
   reset(steps: Step[]): FieldLock | undefined;
+  invalid(steps: Step[], message: string | undefined): void;
   discard(): void;
-  review(): void;
+  review(): boolean;
   pending: number;
   show(result: WriteResult, message: string): void;
   errors: readonly FieldError[];
@@ -93,8 +108,6 @@ const ClusterEditContext = createContext<ClusterEdit | undefined>(undefined);
 export const CHANGES_OFF =
   "Changes are off: the fleet manager could not read its settings.";
 
-const WAITING_FOR_GITOPS = "Waiting for GitOps to apply your last change.";
-const WAITING_ON_LIVE = `${WAITING_FOR_GITOPS} The page shows the live claim until GitOps applies it.`;
 const PUSH_DROPPED =
   "GitOps did not apply your last change. The page shows the live claim again.";
 const STALE_WRITE =
@@ -161,6 +174,9 @@ export function ClusterEditProvider({
   const version = live?.metadata?.resourceVersion;
 
   const [writing, setWriting] = useState(false);
+  const [shown, setShown] = useState<ReadonlyMap<FieldPath, string>>(
+    () => new Map(),
+  );
   const [state, setState] = useState<Edit>(() => ({
     seen: version,
     session: open(context, live, locks),
@@ -184,7 +200,7 @@ export function ClusterEditProvider({
     backups,
     requests,
   } = context;
-  const invalid = useMemo(
+  const validation = useMemo(
     () =>
       validationOf(synced.session, {
         environment,
@@ -209,7 +225,7 @@ export function ClusterEditProvider({
   const reviewing =
     synced.reviewing &&
     synced.session !== undefined &&
-    (writing || (synced.session.pending.size > 0 && invalid.length === 0));
+    (writing || (synced.session.pending.size > 0 && validation.length === 0));
   // A review that an update closed opens again only on a click of Review.
   const edit =
     synced.reviewing && !reviewing
@@ -240,10 +256,14 @@ export function ClusterEditProvider({
       ? WAITING_ON_LIVE
       : undefined;
 
-  // Handlers read and write the latest state through stateRef, so that two
-  // calls in one handler build on each other.
+  const shownError = shown.size > 0 ? [...shown.values()].join(" ") : undefined;
+
+  // Handlers read and write the latest state through stateRef and shownRef,
+  // so that two calls in one handler build on each other.
   const stateRef = useRef(edit);
+  const shownRef = useRef(shown);
   const waitingRef = useRef(waiting);
+  const reviewButton = useRef<HTMLButtonElement>(null);
   const lastWrite = useRef<
     { result: WriteResult; before: string | undefined } | undefined
   >(undefined);
@@ -316,6 +336,16 @@ export function ClusterEditProvider({
     (steps: Step[]) => change((s) => resetValue(s, steps)),
     [change],
   );
+  const invalid = useCallback((steps: Step[], message: string | undefined) => {
+    const path = pathFrom("", steps);
+    const current = shownRef.current;
+    if (current.get(path) === message) return;
+    const next = new Map(current);
+    if (message === undefined) next.delete(path);
+    else next.set(path, message);
+    shownRef.current = next;
+    setShown(next);
+  }, []);
   const discard = useCallback(() => {
     const current = stateRef.current;
     if (!current.session) return;
@@ -328,10 +358,12 @@ export function ClusterEditProvider({
   const review = useCallback(() => {
     const current = stateRef.current;
     const s = current.session;
-    if (!s || s.pending.size === 0 || waitingRef.current) return;
+    if (!s || s.pending.size === 0) return false;
+    if (waitingRef.current || shownRef.current.size > 0) return false;
     if (errorsOf(current, validationOf(s, contextRef.current)).length > 0)
-      return;
+      return false;
     update({ ...current, reviewing: true });
+    return true;
   }, [update]);
   const stopWaiting = () => {
     // The toast reads a push that leaves the tab as applied.
@@ -342,11 +374,12 @@ export function ClusterEditProvider({
 
   const session = edit.session;
   const pending = session?.pending.size ?? 0;
-  const errors = errorsOf(edit, invalid);
+  const errors = errorsOf(edit, validation);
   const value: ClusterEdit = {
     session,
     set,
     reset,
+    invalid,
     discard,
     review,
     pending,
@@ -396,22 +429,14 @@ export function ClusterEditProvider({
         <div className="sticky bottom-4 z-30 flex flex-col items-end gap-2">
           {toast && <Toast result={toast} onDismiss={dismiss} />}
           {waiting && (
-            <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-info/40 bg-panel px-4 py-2 text-sm text-text-2 shadow-lg">
-              <GitCommitHorizontal
-                aria-hidden
-                className="size-4 shrink-0 text-info"
-              />
-              <p className="min-w-0 flex-1">{waiting}</p>
-              <Button variant="outline" size="sm" onClick={stopWaiting}>
-                Stop waiting
-              </Button>
-            </div>
+            <WaitingPanel text={waiting} onStopWaiting={stopWaiting} />
           )}
           <div className="w-full">
             <ChangeBar
               count={pending}
-              blocked={waiting}
+              blocked={waiting ?? shownError}
               errors={errors}
+              reviewRef={reviewButton}
               onDiscard={discard}
               onReview={review}
             />
@@ -423,6 +448,14 @@ export function ClusterEditProvider({
           <DialogContent
             aria-describedby={undefined}
             className="max-h-[85vh] overflow-y-auto sm:max-w-3xl"
+            onCloseAutoFocus={(event) => {
+              // The dialog opens from the change bar or from an editor that
+              // closed, so without this the focus goes to the page body.
+              const button = reviewButton.current;
+              if (!button) return;
+              event.preventDefault();
+              button.focus();
+            }}
           >
             <DialogTitle>Review the change</DialogTitle>
             {note && (

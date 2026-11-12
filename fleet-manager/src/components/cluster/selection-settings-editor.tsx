@@ -15,6 +15,7 @@ import { SettingRow } from "./settings-editor";
  * overrides, shows one editor for each property, and a change writes the
  * whole parameter. choices turn a string parameter into a select. It holds
  * no session: set and reset get claim steps from the root of the claim.
+ * invalid gets the error that a parameter shows, as SettingRow gives it.
  */
 export function SelectionSettingsEditor({
   fields,
@@ -23,6 +24,7 @@ export function SelectionSettingsEditor({
   secrets,
   set,
   reset,
+  invalid,
 }: {
   fields: readonly ClusterField[];
   schema: OpenAPISchema | undefined;
@@ -30,6 +32,7 @@ export function SelectionSettingsEditor({
   secrets?: SecretRefs;
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
+  invalid?: (steps: Step[], message: string | undefined) => void;
 }) {
   const [resets, setResets] = useState(0);
   return (
@@ -41,6 +44,7 @@ export function SelectionSettingsEditor({
           secrets={secrets}
           set={set}
           reset={reset}
+          invalid={invalid}
           onReset={() => setResets((n) => n + 1)}
         />
       ))}

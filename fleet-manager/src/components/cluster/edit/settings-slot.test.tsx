@@ -228,6 +228,46 @@ describe("ComponentSettingsEditor", () => {
     expect(input()).toHaveProperty("value", "3");
   });
 
+  it("a value with an error after a valid one blocks Review and names the field until the error goes", async () => {
+    renderSlot(contextOf({ openId: "gateway" }));
+    await openEditors();
+    const input = within(settingRow(group("Tasklist"), "replicas")).getByRole(
+      "spinbutton",
+    );
+    const bar = () => screen.getByRole("region", { name: "Unsaved changes" });
+    const review = () =>
+      within(bar()).getByRole<HTMLButtonElement>("button", { name: "Review" });
+    await userEvent.type(input, "2");
+    expect(review().disabled).toBe(false);
+    await userEvent.type(input, ".5");
+    expect(claimSpec().cluster.tasklist.replicas).toBe(2);
+    expect(review().disabled).toBe(true);
+    expect(
+      within(bar()).getByText("replicas: Enter a whole number"),
+    ).toBeTruthy();
+    await userEvent.type(input, "{Backspace}{Backspace}");
+    expect(review().disabled).toBe(false);
+    expect(within(bar()).queryByText(/Enter a whole number/)).toBeNull();
+  });
+
+  it("closing the editors clears the error that one of them shows", async () => {
+    renderSlot(contextOf({ openId: "gateway" }));
+    await openEditors();
+    const input = within(settingRow(group("Tasklist"), "replicas")).getByRole(
+      "spinbutton",
+    );
+    await userEvent.type(input, "2.5");
+    const bar = screen.getByRole("region", { name: "Unsaved changes" });
+    const review = within(bar).getByRole<HTMLButtonElement>("button", {
+      name: "Review",
+    });
+    expect(review.disabled).toBe(true);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close the editors" }),
+    );
+    expect(review.disabled).toBe(false);
+  });
+
   it("an edit that the user takes back keeps the editor and its focus", async () => {
     renderSlot(contextOf({ openId: "gateway" }));
     await openEditors();
