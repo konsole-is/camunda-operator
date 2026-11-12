@@ -38,6 +38,8 @@ export default defineConfig([
     "src/generated/**",
     ".next-gallery/**",
     "ui-gallery/**",
+    "storybook-static/**",
+    "ui-stories/**",
     "ui-pages/**",
     "ui-journeys/**",
     "test-results/**",

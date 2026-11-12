@@ -338,6 +338,12 @@
       groupName: "type-definitions",
     },
     {
+      // The Storybook packages require one another at the same exact
+      // release, so one pull request moves all of them.
+      matchPackageNames: ["storybook", "@storybook/**"],
+      groupName: "storybook",
+    },
+    {
       // The plugins inside eslint-config-next have peer ranges that stop at
       // ESLint 9. Lift this when they accept ESLint 10.
       matchFileNames: ["fleet-manager/package.json"],

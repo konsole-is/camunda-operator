@@ -1,3 +1,4 @@
+// Keep these font imports equal to the imports of .storybook/preview.tsx.
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-sans/600.css";

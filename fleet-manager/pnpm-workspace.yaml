@@ -3,3 +3,7 @@
 engineStrict: true
 allowBuilds:
   unrs-resolver: false
+  # Storybook brings esbuild. Its install script only checks the binary of
+  # the platform package that pnpm installs, and pnpm refuses an install
+  # until each build script is allowed or refused.
+  esbuild: false
