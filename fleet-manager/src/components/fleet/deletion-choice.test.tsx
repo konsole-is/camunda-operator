@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DeletionChoice } from "@/lib/clusters/storage";
+import type { DeletionChoice } from "@/lib/policy";
 import { DeletionChoiceField } from "./deletion-choice";
 
 afterEach(cleanup);
@@ -28,15 +28,46 @@ const radio = (name: RegExp) =>
 
 describe("DeletionChoiceField", () => {
   it("asks what happens when the cluster is deleted", () => {
-    render(<DeletionChoiceField choice={open} onChange={vi.fn()} />);
+    render(
+      <DeletionChoiceField
+        subject="cluster"
+        choice={open}
+        onChange={vi.fn()}
+      />,
+    );
 
     expect(
       screen.getByRole("group", { name: "When the cluster is deleted" }),
     ).toBeTruthy();
   });
 
+  it("names a management plane as the subject", () => {
+    render(
+      <DeletionChoiceField
+        subject="management plane"
+        choice={open}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("group", {
+        name: "When the management plane is deleted",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("They stay after the management plane is gone."),
+    ).toBeTruthy();
+  });
+
   it("disables Keep the resources with the options that cannot keep", () => {
-    render(<DeletionChoiceField choice={refused} onChange={vi.fn()} />);
+    render(
+      <DeletionChoiceField
+        subject="cluster"
+        choice={refused}
+        onChange={vi.fn()}
+      />,
+    );
 
     expect(radio(/Keep the resources/).disabled).toBe(true);
     expect(radio(/Delete the resources/).disabled).toBe(false);
@@ -47,7 +78,13 @@ describe("DeletionChoiceField", () => {
   });
 
   it("enables Keep the resources when every option can keep", () => {
-    render(<DeletionChoiceField choice={open} onChange={vi.fn()} />);
+    render(
+      <DeletionChoiceField
+        subject="cluster"
+        choice={open}
+        onChange={vi.fn()}
+      />,
+    );
 
     expect(radio(/Keep the resources/).disabled).toBe(false);
     expect(screen.queryByText("Always deleted")).toBeNull();
@@ -56,6 +93,7 @@ describe("DeletionChoiceField", () => {
   it("checks the policy of the choice", () => {
     render(
       <DeletionChoiceField
+        subject="cluster"
         choice={{ ...open, policy: "Orphan" }}
         onChange={vi.fn()}
       />,
@@ -68,6 +106,7 @@ describe("DeletionChoiceField", () => {
   it("labels the default", () => {
     render(
       <DeletionChoiceField
+        subject="cluster"
         choice={{ ...open, defaultPolicy: "Orphan", policy: "Delete" }}
         onChange={vi.fn()}
       />,
@@ -84,6 +123,7 @@ describe("DeletionChoiceField", () => {
   it("says why Delete is chosen when the default keeps and cannot", () => {
     render(
       <DeletionChoiceField
+        subject="cluster"
         choice={{ ...refused, defaultPolicy: "Orphan" }}
         onChange={vi.fn()}
       />,
@@ -99,6 +139,7 @@ describe("DeletionChoiceField", () => {
   it("does not explain the default when Keep is allowed", () => {
     render(
       <DeletionChoiceField
+        subject="cluster"
         choice={{ ...open, defaultPolicy: "Orphan", policy: "Orphan" }}
         onChange={vi.fn()}
       />,
@@ -109,7 +150,13 @@ describe("DeletionChoiceField", () => {
 
   it("reports a pick", async () => {
     const onChange = vi.fn();
-    render(<DeletionChoiceField choice={open} onChange={onChange} />);
+    render(
+      <DeletionChoiceField
+        subject="cluster"
+        choice={open}
+        onChange={onChange}
+      />,
+    );
 
     await userEvent.click(radio(/Keep the resources/));
 

@@ -744,6 +744,61 @@ describe("SectionCards", () => {
     ).toBe("large is not an available choice");
   });
 
+  it("leaves a policy value that the card does not change to the claim controller", () => {
+    const onChange = vi.fn();
+    render(
+      <SectionCards
+        section={section({
+          name: "secondary-storage",
+          label: "Secondary storage",
+          emptyOptionLabel: undefined,
+          required: true,
+          options: [
+            {
+              registration: "elasticsearch",
+              label: "New Elasticsearch",
+              isDefault: true,
+              parameters: [
+                {
+                  name: "preset",
+                  label: "Preset",
+                  claimEditable: true,
+                  value: "small",
+                },
+              ],
+              choices: { parameter: "preset", items: [{ name: "large" }] },
+            },
+          ],
+        })}
+        onChange={onChange}
+      />,
+    );
+    expect(onChange.mock.lastCall![1]).toEqual([]);
+  });
+
+  it("asks for a choice in place of a value that is no name", () => {
+    const onChange = vi.fn();
+    render(
+      <SectionCards
+        section={section()}
+        defaultValue={[
+          {
+            section: "connectors-permissions",
+            registration: "aws-connectors-role",
+            parameters: { policies: { s3: true } },
+          },
+        ]}
+        onChange={onChange}
+      />,
+    );
+    expect(onChange.mock.lastCall![1]).toEqual([
+      {
+        path: "aws-connectors-role/policies",
+        message: "Choose one of the choices",
+      },
+    ]);
+  });
+
   it("sets the parameter of a choice from its card", async () => {
     const onChange = vi.fn();
     render(

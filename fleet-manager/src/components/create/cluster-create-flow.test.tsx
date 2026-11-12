@@ -520,7 +520,7 @@ describe("ClusterCreateFlow", () => {
     expect(next().disabled).toBe(true);
   });
 
-  it("drops the pick of a section that goes away", async () => {
+  it("drops the pick of a section that goes away, and blocks the step while the policy still requires that section", async () => {
     const initial = data({
       sections: [accessSection, backupSection],
       environments: [
@@ -562,6 +562,13 @@ describe("ClusterCreateFlow", () => {
     rerender(<ClusterCreateFlow initial={initial} />);
 
     expect(screen.queryByText(/Choose another option/)).toBeNull();
-    expect(next().disabled).toBe(false);
+    // The claim controller counts a required section of the policy that no
+    // PluginSection holds as one that applies to every claim.
+    expect(
+      screen.getByText(
+        'section "backup-storage" is required, and the claim selects nothing in it',
+      ),
+    ).toBeTruthy();
+    expect(next().disabled).toBe(true);
   });
 });

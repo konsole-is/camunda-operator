@@ -19,7 +19,9 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/k8s/read", () => ({
   list: vi.fn(async () => []),
   get: vi.fn(async (_kind: string, _ns: unknown, name: string) =>
-    name === "staging" ? staging : undefined,
+    name === "staging" || name === "new"
+      ? { ...staging, metadata: { name } }
+      : undefined,
   ),
 }));
 vi.mock("@/lib/write/writer", () => ({
@@ -52,6 +54,11 @@ describe("EnvironmentPage", () => {
     render(await EnvironmentPage(params("staging")));
     expect(screen.getByText("editor staging git")).toBeTruthy();
     expect(dynamic).toBe("force-dynamic");
+  });
+
+  it("opens the editor of an Environment named new", async () => {
+    render(await EnvironmentPage(params("new")));
+    expect(screen.getByText("editor new direct")).toBeTruthy();
   });
 
   it("passes no write mode when the settings cannot be read", async () => {

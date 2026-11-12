@@ -6,17 +6,17 @@ import type { PluginSection } from "@/generated/crds/pluginsection";
 import { SectionCards } from "@/components/fleet/section-cards";
 import type { RenderedHost } from "@/lib/claims/hosts";
 import { type ClusterDraft, draftSelections } from "@/lib/clusters/draft";
-import type { DeletionChoice } from "@/lib/clusters/storage";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
   type BuiltinContext,
+  type DeletionChoice,
   type DeletionPolicy,
   type PluginSelection,
   type SectionView,
   bucketNote,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
-import { DeletionChoiceField } from "./deletion-choice";
+import { DeletionChoiceField } from "@/components/fleet/deletion-choice";
 
 /**
  * ClusterStorageStep is step 2 of the cluster create flow: one SectionCards
@@ -82,7 +82,11 @@ export function ClusterStorageStep({
           />
         );
       })}
-      <DeletionChoiceField choice={deletion} onChange={onDeletion} />
+      <DeletionChoiceField
+        subject="cluster"
+        choice={deletion}
+        onChange={onDeletion}
+      />
     </div>
   );
 }

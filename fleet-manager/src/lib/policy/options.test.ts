@@ -7,6 +7,7 @@ import type {
 import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
   claimEditable,
+  conditionTrue,
   lockedSummary,
   offeredSection,
   sectionOptions,
@@ -916,5 +917,29 @@ describe("withMissingInputs", () => {
     );
 
     expect(view.options[0].disabledReason).toBeUndefined();
+  });
+});
+
+describe("conditionTrue", () => {
+  const object = {
+    status: {
+      conditions: [
+        { type: "Accepted", status: "True" },
+        { type: "Ready", status: "False" },
+      ],
+    },
+  };
+
+  it("finds a condition of the type with status True", () => {
+    expect(conditionTrue(object, "Accepted")).toBe(true);
+  });
+
+  it("is false for a condition of the type with another status", () => {
+    expect(conditionTrue(object, "Ready")).toBe(false);
+  });
+
+  it("is false without the condition and without a status", () => {
+    expect(conditionTrue(object, "Served")).toBe(false);
+    expect(conditionTrue({}, "Accepted")).toBe(false);
   });
 });

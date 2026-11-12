@@ -8,8 +8,10 @@ import {
   LAST_APPLIED_ANNOTATION,
 } from "@/lib/labels";
 import { APP_FIELD_MANAGER, child, fieldManagers } from "@/lib/merge";
+import { own, setOwn } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { refKey } from "@/lib/write/refs";
+import { allowedErrors } from "./settings";
 import type { Change, KubeObject } from "@/lib/write/types";
 
 const API_VERSION = "fleet.camunda.io/v1alpha1";
@@ -107,6 +109,27 @@ export function draftErrors(
       "The default release must be one of the allowed releases.",
     );
 
+  for (const [section, policy] of Object.entries(spec.sections ?? {})) {
+    if (policy.required && (policy.allowed ?? []).length === 0)
+      add(
+        `spec.sections.${section}.allowed`,
+        "A required section needs at least one allowed option.",
+      );
+    if (policy.default && !(policy.allowed ?? []).includes(policy.default))
+      add(
+        `spec.sections.${section}.default`,
+        "The default option must be one of the allowed options.",
+      );
+  }
+
+  for (const [registration, policies] of Object.entries(spec.parameters ?? {}))
+    for (const [parameter, policy] of Object.entries(policies))
+      for (const e of allowedErrors(policy.allowed ?? []))
+        add(
+          `spec.parameters.${registration}.${parameter}.allowed.${e.path}`,
+          e.message,
+        );
+
   const labels = spec.namespaceCreation?.labels ?? {};
   const labelsPath = "spec.namespaceCreation.labels";
   if (Object.hasOwn(labels, ENVIRONMENT_LABEL))
@@ -137,9 +160,6 @@ function nameError(name: string, taken: readonly string[]): string | undefined {
   if (name === "") return "Give the environment a name.";
   if (name.length > 63 || !isDNSSubdomain(name))
     return "The name must be a DNS name of at most 63 characters.";
-  // The route /setup/environments/new is the create form.
-  if (name === "new")
-    return "The name new is kept for the page of a new environment.";
   if (taken.includes(name)) return "An environment with this name exists.";
   return undefined;
 }
@@ -166,13 +186,16 @@ export function createChange(draft: EnvironmentDraft): Change {
 /**
  * updateChange applies live with the spec of specOf, with the
  * resourceVersion of live as its precondition, and with force, so a field
- * that kubectl apply set changes too. When the edit turns namespace
- * creation off, the spec holds namespaceCreation.allowed false. It leaves
- * out the last applied file of kubectl.
+ * that kubectl apply set changes too. It sends false for each
+ * namespaceCreation.allowed, required, and claimEditable that live has true
+ * and the edit turns off. It leaves out the last applied file of kubectl.
+ * existing names the PluginSections and PluginRegistrations that exist: an
+ * edit that removes the entry of one that does not exist leaves it out.
  */
 export function updateChange(
   live: Environment,
   draft: EnvironmentDraft,
+  existing: { sections: readonly string[]; registrations: readonly string[] },
 ): Change {
   const name = live.metadata.name ?? "";
   const { labels, annotations } = live.metadata;
@@ -189,7 +212,7 @@ export function updateChange(
       ...(labels && { labels }),
       ...(Object.keys(kept).length > 0 && { annotations: kept }),
     },
-    spec: updatedSpec(live, draft),
+    spec: updatedSpec(live, draft, existing),
   };
   return {
     intent: `Change the environment ${name}`,
@@ -199,16 +222,57 @@ export function updateChange(
   };
 }
 
-// Another field manager can own namespaceCreation.allowed, and a save that
-// leaves the field out keeps it true.
+// Another field manager can own namespaceCreation.allowed, the required
+// flag of a section, and the claimEditable flag of a parameter, and a save
+// that leaves such a flag out keeps it true.
 function updatedSpec(
   live: Environment,
   draft: EnvironmentDraft,
+  existing: { sections: readonly string[]; registrations: readonly string[] },
 ): Environment["spec"] {
   const spec = specOf(draft);
   if (live.spec.namespaceCreation?.allowed && !spec.namespaceCreation?.allowed)
     spec.namespaceCreation = { ...spec.namespaceCreation, allowed: false };
+  for (const [section, policy] of Object.entries(live.spec.sections ?? {})) {
+    const edited = own(spec.sections ?? {}, section);
+    const kept = edited || existing.sections.includes(section);
+    if (policy.required && kept && !edited?.required)
+      spec.sections = setEntry(spec.sections, section, {
+        ...edited,
+        required: false,
+      });
+  }
+  for (const [registration, policies] of Object.entries(
+    live.spec.parameters ?? {},
+  )) {
+    for (const [parameter, policy] of Object.entries(policies)) {
+      const edited = own(
+        own(spec.parameters ?? {}, registration) ?? {},
+        parameter,
+      );
+      const kept = edited || existing.registrations.includes(registration);
+      if (!policy.claimEditable || !kept || edited?.claimEditable) continue;
+      spec.parameters = setEntry(
+        spec.parameters,
+        registration,
+        setEntry(own(spec.parameters ?? {}, registration), parameter, {
+          ...edited,
+          claimEditable: false,
+        }),
+      );
+    }
+  }
   return spec;
+}
+
+function setEntry<T>(
+  map: Record<string, T> | undefined,
+  key: string,
+  value: T,
+): Record<string, T> {
+  const next = { ...map };
+  setOwn(next, key, value);
+  return next;
 }
 
 /** deleteChange deletes live when it still has its resourceVersion. */

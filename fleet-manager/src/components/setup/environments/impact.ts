@@ -1,3 +1,4 @@
+import type { ReadError } from "@/components/planes/planes-table";
 import type { Environment } from "@/generated/crds/environment";
 import {
   ALLOW_VERSION_DOWNGRADE_ANNOTATION,
@@ -5,10 +6,15 @@ import {
   ENVIRONMENT_LABEL,
 } from "@/lib/labels";
 import {
+  BUILTIN_OPTIONS,
   byCodeUnit,
+  decodeObject,
   type ClaimKind,
   equalJSON,
+  nameOf,
+  own,
   type PluginSelection,
+  PRESET_LISTS,
   releaseAllowed,
   resolve,
   type ResolvedPolicy,
@@ -16,6 +22,9 @@ import {
 import { specOf, type EnvironmentDraft } from "./draft";
 import { labelledNamespaces } from "./rows";
 import type { EnvironmentSources } from "./sources";
+
+/** StoragePresetKind is the preset kind of the built-in Elasticsearch or PostgreSQL. */
+export type StoragePresetKind = keyof typeof PRESET_LISTS;
 
 /** ClaimRef names one claim of either kind. */
 export type ClaimRef = { kind: ClaimKind; namespace: string; name: string };
@@ -34,7 +43,7 @@ export type ClaimRef = { kind: ClaimKind; namespace: string; name: string };
 export type ReferenceWarning =
   | {
       claim: ClaimRef;
-      kind: "CamundaRelease" | "CamundaClusterPreset";
+      kind: "CamundaRelease" | "CamundaClusterPreset" | StoragePresetKind;
       name: string;
       removed: true;
     }
@@ -65,7 +74,21 @@ export type EnvironmentImpact = {
    * when the edit creates the first environment, sorted.
    */
   unassigned?: string[];
+  /** unread are the kinds of the lists that could not be read or are stale. */
+  unread?: string[];
 };
+
+// The lists that environmentImpact reads.
+const IMPACT_KINDS = [
+  "Environment",
+  "Namespace",
+  "CamundaClusterClaim",
+  "CamundaManagementClusterClaim",
+  "CamundaCluster",
+  "PluginRegistration",
+  "PluginRequest",
+  "CamundaRelease",
+];
 
 type Claim = {
   kind: ClaimKind;
@@ -89,9 +112,18 @@ type Claim = {
 export function environmentImpact(
   live: Environment | undefined,
   draft: EnvironmentDraft,
-  s: EnvironmentSources,
+  s: EnvironmentSources & {
+    errors?: readonly ReadError[];
+    namespacesStale?: boolean;
+  },
 ): EnvironmentImpact {
   const impact: EnvironmentImpact = { clusters: 0, planes: 0, warnings: [] };
+  const unread = IMPACT_KINDS.filter(
+    (kind) =>
+      (kind === "Namespace" && s.namespacesStale) ||
+      (s.errors ?? []).some((e) => e.kind === kind),
+  );
+  if (unread.length > 0) impact.unread = unread;
   const before: Environment = live ?? {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "Environment",
@@ -119,6 +151,7 @@ export function environmentImpact(
       ...warningsOf(ref, claim, before, edited).map((w) =>
         refusedMove(w, claim, runningVersion(claim, before, s), s),
       ),
+      ...storagePresetWarnings(ref, claim, before, edited, s),
     );
   }
   if (!live && s.environments.length === 0) {
@@ -270,6 +303,71 @@ function warningsOf(
   return warnings;
 }
 
+// A live request keeps its preset.
+function storagePresetWarnings(
+  ref: ClaimRef,
+  claim: Claim,
+  live: Environment,
+  edited: Environment,
+  s: EnvironmentSources,
+): ReferenceWarning[] {
+  const requests = s.requests.filter(
+    (r) =>
+      r.metadata?.namespace === ref.namespace &&
+      r.spec.claimRef.kind === ref.kind &&
+      r.spec.claimRef.name === ref.name,
+  );
+  const selections = claim.spec.plugins ?? [];
+  const resolved = resolve({
+    recorded: claim.status?.resolvedPolicy,
+    environment: live,
+    registrations: s.registrations,
+    selections,
+  });
+  const presets = [
+    ...requests.map((r) => ({
+      registration: r.spec.registration,
+      preset: decodeObject(r.spec.parameters)?.preset,
+    })),
+    ...selections
+      .map((selection, i) => ({
+        selection,
+        preset:
+          "value" in resolved
+            ? resolved.value.requests?.[i]?.parameters?.preset
+            : undefined,
+      }))
+      .filter(
+        ({ selection }) =>
+          !requests.some(
+            (r) =>
+              r.spec.section === selection.section &&
+              r.spec.registration === selection.registration,
+          ),
+      )
+      .map(({ selection, preset }) => ({
+        registration: selection.registration,
+        preset,
+      })),
+  ];
+  return presets.flatMap(({ registration, preset }): ReferenceWarning[] => {
+    const kind = own(BUILTIN_OPTIONS, registration)?.lists.preset;
+    const name = nameOf(preset);
+    if (
+      (kind !== "ElasticsearchClusterPreset" &&
+        kind !== "DatabaseServerPreset") ||
+      name === undefined
+    )
+      return [];
+    const list = PRESET_LISTS[kind];
+    const allows = (environment: Environment) =>
+      (environment.spec.presets?.[list] ?? []).includes(name);
+    return allows(live) && !allows(edited)
+      ? [{ claim: ref, kind, name, removed: true }]
+      : [];
+  });
+}
+
 function defaultWarnings(
   claim: ClaimRef,
   kind: "CamundaRelease" | "CamundaPlatformConfig",
@@ -327,9 +425,9 @@ function parseVersion(version: string | undefined): number[] | undefined {
 
 /**
  * withoutKept returns impact without each removed warning whose release or
- * cluster preset kept, the spec that the dry run of the save gives, still
- * allows, and without each cleared warning whose default kept still has. Another field manager keeps such a member. Without kept it
- * returns impact.
+ * preset kept, the spec that the dry run of the save gives, still allows,
+ * and without each cleared warning whose default kept still has. Another
+ * field manager keeps such a member. Without kept it returns impact.
  */
 export function withoutKept(
   impact: EnvironmentImpact,
@@ -341,13 +439,14 @@ export function withoutKept(
       return w.kind === "CamundaRelease"
         ? Boolean(kept.releases?.default)
         : Boolean(kept.platformConfigRef);
-    return (
-      "removed" in w &&
-      (w.kind === "CamundaRelease"
-        ? (kept.releases?.allowed ?? [])
-        : (kept.presets?.camundaCluster ?? [])
-      ).includes(w.name)
-    );
+    if (!("removed" in w)) return false;
+    const list =
+      w.kind === "CamundaRelease"
+        ? kept.releases?.allowed
+        : w.kind === "CamundaClusterPreset"
+          ? kept.presets?.camundaCluster
+          : kept.presets?.[PRESET_LISTS[w.kind]];
+    return (list ?? []).includes(w.name);
   };
   return { ...impact, warnings: impact.warnings.filter((w) => !still(w)) };
 }

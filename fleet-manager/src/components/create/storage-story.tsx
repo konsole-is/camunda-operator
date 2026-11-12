@@ -4,19 +4,18 @@ import { useState } from "react";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import { DeletionChoiceField } from "@/components/fleet/deletion-choice";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import { CLUSTER_STEPS, type ClusterDraft } from "@/lib/clusters/draft";
 import {
-  type DeletionChoice,
   type StorageData,
-  deletionChoice,
+  clusterDeletion,
   storageErrors,
   storageViews,
 } from "@/lib/clusters/storage";
-import type { BuiltinObjects } from "@/lib/policy";
+import type { BuiltinObjects, DeletionChoice } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { ClusterStorageStep } from "./cluster-storage-step";
-import { DeletionChoiceField } from "./deletion-choice";
 import { useCreateFlow } from "./use-create-flow";
 
 /**
@@ -45,7 +44,7 @@ export function StorageStory({
     steps: CLUSTER_STEPS.filter((s) => s.id === "storage").map((s) => ({
       ...s,
       check: (draft: ClusterDraft) =>
-        storageErrors(draft, storageViews(draft, data), cardErrors, []),
+        storageErrors(draft, data, cardErrors, []),
     })),
     initial,
   });
@@ -69,7 +68,7 @@ export function StorageStory({
           flow.set(["storage", name], selections);
           setCardErrors((current) => ({ ...current, [name]: errors }));
         }}
-        deletion={deletionChoice(flow.draft, data)}
+        deletion={clusterDeletion(flow.draft, data)}
         onDeletion={(policy) =>
           flow.set(["claim", "spec", "deletionPolicy"], policy)
         }
@@ -87,6 +86,7 @@ export function DeletionChoiceStory({ choice }: { choice: DeletionChoice }) {
   return (
     <div className="max-w-3xl">
       <DeletionChoiceField
+        subject="cluster"
         choice={{ ...choice, policy }}
         onChange={setPolicy}
       />

@@ -18,7 +18,7 @@ import {
 } from "@/lib/clusters/draft";
 import {
   type StorageData,
-  deletionChoice,
+  clusterDeletion,
   storageErrors,
   storageSummary,
   storageViews,
@@ -259,8 +259,8 @@ function Harness({
     Record<string, ValidationError[]>
   >({});
   const views = storageViews(flow.draft, data);
-  const errors = storageErrors(flow.draft, views, cardErrors, []);
-  const deletion = deletionChoice(flow.draft, data);
+  const errors = storageErrors(flow.draft, data, cardErrors, []);
+  const deletion = clusterDeletion(flow.draft, data);
   useEffect(() => {
     last.draft = flow.draft;
     last.errors = errors;
@@ -327,7 +327,9 @@ describe("ClusterStorageStep", () => {
     );
 
     expect(screen.getByText("must be >= 1")).toBeTruthy();
-    expect(harness.errors()).toEqual(["Fix the Backup storage settings"]);
+    expect(harness.errors()).toEqual([
+      "Fix the Retention in days of S3 bucket.",
+    ]);
   });
 
   it("shows the allowed labels of aws-connectors-role and no ARN", async () => {

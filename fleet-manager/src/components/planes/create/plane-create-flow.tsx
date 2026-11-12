@@ -40,11 +40,7 @@ import {
   planeCreateChange,
   servedErrors,
 } from "@/lib/planes/draft";
-import {
-  planeSectionViews,
-  shownSectionErrors,
-  storageErrors,
-} from "@/lib/planes/storage";
+import { planeSectionViews, storageErrors } from "@/lib/planes/storage";
 import type { ValidationError } from "@/lib/schema";
 import type {
   Change,
@@ -215,13 +211,7 @@ export function planeSteps(
           const views = planeSectionViews(draft, ctx, models.objects);
           return [
             ...storageFailures.map(message),
-            ...storageErrors(
-              draft,
-              ctx,
-              shownSectionErrors(sectionErrors, views),
-              views,
-              models.objects,
-            ),
+            ...storageErrors(draft, ctx, sectionErrors, views, models.objects),
           ];
         }
         default:
