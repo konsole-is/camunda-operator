@@ -319,13 +319,12 @@ function schemaErrors(
     if (!registration || !isObject(schema)) return [];
     const added = controllerParameters(request, registration);
     const later = Object.keys(added).filter((k) => added[k] === undefined);
-    const known = Object.fromEntries(
-      Object.entries(added).filter(([k]) => !later.includes(k)),
+    const parameters = Object.fromEntries(
+      Object.entries({ ...request.parameters, ...added }).filter(
+        ([k]) => !later.includes(k),
+      ),
     );
-    const checked = validate(withoutProperties(schema, later), {
-      ...request.parameters,
-      ...known,
-    });
+    const checked = validate(withoutProperties(schema, later), parameters);
     if (checked.ok) return [];
     const [first] = checked.errors;
     return [

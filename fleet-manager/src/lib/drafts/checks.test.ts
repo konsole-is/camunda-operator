@@ -169,4 +169,29 @@ describe("resolvedErrors", () => {
       })),
     ).toEqual([]);
   });
+
+  it("leaves out the policy value of such a parameter too", () => {
+    const strict = {
+      ...store,
+      spec: {
+        ...store.spec,
+        parameterValues: { owner: "from-the-policy" },
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["owner"],
+          properties: { owner: { type: "string" } },
+        },
+      },
+    } as PluginRegistration;
+    const draft = {
+      ...draftOf({ storage: selections }),
+      registrations: [strict],
+    };
+    expect(
+      resolvedErrors(draft, [view()], selections, () => ({
+        owner: undefined,
+      })),
+    ).toEqual([]);
+  });
 });
