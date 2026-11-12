@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { LimitsList } from "@/components/fleet/limits-list";
 import { ParameterField } from "@/components/fleet/parameter-field";
 import type { Environment } from "@/generated/crds/environment";
@@ -55,6 +55,20 @@ export function OptionSettingsSection({
     textErrors.current[key] = found;
     onTextErrors(Object.values(textErrors.current).flat());
   };
+  const shown = settings
+    .flatMap((o) => o.parameters.map((p) => `${o.registration}/${p.name}`))
+    .join("\n");
+  // A parameter that goes, because its option is no longer allowed, takes
+  // the errors of its text with it.
+  useEffect(() => {
+    const keys = new Set(shown.split("\n"));
+    const kept = Object.entries(textErrors.current).filter(([key]) =>
+      keys.has(key),
+    );
+    if (kept.length === Object.keys(textErrors.current).length) return;
+    textErrors.current = Object.fromEntries(kept);
+    onTextErrors(kept.flatMap(([, found]) => found));
+  }, [shown, onTextErrors]);
   if (settings.length === 0)
     return (
       <p className="text-sm text-muted">
@@ -151,6 +165,10 @@ function ParameterSettingRow({
   const presetWords = setting.presetKind && PRESET_WORDS[setting.presetKind];
   const presets = presetWords ? (spec.presets?.[presetWords[1]] ?? []) : [];
   const allowedPrefix = `${base}.allowed.`;
+  // A cleared text field gives "", which is no value, unless "" is a member
+  // of the enum.
+  const emptyMember =
+    Array.isArray(setting.schema?.enum) && setting.schema.enum.includes("");
 
   return (
     <div
@@ -165,7 +183,7 @@ function ParameterSettingRow({
           object={setting.schema?.type === "object"}
           parameters={others}
           onChange={(value, found) => {
-            valueErrors.current = found;
+            valueErrors.current = value === undefined ? found : [];
             report();
             set({ value });
           }}
@@ -187,7 +205,7 @@ function ParameterSettingRow({
           onValue={(value, parse) => {
             valueErrors.current = parse ?? [];
             report();
-            set({ value: value === "" ? undefined : value });
+            set({ value: value === "" && !emptyMember ? undefined : value });
           }}
         />
       )}

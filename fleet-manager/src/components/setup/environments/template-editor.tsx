@@ -124,5 +124,14 @@ function check(text: string, object: boolean): [unknown, ValidationError[]] {
       [{ path: "", message: line ? `Line ${line}: ${message}` : message }],
     ];
   }
+  // The template check walks the value, which never ends on a cyclic alias.
+  try {
+    JSON.stringify(value);
+  } catch {
+    return [
+      undefined,
+      [{ path: "", message: "An alias refers to the value that holds it" }],
+    ];
+  }
   return [value, templateErrors(value)];
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { ParameterField } from "@/components/fleet/parameter-field";
 import { TextField } from "@/components/setup/form-parts";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ export function AllowedEditor({
   onAllowed: (allowed: NamedValue[]) => void;
   onTextErrors: (errors: ValidationError[]) => void;
 }) {
+  const prefix = useId();
   const [ids, setIds] = useState(() => setting.allowed.map((_, i) => i));
   const next = useRef(ids.length);
   const textErrors = useRef<Record<number, ValidationError[]>>({});
@@ -95,14 +96,14 @@ export function AllowedEditor({
                 object={schema?.type === "object"}
                 parameters={parameters}
                 onChange={(value, found) => {
-                  textErrors.current[id] = found;
+                  textErrors.current[id] = value === undefined ? found : [];
                   update(row, { value });
                   reportText();
                 }}
               />
             ) : (
               <ParameterField
-                id={`choice-${id}-value`}
+                id={`${prefix}-choice-${id}-value`}
                 rule={{
                   name: "value",
                   label: "Value",
@@ -113,7 +114,7 @@ export function AllowedEditor({
                 error={errorAt(`${row}.value`)}
                 onValue={(value, parse) => {
                   textErrors.current[id] = parse ?? [];
-                  update(row, { value: value === "" ? undefined : value });
+                  update(row, { value });
                   reportText();
                 }}
               />

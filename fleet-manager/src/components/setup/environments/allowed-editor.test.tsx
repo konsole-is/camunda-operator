@@ -163,4 +163,75 @@ describe("AllowedEditor", () => {
       claimEditable: true,
     });
   });
+
+  it("keeps the fields of two parameters with choices apart", async () => {
+    const actions = renderEditor("production", withoutChoices());
+    const managed = group("Role for each cluster", "managedPolicyArns");
+    fireEvent.click(
+      within(managed).getByRole("checkbox", { name: "A claim can change it" }),
+    );
+    fireEvent.click(
+      within(extra()).getByRole("checkbox", { name: "A claim can change it" }),
+    );
+    fireEvent.click(
+      within(managed).getByRole("button", { name: "Add a choice" }),
+    );
+    fireEvent.click(
+      within(extra()).getByRole("button", { name: "Add a choice" }),
+    );
+    for (const [where, name] of [
+      [managed, "read"],
+      [extra(), "sqs"],
+    ] as const) {
+      const choice = within(where).getByRole("group", { name: "Choice 1" });
+      fireEvent.change(within(choice).getByLabelText("Name"), {
+        target: { value: name },
+      });
+      fireEvent.change(within(choice).getByLabelText("Label"), {
+        target: { value: name.toUpperCase() },
+      });
+      fireEvent.change(within(choice).getByLabelText("Value"), {
+        target: { value: `arn:aws:iam::aws:policy/${name}` },
+      });
+    }
+    const spec = await save(actions);
+    const policies = spec.parameters?.["aws-connectors-role"];
+    expect(policies?.managedPolicyArns?.allowed).toEqual([
+      { name: "read", label: "READ", value: "arn:aws:iam::aws:policy/read" },
+    ]);
+    expect(policies?.extraPolicyArns?.allowed).toEqual([
+      { name: "sqs", label: "SQS", value: "arn:aws:iam::aws:policy/sqs" },
+    ]);
+  });
+
+  it("keeps an empty string as the value of a choice", async () => {
+    const sources = withoutChoices();
+    const role = sources.registrations.find(
+      (r) => r.metadata.name === "aws-connectors-role",
+    )!;
+    role.spec.parameters = {
+      type: "object",
+      properties: { tier: { type: "string", enum: ["", "gold"] } },
+    };
+    const actions = renderEditor("production", sources);
+    const tier = group("Role for each cluster", "tier");
+    fireEvent.click(
+      within(tier).getByRole("checkbox", { name: "A claim can change it" }),
+    );
+    fireEvent.click(within(tier).getByRole("button", { name: "Add a choice" }));
+    const choice = within(tier).getByRole("group", { name: "Choice 1" });
+    fireEvent.change(within(choice).getByLabelText("Name"), {
+      target: { value: "none" },
+    });
+    fireEvent.change(within(choice).getByLabelText("Label"), {
+      target: { value: "No tier" },
+    });
+    fireEvent.change(within(choice).getByLabelText("Value"), {
+      target: { value: "0" },
+    });
+    const spec = await save(actions);
+    expect(spec.parameters?.["aws-connectors-role"]?.tier?.allowed).toEqual([
+      { name: "none", label: "No tier", value: "" },
+    ]);
+  });
 });

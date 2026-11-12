@@ -7,6 +7,7 @@ import {
 import {
   BUILTIN_OPTIONS,
   byCodeUnit,
+  decodeObject,
   type ClaimKind,
   equalJSON,
   nameOf,
@@ -284,8 +285,8 @@ function warningsOf(
   return warnings;
 }
 
-// The preset of a built-in storage selection is the preset parameter of its
-// request, from the claim or from the policy that the claim recorded.
+// The live request keeps its preset while a change of the claim to another
+// preset is refused.
 function storagePresetWarnings(
   ref: ClaimRef,
   claim: Claim,
@@ -308,7 +309,19 @@ function storagePresetWarnings(
       kind !== "DatabaseServerPreset"
     )
       return [];
-    const name = nameOf(resolved.value.requests?.[i]?.parameters?.preset);
+    const request = s.requests.find(
+      (r) =>
+        r.metadata?.namespace === ref.namespace &&
+        r.spec.claimRef.kind === ref.kind &&
+        r.spec.claimRef.name === ref.name &&
+        r.spec.section === selection.section &&
+        r.spec.registration === selection.registration,
+    );
+    const name = nameOf(
+      request
+        ? decodeObject(request.spec.parameters)?.preset
+        : resolved.value.requests?.[i]?.parameters?.preset,
+    );
     const list = STORAGE_PRESET_LISTS[kind];
     const allows = (environment: Environment) =>
       name !== undefined &&

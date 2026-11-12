@@ -344,3 +344,41 @@ describe("settingErrors", () => {
     ]);
   });
 });
+
+describe("settingErrors of a template parameter", () => {
+  it("names a stored template that is not a valid template parameter, also in a choice", () => {
+    const settings = optionSettings(
+      [role],
+      allowing(
+        { "connectors-permissions": ["aws-connectors-role"] },
+        {
+          "aws-connectors-role": {
+            inlinePolicy: {
+              value: { Resource: "{{ .outputs.bucket }}" },
+              claimEditable: true,
+              allowed: [
+                {
+                  name: "a",
+                  label: "A",
+                  value: { Resource: "{{ .namespace }}" },
+                },
+                { name: "b", label: "B", value: { Resource: "{{ .nope }}" } },
+              ],
+            },
+          },
+        },
+      ),
+    );
+    expect(settingErrors(settings)).toEqual([
+      {
+        path: "spec.parameters.aws-connectors-role.inlinePolicy.value",
+        message:
+          "Resource: the placeholder .outputs.bucket is not allowed: a template parameter cannot read the outputs",
+      },
+      {
+        path: "spec.parameters.aws-connectors-role.inlinePolicy.allowed.1.value",
+        message: "Resource: unknown placeholder .nope",
+      },
+    ]);
+  });
+});

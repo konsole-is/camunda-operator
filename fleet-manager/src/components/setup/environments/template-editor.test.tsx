@@ -158,4 +158,24 @@ describe("TemplateEditor", () => {
     fireEvent.change(field(), { target: { value: "" } });
     expect(onChange).toHaveBeenLastCalledWith(undefined, []);
   });
+
+  it("gives the error of a YAML alias that holds itself and does not crash", () => {
+    const onChange = vi.fn();
+    render(
+      <TemplateEditor
+        label="Inline policy"
+        value={undefined}
+        object
+        parameters={[]}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(field(), {
+      target: { value: "policy: &p\n  self: *p\n" },
+    });
+    expect(field().getAttribute("aria-invalid")).toBe("true");
+    expect(onChange).toHaveBeenLastCalledWith(undefined, [
+      { path: "", message: "An alias refers to the value that holds it" },
+    ]);
+  });
 });

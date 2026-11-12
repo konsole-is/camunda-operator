@@ -16,6 +16,7 @@ import {
   type ValidationError,
   validate,
 } from "@/lib/schema";
+import { templateErrors } from "./preview";
 
 type Spec = Environment["spec"];
 type Policy = NonNullable<Spec["parameters"]>[string][string];
@@ -191,7 +192,8 @@ export function allowedErrors(
 
 /**
  * settingErrors returns an error for each value of settings that its schema
- * refuses: the environment value at
+ * refuses, or that is not a valid template parameter in a template
+ * parameter: the environment value at
  * spec.parameters.<registration>.<parameter>.value, and each allowed value
  * at .allowed.<row>.value. An allowed value of an array parameter that is
  * not a list is one item, so its items schema checks it.
@@ -206,10 +208,14 @@ export function settingErrors(
       const path = `spec.parameters.${option.registration}.${p.name}`;
       const check = (schema: OpenAPISchema, value: unknown, at: string) => {
         const result = validate(schema, value);
-        if (!result.ok)
+        const found = [
+          ...(result.ok ? [] : result.errors),
+          ...(p.template ? templateErrors(value) : []),
+        ];
+        if (found.length > 0)
           errors.push({
             path: at,
-            message: result.errors
+            message: found
               .map((e) => (e.path ? `${e.path}: ${e.message}` : e.message))
               .join(" "),
           });

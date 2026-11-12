@@ -282,4 +282,56 @@ describe("OptionSettings", () => {
     fireEvent.click(review);
     expect(previewChange).not.toHaveBeenCalled();
   });
+
+  it("keeps the empty member of a string enum as the environment value", async () => {
+    const sources = withRustfsSchema();
+    const rustfs = sources.registrations.find(
+      (r) => r.metadata.name === "rustfs",
+    )!;
+    rustfs.spec.parameters = {
+      type: "object",
+      properties: {
+        tier: { type: "string", enum: ["", "gold"], title: "Tier" },
+      },
+    };
+    const actions = renderEditor("production", sources);
+    fireEvent.change(within(group("RustFS", "Tier")).getByLabelText("Tier"), {
+      target: { value: "0" },
+    });
+    expect(await save(actions)).toMatchObject({
+      parameters: { rustfs: { tier: { value: "" } } },
+    });
+  });
+
+  it("drops the error of a removed option, so Review opens again", () => {
+    renderEditor("production", sectionFixtures());
+    fireEvent.change(
+      within(group("Role for each cluster", "inlinePolicy")).getByLabelText(
+        "inlinePolicy",
+      ),
+      { target: { value: "a: [" } },
+    );
+    expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    const permissions = within(
+      screen.getByRole("region", { name: "Clusters" }),
+    ).getByRole("group", { name: "Connectors permissions" });
+    fireEvent.change(within(permissions).getByLabelText("Default option"), {
+      target: { value: "" },
+    });
+    fireEvent.click(
+      within(permissions).getByRole("checkbox", {
+        name: "Role for each cluster",
+      }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Role for each cluster" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Review" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
 });
