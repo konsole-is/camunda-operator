@@ -214,9 +214,13 @@ function Clipped({ text, width }: { text?: string; width: string }) {
   );
 }
 
-// A time that Date cannot read shows as the line wrote it.
+const OFFSET = /\d(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+// A time without an offset, and one that Date cannot read, shows as the
+// line wrote it.
 function utcClock(time: string): string {
-  const ms = Date.parse(time);
+  // Date reads a date-time without an offset as browser time.
+  const ms = OFFSET.test(time) ? Date.parse(time) : NaN;
   return Number.isNaN(ms) ? time : new Date(ms).toISOString().slice(11, 19);
 }
 

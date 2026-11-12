@@ -163,6 +163,24 @@ describe("LogViewer", () => {
     expect(screen.getByText("Time (UTC)")).toBeTruthy();
   });
 
+  it("shows a time without an offset as it is, in any time zone", () => {
+    const zone = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      render(
+        <LogViewer
+          lines={[{ ...line("local"), time: "2026-10-15T11:59:07.120" }]}
+        />,
+      );
+      expect(
+        within(screen.getByRole("log")).getByText("2026-10-15T11:59:07.120"),
+      ).toBeTruthy();
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
+  });
+
   it("shows a time it cannot read as it is", () => {
     render(<LogViewer lines={[{ ...line("odd"), time: "yesterday" }]} />);
     expect(within(screen.getByRole("log")).getByText("yesterday")).toBeTruthy();
