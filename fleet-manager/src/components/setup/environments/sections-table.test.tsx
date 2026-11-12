@@ -218,7 +218,7 @@ describe("SectionsTable", () => {
   it("names a section that does not exist and removes it", async () => {
     const sources = environmentFixtures();
     sources.environments[1].spec.sections = {
-      gone: { allowed: ["rustfs"] },
+      gone: { required: true, allowed: ["rustfs"] },
     };
     const actions = renderEditor("staging", sources);
     const note = screen.getByRole("group", {

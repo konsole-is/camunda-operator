@@ -380,7 +380,6 @@ describe("the changes", () => {
       (updateChange(on, off).apply[0].spec as Environment["spec"]).sections,
     ).toEqual({
       "backup-storage": { required: false, allowed: ["rustfs"] },
-      access: { required: false },
     });
   });
 
@@ -400,8 +399,23 @@ describe("the changes", () => {
       (updateChange(on, off).apply[0].spec as Environment["spec"]).parameters,
     ).toEqual({
       rustfs: { tier: { value: "gold", claimEditable: false } },
-      s3: { region: { claimEditable: false } },
     });
+  });
+
+  it("updateChange keeps out a section and an option that the edit removes", () => {
+    const on: Environment = {
+      ...live,
+      spec: {
+        sections: { gone: { required: true, allowed: ["x"] } },
+        parameters: { "old-option": { tier: { claimEditable: true } } },
+      },
+    };
+    const off = draftOf(on);
+    off.spec.sections = undefined;
+    off.spec.parameters = undefined;
+    const spec = updateChange(on, off).apply[0].spec as Environment["spec"];
+    expect(spec.sections).toBeUndefined();
+    expect(spec.parameters).toBeUndefined();
   });
 
   it("updateChange sends allowed false when the edit turns namespace creation off", () => {

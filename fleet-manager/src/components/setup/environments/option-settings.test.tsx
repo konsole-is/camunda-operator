@@ -502,7 +502,7 @@ describe("OptionSettings", () => {
     const sources = sectionFixtures();
     sources.environments[0].spec.parameters = {
       ...sources.environments[0].spec.parameters,
-      gone: { region: { value: "eu-west-1" } },
+      gone: { region: { value: "eu-west-1", claimEditable: true } },
     };
     const actions = renderEditor("production", sources);
     const note = screen.getByRole("group", {

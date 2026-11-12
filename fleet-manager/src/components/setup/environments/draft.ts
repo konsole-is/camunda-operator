@@ -231,7 +231,7 @@ function updatedSpec(
     spec.namespaceCreation = { ...spec.namespaceCreation, allowed: false };
   for (const [section, policy] of Object.entries(live.spec.sections ?? {})) {
     const edited = own(spec.sections ?? {}, section);
-    if (policy.required && !edited?.required)
+    if (policy.required && edited && !edited.required)
       spec.sections = setEntry(spec.sections, section, {
         ...edited,
         required: false,
@@ -245,7 +245,7 @@ function updatedSpec(
         own(spec.parameters ?? {}, registration) ?? {},
         parameter,
       );
-      if (!policy.claimEditable || edited?.claimEditable) continue;
+      if (!policy.claimEditable || !edited || edited.claimEditable) continue;
       spec.parameters = setEntry(
         spec.parameters,
         registration,
