@@ -399,6 +399,41 @@ describe("ComponentSettingsEditor", () => {
     );
   });
 
+  it("a claim update keeps a variable that the user added and that is not valid yet", async () => {
+    const envOf = (env: object[]) => ({
+      zeebe: { replicas: 3, extraEnv: env },
+      gateway: { mode: "Standalone" },
+    });
+    const contextAt = (version: string, env: object[]) =>
+      contextOf({
+        openId: "zeebe",
+        cluster: cluster(envOf(env)),
+        claim: claim(version, { cluster: envOf(env) }),
+      });
+    const { update } = renderSlot(
+      contextAt("41", [{ name: "LOG_LEVEL", value: "info" }]),
+    );
+    await openEditors();
+    const replicas = within(settingRow(group("Brokers"), "replicas")).getByRole(
+      "spinbutton",
+    );
+    await userEvent.clear(replicas);
+    await userEvent.type(replicas, "5");
+    const env = () => settingRow(group("Brokers"), "extraEnv");
+    await userEvent.click(
+      within(env()).getByRole("button", { name: "Add a variable" }),
+    );
+    update(contextAt("42", [{ name: "LOG_LEVEL", value: "debug" }]));
+    expect(
+      within(env()).getByRole("group", { name: "Variable 2" }),
+    ).toBeTruthy();
+    expect(
+      within(
+        within(env()).getByRole("group", { name: "Variable 1" }),
+      ).getByRole("textbox", { name: "Value" }),
+    ).toHaveProperty("value", "info");
+  });
+
   it("a smaller pending size still says volumes cannot shrink when the editors open again", async () => {
     const spec = {
       zeebe: { replicas: 3, storageSize: "32Gi" },

@@ -175,9 +175,9 @@ export function SettingRow({
         current={"current" in setting ? setting.current : mounted}
         secrets={secrets ?? []}
         onChange={change}
-        onInvalid={(message) =>
-          shows(message && `${setting.label}: ${message}`)
-        }
+        onInvalid={own((message: string | undefined) =>
+          shows(message && `${setting.label}: ${message}`),
+        )}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
         <span>{setting.state ? stateLabel(setting.state) : "Not set"}</span>
