@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { LockedField } from "@/components/fleet/locked-field";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -236,7 +236,8 @@ function Field({
 }
 
 // CountField keeps its own text, so that a count with an error stays in
-// the input while the session keeps the last valid count.
+// the input while the session keeps the last valid count. It clears its
+// error when it unmounts.
 function CountField({
   label,
   steps,
@@ -250,6 +251,8 @@ function CountField({
   const id = useId();
   const [text, setText] = useState(value === undefined ? "" : String(value));
   const error = countError(text);
+  const { invalid } = edit;
+  useEffect(() => () => invalid(steps, undefined), [invalid, steps]);
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm font-medium text-text">

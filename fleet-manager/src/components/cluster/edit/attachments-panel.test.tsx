@@ -241,6 +241,19 @@ describe("the Attachments panel", () => {
     ).toBeTruthy();
   });
 
+  it("closing the panel clears the error of a count", async () => {
+    panel({ backupStorage: rdbmsBackups });
+    fireEvent.click(box("Back up on a schedule"));
+    await userEvent.type(field("Completed backups to keep"), "1.5");
+    fireEvent.click(
+      within(attachments()).getByRole("button", { name: "Done" }),
+    );
+    expect(
+      within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(false);
+  });
+
   it("the backup schedule needs a backup storage option", () => {
     panel();
     expect(box("Back up on a schedule").disabled).toBe(true);
