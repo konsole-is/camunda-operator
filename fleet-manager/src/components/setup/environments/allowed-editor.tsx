@@ -140,7 +140,9 @@ export function AllowedEditor({
         disabled={allowed.length >= MAX_CHOICES}
         onClick={() => {
           setIds([...ids, next.current++]);
-          onAllowed([...allowed, { name: "", label: "", value: undefined }]);
+          // An unchecked checkbox shows false, so the value starts as false.
+          const value = schema?.type === "boolean" ? false : undefined;
+          onAllowed([...allowed, { name: "", label: "", value }]);
         }}
       >
         <Plus aria-hidden />

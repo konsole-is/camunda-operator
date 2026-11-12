@@ -235,6 +235,41 @@ describe("AllowedEditor", () => {
     ]);
   });
 
+  it.each([
+    ["a boolean parameter", { type: "boolean" }],
+    ["an array of booleans", { type: "array", items: { type: "boolean" } }],
+  ])(
+    "starts a new choice of %s at false, as its checkbox shows",
+    async (_, schema) => {
+      const sources = withoutChoices();
+      const role = sources.registrations.find(
+        (r) => r.metadata.name === "aws-connectors-role",
+      )!;
+      role.spec.parameters = { type: "object", properties: { strict: schema } };
+      const actions = renderEditor("production", sources);
+      const strict = group("Role for each cluster", "strict");
+      fireEvent.click(
+        within(strict).getByRole("checkbox", {
+          name: "A claim can change it",
+        }),
+      );
+      fireEvent.click(
+        within(strict).getByRole("button", { name: "Add a choice" }),
+      );
+      const choice = within(strict).getByRole("group", { name: "Choice 1" });
+      fireEvent.change(within(choice).getByLabelText("Name"), {
+        target: { value: "off" },
+      });
+      fireEvent.change(within(choice).getByLabelText("Label"), {
+        target: { value: "Off" },
+      });
+      const spec = await save(actions);
+      expect(spec.parameters?.["aws-connectors-role"]?.strict?.allowed).toEqual(
+        [{ name: "off", label: "Off", value: false }],
+      );
+    },
+  );
+
   it("edits a choice that is a whole list as a list", async () => {
     const sources = sectionFixtures();
     sources.environments[0].spec.parameters![
