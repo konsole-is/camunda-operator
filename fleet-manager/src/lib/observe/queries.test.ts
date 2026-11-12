@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseTemplate, render } from "@/lib/gotemplate";
 import type { Resource } from "@/lib/k8s/kinds";
 import {
-  BACKPRESSURE_SHARE,
+  BACKPRESSURE_RATES,
   CAMUNDA_8_9,
   PARTITION_HEALTH,
   POD_QUERIES,
@@ -335,21 +335,19 @@ describe("PARTITION_HEALTH", () => {
     expect(PARTITION_HEALTH.versions).toEqual(CAMUNDA_8_9));
 });
 
-describe("BACKPRESSURE_SHARE", () => {
-  it("divides the dropped by the received requests of the broker pods", () =>
-    expect(
-      renderCoreQuery(BACKPRESSURE_SHARE, "team-a", ["orders-zeebe-0"]),
-    ).toBe(
-      'sum(rate(zeebe_dropped_request_count_total{namespace="team-a", pod=~"orders-zeebe-0"}[5m])) / sum(rate(zeebe_received_request_count_total{namespace="team-a", pod=~"orders-zeebe-0"}[5m]))',
+describe("BACKPRESSURE_RATES", () => {
+  it("gives the received and the dropped requests of each pod of every namespace", () =>
+    expect(BACKPRESSURE_RATES.query).toBe(
+      'label_replace(sum by (namespace, pod) (rate(zeebe_received_request_count_total[5m])), "kind", "received", "", "") or label_replace(sum by (namespace, pod) (rate(zeebe_dropped_request_count_total[5m])), "kind", "dropped", "", "")',
     ));
 
   it("names its documented source", () => {
-    expect(BACKPRESSURE_SHARE.metric).toBe("zeebe_dropped_request_count_total");
-    expect(BACKPRESSURE_SHARE.source).toBe(
+    expect(BACKPRESSURE_RATES.metric).toBe("zeebe_dropped_request_count_total");
+    expect(BACKPRESSURE_RATES.source).toBe(
       "https://docs.camunda.io/docs/8.9/self-managed/components/orchestration-cluster/zeebe/operations/backpressure/#backpressure-tuning",
     );
   });
 
   it("applies to the Camunda versions of its source", () =>
-    expect(BACKPRESSURE_SHARE.versions).toEqual(CAMUNDA_8_9));
+    expect(BACKPRESSURE_RATES.versions).toEqual(CAMUNDA_8_9));
 });

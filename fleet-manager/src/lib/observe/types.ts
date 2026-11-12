@@ -60,10 +60,10 @@ export type VersionRange = { min: string; below?: string };
 export type MetricsComponent = CoreComponent | "optimize";
 
 /**
- * CoreQuery is a fixed query of a core component. query is a template with
- * {{ .namespace }} and {{ .pods }}. metric is the documented metric that it
- * reads, and source is the address of that documentation. versions is the
- * range of Camunda versions that the source covers. A query without
+ * CoreQuery is a fixed query of a core component. query is a template that
+ * can use {{ .namespace }} and {{ .pods }}. metric is the documented metric
+ * that it reads, and source is the address of that documentation. versions
+ * is the range of Camunda versions that the source covers. A query without
  * versions applies to every version. With over "volumes", {{ .pods }} holds
  * the PersistentVolumeClaim names of the pods, not the pod names.
  */

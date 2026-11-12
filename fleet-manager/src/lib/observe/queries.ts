@@ -122,13 +122,14 @@ export const PARTITION_HEALTH: CoreQuery = {
 };
 
 /**
- * BACKPRESSURE_SHARE gives the share of the requests that the brokers
- * dropped by backpressure over 5 minutes, from 0 to 1. It has no value
- * while the brokers receive no request.
+ * BACKPRESSURE_RATES gives the requests that each pod received and dropped
+ * by backpressure, per second over 5 minutes. A series has the labels kind
+ * ("received" or "dropped"), namespace, and pod. It reads every namespace,
+ * so it has no template field.
  */
-export const BACKPRESSURE_SHARE: CoreQuery = {
-  label: "Share of requests dropped by backpressure",
-  query: `sum(rate(zeebe_dropped_request_count_total{${SELECT}}[5m])) / sum(rate(zeebe_received_request_count_total{${SELECT}}[5m]))`,
+export const BACKPRESSURE_RATES: CoreQuery = {
+  label: "Requests received and dropped by backpressure",
+  query: `label_replace(sum by (namespace, pod) (rate(zeebe_received_request_count_total[5m])), "kind", "received", "", "") or label_replace(sum by (namespace, pod) (rate(zeebe_dropped_request_count_total[5m])), "kind", "dropped", "", "")`,
   metric: "zeebe_dropped_request_count_total",
   // The metrics page does not name zeebe_received_request_count_total.
   source: BACKPRESSURE,

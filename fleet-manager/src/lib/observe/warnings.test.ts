@@ -77,6 +77,19 @@ function fleet(
     kind === "CamundaCluster" ? clusters : pods) as typeof list);
 }
 
+const NOW_MS = NOW.getTime();
+const AGO_60S = NOW_MS - 60_000;
+
+const rates = (
+  kind: "received" | "dropped",
+  namespace: string,
+  pod: string,
+  points: [number, number][],
+) => ({
+  name: `kind="${kind}", namespace="${namespace}", pod="${pod}"`,
+  points,
+});
+
 const kinds = (warnings: { kind: string }[] | undefined) =>
   (warnings ?? []).map((w) => w.kind);
 
@@ -161,13 +174,14 @@ describe("fleetPodWarnings", () => {
       ],
     );
     vi.mocked(promRange).mockResolvedValue([
-      {
-        name: "share",
-        points: [
-          [NOW.getTime() - 60_000, 0.005],
-          [NOW.getTime(), 0.02],
-        ],
-      },
+      rates("received", "team-a", "orders-zeebe-0", [
+        [AGO_60S, 100],
+        [NOW_MS, 100],
+      ]),
+      rates("dropped", "team-a", "orders-zeebe-0", [
+        [AGO_60S, 0.5],
+        [NOW_MS, 2],
+      ]),
     ]);
 
     const answer = await fleetPodWarnings(NOW);
@@ -176,16 +190,150 @@ describe("fleetPodWarnings", () => {
       expect.objectContaining({ kind: "backpressure", severity: "Warning" }),
     ]);
     expect(promRange).toHaveBeenCalledWith(
-      'sum(rate(zeebe_dropped_request_count_total{namespace="team-a", pod=~"orders-zeebe-0"}[5m])) / sum(rate(zeebe_received_request_count_total{namespace="team-a", pod=~"orders-zeebe-0"}[5m]))',
-      {
-        start: NOW.getTime() - 300_000,
-        end: NOW.getTime(),
-        stepSeconds: 60,
-      },
+      'label_replace(sum by (namespace, pod) (rate(zeebe_received_request_count_total[5m])), "kind", "received", "", "") or label_replace(sum by (namespace, pod) (rate(zeebe_dropped_request_count_total[5m])), "kind", "dropped", "", "")',
+      { start: NOW_MS - 300_000, end: NOW_MS, stepSeconds: 60 },
     );
   });
 
-  it("gives no backpressure warning when Prometheus gives no finite value", async () => {
+  it("asks Prometheus once for the whole fleet and gives each cluster its own share", async () => {
+    fleet(
+      [
+        cluster("team-a", "orders", VERSION),
+        cluster("team-a", "billing", VERSION),
+        cluster("team-b", "orders", VERSION),
+      ],
+      [
+        pod("team-a", "orders", "orders-zeebe-0"),
+        pod("team-a", "billing", "billing-zeebe-0"),
+        pod("team-b", "orders", "orders-zeebe-0"),
+      ],
+    );
+    vi.mocked(promRange).mockResolvedValue([
+      rates("received", "team-a", "orders-zeebe-0", [[NOW_MS, 100]]),
+      rates("dropped", "team-a", "orders-zeebe-0", [[NOW_MS, 5]]),
+      rates("received", "team-a", "billing-zeebe-0", [[NOW_MS, 100]]),
+      rates("dropped", "team-a", "billing-zeebe-0", [[NOW_MS, 0.5]]),
+      rates("received", "team-b", "orders-zeebe-0", [[NOW_MS, 100]]),
+      rates("dropped", "team-b", "orders-zeebe-0", [[NOW_MS, 2]]),
+    ]);
+
+    const answer = await fleetPodWarnings(NOW);
+
+    expect(promRange).toHaveBeenCalledTimes(1);
+    expect(answer.clusters["team-a/orders"]).toEqual([
+      expect.objectContaining({
+        kind: "backpressure",
+        detail: expect.stringMatching(/^5 % /),
+      }),
+    ]);
+    expect(kinds(answer.clusters["team-a/billing"])).toEqual([]);
+    expect(answer.clusters["team-b/orders"]).toEqual([
+      expect.objectContaining({
+        kind: "backpressure",
+        detail: expect.stringMatching(/^2 % /),
+      }),
+    ]);
+  });
+
+  it("divides the dropped by the received requests of all the brokers of a cluster", async () => {
+    fleet(
+      [cluster("team-a", "orders", VERSION)],
+      [
+        pod("team-a", "orders", "orders-zeebe-0"),
+        pod("team-a", "orders", "orders-zeebe-1"),
+      ],
+    );
+    // Each broker alone is above 1 %, the two together are not.
+    vi.mocked(promRange).mockResolvedValue([
+      rates("received", "team-a", "orders-zeebe-0", [[NOW_MS, 10]]),
+      rates("dropped", "team-a", "orders-zeebe-0", [[NOW_MS, 0.2]]),
+      rates("received", "team-a", "orders-zeebe-1", [[NOW_MS, 1000]]),
+      rates("dropped", "team-a", "orders-zeebe-1", [[NOW_MS, 0]]),
+    ]);
+
+    const answer = await fleetPodWarnings(NOW);
+
+    expect(kinds(answer.clusters["team-a/orders"])).toEqual([]);
+  });
+
+  it("counts only the series of the broker pods of a cluster", async () => {
+    fleet(
+      [cluster("team-a", "orders", VERSION)],
+      [
+        pod("team-a", "orders", "orders-zeebe-0"),
+        pod("team-a", "orders", "orders-gateway-0", { component: "gateway" }),
+      ],
+    );
+    vi.mocked(promRange).mockResolvedValue([
+      rates("received", "team-a", "orders-zeebe-0", [[NOW_MS, 100]]),
+      rates("dropped", "team-a", "orders-zeebe-0", [[NOW_MS, 0]]),
+      rates("dropped", "team-a", "orders-gateway-0", [[NOW_MS, 50]]),
+      rates("dropped", "team-b", "orders-zeebe-0", [[NOW_MS, 50]]),
+      rates("dropped", "team-a", "other-zeebe-0", [[NOW_MS, 50]]),
+      {
+        name: 'namespace="team-a", pod="orders-zeebe-0"',
+        points: [[NOW_MS, 50]],
+      },
+    ]);
+
+    const answer = await fleetPodWarnings(NOW);
+
+    expect(kinds(answer.clusters["team-a/orders"])).toEqual([]);
+  });
+
+  it("gives no backpressure warning to a cluster without series", async () => {
+    fleet(
+      [
+        cluster("team-a", "orders", VERSION),
+        cluster("team-a", "billing", VERSION),
+      ],
+      [
+        pod("team-a", "orders", "orders-zeebe-0"),
+        pod("team-a", "billing", "billing-zeebe-0"),
+      ],
+    );
+    vi.mocked(promRange).mockResolvedValue([
+      rates("received", "team-a", "orders-zeebe-0", [[NOW_MS, 100]]),
+      rates("dropped", "team-a", "orders-zeebe-0", [[NOW_MS, 5]]),
+    ]);
+
+    const answer = await fleetPodWarnings(NOW);
+
+    expect(kinds(answer.clusters["team-a/orders"])).toEqual(["backpressure"]);
+    expect(kinds(answer.clusters["team-a/billing"])).toEqual([]);
+    expect(answer.missing).toEqual([]);
+  });
+
+  it("gives no backpressure warning while the brokers drop or receive nothing", async () => {
+    fleet(
+      [cluster("team-a", "orders", VERSION)],
+      [pod("team-a", "orders", "orders-zeebe-0")],
+    );
+    vi.mocked(promRange).mockResolvedValue([
+      rates("received", "team-a", "orders-zeebe-0", [[NOW_MS, 0]]),
+      rates("dropped", "team-a", "orders-zeebe-0", [[NOW_MS, 0]]),
+    ]);
+
+    const answer = await fleetPodWarnings(NOW);
+
+    expect(kinds(answer.clusters["team-a/orders"])).toEqual([]);
+  });
+
+  it("gives no backpressure warning without a dropped series", async () => {
+    fleet(
+      [cluster("team-a", "orders", VERSION)],
+      [pod("team-a", "orders", "orders-zeebe-0")],
+    );
+    vi.mocked(promRange).mockResolvedValue([
+      rates("received", "team-a", "orders-zeebe-0", [[NOW_MS, 100]]),
+    ]);
+
+    const answer = await fleetPodWarnings(NOW);
+
+    expect(kinds(answer.clusters["team-a/orders"])).toEqual([]);
+  });
+
+  it("gives no backpressure warning when Prometheus gives no series", async () => {
     fleet(
       [cluster("team-a", "orders", VERSION)],
       [pod("team-a", "orders", "orders-zeebe-0")],
@@ -206,12 +354,31 @@ describe("fleetPodWarnings", () => {
     // The brokers got no request in the last two minutes, so the newest
     // points have no value and Prometheus leaves them out.
     vi.mocked(promRange).mockResolvedValue([
-      { name: "share", points: [[NOW.getTime() - 120_000, 0.5]] },
+      rates("received", "team-a", "orders-zeebe-0", [[NOW_MS - 120_000, 10]]),
+      rates("dropped", "team-a", "orders-zeebe-0", [[NOW_MS - 120_000, 5]]),
     ]);
 
     const answer = await fleetPodWarnings(NOW);
 
     expect(kinds(answer.clusters["team-a/orders"])).toEqual([]);
+  });
+
+  it("takes the share of the newest point that has both rates", async () => {
+    fleet(
+      [cluster("team-a", "orders", VERSION)],
+      [pod("team-a", "orders", "orders-zeebe-0")],
+    );
+    vi.mocked(promRange).mockResolvedValue([
+      rates("received", "team-a", "orders-zeebe-0", [
+        [AGO_60S, 100],
+        [NOW_MS, 100],
+      ]),
+      rates("dropped", "team-a", "orders-zeebe-0", [[AGO_60S, 5]]),
+    ]);
+
+    const answer = await fleetPodWarnings(NOW);
+
+    expect(kinds(answer.clusters["team-a/orders"])).toEqual(["backpressure"]);
   });
 
   it("names metrics-server when the usage is unavailable and gives no near limit warning", async () => {
@@ -239,10 +406,16 @@ describe("fleetPodWarnings", () => {
     expect(answer.missing).toEqual(["metrics-server"]);
   });
 
-  it("names prometheus when the query is unavailable and gives no backpressure warning", async () => {
+  it("names prometheus when the query is unavailable and gives no cluster a backpressure warning", async () => {
     fleet(
-      [cluster("team-a", "orders", VERSION)],
-      [pod("team-a", "orders", "orders-zeebe-0")],
+      [
+        cluster("team-a", "orders", VERSION),
+        cluster("team-b", "billing", VERSION),
+      ],
+      [
+        pod("team-a", "orders", "orders-zeebe-0"),
+        pod("team-b", "billing", "billing-zeebe-0"),
+      ],
     );
     vi.mocked(promRange).mockResolvedValue("unavailable");
 
@@ -250,6 +423,8 @@ describe("fleetPodWarnings", () => {
 
     expect(answer.missing).toEqual(["prometheus"]);
     expect(kinds(answer.clusters["team-a/orders"])).toEqual([]);
+    expect(kinds(answer.clusters["team-b/billing"])).toEqual([]);
+    expect(promRange).toHaveBeenCalledTimes(1);
   });
 
   it("names prometheus when the query rejects", async () => {
@@ -284,6 +459,28 @@ describe("fleetPodWarnings", () => {
     await fleetPodWarnings(NOW);
 
     expect(promRange).not.toHaveBeenCalled();
+  });
+
+  it("counts no broker of a cluster outside the range of the backpressure query", async () => {
+    fleet(
+      [
+        cluster("team-a", "orders", VERSION),
+        cluster("team-a", "billing", "8.10.0"),
+      ],
+      [
+        pod("team-a", "orders", "orders-zeebe-0"),
+        pod("team-a", "billing", "billing-zeebe-0"),
+      ],
+    );
+    vi.mocked(promRange).mockResolvedValue([
+      rates("received", "team-a", "billing-zeebe-0", [[NOW_MS, 100]]),
+      rates("dropped", "team-a", "billing-zeebe-0", [[NOW_MS, 5]]),
+    ]);
+
+    const answer = await fleetPodWarnings(NOW);
+
+    expect(promRange).toHaveBeenCalledTimes(1);
+    expect(kinds(answer.clusters["team-a/billing"])).toEqual([]);
   });
 
   it("runs no query for a cluster without broker pods", async () => {
