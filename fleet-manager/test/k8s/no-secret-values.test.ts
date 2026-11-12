@@ -12,6 +12,7 @@ import {
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { ping } from "@/app/dev/watch-probe/actions";
 import {
+  applyBackupChange,
   applyClaimChange,
   previewClaimChange,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
@@ -209,6 +210,24 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
 // "<file under src>#<export>".
 const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/dev/watch-probe/actions.ts#ping": () => ping(),
+  // The backup does not exist, so the delete refuses and writes nothing.
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyBackupChange": () =>
+    applyBackupChange(
+      { namespace, name: "leak" },
+      {
+        intent: "Delete backup leak",
+        apply: [],
+        delete: [
+          {
+            apiVersion: "core.camunda.io/v1",
+            kind: "LogicalBackupElasticsearch",
+            namespace,
+            name: "leak",
+          },
+        ],
+        directOnly: true,
+      },
+    ),
   "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimChange": () =>
     previewClaimChange(claimChange()),
   // The precondition names a claim that does not exist, so the write

@@ -49,7 +49,59 @@ const restoreRow: RestoreRow = {
   failureMessage: "No WAL after the point",
 };
 
+// rowOf is the table row of the backup named name.
+function rowOf(name: string): HTMLElement {
+  return screen
+    .getByRole("button", { name: `Details of ${name}` })
+    .closest("tr")!;
+}
+
 describe("BackupsTab", () => {
+  it("rowActions renders in an Actions column of each backup row", () => {
+    const second = { ...failedRow, name: "manual-2" };
+    render(
+      <BackupsTab
+        storage={esStorage}
+        backups={[failedRow, second]}
+        restores={[]}
+        rowActions={(r) => <button>Act on {r.name}</button>}
+      />,
+    );
+    expect(screen.getByRole("columnheader", { name: "Actions" })).toBeTruthy();
+    for (const name of ["manual-1", "manual-2"]) {
+      expect(
+        within(rowOf(name)).getByRole("button", { name: `Act on ${name}` }),
+      ).toBeTruthy();
+    }
+  });
+
+  it("without rowActions the table has no Actions column", () => {
+    render(
+      <BackupsTab storage={esStorage} backups={[failedRow]} restores={[]} />,
+    );
+    expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
+  });
+
+  it("the details of a row span every column, the Actions column too", async () => {
+    render(
+      <BackupsTab
+        storage={esStorage}
+        backups={[failedRow]}
+        restores={[]}
+        rowActions={() => <button>Act</button>}
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: "Details of manual-1" });
+    await userEvent.click(toggle);
+    const details = document.getElementById(
+      toggle.getAttribute("aria-controls") ?? "",
+    )!;
+    const columns = within(
+      screen.getByRole("region", { name: "Backups" }),
+    ).getAllByRole("columnheader").length;
+    expect(details.querySelector("td")?.colSpan).toBe(columns);
+  });
+
   it("a row expands to its details and closes again", async () => {
     render(
       <BackupsTab storage={esStorage} backups={[failedRow]} restores={[]} />,
