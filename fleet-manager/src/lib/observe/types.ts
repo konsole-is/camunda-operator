@@ -17,10 +17,11 @@ export type Series = { name: string; points: [time: number, value: number][] };
 /**
  * LogLine is one log line. A JSON line gives time, level, message, logger,
  * request, and the rest of its fields. Another line has only raw and
- * message.
+ * message. pod is set by the stream hooks: the pod whose log has the line.
  */
 export type LogLine = {
   raw: string;
+  pod?: string;
   time?: string;
   level?: string;
   message: string;

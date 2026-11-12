@@ -72,9 +72,39 @@ describe("ClusterComponentDetail", () => {
       component: "optimize",
     }));
 
+  it("gives the brokers the events of the cluster", () =>
+    expect(detailOf("zeebe").eventRefs).toEqual([
+      {
+        kind: "CamundaCluster",
+        name: "orders",
+        namespace: "team-a",
+        uid: "u-cluster",
+      },
+    ]));
+
+  it("gives Optimize the events of its CamundaOptimize", () =>
+    expect(detailOf("optimize").eventRefs).toEqual([
+      {
+        kind: "CamundaOptimize",
+        name: "orders-optimize",
+        namespace: "team-a",
+        uid: "u-1",
+      },
+    ]));
+
   it("selects the pods of an embedded app by its host", () =>
     expect(detailOf("operate").podSelector).toBe(
       "camunda.io/cluster=orders,camunda.io/component=gateway",
+    ));
+
+  it("selects the Services and PVCs of Optimize without the UID that only its pods carry", () =>
+    expect(detailOf("optimize").relatedSelector).toBe(
+      "camunda.io/cluster=orders,camunda.io/component in (optimize-webapp,optimize-importer)",
+    ));
+
+  it("selects the Services and PVCs of the brokers as their pods", () =>
+    expect(detailOf("zeebe").relatedSelector).toBe(
+      "camunda.io/cluster=orders,camunda.io/component=zeebe",
     ));
 
   it("selects the pods of the CamundaOptimize by its UID", () =>

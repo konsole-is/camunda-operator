@@ -4,6 +4,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  useControllerPods,
   useMetrics,
   usePartitions,
   usePodUsage,
@@ -247,5 +248,45 @@ describe("useWarnings", () => {
     const { result } = renderHook(() => useWarnings(), { wrapper });
 
     await waitFor(() => expect(result.current).toBe("unavailable"));
+  });
+});
+
+describe("useControllerPods", () => {
+  const controller = { namespace: "plugins", pods: ["rustfs-controller-0"] };
+
+  it("asks /api/controller-pods for the registration and gives its answer", async () => {
+    const fetchMock = stubFetch(async () => Response.json({ controller }));
+
+    const { result } = renderHook(() => useControllerPods("rustfs-bucket"), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current).toEqual(controller));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/controller-pods?registration=rustfs-bucket",
+      { cache: "no-store" },
+    );
+  });
+
+  it("is unavailable on an answer other than 200", async () => {
+    stubFetch(async () => new Response("no", { status: 404 }));
+
+    const { result } = renderHook(() => useControllerPods("rustfs-bucket"), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current).toBe("unavailable"));
+  });
+
+  it("asks nothing without a registration", async () => {
+    const fetchMock = stubFetch(async () => Response.json({ controller }));
+
+    const { result } = renderHook(() => useControllerPods(undefined), {
+      wrapper,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current).toBeUndefined();
   });
 });

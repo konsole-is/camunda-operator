@@ -1,4 +1,9 @@
-export { clusterFields, type ClusterFieldsInput } from "./cluster";
+export {
+  clusterFields,
+  COMPONENTS,
+  optimizeClaimNames,
+  type ClusterFieldsInput,
+} from "./cluster";
 export { lockLabel, stateLabel, stateNote } from "./labels";
 export { parameterFields } from "./parameters";
 export type {

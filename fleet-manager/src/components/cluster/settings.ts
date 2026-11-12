@@ -1,13 +1,22 @@
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
-import type { ClusterField, ClusterFieldsInput } from "@/lib/fields";
+import type {
+  ClusterField,
+  ClusterFieldsInput,
+  SchemaGroup,
+} from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { BUILTIN_CONTROLLER } from "@/lib/labels";
 import type { FieldPath, Merged } from "@/lib/merge";
 import { PROCESS_LABEL, topologyOf, type Process } from "./topology";
 
-/** SettingsGroup is the fields of one process. embedded marks an app that runs inside the host. */
+/**
+ * SettingsGroup is the fields of one block of the claim: a process,
+ * Optimize, or the fields of the whole cluster. component names that block.
+ * embedded marks an app that runs inside the host.
+ */
 export type SettingsGroup = {
   label: string;
+  component: SchemaGroup;
   embedded: boolean;
   fields: ClusterField[];
 };
@@ -25,12 +34,25 @@ export function componentSettings(
 ): SettingsGroup[] {
   const of = (group: string) => fields.filter((f) => f.group === group);
   if (component === "optimize")
-    return [{ label: "Optimize", embedded: false, fields: of("optimize") }];
+    return [
+      {
+        label: "Optimize",
+        component: "optimize",
+        embedded: false,
+        fields: of("optimize"),
+      },
+    ];
   const box = topologyOf(spec, []).find((b) => b.process === component);
   return [
-    { label: PROCESS_LABEL[component], embedded: false, fields: of(component) },
+    {
+      label: PROCESS_LABEL[component],
+      component,
+      embedded: false,
+      fields: of(component),
+    },
     ...(box?.embedded ?? []).map((app) => ({
       label: app.label,
+      component: app.process,
       embedded: true,
       fields: of(app.process),
     })),
