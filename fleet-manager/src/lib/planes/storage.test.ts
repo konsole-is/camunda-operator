@@ -13,6 +13,7 @@ import {
   contractNameOf,
   databaseConfigErrors,
   databaseSection,
+  goneSections,
   managementHost,
   planeSectionViews,
   storageErrors,
@@ -551,6 +552,54 @@ describe("planeSectionViews", () => {
     ],
   };
 
+  it("treats a section named constructor that has no pick as empty", () => {
+    const c: PlaneContext = {
+      ...live,
+      sections: [
+        ...sections,
+        {
+          metadata: { name: "constructor" },
+          spec: {
+            label: "Constructor",
+            selection: "One",
+            appliesTo: ["CamundaManagementClusterClaim"],
+          },
+        } as unknown as PluginSection,
+      ],
+    };
+    const d = draft({ storage: {} });
+    expect(() =>
+      storageErrors(d, c, [], planeSectionViews(d, c, {})),
+    ).not.toThrow();
+  });
+
+  it("refuses a pick of a section that no longer applies to a plane claim", () => {
+    const c: PlaneContext = {
+      ...ctx,
+      sections: [
+        ...sections,
+        {
+          metadata: { name: "dns-zone" },
+          spec: {
+            label: "DNS zone",
+            selection: "One",
+            appliesTo: ["CamundaClusterClaim"],
+          },
+        } as unknown as PluginSection,
+      ],
+    };
+    const d = draft({
+      storage: {
+        ...withDatabase,
+        "dns-zone": [{ section: "dns-zone", registration: "dns" }],
+      },
+    });
+    expect(goneSections(d, c.sections)).toEqual(["dns-zone"]);
+    expect(storageErrors(d, c, [], {})).toEqual([
+      "Choose another option for dns-zone.",
+    ]);
+  });
+
   it("adds each other section that applies to a plane, by order, and asks for a required one", () => {
     const section = (name: string, label: string, appliesTo: string[]) =>
       ({
@@ -719,7 +768,7 @@ describe("storageErrors and a live choice that is gone", () => {
     spec: { server: { instances: 1 } },
   });
   const errorsOf = (d: PlaneDraft, c: PlaneContext, objects: object) =>
-    storageErrors(d, c, [], planeSectionViews(d, c, objects));
+    storageErrors(d, c, [], planeSectionViews(d, c, objects), objects);
   const keycloakOnly = { mode: "keycloak" as const };
 
   it("refuses a picked DatabaseConfig that is gone while another one is left, and names it", () => {
@@ -900,6 +949,58 @@ describe("storageErrors and a live choice that is gone", () => {
     expect(errorsOf(d, withVersion("17"), objects)).toEqual([]);
     expect(errorsOf(d, withVersion("not-a-version"), objects)).toEqual([
       "Fix the PostgreSQL version of New PostgreSQL server.",
+    ]);
+  });
+
+  it("refuses an empty policy value that its schema refuses, also when the parameter is optional", () => {
+    const d = draft({
+      storage: {
+        "management-database": [
+          { ...database, parameters: { preset: "large" } },
+        ],
+      },
+    });
+    const c = live({
+      parameters: {
+        "management-database-server": {
+          preset: editable,
+          version: { claimEditable: true, value: "" },
+        },
+      },
+      presets: { databaseServer: ["large"] },
+    });
+    expect(errorsOf(d, c, { DatabaseServerPreset: [preset("large")] })).toEqual(
+      ["Fix the PostgreSQL version of New PostgreSQL server."],
+    );
+  });
+
+  it("refuses a DatabaseConfig that an allowed name of the Environment gives once it is gone", () => {
+    const d = draft({
+      ...keycloakOnly,
+      storage: {
+        "management-database": [
+          configs({ keycloak: "kc-db", identity: "gold" }),
+        ],
+      },
+    });
+    const c = live({
+      parameters: {
+        "existing-database-configs": {
+          ...configSpec.parameters["existing-database-configs"],
+          identity: {
+            claimEditable: true,
+            allowed: [{ name: "gold", label: "Gold", value: "id-db" }],
+          },
+        },
+      },
+    });
+    expect(
+      errorsOf(d, c, { DatabaseConfig: [config("kc-db"), config("id-db")] }),
+    ).toEqual([]);
+    expect(
+      errorsOf(d, c, { DatabaseConfig: [config("kc-db"), config("other")] }),
+    ).toEqual([
+      "Pick another DatabaseConfig for Management Identity. id-db is not in platform.",
     ]);
   });
 });

@@ -259,6 +259,28 @@ export function databaseConfigErrors(
   ];
 }
 
+// missingConfigErrors returns an error for each DatabaseConfig name of a
+// running app in selection, the request, that names does not hold.
+function missingConfigErrors(
+  selection: PluginSelection | undefined,
+  running: Running,
+  namespace: string,
+  names: readonly string[],
+): string[] {
+  if (selection?.registration !== EXISTING_DATABASE_CONFIGS) return [];
+  return DATABASE_APPS.flatMap((app) => {
+    const name = selection.parameters?.[app];
+    return runs(app, running) &&
+      typeof name === "string" &&
+      name !== "" &&
+      !names.includes(name)
+      ? [
+          `Pick another DatabaseConfig for ${VERSION_LABEL[app]}. ${name} is not in ${namespace}.`,
+        ]
+      : [];
+  });
+}
+
 // effectiveSelection returns selection with the parameters that the claim
 // gets: SectionCards leaves out a value that equals the policy value.
 function effectiveSelection(
@@ -289,7 +311,9 @@ function selectionErrors(
   views: PlaneSectionViews,
 ): string[] {
   return shownViews(views).flatMap((view) => {
-    const picked = draft.storage[view.name] ?? [];
+    const picked = Object.hasOwn(draft.storage, view.name)
+      ? draft.storage[view.name]
+      : [];
     const unusable = picked.some((s) => {
       const option = view.options.find(
         (o) => o.registration === s.registration,
@@ -319,10 +343,8 @@ function valueErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
           ? set[rule.name]
           : rule.value;
         const empty =
-          value === undefined ||
-          value === "" ||
-          (Array.isArray(value) && value.length === 0);
-        if (empty) {
+          value === "" || (Array.isArray(value) && value.length === 0);
+        if (value === undefined || (empty && rule.required)) {
           return rule.required
             ? [`Choose a ${rule.label} for ${option.label}.`]
             : [];
@@ -335,6 +357,7 @@ function valueErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
         if (!names) {
           return rule.schema && !validate(rule.schema, value).ok ? fix : [];
         }
+        if (empty) return [];
         const list = Array.isArray(value) && !rule.allowedLists;
         const picked = list ? value : [value];
         const gone = picked
@@ -385,6 +408,28 @@ function policyErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
   return "error" in result ? [result.error] : [];
 }
 
+/**
+ * goneSections returns the name of each section that holds a pick in
+ * draft.storage and that sections do not offer to a plane claim: it is
+ * missing, or its appliesTo does not list CamundaManagementClusterClaim.
+ */
+export function goneSections(
+  draft: PlaneDraft,
+  sections: readonly PluginSection[],
+): string[] {
+  return Object.entries(draft.storage)
+    .filter(
+      ([name, picked]) =>
+        picked.length > 0 &&
+        !sections.some(
+          (s) =>
+            s.metadata.name === name &&
+            s.spec.appliesTo.includes("CamundaManagementClusterClaim"),
+        ),
+    )
+    .map(([name]) => name);
+}
+
 /** contractNameOf is the name of the ManagementAuthConfig of the draft: the typed name, else the claim name. */
 export function contractNameOf(draft: PlaneDraft): string {
   return draft.contractName || draft.name;
@@ -428,6 +473,8 @@ export function contractNameErrors(
 /**
  * storageErrors returns the errors of step 4. sectionErrors are the errors
  * that SectionCards reported, and views the sections of planeSectionViews.
+ * With objects, the source kinds of builtinOption in every namespace, the
+ * DatabaseConfig of each running app must be in the namespace of draft.
  * A section of views whose selected option is missing or disabled, a
  * required parameter that a claim can edit and that has no value, a value
  * that is not among the choices of views, or a section other than the
@@ -438,6 +485,7 @@ export function storageErrors(
   ctx: PlaneContext,
   sectionErrors: readonly ValidationError[],
   views: PlaneSectionViews,
+  objects?: BuiltinObjects,
 ): string[] {
   const running = runningOf(draft);
   const databases = databaseSection(ctx.sections);
@@ -445,12 +493,10 @@ export function storageErrors(
   const errors: string[] = [
     ...selectionErrors(draft, views),
     ...valueErrors(draft, views),
+    ...goneSections(draft, ctx.sections).map(
+      (name) => `Choose another option for ${name}.`,
+    ),
   ];
-  for (const [name, picked] of Object.entries(draft.storage)) {
-    if (picked.length > 0 && !sectionNames.includes(name)) {
-      errors.push(`Choose another option for ${name}.`);
-    }
-  }
   if (sectionErrors.some((e) => !sectionNames.includes(e.path))) {
     errors.push(FIX_FIELDS);
   }
@@ -469,17 +515,25 @@ export function storageErrors(
   } else {
     errors.push(...urlErrors(draft.urls, planeUrlFields(running)));
   }
-  errors.push(
-    ...databaseConfigErrors(
-      database &&
-        effectiveSelection(runningSelection(database, running), draft, ctx),
-      running,
-    ),
-  );
+  const request =
+    database &&
+    effectiveSelection(runningSelection(database, running), draft, ctx);
+  errors.push(...databaseConfigErrors(request, running));
   errors.push(...contractNameErrors(draft, ctx));
+  if (errors.length > 0) return errors;
+  // valueErrors does not check a DatabaseConfig against the namespace when
+  // its parameter is locked or the Environment gives it an allowed list.
   // checkAllowed gives only its first refusal, and the checks above name the
   // allowed registrations, the required sections, and the parameters that a
   // claim can edit in plainer words.
-  if (errors.length === 0) errors.push(...policyErrors(draft, ctx));
-  return errors;
+  const namespace = draft.namespace?.name ?? "";
+  const configs = (objects?.DatabaseConfig ?? [])
+    .filter((c) => c.metadata?.namespace === namespace)
+    .map((c) => c.metadata?.name ?? "");
+  return [
+    ...(objects
+      ? missingConfigErrors(request, running, namespace, configs)
+      : []),
+    ...policyErrors(draft, ctx),
+  ];
 }

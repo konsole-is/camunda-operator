@@ -206,6 +206,7 @@ export function planeSteps(
               ctx,
               sectionErrors,
               planeSectionViews(draft, ctx, models.objects),
+              models.objects,
             ),
           ];
         default:

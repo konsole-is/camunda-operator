@@ -202,6 +202,7 @@ function Harness({
           ctx,
           Object.values(errors).flat(),
           planeSectionViews(flow.draft, ctx, objects),
+          objects,
         ).map((e) => (
           <li key={e}>{e}</li>
         ))}
@@ -374,6 +375,30 @@ describe("StorageAccessStep", () => {
       access.compareDocumentPosition(dns) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.queryByRole("group", { name: /Backup storage/ })).toBeNull();
+  });
+
+  it("offers to remove a pick of a section that no longer applies to a plane", () => {
+    const ctx: PlaneContext = {
+      ...ctxOf(false),
+      sections: [
+        ...sections,
+        section("dns-zone", "DNS zone", { appliesTo: ["CamundaClusterClaim"] }),
+      ],
+    };
+    render(
+      <Harness
+        ctx={ctx}
+        initial={{
+          ...keycloak,
+          storage: {
+            "dns-zone": [{ section: "dns-zone", registration: "route53" }],
+          },
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Remove the dns-zone pick" }),
+    ).toBeTruthy();
   });
 
   it("keeps the typed URLs across an access round trip", async () => {

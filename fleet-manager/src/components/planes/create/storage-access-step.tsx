@@ -12,6 +12,7 @@ import {
   DATABASE_SUFFIX,
   EXISTING_DATABASE_CONFIGS,
   accessSelection,
+  goneSections,
   managementHost,
   planeSectionViews,
 } from "@/lib/planes/storage";
@@ -63,10 +64,7 @@ export function StorageAccessStep({
       onSectionErrors(name, errors);
     };
 
-  const sectionNames = ctx.sections.map((s) => s.metadata.name);
-  const gone = Object.entries(draft.storage)
-    .filter(([name, p]) => p.length > 0 && !sectionNames.includes(name))
-    .map(([name]) => name);
+  const gone = goneSections(draft, ctx.sections);
   const remove = (name: string) => {
     set(["storage", name], []);
     onSectionErrors(name, []);
