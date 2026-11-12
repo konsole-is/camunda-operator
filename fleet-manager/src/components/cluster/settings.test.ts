@@ -55,6 +55,16 @@ describe("componentSettings", () => {
     ).toEqual(["Gateway", "Tasklist", "Admin"]);
   });
 
+  it("each group names the block that its fields belong to", () => {
+    const spec = { gateway: { mode: "Standalone" as const } };
+    expect(
+      componentSettings(fields, "gateway", spec).map((g) => g.component),
+    ).toEqual(["gateway", "operate", "tasklist", "admin"]);
+    expect(
+      componentSettings(fields, "optimize", spec).map((g) => g.component),
+    ).toEqual(["optimize"]);
+  });
+
   it("Optimize has its own group only", () => {
     const optimize = { ...field("optimize"), key: "CamundaOptimize:x" };
     expect(
