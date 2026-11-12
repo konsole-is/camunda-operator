@@ -346,6 +346,20 @@ describe("SelectionSettingsEditor", () => {
       expect(set).toHaveBeenLastCalledWith(stepsOf("policies"), "wide");
     });
 
+    it("a list parameter whose choices are whole lists picks one name also without a schema", async () => {
+      const { set } = renderEditor({
+        fields: [choiceField("policies", [])],
+        schema: undefined,
+        allowed: wholeLists,
+        claimed: { policies: [] },
+      });
+      await userEvent.selectOptions(
+        within(settingRow("policies")).getByRole("combobox"),
+        "standard",
+      );
+      expect(set).toHaveBeenLastCalledWith(stepsOf("policies"), "standard");
+    });
+
     it("a list parameter whose choices are whole lists picks one name also from an empty list", async () => {
       const { set } = renderEditor({
         fields: [choiceField("policies", [])],

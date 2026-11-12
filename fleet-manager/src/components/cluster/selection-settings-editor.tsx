@@ -112,8 +112,6 @@ function schemaWithNames(
   schema: OpenAPISchema | undefined,
   lists: Record<string, readonly Choice[]>,
 ): OpenAPISchema | undefined {
-  const properties = schema?.properties;
-  if (!properties) return schema;
   const names = Object.keys(lists).filter((name) =>
     lists[name].every((c) => Array.isArray(c.value)),
   );
@@ -121,7 +119,7 @@ function schemaWithNames(
   return {
     ...schema,
     properties: {
-      ...properties,
+      ...(schema?.properties ?? {}),
       ...Object.fromEntries(names.map((name) => [name, { type: "string" }])),
     },
   };
