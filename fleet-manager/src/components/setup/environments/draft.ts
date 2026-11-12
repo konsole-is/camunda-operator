@@ -154,9 +154,6 @@ function nameError(name: string, taken: readonly string[]): string | undefined {
   if (name === "") return "Give the environment a name.";
   if (name.length > 63 || !isDNSSubdomain(name))
     return "The name must be a DNS name of at most 63 characters.";
-  // The route /setup/environments/new is the create form.
-  if (name === "new")
-    return "The name new is kept for the page of a new environment.";
   if (taken.includes(name)) return "An environment with this name exists.";
   return undefined;
 }

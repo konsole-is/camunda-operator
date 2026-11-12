@@ -1,6 +1,6 @@
 import { EnvironmentEditorLive } from "@/components/setup/environments/environment-editor";
 import { writeMode } from "@/lib/write/writer";
-import { loadEnvironments } from "../load";
+import { loadEnvironments } from "../environments/load";
 
 // The page reads the cache of the server. A static prerender would call the
 // API server at build time.

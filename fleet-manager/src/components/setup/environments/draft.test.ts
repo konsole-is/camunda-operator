@@ -103,11 +103,14 @@ describe("draftErrors", () => {
     ["", "Give the environment a name."],
     ["Bad_Name", "The name must be a DNS name of at most 63 characters."],
     ["a".repeat(64), "The name must be a DNS name of at most 63 characters."],
-    ["new", "The name new is kept for the page of a new environment."],
   ])("refuses the name %j of a new environment", (name, message) => {
     expect(draftErrors(draft({}, name), NEW)).toEqual([
       { path: "name", message },
     ]);
+  });
+
+  it("accepts the name new, because the create page has a path of its own", () => {
+    expect(draftErrors(draft({}, "new"), NEW)).toEqual([]);
   });
 
   it("refuses the name of an environment that exists", () => {

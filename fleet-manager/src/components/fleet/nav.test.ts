@@ -35,12 +35,22 @@ describe("SETUP_ITEMS", () => {
       SETUP_ITEMS.map((item) => `/setup/${item.slug}`),
     );
   });
+
+  it("puts each create page beside the lists, where no object name can take its path", () => {
+    expect(
+      SETUP_ITEMS.flatMap((item) => (item.create ? [item.create] : [])),
+    ).toEqual([
+      { href: "/setup/new-environment", label: "New environment" },
+    ]);
+  });
 });
 
 describe("setupItemOf", () => {
   it.each([
     ["/setup/presets", "Presets"],
     ["/setup/presets/gold", "Presets"],
+    ["/setup/new-environment", "Environments"],
+    ["/setup/environments/new", "Environments"],
     ["/setup", undefined],
     ["/setup/unknown", undefined],
     ["/fleet/presets", undefined],
@@ -59,6 +69,20 @@ describe("setupBreadcrumb", () => {
 
   it("decodes the name", () => {
     expect(setupBreadcrumb("/setup/releases/8.9%20lts")?.name).toBe("8.9 lts");
+  });
+
+  it("names the object new on the page of an Environment named new", () => {
+    expect(setupBreadcrumb("/setup/environments/new")).toEqual({
+      item: SETUP_ITEMS[0],
+      name: "new",
+    });
+  });
+
+  it("names the create page by its label", () => {
+    expect(setupBreadcrumb("/setup/new-environment")).toEqual({
+      item: SETUP_ITEMS[0],
+      name: "New environment",
+    });
   });
 
   it("keeps a name with bad percent-encoding as it is", () => {

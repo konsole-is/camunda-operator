@@ -47,7 +47,7 @@ describe("EnvironmentList", () => {
       screen
         .getByRole("link", { name: "New environment" })
         .getAttribute("href"),
-    ).toBe("/setup/environments/new");
+    ).toBe("/setup/new-environment");
   });
 
   it("shows the banner with the namespaces without an environment", () => {

@@ -1,0 +1,21 @@
+schemaVersion: 1
+description: >-
+  An Environment named new, applied with kubectl, and the namespace team-a
+  that carries its label. The name is the same as the last segment of the
+  old create page of an Environment, so the Setup pages must open its
+  editor at /setup/environments/new.
+seed:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: team-a
+      labels:
+        fleet.camunda.io/environment: new
+  - apiVersion: fleet.camunda.io/v1alpha1
+    kind: Environment
+    metadata:
+      name: new
+    spec:
+      displayName: Lab
+      color: "#2E7D32"
+      deletionPolicy: Delete
