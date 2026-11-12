@@ -50,10 +50,11 @@ import type {
   WriteMode,
   WriteResult,
 } from "@/lib/write/types";
-import { backupReview } from "../backup-caution";
 import { mergedSpecs, showsMergedDiff } from "../impacts";
 import type { ClusterSlotContext } from "../slots";
 import { changeInputOf } from "./change-input";
+import { downgradeDone } from "./downgrade";
+import { reviewGuards } from "./review-guards";
 import {
   WAITING_FOR_GITOPS,
   WAITING_ON_LIVE,
@@ -357,12 +358,13 @@ export function ClusterEditProvider({
   }, [update]);
   const review = useCallback(() => {
     const current = stateRef.current;
-    const s = current.session;
-    if (!s || s.pending.size === 0) return false;
+    const context = contextRef.current;
+    if (!current.session || current.session.pending.size === 0) return false;
     if (waitingRef.current || shownRef.current.size > 0) return false;
-    if (errorsOf(current, validationOf(s, contextRef.current)).length > 0)
+    const s = withDowngradeReset(current.session, context.cluster);
+    if (errorsOf({ ...current, session: s }, validationOf(s, context)).length)
       return false;
-    update({ ...current, reviewing: true });
+    update({ ...current, session: s, reviewing: true });
     return true;
   }, [update]);
   const stopWaiting = () => {
@@ -538,7 +540,7 @@ function ReviewOf({
   const merged = showsMergedDiff(session) ? mergedSpecs(input) : undefined;
   return (
     <ClaimReview
-      {...backupReview(input, context.backups, mode, {
+      {...reviewGuards(context, session, mode, {
         backupsHref: "?tab=backups",
         onOpenBackups,
       })}
@@ -687,6 +689,25 @@ function sameEntry(a: PendingChange, b: PendingChange | undefined): boolean {
   if (b === undefined) return false;
   if ("reset" in a || "reset" in b) return "reset" in a && "reset" in b;
   return equalJSON(a.value, b.value);
+}
+
+const ALLOW_DOWNGRADE: Step[] = [
+  { field: "spec" },
+  { field: "allowVersionDowngrade" },
+];
+
+// withDowngradeReset adds the reset of allowVersionDowngrade to s once the
+// cluster reports the version that the field names, unless s changes the
+// field itself. The page never writes this reset alone: it goes with the
+// next save.
+function withDowngradeReset(
+  s: Session<ClusterClaim>,
+  cluster: ClusterSlotContext["cluster"],
+): Session<ClusterClaim> {
+  if (!downgradeDone(cluster, s.claim)) return s;
+  if (s.pending.has(pathFrom("", ALLOW_DOWNGRADE))) return s;
+  const result = resetValue(s, ALLOW_DOWNGRADE);
+  return "session" in result ? result.session : s;
 }
 
 function errorsOf(edit: Edit, invalid: FieldError[]): FieldError[] {

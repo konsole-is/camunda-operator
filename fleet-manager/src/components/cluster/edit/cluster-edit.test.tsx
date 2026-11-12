@@ -54,6 +54,10 @@ const partitions: Step[] = [
 ];
 const releaseRef: Step[] = [{ field: "spec" }, { field: "releaseRef" }];
 const presetRef: Step[] = [{ field: "spec" }, { field: "presetRef" }];
+const allowDowngrade: Step[] = [
+  { field: "spec" },
+  { field: "allowVersionDowngrade" },
+];
 const schedule: Step[] = [
   { field: "spec" },
   { field: "attachments" },
@@ -105,6 +109,14 @@ function Probe() {
         Clear replicas error
       </button>
       <button onClick={() => setOpened(edit.review())}>Try review</button>
+      <button
+        onClick={() => {
+          edit.set(releaseRef, "camunda-8-9-0");
+          edit.set(allowDowngrade, "8.9.0");
+        }}
+      >
+        Downgrade
+      </button>
       <button
         onClick={() => {
           edit.set(suspend, true);
@@ -240,6 +252,14 @@ async function confirm(label: string) {
   });
   await waitFor(() => expect(button.disabled).toBe(false));
   fireEvent.click(button);
+}
+
+// removedLines returns the removed lines of the claim diff of the review.
+function removedLines() {
+  const figure = within(dialog()!).getByRole("figure", {
+    name: "Changes to the claim",
+  });
+  return [...figure.querySelectorAll("del")].map((d) => d.textContent?.trim());
 }
 
 function openReview() {
@@ -1108,6 +1128,66 @@ describe("ClusterEditProvider", () => {
       screen.getByRole("list", { name: "Field errors", hidden: true })
         .textContent,
     ).toContain("spec.cluster.zeebe.replicas: must be 1 or more");
+  });
+
+  it("a downgrade asks for the downgrade confirm", async () => {
+    page();
+    click("Downgrade");
+    openReview();
+    expect(
+      within(dialog()!).getByRole("note", { name: "Caution" }).textContent,
+    ).toContain("This change moves the cluster from 8.9.1 to 8.9.0.");
+    await waitFor(() =>
+      expect(
+        within(dialog()!)
+          .getByRole("button", { name: "Downgrade" })
+          .getAttribute("data-variant"),
+      ).toBe("destructive"),
+    );
+    cleanup();
+    fakeWriter.reset("git");
+    page(slotContext({ writeMode: "git" }));
+    click("Downgrade");
+    openReview();
+    expect(
+      within(dialog()!).getByRole("button", { name: "Push downgrade" }),
+    ).toBeTruthy();
+  });
+
+  it("the next save adds the reset of allowVersionDowngrade as a diff line and writes it", async () => {
+    page(
+      slotContext({ claim: claim("41", { allowVersionDowngrade: "8.9.1" }) }),
+    );
+    click("Suspend");
+    openReview();
+    expect(removedLines()).toEqual(["allowVersionDowngrade: 8.9.1"]);
+    await confirm("Save");
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+    const spec = (
+      fakeWriter.applied[0].apply[0] as Resource<"CamundaClusterClaim">
+    ).spec;
+    expect(spec.allowVersionDowngrade).toBeUndefined();
+    expect(spec.suspend).toBe(true);
+  });
+
+  it("keeps allowVersionDowngrade while the cluster runs another version", () => {
+    page(
+      slotContext({ claim: claim("41", { allowVersionDowngrade: "8.9.0" }) }),
+    );
+    click("Suspend");
+    openReview();
+    expect(removedLines()).toEqual([]);
+  });
+
+  it("opening the page writes nothing when allowVersionDowngrade can go", async () => {
+    page(
+      slotContext({ claim: claim("41", { allowVersionDowngrade: "8.9.1" }) }),
+    );
+    await act(async () => {});
+    expect(text("Pending 0")).toBeTruthy();
+    expect(bar()).toBeNull();
+    expect(fakeWriter.previewed).toEqual([]);
+    expect(fakeWriter.applied).toEqual([]);
   });
 
   it("rendering the page previews and writes nothing", async () => {
