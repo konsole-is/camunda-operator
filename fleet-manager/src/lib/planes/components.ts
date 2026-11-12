@@ -109,6 +109,22 @@ export function mailSecretErrors(
     : [];
 }
 
+/**
+ * secretRefErrors returns an error when secrets do not hold ref, a Secret
+ * and one of its keys. label names the field of ref.
+ */
+export function secretRefErrors(
+  label: string,
+  ref: SecretKeyRef,
+  secrets: readonly { name: string; keys: readonly string[] }[],
+): string[] {
+  return secrets.some((s) => s.name === ref.name && s.keys.includes(ref.key))
+    ? []
+    : [
+        `Pick another ${label}. ${ref.name} is gone, or it lacks the key ${ref.key}.`,
+      ];
+}
+
 /** mailErrors returns the errors of the mail of Web Modeler. */
 export function mailErrors(mail: MailDraft): string[] {
   const port = mail.smtpPort;

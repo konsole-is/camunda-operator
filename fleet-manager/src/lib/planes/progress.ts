@@ -10,11 +10,12 @@ const MANAGEMENT_CLUSTER_READY: FleetCamundaManagementClusterClaimConditionType 
   "ManagementClusterReady";
 
 /**
- * planeProgressRows returns the progress rows of a plane claim in the
- * expansion order of the claim controller: environment and policy, the
- * database request, the access request when the claim selects one, and
- * the management cluster. A section of a row is the section of sections
- * with the slot of the row. Without a status each row is pending.
+ * planeProgressRows returns the progress rows of a plane claim: environment
+ * and policy, the database request, the access request when the claim
+ * selects one, the request of each other selection in claim order, and the
+ * management cluster. The database row and the access row are of the
+ * section of sections with their slot. Without a status each row is
+ * pending.
  */
 export function planeProgressRows(
   claim: CamundaManagementClusterClaim | undefined,
@@ -37,7 +38,11 @@ export function planeProgressRows(
       },
     ],
   };
+  const database = sectionOf(sections, "managementDatabases");
   const access = sectionOf(sections, "externalAccess");
+  const others = (claim?.spec.plugins ?? [])
+    .map((p) => p.section)
+    .filter((s) => s !== database && s !== access);
   const selectsAccess = (claim?.spec.plugins ?? []).some(
     (p) => p.section === access,
   );
@@ -46,13 +51,16 @@ export function planeProgressRows(
   );
   return [
     environment,
-    requestRow(
-      "database",
-      "Databases",
-      sectionOf(sections, "managementDatabases"),
-      claim,
-    ),
+    requestRow("database", "Databases", database, claim),
     ...(selectsAccess ? [requestRow("access", "Access", access, claim)] : []),
+    ...others.map((name) =>
+      requestRow(
+        `section:${name}`,
+        sections.find((s) => s.metadata.name === name)?.spec.label ?? name,
+        name,
+        claim,
+      ),
+    ),
     {
       id: "managementCluster",
       label: "Management cluster",

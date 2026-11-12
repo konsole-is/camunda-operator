@@ -207,6 +207,27 @@ describe("basicsErrors", () => {
     ).toEqual([]);
   });
 
+  it("refuses a CA bundle Secret of an external Keycloak that is gone or lacks its key", () => {
+    const d: PlaneDraft = {
+      ...ready(),
+      mode: "externalKeycloak",
+      externalKeycloak: {
+        url: "https://kc.example.com/auth",
+        realm: "",
+        adminSecret: "kc-admin",
+        caBundle: { name: "kc-ca", key: "ca.crt" },
+      },
+    };
+    expect(basicsErrors(d, ctx, [{ name: "kc-ca", keys: ["ca.crt"] }])).toEqual(
+      [],
+    );
+    expect(
+      basicsErrors(d, ctx, [{ name: "kc-ca", keys: ["tls.crt"] }]),
+    ).toEqual([
+      "Pick another CA bundle Secret. kc-ca is gone, or it lacks the key ca.crt.",
+    ]);
+  });
+
   it("checks the External Keycloak fields in that mode only", () => {
     const external = { url: "kc", realm: "", adminSecret: "" };
     expect(
@@ -465,6 +486,34 @@ describe("componentsErrors", () => {
       "Enter the address that Web Modeler sends from.",
       "Keycloak needs a version from 26.0.0 up to, but not including, 27.0.0.",
     ]);
+  });
+
+  it("refuses a password Secret that is gone or lacks its key, in the Keycloak modes only", () => {
+    const d: PlaneDraft = {
+      ...ready(),
+      admin: {
+        ...EMPTY_ADMIN,
+        username: "admin",
+        password: { name: "admin-pw", key: "password" },
+      },
+    };
+    expect(
+      componentsErrors(d, ctx, [{ name: "admin-pw", keys: ["password"] }]),
+    ).toEqual([]);
+    expect(componentsErrors(d, ctx, [])).toEqual([
+      "Pick another Password Secret. admin-pw is gone, or it lacks the key password.",
+    ]);
+    expect(
+      componentsErrors(
+        {
+          ...d,
+          mode: "oidc",
+          admin: { ...d.admin, claimName: "sub", claimValue: "x" },
+        },
+        ctx,
+        [],
+      ),
+    ).toEqual([]);
   });
 
   it("refuses an SMTP Secret that is gone or lacks the username or password key", () => {

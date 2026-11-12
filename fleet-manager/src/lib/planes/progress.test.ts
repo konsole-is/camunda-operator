@@ -58,6 +58,50 @@ describe("planeProgressRows", () => {
     ]);
   });
 
+  it("adds a row for each other selected section after access, in claim order, with its request", () => {
+    const withOthers = [
+      ...sections,
+      { metadata: { name: "dns-zone" }, spec: { label: "DNS zone" } },
+      { metadata: { name: "mail" }, spec: { label: "Mail relay" } },
+    ] as PluginSection[];
+    const rows = planeProgressRows(
+      claim(
+        [
+          { section: "mail", registration: "relay" },
+          access,
+          { section: "dns-zone", registration: "route53" },
+          database,
+        ],
+        {
+          requests: [
+            {
+              section: "dns-zone",
+              name: "plane-a-dns-zone",
+              outputsReady: "True",
+              ready: "False",
+            },
+          ],
+        } as unknown as CamundaManagementClusterClaim["status"],
+      ),
+      withOthers,
+    );
+    expect(rows.map((r) => [r.id, r.label])).toEqual([
+      ["environment", "Environment and policy"],
+      ["database", "Databases"],
+      ["access", "Access"],
+      ["section:mail", "Mail relay"],
+      ["section:dns-zone", "DNS zone"],
+      ["managementCluster", "Management cluster"],
+    ]);
+    expect(rows[4]).toMatchObject({
+      detail: "plane-a-dns-zone",
+      checks: [
+        { label: "Outputs", condition: { status: "True" } },
+        { label: "Ready", condition: { status: "False" } },
+      ],
+    });
+  });
+
   it("leaves out the access row without an access selection", () => {
     expect(
       planeProgressRows(claim([database]), sections).map((r) => r.id),

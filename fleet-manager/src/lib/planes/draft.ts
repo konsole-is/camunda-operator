@@ -29,6 +29,7 @@ import {
   mailErrors,
   mailSecretErrors,
   runningOf,
+  secretRefErrors,
 } from "./components";
 import {
   type ExternalKeycloakDraft,
@@ -150,9 +151,14 @@ export function servedOf(draft: PlaneDraft): string[] {
  * Environment it returns only NO_ENVIRONMENT. A picked environment that is
  * gone counts as none, and one that turned Ready=False refuses the step
  * with its message. A namespace that the live data no longer allows is
- * refused.
+ * refused. With secrets, the Secrets of the namespace of draft, the CA
+ * bundle Secret of an external Keycloak must be among them with its key.
  */
-export function basicsErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
+export function basicsErrors(
+  draft: PlaneDraft,
+  ctx: PlaneContext,
+  secrets?: SecretRefs,
+): string[] {
   if (ctx.environments.length === 0) return [NO_ENVIRONMENT];
   const errors: string[] = [];
   const environment = environmentOf(draft, ctx);
@@ -189,6 +195,10 @@ export function basicsErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
     errors.push(
       ...externalKeycloakErrors(draft.externalKeycloak).map((e) => e.message),
     );
+    const { caBundle } = draft.externalKeycloak;
+    if (caBundle && secrets) {
+      errors.push(...secretRefErrors("CA bundle Secret", caBundle, secrets));
+    }
   }
   return errors;
 }
@@ -247,7 +257,8 @@ export function planeVersions(
  * mode, the mail while Web Modeler is on, then the errors of planeVersions.
  * With secrets, the Secrets of the namespace of draft, a credentials Secret
  * that the mail names while Web Modeler is on must be among smtpSecrets of
- * them.
+ * them, and the password Secret outside OIDC mode must be among them with
+ * its key.
  */
 export function componentsErrors(
   draft: PlaneDraft,
@@ -259,6 +270,9 @@ export function componentsErrors(
     ...(draft.webModeler ? mailErrors(draft.mail) : []),
     ...(draft.webModeler && secrets
       ? mailSecretErrors(draft.mail, secrets)
+      : []),
+    ...(draft.mode !== "oidc" && draft.admin.password && secrets
+      ? secretRefErrors("Password Secret", draft.admin.password, secrets)
       : []),
     ...versionErrors(planeVersions(draft, ctx), runningOf(draft)),
   ];

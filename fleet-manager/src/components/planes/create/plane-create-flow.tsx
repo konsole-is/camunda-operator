@@ -189,6 +189,8 @@ export function planeSteps(
   const basicsFailures = failures.filter(
     (f) => !STORAGE_KINDS.includes(f.kind),
   );
+  const secretsOf = (draft: PlaneDraft) =>
+    secrets && (draft.namespace?.kind === "existing" ? secrets : []);
   return PLANE_STEPS.map((step) => ({
     ...step,
     check: (draft: PlaneDraft) => {
@@ -197,15 +199,14 @@ export function planeSteps(
         case "basics":
           // A list that cannot be read would let a taken name, or a rule of
           // an Environment, pass unseen.
-          return [...basicsFailures.map(message), ...basicsErrors(draft, ctx)];
+          return [
+            ...basicsFailures.map(message),
+            ...basicsErrors(draft, ctx, secretsOf(draft)),
+          ];
         case "served":
           return servedErrors(draft, ctx, selectorErrors);
         case "components":
-          return componentsErrors(
-            draft,
-            ctx,
-            secrets && (draft.namespace?.kind === "existing" ? secrets : []),
-          );
+          return componentsErrors(draft, ctx, secretsOf(draft));
         case "storage":
           return [
             ...storageFailures.map(message),

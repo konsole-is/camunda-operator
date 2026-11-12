@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useId } from "react";
+import { type ReactNode, useId } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { DraftPath } from "@/components/create/use-create-flow";
 import {
@@ -175,12 +175,11 @@ function MailFields({
 }) {
   const id = useId();
   const usable = smtpSecrets(secrets);
+  // A stale pick stays until the admin changes it: as None, the claim would
+  // lose the sign-in of a server that needs one.
   const stale =
     mail.credentialsSecret !== "" &&
     !usable.some((s) => s.name === mail.credentialsSecret);
-  useEffect(() => {
-    if (stale) onChange("credentialsSecret", "");
-  }, [stale, onChange]);
   return (
     <div className="flex flex-col gap-4 border-l-2 border-border pl-4">
       <TextField
@@ -234,6 +233,11 @@ function MailFields({
           }
         >
           <NativeSelectOption value="">None</NativeSelectOption>
+          {stale && (
+            <NativeSelectOption value={mail.credentialsSecret}>
+              {`${mail.credentialsSecret} (not usable)`}
+            </NativeSelectOption>
+          )}
           {usable.map((s) => (
             <NativeSelectOption key={s.name} value={s.name}>
               {s.name}

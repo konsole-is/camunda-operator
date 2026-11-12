@@ -187,7 +187,7 @@ describe("ComponentsStep", () => {
     expect(options).toEqual(["", "smtp"]);
   });
 
-  it("clears an SMTP Secret that the namespace does not hold", () => {
+  it("keeps an SMTP Secret that the namespace does not hold until the admin picks another", () => {
     const mail = { ...keycloak.mail, credentialsSecret: "smtp" };
     render(
       <Harness
@@ -195,7 +195,16 @@ describe("ComponentsStep", () => {
         secrets={[{ name: "other", keys: ["username", "password"] }]}
       />,
     );
-    expect(draftOf().mail.credentialsSecret).toBe("");
+    expect(draftOf().mail.credentialsSecret).toBe("smtp");
+    const select = screen.getByRole("combobox", {
+      name: "Credentials Secret",
+    }) as HTMLSelectElement;
+    expect(select.value).toBe("smtp");
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([
+      "",
+      "smtp",
+      "other",
+    ]);
   });
 
   it("keeps an SMTP Secret that the namespace holds", () => {
