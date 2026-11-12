@@ -31,6 +31,19 @@ describe("impactLines", () => {
     ]);
   });
 
+  it("says which lists could not be read instead of new claims only, and keeps the count", () => {
+    const [line] = impactLines({
+      clusters: 1,
+      planes: 0,
+      warnings: [],
+      unread: ["Namespace", "PluginRequest"],
+    });
+    expect(line).toBe(
+      "The fleet manager cannot read Namespace, PluginRequest, so the claims that this change touches can be more than this note names. 1 cluster keeps the policy it recorded at creation.",
+    );
+    expect(line).not.toContain("new claims only");
+  });
+
   it("names the claims whose release the edit removes and says that they keep running", () => {
     const [, line] = impactLines({
       clusters: 0,
@@ -43,6 +56,46 @@ describe("impactLines", () => {
       "orders in team-a uses release 8.9.1, which this change no longer allows. The cluster keeps running. A later change of its release must pick an allowed one.",
     );
     expect(line).not.toContain("refused");
+  });
+
+  it("names the Elasticsearch preset in the warning", () => {
+    const [, line] = impactLines({
+      clusters: 0,
+      planes: 0,
+      warnings: [
+        {
+          claim: orders,
+          kind: "ElasticsearchClusterPreset",
+          name: "es-small",
+          removed: true,
+        },
+      ],
+    });
+    expect(line).toBe(
+      "orders in team-a uses Elasticsearch preset es-small, which this change no longer allows. The cluster keeps running. A later change of its preset must pick an allowed one.",
+    );
+  });
+
+  it("says that a management plane keeps running when its PostgreSQL preset goes", () => {
+    const [, line] = impactLines({
+      clusters: 0,
+      planes: 0,
+      warnings: [
+        {
+          claim: {
+            kind: "CamundaManagementClusterClaim",
+            namespace: "platform",
+            name: "plane-a",
+          },
+          kind: "DatabaseServerPreset",
+          name: "pg-small",
+          removed: true,
+        },
+      ],
+    });
+    expect(line).toBe(
+      "plane-a in platform uses PostgreSQL preset pg-small, which this change no longer allows. The management plane keeps running. A later change of its preset must pick an allowed one.",
+    );
   });
 
   it("names the claims whose cluster preset the edit removes", () => {

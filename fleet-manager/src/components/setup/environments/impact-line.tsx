@@ -1,11 +1,7 @@
 import { Info } from "lucide-react";
 import type { EnvironmentImpact, ReferenceWarning } from "./impact";
 
-/**
- * impactLines returns the text of impact: the new-claims-only line with the
- * count of the claims that keep their recorded policy, the namespaces that
- * a first environment leaves without one, then one line for each warning.
- */
+/** impactLines returns the text of impact, with the count line first. */
 export function impactLines(impact: EnvironmentImpact): string[] {
   return [
     countLine(impact),
@@ -42,8 +38,10 @@ export function ImpactLine({ impact }: { impact: EnvironmentImpact }) {
   );
 }
 
-function countLine({ clusters, planes }: EnvironmentImpact): string {
-  const first = "Changes apply to new claims only.";
+function countLine({ clusters, planes, unread }: EnvironmentImpact): string {
+  const first = unread
+    ? `The fleet manager cannot read ${unread.join(", ")}, so the claims that this change touches can be more than this note names.`
+    : "Changes apply to new claims only.";
   const parts = [
     ...(clusters > 0 ? [plural(clusters, "cluster", "clusters")] : []),
     ...(planes > 0
@@ -59,11 +57,12 @@ function countLine({ clusters, planes }: EnvironmentImpact): string {
 export function warningLine(warning: ReferenceWarning): string {
   const claim = `${warning.claim.name} in ${warning.claim.namespace}`;
   if ("removed" in warning) {
-    const [what, field] =
-      warning.kind === "CamundaRelease"
-        ? ["release", "release"]
-        : ["cluster preset", "preset"];
-    return `${claim} uses ${what} ${warning.name}, which this change no longer allows. The cluster keeps running. A later change of its ${field} must pick an allowed one.`;
+    const [what, field] = REMOVED_WORDS[warning.kind];
+    const running =
+      warning.claim.kind === "CamundaClusterClaim"
+        ? "The cluster keeps running."
+        : "The management plane keeps running.";
+    return `${claim} uses ${what} ${warning.name}, which this change no longer allows. ${running} A later change of its ${field} must pick an allowed one.`;
   }
   if ("cleared" in warning) {
     const what =
@@ -79,6 +78,13 @@ export function warningLine(warning: ReferenceWarning): string {
     ? `${claim} names no release and moves to ${warning.name}. Its brokers restart one at a time.`
     : `${claim} names no platform config and moves to ${warning.name}.`;
 }
+
+const REMOVED_WORDS = {
+  CamundaRelease: ["release", "release"],
+  CamundaClusterPreset: ["cluster preset", "preset"],
+  ElasticsearchClusterPreset: ["Elasticsearch preset", "preset"],
+  DatabaseServerPreset: ["PostgreSQL preset", "preset"],
+} as const;
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
