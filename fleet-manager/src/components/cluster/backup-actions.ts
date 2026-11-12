@@ -448,7 +448,7 @@ export function pointInTimeWindow(
     const cut: RestoreInterval = {
       from: from >= floor ? interval.from : new Date(floor).toISOString(),
     };
-    if (interval.to !== undefined && to < nowMs) {
+    if (interval.to !== undefined && to <= nowMs) {
       cut.to = interval.to;
       if (interval.failing) cut.failing = true;
     }

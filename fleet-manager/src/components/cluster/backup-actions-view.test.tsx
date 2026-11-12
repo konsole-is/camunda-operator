@@ -638,7 +638,7 @@ describe("restore to a point in time", () => {
   });
   const window: RestoreInterval[] = [
     { from: "2026-11-05T00:00:00Z", to: "2026-11-08T00:00:00Z", failing: true },
-    { from: "2026-11-09T00:00:00Z" },
+    { from: "2026-11-09T00:00:30Z" },
   ];
 
   async function openPoint() {
@@ -669,15 +669,15 @@ describe("restore to a point in time", () => {
     ).toHaveProperty("disabled", false);
   });
 
-  it("point in time lists the window and refuses a point outside it", async () => {
+  it("point in time lists the window to the second and refuses a point outside it", async () => {
     header(context({ storage: archived(window) }));
     const dialog = await openPoint();
     const items = within(dialog)
       .getAllByRole("listitem")
       .map((li) => li.textContent);
     expect(items).toEqual([
-      "2026-11-05 00:00 UTC to 2026-11-08 00:00 UTC. Uploads are failing after this point.",
-      "2026-11-09 00:00 UTC to now",
+      "2026-11-05 00:00:00 UTC to 2026-11-08 00:00:00 UTC. Uploads are failing after this point.",
+      "2026-11-09 00:00:30 UTC to now",
     ]);
     pick(dialog, "2026-11-08T12:00:00");
     expect(

@@ -34,7 +34,7 @@ import {
   timestampOf,
   waitNote,
 } from "./backup-actions";
-import { type BackupRow, dateTime, type RestoreInterval } from "./backups";
+import type { BackupRow, RestoreInterval } from "./backups";
 
 /**
  * Write is how a backup action writes. apply is the server action of a
@@ -442,8 +442,8 @@ function ConfirmLines({
 }
 
 function intervalText(interval: RestoreInterval): string {
-  const to = interval.to ? dateTime(interval.to) : "now";
-  const text = `${dateTime(interval.from)} to ${to}`;
+  const to = interval.to ? secondText(interval.to) : "now";
+  const text = `${secondText(interval.from)} to ${to}`;
   return interval.failing
     ? `${text}. Uploads are failing after this point.`
     : text;
@@ -452,7 +452,8 @@ function intervalText(interval: RestoreInterval): string {
 // secondText writes an RFC 3339 time as "2026-11-10 09:30:15 UTC": a point
 // in time needs the seconds that dateTime leaves out.
 function secondText(at: string): string {
-  return `${at.slice(0, 10)} ${at.slice(11, 19)} UTC`;
+  const text = new Date(at).toISOString();
+  return `${text.slice(0, 10)} ${text.slice(11, 19)} UTC`;
 }
 
 function DeleteAction({

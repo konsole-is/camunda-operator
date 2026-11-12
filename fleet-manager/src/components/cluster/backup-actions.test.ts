@@ -522,6 +522,21 @@ describe("restore rules", () => {
     });
   });
 
+  it("an interval that ends at now keeps its end, which no point reaches", () => {
+    const window = pointInTimeWindow(
+      [{ from: ago(1), to: NOW, failing: true }],
+      "P7D",
+      NOW,
+    );
+    expect(window).toEqual({
+      intervals: [{ from: ago(1), to: NOW, failing: true }],
+    });
+    const intervals = "intervals" in window ? window.intervals : [];
+    expect(pointInTimeError(NOW, intervals, NOW)).toBe(
+      "Choose a point inside the restore window.",
+    );
+  });
+
   it("the point-in-time window is unavailable without a restore point, outside the Zeebe window, and with a window the fleet manager cannot read", () => {
     expect(pointInTimeWindow([], "P7D", NOW)).toEqual({
       unavailable: "The archive has no restore point yet.",
