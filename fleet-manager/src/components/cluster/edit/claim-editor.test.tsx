@@ -74,10 +74,48 @@ describe("ClaimEditor", () => {
   it("shows the read view with an Edit button on each panel that has an editor", () => {
     editor();
     expect(within(region("Basics")).getByText("orders")).toBeTruthy();
+    for (const panel of [
+      "Basics",
+      "Release and preset",
+      "Attachments",
+      "Deletion policy",
+    ])
+      expect(
+        within(region(panel)).getByRole("button", { name: `Edit ${panel}` }),
+      ).toBeTruthy();
+    for (const panel of ["Conditions", "Requests"])
+      expect(
+        within(region(panel)).queryByRole("button", { name: /^Edit/ }),
+      ).toBeNull();
+  });
+
+  it("opening a panel closes the one in edit and keeps its changes", () => {
+    editor();
+    fireEvent.click(editButton("Basics")!);
+    fireEvent.click(
+      within(region("Basics")).getByRole("checkbox", {
+        name: "Suspend the cluster",
+      }),
+    );
+    fireEvent.click(editButton("Deletion policy")!);
     expect(editButton("Basics")).toBeTruthy();
     expect(
-      within(region("Conditions")).queryByRole("button", { name: /^Edit/ }),
-    ).toBeNull();
+      within(region("Deletion policy")).getByRole("button", { name: "Done" }),
+    ).toBeTruthy();
+    expect(
+      within(region("Unsaved changes")).getByText("1 unsaved change"),
+    ).toBeTruthy();
+  });
+
+  it("opens the Attachments panel from the link of Change schedule", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    window.history.replaceState(null, "", "?tab=claim&section=attachments");
+    editor();
+    expect(
+      within(region("Attachments")).getByRole("checkbox", {
+        name: "Back up on a schedule",
+      }),
+    ).toBeTruthy();
   });
 
   it("Basics shows the name, the namespace, and the environment locked Set at creation", () => {

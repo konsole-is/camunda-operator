@@ -48,6 +48,54 @@ The preset can set a block such as `scheduling` as one value. A claim value of t
 
 When you empty a field, for example when you remove the last label, the claim no longer sets the field. The value of the preset then applies again.
 
+## Change the claim in the Claim tab
+
+The **Claim** tab shows the choices for the whole cluster in panels. Each panel that you can change has an **Edit** button. One panel is open at a time. **Done** closes the panel and keeps its changes as unsaved changes.
+
+**Basics** shows the name, the namespace, and the environment as **Set at creation**. You cannot change them. **Suspend the cluster** sets `spec.suspend` of the claim. Then every workload goes to zero, and the volumes stay.
+
+**Release and preset** has three lists:
+
+- **Release** lists the releases that the environment allows, newest first. The default release of the environment has the word **Default**. The current release stays in the list also when the environment no longer allows it.
+- **Preset** lists the presets that the environment allows. The review of a new preset shows each field of the cluster that changes.
+- **Platform config** lists the `CamundaPlatformConfig` objects. The first choice removes `platformConfigRef` from the claim, so that the platform config of the environment applies. Its name is **Default of the environment** when the environment names one.
+
+The fleet manager checks a new release against the version that the cluster runs:
+
+| The list shows | What it means |
+| --- | --- |
+| Skips 8.*n*. Move to an 8.*n* release first. | The release is one minor too far. Move to a release of the minor between them first. |
+| downgrade | The release has a lower version. The review asks you to confirm the downgrade with **Downgrade**, or **Push downgrade** in Git mode. |
+| The version checks run when the cluster resumes. | The cluster is suspended, so it reports no version. No release shows as a downgrade or a skip. |
+| The version checks run when the cluster reports its version. | The cluster reports no version yet. |
+
+A downgrade writes the release and `allowVersionDowngrade` with the target version:
+
+```yaml
+apiVersion: fleet.camunda.io/v1alpha1
+kind: CamundaClusterClaim
+metadata:
+  name: my-cluster
+  namespace: my-cluster-ns
+spec:
+  releaseRef: camunda-8-9-1
+  allowVersionDowngrade: "8.9.1"
+  # ... the rest of your claim
+```
+
+When the cluster runs the version of `allowVersionDowngrade`, the next save also removes the field. The review shows this removal as a line of the change. With no other unsaved change, the panel shows **Clear**, which removes the field and opens the review. The fleet manager never writes the claim when you only open the page.
+
+Each storage and access option has its own panel. The option shows **Chosen at creation**, because you cannot change it here. The panel has an editor for each parameter that the environment lets the claim change. A parameter with a list of choices shows the names of the choices. The other parameters show their value and the reason. A change writes only the parameter, in `spec.plugins` of the claim.
+
+**Attachments** has two parts:
+
+- **Attach Optimize** adds `spec.attachments.optimize` with the first `ManagementAuthConfig` by name. Then you can pick another **ManagementAuthConfig** and enter the **External URL**. The URL shows **Filled by Access** when an access option gives it. **Optimize settings** opens the settings of Optimize on the **Overview** tab. Optimize needs Elasticsearch as secondary storage and a `ManagementAuthConfig`. Without them, the checkbox is disabled and says which one is missing.
+- **Back up on a schedule** adds `spec.attachments.backupSchedule` with the cron `0 2 * * *`. Then you can change the **Schedule (cron, UTC)**, **Completed backups to keep**, and **Failed backups to keep**. These numbers are whole numbers of 0 or more. An empty number uses the default of the schedule. Without a backup storage option, the checkbox is disabled.
+
+**Change schedule** on the **Backups** tab opens the **Attachments** panel.
+
+**Deletion policy** decides if the resources of the storage and access options stay when the claim is deleted. **Keep the resources** writes `Orphan`, and **Delete the resources** writes `Delete`. The policy that the claim gets without a choice has the word **Default**. When an option always deletes what it made, **Keep the resources** is disabled, and the panel shows that option with **Always deleted**.
+
 ## Save or discard the changes
 
 The bar at the bottom of the page shows the number of unsaved changes, with **Discard** and **Review**:
@@ -57,7 +105,7 @@ The bar at the bottom of the page shows the number of unsaved changes, with **Di
 
 **Discard** removes every unsaved change. The editors then show the live values again.
 
-A value with an error does not count as a change, and the editor shows the error. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.
+A value with an error does not count as a change, and the editor shows the error. While an editor shows an error, **Review** is disabled, and the bar names the field and the error. Correct the value, or close the editor, to enable **Review** again. Kubernetes checks some rules of a field only when you review the change, for example the highest number of Optimize importers. When the change fails such a rule, the review shows the message at the field.
 
 ## The state of a field
 
