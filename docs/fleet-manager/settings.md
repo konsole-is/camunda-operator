@@ -223,7 +223,7 @@ Then set `prometheus.credentialsSecretRef` to `fleet-prometheus`. Without the se
 
 ## Metrics of the charts
 
-The **Metrics** tab of a component on the cluster page shows the live CPU and memory of each pod. Below them, it shows charts over the last hour, 6 hours, or 24 hours. The live rows come from metrics-server. The charts come from Prometheus, and each chart reads one metric:
+The **Metrics** tab of a component on [the cluster page](cluster-page.md) shows the live CPU and memory of each pod. Below them, it shows charts over the last hour, 6 hours, or 24 hours. The live rows come from metrics-server. The charts come from Prometheus, and each chart reads one metric:
 
 | Chart | Metric | Where Prometheus gets it |
 | --- | --- | --- |

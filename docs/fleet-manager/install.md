@@ -35,7 +35,7 @@ kubectl -n camunda-operator-system port-forward service/camunda-operator-fleet-m
 
 Then open <http://localhost:3000> in a browser.
 
-The Fleet page lists the Camunda clusters of this Kubernetes cluster, as [The fleet view](fleet-view.md) shows. In this version, the Setup page shows only its title. This is expected, and the install works.
+The Fleet page lists the Camunda clusters of this Kubernetes cluster, as [The fleet view](fleet-view.md) shows. The Setup page has a list of its pages at the side. In this version, two of them work: **Environments**, as [Environments](environments.md) shows, and **Settings**, as [Settings page](settings.md#settings-page) shows. The other items of the list show "This page could not be found." This is expected, and the install works.
 
 To set the cluster name, the Git repository, and the Prometheus address, see [Fleet manager settings](settings.md).
 

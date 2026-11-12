@@ -62,7 +62,7 @@ Each table of clusters has these columns:
 
 | Column | What it shows |
 | --- | --- |
-| Cluster | The name, which opens the cluster page, and the namespace below it. A cluster that no claim made shows **Not managed**. |
+| Cluster | The name, which opens [the cluster page](cluster-page.md), and the namespace below it. A cluster that no claim made shows **Not managed**. |
 | Status | The `Ready` condition of the cluster, such as `Ready` or `Not ready · Degraded`. A ready cluster shows its reason too when the reason is not `Healthy`, such as `Ready · Suspended`. The message of the condition shows when you hold the pointer on the status. |
 | Version | The Camunda version that the cluster runs, from `status.management.version`, and the preset below it. A suspended cluster shows `-`. |
 | Components | One dot for each component of the cluster, as the next section shows. |
@@ -115,8 +115,9 @@ Three filters apply to every table of clusters on the tab:
 
 - **Search clusters** keeps the clusters whose name holds the text. Upper case and lower case are the same.
 - **Namespace** keeps the clusters of one namespace.
-- **Status** with **Not ready** keeps the clusters whose `Ready` condition is not `True`, also a cluster that has no status yet.
-- **Status** with **With warnings** keeps the clusters that have at least one warning.
+- **Status** keeps the clusters of one state:
+    - **Not ready** keeps the clusters whose `Ready` condition is not `True`, also a cluster that has no status yet.
+    - **With warnings** keeps the clusters that have at least one warning.
 
 The filters do not apply to the management planes. When no cluster passes the filters, the page says "No cluster matches the search and the filters."
 

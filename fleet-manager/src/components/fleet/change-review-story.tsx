@@ -28,7 +28,7 @@ export function ChangeReviewStory({
         mode={mode}
         diffLabel="Changes to the environment"
         effects={effects}
-        confirmLabel="Save"
+        confirm={{ label: "Save" }}
         savedMessage={`The environment ${change.apply[0]?.metadata.name} is saved.`}
         preview={async () => preview}
         apply={async () => ({ ok: true, mode: "direct" })}

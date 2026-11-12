@@ -7,6 +7,7 @@ import {
   type StatusTone,
   TEXT_TONE,
 } from "@/components/fleet/status";
+import { dateTime } from "@/components/fleet/units";
 import {
   Table,
   TableBody,
@@ -23,7 +24,6 @@ import {
   type RestoreInterval,
   type RestoreRow,
   type ScheduleView,
-  dateTime,
 } from "./backups";
 
 const PANEL =

@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatAxis, formatBytes, formatClock, formatCores } from "./units";
+import {
+  dateTime,
+  formatAxis,
+  formatBytes,
+  formatClock,
+  formatCores,
+  secondText,
+} from "./units";
 
 describe("formatCores", () => {
   it.each([
@@ -45,5 +52,37 @@ describe("formatClock", () => {
     // The zone has a half-hour offset, so a clock in the zone of the viewer cannot pass.
     vi.stubEnv("TZ", "Asia/Kolkata");
     expect(formatClock(Date.parse("2026-10-18T11:58:30Z"))).toBe("11:58");
+  });
+});
+
+describe("dateTime", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("writes the UTC date and minute", () => {
+    expect(dateTime("2026-10-18T11:58:31Z")).toBe("2026-10-18 11:58 UTC");
+  });
+
+  it("writes the same text in any zone of the viewer", () => {
+    // The zone has a half-hour offset, so a time in the zone of the viewer cannot pass.
+    vi.stubEnv("TZ", "Asia/Kolkata");
+    expect(dateTime("2026-10-18T11:58:31Z")).toBe("2026-10-18 11:58 UTC");
+  });
+
+  it.each([undefined, "", "not a time"])("writes - for %j", (iso) => {
+    expect(dateTime(iso)).toBe("-");
+  });
+});
+
+describe("secondText", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("writes the UTC date and second in any zone of the viewer", () => {
+    // The zone has a half-hour offset, so a time in the zone of the viewer cannot pass.
+    vi.stubEnv("TZ", "Asia/Kolkata");
+    expect(secondText("2026-11-10T09:30:15Z")).toBe("2026-11-10 09:30:15 UTC");
   });
 });
