@@ -268,6 +268,15 @@ describe("the Deletion policy panel", () => {
     expect(radio(DELETE).closest("label")?.textContent).toContain("Default");
   });
 
+  it("takes Delete, as the claim controller does, when the claim recorded no policy under an environment that keeps", () => {
+    const context = contextOf(["Delete", "Orphan"]);
+    context.environment!.spec.deletionPolicy = "Orphan";
+    panel(context);
+    expect(radio(DELETE).checked).toBe(true);
+    expect(radio(DELETE).closest("label")?.textContent).toContain("Default");
+    expect(radio(KEEP).closest("label")?.textContent).not.toContain("Default");
+  });
+
   it("choosing Keep writes Orphan", async () => {
     panel(contextOf(["Delete", "Orphan"]));
     fireEvent.click(radio(KEEP));

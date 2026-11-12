@@ -18,7 +18,11 @@ import {
   refusedName,
   resolve,
 } from "@/lib/policy";
-import { type ValidationError, validate } from "@/lib/schema";
+import {
+  type OpenAPISchema,
+  type ValidationError,
+  validate,
+} from "@/lib/schema";
 
 /**
  * StorageDraft is the storage part of a create draft, in the shape that
@@ -338,6 +342,56 @@ function missingObjectErrors(
   });
 }
 
+/**
+ * requestSchemaErrors returns the errors that the parameter schema of
+ * registration gives a request with parameters and added, the parameters
+ * that the claim controller adds. The paths are those of validate in the
+ * request. A rule of the schema can span the whole request, so while a
+ * value of added is not known yet (undefined), whole is false and errors
+ * hold only the errors of each value against the schema of its own
+ * property and each required property that the request does not set.
+ * A registration without a parameter schema gives no errors.
+ */
+export function requestSchemaErrors(
+  registration: Pick<PluginRegistration, "spec">,
+  parameters: Readonly<Record<string, unknown>>,
+  added: Readonly<Record<string, unknown | undefined>>,
+): { whole: boolean; errors: ValidationError[] } {
+  const schema = registration.spec.parameters;
+  if (!isObject(schema)) return { whole: true, errors: [] };
+  const unknown = Object.keys(added).filter((k) => added[k] === undefined);
+  const request = { ...parameters, ...added };
+  if (unknown.length === 0) {
+    const checked = validate(schema, request);
+    return { whole: true, errors: checked.ok ? [] : checked.errors };
+  }
+  for (const key of unknown) delete request[key];
+  const checked = validate(propertySchema(schema), request);
+  return {
+    whole: false,
+    errors: checked.ok
+      ? []
+      : checked.errors.filter((e) => !unknown.includes(e.path.split(".")[0])),
+  };
+}
+
+// The keywords of an object schema that check one property at a time.
+const PROPERTY_KEYWORDS = [
+  "type",
+  "properties",
+  "patternProperties",
+  "additionalProperties",
+  "required",
+  "definitions",
+  "$defs",
+];
+
+function propertySchema(schema: Record<string, unknown>): OpenAPISchema {
+  return Object.fromEntries(
+    Object.entries(schema).filter(([k]) => PROPERTY_KEYWORDS.includes(k)),
+  );
+}
+
 // checkAllowed does not check a locked value against the schema of its
 // registration, and the controller of a request refuses parameters that the
 // schema refuses.
@@ -350,14 +404,13 @@ function schemaErrors(
     const registration = draft.registrations.find(
       (r) => r.metadata.name === request.registration,
     );
-    const schema = registration?.spec.parameters;
-    if (!registration || !isObject(schema)) return [];
-    const added = controllerParameters(request, registration);
-    // A rule of the schema can span the whole request, so the operator checks
-    // a request with a value that is not known yet when the claim is written.
-    if (Object.values(added).some((v) => v === undefined)) return [];
-    const checked = validate(schema, { ...request.parameters, ...added });
-    if (checked.ok) return [];
+    if (!registration) return [];
+    const checked = requestSchemaErrors(
+      registration,
+      request.parameters ?? {},
+      controllerParameters(request, registration),
+    );
+    if (!checked.whole || checked.errors.length === 0) return [];
     const [first] = checked.errors;
     return [
       `The policy gives ${registration.spec.label} a value that its schema refuses: ${first.path} ${first.message}. Pick another option, or ask your admin to change the policy of the Environment.`,

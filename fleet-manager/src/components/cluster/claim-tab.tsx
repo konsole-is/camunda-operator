@@ -2,6 +2,10 @@
 
 import { Fragment, type ReactNode, type Ref, useState } from "react";
 import { ConditionsTable } from "@/components/fleet/conditions-table";
+import {
+  DELETION_LABELS,
+  deletionQuestion,
+} from "@/components/fleet/deletion-choice";
 import { FieldState, FieldValue } from "@/components/fleet/field-state";
 import { Button } from "@/components/ui/button";
 import {
@@ -141,8 +145,11 @@ export function ClaimTab({
           <Panel label="Deletion policy" action={action}>
             <Terms>
               <RefTerm
-                label="When the claim is deleted"
-                value={view.deletionPolicy}
+                label={deletionQuestion("cluster")}
+                value={{
+                  ...view.deletionPolicy,
+                  value: deletionLabel(view.deletionPolicy.value),
+                }}
               />
             </Terms>
           </Panel>
@@ -241,6 +248,12 @@ function RefTerm({ label, value }: { label: string; value: ClaimRef }) {
       {value.value ?? <span className="text-muted">Not set</span>}
     </Term>
   );
+}
+
+function deletionLabel(policy: string | undefined): string | undefined {
+  return policy && Object.hasOwn(DELETION_LABELS, policy)
+    ? DELETION_LABELS[policy as keyof typeof DELETION_LABELS]
+    : policy;
 }
 
 function retained(schedule: { completed?: number; failed?: number }) {

@@ -6,6 +6,7 @@ import {
   draftErrors,
   goneSections,
   picksOf,
+  requestSchemaErrors,
   resolvedErrors,
   valueErrors,
   valueProblem,
@@ -375,5 +376,64 @@ describe("resolvedErrors", () => {
         ]);
       },
     );
+  });
+});
+
+describe("requestSchemaErrors", () => {
+  const ruled = {
+    spec: {
+      parameters: {
+        type: "object",
+        required: ["owner"],
+        properties: {
+          owner: { type: "string" },
+          size: { type: "integer" },
+          releaseRef: { type: "string" },
+        },
+        minProperties: 3,
+      },
+    },
+  } as unknown as PluginRegistration;
+
+  it("checks the whole request once every added value is known", () => {
+    expect(
+      requestSchemaErrors(ruled, { owner: "me" }, { releaseRef: "r" }),
+    ).toEqual({ whole: true, errors: [expect.objectContaining({ path: "" })] });
+  });
+
+  it("checks each value by its own property while an added value is not known", () => {
+    expect(
+      requestSchemaErrors(ruled, { size: "big" }, { releaseRef: undefined }),
+    ).toEqual({
+      whole: false,
+      errors: [
+        { path: "owner", message: "is required" },
+        expect.objectContaining({ path: "size" }),
+      ],
+    });
+  });
+
+  it("does not report an added value that is not known", () => {
+    const strict = {
+      spec: {
+        parameters: {
+          ...(ruled.spec.parameters as object),
+          required: ["releaseRef"],
+        },
+      },
+    } as unknown as PluginRegistration;
+    expect(
+      requestSchemaErrors(strict, { releaseRef: 1 }, { releaseRef: undefined }),
+    ).toEqual({ whole: false, errors: [] });
+  });
+
+  it("gives no errors without a parameter schema", () => {
+    expect(
+      requestSchemaErrors(
+        { spec: {} } as unknown as PluginRegistration,
+        { size: "big" },
+        {},
+      ),
+    ).toEqual({ whole: true, errors: [] });
   });
 });

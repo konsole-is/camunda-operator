@@ -6,6 +6,7 @@ import { accessPatterns, defaultAccessPatterns } from "@/lib/claims/hosts";
 import { SLOT_FIELDS } from "@/lib/fields/slots";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
+  type ControllerParameters,
   type StorageDraft,
   draftErrors,
   picksOf,
@@ -129,9 +130,19 @@ export function storageErrors(
     // The step reports each section that it shows in its first render, so a
     // draft that never showed the step takes the defaults that it preselects.
     draft.storage ? draftSelections(draft) : viewSelections(storage, views),
-    (_, registration) =>
-      declaresRelease(registration) ? { releaseRef: release } : {},
+    clusterControllerParameters(release),
   );
+}
+
+/**
+ * clusterControllerParameters returns the ControllerParameters of a cluster
+ * claim that runs release, undefined while it is not known.
+ */
+export function clusterControllerParameters(
+  release: string | undefined,
+): ControllerParameters {
+  return (_, registration) =>
+    declaresRelease(registration) ? { releaseRef: release } : {};
 }
 
 // The claim controller sets releaseRef to the release of the claim on the
