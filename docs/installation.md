@@ -160,6 +160,8 @@ A successful verification prints the certificate subject and the matched claims.
 
 ## Upgrade
 
+If you use `DatabaseServer` with `spec.archive`, [upgrade the Barman Cloud plugin first](#upgrade-the-barman-cloud-plugin-first).
+
 ```bash
 helm upgrade camunda-operator \
   oci://ghcr.io/konsole-is/charts/camunda-operator \
@@ -172,6 +174,17 @@ Without `--set` or `-f`, Helm keeps the values of the last release. If you pass 
 The CRDs carry the annotation `helm.sh/resource-policy: keep`. Helm updates them in place and never deletes them.
 
 To upgrade a manifest install, apply the `install.yaml` of the new release with `--server-side`, as in [Install without Helm](#install-without-helm). Make the same mirror edits again before you apply.
+
+### Upgrade the Barman Cloud plugin first
+
+From this release, a `DatabaseServer` with an archive needs the Barman Cloud plugin 0.16 or later. Upgrade the plugin before you upgrade the operator:
+
+```bash
+kubectl apply --server-side -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.16.0/manifest.yaml
+kubectl rollout status deployment/barman-cloud -n cnpg-system
+```
+
+With an earlier plugin, a new server and the cluster that a [rollback](crds/databaseserver.md#recovery) creates cannot read the archive settings, and they write no archive. A server that archived before the upgrade continues to archive. If you upgraded the operator first, upgrade the plugin now. The servers then start to archive.
 
 ### Connectors no longer use the cluster ServiceAccount
 
