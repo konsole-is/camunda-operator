@@ -8,6 +8,7 @@ import {
   LAST_APPLIED_ANNOTATION,
 } from "@/lib/labels";
 import { APP_FIELD_MANAGER, child, fieldManagers } from "@/lib/merge";
+import { own, setOwn } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import { refKey } from "@/lib/write/refs";
 import { allowedErrors } from "./settings";
@@ -218,8 +219,9 @@ export function updateChange(
   };
 }
 
-// Another field manager can own namespaceCreation.allowed, and a save that
-// leaves the field out keeps it true.
+// Another field manager can own namespaceCreation.allowed, the required
+// flag of a section, and the claimEditable flag of a parameter, and a save
+// that leaves such a flag out keeps it true.
 function updatedSpec(
   live: Environment,
   draft: EnvironmentDraft,
@@ -227,7 +229,44 @@ function updatedSpec(
   const spec = specOf(draft);
   if (live.spec.namespaceCreation?.allowed && !spec.namespaceCreation?.allowed)
     spec.namespaceCreation = { ...spec.namespaceCreation, allowed: false };
+  for (const [section, policy] of Object.entries(live.spec.sections ?? {})) {
+    const edited = own(spec.sections ?? {}, section);
+    if (policy.required && !edited?.required)
+      spec.sections = setEntry(spec.sections, section, {
+        ...edited,
+        required: false,
+      });
+  }
+  for (const [registration, policies] of Object.entries(
+    live.spec.parameters ?? {},
+  )) {
+    for (const [parameter, policy] of Object.entries(policies)) {
+      const edited = own(
+        own(spec.parameters ?? {}, registration) ?? {},
+        parameter,
+      );
+      if (!policy.claimEditable || edited?.claimEditable) continue;
+      spec.parameters = setEntry(
+        spec.parameters,
+        registration,
+        setEntry(own(spec.parameters ?? {}, registration), parameter, {
+          ...edited,
+          claimEditable: false,
+        }),
+      );
+    }
+  }
   return spec;
+}
+
+function setEntry<T>(
+  map: Record<string, T> | undefined,
+  key: string,
+  value: T,
+): Record<string, T> {
+  const next = { ...map };
+  setOwn(next, key, value);
+  return next;
 }
 
 /** deleteChange deletes live when it still has its resourceVersion. */

@@ -364,6 +364,46 @@ describe("the changes", () => {
     expect(change.intent).toBe("Change the environment staging");
   });
 
+  it("updateChange sends required false when the edit turns Required off", () => {
+    const on: Environment = {
+      ...live,
+      spec: {
+        sections: {
+          "backup-storage": { required: true, allowed: ["rustfs"] },
+          access: { required: true, allowed: ["gateway"] },
+        },
+      },
+    };
+    const off = draftOf(on);
+    off.spec.sections = { "backup-storage": { allowed: ["rustfs"] } };
+    expect(
+      (updateChange(on, off).apply[0].spec as Environment["spec"]).sections,
+    ).toEqual({
+      "backup-storage": { required: false, allowed: ["rustfs"] },
+      access: { required: false },
+    });
+  });
+
+  it("updateChange sends claimEditable false when the edit turns A claim can change it off", () => {
+    const on: Environment = {
+      ...live,
+      spec: {
+        parameters: {
+          rustfs: { tier: { value: "gold", claimEditable: true } },
+          s3: { region: { claimEditable: true } },
+        },
+      },
+    };
+    const off = draftOf(on);
+    off.spec.parameters = { rustfs: { tier: { value: "gold" } } };
+    expect(
+      (updateChange(on, off).apply[0].spec as Environment["spec"]).parameters,
+    ).toEqual({
+      rustfs: { tier: { value: "gold", claimEditable: false } },
+      s3: { region: { claimEditable: false } },
+    });
+  });
+
   it("updateChange sends allowed false when the edit turns namespace creation off", () => {
     const on: Environment = {
       ...live,
