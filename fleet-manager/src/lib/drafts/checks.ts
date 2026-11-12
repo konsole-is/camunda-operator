@@ -38,7 +38,7 @@ export type StorageDraft = {
 /**
  * ControllerParameters returns the parameters that the claim controller
  * adds to request, for the schema check of resolvedErrors. A value that the
- * draft does not know yet is undefined, and the check leaves it out.
+ * draft does not know yet is undefined, and the check skips that request.
  */
 export type ControllerParameters = (
   request: RequestParameters,
@@ -318,45 +318,14 @@ function schemaErrors(
     const schema = registration?.spec.parameters;
     if (!registration || !isObject(schema)) return [];
     const added = controllerParameters(request, registration);
-    const later = Object.keys(added).filter((k) => added[k] === undefined);
-    const parameters = Object.fromEntries(
-      Object.entries({ ...request.parameters, ...added }).filter(
-        ([k]) => !later.includes(k),
-      ),
-    );
-    const checked = validate(withoutProperties(schema, later), parameters);
+    // A rule of the schema can span the whole request, so the operator checks
+    // a request with a value that is not known yet when the claim is written.
+    if (Object.values(added).some((v) => v === undefined)) return [];
+    const checked = validate(schema, { ...request.parameters, ...added });
     if (checked.ok) return [];
     const [first] = checked.errors;
     return [
       `The policy gives ${registration.spec.label} a value that its schema refuses: ${first.path} ${first.message}. Pick another option, or ask your admin to change the policy of the Environment.`,
     ];
   });
-}
-
-// lib/schema compiles each schema object once, and the check runs on each
-// render, so each schema and its left-out names keep one derived object.
-const derived = new WeakMap<object, Map<string, Record<string, unknown>>>();
-
-function withoutProperties(
-  schema: Record<string, unknown>,
-  names: readonly string[],
-): Record<string, unknown> {
-  if (names.length === 0) return schema;
-  const key = JSON.stringify(names);
-  const known = derived.get(schema) ?? new Map();
-  derived.set(schema, known);
-  const cached = known.get(key);
-  if (cached) return cached;
-  const properties = isObject(schema.properties) ? schema.properties : {};
-  const result = {
-    ...schema,
-    properties: Object.fromEntries(
-      Object.entries(properties).filter(([k]) => !names.includes(k)),
-    ),
-    ...(Array.isArray(schema.required) && {
-      required: schema.required.filter((k) => !names.includes(k)),
-    }),
-  };
-  known.set(key, result);
-  return result;
 }

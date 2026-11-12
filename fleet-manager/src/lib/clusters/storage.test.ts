@@ -588,7 +588,7 @@ describe("storageErrors and a live list that changed after the pick", () => {
     ]);
   });
 
-  it("leaves the release to a later step while no release is known, and checks the other parameters", () => {
+  it("leaves the release to a later step while no release is known, and still checks each editable value", () => {
     const schema = elasticsearch.spec.parameters as {
       properties: Record<string, unknown>;
     };
@@ -605,15 +605,15 @@ describe("storageErrors and a live list that changed after the pick", () => {
         },
       },
     } as PluginRegistration;
-    const withReplicas = (replicas: number) => ({
+    const dataWith = (releases: Environment["spec"]["releases"]) => ({
       ...dataOf(
         {
-          releases: { allowed: ["camunda-8-9"] },
+          releases,
           presets: { elasticsearchCluster: ["small"] },
           parameters: {
             elasticsearch: {
               preset: { claimEditable: true },
-              overrides: { value: { replicas } },
+              overrides: { claimEditable: true },
             },
           },
         },
@@ -621,14 +621,20 @@ describe("storageErrors and a live list that changed after the pick", () => {
       ),
       registrations: [constrained, existing],
     });
-    const draft = picking("elasticsearch", { preset: "small" });
+    const unknown = dataWith({ allowed: ["camunda-8-9"] });
+    const known = dataWith({
+      allowed: ["camunda-8-9"],
+      default: "camunda-8-9",
+    });
+    const withReplicas = (replicas: number) =>
+      picking("elasticsearch", { preset: "small", overrides: { replicas } });
 
-    expect(storageErrors(draft, withReplicas(1), {}, [])).toEqual([]);
-    expect(storageErrors(draft, withReplicas(0), {}, [])).toEqual([
-      expect.stringMatching(
-        /^The policy gives New Elasticsearch cluster a value that its schema refuses: /,
-      ),
-    ]);
+    expect(storageErrors(withReplicas(1), unknown, {}, [])).toEqual([]);
+    for (const data of [unknown, known]) {
+      expect(storageErrors(withReplicas(0), data, {}, [])).toEqual([
+        "Fix the overrides of New Elasticsearch cluster.",
+      ]);
+    }
   });
 
   it("refuses a locked policy value that the schema of its registration refuses", () => {

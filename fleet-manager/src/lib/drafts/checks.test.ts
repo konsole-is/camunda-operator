@@ -194,4 +194,50 @@ describe("resolvedErrors", () => {
       })),
     ).toEqual([]);
   });
+
+  describe("with a composed rule in the schema", () => {
+    const composed = (rule: Record<string, unknown>) =>
+      ({
+        ...store,
+        spec: {
+          ...store.spec,
+          parameters: {
+            type: "object",
+            properties: {
+              owner: { type: "string" },
+              size: { type: "integer" },
+            },
+            ...rule,
+          },
+        },
+      }) as PluginRegistration;
+    const errorsOf = (
+      rule: Record<string, unknown>,
+      owner: string | undefined,
+    ) =>
+      resolvedErrors(
+        {
+          ...draftOf({ storage: selections }),
+          registrations: [composed(rule)],
+        },
+        [view()],
+        selections,
+        () => ({ owner }),
+      );
+
+    it.each([
+      ["minProperties", { minProperties: 2 }],
+      ["allOf", { allOf: [{ required: ["owner", "size"] }] }],
+    ])(
+      "skips the check of %s while the controller parameter is not known, and checks it in full once it is",
+      (_, rule) => {
+        expect(errorsOf(rule, undefined)).toEqual([]);
+        expect(errorsOf(rule, "me")).toEqual([
+          expect.stringMatching(
+            /^The policy gives Store a value that its schema/,
+          ),
+        ]);
+      },
+    );
+  });
 });
