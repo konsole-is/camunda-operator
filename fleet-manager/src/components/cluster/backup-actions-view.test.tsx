@@ -602,16 +602,24 @@ describe("restore of a backup", () => {
     expect(fakeWriter.applied).toEqual([]);
   });
 
-  it("restore is disabled with its reason when the RDBMS backup is on another minor", () => {
+  it("restore of an RDBMS backup stays enabled when the cluster runs another minor", () => {
     rowActions(
       dump({ version: "8.8.4" }),
       context({ storage: rdbms, clusterVersion: "8.10.1" }),
     );
+    expect(screen.getByRole("button", { name: "Restore" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+  });
+
+  it("restore is disabled with its reason when the backup recorded no version", () => {
+    rowActions(dump({ version: "-" }), context({ storage: rdbms }));
     const button = screen.getByRole("button", { name: "Restore" });
     expect(button).toHaveProperty("disabled", true);
     const described = button.getAttribute("aria-describedby") ?? "";
     expect(document.getElementById(described)?.textContent).toBe(
-      "Backup nightly-1 has Camunda 8.8.4. It restores only into Camunda 8.8 or 8.9, and the cluster has 8.10.1.",
+      "Backup nightly-1 recorded no Camunda version, so it cannot be restored.",
     );
   });
 

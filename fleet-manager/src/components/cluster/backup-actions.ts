@@ -302,9 +302,8 @@ export function clusterVersionOf(
  * restoreBlock gives the reason that Restore is off for the Completed
  * backup of row, or undefined. It is off when the page cannot write, while
  * a restore of the cluster has not ended, and when the backup recorded no
- * x.y.z version. A relational backup also needs a cluster on its Camunda
- * minor or one minor newer, in the same major. An Elasticsearch restore
- * sets the version of the backup on the cluster, so it has no such rule.
+ * x.y.z version. A restore of either kind sets the version of the backup on
+ * the cluster, so the version of the cluster is no rule.
  */
 export function restoreBlock(
   context: BackupContext,
@@ -312,23 +311,10 @@ export function restoreBlock(
 ): string | undefined {
   if (context.changesOff !== undefined) return context.changesOff;
   if (context.restoring !== undefined) return restoringNote(context.restoring);
-  const backup = parseVersion(row.version);
-  if (backup === undefined) {
+  if (parseVersion(row.version) === undefined) {
     return `Backup ${row.name} recorded no Camunda version, so it cannot be restored.`;
   }
-  if (row.kind === "LogicalBackupElasticsearch") return undefined;
-  const cluster = parseVersion(context.clusterVersion);
-  if (cluster === undefined) {
-    return "The cluster has no Camunda version yet, so the version rule cannot be checked.";
-  }
-  const [major, minor] = backup;
-  if (
-    cluster[0] === major &&
-    (cluster[1] === minor || cluster[1] === minor + 1)
-  ) {
-    return undefined;
-  }
-  return `Backup ${row.name} has Camunda ${row.version}. It restores only into Camunda ${major}.${minor} or ${major}.${minor + 1}, and the cluster has ${context.clusterVersion}.`;
+  return undefined;
 }
 
 function restoringNote(restore: string): string {

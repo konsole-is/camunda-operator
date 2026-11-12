@@ -109,12 +109,12 @@ const scheduled: BackupRow = {
 
 /**
  * BackupRowStory shows the actions of a scheduled PostgreSQL backup in its
- * table cell. clusterVersion is the Camunda version of the cluster.
+ * table cell. version is the Camunda version that the backup recorded.
  */
 export function BackupRowStory({
-  clusterVersion = "8.9.4",
+  version = scheduled.version,
 }: {
-  clusterVersion?: string;
+  version?: string;
 }) {
   return (
     <table className="text-sm">
@@ -123,8 +123,8 @@ export function BackupRowStory({
           <td className="pr-4 font-medium">{scheduled.name}</td>
           <td className="min-w-56 whitespace-normal">
             <BackupRowActions
-              context={context("rdbms", { clusterVersion })}
-              row={scheduled}
+              context={context("rdbms")}
+              row={{ ...scheduled, version }}
               apply={apply}
               show={show}
             />

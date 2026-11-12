@@ -24,8 +24,8 @@ export const backupActionsStories: Story[] = [
   },
   {
     component: "BackupActions",
-    name: "Restore blocked by the version rule",
-    render: () => <BackupRowStory clusterVersion="8.11.0" />,
+    name: "Restore of a backup that recorded no version",
+    render: () => <BackupRowStory version="-" />,
   },
   {
     component: "BackupActions",

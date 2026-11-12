@@ -93,12 +93,10 @@ If a restore of the namespace has that name, the fleet manager adds `-2`, `-3`, 
 | Reason on the page | What to do |
 | --- | --- |
 | "Restore my-cluster-restore-1 of this cluster has not ended. Start a new restore after it ends." | Wait until the restore is `Completed` or `Failed`. |
-| "Backup my-cluster-manual-1 recorded no Camunda version, so it cannot be restored." | For both kinds. Choose another backup. A backup without a version of the form `x.y.z` does not restore. |
-| "Backup my-cluster-manual-1 has Camunda 8.8.4. It restores only into Camunda 8.8 or 8.9, and the cluster has 8.10.1." | Only for PostgreSQL. Choose a backup whose Camunda minor is the minor of the cluster, or one minor below it. |
-| "The cluster has no Camunda version yet, so the version rule cannot be checked." | Only for PostgreSQL. Wait until the cluster reports its version. |
+| "Backup my-cluster-manual-1 recorded no Camunda version, so it cannot be restored." | Choose another backup. A backup without a version of the form `x.y.z` does not restore. |
 | "Changes are off: the fleet manager could not read its settings." | Make sure that the fleet manager can read the ConfigMap `fleet-manager-settings`, as [Fleet manager settings](settings.md) shows. |
 
-An Elasticsearch backup has no minor rule. The restore sets the exact version of the backup on the cluster, as [LogicalRestoreElasticsearch: Compatibility](../crds/logicalrestoreelasticsearch.md#compatibility) shows. A PostgreSQL backup restores only into the same Camunda minor or one minor newer, as [LogicalRestoreRDBMS: Compatibility](../crds/logicalrestorerdbms.md#compatibility) shows. A cluster that ran the newer minor comes back on the minor of the backup. [The version after a logical restore](../guides/operations.md#the-version-after-a-logical-restore) shows how to upgrade it again.
+**Restore** has one version rule for both kinds: the backup recorded a version of the form `x.y.z`. The restore sets that version on the cluster, as [LogicalRestoreElasticsearch: Compatibility](../crds/logicalrestoreelasticsearch.md#compatibility) and [LogicalRestoreRDBMS: Compatibility](../crds/logicalrestorerdbms.md#compatibility) show. A cluster that ran a newer version comes back on the version of the backup. [The version after a logical restore](../guides/operations.md#the-version-after-a-logical-restore) shows how to upgrade it again.
 
 While a backup of the cluster runs, **Restore** stays on, and the confirm says that the new restore waits. For example:
 
