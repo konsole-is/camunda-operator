@@ -1,6 +1,6 @@
 # Claim policy fixtures
 
-The cases in this directory show the policy rules that both claim controllers apply. The functions of `pkg/claimpolicy` hold these rules, and their table tests run each case. The fleet manager runs its own policy code against the cases of `environment-of`, `resolve`, `check-allowed`, `inputs`, `slot-fields`, `check-slot-conflicts`, and `check-deletion-policy`. The rules of `order` and `target-service-account` have no page in the fleet manager, so it does not run their cases. The create flow of the fleet manager offers only a registration that serves its section, so it does not run the cases of `check-served` either.
+The cases in this directory show the policy rules that both claim controllers apply. The functions of `pkg/claimpolicy` hold these rules, and their table tests run each case. The fleet manager runs its own policy code against the cases of `environment-of`, `resolve`, `check-allowed`, `inputs`, `slot-fields`, `target-service-account`, `check-slot-conflicts`, and `check-deletion-policy`. The rule of `order` has no page in the fleet manager, so it does not run its cases. The create flow of the fleet manager offers only a registration that serves its section, so it does not run the cases of `check-served` either.
 
 ## Layout
 

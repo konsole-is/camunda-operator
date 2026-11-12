@@ -200,7 +200,7 @@ export function offeredSection(
     const registration = registrations.find((r) => r.metadata.name === allowed);
     if (
       !registration?.spec.sections.includes(name) ||
-      conditionOf(registration, "Accepted")?.status !== "True"
+      !conditionTrue(registration, "Accepted")
     ) {
       return [];
     }
@@ -284,8 +284,20 @@ function optionOf(
 // Contract 3.6: the app offers a registration only while it is accepted and
 // ready.
 function ready(registration: PluginRegistration): boolean {
-  return ["Accepted", "Ready"].every(
-    (type) => conditionOf(registration, type)?.status === "True",
+  return ["Accepted", "Ready"].every((type) =>
+    conditionTrue(registration, type),
+  );
+}
+
+/** conditionTrue says whether object has a condition of type with status True. */
+export function conditionTrue(
+  object: { status?: { conditions?: { type: string; status: string }[] } },
+  type: string,
+): boolean {
+  return (
+    object.status?.conditions?.some(
+      (c) => c.type === type && c.status === "True",
+    ) ?? false
   );
 }
 
