@@ -14,6 +14,7 @@ import { AttachmentsPanel } from "./attachments-panel";
 import { BasicsPanel } from "./basics-panel";
 import { changeInputOf } from "./change-input";
 import { type ClusterClaim, useClusterEdit } from "./cluster-edit";
+import { DeletionPanel } from "./deletion-panel";
 import { ReleasePanel } from "./release-panel";
 import { SectionPanel } from "./section-panel";
 
@@ -140,6 +141,12 @@ function editDefs(context: ClusterSlotContext, view: ClaimView): EditDef[] {
       label: "Attachments",
       name: "Attachments",
       render: () => <AttachmentsPanel context={context} />,
+    },
+    {
+      panel: "deletion",
+      label: "Deletion policy",
+      name: "Deletion policy",
+      render: () => <DeletionPanel context={context} view={view} />,
     },
   ];
 }

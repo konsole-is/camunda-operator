@@ -150,6 +150,11 @@ export const claimEditorStories: Story[] = [
     render: () => <ClaimEditorStory panel="attachments" cluster={ATTACHED} />,
   },
   {
+    component: "Claim editor",
+    name: "Deletion with Keep refused",
+    render: () => <ClaimEditorStory panel="deletion" cluster={ACCESS} />,
+  },
+  {
     component: "WaitingPanel",
     name: "A push of this page",
     render: () => (
