@@ -112,6 +112,11 @@ describe("urlErrors", () => {
       "The Console URL must carry no percent-encoded character.",
     ],
     [
+      "keycloak",
+      `${base}\\foo/auth`,
+      "The Keycloak URL must carry no backslash.",
+    ],
+    [
       "webModeler",
       `${base}\\modeler`,
       "The Web Modeler URL must carry no backslash.",

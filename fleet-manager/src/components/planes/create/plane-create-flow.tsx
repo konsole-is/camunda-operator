@@ -40,7 +40,11 @@ import {
   planeCreateChange,
   servedErrors,
 } from "@/lib/planes/draft";
-import { planeSectionViews, storageErrors } from "@/lib/planes/storage";
+import {
+  planeSectionViews,
+  shownSectionErrors,
+  storageErrors,
+} from "@/lib/planes/storage";
 import type { ValidationError } from "@/lib/schema";
 import type {
   Change,
@@ -170,15 +174,15 @@ export function planeContextOf(
 /**
  * planeSteps returns PLANE_STEPS with the check of each step.
  * selectorErrors are the errors of the cluster labels, and sectionErrors
- * those of the sections of the storage step. failures are the lists that
- * cannot be read. secrets are the Secrets of the existing namespace of the
- * draft.
+ * those of the sections of the storage step, by section name. failures are
+ * the lists that cannot be read. secrets are the Secrets of the existing
+ * namespace of the draft.
  */
 export function planeSteps(
   models: PlaneModels,
   selectorErrors: readonly ValidationError[],
   failures: readonly ReadError[] = [],
-  sectionErrors: readonly ValidationError[] = [],
+  sectionErrors: Readonly<Record<string, readonly ValidationError[]>> = {},
   secrets?: SecretRefs,
 ): CreateStep<PlaneDraft>[] {
   const message = (f: ReadError) =>
@@ -207,17 +211,19 @@ export function planeSteps(
           return servedErrors(draft, ctx, selectorErrors);
         case "components":
           return componentsErrors(draft, ctx, secretsOf(draft));
-        case "storage":
+        case "storage": {
+          const views = planeSectionViews(draft, ctx, models.objects);
           return [
             ...storageFailures.map(message),
             ...storageErrors(
               draft,
               ctx,
-              sectionErrors,
-              planeSectionViews(draft, ctx, models.objects),
+              shownSectionErrors(sectionErrors, views),
+              views,
               models.objects,
             ),
           ];
+        }
         default:
           return [];
       }
@@ -419,7 +425,7 @@ export function PlaneCreateFlow({
     models,
     selectorErrors,
     readErrors,
-    Object.values(sectionErrors).flat(),
+    sectionErrors,
     secrets,
   );
   const flow = useCreateFlow({ steps, initial: EMPTY_PLANE_DRAFT });

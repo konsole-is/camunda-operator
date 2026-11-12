@@ -16,6 +16,7 @@ import {
   goneSections,
   managementHost,
   planeSectionViews,
+  shownSectionErrors,
   storageErrors,
 } from "./storage";
 import type { Running } from "./versions";
@@ -535,6 +536,26 @@ describe("storageErrors and a policy that changed after step 4", () => {
   });
 });
 
+describe("shownSectionErrors", () => {
+  it("keeps only the errors of the sections that views show", () => {
+    const shown = { path: "management-database", message: "Choose an option" };
+    const gone = { path: "dns-zone", message: "Choose an option" };
+    const databases = {
+      name: "management-database",
+      label: "Databases",
+      selection: "One" as const,
+      required: true,
+      options: [],
+    };
+    expect(
+      shownSectionErrors(
+        { "management-database": [shown], "dns-zone": [gone] },
+        { databases },
+      ),
+    ).toEqual([shown]);
+  });
+});
+
 describe("planeSectionViews", () => {
   const ready = {
     conditions: [
@@ -996,6 +1017,54 @@ describe("storageErrors and a live choice that is gone", () => {
     expect(errorsOf(d, c, { DatabaseServerPreset: [preset("large")] })).toEqual(
       ["Fix the PostgreSQL version of New PostgreSQL server."],
     );
+  });
+
+  it("refuses a DatabaseConfig that the policy gives an app that does not run once it is gone", () => {
+    const d = draft({
+      mode: "oidc",
+      storage: { "management-database": [configs({ identity: "id-db" })] },
+    });
+    const c = live({
+      parameters: {
+        "existing-database-configs": {
+          ...configSpec.parameters["existing-database-configs"],
+          keycloak: { claimEditable: true, value: "kc-db" },
+        },
+      },
+    });
+    expect(
+      errorsOf(d, c, { DatabaseConfig: [config("kc-db"), config("id-db")] }),
+    ).toEqual([]);
+    expect(errorsOf(d, c, { DatabaseConfig: [config("id-db")] })).toEqual([
+      "The DatabaseConfig kc-db that the policy gives Keycloak is not in platform. Ask your admin to change the policy of the Environment.",
+    ]);
+  });
+
+  it("refuses a locked policy value that the schema of its registration refuses", () => {
+    const d = draft({
+      storage: {
+        "management-database": [
+          { ...database, parameters: { preset: "large" } },
+        ],
+      },
+    });
+    const withVersion = (value: string) =>
+      live({
+        parameters: {
+          "management-database-server": {
+            preset: editable,
+            version: { value },
+          },
+        },
+        presets: { databaseServer: ["large"] },
+      });
+    const objects = { DatabaseServerPreset: [preset("large")] };
+    expect(errorsOf(d, withVersion("17"), objects)).toEqual([]);
+    expect(errorsOf(d, withVersion("not-a-version"), objects)).toEqual([
+      expect.stringMatching(
+        /^The policy gives New PostgreSQL server a value that its schema refuses: version .+\. Pick another option, or ask your admin to change the policy of the Environment\.$/,
+      ),
+    ]);
   });
 
   it("refuses a DatabaseConfig that an allowed name of the Environment gives once it is gone", () => {

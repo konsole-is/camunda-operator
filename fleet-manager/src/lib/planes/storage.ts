@@ -16,6 +16,7 @@ import {
   byCodeUnit,
   checkAllowed,
   checkDeletionPolicy,
+  isObject,
   offeredSection,
   resolve,
   withMissingInputs,
@@ -260,8 +261,8 @@ export function databaseConfigErrors(
   ];
 }
 
-// missingConfigErrors returns an error for each DatabaseConfig name of a
-// running app in selection, the request, that names does not hold.
+// missingConfigErrors returns an error for each DatabaseConfig name in
+// selection, the request, that names does not hold.
 function missingConfigErrors(
   selection: PluginSelection | undefined,
   running: Running,
@@ -269,16 +270,18 @@ function missingConfigErrors(
   names: readonly string[],
 ): string[] {
   if (selection?.registration !== EXISTING_DATABASE_CONFIGS) return [];
+  // The handler waits for each name, also that of an app that does not run.
   return DATABASE_APPS.flatMap((app) => {
     const name = selection.parameters?.[app];
-    return runs(app, running) &&
-      typeof name === "string" &&
-      name !== "" &&
-      !names.includes(name)
-      ? [
-          `Pick another DatabaseConfig for ${VERSION_LABEL[app]}. ${name} is not in ${namespace}.`,
-        ]
-      : [];
+    if (typeof name !== "string" || name === "" || names.includes(name)) {
+      return [];
+    }
+    const label = VERSION_LABEL[app];
+    return [
+      runs(app, running)
+        ? `Pick another DatabaseConfig for ${label}. ${name} is not in ${namespace}.`
+        : `The DatabaseConfig ${name} that the policy gives ${label} is not in ${namespace}. Ask your admin to change the policy of the Environment.`,
+    ];
   });
 }
 
@@ -406,7 +409,38 @@ function policyErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
         })
       : resolved;
   if ("refusal" in result) return [result.refusal.message];
-  return "error" in result ? [result.error] : [];
+  if ("error" in result) return [result.error];
+  // checkAllowed does not check a locked value against the schema of its
+  // registration, and the built-in controller refuses a request of a built-in
+  // registration whose parameters the schema refuses.
+  return ("value" in resolved ? (resolved.value.requests ?? []) : []).flatMap(
+    (request) => {
+      const registration = ctx.registrations.find(
+        (r) => r.metadata.name === request.registration,
+      );
+      const schema = registration?.spec.parameters;
+      if (!registration || !isObject(schema)) return [];
+      const checked = validate(schema, request.parameters ?? {});
+      if (checked.ok) return [];
+      const [first] = checked.errors;
+      return [
+        `The policy gives ${registration.spec.label} a value that its schema refuses: ${first.path} ${first.message}. Pick another option, or ask your admin to change the policy of the Environment.`,
+      ];
+    },
+  );
+}
+
+/**
+ * shownSectionErrors returns the errors of errors, by section name, of the
+ * sections of views.
+ */
+export function shownSectionErrors(
+  errors: Readonly<Record<string, readonly ValidationError[]>>,
+  views: PlaneSectionViews,
+): ValidationError[] {
+  return shownViews(views).flatMap((v) =>
+    Object.hasOwn(errors, v.name) ? errors[v.name] : [],
+  );
 }
 
 // The flow writes no deletionPolicy, so the claim takes the default of the
@@ -493,8 +527,8 @@ export function contractNameErrors(
 /**
  * storageErrors returns the errors of step 4. sectionErrors are the errors
  * that SectionCards reported, and views the sections of planeSectionViews.
- * With objects, the source kinds of builtinOption in every namespace, the
- * DatabaseConfig of each running app must be in the namespace of draft.
+ * With objects, the source kinds of builtinOption in every namespace, each
+ * DatabaseConfig that the request names must be in the namespace of draft.
  * A section of views whose selected option is missing or disabled, a
  * required parameter that a claim can edit and that has no value, a value
  * that is not among the choices of views, or a section other than the

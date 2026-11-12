@@ -105,6 +105,7 @@ function urlError(value: string, field: PlaneUrlField): string | undefined {
   }
   const scheme = raw[1].toLowerCase();
   const path = raw[2].split(/[?#]/)[0];
+  if (value.includes("\\")) return `${name} must carry no backslash.`;
   if (field.id === "keycloak") {
     if (value.includes("?") || value.includes("#")) {
       return `${name} must carry no query and no fragment.`;
@@ -116,7 +117,6 @@ function urlError(value: string, field: PlaneUrlField): string | undefined {
   if (value.includes("%")) {
     return `${name} must carry no percent-encoded character.`;
   }
-  if (value.includes("\\")) return `${name} must carry no backslash.`;
   if (DOT_SEGMENT.test(value)) {
     return `${name} must carry no . or .. path segment.`;
   }
