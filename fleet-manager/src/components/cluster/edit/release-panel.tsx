@@ -28,10 +28,10 @@ const ALLOW: Step[] = [{ field: "spec" }, { field: "allowVersionDowngrade" }];
  * allowVersionDowngrade to its target too, and another release sets it
  * back to the value of the claim. The preset select offers the presets
  * that the Environment allows and the current one. The empty platform
- * config option removes spec.platformConfigRef. Once the cluster runs the
- * version that allowVersionDowngrade names and nothing is pending, Clear
- * removes the field and opens the review. A field error of a select shows
- * under it. It renders nothing without a session.
+ * config option removes spec.platformConfigRef. Once downgradeDone and
+ * nothing is pending, Clear removes allowVersionDowngrade and opens the
+ * review. A field error of a select shows under it. It renders nothing
+ * without a session.
  */
 export function ReleasePanel({ context }: { context: ClusterSlotContext }) {
   const edit = useClusterEdit();

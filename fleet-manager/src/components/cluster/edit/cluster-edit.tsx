@@ -81,11 +81,10 @@ export type ClaimActions = {
  * unmounts. While an editor shows an error, the change bar blocks Review
  * with the message. discard drops every pending change. review opens the
  * review on the next render when a change is pending, errors is empty, and
- * no editor shows an error, and returns whether it opens it. Once the
- * cluster runs the version that allowVersionDowngrade names, review also
- * resets that field, unless a change sets it. pending is the
- * count of pending changes. show is the show function of useWriteToast of
- * the page: a write that is not a claim change, such as a backup or a
+ * no editor shows an error, and returns whether it opens it. Once
+ * downgradeDone, review also resets allowVersionDowngrade, unless a change
+ * sets it. pending is the count of pending changes. show is the show
+ * function of useWriteToast of the page: a write that is not a claim change, such as a backup or a
  * restore, reports its result through it, so that the page has one toast.
  * errors are the errors of the session before review, then the field
  * errors of a refused preview or write of that session.
@@ -703,10 +702,8 @@ const ALLOW_DOWNGRADE: Step[] = [
   { field: "allowVersionDowngrade" },
 ];
 
-// withDowngradeReset adds the reset of allowVersionDowngrade to s once the
-// cluster reports the version that the field names, unless s changes the
-// field itself. The page never writes this reset alone: it goes with the
-// next save.
+// withDowngradeReset adds the reset of allowVersionDowngrade to s once
+// downgradeDone, unless s changes the field itself.
 function withDowngradeReset(
   s: Session<ClusterClaim>,
   cluster: ClusterSlotContext["cluster"],

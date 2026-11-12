@@ -38,9 +38,7 @@ export const DEFAULT_SCHEDULE = "0 2 * * *";
  * external URL, which stays locked while a section fills it. Back up on a
  * schedule sets DEFAULT_SCHEDULE and needs a backup storage option; while
  * it is on, the panel edits the cron and the counts to keep, where an
- * empty count removes the field. After a discard or a write, the counts
- * show the values of the session again. It renders nothing without a
- * session.
+ * empty count removes the field. It renders nothing without a session.
  */
 export function AttachmentsPanel({ context }: { context: ClusterSlotContext }) {
   const edit = useClusterEdit();
