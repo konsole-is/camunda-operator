@@ -8,6 +8,7 @@ import {
   previewEnvironmentChange,
   previewNamespaceLabel,
 } from "@/app/setup/environments/actions";
+import { CHANGES_OFF } from "@/components/cluster/edit/cluster-edit";
 import { ChangeBar } from "@/components/fleet/change-bar";
 import { ChangeReview } from "@/components/fleet/change-review";
 import { StatusChip } from "@/components/fleet/status-chip";
@@ -169,7 +170,7 @@ export function EnvironmentEditor({
       </header>
       {!mode && (
         <p role="alert" className="text-sm text-bad">
-          Changes are off: the fleet manager could not read its settings.
+          {CHANGES_OFF}
         </p>
       )}
       {sources.errors.map((e) => (
@@ -344,9 +345,15 @@ export function EnvironmentEditor({
                       withoutKept(impact, keptSpec(preview, draft.name)),
                     )
             }
-            danger={deleting}
-            confirmLabel={deleting ? "Delete the environment" : "Save"}
-            gitConfirmLabel={deleting ? "Push the delete to Git" : undefined}
+            confirm={
+              deleting
+                ? {
+                    label: "Delete the environment",
+                    gitLabel: "Push the delete to Git",
+                    danger: true,
+                  }
+                : { label: "Save" }
+            }
             savedMessage={
               deleting
                 ? `The environment ${name} is deleted.`

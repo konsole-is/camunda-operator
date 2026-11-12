@@ -25,7 +25,7 @@ import { DiffView } from "./diff-view";
 import { ReviewPanel } from "./review-panel";
 
 /**
- * ReviewConfirm changes the confirm of ClaimReview. label is the button in
+ * ReviewConfirm changes the confirm of ClaimReview and ChangeReview. label is the button in
  * direct mode, "Save" by default, and gitLabel in Git mode, "Push to Git" by
  * default. typed is a word that the user types before the confirm enables.
  */

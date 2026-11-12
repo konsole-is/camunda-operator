@@ -110,8 +110,10 @@ export function NamespacesSection({
                 ]
               : []),
           ]}
-          confirmLabel="Add the namespace"
-          gitConfirmLabel="Add the namespace"
+          confirm={{
+            label: "Add the namespace",
+            gitLabel: "Add the namespace",
+          }}
           savedMessage={`The namespace ${picked} is in the environment ${environment}.`}
           preview={actions.previewLabel}
           apply={actions.applyLabel}

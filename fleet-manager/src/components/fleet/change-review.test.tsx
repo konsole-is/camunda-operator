@@ -113,12 +113,12 @@ function setup({
   preview = clean,
   result = { ok: true, mode: "direct" },
   mode = "direct",
-  gitConfirmLabel,
+  gitLabel,
 }: {
   preview?: Preview;
   result?: WriteResult;
   mode?: WriteMode;
-  gitConfirmLabel?: string;
+  gitLabel?: string;
 } = {}) {
   const props = {
     preview: vi.fn(async () => preview),
@@ -134,8 +134,7 @@ function setup({
       mode={mode}
       diffLabel="Changes to the environment"
       effects={["Changes apply to new claims only."]}
-      confirmLabel="Save"
-      gitConfirmLabel={gitConfirmLabel}
+      confirm={{ label: "Save", gitLabel }}
       savedMessage="The environment staging is saved."
       {...props}
     />,
@@ -219,13 +218,13 @@ describe("ChangeReview", () => {
     );
   });
 
-  it("reads Push to Git in Git mode, and the confirm label with gitConfirmLabel", async () => {
+  it("reads Push to Git in Git mode, and the confirm label with gitLabel", async () => {
     setup({ mode: "git" });
     await waitFor(() =>
       expect(confirm("Push to Git")).toHaveProperty("disabled", false),
     );
     cleanup();
-    setup({ mode: "git", gitConfirmLabel: "Add the namespace" });
+    setup({ mode: "git", gitLabel: "Add the namespace" });
     await waitFor(() =>
       expect(confirm("Add the namespace")).toHaveProperty("disabled", false),
     );
@@ -328,7 +327,7 @@ describe("ChangeReview", () => {
         mode="direct"
         diffLabel="Changes to the environment"
         effects={effects}
-        confirmLabel="Save"
+        confirm={{ label: "Save" }}
         savedMessage="Saved."
         preview={async () => clean}
         apply={async () => ({ ok: true, mode: "direct" })}
