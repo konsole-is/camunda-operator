@@ -47,12 +47,12 @@ export function checkDeletionPolicy(
 
 /**
  * DeletionChoice is the deletion choice of a create flow. defaultPolicy is
- * spec.deletionPolicy of the Environment, Delete when unset or without an
- * Environment. keepAllowed is false when checkDeletionPolicy refuses Orphan
- * for the selections. alwaysDeleted lists each selection whose registration
- * does not list Orphan, as "<option label> (<section label>)". policy is
- * the policy that the claim gets: the pick, else the default, and Delete
- * when that is Orphan and keepAllowed is false.
+ * the default that deletionChoice took. keepAllowed is false when
+ * checkDeletionPolicy refuses Orphan for the selections. alwaysDeleted lists
+ * each selection whose registration does not list Orphan, as "<option
+ * label> (<section label>)". policy is the policy that the claim gets: the
+ * pick, else the default, and Delete when that is Orphan and keepAllowed is
+ * false.
  */
 export type DeletionChoice = {
   defaultPolicy: DeletionPolicy;
@@ -65,7 +65,9 @@ export type DeletionChoice = {
  * deletionChoice returns the deletion choice of a claim with selections
  * and the deletion pick picked under environment. views give the labels of
  * alwaysDeleted. A selection outside views shows by the label of its
- * registration and the name of its section.
+ * registration and the name of its section. defaultPolicy replaces the
+ * default of environment, Delete when unset or without an Environment, as
+ * for a claim whose resolved policy records a deletion policy.
  */
 export function deletionChoice(
   picked: DeletionPolicy | undefined,
@@ -73,8 +75,8 @@ export function deletionChoice(
   environment: Environment | undefined,
   registrations: readonly PluginRegistration[],
   views: readonly SectionView[] = [],
+  defaultPolicy: DeletionPolicy = environment?.spec.deletionPolicy || "Delete",
 ): DeletionChoice {
-  const defaultPolicy = environment?.spec.deletionPolicy || "Delete";
   const keepAllowed =
     "value" in checkDeletionPolicy("Orphan", selections, registrations);
   const alwaysDeleted = selections.flatMap((s) => {
