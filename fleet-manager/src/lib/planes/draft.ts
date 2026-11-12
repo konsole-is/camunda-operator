@@ -50,9 +50,9 @@ import {
  * the admin; undefined keeps the default of the environment. served is the
  * pick of step 2; undefined serves the environment of step 1. versions
  * holds only the versions that the admin typed. storage holds the
- * selections of the database and access sections, by section name, once
- * step 4 showed the section. urls are the URLs typed
- * for "No access from outside". contractName "" means the claim name.
+ * selections by section name, once step 4 showed the section. urls are the
+ * URLs typed for "No access from outside". contractName "" means the claim
+ * name.
  */
 export type PlaneDraft = {
   environment?: string;
@@ -89,7 +89,7 @@ export const EMPTY_PLANE_DRAFT: PlaneDraft = {
 };
 
 /**
- * PlaneContext is the live data that the steps check a draft against.
+ * PlaneContext is the data that the steps check a draft against.
  * takenNames are the names of the plane claims and CamundaManagementClusters
  * in the namespace of the draft. namespaces are the live namespaces, each
  * with the name of its Environment. images is the images table of the

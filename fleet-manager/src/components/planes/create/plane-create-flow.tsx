@@ -79,8 +79,8 @@ const ACCESS_REQUESTS = {
   labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
 };
 
-// STORAGE_KINDS are the kinds that only the storage step reads. A failed
-// read of one of them blocks that step.
+// STORAGE_KINDS are the kinds that no step before the storage step reads. A
+// failed read of one of them blocks the storage step.
 const STORAGE_KINDS: readonly string[] = [
   "PluginSection",
   "PluginRegistration",
@@ -168,8 +168,7 @@ export function planeContextOf(
  * planeSteps returns PLANE_STEPS with the check of each step.
  * selectorErrors are the errors of the cluster labels, and sectionErrors
  * those of the sections of the storage step. failures are the lists that
- * cannot be read. A list that only the storage step reads blocks that
- * step, and any other list blocks step 1.
+ * cannot be read.
  */
 export function planeSteps(
   models: PlaneModels,
