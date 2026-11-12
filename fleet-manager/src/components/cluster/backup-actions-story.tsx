@@ -5,7 +5,10 @@ import type { BackupContext } from "./backup-actions";
 import { BackupHeaderActions, BackupRowActions } from "./backup-actions-view";
 import type { BackupRow, BackupStorage } from "./backups";
 
-const STORAGE: Record<"elasticsearch" | "rdbms" | "none", BackupStorage> = {
+const STORAGE: Record<
+  "elasticsearch" | "rdbms" | "archived" | "none",
+  BackupStorage
+> = {
   elasticsearch: {
     kind: "elasticsearch",
     bucket: { name: "backups", location: "s3://acme-backups/orders" },
@@ -18,6 +21,25 @@ const STORAGE: Record<"elasticsearch" | "rdbms" | "none", BackupStorage> = {
     schedules: [
       { name: "nightly", cron: "0 2 * * *", completed: 7, failed: 3 },
     ],
+  },
+  archived: {
+    kind: "rdbms",
+    bucket: { name: "backups", location: "s3://acme-backups/orders" },
+    database: {
+      archive: {
+        server: "orders-db",
+        state: { tone: "ok", label: "Archiving" },
+        window: [
+          {
+            from: "2026-11-04T02:00:00Z",
+            to: "2026-11-07T18:20:00Z",
+            failing: true,
+          },
+          { from: "2026-11-08T02:00:00Z" },
+        ],
+      },
+    },
+    schedules: [],
   },
   none: { kind: "none", schedules: [] },
 };
@@ -33,9 +55,10 @@ function context(
     namespace: "team-a",
     cluster: "orders",
     storage: STORAGE[storage],
-    suspended: false,
     backupNames: [],
+    restoreNames: [],
     readingRestores: [],
+    clusterVersion: "8.9.4",
     now: "2026-11-10T14:30:05Z",
     ...over,
   };
@@ -54,8 +77,9 @@ export function BackupHeaderStory({
 }) {
   const over: Partial<BackupContext> = restoring
     ? {
-        suspended: true,
+        suspension: "held",
         running: { what: "Restore", name: "orders-restore-1" },
+        restoring: "orders-restore-1",
       }
     : {};
   return (
@@ -83,8 +107,15 @@ const scheduled: BackupRow = {
   details: [],
 };
 
-/** BackupRowStory shows the actions of a scheduled PostgreSQL backup in its table cell. */
-export function BackupRowStory() {
+/**
+ * BackupRowStory shows the actions of a scheduled PostgreSQL backup in its
+ * table cell. clusterVersion is the Camunda version of the cluster.
+ */
+export function BackupRowStory({
+  clusterVersion = "8.9.4",
+}: {
+  clusterVersion?: string;
+}) {
   return (
     <table className="text-sm">
       <tbody>
@@ -92,7 +123,7 @@ export function BackupRowStory() {
           <td className="pr-4 font-medium">{scheduled.name}</td>
           <td className="min-w-56 whitespace-normal">
             <BackupRowActions
-              context={context("rdbms")}
+              context={context("rdbms", { clusterVersion })}
               row={scheduled}
               apply={apply}
               show={show}

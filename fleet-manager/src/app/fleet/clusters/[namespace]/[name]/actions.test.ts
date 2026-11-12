@@ -206,3 +206,224 @@ describe("applyBackupChange", () => {
     expect(fakeWriter.applied).toEqual([]);
   });
 });
+
+describe("applyBackupChange, restores", () => {
+  const orders = { namespace: "team-a", name: "orders" };
+  const core = "core.camunda.io/v1";
+  const restore = (
+    kind = "LogicalRestoreRDBMS",
+    name = "orders-restore-1",
+    backup = "orders-manual-1",
+  ) => ({
+    intent: "Restore orders",
+    apply: [
+      {
+        apiVersion: core,
+        kind,
+        metadata: { name, namespace: "team-a" },
+        spec:
+          kind === "PointInTimeRestore"
+            ? {
+                clusterRef: { name: "orders" },
+                timestamp: "2026-11-10T09:30:00Z",
+              }
+            : {
+                backupRef: { name: backup },
+                targetClusterRef: { name: "orders" },
+              },
+      },
+    ],
+    create: [`${kind}/team-a/${name}` as const],
+    directOnly: true,
+  });
+  const backupOf = (
+    kind: string,
+    name: string,
+    phase: string | undefined,
+    cluster = "orders",
+  ) => ({
+    apiVersion: core,
+    kind,
+    metadata: { name, namespace: "team-a" },
+    spec: { clusterRef: { name: cluster } },
+    status: phase === undefined ? {} : { phase },
+  });
+  const restoreOf = (
+    kind: string,
+    name: string,
+    phase: string,
+    cluster = "orders",
+    namespace = "team-a",
+  ) => ({
+    apiVersion: core,
+    kind,
+    metadata: { name, namespace },
+    spec:
+      kind === "PointInTimeRestore"
+        ? { clusterRef: { name: cluster } }
+        : { backupRef: { name: "b" }, targetClusterRef: { name: cluster } },
+    status: { phase },
+  });
+  const refOf = (change: ReturnType<typeof restore>) => ({
+    apiVersion: core,
+    kind: change.apply[0].kind,
+    namespace: "team-a",
+    name: change.apply[0].metadata.name,
+  });
+
+  it.each([
+    ["LogicalRestoreRDBMS", "LogicalBackupRDBMS"],
+    ["LogicalRestoreElasticsearch", "LogicalBackupElasticsearch"],
+  ])(
+    "applyBackupChange writes a %s of a Completed backup of the cluster straight to the cluster, also in Git mode",
+    async (kind, backupKind) => {
+      fakeWriter.reset("git");
+      fakeWriter.objects = [
+        backupOf(backupKind, "orders-manual-1", "Completed"),
+        restoreOf(kind, "done-1", "Completed"),
+        restoreOf("PointInTimeRestore", "failed-1", "Failed"),
+        restoreOf(kind, "billing-1", "Pending", "billing"),
+        restoreOf(kind, "elsewhere-1", "Pending", "orders", "team-b"),
+      ];
+      expect(await applyBackupChange(orders, restore(kind))).toEqual({
+        ok: true,
+        mode: "direct",
+      });
+      expect(fakeWriter.applied).toEqual([restore(kind)]);
+    },
+  );
+
+  it("applyBackupChange writes a point-in-time restore of the cluster", async () => {
+    const change = restore("PointInTimeRestore", "orders-pitr-1");
+    expect(await applyBackupChange(orders, change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(fakeWriter.applied).toEqual([change]);
+  });
+
+  it.each([
+    "LogicalRestoreElasticsearch",
+    "LogicalRestoreRDBMS",
+    "PointInTimeRestore",
+  ])(
+    "applyBackupChange refuses a restore name that a %s of the namespace has, and writes nothing",
+    async (kind) => {
+      fakeWriter.objects = [
+        backupOf("LogicalBackupRDBMS", "orders-manual-1", "Completed"),
+        restoreOf(kind, "orders-restore-1", "Completed", "billing"),
+      ];
+      expect(await applyBackupChange(orders, restore())).toEqual({
+        ok: false,
+        errors: [
+          {
+            code: "Stale",
+            message: `The ${kind} orders-restore-1 exists already. Pick another name.`,
+            ref: {
+              apiVersion: core,
+              kind,
+              namespace: "team-a",
+              name: "orders-restore-1",
+            },
+          },
+        ],
+      });
+      expect(fakeWriter.applied).toEqual([]);
+    },
+  );
+
+  it.each([
+    "LogicalRestoreElasticsearch",
+    "LogicalRestoreRDBMS",
+    "PointInTimeRestore",
+  ])(
+    "applyBackupChange refuses a restore while a %s of the cluster has not ended, and writes nothing",
+    async (kind) => {
+      fakeWriter.objects = [
+        backupOf("LogicalBackupRDBMS", "orders-manual-1", "Completed"),
+        restoreOf(kind, "r0", "Pending"),
+      ];
+      for (const change of [
+        restore(),
+        restore("PointInTimeRestore", "orders-pitr-1"),
+      ]) {
+        expect(await applyBackupChange(orders, change)).toEqual({
+          ok: false,
+          errors: [
+            {
+              code: "Stale",
+              message:
+                "Restore r0 of this cluster has not ended. Start a new restore after it ends.",
+              ref: refOf(change),
+            },
+          ],
+        });
+      }
+      expect(fakeWriter.applied).toEqual([]);
+    },
+  );
+
+  it.each([
+    [[], "Backup orders-manual-1 does not exist."],
+    [
+      [backupOf("LogicalBackupElasticsearch", "orders-manual-1", "Completed")],
+      "Backup orders-manual-1 does not exist.",
+    ],
+    [
+      [backupOf("LogicalBackupRDBMS", "orders-manual-1", "Running")],
+      "Backup orders-manual-1 is Running, and a restore reads only a Completed backup.",
+    ],
+    [
+      [backupOf("LogicalBackupRDBMS", "orders-manual-1", undefined)],
+      "Backup orders-manual-1 is Pending, and a restore reads only a Completed backup.",
+    ],
+    [
+      [
+        {
+          ...backupOf("LogicalBackupRDBMS", "orders-manual-1", "Completed"),
+          metadata: {
+            name: "orders-manual-1",
+            namespace: "team-a",
+            deletionTimestamp: "2026-11-12T00:00:00Z",
+          },
+        },
+      ],
+      "Backup orders-manual-1 is being deleted, so a restore cannot read it.",
+    ],
+    [
+      [
+        backupOf(
+          "LogicalBackupRDBMS",
+          "orders-manual-1",
+          "Completed",
+          "billing",
+        ),
+      ],
+      "Backup orders-manual-1 is a backup of the cluster billing. A restore writes only into the cluster of its backup.",
+    ],
+  ])(
+    "applyBackupChange refuses a logical restore of a backup that is missing, not Completed, being deleted, or of another cluster: %#",
+    async (objects, message) => {
+      fakeWriter.objects = objects;
+      expect(await applyBackupChange(orders, restore())).toEqual({
+        ok: false,
+        errors: [{ code: "Stale", message, ref: refOf(restore()) }],
+      });
+      expect(fakeWriter.applied).toEqual([]);
+    },
+  );
+
+  it("applyBackupChange writes no restore when it cannot read the backups and restores", async () => {
+    fakeWriter.readError = new Error("connect ECONNREFUSED");
+    for (const change of [
+      restore(),
+      restore("PointInTimeRestore", "orders-pitr-1"),
+    ]) {
+      expect(await applyBackupChange(orders, change)).toEqual({
+        ok: false,
+        errors: [{ code: "Unavailable", message: "connect ECONNREFUSED" }],
+      });
+    }
+    expect(fakeWriter.applied).toEqual([]);
+  });
+});
