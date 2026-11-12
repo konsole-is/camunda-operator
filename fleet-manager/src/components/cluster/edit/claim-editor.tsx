@@ -14,6 +14,7 @@ import { BasicsPanel } from "./basics-panel";
 import { changeInputOf } from "./change-input";
 import { type ClusterClaim, useClusterEdit } from "./cluster-edit";
 import { ReleasePanel } from "./release-panel";
+import { SectionPanel } from "./section-panel";
 
 // EditDef is one panel of the Claim tab that has an editor. label is the
 // heading, name the accessible name of the panel.
@@ -127,6 +128,12 @@ function editDefs(context: ClusterSlotContext, view: ClaimView): EditDef[] {
       name: "Release and preset",
       render: () => <ReleasePanel context={context} />,
     },
+    ...view.sections.map((section): EditDef => ({
+      panel: section.id,
+      label: section.sectionLabel,
+      name: `${section.sectionLabel}: ${section.optionLabel}`,
+      render: () => <SectionPanel context={context} section={section} />,
+    })),
   ];
 }
 

@@ -41,6 +41,7 @@ export type StoryCluster = {
   version?: string;
   suspended?: boolean;
   claimSpec?: Record<string, unknown>;
+  claimStatus?: Record<string, unknown>;
   over?: Partial<ClusterSlotContext>;
 };
 
@@ -48,6 +49,7 @@ function contextOf({
   version = "8.9.3",
   suspended = false,
   claimSpec = {},
+  claimStatus = {},
   over = {},
 }: StoryCluster): ClusterSlotContext {
   const metadata = { namespace: "team-payments", name: "orders" };
@@ -75,7 +77,7 @@ function contextOf({
       ...(suspended && { suspend: true }),
       ...claimSpec,
     },
-    status: { environment: "prod" },
+    status: { environment: "prod", ...claimStatus },
   } as unknown as Resource<"CamundaClusterClaim">;
   const environment = {
     kind: "Environment",
