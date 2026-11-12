@@ -65,7 +65,7 @@ A list can hold a name that no object has. The editor shows that name checked, w
 
 ## Sections and options
 
-A section is one choice of a claim, for example **Backup storage** or **Access**. An option is a registration that serves the section, for example RustFS for backups. The section **Sections** of the editor has a row for each section, in one group for clusters and one for management planes. The section **Access** is in both groups, and both rows edit one policy.
+A section is one choice of a claim, for example **Backup storage** or **Access**. An option is a `PluginRegistration` that serves the section, for example the registration `rustfs` for backups. The YAML names an option by the name of its registration. The section **Sections** of the editor has a row for each section, in one group for clusters and one for management planes. The section **Access** is in both groups, and both rows edit one policy.
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
@@ -88,11 +88,15 @@ Each row has three settings:
 - **Default option** is the option that the create flow selects first. It must be one of the allowed options, and the page refuses a save with another default.
 - **Required** makes a claim pick an allowed option. The create flow then does not offer the empty option.
 
-The row offers only the options that the operator accepted. An option that is not ready shows its reason, for example `Not ready: AccessDenied on the key.` The create flow offers it only when it is ready. An option can need a value from another section, for example an encryption key for encrypted volumes. If that section has no default, the option shows `Needs an option of Encryption key. Set a default in Encryption key.` A claim that picks the option without an encryption key is refused with `MissingInput`. An allowed name that no accepted option has shows checked, with **Not offered**. Clear the box to remove the name.
+The row offers only the registrations that have the condition `Accepted=True`. An option that is not ready shows `Not ready:` and the message of its `Ready` condition. You can allow it, and the create flow offers it when it is ready.
+
+An option can need a value from another section, for example an encryption key for encrypted volumes. If that section has no default, the option shows `Needs an option of Encryption key. Set a default in Encryption key.` The note does not block a save. A claim that picks the option must also pick an encryption key, or it is refused with `MissingInput`. A default in the other section makes the create flow pick one first.
+
+An allowed name that no accepted registration of the section has shows checked, with **Not offered**. Clear the box to remove the name. A claim that exists keeps the options that it picked when the edit removes one, because the options are part of its recorded policy.
 
 ## Settings of the options
 
-The section **Settings of the options** has an entry for each option that a section allows. Each entry lists the parameters of the option. A field follows the type of the parameter: a number field shows its range, and a parameter with a fixed set of values is a select.
+The section **Settings of the options** has an entry for each option that a section allows. Each entry lists the parameters of the option. A field follows the type of the parameter. A number field shows its range, and a parameter with a fixed set of values is a select.
 
 ```yaml
 apiVersion: fleet.camunda.io/v1alpha1
@@ -116,9 +120,9 @@ spec:
 
 A value of the environment replaces the value of the option. While the field is empty, the page shows the value of the option under it, for example `From the registration: 3`. **A claim can change it** lets a claim of the environment set its own value. Without it, each claim gets the value of the environment, or of the option.
 
-When **A claim can change it** is on, the parameter can get a list of choices. Select **Add a choice** and give each choice a name, a label, and a value. A claim stores the name, and the create flow shows the label. Only the request of the claim gets the value, for example the ARN of a policy. Each name and each label is used once. A parameter can have 32 choices at most. When you turn **A claim can change it** off, the choices go too.
+When **A claim can change it** is on, the parameter can get a list of choices, `allowed` in the YAML. Select **Add a choice** and give each choice a name, a label, and a value. A claim can then pick only a name of the list. A claim stores the name, and the create flow shows the label. Only the request of the claim gets the value, for example the ARN of a policy. Each name and each label is used once. A parameter can have 32 choices at most. When you turn **A claim can change it** off, the choices go too.
 
-A host pattern of an access option shows the host that it gives the first claim of the environment, for example `orders in team-a gets orders.team-a.example.com`. The preset of a built-in Elasticsearch or PostgreSQL option offers only the presets that the section **Presets** allows.
+A host pattern of an access option shows the host that it gives the first claim of the environment, for example `orders in team-a gets orders.team-a.example.com`. The preset of a built-in Elasticsearch or PostgreSQL option offers only the presets that the section **Presets** allows. With an empty list, a new claim of the option is refused with `NotAllowed`, and the page says so.
 
 ## Template parameters
 
@@ -132,13 +136,13 @@ Some parameters are templates, for example the inline policy of the Connectors r
 | `{{ .serviceAccount }}` | The ServiceAccount that the request gives the permissions to. |
 | `{{ .parameters.<name> }}` | The value of another parameter of the option. |
 
-A template parameter cannot read `.outputs`. The editor shows `the placeholder .outputs.bucket is not allowed: a template parameter cannot read the outputs` at the field, and an unknown placeholder gets the same kind of error. The page refuses a save while a template has an error.
+A template parameter cannot read `.outputs`. The editor shows `the placeholder .outputs.bucket is not allowed: a template parameter cannot read the outputs` at the field. An unknown placeholder shows an error such as `unknown placeholder .claimName`. The page refuses a save while a template has an error.
 
-The preview under the editor renders the template for a claim of the environment, which you pick. A parameter that holds an object renders as YAML. If the environment has no claim yet, the preview uses the example claim `example` in the first namespace. If the environment has no namespace, the preview asks you to add one first.
+The preview under the editor renders the template for a claim of the environment, which you pick. A parameter that holds an object renders as YAML. If the environment has no claim yet, the preview uses the example claim `example` in the first namespace by name. If the environment has no namespace, the preview asks you to add one first.
 
 ## Limits set at install
 
-An option can have limits that its install sets, for example a permissions boundary for the role of each cluster. The page shows each limit by its label, as **Permissions boundary (limit set at install)**, with its value. The page cannot change a limit. The chart of the option sets it.
+An option can have limits that its install sets, for example a permissions boundary for the role of each cluster. The page shows each limit by its label, as **Permissions boundary (limit set at install)**, with its value. The page cannot change a limit. The Helm chart that installs the registration sets it.
 
 ## Namespace creation
 
