@@ -3,6 +3,8 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import { clusterControllerParameters } from "@/lib/clusters/storage";
+import { requestSchemaErrors } from "@/lib/drafts";
 import {
   pathFrom,
   REFUSED_CLUSTER_FIELDS,
@@ -16,6 +18,7 @@ import {
   checkAllowed,
   checkDeletionPolicy,
   checkSlotConflicts,
+  deletionPolicyOf,
   equalJSON,
   releaseMove,
   resolve,
@@ -25,7 +28,7 @@ import {
   type PolicyResult,
   type ResolvedPolicy,
 } from "@/lib/policy";
-import { schemaError, validate, type OpenAPISchema } from "@/lib/schema";
+import { schemaError, type OpenAPISchema } from "@/lib/schema";
 import { claimAfter, type Session } from "./session";
 import { valueAt } from "./steps";
 
@@ -54,13 +57,14 @@ type Claim = Resource<"CamundaClusterClaim">;
  * validateClusterClaim returns the errors of the claim after the change of
  * s, before review: each refused field in spec.cluster, the first value that
  * the resolved policy does not allow, the first field that a selected slot
- * fills, each section parameter that fails the schema of its registration,
- * a refused deletion policy, and a release move that skips a minor,
- * downgrades without allowVersionDowngrade set to its version, or names no
- * release. It checks a preset and a release that s sets against the
- * Environment, also without a resolved policy. After a reset of the
- * release, the move goes to the default release of the Environment. Types
- * and ranges of the CRD are left to the dry run.
+ * fills, each section parameter that s sets, changes, or removes and that
+ * the schema of its registration refuses in the request, a refused deletion
+ * policy, and a release move that skips a minor, downgrades without
+ * allowVersionDowngrade set to its version, or names no release. It checks
+ * a preset and a release that s sets against the Environment, also without
+ * a resolved policy. After a reset of the release, the move goes to the
+ * default release of the Environment. Types and ranges of the CRD are left
+ * to the dry run.
  */
 export function validateClusterClaim(
   s: Session<Claim>,
@@ -109,11 +113,10 @@ export function validateClusterClaim(
 
   errors.push(...changedParameterErrors(s.claim, after, ctx, policy));
 
-  // DeletionPolicy of pkg/claimpolicy: the claim, else the resolved policy.
   errors.push(
     ...messagesOf(
       checkDeletionPolicy(
-        spec.deletionPolicy || policy?.deletionPolicy || "Delete",
+        deletionPolicyOf(spec.deletionPolicy, policy),
         selections,
         generated<PluginRegistration[]>(ctx.registrations),
       ),
@@ -155,16 +158,22 @@ function messagesOf(result: PolicyResult<unknown>): FieldError[] {
   return [];
 }
 
-// changedParameterErrors checks each section parameter that after sets to
-// another value than claim.
+// changedParameterErrors checks the request of each selection of after
+// against the schema of its registration, as the create flows do. An error
+// counts only at a parameter that the change sets, changes, or removes, so
+// that a claim that breaks a rule already does not block every later change.
 function changedParameterErrors(
   claim: Claim,
   after: Claim,
   ctx: ClusterClaimContext,
   policy: ResolvedPolicy | undefined,
 ): FieldError[] {
-  const errors: FieldError[] = [];
-  for (const selection of selectionsOf(after)) {
+  const selections = selectionsOf(after);
+  const requests = requestsOf(selections, ctx, policy);
+  const added = clusterControllerParameters(
+    after.spec?.releaseRef || ctx.environment?.spec.releases?.default,
+  );
+  return selections.flatMap((selection, i) => {
     const keys = {
       section: selection.section,
       registration: selection.registration,
@@ -173,76 +182,53 @@ function changedParameterErrors(
       { field: "spec" },
       { field: "plugins" },
       { item: keys },
+      { field: "parameters" },
     ];
-    const before = asObject(
-      valueAt(claim, [...steps, { field: "parameters" }]),
+    const before = asObject(valueAt(claim, steps));
+    const now = asObject(selection.parameters);
+    const touched = [
+      ...new Set([...Object.keys(before), ...Object.keys(now)]),
+    ].filter((name) => !equalJSON(ownValue(now, name), ownValue(before, name)));
+    const registration = ctx.registrations.find(
+      (r) => r.metadata?.name === keys.registration,
     );
-    for (const [name, value] of Object.entries(
-      asObject(selection.parameters),
-    )) {
-      if (
-        equalJSON(value, Object.hasOwn(before, name) ? before[name] : undefined)
-      )
-        continue;
-      const path = pathFrom("", [
-        ...steps,
-        { field: "parameters" },
-        { field: name },
-      ]);
-      errors.push(
-        ...parameterErrors(after, keys, name, value, path, ctx, policy),
-      );
-    }
-  }
-  return errors;
-}
-
-function parameterErrors(
-  after: Claim,
-  keys: { section: string; registration: string },
-  name: string,
-  value: unknown,
-  path: FieldPath,
-  ctx: ClusterClaimContext,
-  policy: ResolvedPolicy | undefined,
-): FieldError[] {
-  // A parameter with choices holds the name of a choice, which the policy
-  // check covers. The schema describes the value of the choice.
-  const choices = policy?.parameters?.[keys.registration]?.[name]?.allowed;
-  if (choices?.length) return [];
-  const registration = ctx.registrations.find(
-    (r) => r.metadata?.name === keys.registration,
-  );
-  const root = asObject(registration?.spec.parameters) as OpenAPISchema;
-  if (Object.keys(root).length === 0) return [];
-  const broken = schemaError(root);
-  if (broken !== undefined)
-    return [{ path, message: `The schema is not valid: ${broken}` }];
-  // The parameters of the request are checked, so that references and root
-  // rules see the values that the plugin gets.
-  const result = validate(root, {
-    ...requestOf(after, keys, ctx, policy),
-    [name]: value,
+    if (!registration || touched.length === 0) return [];
+    const root = asObject(registration.spec.parameters) as OpenAPISchema;
+    if (Object.keys(root).length === 0) return [];
+    const at = (name: string) => pathFrom("", [...steps, { field: name }]);
+    const broken = schemaError(root);
+    if (broken !== undefined)
+      return touched.map((name) => ({
+        path: at(name),
+        message: `The schema is not valid: ${broken}`,
+      }));
+    const { errors } = requestSchemaErrors(
+      generated<PluginRegistration>(registration),
+      requests[i],
+      added(
+        { ...keys, parameters: requests[i] },
+        generated<PluginRegistration>(registration),
+      ),
+    );
+    return touched.flatMap((name) => {
+      // The policy check covers the name of a choice that the claim sets.
+      const choices = policy?.parameters?.[keys.registration]?.[name]?.allowed;
+      if (Object.hasOwn(now, name) && choices?.length) return [];
+      return errors
+        .filter((e) => e.path === name || e.path.startsWith(`${name}.`))
+        .map((e) => ({ path: at(name), message: e.message }));
+    });
   });
-  if (result.ok) return [];
-  return result.errors
-    .filter((e) => e.path === name || e.path.startsWith(`${name}.`))
-    .map((e) => ({ path, message: e.message }));
 }
 
-// requestOf returns the parameters of the request of the selection with
-// keys, as resolve gives them. Without the snapshot of the claim, it returns
-// the parameters of the claim.
-function requestOf(
-  after: Claim,
-  keys: Record<string, unknown>,
+// requestsOf returns the parameters of the request of each selection, as
+// resolve gives them. Without the snapshot of the claim, they are the
+// parameters of the selections.
+function requestsOf(
+  selections: PluginSelection[],
   ctx: ClusterClaimContext,
   policy: ResolvedPolicy | undefined,
-): Record<string, unknown> {
-  const selections = selectionsOf(after);
-  const i = selections.findIndex((s) =>
-    Object.entries(keys).every(([k, v]) => s[k as keyof PluginSelection] === v),
-  );
+): Record<string, unknown>[] {
   const resolution =
     policy &&
     resolve({
@@ -251,9 +237,11 @@ function requestOf(
       registrations: generated<PluginRegistration[]>(ctx.registrations),
       selections,
     });
-  if (resolution && "value" in resolution)
-    return resolution.value.requests?.[i]?.parameters ?? {};
-  return asObject(selections[i]?.parameters);
+  return selections.map((s, i) =>
+    resolution && "value" in resolution
+      ? (resolution.value.requests?.[i]?.parameters ?? {})
+      : asObject(s.parameters),
+  );
 }
 
 function releaseErrors(
@@ -307,6 +295,10 @@ function selectionsOf(claim: Claim): PluginSelection[] {
       typeof p.section === "string" &&
       typeof p.registration === "string",
   );
+}
+
+function ownValue(object: Record<string, unknown>, name: string): unknown {
+  return Object.hasOwn(object, name) ? object[name] : undefined;
 }
 
 // The CRD does not give the parameters of a registration a shape.

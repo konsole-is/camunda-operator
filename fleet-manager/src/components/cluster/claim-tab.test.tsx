@@ -363,6 +363,23 @@ describe("ClaimTab", () => {
     ).toBeTruthy();
   });
 
+  it("says in the words of its editor what happens to the resources when the cluster is deleted", () => {
+    renderTab(MISSING_INPUT);
+    const deletion = () =>
+      screen.getByRole("region", { name: "Deletion policy" });
+    expect(
+      within(deletion()).getByText("When the cluster is deleted"),
+    ).toBeTruthy();
+    expect(within(deletion()).getByText("Delete the resources")).toBeTruthy();
+    cleanup();
+    renderTab({
+      ...MISSING_INPUT,
+      spec: { ...MISSING_INPUT.spec, deletionPolicy: "Orphan" },
+    });
+    expect(within(deletion()).getByText("Keep the resources")).toBeTruthy();
+    expect(within(deletion()).queryByText("Orphan")).toBeNull();
+  });
+
   it("an edit panel shows in place of its read panel", () => {
     renderTab(MISSING_INPUT, {
       panels: {

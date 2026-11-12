@@ -73,6 +73,13 @@ const preset = (name: string, replicas: number) =>
     spec: { cluster: { tasklist: { replicas } } },
   }) as unknown as Resource<"CamundaClusterPreset">;
 
+const release = (name: string, version: string) =>
+  ({
+    kind: "CamundaRelease",
+    metadata: { name },
+    spec: { version },
+  }) as unknown as Resource<"CamundaRelease">;
+
 const platformConfig = (name: string) =>
   ({
     kind: "CamundaPlatformConfig",
@@ -133,6 +140,29 @@ describe("the Release and preset panel", () => {
       "8.9.1 (camunda-8-9-1), Default",
       "8.9.0 (camunda-8-9-0), downgrade",
     ]);
+  });
+
+  it("disables a release that skips a minor and leaves out one that the environment does not allow", () => {
+    const context = slotContext({
+      releases: [
+        ...slotContext().releases,
+        release("camunda-8-11-0", "8.11.0"),
+        release("camunda-8-9-2", "8.9.2"),
+      ],
+    });
+    context.environment!.spec.releases!.allowed = [
+      "camunda-8-9-0",
+      "camunda-8-9-1",
+      "camunda-8-11-0",
+    ];
+    panel(context);
+    const options = [...select("Release").options];
+    const skipping = options.find((o) => o.value === "camunda-8-11-0");
+    expect(skipping?.textContent).toBe(
+      "8.11.0 (camunda-8-11-0): Skips 8.10. Move to an 8.10 release first.",
+    );
+    expect(skipping?.disabled).toBe(true);
+    expect(options.map((o) => o.value)).not.toContain("camunda-8-9-2");
   });
 
   it("a preset change shows the merged fields that change", () => {

@@ -5,6 +5,19 @@ import { Badge } from "@/components/ui/badge";
 import type { DeletionChoice, DeletionPolicy } from "@/lib/policy";
 import { cn } from "@/lib/utils";
 
+/** DELETION_LABELS are the words of each deletion policy. */
+export const DELETION_LABELS: Readonly<Record<DeletionPolicy, string>> = {
+  Orphan: "Keep the resources",
+  Delete: "Delete the resources",
+};
+
+/** deletionQuestion is the question that a deletion policy answers. */
+export function deletionQuestion(
+  subject: "cluster" | "management plane",
+): string {
+  return `When the ${subject} is deleted`;
+}
+
 /**
  * DeletionChoiceField asks "When the <subject> is deleted": "Keep the
  * resources" or "Delete the resources", with "Default" on the default of
@@ -27,7 +40,7 @@ export function DeletionChoiceField({
   return (
     <fieldset className="flex min-w-0 flex-col gap-3">
       <legend className="mb-1 font-heading text-base font-semibold text-text">
-        {`When the ${subject} is deleted`}
+        {deletionQuestion(subject)}
       </legend>
       <p className="-mt-1 text-sm text-muted">
         This applies to the resources of the storage and access options.
@@ -35,7 +48,7 @@ export function DeletionChoiceField({
       <div className="grid gap-3 md:grid-cols-2">
         <PolicyCard
           name={id}
-          label="Keep the resources"
+          label={DELETION_LABELS.Orphan}
           description={`They stay after the ${subject} is gone.`}
           checked={choice.policy === "Orphan"}
           isDefault={choice.defaultPolicy === "Orphan"}
@@ -48,7 +61,7 @@ export function DeletionChoiceField({
         />
         <PolicyCard
           name={id}
-          label="Delete the resources"
+          label={DELETION_LABELS.Delete}
           description={`They are deleted with the ${subject}.`}
           checked={choice.policy === "Delete"}
           isDefault={choice.defaultPolicy === "Delete"}

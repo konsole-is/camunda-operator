@@ -658,6 +658,132 @@ describe("validateClusterClaim", () => {
     expect(validateClusterClaim(set(open(), steps, 2), c)).toEqual([]);
   });
 
+  describe("with a required parameter", () => {
+    const HOST = [...ACCESS, f("parameters"), f("hostnamePattern")];
+    const REPLICAS = [...ACCESS, f("parameters"), f("replicas")];
+    const required = (extra: Record<string, unknown> = {}) => {
+      const c = ctx();
+      c.registrations = [
+        {
+          apiVersion: "plugins.camunda.io/v1alpha1",
+          kind: "PluginRegistration",
+          metadata: { name: "gateway-access" },
+          spec: {
+            parameters: {
+              type: "object",
+              required: ["hostnamePattern"],
+              properties: {
+                hostnamePattern: { type: "string" },
+                replicas: { type: "integer" },
+                releaseRef: { type: "string" },
+              },
+              ...extra,
+            },
+          },
+        } as unknown as Resource<"PluginRegistration">,
+      ];
+      return c;
+    };
+    const editable = (hostnamePattern: Record<string, unknown> = {}) =>
+      ({
+        sections: { access: { allowed: ["gateway-access"] } },
+        parameters: {
+          "gateway-access": {
+            hostnamePattern: { claimEditable: true, ...hostnamePattern },
+            replicas: { claimEditable: true },
+          },
+        },
+      }) as unknown as ResolvedPolicy;
+    const reset = (s: Session<Claim>, steps: Step[]) => {
+      const result = resetValue(s, steps);
+      if (!("session" in result)) throw new Error("refused");
+      return result.session;
+    };
+    const isRequired = {
+      path: pathFrom("", HOST),
+      message: "is required",
+    };
+
+    it("refuses its removal at that parameter", () => {
+      const s = reset(open(claim({}, editable())), HOST);
+      expect(validateClusterClaim(s, required())).toEqual([isRequired]);
+    });
+
+    it("refuses its removal without the snapshot of the claim", () => {
+      expect(validateClusterClaim(reset(open(), HOST), required())).toEqual([
+        isRequired,
+      ]);
+    });
+
+    it("refuses a reset to an Environment value that does not exist", () => {
+      const s = reset(open(claim({}, editable({ value: null }))), HOST);
+      expect(validateClusterClaim(s, required())).toEqual([isRequired]);
+    });
+
+    it("passes its removal when the policy still gives it", () => {
+      const s = reset(
+        open(claim({}, editable({ value: "{name}.policy.example.com" }))),
+        HOST,
+      );
+      expect(validateClusterClaim(s, required())).toEqual([]);
+    });
+
+    it("does not block on an untouched parameter that is broken already", () => {
+      const broken = claim(
+        {
+          plugins: [
+            {
+              section: "access",
+              registration: "gateway-access",
+              parameters: { replicas: "three" },
+            },
+          ],
+        },
+        editable(),
+      );
+      const other = set(open(broken), [f("spec"), f("presetRef")], "large");
+      expect(validateClusterClaim(other, required())).toEqual([]);
+      const touched = set(open(broken), REPLICAS, 2);
+      expect(validateClusterClaim(touched, required())).toEqual([]);
+    });
+
+    it("checks the release that the claim controller adds", () => {
+      const c = required({
+        if: {
+          required: ["releaseRef"],
+          properties: { releaseRef: { const: "camunda-8-9-5" } },
+        },
+        then: { properties: { replicas: { maximum: 3 } } },
+      });
+      const s = set(open(claim({}, editable())), REPLICAS, 4);
+      expect(validateClusterClaim(s, c)).toEqual([
+        { path: pathFrom("", REPLICAS), message: expect.any(String) },
+      ]);
+    });
+
+    it("checks each value by its own schema while the release is not known", () => {
+      const c = required({
+        if: {
+          required: ["releaseRef"],
+          properties: { releaseRef: { const: "camunda-8-9-5" } },
+        },
+        then: { properties: { replicas: { maximum: 3 } } },
+      });
+      const unknown = claim({ releaseRef: undefined }, editable());
+      expect(validateClusterClaim(set(open(unknown), REPLICAS, 4), c)).toEqual(
+        [],
+      );
+      expect(
+        validateClusterClaim(set(open(unknown), REPLICAS, "four"), c),
+      ).toEqual([
+        { path: pathFrom("", REPLICAS), message: expect.any(String) },
+      ]);
+      expect(validateClusterClaim(reset(open(unknown), HOST), c)).toEqual([
+        isRequired,
+      ]);
+    });
+  });
+
   describe("checks a parameter beside the resolved values of the others", () => {
     // replicas may be at most 3 only while tier is 1.
     const tiered = (): ClusterClaimContext => {

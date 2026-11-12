@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import { deletionChoice } from "./deletion";
+import { deletionChoice, deletionPolicyOf } from "./deletion";
+import type { ResolvedPolicy } from "./resolve";
 
 const environment = {
   apiVersion: "fleet.camunda.io/v1alpha1",
@@ -36,5 +37,19 @@ describe("deletionChoice", () => {
     expect(
       deletionChoice(undefined, selections, environment, [keeps], [], "Delete"),
     ).toMatchObject({ defaultPolicy: "Delete", policy: "Delete" });
+  });
+});
+
+describe("deletionPolicyOf", () => {
+  const orphan: ResolvedPolicy = { deletionPolicy: "Orphan" };
+
+  it.each([
+    ["the policy of the claim wins", "Delete", orphan, "Delete"],
+    ["no policy of the claim takes the default", undefined, orphan, "Orphan"],
+    ["an empty policy of the claim takes the default", "", orphan, "Orphan"],
+    ["no snapshot means Delete", undefined, undefined, "Delete"],
+    ["a snapshot without a default means Delete", undefined, {}, "Delete"],
+  ] as const)("%s", (_, own, resolved, want) => {
+    expect(deletionPolicyOf(own, resolved)).toBe(want);
   });
 });

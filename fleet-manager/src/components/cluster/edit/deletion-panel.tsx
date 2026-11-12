@@ -8,6 +8,7 @@ import type { Step } from "@/lib/fields";
 import {
   type DeletionChoice,
   deletionChoice,
+  deletionPolicyOf,
   offeredSection,
   type PluginSelection,
 } from "@/lib/policy";
@@ -62,16 +63,17 @@ function shownChoice(
   const views = (context.sections as unknown as PluginSection[]).map((s) =>
     offeredSection(s, registrations, environment, "CamundaClusterClaim"),
   );
+  const resolved = after.status?.resolvedPolicy;
   const choice = deletionChoice(
     after.spec?.deletionPolicy,
     selections,
     environment,
     registrations,
     views,
-    after.status?.resolvedPolicy?.deletionPolicy || undefined,
+    deletionPolicyOf(undefined, resolved),
   );
   return {
     ...choice,
-    policy: after.spec?.deletionPolicy ?? choice.defaultPolicy,
+    policy: deletionPolicyOf(after.spec?.deletionPolicy, resolved),
   };
 }
