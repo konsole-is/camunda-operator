@@ -18,8 +18,7 @@ type Choice = { name: string; value: unknown };
 /**
  * SectionPanel edits one selection of the claim: its option is locked as
  * chosen at creation, and the parameters that the claim may set have
- * editors. A parameter with choices of the Environment picks its choices
- * by name. section comes from the claim after the pending changes. After
+ * editors. section comes from the claim after the pending changes. After
  * a discard or a write, the editors show the values of the session again.
  * It follows the Secrets of the namespace while it is open, and renders
  * nothing without a session.

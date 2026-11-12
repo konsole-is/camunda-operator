@@ -34,8 +34,7 @@ export const DEFAULT_SCHEDULE = "0 2 * * *";
  * name, and turning it off removes the attachment with its settings. It
  * needs Elasticsearch as secondary storage and a ManagementAuthConfig.
  * While Optimize is on, the panel edits its ManagementAuthConfig and its
- * external URL, which stays locked, with the URL of the live Optimize,
- * while a section fills it. Back up on a
+ * external URL, which stays locked while a section fills it. Back up on a
  * schedule sets DEFAULT_SCHEDULE and needs a backup storage option; while
  * it is on, the panel edits the cron and the counts to keep, where an
  * empty count removes the field. After a discard or a write, the counts
@@ -250,7 +249,7 @@ function Field({
 
 // CountField keeps its own text, so that a count with an error stays in
 // the input while the session keeps the last valid count. It clears its
-// error when it unmounts. set and reset change the session.
+// error when it unmounts.
 function CountField({
   label,
   steps,

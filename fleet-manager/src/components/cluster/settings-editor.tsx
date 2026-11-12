@@ -133,8 +133,6 @@ export function SettingRow({
 }) {
   const [mounted] = useState(setting.value);
   const { editor, steps } = setting;
-  // The parts of a whole setting share its steps, so each part reports its
-  // error at its own path.
   const shows = useShownError(
     steps && setting.holder ? [...steps, ...setting.holder.rest] : steps,
     invalid,

@@ -13,9 +13,9 @@ import { SettingRow } from "./settings-editor";
  * registration. A parameter that the claim cannot change shows its lock
  * reason and no editor. An object parameter with properties, such as
  * overrides, shows one editor for each property, and a change writes the
- * whole parameter. choices turn a parameter into a select of the names
- * of its choices, whatever its schema. It holds no session: set and reset
- * get claim steps from the root of the claim.
+ * whole parameter. choices make a parameter pick the names of its
+ * choices, whatever its schema. It holds no session: set and reset get
+ * claim steps from the root of the claim.
  * invalid gets the error that a parameter shows, as SettingRow gives it.
  */
 export function SelectionSettingsEditor({
