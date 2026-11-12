@@ -19,12 +19,12 @@ export function downgradeDone(
 }
 
 /**
- * downgradeOf returns the versions of the downgrade that session makes or
- * allows: a move to a lower release, or a new allowVersionDowngrade for the
- * lower release that the claim names already. It is undefined for any
- * other session, a release that is not in the context, and a cluster that
- * reports no version. A claim without a release runs the default release of
- * the Environment.
+ * downgradeOf returns the versions of a downgrade for session: a move to a
+ * release below the version that the cluster reports, or a new
+ * allowVersionDowngrade while the claim keeps such a release. It is
+ * undefined for any other session, a release that is not in the context,
+ * and a cluster that reports no version. A claim without a release runs the
+ * default release of the Environment.
  */
 export function downgradeOf(
   context: ClusterSlotContext,

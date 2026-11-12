@@ -80,6 +80,8 @@ export function claimEditable(
     return {
       ...base,
       claimEditable: true,
+      // The values of the choices stay with the claim controller, and the
+      // cards pick choices by name.
       ...("value" in policy && {
         value: namesOf(policy.value, policy.allowed ?? []),
       }),
