@@ -79,9 +79,9 @@ const ATTENTION_KINDS = [
 ];
 
 /**
- * FleetView is the fleet page on the given lists and pod warnings. It
- * fetches nothing. Without podWarnings a row shows only the warnings of its
- * backups and requests.
+ * FleetView is the fleet page on the given lists. It fetches nothing.
+ * Without podWarnings a row shows only the warnings of its backups and
+ * requests.
  */
 export function FleetView({
   sources,
@@ -421,11 +421,7 @@ function FilterBar({
   );
 }
 
-/**
- * FleetViewLive is FleetView on the live lists, starting from initial, and
- * on the pod warnings that useWarnings polls. It never watches pods, logs,
- * or events.
- */
+/** FleetViewLive is FleetView on the live lists, starting from initial. */
 export function FleetViewLive({
   initial,
   now,
@@ -494,6 +490,7 @@ export function FleetViewLive({
       backupsRDBMS.items,
     ],
   );
+  // The fleet page never watches pods, logs, or events.
   const watched = [
     ["CamundaCluster", clusters],
     ["CamundaClusterClaim", claims],
