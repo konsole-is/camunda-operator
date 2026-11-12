@@ -1,9 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useRef, useState, useTransition } from "react";
+import { type ReactNode, useId, useRef, useState, useTransition } from "react";
 import { InlineConfirm } from "@/components/fleet/inline-confirm";
+import { TypedConfirm } from "@/components/fleet/typed-confirm";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { Change, WriteResult } from "@/lib/write/types";
 import {
@@ -16,8 +25,16 @@ import {
   deleteBlock,
   deleteLines,
   manualBackupName,
+  pointInTime,
+  pointInTimeChange,
+  pointInTimeError,
+  restoreBlock,
+  restoreChange,
+  restoreNameOf,
+  timestampOf,
+  waitNote,
 } from "./backup-actions";
-import type { BackupRow } from "./backups";
+import { type BackupRow, dateTime, type RestoreInterval } from "./backups";
 
 /**
  * Write is how a backup action writes. apply is the server action of a
@@ -33,9 +50,10 @@ type Write = {
 };
 
 /**
- * BackupHeaderActions holds Back up now, Change schedule, and the note that
- * the writes skip Git. Back up now opens a form with a name. The form
- * closes when the write succeeds and stays open when it is refused.
+ * BackupHeaderActions holds Back up now, Restore to a point in time when
+ * the cluster has it, Change schedule, and the note that the writes skip
+ * Git. Back up now opens a form with a name. The form closes when the
+ * write succeeds and stays open when it is refused.
  */
 export function BackupHeaderActions({
   context,
@@ -44,6 +62,7 @@ export function BackupHeaderActions({
 }: { context: BackupContext } & Write) {
   const id = useId();
   const state = backUpNow(context);
+  const point = pointInTime(context);
   const [name, setName] = useState<string>();
   const [writing, startWrite] = useTransition();
   const open = name !== undefined;
@@ -69,6 +88,15 @@ export function BackupHeaderActions({
         >
           Change schedule
         </Link>
+        {point && (
+          <PointInTimeAction
+            context={context}
+            state={point}
+            reasonId={`${id}-point-reason`}
+            apply={apply}
+            show={show}
+          />
+        )}
         {!open && (
           <Button
             size="sm"
@@ -82,6 +110,14 @@ export function BackupHeaderActions({
           </Button>
         )}
       </div>
+      {point && "disabled" in point && (
+        <p
+          id={`${id}-point-reason`}
+          className="max-w-md text-right text-xs text-muted"
+        >
+          {point.disabled}
+        </p>
+      )}
       {state.disabled && (
         <p
           id={`${id}-reason`}
@@ -152,11 +188,274 @@ export function BackupHeaderActions({
 }
 
 /**
- * BackupRowActions holds the actions of one backup row: Delete, with a
- * confirm that names what goes and what stays. Delete is off, with the
- * reason of deleteBlock, when that reason is set.
+ * BackupRowActions holds the actions of one backup row. Restore, on a
+ * Completed backup only, opens a confirm that asks for the name of the
+ * cluster. Delete opens a confirm that names what goes and what stays.
+ * Each action is off, with its reason, when restoreBlock or deleteBlock
+ * gives one.
  */
 export function BackupRowActions({
+  context,
+  row,
+  apply,
+  show,
+}: { context: BackupContext; row: BackupRow } & Write) {
+  return (
+    <div className="flex flex-wrap items-start gap-2">
+      {row.phase === "Completed" && (
+        <RestoreAction context={context} row={row} apply={apply} show={show} />
+      )}
+      <DeleteAction context={context} row={row} apply={apply} show={show} />
+    </div>
+  );
+}
+
+function RestoreAction({
+  context,
+  row,
+  apply,
+  show,
+}: { context: BackupContext; row: BackupRow } & Write) {
+  const block = restoreBlock(context, row);
+  const lines = [
+    `Backup ${row.name} has Camunda ${row.version}. ${
+      context.clusterVersion
+        ? `The cluster has ${context.clusterVersion}.`
+        : "The cluster reports no Camunda version yet."
+    }`,
+    `The restore replaces the data of the cluster and sets its version to ${row.version}.`,
+    "It suspends the cluster while it runs, and starts it again when it completes. A failed restore leaves the cluster suspended.",
+  ];
+  return (
+    <RestoreDialog
+      trigger="Restore"
+      title={`Restore ${context.cluster}`}
+      description={`From backup ${row.name}.`}
+      block={block}
+      context={context}
+      write={(name) => restoreChange(context, row, name)}
+      what="restore"
+      apply={apply}
+      show={show}
+    >
+      <ConfirmLines context={context} lines={lines} />
+    </RestoreDialog>
+  );
+}
+
+function PointInTimeAction({
+  context,
+  state,
+  reasonId,
+  apply,
+  show,
+}: {
+  context: BackupContext;
+  state: NonNullable<ReturnType<typeof pointInTime>>;
+  reasonId: string;
+} & Write) {
+  const [local, setLocal] = useState("");
+  const id = useId();
+  const intervals = "intervals" in state ? state.intervals : [];
+  const at = timestampOf(local);
+  const error = pointInTimeError(at, intervals, context.now);
+  const shown = local !== "" ? error : undefined;
+  return (
+    <RestoreDialog
+      trigger="Restore to a point in time"
+      title={`Restore ${context.cluster} to a point in time`}
+      description="Choose a time in UTC inside the restore window."
+      block={"disabled" in state ? state.disabled : undefined}
+      reasonId={reasonId}
+      size="sm"
+      context={context}
+      write={(name) => pointInTimeChange(context, name, at!)}
+      what="pitr"
+      ready={error === undefined}
+      onOpen={() => setLocal("")}
+      apply={apply}
+      show={show}
+    >
+      <>
+        <div className="flex flex-col gap-1">
+          <p className="font-medium text-text">Restore window</p>
+          <ul className="flex list-disc flex-col gap-0.5 pl-5 text-text-2">
+            {intervals.map((interval) => (
+              <li key={interval.from}>{intervalText(interval)}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor={`${id}-at`} className="font-medium">
+            Time (UTC)
+          </label>
+          <Input
+            id={`${id}-at`}
+            type="datetime-local"
+            step={1}
+            value={local}
+            aria-invalid={shown !== undefined || undefined}
+            aria-describedby={shown ? `${id}-error` : undefined}
+            onChange={(event) => setLocal(event.target.value)}
+          />
+          {shown && (
+            <p id={`${id}-error`} className="text-xs text-bad">
+              {shown}
+            </p>
+          )}
+        </div>
+        {error === undefined && at !== undefined && (
+          <ConfirmLines
+            context={context}
+            lines={[
+              `The database server rolls back to ${secondText(at)}, and the Zeebe data goes back to the backup that covers it.`,
+              "The restore suspends the cluster while it runs, and starts it again when it completes.",
+              "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.",
+            ]}
+          />
+        )}
+      </>
+    </RestoreDialog>
+  );
+}
+
+// RestoreDialog is the trigger and the dialog of a restore. The dialog
+// closes when the write returns, so that the toast of the page, which an
+// open modal dialog hides, reports the result.
+function RestoreDialog({
+  trigger,
+  title,
+  description,
+  block,
+  reasonId,
+  size,
+  context,
+  write,
+  what,
+  ready = true,
+  onOpen,
+  apply,
+  show,
+  children,
+}: {
+  trigger: string;
+  title: string;
+  description: string;
+  block?: string;
+  reasonId?: string;
+  size?: "sm";
+  context: BackupContext;
+  write: (name: string) => Change;
+  what: "restore" | "pitr";
+  ready?: boolean;
+  onOpen?: () => void;
+  children: ReactNode;
+} & Write) {
+  const id = useId();
+  const [open, setOpen] = useState(false);
+  const [writing, startWrite] = useTransition();
+  if (block !== undefined) {
+    const describedBy = reasonId ?? `${id}-reason`;
+    return (
+      <div className="flex flex-col gap-1">
+        <Button
+          variant="outline"
+          size={size}
+          disabled
+          aria-describedby={describedBy}
+          className="self-start"
+        >
+          {trigger}
+        </Button>
+        {reasonId === undefined && (
+          <p id={describedBy} className="max-w-56 text-xs text-muted">
+            {block}
+          </p>
+        )}
+      </div>
+    );
+  }
+  const confirm = () => {
+    const name = restoreNameOf(context, what);
+    const change = write(name);
+    startWrite(async () => {
+      const result = await apply(clusterOf(context), change).catch(rejected);
+      setOpen(false);
+      show(result, `Restore ${name} created.`);
+    });
+  };
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (next) onOpen?.();
+        setOpen(next);
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="outline" size={size}>
+          {trigger}
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-4 text-sm">
+          {children}
+          {ready && (
+            <TypedConfirm
+              name={context.cluster}
+              confirmLabel="Restore"
+              pending={writing}
+              onConfirm={confirm}
+            />
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ConfirmLines({
+  context,
+  lines,
+}: {
+  context: BackupContext;
+  lines: string[];
+}) {
+  const waits =
+    context.running?.what === "Backup"
+      ? waitNote(context.running, "restore")
+      : undefined;
+  return (
+    <div className="flex flex-col gap-2">
+      <ul className="flex list-disc flex-col gap-1 pl-5 text-text-2">
+        {lines.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+      {waits && <p className="text-xs text-info">{waits}</p>}
+    </div>
+  );
+}
+
+function intervalText(interval: RestoreInterval): string {
+  const to = interval.to ? dateTime(interval.to) : "now";
+  const text = `${dateTime(interval.from)} to ${to}`;
+  return interval.failing
+    ? `${text}. Uploads are failing after this point.`
+    : text;
+}
+
+// secondText writes an RFC 3339 time as "2026-11-10 09:30:15 UTC": a point
+// in time needs the seconds that dateTime leaves out.
+function secondText(at: string): string {
+  return `${at.slice(0, 10)} ${at.slice(11, 19)} UTC`;
+}
+
+function DeleteAction({
   context,
   row,
   apply,
@@ -179,7 +478,7 @@ export function BackupRowActions({
         >
           Delete
         </Button>
-        <p id={`${id}-reason`} className="text-xs text-muted">
+        <p id={`${id}-reason`} className="max-w-56 text-xs text-muted">
           {block}
         </p>
       </div>

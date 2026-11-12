@@ -19,7 +19,17 @@ export const backupActionsStories: Story[] = [
   },
   {
     component: "BackupActions",
-    name: "Row actions of a scheduled PostgreSQL backup",
+    name: "Restore a completed PostgreSQL backup",
     render: () => <BackupRowStory />,
+  },
+  {
+    component: "BackupActions",
+    name: "Restore blocked by the version rule",
+    render: () => <BackupRowStory clusterVersion="8.11.0" />,
+  },
+  {
+    component: "BackupActions",
+    name: "Point in time on PostgreSQL with recovery by the operator",
+    render: () => <BackupHeaderStory storage="archived" />,
   },
 ];

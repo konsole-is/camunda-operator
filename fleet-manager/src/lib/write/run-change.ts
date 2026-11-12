@@ -114,11 +114,16 @@ const BACKUP_METADATA: readonly string[] = [
 /**
  * backupChangeSchema accepts a Change with directOnly, no force, and no
  * preconditions that does one of two things for cluster. It creates one
- * backup of either kind in the namespace of cluster, listed in create, with
- * only name, namespace, labels, and annotations in its metadata and a spec
- * of exactly { clusterRef: { name: cluster.name } }. Or it deletes one
- * backup of either kind in that namespace. A delete has no precondition,
- * because the status of a running backup changes its resourceVersion.
+ * backup or restore in the namespace of cluster, listed in create, with
+ * only name, namespace, labels, and annotations in its metadata. The spec
+ * of a backup of either kind is exactly { clusterRef: { name } }, of a
+ * logical restore of either kind exactly { backupRef: { name },
+ * targetClusterRef: { name } }, and of a PointInTimeRestore exactly
+ * { clusterRef: { name }, timestamp }, where each cluster name is
+ * cluster.name and timestamp is RFC 3339 in UTC to the second. Or it
+ * deletes one backup of either kind in that namespace. A delete has no
+ * precondition, because the status of a running backup changes its
+ * resourceVersion.
  */
 export function backupChangeSchema(cluster: {
   namespace: string;
@@ -134,7 +139,7 @@ export function backupChangeSchema(cluster: {
       if (c.apply.length === 1 && c.delete === undefined) {
         const object = c.apply[0];
         return (
-          isClusterBackup(object, cluster) &&
+          isClusterWrite(object, cluster) &&
           c.create?.length === 1 &&
           c.create[0] === refKey(refOf(object))
         );
@@ -152,18 +157,22 @@ export function backupChangeSchema(cluster: {
     },
     {
       message:
-        "The change must create one backup of the cluster, or delete one backup in its namespace, straight to the cluster.",
+        "The change must create one backup or restore of the cluster, or delete one backup in its namespace, straight to the cluster.",
     },
   );
 }
 
 /**
- * runBackupChange is runChange with backupChangeSchema(cluster). A new
- * backup also fails with Stale, and writes nothing, when a backup of either
- * kind in the namespace has its name. A delete fails with Stale while a
- * logical restore that is not Completed or Failed reads the backup. When
- * these checks cannot read the backups or the restores, it gives
- * Unavailable and writes nothing.
+ * runBackupChange is runChange with backupChangeSchema(cluster). Each
+ * refusal below gives Stale and writes nothing. A new backup fails when a
+ * backup of either kind in the namespace has its name, and a new restore
+ * when a restore of any kind there has its name. A new restore also fails
+ * while a restore of the cluster is not Completed or Failed, and a new
+ * logical restore when its backup does not exist, is not Completed, or is
+ * a backup of another cluster. A delete fails while a logical restore that
+ * is not Completed or Failed reads the backup. When these checks cannot
+ * read the backups or the restores, it gives Unavailable and writes
+ * nothing.
  */
 export async function runBackupChange(
   cluster: { namespace: string; name: string },
@@ -173,7 +182,7 @@ export async function runBackupChange(
   const parsed = schema.safeParse(input);
   if (!parsed.success) return { ok: false, errors: issuesOf(parsed.error) };
   try {
-    const refusal = await backupRefusalOf(cluster.namespace, parsed.data);
+    const refusal = await backupRefusalOf(cluster, parsed.data);
     if (refusal !== undefined) return { ok: false, errors: [refusal] };
   } catch (error) {
     return { ok: false, errors: [unavailable(error)] };
@@ -186,38 +195,66 @@ const RESTORE_OF = {
   LogicalBackupRDBMS: "LogicalRestoreRDBMS",
 } as const;
 
-async function backupRefusalOf(
+const BACKUP_OF = {
+  LogicalRestoreElasticsearch: "LogicalBackupElasticsearch",
+  LogicalRestoreRDBMS: "LogicalBackupRDBMS",
+} as const;
+
+const RESTORE_KINDS = [
+  "LogicalRestoreElasticsearch",
+  "LogicalRestoreRDBMS",
+  "PointInTimeRestore",
+] as const;
+
+type Stored = KubeObject & {
+  spec?: {
+    backupRef?: { name?: string };
+    clusterRef?: { name?: string };
+    targetClusterRef?: { name?: string };
+  };
+  status?: { phase?: string };
+};
+
+async function listStored(
+  kind: Parameters<typeof listObjects>[0],
   namespace: string,
+): Promise<Stored[]> {
+  return (await listObjects(kind, namespace)) as Stored[];
+}
+
+function ended(object: Stored): boolean {
+  const phase = object.status?.phase;
+  return phase === "Completed" || phase === "Failed";
+}
+
+async function backupRefusalOf(
+  cluster: { namespace: string; name: string },
   change: Change,
 ): Promise<ApiError | undefined> {
-  const [backup] = change.apply;
-  if (backup !== undefined) {
+  const { namespace } = cluster;
+  const [object] = change.apply;
+  if (object !== undefined && !BACKUP_KINDS.includes(object.kind)) {
+    return restoreRefusalOf(cluster, object as Stored);
+  }
+  if (object !== undefined) {
     const taken = await firstExisting(
       BACKUP_KINDS.map((kind) => ({
         apiVersion: BACKUP_API_VERSION,
         kind,
         namespace,
-        name: backup.metadata.name,
+        name: object.metadata.name,
       })),
     );
     return taken === undefined ? undefined : existsError(taken);
   }
   const ref = change.delete![0];
-  const restores = await listObjects(
+  const restores = await listStored(
     RESTORE_OF[ref.kind as keyof typeof RESTORE_OF],
     namespace,
   );
-  const reader = restores.find((r) => {
-    const { spec, status } = r as {
-      spec?: { backupRef?: { name?: string } };
-      status?: { phase?: string };
-    };
-    return (
-      spec?.backupRef?.name === ref.name &&
-      status?.phase !== "Completed" &&
-      status?.phase !== "Failed"
-    );
-  });
+  const reader = restores.find(
+    (r) => r.spec?.backupRef?.name === ref.name && !ended(r),
+  );
   return reader === undefined
     ? undefined
     : {
@@ -227,7 +264,49 @@ async function backupRefusalOf(
       };
 }
 
-function isClusterBackup(
+async function restoreRefusalOf(
+  cluster: { namespace: string; name: string },
+  restore: Stored,
+): Promise<ApiError | undefined> {
+  const { namespace } = cluster;
+  const ref = refOf(restore);
+  const restores = (
+    await Promise.all(RESTORE_KINDS.map((kind) => listStored(kind, namespace)))
+  ).flat();
+  const taken = restores.find((r) => r.metadata.name === restore.metadata.name);
+  if (taken !== undefined) return existsError(refOf(taken));
+  const running = restores.find((r) => {
+    const target =
+      r.kind === "PointInTimeRestore"
+        ? r.spec?.clusterRef?.name
+        : r.spec?.targetClusterRef?.name;
+    return target === cluster.name && !ended(r);
+  });
+  if (running !== undefined) {
+    return {
+      code: "Stale",
+      message: `Restore ${running.metadata.name} of this cluster has not ended. Start a new restore after it ends.`,
+      ref,
+    };
+  }
+  if (!(restore.kind in BACKUP_OF)) return undefined;
+  const backupKind = BACKUP_OF[restore.kind as keyof typeof BACKUP_OF];
+  const name = restore.spec?.backupRef?.name;
+  const backups = await listStored(backupKind, namespace);
+  const backup = backups.find((b) => b.metadata.name === name);
+  const of = backup?.spec?.clusterRef?.name;
+  const phase = backup?.status?.phase || "Pending";
+  let message: string | undefined;
+  if (backup === undefined) message = `Backup ${name} does not exist.`;
+  else if (of !== cluster.name) {
+    message = `Backup ${name} is a backup of the cluster ${of}. A restore writes only into the cluster of its backup.`;
+  } else if (phase !== "Completed") {
+    message = `Backup ${name} is ${phase}, and a restore reads only a Completed backup.`;
+  }
+  return message === undefined ? undefined : { code: "Stale", message, ref };
+}
+
+function isClusterWrite(
   object: KubeObject,
   cluster: { namespace: string; name: string },
 ): boolean {
@@ -235,10 +314,37 @@ function isClusterBackup(
   return (
     Object.keys(rest).length === 0 &&
     apiVersion === BACKUP_API_VERSION &&
-    BACKUP_KINDS.includes(kind) &&
     metadata.namespace === cluster.namespace &&
     Object.keys(metadata).every((key) => BACKUP_METADATA.includes(key)) &&
-    equalJSON(spec, { clusterRef: { name: cluster.name } })
+    specFits(kind, spec, cluster.name)
+  );
+}
+
+// SECOND_UTC is the form of an RFC 3339 time in UTC to the second, the form
+// in which the page writes the timestamp of a PointInTimeRestore.
+const SECOND_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+function specFits(kind: string, spec: unknown, cluster: string): boolean {
+  const ref = { name: cluster };
+  if (BACKUP_KINDS.includes(kind)) return equalJSON(spec, { clusterRef: ref });
+  const fields = spec as
+    { backupRef?: { name?: unknown }; timestamp?: unknown } | undefined;
+  if (kind in BACKUP_OF) {
+    const name = fields?.backupRef?.name;
+    return (
+      typeof name === "string" &&
+      name !== "" &&
+      equalJSON(spec, { backupRef: { name }, targetClusterRef: ref })
+    );
+  }
+  if (kind !== "PointInTimeRestore") return false;
+  const timestamp = fields?.timestamp;
+  return (
+    typeof timestamp === "string" &&
+    SECOND_UTC.test(timestamp) &&
+    !Number.isNaN(Date.parse(timestamp)) &&
+    new Date(timestamp).toISOString().startsWith(timestamp.slice(0, 19)) &&
+    equalJSON(spec, { clusterRef: ref, timestamp })
   );
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import type { BackupLike } from "./backups";
-import { releaseMove } from "./release";
+import { parseVersion, releaseMove } from "./release";
 
 const cluster = (version?: string, specVersion?: string) => ({
   metadata: { namespace: "team-a", name: "orders" },
@@ -128,5 +128,14 @@ describe("releaseMove", () => {
       namespace: "team-a",
       name: "nightly-1",
     });
+  });
+});
+
+describe("parseVersion", () => {
+  it("parseVersion reads major.minor.patch and refuses another form", () => {
+    expect(parseVersion("8.10.2")).toEqual([8, 10, 2]);
+    for (const version of ["8.10", "8.10.2-rc1", "v8.10.2", "", undefined]) {
+      expect(parseVersion(version)).toBeUndefined();
+    }
   });
 });

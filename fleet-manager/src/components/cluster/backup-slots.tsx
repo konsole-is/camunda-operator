@@ -7,7 +7,11 @@ import {
   runningBackup,
   runningRestore,
 } from "@/lib/policy/backups";
-import { type BackupContext, clusterSuspended } from "./backup-actions";
+import {
+  type BackupContext,
+  clusterVersionOf,
+  suspensionOf,
+} from "./backup-actions";
 import { BackupHeaderActions, BackupRowActions } from "./backup-actions-view";
 import type { BackupObject, BackupRow } from "./backups";
 import type { Change, WriteResult } from "@/lib/write/types";
@@ -15,20 +19,28 @@ import { CHANGES_OFF, useClusterEdit } from "./edit/cluster-edit";
 import type { ClusterSlotContext, ClusterSlots } from "./slots";
 
 /**
- * backupContextOf reads the BackupContext of the backup actions from the
- * slot context. changesOff is CHANGES_OFF when the page has no write mode.
+ * backupContextOf reads the BackupContext of the backup and restore actions
+ * from the slot context. changesOff is CHANGES_OFF when the page has no
+ * write mode.
  */
 export function backupContextOf(context: ClusterSlotContext): BackupContext {
   const { cluster, backups, restores } = context;
+  const spec = context.merged.spec;
   const namespace = cluster.metadata?.namespace ?? "";
   const running = holderOf(context);
+  const suspension = suspensionOf(cluster);
+  const restoring = runningRestore(cluster, restores)?.name;
+  const clusterVersion = clusterVersionOf(cluster, spec);
+  const retentionWindow = spec.backup?.primaryStorage?.retention?.window;
   return {
     namespace,
     cluster: cluster.metadata?.name ?? "",
     storage: context.backupStorage,
-    suspended: clusterSuspended(cluster),
+    ...(suspension ? { suspension } : {}),
     ...(running ? { running } : {}),
+    ...(restoring ? { restoring } : {}),
     backupNames: namesIn(namespace, backups),
+    restoreNames: namesIn(namespace, restores),
     readingRestores: restores.flatMap((r) => {
       const phase = r.status?.phase;
       if (phase === "Completed" || phase === "Failed") return [];
@@ -38,6 +50,8 @@ export function backupContextOf(context: ClusterSlotContext): BackupContext {
         { name: r.metadata?.name ?? "", kind, backup: r.spec.backupRef.name },
       ];
     }),
+    ...(clusterVersion ? { clusterVersion } : {}),
+    ...(retentionWindow ? { retentionWindow } : {}),
     ...(context.writeMode === undefined ? { changesOff: CHANGES_OFF } : {}),
     now: context.now,
   };
