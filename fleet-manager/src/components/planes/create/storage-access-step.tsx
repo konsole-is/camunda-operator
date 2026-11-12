@@ -28,13 +28,13 @@ const MANAGEMENT_DATABASE_SERVER = "management-database-server";
 
 /**
  * StorageAccessStep is step 4 of the plane create flow: the database
- * option, the access option with the URLs of the running apps, and the
- * contract name. A section that the step showed before restores its
- * selections from draft.storage; any other preselects its default. Each
- * section reports its selections to draft.storage and its errors to
- * onSectionErrors. A pick of a section that no PluginSection holds any more
- * gets a button that empties it and its errors. objects are the source kinds
- * of builtinOption, in every namespace.
+ * option, the access option with the URLs of the running apps, the other
+ * sections of planeSectionViews, and the contract name. A section that the
+ * step showed before restores its selections from draft.storage; any other
+ * preselects its default. Each section reports its selections to
+ * draft.storage and its errors to onSectionErrors. A pick of a section that
+ * no PluginSection holds any more gets a button that empties it and its
+ * errors. objects are the source kinds of builtinOption, in every namespace.
  */
 export function StorageAccessStep({
   draft,
@@ -178,6 +178,14 @@ export function StorageAccessStep({
           </div>
         )}
       </div>
+      {views.others?.map((view) => (
+        <StorageCards
+          key={view.name}
+          view={view}
+          draft={draft}
+          onChange={onChange(view.name)}
+        />
+      ))}
       <section className="flex max-w-md min-w-0 flex-col gap-1">
         <label
           htmlFor={`${id}-contract`}

@@ -13,9 +13,9 @@ import {
   type PluginSelection,
   type SectionView,
   builtinOption,
-  checkParameters,
+  byCodeUnit,
+  checkAllowed,
   offeredSection,
-  parameterPolicies,
   resolve,
   withMissingInputs,
 } from "@/lib/policy";
@@ -39,7 +39,7 @@ export const DATABASE_SUFFIX = {
 const MANAGEMENT_HOST = "managementHostnamePattern";
 const CONTRACT_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const DATABASE_APPS = ["keycloak", "identity", "webModeler"] as const;
-const FIX_FIELDS = "Fix the fields of the databases and access options.";
+const FIX_FIELDS = "Fix the fields of the options.";
 
 /** databaseSection returns the section whose slot is managementDatabases. */
 export function databaseSection(
@@ -53,16 +53,28 @@ export function planeSelections(draft: PlaneDraft): PluginSelection[] {
   return Object.values(draft.storage).flat();
 }
 
-/** PlaneSectionViews are the sections of step 4. A section that no PluginSection has is undefined. */
+/**
+ * PlaneSectionViews are the sections of step 4. A section that no
+ * PluginSection has is undefined. others are the other sections that apply
+ * to a plane claim, by spec.order and then by name.
+ */
 export type PlaneSectionViews = {
   databases?: SectionView;
   access?: SectionView;
+  others?: SectionView[];
 };
 
+/** shownViews returns the sections that views holds. */
+export function shownViews(views: PlaneSectionViews): SectionView[] {
+  return [views.databases, views.access, ...(views.others ?? [])].filter(
+    (v) => v !== undefined,
+  );
+}
+
 /**
- * planeSectionViews returns the database and access sections of step 4 as
- * a plane claim sees them: offeredSection with builtinOption in the
- * namespace of draft, then withMissingInputs over the picks of draft.
+ * planeSectionViews returns the sections of step 4 as a plane claim sees
+ * them: offeredSection with builtinOption in the namespace of draft, then
+ * withMissingInputs over the picks of draft.
  * existing-database-configs has no parameter of an app that does not run.
  * objects are the source kinds of builtinOption, in every namespace.
  */
@@ -95,15 +107,33 @@ export function planeSectionViews(
       ),
     };
   };
+  const databases = databaseSection(ctx.sections);
+  const access = ctx.sections.find((s) => s.metadata.name === ACCESS_SECTION);
+  const others = ctx.sections
+    .filter(
+      (s) =>
+        s !== databases &&
+        s !== access &&
+        s.spec.appliesTo.includes("CamundaManagementClusterClaim"),
+    )
+    .sort(
+      (a, b) =>
+        (a.spec.order ?? 0) - (b.spec.order ?? 0) ||
+        byCodeUnit(a.metadata.name ?? "", b.metadata.name ?? ""),
+    );
   const views = {
-    databases: view(databaseSection(ctx.sections)),
-    access: view(ctx.sections.find((s) => s.metadata.name === ACCESS_SECTION)),
+    databases: view(databases),
+    access: view(access),
+    others: others.map((s) => view(s)!),
   };
-  const shown = [views.databases, views.access].filter((v) => v !== undefined);
-  const selections = shown.flatMap((v) => picksOf(draft, v));
-  const missing = (v: SectionView | undefined) =>
-    v && withMissingInputs(v, selections, ctx.registrations, ctx.sections);
-  return { databases: missing(views.databases), access: missing(views.access) };
+  const selections = shownViews(views).flatMap((v) => picksOf(draft, v));
+  const missing = (v: SectionView) =>
+    withMissingInputs(v, selections, ctx.registrations, ctx.sections);
+  return {
+    databases: views.databases && missing(views.databases),
+    access: views.access && missing(views.access),
+    others: views.others.map(missing),
+  };
 }
 
 // A section that draft.storage does not hold yet counts its enabled default
@@ -258,8 +288,7 @@ function selectionErrors(
   draft: PlaneDraft,
   views: PlaneSectionViews,
 ): string[] {
-  return [views.databases, views.access].flatMap((view) => {
-    if (!view) return [];
+  return shownViews(views).flatMap((view) => {
     const picked = draft.storage[view.name] ?? [];
     const unusable = picked.some((s) => {
       const option = view.options.find(
@@ -277,8 +306,7 @@ function selectionErrors(
 // SectionCards checks the values only while step 4 shows, and a
 // DatabaseConfig, a preset, or a policy value can go after that.
 function valueErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
-  return [views.databases, views.access].flatMap((view) => {
-    if (!view) return [];
+  return shownViews(views).flatMap((view) => {
     return picksOf(draft, view).flatMap((selection) => {
       const option = view.options.find(
         (o) => o.registration === selection.registration,
@@ -328,26 +356,33 @@ function valueErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
   });
 }
 
-// SectionCards checks the parameters against the policy only while step 4
-// shows, and the Environment can change after that.
-function parameterErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
+// The claim controller refuses what checkAllowed refuses, and the
+// Environment and the registrations can change after step 4.
+function policyErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
   const environment = ctx.environments.find(
     (e) => e.metadata.name === draft.environment,
   );
   const running = runningOf(draft);
-  const refused = planeSelections(draft).some((picked) => {
-    const selection = runningSelection(picked, running);
-    const registration = ctx.registrations.find(
-      (r) => r.metadata.name === selection.registration,
-    );
-    if (!registration) return false;
-    const policies = parameterPolicies(registration, environment);
-    return (
-      !("value" in policies) ||
-      checkParameters(selection, policies.value) !== undefined
-    );
+  const selections = planeSelections(draft).map((p) =>
+    runningSelection(p, running),
+  );
+  const resolved = resolve({
+    environment,
+    registrations: [...ctx.registrations],
+    selections,
   });
-  return refused ? [FIX_FIELDS] : [];
+  const result =
+    "value" in resolved
+      ? checkAllowed({
+          kind: "CamundaManagementClusterClaim",
+          sections: ctx.sections,
+          environment,
+          policy: resolved.value.policy,
+          selections,
+        })
+      : resolved;
+  if ("refusal" in result) return [result.refusal.message];
+  return "error" in result ? [result.error] : [];
 }
 
 /** contractNameOf is the name of the ManagementAuthConfig of the draft: the typed name, else the claim name. */
@@ -395,8 +430,8 @@ export function contractNameErrors(
  * that SectionCards reported, and views the sections of planeSectionViews.
  * A section of views whose selected option is missing or disabled, a
  * required parameter that a claim can edit and that has no value, a value
- * that is not among the choices of views, or an access section that is
- * required and has no selection, blocks the step.
+ * that is not among the choices of views, or a section other than the
+ * database section that is required and has no selection, blocks the step.
  */
 export function storageErrors(
   draft: PlaneDraft,
@@ -418,8 +453,6 @@ export function storageErrors(
   }
   if (sectionErrors.some((e) => !sectionNames.includes(e.path))) {
     errors.push(FIX_FIELDS);
-  } else {
-    errors.push(...parameterErrors(draft, ctx));
   }
   const database = planeSelections(draft).find(
     (p) => p.section === databases?.metadata.name,
@@ -444,5 +477,9 @@ export function storageErrors(
     ),
   );
   errors.push(...contractNameErrors(draft, ctx));
+  // checkAllowed gives only its first refusal, and the checks above name the
+  // allowed registrations, the required sections, and the parameters that a
+  // claim can edit in plainer words.
+  if (errors.length === 0) errors.push(...policyErrors(draft, ctx));
   return errors;
 }

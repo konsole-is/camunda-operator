@@ -338,6 +338,44 @@ describe("StorageAccessStep", () => {
     expect(screen.getByLabelText("Keycloak URL")).toBeTruthy();
   });
 
+  it("shows each other section that applies to a plane after the access section", () => {
+    const base = environment(true);
+    const ctx: PlaneContext = {
+      ...ctxOf(true),
+      sections: [
+        ...sections,
+        section("dns-zone", "DNS zone", { order: 90 }),
+        section("backup-storage", "Backup storage", {
+          appliesTo: ["CamundaClusterClaim"],
+        }),
+      ],
+      registrations: [
+        ...registrations,
+        registration("route53", "Route 53", { sections: ["dns-zone"] }),
+      ],
+      environments: [
+        {
+          ...base,
+          spec: {
+            ...base.spec,
+            sections: {
+              ...base.spec.sections,
+              "dns-zone": { allowed: ["route53"] },
+            },
+          },
+        },
+      ],
+    };
+    render(<Harness ctx={ctx} />);
+    const dns = screen.getByRole("group", { name: /DNS zone/ });
+    expect(within(dns).getByRole("radio", { name: /Route 53/ })).toBeTruthy();
+    const access = screen.getByRole("group", { name: /Access/ });
+    expect(
+      access.compareDocumentPosition(dns) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.queryByRole("group", { name: /Backup storage/ })).toBeNull();
+  });
+
   it("keeps the typed URLs across an access round trip", async () => {
     render(<Harness access />);
     await userEvent.type(

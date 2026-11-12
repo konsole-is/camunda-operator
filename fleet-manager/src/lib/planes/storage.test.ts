@@ -41,19 +41,59 @@ const sections = [
   },
 ] as PluginSection[];
 
-const gateway = {
-  metadata: { name: "gateway" },
-  spec: {
-    sections: ["access"],
-    mode: "Optional",
-    label: "Gateway",
-    deletionPolicies: ["Delete"],
-    serviceAccount: { name: "gateway", namespace: "plugins" },
-    parameterValues: {
-      managementHostnamePattern: "{name}.{namespace}.example.com",
+const registration = (
+  name: string,
+  section: string,
+  label: string,
+  spec: object = {},
+) =>
+  ({
+    metadata: { name },
+    spec: {
+      sections: [section],
+      mode: "Optional",
+      label,
+      deletionPolicies: ["Delete"],
+      serviceAccount: { name, namespace: "plugins" },
+      ...spec,
     },
+  }) as PluginRegistration;
+
+const gateway = registration("gateway", "access", "Gateway", {
+  parameterValues: {
+    managementHostnamePattern: "{name}.{namespace}.example.com",
   },
-} as PluginRegistration;
+});
+
+const registrations = [
+  gateway,
+  registration(
+    "management-database-server",
+    "management-database",
+    "New PostgreSQL server",
+  ),
+  registration(
+    "existing-database-configs",
+    "management-database",
+    "Existing databases",
+  ),
+];
+
+// production is the Environment of the tests. Unless spec has sections,
+// its sections allow each registration of registrations.
+const production = (spec: Record<string, unknown> = {}) =>
+  ({
+    metadata: { name: "production" },
+    spec: {
+      sections: {
+        "management-database": {
+          allowed: ["management-database-server", "existing-database-configs"],
+        },
+        access: { allowed: ["gateway"] },
+      },
+      ...spec,
+    },
+  }) as unknown as Environment;
 
 const request = (namespace: string, claim: string, host: string) =>
   ({
@@ -78,14 +118,14 @@ const plane = (namespace: string, name: string, contract?: string) =>
   }) as unknown as CamundaManagementClusterClaim;
 
 const ctx: PlaneContext = {
-  environments: [{ metadata: { name: "production" }, spec: {} } as Environment],
+  environments: [production()],
   platformConfigs: [],
   takenNames: [],
   namespaces: [{ name: "platform", environment: "production" }],
   releases: [],
   images: { schemaVersion: 1, minors: {} },
   sections,
-  registrations: [gateway],
+  registrations,
   accessRequests: [],
   authConfigs: [],
   planeClaims: [],
@@ -263,7 +303,7 @@ describe("storageErrors", () => {
         [{ path: "existing-database-configs/identity", message: "required" }],
         {},
       ),
-    ).toEqual(["Fix the fields of the databases and access options."]);
+    ).toEqual(["Fix the fields of the options."]);
   });
 
   it("asks for the URLs without an access selection", () => {
@@ -325,39 +365,22 @@ describe("storageErrors", () => {
   });
 
   describe("and an app that does not run", () => {
-    const existing = {
-      metadata: { name: "existing-database-configs" },
-      spec: {
-        sections: ["management-database"],
-        mode: "Optional",
-        label: "Existing databases",
-        deletionPolicies: ["Delete"],
-        serviceAccount: { name: "x", namespace: "plugins" },
-      },
-    } as PluginRegistration;
     const environment = (keycloak: Record<string, unknown>) =>
-      ({
-        metadata: { name: "production" },
-        spec: {
-          parameters: {
-            "existing-database-configs": {
-              keycloak,
-              identity: { claimEditable: true },
-            },
+      production({
+        parameters: {
+          "existing-database-configs": {
+            keycloak,
+            identity: { claimEditable: true },
           },
         },
-      }) as unknown as Environment;
+      });
     const errorsOf = (keycloak: Record<string, unknown>, picked: object) =>
       storageErrors(
         draft({
           mode: "oidc",
           storage: { "management-database": [configs({ ...picked })] },
         }),
-        {
-          ...ctx,
-          environments: [environment(keycloak)],
-          registrations: [gateway, existing],
-        },
+        { ...ctx, environments: [environment(keycloak)] },
         [],
         {},
       );
@@ -378,41 +401,19 @@ describe("storageErrors", () => {
   });
 
   it("checks the DatabaseConfig names that the policy gives, not only the picked ones", () => {
-    const existing = {
-      metadata: { name: "existing-database-configs" },
-      spec: {
-        sections: ["management-database"],
-        mode: "Optional",
-        label: "Existing databases",
-        deletionPolicies: ["Delete"],
-        serviceAccount: { name: "x", namespace: "plugins" },
-      },
-    } as PluginRegistration;
-    const environment = {
-      metadata: { name: "production" },
-      spec: {
-        parameters: {
-          "existing-database-configs": {
-            keycloak: { claimEditable: true, value: "kc-db" },
-            identity: { claimEditable: true, value: "id-db" },
-          },
+    const environment = production({
+      parameters: {
+        "existing-database-configs": {
+          keycloak: { claimEditable: true, value: "kc-db" },
+          identity: { claimEditable: true, value: "id-db" },
         },
       },
-    } as unknown as Environment;
+    });
     const d = draft({
       storage: { "management-database": [configs({ identity: "kc-db" })] },
     });
     expect(
-      storageErrors(
-        d,
-        {
-          ...ctx,
-          environments: [environment],
-          registrations: [gateway, existing],
-        },
-        [],
-        {},
-      ),
+      storageErrors(d, { ...ctx, environments: [environment] }, [], {}),
     ).toEqual([
       "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use kc-db.",
     ]);
@@ -484,20 +485,17 @@ describe("storageErrors and a policy that changed after step 4", () => {
     ]);
   });
 
-  it("refuses a parameter whose choice the Environment no longer allows", () => {
-    const environment = {
-      metadata: { name: "production" },
-      spec: {
-        parameters: {
-          gateway: {
-            tier: {
-              claimEditable: true,
-              allowed: [{ name: "gold", label: "Gold", value: "gold" }],
-            },
+  it("refuses a parameter whose choice the Environment no longer allows, with the refusal of the policy", () => {
+    const environment = production({
+      parameters: {
+        gateway: {
+          tier: {
+            claimEditable: true,
+            allowed: [{ name: "gold", label: "Gold", value: "gold" }],
           },
         },
       },
-    } as unknown as Environment;
+    });
     const d = draft({
       storage: {
         ...withDatabase,
@@ -506,7 +504,9 @@ describe("storageErrors and a policy that changed after step 4", () => {
     });
     expect(
       storageErrors(d, { ...ctx, environments: [environment] }, [], {}),
-    ).toEqual(["Fix the fields of the databases and access options."]);
+    ).toEqual([
+      'parameter "tier" of registration "gateway" has the name "silver", which is not one of gold',
+    ]);
   });
 });
 
@@ -550,6 +550,48 @@ describe("planeSectionViews", () => {
       behindGateway,
     ],
   };
+
+  it("adds each other section that applies to a plane, by order, and asks for a required one", () => {
+    const section = (name: string, label: string, appliesTo: string[]) =>
+      ({
+        metadata: { name },
+        spec: { label, selection: "One", appliesTo, order: 5 },
+      }) as unknown as PluginSection;
+    const c: PlaneContext = {
+      ...live,
+      sections: [
+        ...sections,
+        section("dns-zone", "DNS zone", ["CamundaManagementClusterClaim"]),
+        section("backup-storage", "Backup storage", ["CamundaClusterClaim"]),
+      ],
+      registrations: [
+        ...live.registrations,
+        { ...registration("dns", "dns-zone", "Route 53"), status: ready },
+      ] as PluginRegistration[],
+      environments: [
+        production({
+          sections: {
+            ...environment.spec.sections,
+            "dns-zone": { required: true, allowed: ["dns"] },
+          },
+        }),
+      ],
+    };
+    const d = draft({
+      storage: {
+        "management-database": [
+          { section: "management-database", registration: "behind-gateway" },
+        ],
+        access: [gatewayPick],
+        "dns-zone": [],
+      },
+    });
+    const views = planeSectionViews(d, c, {});
+    expect(views.others?.map((v) => v.name)).toEqual(["dns-zone"]);
+    expect(storageErrors(d, c, [], views)).toEqual([
+      "Choose an option for DNS zone.",
+    ]);
+  });
 
   it("disables an option whose input section has no pick, and the step refuses that pick", () => {
     const d = draft({
@@ -802,6 +844,37 @@ describe("storageErrors and a live choice that is gone", () => {
     expect(errorsOf(d, withZones(["a"]), objects)).toEqual([]);
     expect(errorsOf(d, withZones(["a", "b"]), objects)).toEqual([
       "Fix the Zones of New PostgreSQL server.",
+    ]);
+  });
+
+  it("refuses a preset that an allowed name of the Environment gives once the Environment no longer lists it", () => {
+    const d = draft({
+      storage: {
+        "management-database": [
+          { ...database, parameters: { preset: "small-option" } },
+        ],
+      },
+    });
+    const objects = {
+      DatabaseServerPreset: [preset("small"), preset("large")],
+    };
+    const withPresets = (listed: string[]) =>
+      live({
+        parameters: {
+          "management-database-server": {
+            preset: {
+              claimEditable: true,
+              allowed: [
+                { name: "small-option", label: "Small", value: "small" },
+              ],
+            },
+          },
+        },
+        presets: { databaseServer: listed },
+      });
+    expect(errorsOf(d, withPresets(["small", "large"]), objects)).toEqual([]);
+    expect(errorsOf(d, withPresets(["large"]), objects)).toEqual([
+      'DatabaseServerPreset "small" is not in spec.presets.databaseServer of Environment "production"',
     ]);
   });
 

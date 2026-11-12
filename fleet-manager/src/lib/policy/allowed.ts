@@ -223,12 +223,7 @@ function presetOf(parameters: unknown): string | undefined {
   return nameOf(decodeObject(parameters)?.preset);
 }
 
-/**
- * checkParameters refuses with NotAllowed the first parameter of selection
- * that policies do not allow, by the parameter rule of checkAllowed. It
- * returns undefined when each parameter passes.
- */
-export function checkParameters(
+function checkParameters(
   selection: PluginSelection,
   policies: ParameterPolicies,
 ): { refusal: Refusal } | { error: string } | undefined {
