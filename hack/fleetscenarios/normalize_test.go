@@ -464,47 +464,24 @@ func applyEvent(owner, applied unstructured.Unstructured, verb string) unstructu
 	return e
 }
 
-func TestNormalizeLeavesOutTheEventOfAnApplyThatUpdatedAnObject(t *testing.T) {
+func TestNormalizeKeepsTheEventOfAnApply(t *testing.T) {
 	claim := object("fleet.camunda.io/v1alpha1", "CamundaClusterClaim", "team-a", "orders", "claim")
 	request := object("plugins.camunda.io/v1alpha1", "PluginRequest", "team-a", "orders-storage", "request")
-	out, err := normalize(
-		newServiceIPs(),
-		[]unstructured.Unstructured{claim, request, applyEvent(claim, request, "Update")},
-	)
-	require.NoError(t, err)
 
-	assert.Len(t, out, 2, "a finalizer that another controller adds before the apply returns also records this Event")
-}
-
-func TestNormalizeKeepsTheEventsThatNoApplyUpdateRecorded(t *testing.T) {
-	claim := object("fleet.camunda.io/v1alpha1", "CamundaClusterClaim", "team-a", "orders", "claim")
-	request := object("plugins.camunda.io/v1alpha1", "PluginRequest", "team-a", "orders-storage", "request")
-	cluster := object("core.camunda.io/v1", "CamundaCluster", "team-a", "orders", "cluster")
-
-	rotated := event("orders.rotated", cluster, "UpdatedAdminPassword", "Updated the admin password")
-	rotated.Object["action"] = "Rotate"
-	otherKind := applyEvent(claim, request, "Update")
-	otherKind.Object["reason"] = "UpdatedOutputs"
-
-	tests := map[string]unstructured.Unstructured{
-		"an apply that created an object":                         applyEvent(claim, request, "Create"),
-		"another action with a reason that starts with Updated":   rotated,
-		"an update whose reason does not name the related object": otherKind,
-	}
-	for name, e := range tests {
-		t.Run(name, func(t *testing.T) {
-			out, err := normalize(newServiceIPs(), []unstructured.Unstructured{claim, request, cluster, e})
+	for _, verb := range []string{"Create", "Update"} {
+		t.Run(verb, func(t *testing.T) {
+			e := applyEvent(claim, request, verb)
+			out, err := normalize(newServiceIPs(), []unstructured.Unstructured{claim, request, e})
 			require.NoError(t, err)
 
-			reason, _, _ := unstructured.NestedString(e.Object, "reason")
 			var reasons []string
 			for _, obj := range out {
 				if isEvent(&obj) {
-					r, _, _ := unstructured.NestedString(obj.Object, "reason")
-					reasons = append(reasons, r)
+					reason, _, _ := unstructured.NestedString(obj.Object, "reason")
+					reasons = append(reasons, reason)
 				}
 			}
-			assert.Equal(t, []string{reason}, reasons)
+			assert.Equal(t, []string{verb + "dPluginRequest"}, reasons)
 		})
 	}
 }
