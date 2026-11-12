@@ -183,7 +183,7 @@ Most fields merge like this, value by value. A few blocks replace as a whole: `s
 
 ## Change a fleet
 
-When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under `auth.basic` rolls no pods. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a cluster that applied a larger size. That cluster keeps its volumes and records the event `StorageShrinkIgnored`. A new `storageClassName` reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the event `StorageClassChangeIgnored`. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
+When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change of `auth.basic.adminEmail` rolls no pods. A new `auth.basic.passwordRotation` rotates the admin password of each cluster and rolls only the connectors pods. A larger `storageSize` grows the volumes of every cluster in place. A lower `storageSize` is ignored for a cluster that applied a larger size. That cluster keeps its volumes and records the event `StorageShrinkIgnored`. A new `storageClassName` reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the event `StorageClassChangeIgnored`. Volumes that `whenDeleted: Retain` kept from a deleted cluster of the same name keep their class.
 
 You can roll versions in two ways. Name the release for the way you pick:
 
