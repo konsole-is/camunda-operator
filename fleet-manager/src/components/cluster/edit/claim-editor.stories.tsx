@@ -1,11 +1,11 @@
 import type { Story } from "@/gallery/registry";
 import type { Resource } from "@/lib/k8s/kinds";
-import { ClaimEditorStory, type StoryCluster } from "./claim-editor-story";
 import {
-  WAITING_FOR_GITOPS,
-  WAITING_ON_LIVE,
-  WaitingPanel,
-} from "./waiting-panel";
+  ClaimEditorStory,
+  type StoryCluster,
+  WaitingPanelStory,
+} from "./claim-editor-story";
+import { WAITING_FOR_GITOPS, WAITING_ON_LIVE } from "./waiting-panel";
 
 // ACCESS gives the claim the access option Gateway, whose host prefix the
 // claim may change and whose zone the admin sets.
@@ -157,19 +157,11 @@ export const claimEditorStories: Story[] = [
   {
     component: "WaitingPanel",
     name: "A push of this page",
-    render: () => (
-      <div className="max-w-3xl">
-        <WaitingPanel text={WAITING_FOR_GITOPS} onStopWaiting={() => {}} />
-      </div>
-    ),
+    render: () => <WaitingPanelStory text={WAITING_FOR_GITOPS} />,
   },
   {
     component: "WaitingPanel",
     name: "A push of an earlier visit",
-    render: () => (
-      <div className="max-w-3xl">
-        <WaitingPanel text={WAITING_ON_LIVE} onStopWaiting={() => {}} />
-      </div>
-    ),
+    render: () => <WaitingPanelStory text={WAITING_ON_LIVE} />,
   },
 ];

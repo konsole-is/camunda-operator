@@ -13,6 +13,7 @@ import {
   ClusterEditProvider,
   useClusterEdit,
 } from "./cluster-edit";
+import { WaitingPanel } from "./waiting-panel";
 
 const ACTIONS: ClaimActions = {
   preview: async () => ({ objects: [], errors: [] }),
@@ -152,6 +153,15 @@ export function ClaimEditorStory({
         <Changes changes={changes} />
         <ClaimEditorPanels context={context} requested={panel} />
       </ClusterEditProvider>
+    </div>
+  );
+}
+
+/** WaitingPanelStory shows WaitingPanel with text and a Stop waiting that does nothing. */
+export function WaitingPanelStory({ text }: { text: string }) {
+  return (
+    <div className="max-w-3xl">
+      <WaitingPanel text={text} onStopWaiting={() => {}} />
     </div>
   );
 }
