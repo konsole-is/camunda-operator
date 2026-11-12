@@ -107,6 +107,14 @@ export function draftErrors(
       "The default release must be one of the allowed releases.",
     );
 
+  for (const [section, policy] of Object.entries(spec.sections ?? {})) {
+    if (policy.default && !(policy.allowed ?? []).includes(policy.default))
+      add(
+        `spec.sections.${section}.default`,
+        "The default option must be one of the allowed options.",
+      );
+  }
+
   const labels = spec.namespaceCreation?.labels ?? {};
   const labelsPath = "spec.namespaceCreation.labels";
   if (Object.hasOwn(labels, ENVIRONMENT_LABEL))

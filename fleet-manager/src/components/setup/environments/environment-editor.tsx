@@ -44,6 +44,8 @@ import { NamespaceCreationSection } from "./namespace-creation-section";
 import { NamespacesSection } from "./namespaces-section";
 import { ReferencesSection } from "./references-section";
 import { labelledNamespaces } from "./rows";
+import { sectionGroups, withSectionPolicy } from "./sections";
+import { SectionsTable } from "./sections-table";
 import { type EnvironmentSources, useEnvironmentSources } from "./sources";
 
 const READY: FleetEnvironmentConditionType = "Ready";
@@ -216,6 +218,19 @@ export function EnvironmentEditor({
             value={draft.spec.deletionPolicy ?? "Delete"}
             onChange={(deletionPolicy) =>
               setSpec({ ...draft.spec, deletionPolicy })
+            }
+          />
+        </EditorSection>
+        <EditorSection title="Sections">
+          <SectionsTable
+            groups={sectionGroups(
+              sources.sections,
+              sources.registrations,
+              draft.spec,
+            )}
+            errors={errors}
+            onPolicy={(section, policy) =>
+              setSpec(withSectionPolicy(draft.spec, section, policy))
             }
           />
         </EditorSection>

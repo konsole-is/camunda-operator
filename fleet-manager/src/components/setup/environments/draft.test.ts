@@ -168,6 +168,25 @@ describe("draftErrors", () => {
     ]);
   });
 
+  it("refuses a section default that is not an allowed option", () => {
+    expect(
+      draftErrors(
+        draft({
+          sections: {
+            access: { allowed: ["gateway"], default: "gateway" },
+            "backup-storage": { allowed: ["s3"], default: "rustfs" },
+          },
+        }),
+        NEW,
+      ),
+    ).toEqual([
+      {
+        path: "spec.sections.backup-storage.default",
+        message: "The default option must be one of the allowed options.",
+      },
+    ]);
+  });
+
   it("refuses the environment label in the fixed labels and in the required label keys", () => {
     expect(
       draftErrors(
