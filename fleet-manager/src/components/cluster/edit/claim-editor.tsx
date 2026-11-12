@@ -10,6 +10,7 @@ import { ClaimTab, type ClaimTabEdit, Panel } from "../claim-tab";
 import { mergedSpecs } from "../impacts";
 import type { ClusterSlotContext } from "../slots";
 import { type ClaimPanel, claimPanelOf } from "../tabs";
+import { AttachmentsPanel } from "./attachments-panel";
 import { BasicsPanel } from "./basics-panel";
 import { changeInputOf } from "./change-input";
 import { type ClusterClaim, useClusterEdit } from "./cluster-edit";
@@ -134,6 +135,12 @@ function editDefs(context: ClusterSlotContext, view: ClaimView): EditDef[] {
       name: `${section.sectionLabel}: ${section.optionLabel}`,
       render: () => <SectionPanel context={context} section={section} />,
     })),
+    {
+      panel: "attachments",
+      label: "Attachments",
+      name: "Attachments",
+      render: () => <AttachmentsPanel context={context} />,
+    },
   ];
 }
 
