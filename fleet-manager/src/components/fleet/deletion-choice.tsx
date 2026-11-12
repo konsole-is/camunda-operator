@@ -2,12 +2,11 @@
 
 import { useId } from "react";
 import { Badge } from "@/components/ui/badge";
-import type { DeletionChoice } from "@/lib/clusters/storage";
-import type { DeletionPolicy } from "@/lib/policy";
+import type { DeletionChoice, DeletionPolicy } from "@/lib/policy";
 import { cn } from "@/lib/utils";
 
 /**
- * DeletionChoiceField asks "When the cluster is deleted": "Keep the
+ * DeletionChoiceField asks "When the <subject> is deleted": "Keep the
  * resources" or "Delete the resources", with "Default" on the default of
  * choice and choice.policy checked. Keep is disabled while
  * choice.keepAllowed is false, with the options that always delete what
@@ -16,9 +15,11 @@ import { cn } from "@/lib/utils";
  * deleted".
  */
 export function DeletionChoiceField({
+  subject,
   choice,
   onChange,
 }: {
+  subject: "cluster" | "management plane";
   choice: DeletionChoice;
   onChange: (policy: DeletionPolicy) => void;
 }) {
@@ -26,7 +27,7 @@ export function DeletionChoiceField({
   return (
     <fieldset className="flex min-w-0 flex-col gap-3">
       <legend className="mb-1 font-heading text-base font-semibold text-text">
-        When the cluster is deleted
+        {`When the ${subject} is deleted`}
       </legend>
       <p className="-mt-1 text-sm text-muted">
         This applies to the resources of the storage and access options.
@@ -35,7 +36,7 @@ export function DeletionChoiceField({
         <PolicyCard
           name={id}
           label="Keep the resources"
-          description="They stay after the cluster is gone."
+          description={`They stay after the ${subject} is gone.`}
           checked={choice.policy === "Orphan"}
           isDefault={choice.defaultPolicy === "Orphan"}
           disabledReason={
@@ -48,7 +49,7 @@ export function DeletionChoiceField({
         <PolicyCard
           name={id}
           label="Delete the resources"
-          description="They are deleted with the cluster."
+          description={`They are deleted with the ${subject}.`}
           checked={choice.policy === "Delete"}
           isDefault={choice.defaultPolicy === "Delete"}
           onPick={() => onChange("Delete")}

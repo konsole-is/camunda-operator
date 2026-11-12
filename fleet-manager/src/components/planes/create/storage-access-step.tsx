@@ -2,19 +2,22 @@
 
 import { useId, useMemo } from "react";
 import type { DraftPath } from "@/components/create/use-create-flow";
+import { DeletionChoiceField } from "@/components/fleet/deletion-choice";
 import { LockedField } from "@/components/fleet/locked-field";
 import { SectionCards } from "@/components/fleet/section-cards";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { goneSections } from "@/lib/drafts";
 import { runningOf } from "@/lib/planes/components";
 import type { PlaneContext, PlaneDraft } from "@/lib/planes/draft";
 import {
   DATABASE_SUFFIX,
   EXISTING_DATABASE_CONFIGS,
   accessSelection,
-  goneSections,
   managementHost,
+  planeDeletion,
   planeSectionViews,
+  planeStorageDraft,
 } from "@/lib/planes/storage";
 import { accessUrls, planeUrlFields } from "@/lib/planes/urls";
 import type {
@@ -30,9 +33,9 @@ const MANAGEMENT_DATABASE_SERVER = "management-database-server";
 /**
  * StorageAccessStep is step 4 of the plane create flow: the database
  * option, the access option with the URLs of the running apps, the other
- * sections of planeSectionViews, and the contract name. A section that the
- * step showed before restores its selections from draft.storage; any other
- * preselects its default. Each section reports its selections to
+ * sections of planeSectionViews, the deletion choice of planeDeletion, and
+ * the contract name. A section that the step showed before restores its
+ * selections from draft.storage; any other preselects its default. Each section reports its selections to
  * draft.storage and its errors to onSectionErrors. A pick of a section that
  * no PluginSection holds any more gets a button that empties it and its
  * errors. objects are the source kinds of builtinOption, in every namespace.
@@ -64,7 +67,7 @@ export function StorageAccessStep({
       onSectionErrors(name, errors);
     };
 
-  const gone = goneSections(draft, ctx.sections);
+  const gone = goneSections(planeStorageDraft(draft, ctx));
   const remove = (name: string) => {
     set(["storage", name], []);
     onSectionErrors(name, []);
@@ -184,6 +187,11 @@ export function StorageAccessStep({
           onChange={onChange(view.name)}
         />
       ))}
+      <DeletionChoiceField
+        subject="management plane"
+        choice={planeDeletion(draft, ctx, objects)}
+        onChange={(policy) => set(["deletionPolicy"], policy)}
+      />
       <section className="flex max-w-md min-w-0 flex-col gap-1">
         <label
           htmlFor={`${id}-contract`}

@@ -54,9 +54,12 @@ const ctx: PlaneContext = {
   registrations: [
     {
       metadata: { name: "management-database-server" },
-      spec: { label: "New PostgreSQL server" },
+      spec: { label: "New PostgreSQL server", deletionPolicies: ["Delete"] },
     },
-    { metadata: { name: "gateway" }, spec: { label: "Gateway" } },
+    {
+      metadata: { name: "gateway" },
+      spec: { label: "Gateway", deletionPolicies: ["Delete"] },
+    },
   ] as PluginRegistration[],
   accessRequests: [],
   authConfigs: [],

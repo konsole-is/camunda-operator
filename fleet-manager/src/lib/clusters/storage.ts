@@ -6,8 +6,15 @@ import { accessPatterns, defaultAccessPatterns } from "@/lib/claims/hosts";
 import { SLOT_FIELDS } from "@/lib/fields/slots";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
+  type StorageDraft,
+  draftErrors,
+  picksOf,
+  resolvedErrors,
+  viewSelections,
+} from "@/lib/drafts";
+import {
   type BuiltinObjects,
-  type DeletionPolicy,
+  type DeletionChoice,
   type ParameterRule,
   type PluginSelection,
   type SectionView,
@@ -15,7 +22,8 @@ import {
   builtinEntry,
   builtinOption,
   byCodeUnit,
-  checkDeletionPolicy,
+  deletionChoice,
+  isObject,
   lockedSummary,
   offeredSection,
   resolve,
@@ -23,7 +31,7 @@ import {
   withMissingInputs,
 } from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
-import type { ClusterDraft } from "./draft";
+import { type ClusterDraft, releaseOf } from "./draft";
 
 /** StorageData is the live data that step 2 reads. objects are the source kinds of builtinOption, in every namespace. */
 export type StorageData = {
@@ -69,67 +77,73 @@ export function storageViews(
         ),
       };
     });
-  const selections = views.flatMap((view) => picksOf(draft, view));
+  const storage = storageDraftOf(draft, data);
+  const selections = viewSelections(storage, views);
   return views.map((view) =>
     withMissingInputs(view, selections, data.registrations, data.sections),
   );
 }
 
-// A section that draft.storage does not hold yet counts its enabled default
-// option as picked, as SectionCards preselects it.
-function picksOf(draft: ClusterDraft, view: SectionView): PluginSelection[] {
-  if (Object.hasOwn(draft.storage ?? {}, view.name)) {
-    return draft.storage![view.name];
-  }
-  const preselected = view.options.find(
-    (o) => o.isDefault && !o.disabledReason,
-  );
-  return preselected
-    ? [{ section: view.name, registration: preselected.registration }]
-    : [];
+/**
+ * storageDraftOf returns the storage part of draft in the shape of the draft
+ * checks, with the live data of data.
+ */
+export function storageDraftOf(
+  draft: ClusterDraft,
+  data: StorageData,
+): StorageDraft {
+  return {
+    kind: "CamundaClusterClaim",
+    picks: draft.storage ?? {},
+    namespace: draft.namespace?.name ?? "",
+    environment: data.environment,
+    sections: data.sections,
+    registrations: data.registrations,
+    objects: data.objects,
+  };
 }
 
 /**
- * storageErrors returns the errors of step 2, section after section: a
- * selection whose option is gone or disabled ("Choose another option for
- * <label>"), a required section without a selection ("Choose an option for
- * <label>"), and a card error other than the required one ("Fix the <label>
- * settings"), at most one of each per section. Then a pick of a section
- * that views no longer hold, then conflicts. cardErrors are the errors that
- * SectionCards reported, by section name.
+ * storageErrors returns the errors of step 2 against the newest data: the
+ * errors of draftErrors over storageViews, then conflicts, the host
+ * conflicts of the access pick. When there are none, it returns
+ * resolvedErrors of the selections of the step, so a value that the claim
+ * controller would refuse blocks the step too. cardErrors are the errors
+ * that SectionCards last reported, by section name.
  */
 export function storageErrors(
   draft: ClusterDraft,
-  views: readonly SectionView[],
+  data: StorageData,
   cardErrors: Readonly<Record<string, readonly ValidationError[]>>,
   conflicts: readonly string[],
 ): string[] {
-  const errors: string[] = [];
-  for (const view of views) {
-    const selections = picksOf(draft, view);
-    const unusable = selections.some((s) => {
-      const option = view.options.find(
-        (o) => o.registration === s.registration,
-      );
-      return !option || option.disabledReason !== undefined;
-    });
-    if (unusable) errors.push(`Choose another option for ${view.label}`);
-    else if (view.required && selections.length === 0) {
-      errors.push(`Choose an option for ${view.label}`);
-    }
-    const fieldErrors = Object.hasOwn(cardErrors, view.name)
-      ? cardErrors[view.name]
-      : [];
-    if (fieldErrors.some((e) => e.path !== view.name)) {
-      errors.push(`Fix the ${view.label} settings`);
-    }
-  }
-  for (const [name, selections] of Object.entries(draft.storage ?? {})) {
-    if (selections.length > 0 && !views.some((v) => v.name === name)) {
-      errors.push(`Choose another option for ${name}`);
-    }
-  }
-  return [...errors, ...conflicts];
+  const views = storageViews(draft, data);
+  const storage = storageDraftOf(draft, data);
+  const errors = [...draftErrors(storage, views, cardErrors), ...conflicts];
+  if (errors.length > 0) return errors;
+  const release = releaseOf(draft, data.environment);
+  return resolvedErrors(
+    storage,
+    views,
+    viewSelections(storage, views),
+    (_, registration) =>
+      release !== undefined && declaresRelease(registration)
+        ? { releaseRef: release }
+        : {},
+  );
+}
+
+// The claim controller sets releaseRef to the release of the claim on the
+// request of a registration whose schema has a top-level string property
+// releaseRef (requestParameters of pkg/components/claimrequests).
+function declaresRelease(registration: PluginRegistration): boolean {
+  const schema = registration.spec.parameters;
+  const properties = isObject(schema) ? schema.properties : undefined;
+  return (
+    isObject(properties) &&
+    isObject(properties.releaseRef) &&
+    properties.releaseRef.type === "string"
+  );
 }
 
 /**
@@ -158,60 +172,22 @@ export function draftAccessPatterns(
 }
 
 /**
- * DeletionChoice is the deletion choice of step 2. defaultPolicy is
- * spec.deletionPolicy of the Environment, Delete when unset or without an
- * Environment. keepAllowed is false when checkDeletionPolicy refuses Orphan
- * for the selections. alwaysDeleted lists each selection whose registration
- * does not list Orphan, as "<option label> (<section label>)". policy is
- * the pick of the draft, else the default, and Delete when that is Orphan
- * and keepAllowed is false.
- */
-export type DeletionChoice = {
-  defaultPolicy: DeletionPolicy;
-  keepAllowed: boolean;
-  alwaysDeleted: { section: string; label: string }[];
-  policy: DeletionPolicy;
-};
-
-/**
- * deletionChoice returns the deletion choice of draft. The selections are
+ * clusterDeletion returns the deletion choice of draft. The selections are
  * those of the sections that storageViews shows, with the default of a
  * section that the step has not reported yet.
  */
-export function deletionChoice(
+export function clusterDeletion(
   draft: ClusterDraft,
   data: StorageData,
 ): DeletionChoice {
-  const defaultPolicy = data.environment?.spec.deletionPolicy || "Delete";
   const views = storageViews(draft, data);
-  const selections = views.flatMap((view) => picksOf(draft, view));
-  const keepAllowed =
-    "value" in checkDeletionPolicy("Orphan", selections, data.registrations);
-  const alwaysDeleted = selections.flatMap((s) => {
-    const registration = data.registrations.find(
-      (r) => r.metadata.name === s.registration,
-    );
-    if (
-      !registration ||
-      registration.spec.deletionPolicies.includes("Orphan")
-    ) {
-      return [];
-    }
-    const view = views.find((v) => v.name === s.section);
-    const option =
-      view?.options.find((o) => o.registration === s.registration)?.label ??
-      registration.spec.label;
-    return [
-      { section: s.section, label: `${option} (${view?.label ?? s.section})` },
-    ];
-  });
-  const picked = draft.claim.spec.deletionPolicy ?? defaultPolicy;
-  return {
-    defaultPolicy,
-    keepAllowed,
-    alwaysDeleted,
-    policy: picked === "Orphan" && !keepAllowed ? "Delete" : picked,
-  };
+  return deletionChoice(
+    draft.claim.spec.deletionPolicy,
+    viewSelections(storageDraftOf(draft, data), views),
+    data.environment,
+    data.registrations,
+    views,
+  );
 }
 
 /**
@@ -264,7 +240,7 @@ export function storageSummary(
 ): StorageSummary {
   const summary: StorageSummary = { optimizeUrl: false, slots: [], picks: [] };
   for (const view of storageViews(draft, data)) {
-    const selections = picksOf(draft, view);
+    const selections = picksOf(draft.storage ?? {}, view);
     const section = data.sections.find((s) => s.metadata.name === view.name);
     const slot = section && slotOf(section);
     if (slot && selections.length > 0) summary.slots.push(slot);

@@ -1,5 +1,6 @@
+import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import type { PluginSelection, PolicyResult } from "./types";
+import type { PluginSelection, PolicyResult, SectionView } from "./types";
 
 /** DeletionPolicy is a deletion policy of a claim or of a request. */
 export type DeletionPolicy =
@@ -41,5 +42,64 @@ export function checkDeletionPolicy(
       reason: "NotAllowed",
       message: `the deletion policy is Orphan, and these registrations do not support it: ${names}`,
     },
+  };
+}
+
+/**
+ * DeletionChoice is the deletion choice of a create flow. defaultPolicy is
+ * spec.deletionPolicy of the Environment, Delete when unset or without an
+ * Environment. keepAllowed is false when checkDeletionPolicy refuses Orphan
+ * for the selections. alwaysDeleted lists each selection whose registration
+ * does not list Orphan, as "<option label> (<section label>)". policy is
+ * the policy that the claim gets: the pick, else the default, and Delete
+ * when that is Orphan and keepAllowed is false.
+ */
+export type DeletionChoice = {
+  defaultPolicy: DeletionPolicy;
+  keepAllowed: boolean;
+  alwaysDeleted: { section: string; label: string }[];
+  policy: DeletionPolicy;
+};
+
+/**
+ * deletionChoice returns the deletion choice of a claim with selections
+ * and the deletion pick picked under environment. views give the labels of
+ * alwaysDeleted. A selection outside views shows by the label of its
+ * registration and the name of its section.
+ */
+export function deletionChoice(
+  picked: DeletionPolicy | undefined,
+  selections: readonly PluginSelection[],
+  environment: Environment | undefined,
+  registrations: readonly PluginRegistration[],
+  views: readonly SectionView[] = [],
+): DeletionChoice {
+  const defaultPolicy = environment?.spec.deletionPolicy || "Delete";
+  const keepAllowed =
+    "value" in checkDeletionPolicy("Orphan", selections, registrations);
+  const alwaysDeleted = selections.flatMap((s) => {
+    const registration = registrations.find(
+      (r) => r.metadata.name === s.registration,
+    );
+    if (
+      !registration ||
+      registration.spec.deletionPolicies.includes("Orphan")
+    ) {
+      return [];
+    }
+    const view = views.find((v) => v.name === s.section);
+    const option =
+      view?.options.find((o) => o.registration === s.registration)?.label ??
+      registration.spec.label;
+    return [
+      { section: s.section, label: `${option} (${view?.label ?? s.section})` },
+    ];
+  });
+  const policy = picked ?? defaultPolicy;
+  return {
+    defaultPolicy,
+    keepAllowed,
+    alwaysDeleted,
+    policy: policy === "Orphan" && !keepAllowed ? "Delete" : policy,
   };
 }

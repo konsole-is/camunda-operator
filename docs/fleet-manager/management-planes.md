@@ -6,7 +6,7 @@ A management plane runs Management Identity, Console, and Web Modeler for the cl
 
 Open the page **Management planes** at `/fleet/planes` and select **New management plane**. The form has five steps. **Next** stays off while a step has an error, and the errors show under the step. You can go back to an earlier step at any time. The fleet manager keeps what you entered.
 
-The form follows the cluster while you fill it in. An Environment, a namespace, or a host that changes shows in the errors of its step at once.
+The form follows the cluster while you fill it in. An Environment, a namespace, or a host that changes shows in the errors of its step at once. A pick that goes away after you made it shows the same way. An example is a deleted `DatabaseConfig`, or a preset that the environment no longer lists. While a step has an error, **Create** stays off.
 
 ### Basics
 
@@ -71,6 +71,8 @@ If another cluster or plane uses the same host, the step shows `The host <host> 
 
 With **No access from outside**, enter the URL where browsers reach each component that runs. Each URL must start with `http://` or `https://`. The Keycloak URL must have the path `/auth`, and no query and no fragment. A Management Identity URL with a path must use `https`. A URL must not hold a `%`, a `\`, or a `.` or `..` path segment.
 
+**When the management plane is deleted** says what happens to the resources of the database and access options. **Keep the resources** is the deletion policy `Orphan`, and **Delete the resources** is `Delete`. The **Default** label marks the default of the environment, see [When a claim is deleted](environments.md#when-a-claim-is-deleted). Some options always delete what they made. When you pick one, it shows under the choice with **Always deleted**, and **Keep the resources** is off. If the default keeps the resources and you pick such an option, the plane gets `Delete`, and a line under the choice says so. This is no error, so you can still create the plane. The `CamundaManagementCluster` is always deleted with the claim.
+
 **Contract name** is the name of the [ManagementAuthConfig](../crds/managementauthconfig.md) that the plane writes for Optimize. Leave it empty to use the name of the plane. The step refuses a name that a `ManagementAuthConfig` or another plane already uses.
 
 ### Review
@@ -110,7 +112,7 @@ spec:
     keycloak: 26.6.4
 ```
 
-The claim names `platformConfigRef` only when you picked a platform config that is not the default of the environment. It names `managementAuthConfigName` only when the contract name is not the name of the plane.
+The claim names `platformConfigRef` only when you picked a platform config that is not the default of the environment. It names `managementAuthConfigName` only when the contract name is not the name of the plane. It names `deletionPolicy` only when the deletion policy of the plane is not the default of the environment.
 
 Select **Create** to write the claim. In Git mode, the button reads **Push to Git**. [Fleet manager settings](settings.md) says how to turn on Git mode. The fleet manager commits the claim to the repository, and the new namespace too when the plane needs one, in one commit.
 

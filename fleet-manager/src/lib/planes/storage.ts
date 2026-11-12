@@ -6,22 +6,28 @@ import {
   renderHosts,
   takenHosts,
 } from "@/lib/claims/hosts";
+import {
+  type StorageDraft,
+  draftErrors,
+  picksOf,
+  resolvedErrors,
+  viewSelections,
+} from "@/lib/drafts";
 import { ACCESS_SECTION } from "@/lib/labels";
 import {
   type BuiltinObjects,
+  type DeletionChoice,
   type OptionView,
   type PluginSelection,
   type SectionView,
   builtinOption,
   byCodeUnit,
-  checkAllowed,
-  checkDeletionPolicy,
-  isObject,
+  deletionChoice,
   offeredSection,
   resolve,
   withMissingInputs,
 } from "@/lib/policy";
-import { type ValidationError, validate } from "@/lib/schema";
+import type { ValidationError } from "@/lib/schema";
 import { listOf } from "@/lib/text";
 import { runningOf } from "./components";
 import type { PlaneContext, PlaneDraft } from "./draft";
@@ -41,7 +47,6 @@ export const DATABASE_SUFFIX = {
 const MANAGEMENT_HOST = "managementHostnamePattern";
 const CONTRACT_NAME = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const DATABASE_APPS = ["keycloak", "identity", "webModeler"] as const;
-const FIX_FIELDS = "Fix the fields of the options.";
 
 /** databaseSection returns the section whose slot is managementDatabases. */
 export function databaseSection(
@@ -128,7 +133,9 @@ export function planeSectionViews(
     access: view(access),
     others: others.map((s) => view(s)!),
   };
-  const selections = shownViews(views).flatMap((v) => picksOf(draft, v));
+  const selections = shownViews(views).flatMap((v) =>
+    picksOf(draft.storage, v),
+  );
   const missing = (v: SectionView) =>
     withMissingInputs(v, selections, ctx.registrations, ctx.sections);
   return {
@@ -136,18 +143,6 @@ export function planeSectionViews(
     access: views.access && missing(views.access),
     others: views.others.map(missing),
   };
-}
-
-// A section that draft.storage does not hold yet counts its enabled default
-// option as picked, as SectionCards preselects it.
-function picksOf(draft: PlaneDraft, view: SectionView): PluginSelection[] {
-  if (Object.hasOwn(draft.storage, view.name)) return draft.storage[view.name];
-  const preselected = view.options.find(
-    (o) => o.isDefault && !o.disabledReason,
-  );
-  return preselected
-    ? [{ section: view.name, registration: preselected.registration }]
-    : [];
 }
 
 function runningOption(option: OptionView, running: Running): OptionView {
@@ -261,30 +256,6 @@ export function databaseConfigErrors(
   ];
 }
 
-// missingConfigErrors returns an error for each DatabaseConfig name in
-// selection, the request, that names does not hold.
-function missingConfigErrors(
-  selection: PluginSelection | undefined,
-  running: Running,
-  namespace: string,
-  names: readonly string[],
-): string[] {
-  if (selection?.registration !== EXISTING_DATABASE_CONFIGS) return [];
-  // The handler waits for each name, also that of an app that does not run.
-  return DATABASE_APPS.flatMap((app) => {
-    const name = selection.parameters?.[app];
-    if (typeof name !== "string" || name === "" || names.includes(name)) {
-      return [];
-    }
-    const label = VERSION_LABEL[app];
-    return [
-      runs(app, running)
-        ? `Pick another DatabaseConfig for ${label}. ${name} is not in ${namespace}.`
-        : `The DatabaseConfig ${name} that the policy gives ${label} is not in ${namespace}. Ask your admin to change the policy of the Environment.`,
-    ];
-  });
-}
-
 // effectiveSelection returns selection with the parameters that the claim
 // gets: SectionCards leaves out a value that equals the policy value.
 function effectiveSelection(
@@ -308,193 +279,48 @@ function effectiveSelection(
   return parameters ? { ...selection, parameters } : selection;
 }
 
-// The database section is never required here: storageErrors asks for its
-// option in its own words.
-function selectionErrors(
+/**
+ * planeStorageDraft returns the storage part of draft in the shape of the
+ * draft checks. objects are the source kinds of builtinOption, in every
+ * namespace. Without them, the config names are not checked.
+ */
+export function planeStorageDraft(
   draft: PlaneDraft,
-  views: PlaneSectionViews,
-): string[] {
-  return shownViews(views).flatMap((view) => {
-    const picked = Object.hasOwn(draft.storage, view.name)
-      ? draft.storage[view.name]
-      : [];
-    const unusable = picked.some((s) => {
-      const option = view.options.find(
-        (o) => o.registration === s.registration,
-      );
-      return !option || option.disabledReason !== undefined;
-    });
-    if (unusable) return [`Choose another option for ${view.label}.`];
-    if (view.selection === "One" && picked.length > 1) {
-      return [`Choose one option for ${view.label}.`];
-    }
-    return view.required && picked.length === 0 && view !== views.databases
-      ? [`Choose an option for ${view.label}.`]
-      : [];
-  });
-}
-
-// SectionCards checks the values only while step 4 shows, and a
-// DatabaseConfig, a preset, or a policy value can go after that.
-function valueErrors(draft: PlaneDraft, views: PlaneSectionViews): string[] {
-  return shownViews(views).flatMap((view) => {
-    return picksOf(draft, view).flatMap((selection) => {
-      const option = view.options.find(
-        (o) => o.registration === selection.registration,
-      );
-      if (!option || option.disabledReason) return [];
-      const set = selection.parameters ?? {};
-      return option.parameters.flatMap((rule) => {
-        if (!rule.claimEditable) return [];
-        const value = Object.hasOwn(set, rule.name)
-          ? set[rule.name]
-          : rule.value;
-        const empty =
-          value === "" || (Array.isArray(value) && value.length === 0);
-        if (value === undefined || (empty && rule.required)) {
-          return rule.required
-            ? [`Choose a ${rule.label} for ${option.label}.`]
-            : [];
-        }
-        const names =
-          option.choices?.parameter === rule.name
-            ? option.choices.items.map((i) => i.name)
-            : rule.allowed?.map((a) => a.name);
-        const fix = [`Fix the ${rule.label} of ${option.label}.`];
-        if (!names) {
-          return rule.schema && !validate(rule.schema, value).ok ? fix : [];
-        }
-        if (empty) return [];
-        const list = Array.isArray(value) && !rule.allowedLists;
-        const picked = list ? value : [value];
-        const gone = picked
-          .filter((v) => !names.includes(v as string))
-          .map(
-            (v) =>
-              `${String(v)} is not available for ${rule.label} of ${option.label}. Choose another.`,
-          );
-        if (gone.length > 0 || !list) return gone;
-        // The schema describes the values of the choices, not their names,
-        // so only its count applies to a list of names.
-        const { minItems, maxItems } = rule.schema ?? {};
-        return (typeof minItems === "number" && value.length < minItems) ||
-          (typeof maxItems === "number" && value.length > maxItems)
-          ? fix
-          : [];
-      });
-    });
-  });
-}
-
-// The claim controller refuses what checkAllowed refuses, and the
-// Environment and the registrations can change after step 4.
-function policyErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
-  const environment = ctx.environments.find(
-    (e) => e.metadata.name === draft.environment,
-  );
-  const running = runningOf(draft);
-  const selections = planeSelections(draft).map((p) =>
-    runningSelection(p, running),
-  );
-  const resolved = resolve({
-    environment,
-    registrations: [...ctx.registrations],
-    selections,
-  });
-  const result =
-    "value" in resolved
-      ? checkAllowed({
-          kind: "CamundaManagementClusterClaim",
-          sections: ctx.sections,
-          environment,
-          policy: resolved.value.policy,
-          selections,
-        })
-      : resolved;
-  if ("refusal" in result) return [result.refusal.message];
-  if ("error" in result) return [result.error];
-  // checkAllowed does not check a locked value against the schema of its
-  // registration, and the built-in controller refuses a request of a built-in
-  // registration whose parameters the schema refuses.
-  const databases = databaseSection(ctx.sections)?.metadata.name;
-  return ("value" in resolved ? (resolved.value.requests ?? []) : []).flatMap(
-    (request) => {
-      const registration = ctx.registrations.find(
-        (r) => r.metadata.name === request.registration,
-      );
-      const schema = registration?.spec.parameters;
-      if (!registration || !isObject(schema)) return [];
-      // The claim controller sets databases on the request of the database
-      // section (WithDatabases of camundamanagementclusterclaim).
-      const parameters =
-        request.section === databases
-          ? {
-              ...request.parameters,
-              databases: DATABASE_APPS.filter((app) => runs(app, running)),
-            }
-          : (request.parameters ?? {});
-      const checked = validate(schema, parameters);
-      if (checked.ok) return [];
-      const [first] = checked.errors;
-      return [
-        `The policy gives ${registration.spec.label} a value that its schema refuses: ${first.path} ${first.message}. Pick another option, or ask your admin to change the policy of the Environment.`,
-      ];
-    },
-  );
+  ctx: PlaneContext,
+  objects?: BuiltinObjects,
+): StorageDraft {
+  return {
+    kind: "CamundaManagementClusterClaim",
+    picks: draft.storage,
+    namespace: draft.namespace?.name ?? "",
+    environment: ctx.environments.find(
+      (e) => e.metadata.name === draft.environment,
+    ),
+    sections: ctx.sections,
+    registrations: ctx.registrations,
+    ...(objects && { objects }),
+  };
 }
 
 /**
- * shownSectionErrors returns the errors of errors, by section name, of the
- * sections of views.
+ * planeDeletion returns the deletion choice of draft. The selections are
+ * those of the sections of planeSectionViews, with the default of a section
+ * that the step has not reported yet. objects are as for planeSectionViews.
  */
-export function shownSectionErrors(
-  errors: Readonly<Record<string, readonly ValidationError[]>>,
-  views: PlaneSectionViews,
-): ValidationError[] {
-  return shownViews(views).flatMap((v) =>
-    Object.hasOwn(errors, v.name) ? errors[v.name] : [],
-  );
-}
-
-// The flow writes no deletionPolicy, so the claim takes the default of the
-// Environment, and the claim controller runs CheckDeletionPolicy on it.
-function deletionPolicyErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
-  const environment = ctx.environments.find(
-    (e) => e.metadata.name === draft.environment,
-  );
-  const policy = environment?.spec.deletionPolicy || "Delete";
-  return planeSelections(draft).flatMap((selection) => {
-    if ("value" in checkDeletionPolicy(policy, [selection], ctx.registrations))
-      return [];
-    const label =
-      ctx.registrations.find((r) => r.metadata.name === selection.registration)
-        ?.spec.label ?? selection.registration;
-    return [
-      `${label} (${selection.registration}) does not support the deletion policy ${policy}, the default of the Environment ${draft.environment}. Pick another option, or ask your admin to change the default deletion policy of the Environment.`,
-    ];
-  });
-}
-
-/**
- * goneSections returns the name of each section that holds a pick in
- * draft.storage and that sections do not offer to a plane claim: it is
- * missing, or its appliesTo does not list CamundaManagementClusterClaim.
- */
-export function goneSections(
+export function planeDeletion(
   draft: PlaneDraft,
-  sections: readonly PluginSection[],
-): string[] {
-  return Object.entries(draft.storage)
-    .filter(
-      ([name, picked]) =>
-        picked.length > 0 &&
-        !sections.some(
-          (s) =>
-            s.metadata.name === name &&
-            s.spec.appliesTo.includes("CamundaManagementClusterClaim"),
-        ),
-    )
-    .map(([name]) => name);
+  ctx: PlaneContext,
+  objects: BuiltinObjects,
+): DeletionChoice {
+  const views = shownViews(planeSectionViews(draft, ctx, objects));
+  const storage = planeStorageDraft(draft, ctx);
+  return deletionChoice(
+    draft.deletionPolicy,
+    viewSelections(storage, views),
+    storage.environment,
+    ctx.registrations,
+    views,
+  );
 }
 
 /** contractNameOf is the name of the ManagementAuthConfig of the draft: the typed name, else the claim name. */
@@ -538,35 +364,35 @@ export function contractNameErrors(
 }
 
 /**
- * storageErrors returns the errors of step 4. sectionErrors are the errors
- * that SectionCards reported, and views the sections of planeSectionViews.
- * With objects, the source kinds of builtinOption in every namespace, each
- * DatabaseConfig that the request names must be in the namespace of draft.
- * A section of views whose selected option is missing or disabled, a
- * required parameter that a claim can edit and that has no value, a value
- * that is not among the choices of views, or a section other than the
- * database section that is required and has no selection, blocks the step.
+ * storageErrors returns the errors of step 4 against the newest data.
+ * sectionErrors are the errors that SectionCards last reported, by section
+ * name, and views the sections of planeSectionViews. It returns the
+ * errors of draftErrors over views, a missing database pick, the host or
+ * URL errors, the DatabaseConfig errors, and the contract name errors.
+ * When there are none, it returns resolvedErrors of the plugins of the
+ * claim, so a value that the claim controller would refuse blocks the
+ * step too. With objects, the source kinds of builtinOption in every
+ * namespace, each config name of a request must be in the namespace of
+ * draft.
  */
 export function storageErrors(
   draft: PlaneDraft,
   ctx: PlaneContext,
-  sectionErrors: readonly ValidationError[],
+  sectionErrors: Readonly<Record<string, readonly ValidationError[]>>,
   views: PlaneSectionViews,
   objects?: BuiltinObjects,
 ): string[] {
   const running = runningOf(draft);
   const databases = databaseSection(ctx.sections);
-  const sectionNames = ctx.sections.map((s) => s.metadata.name);
-  const errors: string[] = [
-    ...selectionErrors(draft, views),
-    ...valueErrors(draft, views),
-    ...goneSections(draft, ctx.sections).map(
-      (name) => `Choose another option for ${name}.`,
-    ),
-  ];
-  if (sectionErrors.some((e) => !sectionNames.includes(e.path))) {
-    errors.push(FIX_FIELDS);
-  }
+  const storage = planeStorageDraft(draft, ctx, objects);
+  const shown = shownViews(views);
+  const errors: string[] = draftErrors(
+    storage,
+    shown,
+    sectionErrors,
+    // The pick of the database section is asked for below, in its own words.
+    views.databases ? [views.databases.name] : [],
+  );
   const database = planeSelections(draft).find(
     (p) => p.section === databases?.metadata.name,
   );
@@ -586,22 +412,17 @@ export function storageErrors(
     database &&
     effectiveSelection(runningSelection(database, running), draft, ctx);
   errors.push(...databaseConfigErrors(request, running));
-  errors.push(...deletionPolicyErrors(draft, ctx));
   errors.push(...contractNameErrors(draft, ctx));
   if (errors.length > 0) return errors;
-  // valueErrors does not check a DatabaseConfig against the namespace when
-  // its parameter is locked or the Environment gives it an allowed list.
-  // checkAllowed gives only its first refusal, and the checks above name the
-  // allowed registrations, the required sections, and the parameters that a
-  // claim can edit in plainer words.
-  const namespace = draft.namespace?.name ?? "";
-  const configs = (objects?.DatabaseConfig ?? [])
-    .filter((c) => c.metadata?.namespace === namespace)
-    .map((c) => c.metadata?.name ?? "");
-  return [
-    ...(objects
-      ? missingConfigErrors(request, running, namespace, configs)
-      : []),
-    ...policyErrors(draft, ctx),
-  ];
+  return resolvedErrors(
+    storage,
+    shown,
+    planeSelections(draft).map((p) => runningSelection(p, running)),
+    // The claim controller sets databases on the request of the database
+    // section (WithDatabases of camundamanagementclusterclaim).
+    (request) =>
+      request.section === databases?.metadata.name
+        ? { databases: DATABASE_APPS.filter((app) => runs(app, running)) }
+        : {},
+  );
 }

@@ -5,6 +5,7 @@ import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
 import type { PluginRequest } from "@/generated/crds/pluginrequest";
 import type { PluginSection } from "@/generated/crds/pluginsection";
+import { goneSections } from "@/lib/drafts";
 import { EMPTY_ADMIN } from "./components";
 import { EMPTY_PLANE_DRAFT, type PlaneContext, type PlaneDraft } from "./draft";
 import {
@@ -13,10 +14,10 @@ import {
   contractNameOf,
   databaseConfigErrors,
   databaseSection,
-  goneSections,
   managementHost,
+  planeDeletion,
   planeSectionViews,
-  shownSectionErrors,
+  planeStorageDraft,
   storageErrors,
 } from "./storage";
 import type { Running } from "./versions";
@@ -288,52 +289,51 @@ describe("contractNameErrors", () => {
 
 describe("storageErrors", () => {
   it("passes a draft with a database option, its URLs, and a free contract", () => {
-    expect(storageErrors(draft(), ctx, [], {})).toEqual([]);
+    expect(storageErrors(draft(), ctx, {}, {})).toEqual([]);
   });
 
-  describe("and the default deletion policy of the Environment", () => {
+  it("passes an option that does not support Orphan, the default of the Environment, because the claim then deletes", () => {
     const orphan = {
       ...ctx,
       environments: [production({ deletionPolicy: "Orphan" })],
     };
-
-    it("refuses an option that does not support Orphan, the default", () => {
-      expect(storageErrors(draft(), orphan, [], {})).toEqual([
-        "New PostgreSQL server (management-database-server) does not support the deletion policy Orphan, the default of the Environment production. Pick another option, or ask your admin to change the default deletion policy of the Environment.",
-      ]);
-    });
-
-    it("passes an option that supports Orphan", () => {
-      const c = {
-        ...orphan,
-        registrations: registrations.map((r) => ({
-          ...r,
-          spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] },
-        })) as PluginRegistration[],
-      };
-      expect(storageErrors(draft(), c, [], {})).toEqual([]);
-    });
+    expect(storageErrors(draft(), orphan, {}, {})).toEqual([]);
   });
 
   it("asks for a database option", () => {
-    expect(storageErrors(draft({ storage: {} }), ctx, [], {})).toEqual([
+    expect(storageErrors(draft({ storage: {} }), ctx, {}, {})).toEqual([
       "Pick a database option.",
     ]);
   });
 
-  it("asks to fix the fields of the options that SectionCards reported", () => {
-    expect(
-      storageErrors(
-        draft(),
-        ctx,
-        [{ path: "existing-database-configs/identity", message: "required" }],
-        {},
-      ),
-    ).toEqual(["Fix the fields of the options."]);
+  it("asks to fix the settings of a shown section whose card reported a field error", () => {
+    const databases = {
+      name: "management-database",
+      label: "Databases",
+      selection: "One" as const,
+      required: true,
+      options: [
+        {
+          registration: "management-database-server",
+          label: "New PostgreSQL server",
+          isDefault: true,
+          parameters: [],
+        },
+      ],
+    };
+    const reported = {
+      "management-database": [
+        { path: "management-database-server/preset", message: "required" },
+      ],
+      "dns-zone": [{ path: "route53/zone", message: "required" }],
+    };
+    expect(storageErrors(draft(), ctx, reported, { databases })).toEqual([
+      "Fix the Databases settings.",
+    ]);
   });
 
   it("asks for the URLs without an access selection", () => {
-    expect(storageErrors(draft({ urls: {} }), ctx, [], {})).toEqual([
+    expect(storageErrors(draft({ urls: {} }), ctx, {}, {})).toEqual([
       "Enter the Keycloak URL.",
       "Enter the Management Identity URL.",
     ]);
@@ -353,7 +353,7 @@ describe("storageErrors", () => {
             request("team-b", "plane-b", "plane-a.platform.example.com"),
           ],
         },
-        [],
+        {},
         {},
       ),
     ).toEqual([
@@ -371,7 +371,7 @@ describe("storageErrors", () => {
       "https://plane-a.platform.example.com",
     );
     expect(
-      storageErrors(withAccess, { ...ctx, accessRequests: [cluster] }, [], {}),
+      storageErrors(withAccess, { ...ctx, accessRequests: [cluster] }, {}, {}),
     ).toEqual([
       "The host plane-a.platform.example.com is taken by team-c/orders. Choose another name.",
     ]);
@@ -384,7 +384,7 @@ describe("storageErrors", () => {
       },
       contractName: "ops",
     });
-    expect(storageErrors(d, { ...ctx, authConfigs: ["ops"] }, [], {})).toEqual([
+    expect(storageErrors(d, { ...ctx, authConfigs: ["ops"] }, {}, {})).toEqual([
       "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use db.",
       "A contract ops exists already. Enter another name.",
     ]);
@@ -407,7 +407,7 @@ describe("storageErrors", () => {
           storage: { "management-database": [configs({ ...picked })] },
         }),
         { ...ctx, environments: [environment(keycloak)] },
-        [],
+        {},
         {},
       );
 
@@ -439,7 +439,7 @@ describe("storageErrors", () => {
       storage: { "management-database": [configs({ identity: "kc-db" })] },
     });
     expect(
-      storageErrors(d, { ...ctx, environments: [environment] }, [], {}),
+      storageErrors(d, { ...ctx, environments: [environment] }, {}, {}),
     ).toEqual([
       "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use kc-db.",
     ]);
@@ -453,7 +453,7 @@ describe("storageErrors", () => {
       required: true,
       options: [],
     };
-    expect(storageErrors(draft(), ctx, [], { access })).toEqual([
+    expect(storageErrors(draft(), ctx, {}, { access })).toEqual([
       "Choose an option for Access.",
     ]);
   });
@@ -466,7 +466,7 @@ describe("storageErrors", () => {
       required: true,
       options: [],
     };
-    expect(storageErrors(draft(), ctx, [], { databases })).toEqual([
+    expect(storageErrors(draft(), ctx, {}, { databases })).toEqual([
       "Choose another option for Databases.",
     ]);
     const disabled = {
@@ -481,7 +481,7 @@ describe("storageErrors", () => {
         },
       ],
     };
-    expect(storageErrors(draft(), ctx, [], { databases: disabled })).toEqual([
+    expect(storageErrors(draft(), ctx, {}, { databases: disabled })).toEqual([
       "Choose another option for Databases.",
     ]);
   });
@@ -506,7 +506,7 @@ describe("storageErrors and a policy that changed after step 4", () => {
   it("refuses a pick of a section that no PluginSection offers any more", () => {
     const d = draft({ storage: { ...withDatabase, access: [gatewayPick] } });
     const gone = { ...ctx, sections: [sections[0]] };
-    expect(storageErrors(d, gone, [], { databases })).toEqual([
+    expect(storageErrors(d, gone, {}, { databases })).toEqual([
       "Choose another option for access.",
     ]);
   });
@@ -529,30 +529,52 @@ describe("storageErrors and a policy that changed after step 4", () => {
       },
     });
     expect(
-      storageErrors(d, { ...ctx, environments: [environment] }, [], {}),
+      storageErrors(d, { ...ctx, environments: [environment] }, {}, {}),
     ).toEqual([
       'parameter "tier" of registration "gateway" has the name "silver", which is not one of gold',
     ]);
   });
 });
 
-describe("shownSectionErrors", () => {
-  it("keeps only the errors of the sections that views show", () => {
-    const shown = { path: "management-database", message: "Choose an option" };
-    const gone = { path: "dns-zone", message: "Choose an option" };
-    const databases = {
-      name: "management-database",
-      label: "Databases",
-      selection: "One" as const,
-      required: true,
-      options: [],
-    };
+describe("planeDeletion", () => {
+  const orphan = {
+    ...ctx,
+    environments: [production({ deletionPolicy: "Orphan" })],
+  };
+  const keeping = {
+    ...orphan,
+    registrations: registrations.map((r) => ({
+      ...r,
+      spec: { ...r.spec, deletionPolicies: ["Delete", "Orphan"] },
+    })) as PluginRegistration[],
+  };
+
+  it("takes the default of the Environment while every pick can keep", () => {
+    expect(planeDeletion(draft(), keeping, {})).toMatchObject({
+      defaultPolicy: "Orphan",
+      keepAllowed: true,
+      policy: "Orphan",
+    });
+  });
+
+  it("does not offer Keep and deletes when the default keeps and a pick supports only Delete", () => {
+    expect(planeDeletion(draft(), orphan, {})).toEqual({
+      defaultPolicy: "Orphan",
+      keepAllowed: false,
+      alwaysDeleted: [
+        {
+          section: "management-database",
+          label: "New PostgreSQL server (Databases)",
+        },
+      ],
+      policy: "Delete",
+    });
+  });
+
+  it("takes the pick of the draft over the default", () => {
     expect(
-      shownSectionErrors(
-        { "management-database": [shown], "dns-zone": [gone] },
-        { databases },
-      ),
-    ).toEqual([shown]);
+      planeDeletion(draft({ deletionPolicy: "Delete" }), keeping, {}).policy,
+    ).toBe("Delete");
   });
 });
 
@@ -634,7 +656,7 @@ describe("planeSectionViews", () => {
         ],
       },
     });
-    expect(storageErrors(d, c, [], { others: [dnsZone] })).toEqual([
+    expect(storageErrors(d, c, {}, { others: [dnsZone] })).toEqual([
       "Choose one option for DNS zone.",
     ]);
   });
@@ -656,7 +678,7 @@ describe("planeSectionViews", () => {
     };
     const d = draft({ storage: {} });
     expect(() =>
-      storageErrors(d, c, [], planeSectionViews(d, c, {})),
+      storageErrors(d, c, {}, planeSectionViews(d, c, {})),
     ).not.toThrow();
   });
 
@@ -681,8 +703,8 @@ describe("planeSectionViews", () => {
         "dns-zone": [{ section: "dns-zone", registration: "dns" }],
       },
     });
-    expect(goneSections(d, c.sections)).toEqual(["dns-zone"]);
-    expect(storageErrors(d, c, [], {})).toEqual([
+    expect(goneSections(planeStorageDraft(d, c))).toEqual(["dns-zone"]);
+    expect(storageErrors(d, c, {}, {})).toEqual([
       "Choose another option for dns-zone.",
     ]);
   });
@@ -724,7 +746,7 @@ describe("planeSectionViews", () => {
     });
     const views = planeSectionViews(d, c, {});
     expect(views.others?.map((v) => v.name)).toEqual(["dns-zone"]);
-    expect(storageErrors(d, c, [], views)).toEqual([
+    expect(storageErrors(d, c, {}, views)).toEqual([
       "Choose an option for DNS zone.",
     ]);
   });
@@ -740,7 +762,7 @@ describe("planeSectionViews", () => {
     });
     const views = planeSectionViews(d, live, {});
     expect(views.databases?.options[0].disabledReason).toBe("Needs an access");
-    expect(storageErrors(d, live, [], views)).toContain(
+    expect(storageErrors(d, live, {}, views)).toContain(
       "Choose another option for Databases.",
     );
   });
@@ -855,7 +877,7 @@ describe("storageErrors and a live choice that is gone", () => {
     spec: { server: { instances: 1 } },
   });
   const errorsOf = (d: PlaneDraft, c: PlaneContext, objects: object) =>
-    storageErrors(d, c, [], planeSectionViews(d, c, objects), objects);
+    storageErrors(d, c, {}, planeSectionViews(d, c, objects), objects);
   const keycloakOnly = { mode: "keycloak" as const };
 
   it("refuses a picked DatabaseConfig that is gone while another one is left, and names it", () => {

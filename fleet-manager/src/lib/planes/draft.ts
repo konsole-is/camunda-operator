@@ -15,7 +15,11 @@ import { claimNameErrors } from "@/lib/claims/names";
 import { syncedNamespace } from "@/lib/clusters/draft";
 import { environmentReady } from "@/lib/environments";
 import type { LabelSelector } from "@/lib/labels";
-import type { PluginSelection } from "@/lib/policy";
+import {
+  type DeletionPolicy,
+  type PluginSelection,
+  deletionChoice,
+} from "@/lib/policy";
 import type { ValidationError } from "@/lib/schema";
 import type { ImagesTable } from "@/startup/bundled-data";
 import { createChangeOf } from "@/lib/write/create";
@@ -56,7 +60,8 @@ import {
  * holds only the versions that the admin typed. storage holds the
  * selections by section name, once step 4 showed the section. urls are the
  * URLs typed for "No access from outside". contractName "" means the claim
- * name.
+ * name. deletionPolicy is the deletion pick. Without it, the claim takes
+ * the default of the environment.
  */
 export type PlaneDraft = {
   environment?: string;
@@ -75,6 +80,7 @@ export type PlaneDraft = {
   storage: Record<string, PluginSelection[]>;
   urls: Partial<Record<PlaneUrlId, string>>;
   contractName: string;
+  deletionPolicy?: DeletionPolicy;
 };
 
 /** EMPTY_PLANE_DRAFT is the draft that the flow starts from. */
@@ -278,20 +284,10 @@ export function componentsErrors(
   ];
 }
 
-/**
- * planeClaimOf returns the claim of draft. clusterSelector is never unset:
- * an unset selector selects no cluster, so no cluster labels give {}.
- * platformConfigRef is set only when the pick differs from the platform
- * config of the environment. The admin holds only the fields of the mode.
- * Console, Web Modeler, and their versions are set only while they run,
- * and versions.keycloak only in Keycloak mode. Without an access
- * selection, each typed URL of a running app is set. A selection of
- * existing-database-configs names no DatabaseConfig of an app that does
- * not run. managementAuthConfigName is set only when it differs from the
- * claim name.
- */
+/** planeClaimOf returns the claim of draft. */
 export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
-  const own = environmentOf(draft, ctx)?.spec.platformConfigRef;
+  const environment = environmentOf(draft, ctx);
+  const own = environment?.spec.platformConfigRef;
   const ref =
     draft.platformConfig !== undefined && draft.platformConfig !== own
       ? draft.platformConfig
@@ -305,6 +301,12 @@ export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
     draft.contractName !== "" && draft.contractName !== draft.name
       ? draft.contractName
       : undefined;
+  const deletion = deletionChoice(
+    draft.deletionPolicy,
+    plugins,
+    environment,
+    ctx.registrations,
+  );
   const management: Management = {
     identityProvider: identityProviderOf(draft),
     identity: { admin: adminOf(draft) },
@@ -324,6 +326,7 @@ export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
     spec: {
       // The CRD needs one environment or more; the served step checks it.
       environments: servedOf(draft) as [string, ...string[]],
+      // An unset selector selects no cluster, so no cluster labels give {}.
       clusterSelector:
         Object.keys(draft.clusterLabels).length === 0
           ? {}
@@ -333,6 +336,9 @@ export function planeClaimOf(draft: PlaneDraft, ctx: PlaneContext): PlaneClaim {
       versions: { ...versions, identity: versions.identity ?? "" },
       ...(plugins.length > 0 && { plugins }),
       ...(contract !== undefined && { managementAuthConfigName: contract }),
+      ...(deletion.policy !== deletion.defaultPolicy && {
+        deletionPolicy: deletion.policy,
+      }),
     },
   };
 }

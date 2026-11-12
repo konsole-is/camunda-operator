@@ -9,8 +9,11 @@ import type {
 import { claimNameErrors } from "@/lib/claims/names";
 import { environmentReady } from "@/lib/environments";
 import { ENVIRONMENT_LABEL } from "@/lib/labels";
-import { byCodeUnit, type PluginSelection } from "@/lib/policy";
-import type { DeletionChoice } from "./storage";
+import {
+  byCodeUnit,
+  type DeletionChoice,
+  type PluginSelection,
+} from "@/lib/policy";
 
 /** ClusterClaimSpec is the spec of a cluster claim with typed plugin parameters. */
 export type ClusterClaimSpec = Omit<CamundaClusterClaim["spec"], "plugins"> & {
@@ -158,10 +161,17 @@ export function draftSelections(draft: ClusterDraft): PluginSelection[] {
   return Object.values(draft.storage ?? {}).flat();
 }
 
+/** releaseOf returns the release of draft: its pick, else the default release of environment, else undefined. */
+export function releaseOf(
+  draft: ClusterDraft,
+  environment: Environment | undefined,
+): string | undefined {
+  return draft.claim.spec.releaseRef ?? environment?.spec.releases?.default;
+}
+
 /**
- * clusterClaimOf returns the claim that draft writes. releaseRef is always
- * set when one is known: the pick of the draft, else the default release
- * of environment. platformConfigRef is set only when the pick differs from
+ * clusterClaimOf returns the claim that draft writes. releaseRef is
+ * releaseOf, set when one is known. platformConfigRef is set only when the pick differs from
  * spec.platformConfigRef of environment. plugins are draftSelections, left
  * out when empty. cluster and attachments are copied when the draft sets
  * them. deletionPolicy is deletion.policy, set only when it differs from
@@ -174,7 +184,7 @@ export function clusterClaimOf(
   deletion: DeletionChoice,
 ): ClusterClaimObject {
   const { spec } = draft.claim;
-  const releaseRef = spec.releaseRef ?? environment?.spec.releases?.default;
+  const releaseRef = releaseOf(draft, environment);
   const platformConfigRef =
     spec.platformConfigRef !== environment?.spec.platformConfigRef
       ? spec.platformConfigRef

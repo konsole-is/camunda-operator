@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ElasticsearchClusterPreset } from "@/generated/crds/elasticsearchclusterpreset";
 import type { Environment } from "@/generated/crds/environment";
 import type {
   PluginRegistration,
@@ -9,7 +10,7 @@ import type { SecondaryStorageConfig } from "@/generated/crds/secondarystorageco
 import type { ClusterDraft } from "./draft";
 import {
   type StorageData,
-  deletionChoice,
+  clusterDeletion,
   draftAccessPatterns,
   storageErrors,
   storageSummary,
@@ -254,17 +255,17 @@ describe("storageErrors", () => {
     draft: ClusterDraft,
     cardErrors: Parameters<typeof storageErrors>[2] = {},
     conflicts: string[] = [],
-  ) => storageErrors(draft, storageViews(draft, data), cardErrors, conflicts);
+  ) => storageErrors(draft, data, cardErrors, conflicts);
 
   it("asks for an option in a required section", () => {
     expect(errorsOf(draftWith({ "secondary-storage": [] }))).toEqual([
-      "Choose an option for Secondary storage",
+      "Choose an option for Secondary storage.",
     ]);
   });
 
   it("asks for an option in a required section that the step has not reported yet", () => {
     expect(errorsOf(draftWith())).toEqual([
-      "Choose an option for Secondary storage",
+      "Choose an option for Secondary storage.",
     ]);
   });
 
@@ -286,9 +287,7 @@ describe("storageErrors", () => {
     };
     const draft = draftWith();
 
-    expect(
-      storageErrors(draft, storageViews(draft, withDefault), {}, []),
-    ).toEqual([]);
+    expect(storageErrors(draft, withDefault, {}, [])).toEqual([]);
   });
 
   it("asks for another option when the picked one is disabled now", () => {
@@ -305,7 +304,7 @@ describe("storageErrors", () => {
     });
 
     expect(errorsOf(draft)).toEqual([
-      "Choose another option for Volume encryption",
+      "Choose another option for Volume encryption.",
     ]);
   });
 
@@ -317,7 +316,7 @@ describe("storageErrors", () => {
     });
 
     expect(errorsOf(draft)).toEqual([
-      "Choose another option for Secondary storage",
+      "Choose another option for Secondary storage.",
     ]);
   });
 
@@ -338,7 +337,7 @@ describe("storageErrors", () => {
           { path: "existing-secondary-storage/name", message: "too long" },
         ],
       }),
-    ).toEqual(["Fix the Secondary storage settings"]);
+    ).toEqual(["Fix the Secondary storage settings."]);
   });
 
   it("does not repeat the required error that the card also reports", () => {
@@ -348,7 +347,7 @@ describe("storageErrors", () => {
           { path: "secondary-storage", message: "Choose an option" },
         ],
       }),
-    ).toEqual(["Choose an option for Secondary storage"]);
+    ).toEqual(["Choose an option for Secondary storage."]);
   });
 
   it("asks for another option for a pick of a section that step 2 no longer shows", () => {
@@ -361,8 +360,8 @@ describe("storageErrors", () => {
         }),
       ),
     ).toEqual([
-      "Choose an option for Secondary storage",
-      "Choose another option for gone",
+      "Choose an option for Secondary storage.",
+      "Choose another option for gone.",
     ]);
   });
 
@@ -371,7 +370,7 @@ describe("storageErrors", () => {
       errorsOf(draftWith({ "secondary-storage": [] }), {}, [
         "The host is taken",
       ]),
-    ).toEqual(["Choose an option for Secondary storage", "The host is taken"]);
+    ).toEqual(["Choose an option for Secondary storage.", "The host is taken"]);
   });
 
   it("gives no error for a complete draft", () => {
@@ -387,6 +386,202 @@ describe("storageErrors", () => {
         }),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("storageErrors and a live list that changed after the pick", () => {
+  const builtin = { name: "camunda-operator", version: "0.0.0" };
+  const elasticsearch = registration("elasticsearch", {
+    sections: ["secondary-storage"],
+    label: "New Elasticsearch cluster",
+    controller: builtin,
+    parameters: {
+      type: "object",
+      required: ["preset", "releaseRef"],
+      properties: {
+        preset: { type: "string", minLength: 1, title: "Preset" },
+        releaseRef: { type: "string", minLength: 1, title: "Release" },
+        overrides: {
+          type: "object",
+          properties: { replicas: { type: "integer", minimum: 1 } },
+        },
+      },
+    },
+  });
+  const existing = registration("existing-secondary-storage", {
+    sections: ["secondary-storage"],
+    label: "Existing secondary storage",
+    controller: builtin,
+    parameters: {
+      type: "object",
+      required: ["name"],
+      properties: { name: { type: "string", minLength: 1, title: "Name" } },
+    },
+  });
+  const environment = (spec: Partial<Environment["spec"]>): Environment => ({
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "Environment",
+    metadata: { name: "prod" },
+    spec: {
+      releases: { allowed: ["r1"], default: "r1" },
+      sections: {
+        "secondary-storage": {
+          allowed: ["elasticsearch", "existing-secondary-storage"],
+        },
+      },
+      ...spec,
+    },
+  });
+  const preset = (name: string) =>
+    ({
+      metadata: { name },
+      spec: { cluster: { replicas: 1 } },
+    }) as ElasticsearchClusterPreset;
+  const dataOf = (
+    spec: Partial<Environment["spec"]>,
+    objects: StorageData["objects"],
+  ): StorageData => ({
+    environment: environment(spec),
+    sections: [section("secondary-storage", "Secondary storage")],
+    registrations: [elasticsearch, existing],
+    objects,
+  });
+  const picking = (registration: string, parameters: Record<string, unknown>) =>
+    draftWith({
+      "secondary-storage": [
+        { section: "secondary-storage", registration, parameters },
+      ],
+    });
+  const named = {
+    parameters: {
+      "existing-secondary-storage": { name: { claimEditable: true } },
+    },
+  };
+
+  it("refuses a picked SecondaryStorageConfig that is gone while another one is left, and names it", () => {
+    const draft = picking("existing-secondary-storage", { name: "orders" });
+
+    expect(
+      storageErrors(
+        draft,
+        dataOf(named, {
+          SecondaryStorageConfig: [config("orders", "team-a")],
+        }),
+        {},
+        [],
+      ),
+    ).toEqual([]);
+    expect(
+      storageErrors(
+        draft,
+        dataOf(named, {
+          SecondaryStorageConfig: [config("other", "team-a")],
+        }),
+        {},
+        [],
+      ),
+    ).toEqual([
+      "orders is not available for Name of Existing secondary storage. Choose another.",
+    ]);
+  });
+
+  it("refuses a picked SecondaryStorageConfig that is gone with the last one, and names it", () => {
+    expect(
+      storageErrors(
+        picking("existing-secondary-storage", { name: "orders" }),
+        dataOf(named, { SecondaryStorageConfig: [] }),
+        {},
+        [],
+      ),
+    ).toEqual([
+      "Choose another option for Secondary storage.",
+      "orders is not available for Name of Existing secondary storage. Choose another.",
+    ]);
+  });
+
+  it("refuses a SecondaryStorageConfig that an allowed name of the Environment gives once it is gone", () => {
+    const alias = {
+      parameters: {
+        "existing-secondary-storage": {
+          name: {
+            claimEditable: true,
+            allowed: [{ name: "fast", label: "Fast", value: "orders" }],
+          },
+        },
+      },
+    };
+    const draft = picking("existing-secondary-storage", { name: "fast" });
+
+    expect(
+      storageErrors(
+        draft,
+        dataOf(alias, { SecondaryStorageConfig: [config("orders", "team-a")] }),
+        {},
+        [],
+      ),
+    ).toEqual([]);
+    expect(
+      storageErrors(
+        draft,
+        dataOf(alias, { SecondaryStorageConfig: [config("other", "team-a")] }),
+        {},
+        [],
+      ),
+    ).toEqual([
+      "Pick another SecondaryStorageConfig for Name. orders is not in team-a.",
+    ]);
+  });
+
+  it("refuses a preset that an allowed name of the Environment gives once the Environment no longer lists it", () => {
+    const withPresets = (listed: string[]) =>
+      dataOf(
+        {
+          presets: { camundaCluster: ["small"], elasticsearchCluster: listed },
+          parameters: {
+            elasticsearch: {
+              preset: {
+                claimEditable: true,
+                allowed: [
+                  { name: "small-option", label: "Small", value: "small" },
+                ],
+              },
+            },
+          },
+        },
+        { ElasticsearchClusterPreset: [preset("small"), preset("large")] },
+      );
+    const draft = picking("elasticsearch", { preset: "small-option" });
+
+    expect(
+      storageErrors(draft, withPresets(["small", "large"]), {}, []),
+    ).toEqual([]);
+    expect(storageErrors(draft, withPresets(["large"]), {}, [])).toEqual([
+      'ElasticsearchClusterPreset "small" is not in spec.presets.elasticsearchCluster of Environment "prod"',
+    ]);
+  });
+
+  it("refuses a locked policy value that the schema of its registration refuses", () => {
+    const locked = (replicas: number) =>
+      dataOf(
+        {
+          presets: { elasticsearchCluster: ["small"] },
+          parameters: {
+            elasticsearch: {
+              preset: { value: "small" },
+              overrides: { value: { replicas } },
+            },
+          },
+        },
+        { ElasticsearchClusterPreset: [preset("small")] },
+      );
+    const draft = picking("elasticsearch", {});
+
+    expect(storageErrors(draft, locked(1), {}, [])).toEqual([]);
+    expect(storageErrors(draft, locked(0), {}, [])).toEqual([
+      expect.stringMatching(
+        /^The policy gives New Elasticsearch cluster a value that its schema refuses: .+\. Pick another option, or ask your admin to change the policy of the Environment\.$/,
+      ),
+    ]);
   });
 });
 
@@ -424,7 +619,7 @@ describe("draftAccessPatterns", () => {
   });
 });
 
-describe("deletionChoice", () => {
+describe("clusterDeletion", () => {
   const keeping = (name: string, sections: string[]) =>
     registration(name, { sections, deletionPolicies: ["Delete", "Orphan"] });
   const data: StorageData = {
@@ -478,7 +673,7 @@ describe("deletionChoice", () => {
   });
 
   it("does not offer Keep when checkDeletionPolicy refuses Orphan", () => {
-    const choice = deletionChoice(picking("ephemeral"), data);
+    const choice = clusterDeletion(picking("ephemeral"), data);
 
     expect(choice.keepAllowed).toBe(false);
     expect(choice.alwaysDeleted).toEqual([
@@ -487,7 +682,7 @@ describe("deletionChoice", () => {
   });
 
   it("offers Keep when every registration supports Orphan", () => {
-    const choice = deletionChoice(picking("s3"), data);
+    const choice = clusterDeletion(picking("s3"), data);
 
     expect(choice.keepAllowed).toBe(true);
     expect(choice.alwaysDeleted).toEqual([]);
@@ -495,51 +690,52 @@ describe("deletionChoice", () => {
 
   it("does not offer Keep for a default that the step has not reported yet", () => {
     expect(
-      deletionChoice(draftWith(), withEnvironment(undefined, "ephemeral"))
+      clusterDeletion(draftWith(), withEnvironment(undefined, "ephemeral"))
         .keepAllowed,
     ).toBe(false);
   });
 
   it("offers Keep for the picked empty option", () => {
     expect(
-      deletionChoice(draftWith({ "backup-storage": [], access: [] }), data)
+      clusterDeletion(draftWith({ "backup-storage": [], access: [] }), data)
         .keepAllowed,
     ).toBe(true);
   });
 
   it("takes Delete as the default without an Environment", () => {
-    expect(deletionChoice(picking("s3"), data)).toMatchObject({
+    expect(clusterDeletion(picking("s3"), data)).toMatchObject({
       defaultPolicy: "Delete",
       policy: "Delete",
     });
   });
 
   it("takes Delete as the default of an Environment that sets none", () => {
-    expect(deletionChoice(picking("s3"), withEnvironment()).defaultPolicy).toBe(
-      "Delete",
-    );
+    expect(
+      clusterDeletion(picking("s3"), withEnvironment()).defaultPolicy,
+    ).toBe("Delete");
   });
 
   it("takes the deletion default of the Environment", () => {
     expect(
-      deletionChoice(picking("s3"), withEnvironment("Orphan")),
+      clusterDeletion(picking("s3"), withEnvironment("Orphan")),
     ).toMatchObject({ defaultPolicy: "Orphan", policy: "Orphan" });
   });
 
   it("takes the pick of the draft over the default", () => {
     expect(
-      deletionChoice(picking("s3", "Delete"), withEnvironment("Orphan")).policy,
+      clusterDeletion(picking("s3", "Delete"), withEnvironment("Orphan"))
+        .policy,
     ).toBe("Delete");
   });
 
   it("falls back to Delete when the default keeps and a pick cannot", () => {
     expect(
-      deletionChoice(picking("ephemeral"), withEnvironment("Orphan")),
+      clusterDeletion(picking("ephemeral"), withEnvironment("Orphan")),
     ).toMatchObject({ defaultPolicy: "Orphan", policy: "Delete" });
   });
 
   it("falls back to Delete when the draft keeps and a pick cannot", () => {
-    expect(deletionChoice(picking("ephemeral", "Orphan"), data).policy).toBe(
+    expect(clusterDeletion(picking("ephemeral", "Orphan"), data).policy).toBe(
       "Delete",
     );
   });

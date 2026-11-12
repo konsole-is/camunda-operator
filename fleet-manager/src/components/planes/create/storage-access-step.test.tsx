@@ -16,6 +16,7 @@ import {
   EMPTY_PLANE_DRAFT,
   type PlaneContext,
   type PlaneDraft,
+  planeClaimOf,
 } from "@/lib/planes/draft";
 import { planeSectionViews, storageErrors } from "@/lib/planes/storage";
 import type { ValidationError } from "@/lib/schema";
@@ -200,13 +201,16 @@ function Harness({
         {storageErrors(
           flow.draft,
           ctx,
-          Object.values(errors).flat(),
+          errors,
           planeSectionViews(flow.draft, ctx, objects),
           objects,
         ).map((e) => (
           <li key={e}>{e}</li>
         ))}
       </ul>
+      <output aria-label="Claim deletion policy">
+        {planeClaimOf(flow.draft, ctx).spec.deletionPolicy ?? "default"}
+      </output>
     </>
   );
 }
@@ -456,5 +460,80 @@ describe("StorageAccessStep", () => {
     expect(stepErrors()).toContain(
       "The contract name must be lower case letters, digits, and dashes.",
     );
+  });
+});
+
+describe("StorageAccessStep and the deletion choice", () => {
+  const withDefault = (
+    deletionPolicy: "Delete" | "Orphan",
+    deletionPolicies: ("Delete" | "Orphan")[],
+  ): PlaneContext => {
+    const ctx = ctxOf(false);
+    return {
+      ...ctx,
+      environments: ctx.environments.map((e) => ({
+        ...e,
+        spec: { ...e.spec, deletionPolicy },
+      })),
+      registrations: ctx.registrations.map((r) => ({
+        ...r,
+        spec: { ...r.spec, deletionPolicies },
+      })),
+    };
+  };
+  const server: PlaneDraft = {
+    ...keycloak,
+    storage: {
+      "management-database": [
+        {
+          section: "management-database",
+          registration: "management-database-server",
+        },
+      ],
+    },
+    urls: {
+      keycloak: "https://m.example.com/auth",
+      identity: "https://m.example.com/identity",
+    },
+  };
+  const choice = () =>
+    screen.getByRole("group", { name: "When the management plane is deleted" });
+  const policy = () =>
+    screen.getByRole("status", { name: "Claim deletion policy" }).textContent;
+
+  it("lets the user keep the resources, and the claim carries the pick", async () => {
+    render(
+      <Harness
+        initial={server}
+        ctx={withDefault("Delete", ["Delete", "Orphan"])}
+      />,
+    );
+    expect(policy()).toBe("default");
+
+    await userEvent.click(
+      within(choice()).getByRole("radio", { name: /Keep the resources/ }),
+    );
+
+    expect(policy()).toBe("Orphan");
+    expect(stepErrors()).toEqual([]);
+  });
+
+  it("shows the choice with Keep off when the default keeps and a pick supports only Delete, and the step passes with Delete", async () => {
+    render(
+      <Harness initial={server} ctx={withDefault("Orphan", ["Delete"])} />,
+    );
+    const keep = within(choice()).getByRole("radio", {
+      name: /Keep the resources/,
+    }) as HTMLInputElement;
+    const remove = within(choice()).getByRole("radio", {
+      name: /Delete the resources/,
+    }) as HTMLInputElement;
+    expect(keep.disabled).toBe(true);
+
+    await userEvent.click(remove);
+
+    expect(remove.checked).toBe(true);
+    expect(policy()).toBe("Delete");
+    expect(stepErrors()).toEqual([]);
   });
 });

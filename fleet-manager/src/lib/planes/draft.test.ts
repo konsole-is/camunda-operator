@@ -640,6 +640,73 @@ describe("planeClaimOf and the components", () => {
   });
 });
 
+describe("planeClaimOf and the deletion policy", () => {
+  const database = {
+    section: "management-database",
+    registration: "management-database-server",
+  };
+  const server = (deletionPolicies: ("Delete" | "Orphan")[]) =>
+    ({
+      metadata: { name: "management-database-server" },
+      spec: {
+        sections: ["management-database"],
+        mode: "Optional",
+        label: "New PostgreSQL server",
+        deletionPolicies,
+        serviceAccount: { name: "camunda", namespace: "camunda-system" },
+      },
+    }) as PlaneContext["registrations"][number];
+  const withPolicy = (
+    deletionPolicy: "Delete" | "Orphan" | undefined,
+    deletionPolicies: ("Delete" | "Orphan")[],
+  ): PlaneContext => ({
+    ...ctx,
+    environments: [
+      environment("production", "default-platform", {
+        spec: {
+          platformConfigRef: "default-platform",
+          ...(deletionPolicy && { deletionPolicy }),
+        },
+      }),
+    ],
+    registrations: [server(deletionPolicies)],
+  });
+  const picked = (deletionPolicy?: "Delete" | "Orphan"): PlaneDraft => ({
+    ...ready(),
+    storage: { [database.section]: [database] },
+    ...(deletionPolicy && { deletionPolicy }),
+  });
+
+  it("leaves deletionPolicy out while the claim takes the default of the Environment", () => {
+    expect(
+      planeClaimOf(picked(), withPolicy("Orphan", ["Delete", "Orphan"])).spec,
+    ).not.toHaveProperty("deletionPolicy");
+    expect(
+      planeClaimOf(picked("Delete"), withPolicy(undefined, ["Delete"])).spec,
+    ).not.toHaveProperty("deletionPolicy");
+  });
+
+  it("writes the deletion pick that differs from the default", () => {
+    expect(
+      planeClaimOf(picked("Delete"), withPolicy("Orphan", ["Delete", "Orphan"]))
+        .spec.deletionPolicy,
+    ).toBe("Delete");
+    expect(
+      planeClaimOf(
+        picked("Orphan"),
+        withPolicy(undefined, ["Delete", "Orphan"]),
+      ).spec.deletionPolicy,
+    ).toBe("Orphan");
+  });
+
+  it("writes Delete when the default keeps and a pick supports only Delete", () => {
+    expect(
+      planeClaimOf(picked(), withPolicy("Orphan", ["Delete"])).spec
+        .deletionPolicy,
+    ).toBe("Delete");
+  });
+});
+
 describe("planeClaimOf and the storage and access", () => {
   const database = {
     section: "management-database",
