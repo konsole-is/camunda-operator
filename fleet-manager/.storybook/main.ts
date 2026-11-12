@@ -14,8 +14,8 @@ const csfFiles = globSync("src/components/**/*.stories.tsx", {
 );
 
 // The previews are public pages, so no search engine may list them.
-const noIndex = (head: string) =>
-  `${head}<meta name="robots" content="noindex, nofollow" />`;
+const noIndex = (head?: string) =>
+  `${head ?? ""}<meta name="robots" content="noindex, nofollow" />`;
 
 const config: StorybookConfig = {
   stories: csfFiles.map((file) => `../${file}`),
