@@ -178,4 +178,21 @@ describe("TemplateEditor", () => {
       { path: "", message: "An alias refers to the value that holds it" },
     ]);
   });
+
+  it("gives the error of a number that is not finite", () => {
+    const onChange = vi.fn();
+    render(
+      <TemplateEditor
+        label="Inline policy"
+        value={undefined}
+        object
+        parameters={[]}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(field(), { target: { value: "limit: .inf\n" } });
+    expect(onChange).toHaveBeenLastCalledWith(undefined, [
+      { path: "", message: "Use a finite number, not .nan or .inf" },
+    ]);
+  });
 });

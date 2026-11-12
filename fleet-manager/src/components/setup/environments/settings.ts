@@ -54,8 +54,9 @@ export type OptionSettings = {
  * optionSettings returns one entry for each registration that a section of
  * spec allows, by name. A name that no registration has gives no entry.
  * parameters are the properties of the schema in schema order, then the
- * keys of the environment policy that are not properties in code-unit
- * order, without the parameters that the built-in table hides.
+ * keys of the environment policy and of the values of the registration that
+ * are not properties in code-unit order, without the parameters that the
+ * built-in table hides.
  */
 export function optionSettings(
   registrations: readonly PluginRegistration[],
@@ -90,7 +91,7 @@ function settingsOf(
   const access = registration.spec.sections.includes(ACCESS_SECTION);
   const names = [
     ...Object.keys(properties),
-    ...Object.keys(policies)
+    ...[...new Set([...Object.keys(policies), ...Object.keys(values)])]
       .filter((k) => !Object.hasOwn(properties, k))
       .sort(byCodeUnit),
   ].filter((p) => !entry?.hidden.includes(p));
@@ -192,7 +193,8 @@ export function allowedErrors(
 
 /**
  * settingErrors returns an error for each value of settings that its schema
- * refuses, or that is not a valid template parameter in a template
+ * refuses, that is not a valid template parameter in a template
+ * parameter, or that names a preset that spec does not list in a preset
  * parameter: the environment value at
  * spec.parameters.<registration>.<parameter>.value, and each allowed value
  * at .allowed.<row>.value. An allowed value of an array parameter that is
@@ -200,17 +202,25 @@ export function allowedErrors(
  */
 export function settingErrors(
   settings: readonly OptionSettings[],
+  spec: Spec,
 ): ValidationError[] {
   const errors: ValidationError[] = [];
   for (const option of settings) {
     for (const p of option.parameters) {
-      if (!p.schema) continue;
       const path = `spec.parameters.${option.registration}.${p.name}`;
-      const check = (schema: OpenAPISchema, value: unknown, at: string) => {
-        const result = validate(schema, value);
+      const presets = p.presetKind && presetsOf(spec, p.presetKind);
+      const check = (
+        schema: OpenAPISchema | undefined,
+        value: unknown,
+        at: string,
+      ) => {
+        const result = schema ? validate(schema, value) : undefined;
         const found = [
-          ...(result.ok ? [] : result.errors),
+          ...(result && !result.ok ? result.errors : []),
           ...(p.template ? templateErrors(value) : []),
+          ...(presets && typeof value === "string" && !presets.includes(value)
+            ? [{ path: "", message: presetMessage(value) }]
+            : []),
         ];
         if (found.length > 0)
           errors.push({
@@ -222,12 +232,12 @@ export function settingErrors(
       };
       if (p.value !== undefined) check(p.schema, p.value, `${path}.value`);
       const items =
-        p.schema.type === "array" && isObject(p.schema.items)
+        p.schema?.type === "array" && isObject(p.schema.items)
           ? (p.schema.items as OpenAPISchema)
           : p.schema;
       p.allowed.forEach((choice, row) =>
         check(
-          Array.isArray(choice.value) ? p.schema! : items,
+          Array.isArray(choice.value) ? p.schema : items,
           choice.value,
           `${path}.allowed.${row}.value`,
         ),
@@ -235,4 +245,21 @@ export function settingErrors(
     }
   }
   return errors;
+}
+
+/** presetsOf returns the presets of kind that spec lists. */
+export function presetsOf(
+  spec: Spec,
+  kind: NonNullable<ParameterSetting["presetKind"]>,
+): string[] {
+  const list =
+    kind === "ElasticsearchClusterPreset"
+      ? spec.presets?.elasticsearchCluster
+      : spec.presets?.databaseServer;
+  return list ?? [];
+}
+
+/** presetMessage is the error of a preset parameter that names the preset name, which the environment does not list. */
+export function presetMessage(name: string): string {
+  return `The environment does not allow the preset ${name}. Check it under Presets, or pick another.`;
 }

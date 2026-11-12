@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LimitsList } from "@/components/fleet/limits-list";
 import { ParameterField } from "@/components/fleet/parameter-field";
+import { Button } from "@/components/ui/button";
 import type { Environment } from "@/generated/crds/environment";
 import { accessPatterns, renderHosts } from "@/lib/claims/hosts";
 import { renderJSON } from "@/lib/gotemplate";
@@ -13,17 +14,18 @@ import {
   type NamedValue,
   type OptionSettings,
   type ParameterSetting,
+  presetsOf,
   withParameterPolicy,
 } from "./settings";
 import type { EnvironmentSources } from "./sources";
-import { TemplateEditor } from "./template-editor";
+import { isStructured, TemplateEditor } from "./template-editor";
 import { TemplatePreview } from "./template-preview";
 
 type Spec = Environment["spec"];
 
 const PRESET_WORDS = {
-  ElasticsearchClusterPreset: ["Elasticsearch", "elasticsearchCluster"],
-  DatabaseServerPreset: ["PostgreSQL", "databaseServer"],
+  ElasticsearchClusterPreset: "Elasticsearch",
+  DatabaseServerPreset: "PostgreSQL",
 } as const;
 
 /**
@@ -163,7 +165,14 @@ function ParameterSettingRow({
     option.registration,
   );
   const presetWords = setting.presetKind && PRESET_WORDS[setting.presetKind];
-  const presets = presetWords ? (spec.presets?.[presetWords[1]] ?? []) : [];
+  const presets = setting.presetKind ? presetsOf(spec, setting.presetKind) : [];
+  // A value that the list no longer holds shows, with its error, so the
+  // admin can see it and pick another.
+  const retained =
+    typeof setting.value === "string" && !presets.includes(setting.value)
+      ? [{ name: setting.value, label: `${setting.value} (not allowed)` }]
+      : [];
+  const [generation, setGeneration] = useState(0);
   const allowedPrefix = `${base}.allowed.`;
   // A cleared text field gives "", which is no value, unless "" is a member
   // of the enum.
@@ -178,9 +187,10 @@ function ParameterSettingRow({
     >
       {setting.template ? (
         <TemplateEditor
+          key={generation}
           label={setting.label}
           value={setting.value}
-          object={setting.schema?.type === "object"}
+          object={isStructured(setting.schema)}
           parameters={others}
           onChange={(value, found) => {
             valueErrors.current = value === undefined ? found : [];
@@ -190,6 +200,7 @@ function ParameterSettingRow({
         />
       ) : (
         <ParameterField
+          key={generation}
           id={`${option.registration}-${setting.name}`}
           rule={{
             name: setting.name,
@@ -197,7 +208,10 @@ function ParameterSettingRow({
             claimEditable: true,
             ...(setting.schema && { schema: setting.schema }),
             ...(presetWords && {
-              allowed: presets.map((name) => ({ name, label: name })),
+              allowed: [
+                ...retained,
+                ...presets.map((name) => ({ name, label: name })),
+              ],
             }),
           }}
           value={setting.value}
@@ -209,15 +223,29 @@ function ParameterSettingRow({
           }}
         />
       )}
-      {setting.value === undefined && (
+      {setting.value === undefined ? (
         <p className="text-xs text-muted">
           From the registration: {setting.registrationSummary}
         </p>
+      ) : (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          onClick={() => {
+            valueErrors.current = [];
+            report();
+            set({ value: undefined });
+            setGeneration((g) => g + 1);
+          }}
+        >
+          Use the value of the registration
+        </Button>
       )}
       {presetWords && presets.length === 0 && (
         <p className="text-xs text-warn">
-          No {presetWords[0]} preset is allowed. A claim that picks this option
-          is refused until you check one under Presets.
+          No {presetWords} preset is allowed. A claim that picks this option is
+          refused until you check one under Presets.
         </p>
       )}
       {setting.hostPattern && registration && (

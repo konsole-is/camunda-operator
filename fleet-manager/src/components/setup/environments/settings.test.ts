@@ -307,7 +307,7 @@ describe("settingErrors", () => {
         },
       ),
     );
-    expect(settingErrors(settings).map((e) => e.path)).toEqual([
+    expect(settingErrors(settings, {}).map((e) => e.path)).toEqual([
       "spec.parameters.aws-connectors-role.replicas.value",
       "spec.parameters.aws-connectors-role.replicas.allowed.0.value",
     ]);
@@ -339,7 +339,7 @@ describe("settingErrors", () => {
         },
       ),
     );
-    expect(settingErrors(settings).map((e) => e.path)).toEqual([
+    expect(settingErrors(settings, {}).map((e) => e.path)).toEqual([
       "spec.parameters.lists.arns.allowed.1.value",
     ]);
   });
@@ -369,7 +369,7 @@ describe("settingErrors of a template parameter", () => {
         },
       ),
     );
-    expect(settingErrors(settings)).toEqual([
+    expect(settingErrors(settings, {})).toEqual([
       {
         path: "spec.parameters.aws-connectors-role.inlinePolicy.value",
         message:
@@ -380,5 +380,83 @@ describe("settingErrors of a template parameter", () => {
         message: "Resource: unknown placeholder .nope",
       },
     ]);
+  });
+});
+
+describe("optionSettings of the values of a registration", () => {
+  it("lists a parameter that only the registration value names", () => {
+    const free = registration("free", ["s"], {
+      parameters: { type: "object", additionalProperties: { type: "string" } },
+      parameterValues: { region: "eu-west-1", zone: "a" },
+    });
+    const [settings] = optionSettings(
+      [free],
+      allowing({ s: ["free"] }, { free: { zone: { claimEditable: true } } }),
+    );
+    expect(
+      settings.parameters.map((p) => [p.name, p.registrationSummary, p.schema]),
+    ).toEqual([
+      ["region", "eu-west-1", { type: "string" }],
+      ["zone", "a", { type: "string" }],
+    ]);
+  });
+});
+
+describe("settingErrors of a preset parameter", () => {
+  it("names a preset value and a choice that the presets of the environment do not list", () => {
+    const database = registration("database-server", ["secondary-storage"], {
+      controller: { name: BUILTIN_CONTROLLER },
+      parameters: {
+        type: "object",
+        properties: { preset: { type: "string" } },
+      },
+    } as Partial<PluginRegistration["spec"]>);
+    const spec: Environment["spec"] = {
+      ...allowing(
+        { "secondary-storage": ["database-server"] },
+        {
+          "database-server": {
+            preset: {
+              value: "pg-gone",
+              claimEditable: true,
+              allowed: [
+                { name: "a", label: "A", value: "pg-small" },
+                { name: "b", label: "B", value: "pg-gone" },
+              ],
+            },
+          },
+        },
+      ),
+      presets: { databaseServer: ["pg-small"] },
+    };
+    expect(settingErrors(optionSettings([database], spec), spec)).toEqual([
+      {
+        path: "spec.parameters.database-server.preset.value",
+        message:
+          "The environment does not allow the preset pg-gone. Check it under Presets, or pick another.",
+      },
+      {
+        path: "spec.parameters.database-server.preset.allowed.1.value",
+        message:
+          "The environment does not allow the preset pg-gone. Check it under Presets, or pick another.",
+      },
+    ]);
+  });
+
+  it("names a preset that the environment does not list also for a parameter without a schema", () => {
+    const database = registration("database-server", ["secondary-storage"], {
+      controller: { name: BUILTIN_CONTROLLER },
+      parameters: { type: "object" },
+    } as Partial<PluginRegistration["spec"]>);
+    const spec: Environment["spec"] = {
+      ...allowing(
+        { "secondary-storage": ["database-server"] },
+        { "database-server": { preset: { value: "pg-gone" } } },
+      ),
+      presets: { databaseServer: ["pg-small"] },
+    };
+    expect(
+      settingErrors(optionSettings([database], spec), spec).map((e) => e.path),
+    ).toEqual(["spec.parameters.database-server.preset.value"]);
   });
 });

@@ -1,9 +1,10 @@
 "use client";
 
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import { YAMLParseError, parse, stringify } from "yaml";
+import { stringify } from "yaml";
+import { parseYaml } from "@/components/fleet/yaml-editor";
 import { Textarea } from "@/components/ui/textarea";
-import type { ValidationError } from "@/lib/schema";
+import type { OpenAPISchema, ValidationError } from "@/lib/schema";
 import { templateErrors } from "./preview";
 
 const PLACEHOLDERS = [
@@ -14,7 +15,7 @@ const PLACEHOLDERS = [
 ];
 
 /**
- * TemplateEditor edits a template parameter as text, YAML for an object,
+ * TemplateEditor edits a template parameter as text, as YAML with object,
  * with a chip for each placeholder of a template parameter that inserts it
  * at the cursor. parameters are the names of the other parameters of the
  * registration. It shows the error of each string that is not a valid
@@ -102,6 +103,11 @@ export function TemplateEditor({
   );
 }
 
+/** isStructured says whether a template parameter of schema holds an object or a list, which TemplateEditor edits as YAML. */
+export function isStructured(schema: OpenAPISchema | undefined): boolean {
+  return schema?.type === "object" || schema?.type === "array";
+}
+
 function textOf(value: unknown, object: boolean): string {
   if (value === undefined) return "";
   if (object || typeof value !== "string") return stringify(value);
@@ -111,27 +117,6 @@ function textOf(value: unknown, object: boolean): string {
 function check(text: string, object: boolean): [unknown, ValidationError[]] {
   if (text.trim() === "") return [undefined, []];
   if (!object) return [text, templateErrors(text)];
-  let value: unknown;
-  try {
-    value = parse(text);
-  } catch (error) {
-    const line =
-      error instanceof YAMLParseError ? error.linePos?.[0]?.line : undefined;
-    const message =
-      error instanceof Error ? error.message.split("\n")[0] : String(error);
-    return [
-      undefined,
-      [{ path: "", message: line ? `Line ${line}: ${message}` : message }],
-    ];
-  }
-  // The template check walks the value, which never ends on a cyclic alias.
-  try {
-    JSON.stringify(value);
-  } catch {
-    return [
-      undefined,
-      [{ path: "", message: "An alias refers to the value that holds it" }],
-    ];
-  }
-  return [value, templateErrors(value)];
+  const [value, errors] = parseYaml(text);
+  return value === undefined ? [value, errors] : [value, templateErrors(value)];
 }

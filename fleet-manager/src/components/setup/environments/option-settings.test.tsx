@@ -334,4 +334,82 @@ describe("OptionSettings", () => {
       false,
     );
   });
+
+  it("edits an array template parameter as YAML and saves the list", async () => {
+    const sources = sectionFixtures();
+    const role = sources.registrations.find(
+      (r) => r.metadata.name === "aws-connectors-role",
+    )!;
+    role.spec.parameters = {
+      type: "object",
+      properties: {
+        resources: {
+          type: "array",
+          items: { type: "string" },
+          "x-fleet-template": true,
+        },
+      },
+    };
+    const actions = renderEditor("production", sources);
+    fireEvent.change(
+      within(group("Role for each cluster", "resources")).getByLabelText(
+        "resources",
+      ),
+      { target: { value: "- arn:aws:sqs:*:*:{{ .namespace }}-*\n" } },
+    );
+    expect(await save(actions)).toMatchObject({
+      parameters: {
+        "aws-connectors-role": {
+          resources: { value: ["arn:aws:sqs:*:*:{{ .namespace }}-*"] },
+        },
+      },
+    });
+  });
+
+  it("shows a preset value that the environment no longer allows, and blocks Review", () => {
+    const sources = withElasticsearch(["es-small", "es-large"]);
+    sources.environments[0].spec.parameters = {
+      elasticsearch: { preset: { value: "es-small" } },
+    };
+    const { previewChange } = renderEditor("production", sources);
+    fireEvent.click(
+      within(
+        screen.getByRole("group", { name: "Elasticsearch presets" }),
+      ).getByRole("checkbox", { name: "es-small" }),
+    );
+    const preset = within(
+      group("Elasticsearch in the cluster", "Preset"),
+    ).getByLabelText("Preset") as HTMLSelectElement;
+    expect(preset.selectedOptions[0].text).toBe("es-small (not allowed)");
+    expect(preset.getAttribute("aria-invalid")).toBe("true");
+    const review = screen.getByRole("button", { name: "Review" });
+    expect(review).toHaveProperty("disabled", true);
+    fireEvent.click(review);
+    expect(previewChange).not.toHaveBeenCalled();
+  });
+
+  it("resets a boolean to the value of the registration", async () => {
+    const sources = withRustfsSchema();
+    const rustfs = sources.registrations.find(
+      (r) => r.metadata.name === "rustfs",
+    )!;
+    rustfs.spec.parameters = {
+      type: "object",
+      properties: { tls: { type: "boolean", title: "TLS" } },
+    };
+    rustfs.spec.parameterValues = { tls: true };
+    sources.environments[0].spec.parameters = {
+      rustfs: { tls: { value: false, claimEditable: true } },
+    };
+    const actions = renderEditor("production", sources);
+    const tls = group("RustFS", "TLS");
+    fireEvent.click(
+      within(tls).getByRole("button", {
+        name: "Use the value of the registration",
+      }),
+    );
+    expect(within(tls).getByText("From the registration: true")).toBeTruthy();
+    const spec = await save(actions);
+    expect(spec.parameters?.rustfs?.tls).toEqual({ claimEditable: true });
+  });
 });

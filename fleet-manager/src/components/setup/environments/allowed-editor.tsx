@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { isObject } from "@/lib/policy";
 import type { OpenAPISchema, ValidationError } from "@/lib/schema";
 import type { NamedValue, ParameterSetting } from "./settings";
-import { TemplateEditor } from "./template-editor";
+import { isStructured, TemplateEditor } from "./template-editor";
 
 const MAX_CHOICES = 32;
 
@@ -93,7 +93,7 @@ export function AllowedEditor({
               <TemplateEditor
                 label="Value"
                 value={choice.value}
-                object={schema?.type === "object"}
+                object={isStructured(schema)}
                 parameters={parameters}
                 onChange={(value, found) => {
                   textErrors.current[id] = value === undefined ? found : [];

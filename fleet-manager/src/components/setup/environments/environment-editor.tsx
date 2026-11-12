@@ -109,7 +109,7 @@ export function EnvironmentEditor({
       isNew,
       taken: sources.environments.map((e) => e.metadata.name ?? ""),
     }),
-    ...settingErrors(settings),
+    ...settingErrors(settings, draft.spec),
   ];
   const count = changeCount(base, draft, isNew);
   const impact = useMemo(
