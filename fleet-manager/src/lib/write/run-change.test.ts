@@ -463,9 +463,9 @@ describe("backupChangeSchema", () => {
       deleted(ref(), { delete: [ref(), ref(undefined, { name: "b" })] }),
     ],
     [
-      "a restore",
+      "a backup with the spec of a restore",
       created(
-        backup("LogicalRestoreElasticsearch", {
+        backup(undefined, {
           spec: {
             backupRef: { name: "orders-manual-1" },
             targetClusterRef: { name: "orders" },
@@ -523,6 +523,152 @@ describe("backupChangeSchema", () => {
     [
       "the delete of a backup with another apiVersion",
       deleted(ref(undefined, { apiVersion: "v1" })),
+    ],
+  ])("refuses %s", (_, change) => {
+    expect(ok(change)).toBe(false);
+  });
+});
+
+describe("backupChangeSchema, restores", () => {
+  const core = "core.camunda.io/v1";
+  const schema = backupChangeSchema({ namespace: "team-a", name: "orders" });
+  const logical = (kind = "LogicalRestoreRDBMS", over: object = {}) => ({
+    apiVersion: core,
+    kind,
+    metadata: { name: "orders-restore-1", namespace: "team-a" },
+    spec: {
+      backupRef: { name: "orders-manual-1" },
+      targetClusterRef: { name: "orders" },
+    },
+    ...over,
+  });
+  const pitr = (over: object = {}) => ({
+    apiVersion: core,
+    kind: "PointInTimeRestore",
+    metadata: { name: "orders-pitr-1", namespace: "team-a" },
+    spec: { clusterRef: { name: "orders" }, timestamp: "2026-11-10T09:30:00Z" },
+    ...over,
+  });
+  const created = (object: { kind: string; metadata: object }, over = {}) => {
+    const { name, namespace } = object.metadata as {
+      name: string;
+      namespace?: string;
+    };
+    return {
+      intent: "Restore orders",
+      apply: [object],
+      create: [`${object.kind}/${namespace ?? ""}/${name}`],
+      directOnly: true,
+      ...over,
+    };
+  };
+  const ok = (c: unknown) => schema.safeParse(c).success;
+
+  it.each(["LogicalRestoreElasticsearch", "LogicalRestoreRDBMS"])(
+    "accepts one new %s of a backup into the cluster, straight to the cluster",
+    (kind) => {
+      expect(ok(created(logical(kind)))).toBe(true);
+    },
+  );
+
+  it("accepts one new PointInTimeRestore of the cluster, straight to the cluster", () => {
+    expect(ok(created(pitr()))).toBe(true);
+  });
+
+  it.each<[string, unknown]>([
+    ["no directOnly", created(logical(), { directOnly: undefined })],
+    ["force", created(logical(), { force: true })],
+    ["a restore without create", created(logical(), { create: undefined })],
+    [
+      "a restore into another cluster",
+      created(
+        logical(undefined, {
+          spec: {
+            backupRef: { name: "orders-manual-1" },
+            targetClusterRef: { name: "billing" },
+          },
+        }),
+      ),
+    ],
+    [
+      "a restore without a backup",
+      created(
+        logical(undefined, {
+          spec: {
+            backupRef: { name: "" },
+            targetClusterRef: { name: "orders" },
+          },
+        }),
+      ),
+    ],
+    [
+      "a spec field next to backupRef and targetClusterRef",
+      created(
+        logical(undefined, {
+          spec: {
+            backupRef: { name: "orders-manual-1" },
+            targetClusterRef: { name: "orders" },
+            suspend: false,
+          },
+        }),
+      ),
+    ],
+    [
+      "a logical restore with the spec of a backup",
+      created(logical(undefined, { spec: { clusterRef: { name: "orders" } } })),
+    ],
+    [
+      "a restore in another namespace",
+      created(
+        logical(undefined, {
+          metadata: { name: "orders-restore-1", namespace: "team-b" },
+        }),
+      ),
+    ],
+    [
+      "a point-in-time restore of another cluster",
+      created(
+        pitr({
+          spec: {
+            clusterRef: { name: "billing" },
+            timestamp: "2026-11-10T09:30:00Z",
+          },
+        }),
+      ),
+    ],
+    ...[
+      "2026-11-10T09:30:00",
+      "2026-11-10T09:30:00.5Z",
+      "2026-11-10T09:30:00+01:00",
+      "2026-13-10T09:30:00Z",
+      "now",
+    ].map((timestamp): [string, unknown] => [
+      `a point in time of ${timestamp}`,
+      created(pitr({ spec: { clusterRef: { name: "orders" }, timestamp } })),
+    ]),
+    ...["constructor", "toString"].map((kind): [string, unknown] => [
+      `a restore of the kind ${kind}`,
+      created(logical(kind)),
+    ]),
+    [
+      "a point-in-time restore with a field next to spec",
+      created(pitr({ status: {} })),
+    ],
+    [
+      "the delete of a point-in-time restore",
+      {
+        intent: "x",
+        apply: [],
+        delete: [
+          {
+            apiVersion: core,
+            kind: "PointInTimeRestore",
+            namespace: "team-a",
+            name: "orders-pitr-1",
+          },
+        ],
+        directOnly: true,
+      },
     ],
   ])("refuses %s", (_, change) => {
     expect(ok(change)).toBe(false);
