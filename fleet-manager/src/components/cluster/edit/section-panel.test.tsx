@@ -285,6 +285,33 @@ describe("a section panel", () => {
     });
   });
 
+  it("a list parameter whose choices are whole lists picks one name also from an empty list", async () => {
+    const context = contextOf();
+    context.claim!.status!.resolvedPolicy!.parameters![
+      "fleet-harness"
+    ].policies = {
+      claimEditable: true,
+      allowed: [
+        { name: "standard", label: "Standard", value: ["a", "b"] },
+        { name: "wide", label: "Wide", value: ["a", "b", "c"] },
+      ],
+    };
+    context.claim!.spec.plugins![0].parameters = {
+      hostPrefix: "orders",
+      tier: "gold",
+      policies: [],
+    };
+    panel(context);
+    const select = within(row("policies")).getByRole<HTMLSelectElement>(
+      "combobox",
+    );
+    fireEvent.change(select, { target: { value: "standard" } });
+    const written = await save();
+    expect(written.spec.plugins![0].parameters).toMatchObject({
+      policies: "standard",
+    });
+  });
+
   it("taking away the last choice of a list writes an empty list", async () => {
     panel();
     fireEvent.click(

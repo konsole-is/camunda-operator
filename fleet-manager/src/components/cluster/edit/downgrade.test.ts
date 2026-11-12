@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
+import { ALLOW_VERSION_DOWNGRADE_ANNOTATION } from "@/lib/labels";
 import { openSession, setValue, type Session } from "@/lib/session";
 import {
   claim,
@@ -48,6 +49,17 @@ describe("downgradeDone", () => {
   });
 
   it.each([
+    [
+      "a cluster that still has the downgrade annotation",
+      {
+        ...atVersion("8.9.1"),
+        metadata: {
+          ...atVersion("8.9.1").metadata,
+          annotations: { [ALLOW_VERSION_DOWNGRADE_ANNOTATION]: "8.9.1" },
+        },
+      },
+      allowing("8.9.1"),
+    ],
     ["another version", atVersion("8.9.3"), allowing("8.9.1")],
     ["no reported version", atVersion(undefined), allowing("8.9.1")],
     ["an empty field", atVersion("8.9.1"), allowing("")],

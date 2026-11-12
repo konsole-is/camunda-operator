@@ -83,13 +83,13 @@ spec:
   # ... the rest of your claim
 ```
 
-When the cluster runs the version of `allowVersionDowngrade`, the next save also removes the field. The review shows this removal as a line of the change. With no other unsaved change, the panel shows **Clear**, which removes the field and opens the review. The fleet manager never writes the claim when you only open the page.
+The operator removes the annotation `camunda.io/allow-version-downgrade` from the `CamundaCluster` when the downgrade is complete. After that, the next save also removes `allowVersionDowngrade` from the claim. The review shows this removal as a line of the change. With no other unsaved change, the panel shows **Clear**, which removes the field and opens the review. The fleet manager never writes the claim when you only open the page.
 
 Each storage and access option has its own panel. The option shows **Chosen at creation**, because you cannot change it here. The panel has an editor for each parameter that the environment lets the claim change. A parameter with a list of choices shows the names of the choices. The other parameters show their value and the reason. A change writes only the parameter, in `spec.plugins` of the claim.
 
 **Attachments** has two parts:
 
-- **Attach Optimize** adds `spec.attachments.optimize` with the first `ManagementAuthConfig` by name. Then you can pick another **ManagementAuthConfig** and enter the **External URL**. The URL shows **Filled by Access** when an access option gives it. **Optimize settings** opens the settings of Optimize on the **Overview** tab. Optimize needs Elasticsearch as secondary storage and a `ManagementAuthConfig`. Without them, the checkbox is disabled and says which one is missing.
+- **Attach Optimize** adds `spec.attachments.optimize` with the first `ManagementAuthConfig` by name. Then you can pick another **ManagementAuthConfig** and enter the **External URL**. The URL shows **Filled by Access** when an access option gives it. **Open Optimize** opens Optimize on the **Overview** tab. Its **Settings** tab holds the other settings of Optimize. Optimize needs Elasticsearch as secondary storage and a `ManagementAuthConfig`. Without them, the checkbox is disabled and says which one is missing.
 - **Back up on a schedule** adds `spec.attachments.backupSchedule` with the cron `0 2 * * *`. Then you can change the **Schedule (cron, UTC)**, **Completed backups to keep**, and **Failed backups to keep**. **Completed backups to keep** is 1 or more, and **Failed backups to keep** is 0 or more. An empty number uses the default of the schedule. Without a backup storage option, the checkbox is disabled.
 
 **Change schedule** on the **Backups** tab opens the **Attachments** panel.

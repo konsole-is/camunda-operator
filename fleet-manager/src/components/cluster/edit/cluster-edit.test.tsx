@@ -1190,6 +1190,35 @@ describe("ClusterEditProvider", () => {
     expect(fakeWriter.applied).toEqual([]);
   });
 
+  it("closing the review gives the focus to Discard while Review is disabled", async () => {
+    fakeWriter.results = [
+      {
+        ok: false,
+        errors: [
+          {
+            code: "Invalid",
+            message: "must be 1 or more",
+            path: "spec.cluster.zeebe.replicas",
+          },
+        ],
+      },
+    ];
+    page();
+    click("Scale");
+    openReview();
+    await confirm("Save");
+    await waitFor(() =>
+      expect(within(dialog()!).getByRole("alert").textContent).toContain(
+        "must be 1 or more",
+      ),
+    );
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(dialog()).toBeNull());
+    expect(document.activeElement).toBe(
+      within(bar()!).getByRole("button", { name: "Discard" }),
+    );
+  });
+
   it("rendering the page previews and writes nothing", async () => {
     page();
     await new Promise((resolve) => setTimeout(resolve, 0));

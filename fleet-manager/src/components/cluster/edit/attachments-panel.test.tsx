@@ -224,7 +224,7 @@ describe("the Attachments panel", () => {
     ).toBeTruthy();
   });
 
-  it("links to the settings of an attached Optimize", () => {
+  it("links to Optimize on the Overview tab", () => {
     panel({
       claim: withOptimize({ managementAuthConfigRef: "camunda" }),
       optimize: {
@@ -235,7 +235,7 @@ describe("the Attachments panel", () => {
     });
     expect(
       within(attachments())
-        .getByRole("link", { name: "Optimize settings" })
+        .getByRole("link", { name: "Open Optimize" })
         .getAttribute("href"),
     ).toBe("?tab=overview&component=optimize");
   });

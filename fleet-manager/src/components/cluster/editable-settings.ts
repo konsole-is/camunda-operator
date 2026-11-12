@@ -362,9 +362,8 @@ export function selectionSettingsOf(
       ? properties[name]
       : undefined;
     if (options) {
-      const list =
-        Array.isArray(field.value) ||
-        fieldSchemaFromOpenAPI(property)?.type === "array";
+      const own = fieldSchemaFromOpenAPI(property);
+      const list = own ? own.type === "array" : Array.isArray(field.value);
       const editor = { kind: list ? "choices" : "select", options } as const;
       return [{ ...base, editor, steps: field.claimSteps }];
     }

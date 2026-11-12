@@ -455,7 +455,12 @@ export function ClusterEditProvider({
             onCloseAutoFocus={(event) => {
               // The dialog opens from the change bar or from an editor that
               // closed, so without this the focus goes to the page body.
-              const button = reviewButton.current;
+              const review = reviewButton.current;
+              const button = review?.disabled
+                ? review
+                    .closest("section")
+                    ?.querySelector<HTMLButtonElement>("button:enabled")
+                : review;
               if (!button) return;
               event.preventDefault();
               button.focus();

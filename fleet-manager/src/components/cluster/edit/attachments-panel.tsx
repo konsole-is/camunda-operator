@@ -137,7 +137,7 @@ export function AttachmentsPanel({ context }: { context: ClusterSlotContext }) {
                 href="?tab=overview&component=optimize"
                 className="self-start text-sm font-medium text-text underline underline-offset-4 hover:text-accent"
               >
-                Optimize settings
+                Open Optimize
               </Link>
             )}
           </>

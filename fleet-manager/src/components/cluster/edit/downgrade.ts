@@ -1,6 +1,7 @@
 import type { CamundaRelease } from "@/generated/crds/camundarelease";
 import type { Environment } from "@/generated/crds/environment";
 import type { Resource } from "@/lib/k8s/kinds";
+import { ALLOW_VERSION_DOWNGRADE_ANNOTATION } from "@/lib/labels";
 import { releaseMove } from "@/lib/policy";
 import { claimAfter, type Session } from "@/lib/session";
 import type { ClusterSlotContext } from "../slots";
@@ -8,14 +9,19 @@ import type { ClusterClaim } from "./cluster-edit";
 
 /**
  * downgradeDone says whether the cluster reports the version that
- * allowVersionDowngrade of the claim names, so that the field can go.
+ * allowVersionDowngrade of the claim names and no longer carries the
+ * downgrade annotation, so that the field can go.
  */
 export function downgradeDone(
   cluster: Resource<"CamundaCluster">,
   claim: ClusterClaim,
 ): boolean {
   const target = claim.spec?.allowVersionDowngrade;
-  return Boolean(target) && cluster.status?.management?.version === target;
+  return (
+    Boolean(target) &&
+    cluster.status?.management?.version === target &&
+    !cluster.metadata?.annotations?.[ALLOW_VERSION_DOWNGRADE_ANNOTATION]
+  );
 }
 
 /**
