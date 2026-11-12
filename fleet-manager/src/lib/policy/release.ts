@@ -37,7 +37,8 @@ export function releaseMove(
   };
 }
 
-function parseVersion(
+/** parseVersion reads a version of the form major.minor.patch, or gives undefined, as the operator does. */
+export function parseVersion(
   version: string | undefined,
 ): [number, number, number] | undefined {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? "");

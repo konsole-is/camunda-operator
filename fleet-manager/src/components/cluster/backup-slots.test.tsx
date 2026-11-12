@@ -78,9 +78,10 @@ describe("backupContextOf", () => {
       namespace: "team-a",
       cluster: "orders",
       storage: es,
-      suspended: false,
       backupNames: ["done-1", "other-cluster-1"],
+      restoreNames: [],
       readingRestores: [],
+      clusterVersion: "8.9.1",
       now: NOW,
     });
 
@@ -91,8 +92,9 @@ describe("backupContextOf", () => {
       restores: [restore("r1", "Restoring")],
     });
     expect(backupContextOf(restoring)).toMatchObject({
-      suspended: true,
+      suspension: "requested",
       running: { what: "Restore", name: "r1" },
+      restoring: "r1",
     });
 
     const both = slotContext({
@@ -134,6 +136,77 @@ describe("backupContextOf", () => {
       what: "Backup",
       name: "queued-1",
     });
+  });
+});
+
+describe("backupContextOf, the facts of a restore", () => {
+  it("reads the version of the merged spec on a cluster that reports none, and the retention window of the merged spec", () => {
+    const suspended = {
+      ...cluster({
+        suspend: true,
+        backup: { primaryStorage: { retention: { window: "P3D" } } },
+      }),
+      status: {},
+    } as unknown as ReturnType<typeof cluster>;
+    expect(backupContextOf(slotContext({ cluster: suspended }))).toMatchObject({
+      clusterVersion: "8.9.1",
+      retentionWindow: "P3D",
+    });
+  });
+
+  it("names every restore of the namespace and the restore of the cluster that has not ended", () => {
+    const of = (
+      kind: string,
+      name: string,
+      phase: string,
+      target = "orders",
+      namespace = "team-a",
+    ) =>
+      ({
+        kind,
+        metadata: { namespace, name },
+        spec:
+          kind === "PointInTimeRestore"
+            ? { clusterRef: { name: target }, timestamp: NOW }
+            : { targetClusterRef: { name: target }, backupRef: { name: "b" } },
+        status: { phase },
+      }) as unknown as RestoreObject;
+    const context = backupContextOf(
+      slotContext({
+        restores: [
+          of("LogicalRestoreRDBMS", "done-1", "Completed"),
+          of("PointInTimeRestore", "pitr-1", "RestoringDatabase"),
+          of("LogicalRestoreElasticsearch", "billing-1", "Pending", "billing"),
+          of(
+            "LogicalRestoreRDBMS",
+            "elsewhere-1",
+            "Pending",
+            "orders",
+            "team-b",
+          ),
+        ],
+      }),
+    );
+    expect(context.restoreNames).toEqual(["done-1", "pitr-1", "billing-1"]);
+    expect(context.restoring).toBe("pitr-1");
+    expect(
+      backupContextOf(
+        slotContext({ restores: [of("LogicalRestoreRDBMS", "d", "Failed")] }),
+      ).restoring,
+    ).toBeUndefined();
+  });
+
+  it("reads the suspension of the cluster, a Ready reason of the operator included", () => {
+    const attached = {
+      ...cluster(),
+      status: {
+        conditions: [{ type: "Ready", reason: "StorageAlreadyAttached" }],
+      },
+    } as unknown as ReturnType<typeof cluster>;
+    expect(backupContextOf(slotContext({ cluster: attached })).suspension).toBe(
+      "StorageAlreadyAttached",
+    );
+    expect(backupContextOf(slotContext()).suspension).toBeUndefined();
   });
 });
 
@@ -213,13 +286,15 @@ describe("backupContextOf, the holders and readers", () => {
 });
 
 describe("backupSlots", () => {
-  it("the row slot of backupSlots mounts Delete on a backup row and the header slot mounts Back up now", async () => {
+  it("the row slot of backupSlots mounts Restore and Delete on a completed backup row and the header slot keeps Back up now", async () => {
     const context = slotContext({ backupStorage: es });
     const slots = backupSlots(applyBackupChange);
     const row = {
       kind: "LogicalBackupElasticsearch",
       name: "nightly-1",
       origin: "Manual",
+      phase: "Completed",
+      version: "8.9.1",
     } as BackupRow;
     render(
       <QueryClientProvider client={new QueryClient()}>
@@ -235,6 +310,10 @@ describe("backupSlots", () => {
       </QueryClientProvider>,
     );
     expect(screen.getByRole("button", { name: "Back up now" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Restore" })).toHaveProperty(
+      "disabled",
+      false,
+    );
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
     await userEvent.click(
       screen.getByRole("button", { name: "Delete backup" }),
