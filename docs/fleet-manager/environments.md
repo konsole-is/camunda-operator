@@ -92,7 +92,7 @@ The row offers only the registrations that have the condition `Accepted=True`. A
 
 An option can need a value from another section, for example an encryption key for encrypted volumes. If that section has no default, the option shows `Needs an option of Encryption key. Set a default in Encryption key.` The note does not block a save. A claim that picks the option must also pick an encryption key, or it is refused with `MissingInput`. A default in the other section makes the create flow pick one first.
 
-An allowed name that no accepted registration of the section has shows checked, with **Not offered**. Clear the box to remove the name. A claim that exists keeps the options that it picked when the edit removes one, because the options are part of its recorded policy.
+An allowed name that no accepted registration of the section has shows checked, with **Not offered**. Clear the box to remove the name. A claim that exists keeps an option that it picked, also when the edit removes that option. The options are part of its recorded policy.
 
 ## Settings of the options
 
