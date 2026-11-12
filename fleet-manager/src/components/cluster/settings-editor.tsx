@@ -262,7 +262,11 @@ function Editor({
         <StorageSizeEditor
           label={label}
           defaultValue={String(initial)}
-          current={typeof current === "string" ? current : undefined}
+          current={
+            typeof current === "string" || typeof current === "number"
+              ? String(current)
+              : undefined
+          }
           onChange={valid}
         />
       );

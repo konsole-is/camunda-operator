@@ -159,6 +159,18 @@ describe("SettingsEditor", () => {
     expect(screen.getByText(SHRINK)).toBeDefined();
   });
 
+  it("a smaller storage size than a number says volumes cannot shrink", async () => {
+    renderEditor("zeebe", "zeebe", {
+      claim: { cluster: { zeebe: { storageSize: 34359738368 } } },
+    });
+    const amount = within(settingRow("storageSize")).getByRole("textbox", {
+      name: "Amount",
+    });
+    await userEvent.clear(amount);
+    await userEvent.type(amount, "1000");
+    expect(screen.getByText(SHRINK)).toBeDefined();
+  });
+
   it("a Secret reference is picked by name and key", async () => {
     const { set } = renderEditor("cluster", "cluster");
     const ref = settingRow("auth.clientSecretRef");
