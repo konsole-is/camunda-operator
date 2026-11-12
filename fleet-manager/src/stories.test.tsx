@@ -10,14 +10,14 @@ const csf = Object.entries(
   import.meta.glob<StoriesModule>("./components/**/*.stories.tsx", {
     eager: true,
   }),
-).filter(([, module]) => module.default?.title);
+).filter(([, module]) => module.default);
 
 describe("the Storybook stories", () => {
   it("gives each stories file the title of its directory and a component name", () => {
     expect(csf.length).toBeGreaterThan(0);
     for (const [file, module] of csf) {
       const directory = path.dirname(file).replace(/^\.\/components\//, "");
-      expect(module.default?.title, file).toMatch(
+      expect(module.default?.title ?? "", file).toMatch(
         new RegExp(`^${directory}/[^/]+$`),
       );
     }
