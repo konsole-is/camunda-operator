@@ -99,8 +99,8 @@ type Apply = (
 ) => Promise<WriteResult>;
 
 /**
- * backupSlots fills cluster.backups.actions with Back up now and Change
- * schedule, and cluster.backups.row with Delete. Each write goes through
+ * backupSlots fills cluster.backups.actions with BackupHeaderActions, and
+ * cluster.backups.row with BackupRowActions. Each write goes through
  * apply, the server action of backup changes, with the namespace and the
  * name of the cluster of the page. The slots need a
  * ClusterEditProvider above them, for the toast of the page.

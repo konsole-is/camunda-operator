@@ -13,13 +13,16 @@ import {
   manualBackupName,
   pointInTime,
   pointInTimeChange,
+  pointInTimeConfirm,
   pointInTimeError,
   pointInTimeWindow,
   restoreBlock,
   restoreChange,
+  restoreConfirm,
   restoreKindOf,
   restoreNameOf,
   retentionMs,
+  type Suspension,
   suspensionOf,
   timestampOf,
   waitNote,
@@ -629,5 +632,112 @@ describe("restore rules", () => {
     expect(
       pointInTime(context({ storage: archived([]), retentionWindow: "P7D" })),
     ).toEqual({ disabled: "The archive has no restore point yet." });
+  });
+});
+
+describe("restore confirm", () => {
+  const dump = row({ kind: "LogicalBackupRDBMS", name: "nightly-1" });
+  const snapshot = row({ name: "nightly-1" });
+  const text = (confirm: { lead: string; lines: string[] }) =>
+    [confirm.lead, ...confirm.lines].join("\n");
+
+  it.each([
+    ["Elasticsearch", snapshot],
+    ["PostgreSQL", dump],
+  ])(
+    "a restore of a %s backup says that everything after the backup is lost",
+    (_, backup) => {
+      expect(restoreConfirm(context(), backup).lead).toBe(
+        "The cluster goes back to backup nightly-1. Everything that it wrote after that backup is lost.",
+      );
+    },
+  );
+
+  it("an Elasticsearch restore says that it deletes the indices and the broker volumes", () => {
+    expect(text(restoreConfirm(context(), snapshot))).toContain(
+      "The restore deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
+    );
+  });
+
+  it("a PostgreSQL restore says that it writes over the database and deletes the broker volumes", () => {
+    expect(text(restoreConfirm(context(), dump))).toContain(
+      "The restore runs pg_restore over the database of the cluster, which drops each table of the dump and creates it again. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
+    );
+  });
+
+  it.each([
+    ["Elasticsearch", snapshot, "the Camunda indices and the broker volumes"],
+    ["PostgreSQL", dump, "the database and the broker volumes"],
+  ])(
+    "a %s restore says that a failure can leave no usable data, and names the remedy",
+    (_, backup, what) => {
+      expect(restoreConfirm(context(), backup).lines).toContain(
+        `If the restore fails, ${what} can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.`,
+      );
+    },
+  );
+
+  it("the restore confirm names both versions and the version that the restore sets", () => {
+    expect(
+      restoreConfirm(context({ clusterVersion: "8.10.1" }), dump).lines[0],
+    ).toBe(
+      "Backup nightly-1 has Camunda 8.9.3. The cluster has 8.10.1. The restore sets the cluster to 8.9.3.",
+    );
+    expect(restoreConfirm(context(), dump).lines[0]).toBe(
+      "Backup nightly-1 has Camunda 8.9.3. The cluster reports no Camunda version yet. The restore sets the cluster to 8.9.3.",
+    );
+  });
+
+  it("a point-in-time restore says that everything after the point is lost", () => {
+    expect(
+      pointInTimeConfirm(context(), "2026-11-09 09:30:15 UTC").lead,
+    ).toBe(
+      "The cluster goes back to 2026-11-09 09:30:15 UTC. Everything that it wrote after that time is lost.",
+    );
+  });
+
+  it("a point-in-time restore says that it rolls the database back and deletes the broker volumes", () => {
+    expect(
+      pointInTimeConfirm(context(), "2026-11-09 09:30:15 UTC").lines,
+    ).toContain(
+      "The database server rolls back to that time. The restore also deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
+    );
+  });
+
+  it("a point-in-time restore says that a failure can leave no usable data, and names the remedy", () => {
+    const { lines } = pointInTimeConfirm(context(), "2026-11-09 09:30:15 UTC");
+    expect(lines).toContain(
+      "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.",
+    );
+    expect(lines).toContain(
+      'If the restore fails, the broker volumes can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.',
+    );
+  });
+
+  const STARTS =
+    "The restore suspends the cluster while it runs, and starts it again when it completes.";
+  const OWNER =
+    "The cluster is suspended now. If its owner suspended it, it stays suspended after the restore, and the owner resumes it.";
+  const OTHER =
+    "Something else keeps the cluster suspended now. It stays suspended after the restore until that suspension ends.";
+
+  it.each<[string, Suspension | undefined, string]>([
+    ["a running cluster", undefined, STARTS],
+    ["a cluster that its owner suspended", "requested", OWNER],
+    ["a cluster under a suspension hold", "held", OTHER],
+    ["a cluster whose storage another cluster holds", "StorageAlreadyAttached", OTHER],
+    ["a cluster that waits for a handover", "WaitingForHandover", OTHER],
+  ])("each confirm says whether %s starts again", (_, suspension, line) => {
+    const c = context(suspension ? { suspension } : {});
+    for (const confirm of [
+      restoreConfirm(c, snapshot),
+      restoreConfirm(c, dump),
+      pointInTimeConfirm(c, "2026-11-09 09:30:15 UTC"),
+    ]) {
+      expect(confirm.lines).toContain(line);
+      for (const other of [STARTS, OWNER, OTHER].filter((l) => l !== line)) {
+        expect(confirm.lines).not.toContain(other);
+      }
+    }
   });
 });

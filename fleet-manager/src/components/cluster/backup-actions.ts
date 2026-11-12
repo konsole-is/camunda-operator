@@ -386,6 +386,77 @@ export function restoreChange(
   };
 }
 
+/** RestoreConfirm is the text of a restore confirm: a lead sentence and the lines of a list. */
+export type RestoreConfirm = { lead: string; lines: string[] };
+
+/**
+ * restoreConfirm gives the confirm of a restore of the backup of row: what
+ * the restore loses, what it deletes, whether the cluster starts again
+ * after it, and what a failed restore leaves.
+ */
+export function restoreConfirm(
+  context: BackupContext,
+  row: BackupRow,
+): RestoreConfirm {
+  const es = row.kind === "LogicalBackupElasticsearch";
+  const cluster = context.clusterVersion
+    ? `The cluster has ${context.clusterVersion}.`
+    : "The cluster reports no Camunda version yet.";
+  const volumes =
+    "It also deletes the broker volumes and creates them again from the Zeebe data of the backup.";
+  return {
+    lead: `The cluster goes back to backup ${row.name}. Everything that it wrote after that backup is lost.`,
+    lines: [
+      `Backup ${row.name} has Camunda ${row.version}. ${cluster} The restore sets the cluster to ${row.version}.`,
+      es
+        ? `The restore deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. ${volumes}`
+        : `The restore runs pg_restore over the database of the cluster, which drops each table of the dump and creates it again. ${volumes}`,
+      startsAgain(context.suspension),
+      failed(
+        es
+          ? "the Camunda indices and the broker volumes"
+          : "the database and the broker volumes",
+      ),
+    ],
+  };
+}
+
+/**
+ * pointInTimeConfirm gives the confirm of a restore to at, the point as
+ * the page shows it, with the facts of restoreConfirm.
+ */
+export function pointInTimeConfirm(
+  context: BackupContext,
+  at: string,
+): RestoreConfirm {
+  return {
+    lead: `The cluster goes back to ${at}. Everything that it wrote after that time is lost.`,
+    lines: [
+      "The database server rolls back to that time. The restore also deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
+      startsAgain(context.suspension),
+      "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.",
+      failed("the broker volumes"),
+    ],
+  };
+}
+
+// A restore lifts only the suspension that it applied, or one that an
+// earlier restore left, so a cluster that its owner suspended stays
+// suspended.
+function startsAgain(suspension: Suspension | undefined): string {
+  if (suspension === undefined) {
+    return "The restore suspends the cluster while it runs, and starts it again when it completes.";
+  }
+  if (suspension === "requested") {
+    return "The cluster is suspended now. If its owner suspended it, it stays suspended after the restore, and the owner resumes it.";
+  }
+  return "Something else keeps the cluster suspended now. It stays suspended after the restore until that suspension ends.";
+}
+
+function failed(what: string): string {
+  return `If the restore fails, ${what} can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.`;
+}
+
 const DURATION =
   /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/;
 

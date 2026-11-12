@@ -531,20 +531,62 @@ describe("restore of a backup", () => {
     },
   );
 
-  it("the restore confirm names the backup, both versions, and that the version changes", async () => {
-    rowActions(
-      dump({ version: "8.9.3" }),
-      context({ storage: rdbms, clusterVersion: "8.10.1" }),
-    );
+  it.each([
+    [
+      "PostgreSQL",
+      () => dump(),
+      "The restore runs pg_restore over the database of the cluster, which drops each table of the dump and creates it again. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
+      "the database and the broker volumes",
+    ],
+    [
+      "Elasticsearch",
+      () => row(),
+      "The restore deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
+      "the Camunda indices and the broker volumes",
+    ],
+  ])(
+    "the %s restore confirm says what is lost, what goes, and what a failure leaves, before the typed name",
+    async (_, backup, deletes, broken) => {
+      rowActions(
+        backup(),
+        context({
+          storage: backup().kind === "LogicalBackupRDBMS" ? rdbms : es,
+          clusterVersion: "8.10.1",
+        }),
+      );
+      const dialog = await openRestore();
+      const lead = within(dialog).getByText(
+        "The cluster goes back to backup nightly-1. Everything that it wrote after that backup is lost.",
+      );
+      const items = within(dialog)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent);
+      expect(items).toEqual([
+        "Backup nightly-1 has Camunda 8.9.3. The cluster has 8.10.1. The restore sets the cluster to 8.9.3.",
+        deletes,
+        "The restore suspends the cluster while it runs, and starts it again when it completes.",
+        `If the restore fails, ${broken} can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.`,
+      ]);
+      const typed = within(dialog).getByLabelText("Type orders to confirm");
+      expect(
+        lead.compareDocumentPosition(typed) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    },
+  );
+
+  it("the restore confirm says that a cluster its owner suspended stays suspended", async () => {
+    rowActions(dump(), context({ storage: rdbms, suspension: "requested" }));
     const dialog = await openRestore();
-    const items = within(dialog)
-      .getAllByRole("listitem")
-      .map((li) => li.textContent);
-    expect(items).toEqual([
-      "Backup nightly-1 has Camunda 8.9.3. The cluster has 8.10.1.",
-      "The restore replaces the data of the cluster and sets its version to 8.9.3.",
-      "It suspends the cluster while it runs, and starts it again when it completes. A failed restore leaves the cluster suspended.",
-    ]);
+    expect(
+      within(dialog).getByText(
+        "The cluster is suspended now. If its owner suspended it, it stays suspended after the restore, and the owner resumes it.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByText(
+        "The restore suspends the cluster while it runs, and starts it again when it completes.",
+      ),
+    ).toBeNull();
   });
 
   it("the confirm stays disabled until the cluster name is typed", async () => {
@@ -705,10 +747,16 @@ describe("restore to a point in time", () => {
           .map((li) => li.textContent)
           .slice(2),
       ).toEqual([
-        "The database server rolls back to 2026-11-09 09:30:15 UTC, and the Zeebe data goes back to the backup that covers it.",
+        "The database server rolls back to that time. The restore also deletes the broker volumes and creates them again from the Zeebe backup that covers the point.",
         "The restore suspends the cluster while it runs, and starts it again when it completes.",
         "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.",
+        'If the restore fails, the broker volumes can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and restore again, as "When the cluster starts again" in the Operations guide shows.',
       ]);
+      expect(
+        within(dialog).getByText(
+          "The cluster goes back to 2026-11-09 09:30:15 UTC. Everything that it wrote after that time is lost.",
+        ),
+      ).toBeTruthy();
       await userEvent.type(
         within(dialog).getByLabelText("Type orders to confirm"),
         "orders",

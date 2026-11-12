@@ -646,6 +646,10 @@ describe("backupChangeSchema, restores", () => {
       `a point in time of ${timestamp}`,
       created(pitr({ spec: { clusterRef: { name: "orders" }, timestamp } })),
     ]),
+    ...["constructor", "toString"].map((kind): [string, unknown] => [
+      `a restore of the kind ${kind}`,
+      created(logical(kind)),
+    ]),
     [
       "a point-in-time restore with a field next to spec",
       created(pitr({ status: {} })),

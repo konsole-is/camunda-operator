@@ -27,9 +27,12 @@ import {
   manualBackupName,
   pointInTime,
   pointInTimeChange,
+  pointInTimeConfirm,
   pointInTimeError,
+  type RestoreConfirm,
   restoreBlock,
   restoreChange,
+  restoreConfirm,
   restoreNameOf,
   timestampOf,
   waitNote,
@@ -52,8 +55,7 @@ type Write = {
 /**
  * BackupHeaderActions holds Back up now, Restore to a point in time when
  * the cluster has it, Change schedule, and the note that the writes skip
- * Git. Back up now opens a form with a name. The form closes when the
- * write succeeds and stays open when it is refused.
+ * Git.
  */
 export function BackupHeaderActions({
   context,
@@ -187,13 +189,7 @@ export function BackupHeaderActions({
   );
 }
 
-/**
- * BackupRowActions holds the actions of one backup row. Restore, on a
- * Completed backup only, opens a confirm that asks for the name of the
- * cluster. Delete opens a confirm that names what goes and what stays.
- * Each action is off, with its reason, when restoreBlock or deleteBlock
- * gives one.
- */
+/** BackupRowActions holds Restore, on a Completed backup only, and Delete. */
 export function BackupRowActions({
   context,
   row,
@@ -217,15 +213,6 @@ function RestoreAction({
   show,
 }: { context: BackupContext; row: BackupRow } & Write) {
   const block = restoreBlock(context, row);
-  const lines = [
-    `Backup ${row.name} has Camunda ${row.version}. ${
-      context.clusterVersion
-        ? `The cluster has ${context.clusterVersion}.`
-        : "The cluster reports no Camunda version yet."
-    }`,
-    `The restore replaces the data of the cluster and sets its version to ${row.version}.`,
-    "It suspends the cluster while it runs, and starts it again when it completes. A failed restore leaves the cluster suspended.",
-  ];
   return (
     <RestoreDialog
       trigger="Restore"
@@ -238,7 +225,7 @@ function RestoreAction({
       apply={apply}
       show={show}
     >
-      <ConfirmLines context={context} lines={lines} />
+      <ConfirmLines context={context} {...restoreConfirm(context, row)} />
     </RestoreDialog>
   );
 }
@@ -307,11 +294,7 @@ function PointInTimeAction({
         {error === undefined && at !== undefined && (
           <ConfirmLines
             context={context}
-            lines={[
-              `The database server rolls back to ${secondText(at)}, and the Zeebe data goes back to the backup that covers it.`,
-              "The restore suspends the cluster while it runs, and starts it again when it completes.",
-              "If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.",
-            ]}
+            {...pointInTimeConfirm(context, secondText(at))}
           />
         )}
       </>
@@ -420,17 +403,16 @@ function RestoreDialog({
 
 function ConfirmLines({
   context,
+  lead,
   lines,
-}: {
-  context: BackupContext;
-  lines: string[];
-}) {
+}: { context: BackupContext } & RestoreConfirm) {
   const waits =
     context.running?.what === "Backup"
       ? waitNote(context.running, "restore")
       : undefined;
   return (
     <div className="flex flex-col gap-2">
+      <p className="font-medium text-text">{lead}</p>
       <ul className="flex list-disc flex-col gap-1 pl-5 text-text-2">
         {lines.map((line) => (
           <li key={line}>{line}</li>

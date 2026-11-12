@@ -292,7 +292,7 @@ async function restoreRefusalOf(
       ref,
     };
   }
-  if (!(restore.kind in BACKUP_OF)) return undefined;
+  if (!Object.hasOwn(BACKUP_OF, restore.kind)) return undefined;
   const backupKind = BACKUP_OF[restore.kind as keyof typeof BACKUP_OF];
   const name = restore.spec?.backupRef?.name;
   const backups = await listStored(backupKind, namespace);
@@ -334,7 +334,7 @@ function specFits(kind: string, spec: unknown, cluster: string): boolean {
   if (BACKUP_KINDS.includes(kind)) return equalJSON(spec, { clusterRef: ref });
   const fields = spec as
     { backupRef?: { name?: unknown }; timestamp?: unknown } | undefined;
-  if (kind in BACKUP_OF) {
+  if (Object.hasOwn(BACKUP_OF, kind)) {
     const name = fields?.backupRef?.name;
     return (
       typeof name === "string" &&
