@@ -10,10 +10,12 @@ type Summary = NonNullable<
 const component = ({
   label = "Secondary storage",
   summary,
+  summaryTime,
   ready,
 }: {
   label?: string;
   summary?: Summary;
+  summaryTime?: string;
   ready?: {
     status: "True" | "False" | "Unknown";
     reason?: string;
@@ -25,7 +27,21 @@ const component = ({
     kind: "PluginRequest",
     metadata: { namespace: "team-a", name: "orders-storage" },
     spec: {},
-    ...(summary ? { status: { summary } } : {}),
+    status: {
+      ...(summary ? { summary } : {}),
+      ...(summaryTime ? { summaryTime } : {}),
+      ...(ready
+        ? {
+            conditions: [
+              {
+                type: "Ready",
+                ...ready,
+                lastTransitionTime: "2026-11-10T11:30:00Z",
+              },
+            ],
+          }
+        : {}),
+    },
   } as unknown as Resource<"PluginRequest">;
   return {
     id: "section:secondary-storage",
@@ -107,8 +123,28 @@ describe("requestWarnings", () => {
         severity: "Error",
         label: "Secondary storage not ready",
         detail: "GrantRejected: The grant orders-es is not ready",
+        since: "2026-11-10T11:30:00Z",
       },
     ]);
+  });
+
+  it("gives a summary item the time of the summary", () => {
+    expect(
+      requestWarnings([
+        component({
+          summary: [{ label: "Disk", value: "81 % used", severity: "Warning" }],
+          summaryTime: "2026-11-10T11:50:00Z",
+        }),
+      ])[0]?.since,
+    ).toBe("2026-11-10T11:50:00Z");
+  });
+
+  it("gives a request that is not ready the time its Ready became False", () => {
+    expect(
+      requestWarnings([
+        component({ ready: { status: "False", reason: "GrantRejected" } }),
+      ])[0]?.since,
+    ).toBe("2026-11-10T11:30:00Z");
   });
 
   it("gives the reason alone when the request has no message", () => {
