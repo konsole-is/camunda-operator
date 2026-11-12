@@ -110,8 +110,9 @@ export function SettingsEditor({
  * claim value of undefined resets the field. errors are field errors from
  * outside the row. onReset runs after a click on the reset link: the caller
  * remounts the rows, so that they show the values below the claim. invalid
- * gets the steps of the setting and "<label>: <error>" while the editor
- * shows an error, and undefined once the error goes or the row unmounts.
+ * gets the claim steps of the shown field and "<label>: <error>" while the
+ * editor shows an error, and undefined once the error goes or the row
+ * unmounts.
  */
 export function SettingRow({
   setting,
@@ -132,7 +133,12 @@ export function SettingRow({
 }) {
   const [mounted] = useState(setting.value);
   const { editor, steps } = setting;
-  const shows = useShownError(steps, invalid);
+  // The parts of a whole setting share its steps, so each part reports its
+  // error at its own path.
+  const shows = useShownError(
+    steps && setting.holder ? [...steps, ...setting.holder.rest] : steps,
+    invalid,
+  );
   if (!editor || !steps)
     return (
       <div className="py-3">

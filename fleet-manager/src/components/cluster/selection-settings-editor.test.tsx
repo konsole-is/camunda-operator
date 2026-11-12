@@ -165,6 +165,30 @@ describe("SelectionSettingsEditor", () => {
     });
   });
 
+  it("each part of a whole parameter reports its own error", async () => {
+    const invalid = vi.fn();
+    renderEditor({ invalid });
+    const replicas = within(settingRow("overrides.replicas")).getByRole(
+      "spinbutton",
+    );
+    await userEvent.clear(replicas);
+    await userEvent.type(replicas, "0");
+    await userEvent.type(
+      within(settingRow("overrides.storageSize")).getByRole("textbox", {
+        name: "Amount",
+      }),
+      "0",
+    );
+    const replicasSteps = [...overridesSteps, { field: "replicas" }];
+    const reports = invalid.mock.calls.filter(
+      ([steps]) => JSON.stringify(steps) === JSON.stringify(replicasSteps),
+    );
+    expect(reports.at(-1)).toEqual([
+      replicasSteps,
+      "overrides.replicas: Enter 1 or more",
+    ]);
+  });
+
   it("a parameter resets to the environment", async () => {
     const { reset } = renderEditor();
     const replicas = settingRow("overrides.replicas");
