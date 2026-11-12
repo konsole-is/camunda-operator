@@ -105,6 +105,7 @@ jobs:
         run: |
           kubectl get pods -A -o wide || true
           kubectl get pluginrequests,pluginregistrations -A -o yaml || true
+          kubectl get camundaclusterclaims,camundaclusters,environments -A -o yaml || true
           for target in \
             "camunda-operator-system deployment/camunda-operator-fleet-manager" \
             "camunda-operator-system deployment/camunda-operator-controller-manager" \
