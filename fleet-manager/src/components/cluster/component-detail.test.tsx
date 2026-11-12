@@ -208,6 +208,35 @@ describe("ComponentDetail", () => {
     ).toBeTruthy();
   });
 
+  it("watches the Services and PVCs of its related selector on the Events tab", async () => {
+    render(keycloak({ relatedSelector: "camunda.io/component=keycloak" }));
+
+    await userEvent.click(screen.getByRole("tab", { name: "Events" }));
+
+    expect(live.calls).toContainEqual({
+      kind: "Service",
+      opts: {
+        namespace: "mgmt",
+        labelSelector: "camunda.io/component=keycloak",
+      },
+    });
+    expect(live.calls).toContainEqual({
+      kind: "Pod",
+      opts: { namespace: "mgmt", labelSelector: SELECTOR },
+    });
+  });
+
+  it("watches the Services and PVCs of its pod selector without a related selector", async () => {
+    render(keycloak());
+
+    await userEvent.click(screen.getByRole("tab", { name: "Events" }));
+
+    expect(live.calls).toContainEqual({
+      kind: "PersistentVolumeClaim",
+      opts: { namespace: "mgmt", labelSelector: SELECTOR },
+    });
+  });
+
   it("shows the children on the Overview", () => {
     render(keycloak({ children: <p>Partitions here</p> }));
     expect(screen.getByText("Partitions here")).toBeTruthy();

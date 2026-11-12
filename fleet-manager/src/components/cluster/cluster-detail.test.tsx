@@ -97,6 +97,16 @@ describe("ClusterComponentDetail", () => {
       "camunda.io/cluster=orders,camunda.io/component=gateway",
     ));
 
+  it("selects the Services and PVCs of Optimize without the UID that only its pods carry", () =>
+    expect(detailOf("optimize").relatedSelector).toBe(
+      "camunda.io/cluster=orders,camunda.io/component in (optimize-webapp,optimize-importer)",
+    ));
+
+  it("selects the Services and PVCs of the brokers as their pods", () =>
+    expect(detailOf("zeebe").relatedSelector).toBe(
+      "camunda.io/cluster=orders,camunda.io/component=zeebe",
+    ));
+
   it("selects the pods of the CamundaOptimize by its UID", () =>
     expect(detailOf("optimize").podSelector).toBe(
       "camunda.io/cluster=orders,camunda.io/component in (optimize-webapp,optimize-importer),camunda.io/optimize-uid=u-1",

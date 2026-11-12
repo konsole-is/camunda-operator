@@ -6,7 +6,10 @@ import {
   conditionsAt,
 } from "@/lib/conditions";
 import type { Resource } from "@/lib/k8s/kinds";
-import { componentPodSelector } from "@/lib/observe/selectors";
+import {
+  componentObjectSelector,
+  componentPodSelector,
+} from "@/lib/observe/selectors";
 import type {
   MetricsComponent,
   PartitionHealth,
@@ -88,6 +91,7 @@ export function ClusterComponentDetail({
       subtitle={host && `Embedded in ${host.label}`}
       namespace={namespace}
       podSelector={selector}
+      relatedSelector={componentObjectSelector(podSelector, component)}
       metrics={{ cluster: cluster.metadata?.name ?? "", component }}
       eventRefs={eventRefs}
       conditions={rows}

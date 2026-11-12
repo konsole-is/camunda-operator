@@ -43,8 +43,9 @@ type DetailProps = {
  * ref, and the Settings tab holds settings. Without metrics, the Metrics
  * tab shows the live usage only. The Logs tab follows the logs of the
  * pods, and with controllerLogs also those of the controller pods. The
- * Events tab lists the events of the pods, their Services, PVCs, and
- * workloads, and of eventRefs. Logs and events load only while their tab
+ * Events tab lists the events of the pods, their workloads, the Services
+ * and PVCs that relatedSelector selects (podSelector without it), and
+ * eventRefs. Logs and events load only while their tab
  * is open. It reads nothing else, so any page can mount it for any
  * component. It needs a QueryClientProvider above it.
  */
@@ -52,12 +53,14 @@ export function ComponentDetail({
   namespace,
   podSelector,
   metrics,
+  relatedSelector,
   controllerLogs,
   eventRefs,
   ...props
 }: DetailProps & {
   namespace: string;
   podSelector: string;
+  relatedSelector?: string;
   metrics?: MetricsRef;
   controllerLogs?: ControllerLogs;
   eventRefs?: EventRef[];
@@ -91,7 +94,7 @@ export function ComponentDetail({
       eventsTab={
         <DetailEvents
           namespace={namespace}
-          podSelector={podSelector}
+          selector={relatedSelector ?? podSelector}
           pods={pods.items}
           refs={eventRefs ?? []}
           now={props.now}
