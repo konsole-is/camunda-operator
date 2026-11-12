@@ -918,7 +918,7 @@ describe("storageErrors and a live choice that is gone", () => {
     expect(
       errorsOf(d, c, { DatabaseConfig: [config("id-db"), config("other")] }),
     ).toEqual([
-      "kc-db is not available for Keycloak of Existing databases. Choose another.",
+      "Pick another DatabaseConfig for Keycloak. kc-db is not in platform.",
     ]);
   });
 

@@ -22,11 +22,11 @@ import type {
   PluginSelection,
   SectionView,
 } from "@/lib/policy/types";
+import { valueProblem } from "@/lib/drafts";
 import {
   type SchemaRule,
   type ValidationError,
   schemaRules,
-  validate,
 } from "@/lib/schema";
 import { cn } from "@/lib/utils";
 import { LockedField } from "./locked-field";
@@ -788,48 +788,24 @@ function sectionErrors(
         for (const e of parse) add(e.message);
         continue;
       }
-      const emptyList = Array.isArray(value) && value.length === 0;
-      if (
-        value === undefined ||
-        ((value === "" || emptyList) && rule.required)
-      ) {
-        if (rule.required) add("is required");
-        continue;
+      const problem = valueProblem(
+        option,
+        rule,
+        value,
+        !same(value, policyValue(option, rule.name)),
+      );
+      if (problem?.kind === "required") add("is required");
+      if (problem?.kind === "notName") add("Choose one of the choices");
+      if (problem?.kind === "unknownName") {
+        const list = option.choices?.parameter === rule.name;
+        add(
+          `${problem.name} is not an ${list ? "available" : "allowed"} choice`,
+        );
       }
-      const choices = option.choices;
-      if (
-        choices?.parameter === rule.name &&
-        !choices.items.some((item) => item.name === value)
-      ) {
-        add(`${value} is not an available choice`);
-        continue;
-      }
-      if (rule.allowed) {
-        const names = new Set(rule.allowed.map((a) => a.name));
-        for (const picked of Array.isArray(value) ? value : [value])
-          if (!names.has(picked as string))
-            add(`${picked} is not an allowed choice`);
-        // The schema checks only the count: its items are the names, and
-        // the values of the choices stay on the server.
-        const { minItems, maxItems } = rule.schema ?? {};
-        if (
-          Array.isArray(value) &&
-          typeof minItems === "number" &&
-          value.length < minItems
-        )
-          add(`Choose at least ${minItems}`);
-        if (
-          Array.isArray(value) &&
-          typeof maxItems === "number" &&
-          value.length > maxItems
-        )
-          add(`Choose at most ${maxItems}`);
-        continue;
-      }
-      if (!rule.schema) continue;
-      const result = validate(rule.schema, value);
-      if (!result.ok)
-        for (const e of result.errors)
+      if (problem?.kind === "tooFew") add(`Choose at least ${problem.min}`);
+      if (problem?.kind === "tooMany") add(`Choose at most ${problem.max}`);
+      if (problem?.kind === "schema")
+        for (const e of problem.errors)
           add(e.message, e.path ? `${key}.${e.path}` : key);
     }
   }

@@ -5,6 +5,9 @@ import type { PluginSection } from "@/generated/crds/pluginsection";
 import {
   type BuiltinObjects,
   type ClaimKind,
+  type EditableParameter,
+  type NameRefusal,
+  type OptionView,
   type PluginSelection,
   type RequestParameters,
   type SectionView,
@@ -12,6 +15,7 @@ import {
   checkAllowed,
   claimEditable,
   isObject,
+  refusedName,
   resolve,
 } from "@/lib/policy";
 import { type ValidationError, validate } from "@/lib/schema";
@@ -142,12 +146,10 @@ function selectionError(
 
 /**
  * valueErrors returns an error for each claim-editable parameter of a pick
- * whose value the live choices of views refuse: a required parameter
- * without a value, a name that is not among the choices or the allowed
- * names (the message names it), a list whose count the schema refuses, or
- * a free value that the schema refuses. A pick takes the policy value of a
- * parameter that it does not set. Of a disabled option only the names are
- * checked, so a config that is gone is named also with the last one.
+ * whose value valueProblem refuses. A pick takes the policy value of a
+ * parameter that it does not set. Of a disabled option only a name that is
+ * gone is reported, so a config that is gone is named also with the last
+ * one.
  */
 export function valueErrors(
   draft: StorageDraft,
@@ -163,58 +165,91 @@ export function valueErrors(
       const set = selection.parameters ?? {};
       return option.parameters.flatMap((rule) => {
         if (!rule.claimEditable) return [];
-        const value = Object.hasOwn(set, rule.name)
-          ? set[rule.name]
-          : rule.value;
-        const empty =
-          value === "" || (Array.isArray(value) && value.length === 0);
-        if (value === undefined || (empty && rule.required)) {
-          return rule.required && !disabled
-            ? [`Choose a ${rule.label} for ${option.label}.`]
-            : [];
+        const claimed = Object.hasOwn(set, rule.name);
+        const problem = valueProblem(
+          option,
+          rule,
+          claimed ? set[rule.name] : rule.value,
+          claimed,
+        );
+        if (problem?.kind === "unknownName" && problem.name !== "") {
+          return [
+            `${problem.name} is not available for ${rule.label} of ${option.label}. Choose another.`,
+          ];
         }
-        const names =
-          option.choices?.parameter === rule.name
-            ? option.choices.items.map((i) => i.name)
-            : rule.allowed?.map((a) => a.name);
-        const fix = disabled
-          ? []
+        if (!problem || disabled) return [];
+        return problem.kind === "required"
+          ? [`Choose a ${rule.label} for ${option.label}.`]
           : [`Fix the ${rule.label} of ${option.label}.`];
-        if (!names) {
-          return rule.schema && !validate(rule.schema, value).ok ? fix : [];
-        }
-        const list = Array.isArray(value) && !rule.allowedLists;
-        if (empty && !list) return [];
-        const picked = list ? value : [value];
-        const gone = picked
-          .filter((v) => !names.includes(v as string))
-          .map(
-            (v) =>
-              `${String(v)} is not available for ${rule.label} of ${option.label}. Choose another.`,
-          );
-        if (gone.length > 0 || !list) return gone;
-        // The schema describes the values of the choices, not their names,
-        // so only its count applies to a list of names.
-        const { minItems, maxItems } = rule.schema ?? {};
-        return (typeof minItems === "number" && value.length < minItems) ||
-          (typeof maxItems === "number" && value.length > maxItems)
-          ? fix
-          : [];
       });
     }),
   );
 }
 
 /**
+ * ValueProblem is why a value of a claim-editable parameter does not pass:
+ * a required parameter without a value, a refusal of the names of its
+ * choices, a count of names outside the schema, or the errors of the
+ * schema.
+ */
+export type ValueProblem =
+  | { kind: "required" }
+  | NameRefusal
+  | { kind: "tooFew"; min: number }
+  | { kind: "tooMany"; max: number }
+  | { kind: "schema"; errors: ValidationError[] };
+
+/**
+ * valueProblem returns the problem of value, the value of rule in option,
+ * or undefined when it passes. claimed says that the claim sets the value:
+ * only then is it checked against the names of the choices, as the claim
+ * controller does.
+ */
+export function valueProblem(
+  option: OptionView,
+  rule: EditableParameter,
+  value: unknown,
+  claimed: boolean,
+): ValueProblem | undefined {
+  const empty = value === "" || (Array.isArray(value) && value.length === 0);
+  if (value === undefined || (empty && rule.required)) {
+    return rule.required ? { kind: "required" } : undefined;
+  }
+  const names =
+    option.choices?.parameter === rule.name
+      ? option.choices.items.map((i) => i.name)
+      : rule.allowed?.map((a) => a.name);
+  const refused = claimed && names ? refusedName(value, names) : undefined;
+  if (refused) return refused;
+  if (rule.allowed) {
+    // The schema describes the values of the choices, not their names,
+    // so only its count applies to a list of names.
+    const { minItems, maxItems } = rule.schema ?? {};
+    if (!Array.isArray(value)) return undefined;
+    if (typeof minItems === "number" && value.length < minItems) {
+      return { kind: "tooFew", min: minItems };
+    }
+    return typeof maxItems === "number" && value.length > maxItems
+      ? { kind: "tooMany", max: maxItems }
+      : undefined;
+  }
+  const checked = rule.schema && validate(rule.schema, value);
+  return checked && !checked.ok
+    ? { kind: "schema", errors: checked.errors }
+    : undefined;
+}
+
+/**
  * resolvedErrors returns the errors of the requests that selections, the
  * plugins of the claim, resolve to under draft.environment, as the claim
  * controller finds them: each preset or config that a built-in request
- * names and that is not there (a config must be in draft.namespace), then
- * the first refusal of checkAllowed, then each request whose parameters,
- * with those of controllerParameters, the schema of its registration
- * refuses. views give the words of a missing object: one that a claim can
- * pick in views asks for another pick, any other asks for the admin. The messages of checkAllowed are its own, so
- * a flow runs this after draftErrors passes.
+ * names and that is not there (a config must be in draft.namespace), and
+ * the refusal of checkAllowed or, when it passes, each request whose
+ * parameters, with those of controllerParameters, the schema of its
+ * registration refuses. views give the words of a missing object: one that a claim can
+ * pick in views asks for another pick, any other asks for the admin. The
+ * messages of checkAllowed are its own, so a flow runs this after
+ * draftErrors passes.
  */
 export function resolvedErrors(
   draft: StorageDraft,
@@ -304,8 +339,8 @@ function missingObjectErrors(
 }
 
 // checkAllowed does not check a locked value against the schema of its
-// registration, and the built-in controller refuses a request of a built-in
-// registration whose parameters the schema refuses.
+// registration, and the controller of a request refuses parameters that the
+// schema refuses.
 function schemaErrors(
   draft: StorageDraft,
   requests: readonly RequestParameters[],

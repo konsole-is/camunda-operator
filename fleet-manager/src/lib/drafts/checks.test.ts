@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import type { SectionView } from "@/lib/policy";
+import type { EditableParameter, OptionView, SectionView } from "@/lib/policy";
 import {
   type StorageDraft,
   draftErrors,
@@ -8,6 +8,7 @@ import {
   picksOf,
   resolvedErrors,
   valueErrors,
+  valueProblem,
 } from "./checks";
 
 const view = (over: Partial<SectionView> = {}): SectionView => ({
@@ -145,6 +146,99 @@ describe("valueErrors", () => {
         [disabled],
       ),
     ).toEqual(["b is not available for Name of Store. Choose another."]);
+  });
+
+  const tiered = (value?: unknown) =>
+    view({
+      options: [
+        {
+          registration: "store",
+          label: "Store",
+          isDefault: true,
+          parameters: [
+            {
+              name: "tier",
+              label: "Tier",
+              claimEditable: true,
+              ...(value !== undefined && { value }),
+              allowed: [{ name: "gold", label: "Gold" }],
+            },
+          ],
+        },
+      ],
+    });
+  const setting = (parameters?: Record<string, unknown>) =>
+    draftOf({
+      storage: [
+        {
+          section: "storage",
+          registration: "store",
+          ...(parameters && { parameters }),
+        },
+      ],
+    });
+
+  it("does not check a policy value that the claim does not set against the names", () => {
+    expect(valueErrors(setting(), [tiered("silver")])).toEqual([]);
+  });
+
+  it("checks a value that the claim sets against the names", () => {
+    expect(valueErrors(setting({ tier: "silver" }), [tiered()])).toEqual([
+      "silver is not available for Tier of Store. Choose another.",
+    ]);
+  });
+
+  it("asks to fix a value that the claim sets and that is no name", () => {
+    expect(valueErrors(setting({ tier: { level: 1 } }), [tiered()])).toEqual([
+      "Fix the Tier of Store.",
+    ]);
+  });
+
+  it("takes a list of names as names", () => {
+    expect(
+      valueErrors(setting({ tier: ["gold", "bronze"] }), [tiered()]),
+    ).toEqual(["bronze is not available for Tier of Store. Choose another."]);
+  });
+});
+
+describe("valueProblem", () => {
+  const option = (choices?: string[]): OptionView => ({
+    registration: "store",
+    label: "Store",
+    isDefault: true,
+    parameters: [],
+    ...(choices && {
+      choices: {
+        parameter: "preset",
+        items: choices.map((name) => ({ name })),
+      },
+    }),
+  });
+  const preset: EditableParameter = {
+    name: "preset",
+    label: "Preset",
+    claimEditable: true,
+    schema: { type: "string", minLength: 2 },
+  };
+
+  it("checks a value of the choices against its schema too, because the name is the value", () => {
+    expect(valueProblem(option(["a", "small"]), preset, "a", true)).toEqual({
+      kind: "schema",
+      errors: [expect.objectContaining({ message: expect.any(String) })],
+    });
+  });
+
+  it("refuses a name that the choices do not hold", () => {
+    expect(valueProblem(option(["small"]), preset, "large", true)).toEqual({
+      kind: "unknownName",
+      name: "large",
+    });
+  });
+
+  it("asks for a required value", () => {
+    expect(
+      valueProblem(option(), { ...preset, required: true }, "", false),
+    ).toEqual({ kind: "required" });
   });
 });
 

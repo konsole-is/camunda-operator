@@ -107,21 +107,21 @@ const REGISTRATIONS = [
   }),
 ];
 
-function environment(
-  allowed: string[],
-  parameters: Record<string, unknown>,
-): Environment {
+function environment(c: Case): Environment {
   return {
     apiVersion: "fleet.camunda.io/v1alpha1",
     kind: "Environment",
     metadata: { name: "prod" },
     spec: {
       sections: {
-        "secondary-storage": { allowed },
+        "secondary-storage": {
+          allowed: c.allowed ?? ["existing-secondary-storage", "tiered"],
+          ...(c.required && { required: true }),
+        },
         "management-database": { allowed: ["server"] },
       },
-      presets: { elasticsearchCluster: ["small", "large"] },
-      parameters: parameters as Environment["spec"]["parameters"],
+      presets: { elasticsearchCluster: c.presets ?? ["small", "large"] },
+      parameters: (c.parameters ?? {}) as Environment["spec"]["parameters"],
     },
   };
 }
@@ -135,10 +135,14 @@ function config(name: string): SecondaryStorageConfig {
   } as SecondaryStorageConfig;
 }
 
+// picks are the picks of the secondary storage section. allowed, required,
+// presets, and parameters set the Environment.
 type Case = {
   name: string;
-  pick: Omit<PluginSelection, "section">;
+  picks: Omit<PluginSelection, "section">[];
   allowed?: string[];
+  required?: boolean;
+  presets?: string[];
   parameters?: Record<string, unknown>;
   sections?: PluginSection[];
   objects?: BuiltinObjects;
@@ -157,26 +161,31 @@ function preset(name: string): ElasticsearchClusterPreset {
 const NAMED = {
   "existing-secondary-storage": { name: { claimEditable: true } },
 };
+const EDITABLE_PRESET = { elasticsearch: { preset: { claimEditable: true } } };
 const ORDERS_LEFT = { SecondaryStorageConfig: [config("orders")] };
 const ORDERS_GONE = { SecondaryStorageConfig: [config("other")] };
 
 const CASES: Case[] = [
   {
     name: "a picked config that is still there passes",
-    pick: {
-      registration: "existing-secondary-storage",
-      parameters: { name: "orders" },
-    },
+    picks: [
+      {
+        registration: "existing-secondary-storage",
+        parameters: { name: "orders" },
+      },
+    ],
     parameters: NAMED,
     objects: ORDERS_LEFT,
     refusal: [],
   },
   {
     name: "a picked config that was deleted after the pick",
-    pick: {
-      registration: "existing-secondary-storage",
-      parameters: { name: "orders" },
-    },
+    picks: [
+      {
+        registration: "existing-secondary-storage",
+        parameters: { name: "orders" },
+      },
+    ],
     parameters: NAMED,
     objects: ORDERS_GONE,
     refusal: [
@@ -185,10 +194,12 @@ const CASES: Case[] = [
   },
   {
     name: "a config behind an Environment alias that was deleted",
-    pick: {
-      registration: "existing-secondary-storage",
-      parameters: { name: "fast" },
-    },
+    picks: [
+      {
+        registration: "existing-secondary-storage",
+        parameters: { name: "fast" },
+      },
+    ],
     parameters: {
       "existing-secondary-storage": {
         name: {
@@ -204,7 +215,7 @@ const CASES: Case[] = [
   },
   {
     name: "a config that a locked policy value names and that was deleted",
-    pick: { registration: "existing-secondary-storage" },
+    picks: [{ registration: "existing-secondary-storage" }],
     parameters: {
       "existing-secondary-storage": { name: { value: "orders" } },
     },
@@ -215,7 +226,7 @@ const CASES: Case[] = [
   },
   {
     name: "a preset behind an Environment alias that was deleted",
-    pick: { registration: "elasticsearch", parameters: { preset: "fast" } },
+    picks: [{ registration: "elasticsearch", parameters: { preset: "fast" } }],
     allowed: ["elasticsearch"],
     parameters: {
       elasticsearch: {
@@ -232,7 +243,7 @@ const CASES: Case[] = [
   },
   {
     name: "a choice that the Environment no longer allows",
-    pick: { registration: "tiered", parameters: { tier: "silver" } },
+    picks: [{ registration: "tiered", parameters: { tier: "silver" } }],
     parameters: {
       tiered: {
         tier: {
@@ -247,7 +258,7 @@ const CASES: Case[] = [
   },
   {
     name: "a locked policy value that the schema of the registration refuses",
-    pick: { registration: "tiered" },
+    picks: [{ registration: "tiered" }],
     parameters: { tiered: { tier: { value: "bronze" } } },
     refusal: [
       expect.stringMatching(
@@ -257,15 +268,91 @@ const CASES: Case[] = [
   },
   {
     name: "an option that the Environment no longer allows",
-    pick: { registration: "tiered" },
+    picks: [{ registration: "tiered" }],
     allowed: ["existing-secondary-storage"],
     refusal: ["Choose another option for Secondary storage."],
   },
   {
     name: "a section that no longer applies to the claim",
-    pick: { registration: "tiered" },
+    picks: [{ registration: "tiered" }],
     sections: [section("secondary-storage", "Secondary storage", {})],
     refusal: ["Choose another option for secondary-storage."],
+  },
+  {
+    name: "a policy value outside the allowed names that the claim does not set passes",
+    picks: [{ registration: "tiered" }],
+    parameters: {
+      tiered: {
+        tier: {
+          claimEditable: true,
+          value: "silver",
+          allowed: [{ name: "gold", label: "Gold", value: "gold" }],
+        },
+      },
+    },
+    refusal: [],
+  },
+  {
+    name: "a value of the claim that names no choice",
+    picks: [{ registration: "tiered", parameters: { tier: { level: 1 } } }],
+    parameters: {
+      tiered: {
+        tier: {
+          claimEditable: true,
+          allowed: [{ name: "gold", label: "Gold", value: "gold" }],
+        },
+      },
+    },
+    refusal: ["Fix the Tier of Tiered storage."],
+  },
+  {
+    name: "an empty allowed list of the Environment refuses no value",
+    picks: [{ registration: "tiered", parameters: { tier: "gold" } }],
+    parameters: { tiered: { tier: { claimEditable: true, allowed: [] } } },
+    refusal: [],
+  },
+  {
+    name: "a second pick in a section that now takes one",
+    picks: [
+      { registration: "tiered" },
+      {
+        registration: "existing-secondary-storage",
+        parameters: { name: "orders" },
+      },
+    ],
+    parameters: NAMED,
+    objects: ORDERS_LEFT,
+    refusal: ["Choose one option for Secondary storage."],
+  },
+  {
+    name: "a preset that the Environment list dropped",
+    picks: [{ registration: "elasticsearch", parameters: { preset: "large" } }],
+    allowed: ["elasticsearch"],
+    presets: ["small"],
+    parameters: EDITABLE_PRESET,
+    objects: { ElasticsearchClusterPreset: [preset("small"), preset("large")] },
+    refusal: [
+      "large is not available for Preset of New Elasticsearch cluster. Choose another.",
+    ],
+  },
+  {
+    name: "a picked preset that was deleted",
+    picks: [{ registration: "elasticsearch", parameters: { preset: "large" } }],
+    allowed: ["elasticsearch"],
+    parameters: EDITABLE_PRESET,
+    objects: { ElasticsearchClusterPreset: [preset("small")] },
+    refusal: [
+      "large is not available for Preset of New Elasticsearch cluster. Choose another.",
+    ],
+  },
+  {
+    name: "a required section that is gone",
+    picks: [],
+    required: true,
+    sections: [],
+    refusal: [
+      'section "secondary-storage" is required, and the claim selects nothing in it',
+    ],
   },
 ];
 
@@ -273,7 +360,7 @@ function clusterRefusal(c: Case, live: Live): string[] {
   const draft: ClusterDraft = {
     namespace: { kind: "existing", name: "team-a" },
     claim: { metadata: { name: "orders" }, spec: { presetRef: "small" } },
-    storage: { "secondary-storage": [c.pick as PluginSelection] },
+    storage: { "secondary-storage": picksOf(c) },
   };
   return clusterErrors(
     draft,
@@ -300,7 +387,7 @@ function planeRefusal(c: Case, live: Live): string[] {
       "management-database": [
         { section: "management-database", registration: "server" },
       ],
-      "secondary-storage": [c.pick as PluginSelection],
+      "secondary-storage": picksOf(c),
     },
     urls: {
       keycloak: "https://m.example.com/auth",
@@ -329,6 +416,10 @@ function planeRefusal(c: Case, live: Live): string[] {
   );
 }
 
+function picksOf(c: Case): PluginSelection[] {
+  return c.picks.map((p) => ({ section: "secondary-storage", ...p }));
+}
+
 type Live = {
   environment: Environment;
   sections: PluginSection[];
@@ -337,18 +428,13 @@ type Live = {
 
 describe("the cluster flow and the plane flow refuse the same stale picks", () => {
   it.each(CASES)("$name", (c) => {
-    const pick = { section: "secondary-storage", ...c.pick };
     const live: Live = {
-      environment: environment(
-        c.allowed ?? ["existing-secondary-storage", "tiered"],
-        c.parameters ?? {},
-      ),
+      environment: environment(c),
       sections: c.sections ?? [storage],
       objects: c.objects ?? {},
     };
-    const withSection = { ...c, pick };
 
-    expect(clusterRefusal(withSection, live)).toEqual(c.refusal);
-    expect(planeRefusal(withSection, live)).toEqual(c.refusal);
+    expect(clusterRefusal(c, live)).toEqual(c.refusal);
+    expect(planeRefusal(c, live)).toEqual(c.refusal);
   });
 });
