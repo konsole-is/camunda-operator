@@ -151,17 +151,31 @@ function editDefs(context: ClusterSlotContext, view: ClaimView): EditDef[] {
   ];
 }
 
+// viewOf returns the read view of the claim after the pending changes. A
+// ref that the claim leaves empty shows the value that the cluster gets
+// after the changes, not the live one.
 function viewOf(
   context: ClusterSlotContext,
   stored: ClusterClaim,
   session: Session<ClusterClaim> | undefined,
 ): ClaimView {
-  const merged = session
-    ? mergedSpecs(changeInputOf(context, session)).after
-    : context.merged;
+  if (!session)
+    return claimView({
+      claim: stored,
+      cluster: context.cluster,
+      merged: context.merged,
+      environments: context.environments,
+      sections: context.sections,
+      registrations: context.registrations,
+    });
+  const merged = mergedSpecs(changeInputOf(context, session)).after;
+  const { releaseRef, platformConfigRef } = merged.spec;
   return claimView({
-    claim: session ? claimAfter(session) : stored,
-    cluster: context.cluster,
+    claim: claimAfter(session),
+    cluster: {
+      ...context.cluster,
+      spec: { ...context.cluster.spec, releaseRef, platformConfigRef },
+    },
     merged,
     environments: context.environments,
     sections: context.sections,

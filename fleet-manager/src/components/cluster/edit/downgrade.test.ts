@@ -78,6 +78,19 @@ describe("downgradeOf", () => {
     ).toEqual({ from: "8.9.3", to: "8.9.1" });
   });
 
+  it("gives both versions when the session allows the downgrade that the claim names already", () => {
+    const context = slotContext({
+      claim: claim("41", { releaseRef: "camunda-8-9-0" }),
+    });
+    const allow: Step[] = [
+      { field: "spec" },
+      { field: "allowVersionDowngrade" },
+    ];
+    expect(
+      downgradeOf(context, sessionOf(context, [[allow, "8.9.0"]])),
+    ).toEqual({ from: "8.9.1", to: "8.9.0" });
+  });
+
   it.each([
     ["an upgrade", "8.9.0", [[releaseRef, "camunda-8-9-3"]]],
     ["no release change", "8.9.3", [[suspend, true]]],

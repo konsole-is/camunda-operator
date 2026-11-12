@@ -19,19 +19,25 @@ export function downgradeDone(
 }
 
 /**
- * downgradeOf returns the versions of the downgrade that session makes, or
- * undefined when its release move is not a downgrade, the release is not
- * in the context, or the cluster reports no version. A claim without a
- * release runs the default release of the Environment.
+ * downgradeOf returns the versions of the downgrade that session makes or
+ * allows: a move to a lower release, or a new allowVersionDowngrade for the
+ * lower release that the claim names already. It is undefined for any
+ * other session, a release that is not in the context, and a cluster that
+ * reports no version. A claim without a release runs the default release of
+ * the Environment.
  */
 export function downgradeOf(
   context: ClusterSlotContext,
   session: Session<ClusterClaim>,
 ): { from: string; to: string } | undefined {
   const fallback = context.environment?.spec.releases?.default;
+  const spec = claimAfter(session).spec;
   const before = session.claim.spec?.releaseRef || fallback;
-  const after = claimAfter(session).spec?.releaseRef || fallback;
-  if (!after || after === before) return undefined;
+  const after = spec?.releaseRef || fallback;
+  const allows =
+    spec?.allowVersionDowngrade !== undefined &&
+    spec.allowVersionDowngrade !== session.claim.spec?.allowVersionDowngrade;
+  if (!after || (after === before && !allows)) return undefined;
   const release = context.releases.find((r) => r.metadata?.name === after);
   if (!release) return undefined;
   const move = releaseMove(

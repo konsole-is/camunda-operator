@@ -16,7 +16,11 @@ import {
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import type { Resource } from "@/lib/k8s/kinds";
 import { FakeEventSource } from "../../../../test/fakes/event-source";
-import { claim, slotContext } from "../../../../test/fakes/slot-context";
+import {
+  claim,
+  cluster,
+  slotContext,
+} from "../../../../test/fakes/slot-context";
 import { fakeWriter } from "../../../../test/fakes/writer";
 import type { ClusterSlotContext } from "../slots";
 import { ClaimEditorPanels } from "./claim-editor";
@@ -103,6 +107,15 @@ describe("the Release and preset panel", () => {
     expect(spec.allowVersionDowngrade).toBe("8.9.0");
   });
 
+  it("asks for the downgrade confirm when the claim names a lower release already and gets allowVersionDowngrade", async () => {
+    panel(slotContext({ claim: claim("41", { releaseRef: "camunda-8-9-0" }) }));
+    choose("Release", "camunda-8-9-1");
+    choose("Release", "camunda-8-9-0");
+    openReview();
+    const spec = await confirm("Downgrade");
+    expect(spec.allowVersionDowngrade).toBe("8.9.0");
+  });
+
   it("moving off a downgrade drops allowVersionDowngrade again", () => {
     panel();
     choose("Release", "camunda-8-9-0");
@@ -158,6 +171,23 @@ describe("the Release and preset panel", () => {
     choose("Platform config", "strict");
     openReview();
     expect((await confirm("Save")).platformConfigRef).toBe("strict");
+  });
+
+  it("the read view shows the platform config that applies after a reset to the default", () => {
+    const context = slotContext({
+      cluster: cluster({ platformConfigRef: "strict" }),
+      claim: claim("41", { platformConfigRef: "strict" }),
+      platformConfigs: [platformConfig("base"), platformConfig("strict")],
+    });
+    context.environment!.spec.platformConfigRef = "base";
+    panel(context);
+    choose("Platform config", "");
+    fireEvent.click(
+      within(releasePanel()).getByRole("button", { name: "Done" }),
+    );
+    const terms = releasePanel().textContent ?? "";
+    expect(terms).toContain("base");
+    expect(terms).not.toContain("strict");
   });
 
   it("Clear writes the reset of allowVersionDowngrade when nothing else is pending", async () => {
