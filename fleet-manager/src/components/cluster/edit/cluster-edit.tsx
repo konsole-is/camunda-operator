@@ -81,7 +81,9 @@ export type ClaimActions = {
  * unmounts. While an editor shows an error, the change bar blocks Review
  * with the message. discard drops every pending change. review opens the
  * review on the next render when a change is pending, errors is empty, and
- * no editor shows an error, and returns whether it opens it. pending is the
+ * no editor shows an error, and returns whether it opens it. Once the
+ * cluster runs the version that allowVersionDowngrade names, review also
+ * resets that field, unless a change sets it. pending is the
  * count of pending changes. show is the show function of useWriteToast of
  * the page: a write that is not a claim change, such as a backup or a
  * restore, reports its result through it, so that the page has one toast.
