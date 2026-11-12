@@ -18,8 +18,8 @@ import { errorsAt, SettingRow } from "./settings-editor";
  * choices, whatever its schema. It holds no session: set and reset get
  * claim steps from the root of the claim.
  * invalid gets the error that a parameter shows, as SettingRow gives it.
- * errors are the field errors of the claim, and each shows at the
- * parameter whose claim path holds it.
+ * errors show at the parameter whose claim path holds them or is above
+ * them.
  */
 export function SelectionSettingsEditor({
   fields,
