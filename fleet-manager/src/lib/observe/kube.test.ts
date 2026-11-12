@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { KubernetesRequestError, getJSON } from "@/lib/k8s/client";
 import type { Resource } from "@/lib/k8s/kinds";
 import { list } from "@/lib/k8s/read";
-import { events, metricsServerFound, podUsage, requestPods } from "./kube";
+import {
+  controllerPods,
+  events,
+  metricsServerFound,
+  podUsage,
+  requestPods,
+} from "./kube";
 
 vi.mock("@/lib/k8s/client", async (real) => ({
   ...(await real<typeof import("@/lib/k8s/client")>()),
@@ -290,6 +296,32 @@ describe("requestPods", () => {
       namespace: "team-a",
       labelSelector: "app=x",
     });
+  });
+});
+
+describe("controllerPods", () => {
+  const registration = {
+    metadata: { name: "rustfs-bucket" },
+    spec: {
+      serviceAccount: { namespace: "plugins", name: "rustfs-controller" },
+    },
+  } as unknown as Resource<"PluginRegistration">;
+  const podAs = (name: string, serviceAccountName?: string) => ({
+    metadata: { name, namespace: "plugins" },
+    spec: { containers: [], serviceAccountName },
+  });
+
+  it("gives the pods that run under the ServiceAccount of the registration", async () => {
+    vi.mocked(list).mockResolvedValue([
+      podAs("rustfs-controller-0", "rustfs-controller"),
+      podAs("other-0", "default"),
+      podAs("no-account-0"),
+    ] as never);
+
+    const pods = await controllerPods(registration);
+
+    expect(list).toHaveBeenCalledWith("Pod", { namespace: "plugins" });
+    expect(pods.map((p) => p.metadata?.name)).toEqual(["rustfs-controller-0"]);
   });
 });
 

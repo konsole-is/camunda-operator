@@ -71,3 +71,33 @@ test("the Metrics tab of the brokers shows the live usage and a chart that the s
   expect(await blockingViolations(page)).toEqual([]);
   await shot(page, "component-metrics", { dir: PAGES_DIR });
 });
+
+test("the Logs tab of the brokers shows a line of each broker pod", async ({
+  page,
+}) => {
+  await page.goto(BROKERS);
+  await page.getByRole("tab", { name: "Logs" }).click();
+
+  const log = page.getByRole("log");
+  await expect(log.getByText("Broker 0 is ready")).toBeVisible();
+  await expect(log.getByText("Broker 1 is ready")).toBeVisible();
+  await expect(
+    log.getByText("camundacluster-sample-zeebe-1").first(),
+  ).toBeVisible();
+  expect(await blockingViolations(page)).toEqual([]);
+  await shot(page, "component-logs", { dir: PAGES_DIR });
+});
+
+test("the Events tab of the brokers shows the events of the cluster", async ({
+  page,
+}) => {
+  await page.goto(BROKERS);
+  await page.getByRole("tab", { name: "Events" }).click();
+
+  await expect(page.getByText("CreatedStatefulSet")).toBeVisible();
+  await expect(
+    page.getByText("CamundaCluster/camundacluster-sample").first(),
+  ).toBeVisible();
+  expect(await blockingViolations(page)).toEqual([]);
+  await shot(page, "component-events", { dir: PAGES_DIR });
+});

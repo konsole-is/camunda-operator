@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,20 +18,28 @@ const LEVEL_TONE: Record<string, string> = {
 };
 
 /**
- * LogViewer shows log lines and follows new ones. Pause keeps the lines
- * that show and counts the new ones, and Follow shows them all again. The
- * level and text filters apply to the lines that show. A line with extra
- * fields opens to show them.
+ * LogViewer shows log lines and follows new ones. A new source ends
+ * Pause, so the lines of the new source show. controls go first in the
+ * toolbar.
  */
 export function LogViewer({
   lines,
   label = "Logs",
+  controls,
+  source,
 }: {
   lines: LogLine[];
   label?: string;
+  controls?: ReactNode;
+  source?: string;
 }) {
   const id = useId();
   const [paused, setPaused] = useState<LogLine[] | undefined>();
+  const [shownSource, setShownSource] = useState(source);
+  if (shownSource !== source) {
+    setShownSource(source);
+    setPaused(undefined);
+  }
   const [level, setLevel] = useState("");
   const [text, setText] = useState("");
   const box = useRef<HTMLDivElement>(null);
@@ -53,6 +61,11 @@ export function LogViewer({
       (!level || l.level?.toLowerCase() === level) &&
       (!text || l.raw.toLowerCase().includes(text.toLowerCase())),
   );
+  const columns = {
+    time: kept.some((l) => l.time),
+    pod: new Set(kept.map((l) => l.pod)).size > 1,
+    logger: kept.some((l) => l.logger),
+  };
   const levels = [
     ...new Set(
       [...kept.map((l) => l.level?.toLowerCase()), level].filter(
@@ -69,6 +82,7 @@ export function LogViewer({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-end gap-2">
+        {controls}
         {paused === undefined ? (
           <Button variant="outline" size="sm" onClick={() => setPaused(lines)}>
             Pause
@@ -131,11 +145,12 @@ export function LogViewer({
         {shown.map((line) => {
           const row = (
             <>
-              {line.time && (
-                <span className="shrink-0 text-muted">
-                  {line.time.slice(11, 19)}
+              {columns.time && (
+                <span className="min-w-16 shrink-0 text-muted">
+                  {line.time && utcClock(line.time)}
                 </span>
               )}
+              {columns.pod && <Clipped text={line.pod} width="w-28 sm:w-56" />}
               {line.level && (
                 <span
                   className={cn(
@@ -146,27 +161,63 @@ export function LogViewer({
                   {line.level}
                 </span>
               )}
-              <span className="min-w-0 break-all whitespace-pre-wrap text-text">
+              {columns.logger && (
+                <Clipped text={line.logger} width="hidden w-48 sm:block" />
+              )}
+              <span className="min-w-0 basis-full break-all whitespace-pre-wrap text-text sm:basis-auto">
                 {line.message}
               </span>
             </>
           );
           return Object.keys(line.fields).length > 0 ? (
             <details key={keyOf(line)} className="px-3">
-              <summary className="flex cursor-pointer gap-3">{row}</summary>
+              <summary className="flex cursor-pointer flex-wrap gap-x-3 sm:flex-nowrap">
+                {row}
+              </summary>
               <pre className="ml-6 text-muted">
                 {JSON.stringify(line.fields, null, 2)}
               </pre>
             </details>
           ) : (
-            <div key={keyOf(line)} className="flex gap-3 px-3">
+            <div
+              key={keyOf(line)}
+              className="flex flex-wrap gap-x-3 px-3 sm:flex-nowrap"
+            >
               {row}
             </div>
           );
         })}
       </div>
+      {columns.time && (
+        <p className="-mt-1 text-right text-xs text-muted">Time (UTC)</p>
+      )}
     </div>
   );
+}
+
+// A pod or a logger name differs at its end, so a long one loses its start.
+function Clipped({ text, width }: { text?: string; width: string }) {
+  return (
+    <span
+      title={text}
+      className={cn(
+        "shrink-0 truncate text-left text-muted [direction:rtl]",
+        width,
+      )}
+    >
+      <bdi>{text}</bdi>
+    </span>
+  );
+}
+
+const OFFSET = /\d(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+// A time without an offset, and one that Date cannot read, shows as the
+// line wrote it.
+function utcClock(time: string): string {
+  // Date reads a date-time without an offset as browser time.
+  const ms = OFFSET.test(time) ? Date.parse(time) : NaN;
+  return Number.isNaN(ms) ? time : new Date(ms).toISOString().slice(11, 19);
 }
 
 // A buffer can drop its oldest lines, so a count by length is wrong.
