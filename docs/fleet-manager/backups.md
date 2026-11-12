@@ -1,4 +1,4 @@
-# Back up a cluster from the fleet manager
+# Back up and restore a cluster from the fleet manager
 
 The **Backups** tab of a cluster page shows the backup storage, the schedules, the backups, and the restores of the cluster. On a cluster that a `CamundaClusterClaim` made, the tab also has the actions on this page. A cluster that shows **Not managed** in [the fleet view](fleet-view.md) has no actions. Its backups are read only in the fleet manager.
 
@@ -27,7 +27,10 @@ The page says "Backup my-cluster-manual-20261110-143005 created." when the backu
 | --- | --- |
 | "This cluster has no backup storage." | The claim chose no bucket in its **Backup storage** section when it was created. The sections of a claim are fixed after creation. To back up from the fleet manager, create a cluster with a bucket in that section. |
 | "`SecondaryStorageConfig <name>` not found, so the kind of backup is not known." | Create the `SecondaryStorageConfig` that `spec.storageRef` of the cluster names. |
-| "The cluster is suspended. A backup waits until it runs again, so resume the cluster first." | If you suspended the cluster, resume it, as [Suspend and resume](../guides/operations.md#suspend-and-resume) shows. Otherwise, read the reason of the `Ready` condition of the `CamundaCluster`, and find it in [Why the cluster is at zero replicas](../crds/camundacluster.md#why-the-cluster-is-at-zero-replicas). For example, `StorageAlreadyAttached` means that another cluster holds the secondary storage. |
+| "The cluster is suspended. A backup waits until it runs again, so resume the cluster first." | `spec.suspend` of the cluster is `true`. Resume the cluster, as [Suspend and resume](../guides/operations.md#suspend-and-resume) shows. |
+| "A suspension hold keeps the cluster suspended, and a backup waits until the cluster runs again. A failed restore keeps its hold until you delete that restore." | Find the failed restore in the table of restores, and read its failure. Then delete the restore, as [Suspension holds](../crds/camundacluster.md#suspension-holds) shows. |
+| "Another cluster holds the secondary storage of this cluster, so the operator keeps this cluster suspended, and a backup waits until it runs again. Give this cluster storage of its own, or delete the cluster that holds the storage." | Do one of the two, as [A second cluster on a held backend](../crds/camundacluster.md#a-second-cluster-on-a-held-backend) shows. |
+| "Something else still writes the secondary storage of this cluster, so the operator keeps this cluster suspended, and a backup waits until it runs again. Wait, or remove what the Ready condition of the cluster names." | Read the message of the `Ready` condition of the `CamundaCluster`, as [Waiting for a handover](../crds/camundacluster.md#waiting-for-a-handover) shows. |
 | "Changes are off: the fleet manager could not read its settings." | Make sure that the fleet manager can read the ConfigMap `fleet-manager-settings`, as [Fleet manager settings](settings.md) shows. |
 
 A cluster holds one backup or one restore at a time, as [One backup or restore at a time](../guides/operations.md#one-backup-or-restore-at-a-time) shows. While a backup or a restore of the cluster runs, **Back up now** stays on. The form then says, for example, "Restore my-cluster-restore-1 is running. The new backup waits until it ends." The new backup waits in `Pending` and starts on its own. A restore also suspends the cluster while it runs. This suspension does not turn **Back up now** off, because it ends with the restore. Any other suspension turns it off.
@@ -59,6 +62,102 @@ A delete during the restore can leave the secondary storage of the cluster empty
 
 The operator removes the artifacts before the resource goes. When it cannot reach them, the artifacts stay in the bucket, and an event on the backup names them. The Deletion section of [LogicalBackupElasticsearch](../crds/logicalbackupelasticsearch.md#deletion) and [LogicalBackupRDBMS](../crds/logicalbackuprdbms.md#deletion) names the cases.
 
+## Restore from a backup
+
+Each row of a `Completed` backup has **Restore**. A backup in another phase has no **Restore**. **Restore** opens a confirm with these lines:
+
+- The Camunda version of the backup, and the Camunda version of the cluster.
+- The restore replaces the data of the cluster and sets its version to the version of the backup.
+- The restore suspends the cluster while it runs, and starts it again when it completes. A failed restore leaves the cluster suspended.
+
+Type the name of the cluster, then select **Restore**. The fleet manager creates one restore of the kind that the backup needs. A `LogicalBackupElasticsearch` gets a [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md). A `LogicalBackupRDBMS` gets a [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md). The name is the cluster, `restore`, and the current time in UTC:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: LogicalRestoreRDBMS
+metadata:
+  name: my-cluster-restore-20261110-143005
+  namespace: my-cluster-ns
+spec:
+  backupRef:
+    name: my-cluster-manual-20261110-120000
+  targetClusterRef:
+    name: my-cluster
+```
+
+If a restore of the namespace has that name, the fleet manager adds `-2`, `-3`, and so on. The page then says "Restore my-cluster-restore-20261110-143005 created." with the name that it used, and the restore shows in the table of restores. What the restore does to the cluster, and what to do when it fails, is in [Operations: Restore a cluster](../guides/operations.md#restore-a-cluster).
+
+**Restore** is off, with the reason under it, in these cases:
+
+| Reason on the page | What to do |
+| --- | --- |
+| "Restore my-cluster-restore-1 of this cluster has not ended. Start a new restore after it ends." | Wait until the restore is `Completed` or `Failed`. |
+| "Backup my-cluster-manual-1 recorded no Camunda version, so it cannot be restored." | For both kinds. Choose another backup. A backup without a version of the form `x.y.z` does not restore. |
+| "Backup my-cluster-manual-1 has Camunda 8.8.4. It restores only into Camunda 8.8 or 8.9, and the cluster has 8.10.1." | Only for PostgreSQL. Choose a backup whose Camunda minor is the minor of the cluster, or one minor below it. |
+| "The cluster has no Camunda version yet, so the version rule cannot be checked." | Only for PostgreSQL. Wait until the cluster reports its version. |
+| "Changes are off: the fleet manager could not read its settings." | Make sure that the fleet manager can read the ConfigMap `fleet-manager-settings`, as [Fleet manager settings](settings.md) shows. |
+
+An Elasticsearch backup has no minor rule. The restore sets the exact version of the backup on the cluster, as [LogicalRestoreElasticsearch: Compatibility](../crds/logicalrestoreelasticsearch.md#compatibility) shows. A PostgreSQL backup restores only into the same Camunda minor or one minor newer, as [LogicalRestoreRDBMS: Compatibility](../crds/logicalrestorerdbms.md#compatibility) shows. A cluster that ran the newer minor comes back on the minor of the backup. [The version after a logical restore](../guides/operations.md#the-version-after-a-logical-restore) shows how to upgrade it again.
+
+While a backup of the cluster runs, **Restore** stays on, and the confirm says that the new restore waits. For example:
+
+> Backup my-cluster-manual-1 is running. The new restore waits until it ends.
+
+A cluster holds one backup or one restore at a time, as [One backup or restore at a time](../guides/operations.md#one-backup-or-restore-at-a-time) shows.
+
+When you select **Restore**, the fleet manager reads the backup and the restores of the namespace again. The page can be older than these objects. So the fleet manager creates nothing, and the page shows the reason, in these cases:
+
+- After the page chose the name, another restore took that name.
+- A restore of the cluster has not ended.
+- The backup does not exist, or it is not `Completed`.
+- The backup is a backup of another cluster.
+
+## Restore to a point in time
+
+**Restore to a point in time** is at the top of the **Backups** tab of a cluster on PostgreSQL. It shows only when the operator rolls the database server back, that is when the `DatabaseServerConfig` of the cluster has `pitr.recovery: operator`. A server with `pitr.recovery: external` gets no point-in-time restore in the fleet manager. [PointInTimeRestore: Who rolls the database back](../crds/pointintimerestore.md#who-rolls-the-database-back) shows the two values.
+
+The confirm lists the restore window. The window holds the times that are inside both of these:
+
+- The archive window of the database server, as the **Backups** tab shows it.
+- The time in which Zeebe keeps its primary-storage backups. `spec.backup.primaryStorage.retention.window` of the cluster sets it, and the default is `P7D`.
+
+Each interval of the window shows its start and its end in UTC. An interval that ends where the uploads of the archive started to fail says "Uploads are failing after this point."
+
+Enter a time in UTC in **Time (UTC)**. A time outside the window, or a time in the future, shows an error. A time inside the window shows the confirm:
+
+- The database server rolls back to the time, and the Zeebe data goes back to the backup that covers it.
+- The restore suspends the cluster while it runs, and starts it again when it completes.
+- If no Zeebe backup covers the point, the restore fails after it erased the broker volumes.
+
+Type the name of the cluster, then select **Restore**. The fleet manager creates a [PointInTimeRestore](../crds/pointintimerestore.md). The name is the cluster, `pitr`, and the current time in UTC:
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: PointInTimeRestore
+metadata:
+  name: my-cluster-pitr-20261110-143005
+  namespace: my-cluster-ns
+spec:
+  clusterRef:
+    name: my-cluster
+  timestamp: "2026-11-09T09:30:15Z"
+```
+
+The window shows where a restore can reach. The fleet manager cannot see the Zeebe backups, so it cannot prove that a backup covers the point.
+
+CAUTION: Choose a point at least one period of `spec.backup.primaryStorage.schedule` before the cluster stopped writing. The default period is one hour. If no Zeebe backup covers the point, the restore erases the broker volumes and then fails. [PointInTimeRestore: Choose the point to restore to](../crds/pointintimerestore.md#choose-the-point-to-restore-to) shows how to read the real window.
+
+A point-in-time restore writes no version on the cluster. A failed restore leaves the cluster suspended, as for **Restore**. While a backup of the cluster runs, **Restore to a point in time** stays on, and the confirm says that the new restore waits.
+
+**Restore to a point in time** is off, with the reason under it, in these cases:
+
+| Reason on the page | What to do |
+| --- | --- |
+| "The archive has no restore point yet." | Wait until the database server archives its first base backup. |
+| "No point is inside both the archive window and the P7D in which Zeebe keeps its backups." | The archive holds no point that Zeebe still covers. `P7D` is the `retention.window` of the cluster. Use **Restore** with a backup instead. |
+| "The cluster keeps its Zeebe backups for P1W, which the fleet manager cannot read, so it cannot offer a point." | Write `retention.window` in days and time, such as `P7D`. Camunda reads no week, month, or year units. |
+| "Restore my-cluster-restore-1 of this cluster has not ended. Start a new restore after it ends." | Wait until the restore is `Completed` or `Failed`. |
+
 ## Change the schedule
 
 **Change schedule** opens the attachments on the **Claim** tab of the cluster. The claim holds the schedule of its cluster in `spec.attachments.backupSchedule`, so you change the schedule there:
@@ -80,9 +179,10 @@ The schedule is a five-field cron expression in UTC. The claim then writes the `
 
 ## Git mode
 
-The top of the tab says that backups and restores go straight to the cluster, also in Git mode. In Git mode, the fleet manager commits each claim change to the repository and waits for your GitOps tool to apply it. A backup and the delete of a backup do not go to Git. The fleet manager writes them to the Kubernetes API at once, and the page does not wait for GitOps. These backups are not in the repository, so your GitOps tool does not see them.
+The top of the tab says that backups and restores go straight to the cluster, also in Git mode. In Git mode, the fleet manager commits each claim change to the repository and waits for your GitOps tool to apply it. A backup, a restore, and the delete of a backup do not go to Git. The fleet manager writes them to the Kubernetes API at once, and the page does not wait for GitOps. These backups and restores are not in the repository, so your GitOps tool does not see them. A restore writes `spec.suspend` and `spec.version` on the `CamundaCluster`. If your GitOps tool owns the cluster, read [A GitOps tool that owns the CamundaCluster](../guides/operations.md#a-gitops-tool-that-owns-the-camundacluster) before the restore.
 
 ## Related
 
 - [Backup](../guides/backup.md): set up the bucket and take a backup with `kubectl`.
+- [Operations: Restore a cluster](../guides/operations.md#restore-a-cluster): what a restore does to the cluster, and a failed restore.
 - [The fleet view](fleet-view.md): the list of clusters and their last backup.
