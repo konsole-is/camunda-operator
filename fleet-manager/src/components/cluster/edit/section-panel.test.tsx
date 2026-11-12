@@ -243,6 +243,59 @@ describe("a section panel", () => {
     });
   });
 
+  it("a choice shows the name that the claim stores when two choices have one value", () => {
+    const context = contextOf();
+    context.claim!.status!.resolvedPolicy!.parameters!["fleet-harness"].tier = {
+      claimEditable: true,
+      allowed: [
+        { name: "silver", label: "Silver", value: { size: 2 } },
+        { name: "gold", label: "Gold", value: { size: 2 } },
+      ],
+    };
+    panel(context);
+    expect(
+      within(row("tier")).getByRole<HTMLSelectElement>("combobox").value,
+    ).toBe("gold");
+  });
+
+  it("a list parameter whose choices are whole lists picks one name", async () => {
+    const context = contextOf();
+    const policies = context.claim!.status!.resolvedPolicy!.parameters!;
+    policies["fleet-harness"].policies = {
+      claimEditable: true,
+      allowed: [
+        { name: "standard", label: "Standard", value: ["a", "b"] },
+        { name: "wide", label: "Wide", value: ["a", "b", "c"] },
+      ],
+    };
+    context.claim!.spec.plugins![0].parameters = {
+      hostPrefix: "orders",
+      tier: "gold",
+      policies: "standard",
+    };
+    panel(context);
+    const select = within(row("policies")).getByRole<HTMLSelectElement>(
+      "combobox",
+    );
+    expect(select.value).toBe("standard");
+    fireEvent.change(select, { target: { value: "wide" } });
+    const written = await save();
+    expect(written.spec.plugins![0].parameters).toMatchObject({
+      policies: "wide",
+    });
+  });
+
+  it("taking away the last choice of a list writes an empty list", async () => {
+    panel();
+    fireEvent.click(
+      within(row("policies")).getByRole("checkbox", { name: "sqs" }),
+    );
+    const written = await save();
+    expect(written.spec.plugins![0].parameters).toMatchObject({
+      policies: [],
+    });
+  });
+
   it("says when no parameter can change", () => {
     const context = contextOf();
     context.claim!.status!.resolvedPolicy!.parameters!["fleet-harness"] = {

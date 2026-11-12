@@ -4,7 +4,7 @@ import { LockedField } from "@/components/fleet/locked-field";
 import { secretRefsOf } from "@/components/fleet/secret-ref-picker";
 import { type ClusterField, lockLabel } from "@/lib/fields";
 import { useResources } from "@/lib/k8s/hooks";
-import { equalJSON } from "@/lib/policy";
+import { namesOf } from "@/lib/policy/options";
 import type { OpenAPISchema } from "@/lib/schema";
 import { claimAfter } from "@/lib/session";
 import type { ClaimSection } from "../claim";
@@ -38,10 +38,14 @@ export function SectionPanel({
   const registration = context.registrations.find(
     (r) => r.metadata?.name === section.registration,
   );
+  const after = claimAfter(session);
   const policies =
-    claimAfter(session).status?.resolvedPolicy?.parameters?.[
-      section.registration
-    ] ?? {};
+    after.status?.resolvedPolicy?.parameters?.[section.registration] ?? {};
+  const selection = (after.spec?.plugins ?? []).find(
+    (p) =>
+      p.section === section.section && p.registration === section.registration,
+  );
+  const claimed = asObject(selection?.parameters);
   const choices = Object.fromEntries(
     Object.entries(policies).flatMap(([name, p]) =>
       p.allowed?.length ? [[name, p.allowed as Choice[]]] : [],
@@ -58,8 +62,13 @@ export function SectionPanel({
       {editable ? (
         <SelectionSettingsEditor
           key={generation}
-          fields={section.parameters.map((f) => withChoiceName(f, choices))}
-          schema={registration?.spec.parameters as OpenAPISchema | undefined}
+          fields={section.parameters.map((f) =>
+            withChoiceName(f, choices, claimed),
+          )}
+          schema={schemaWithNames(
+            registration?.spec.parameters as OpenAPISchema | undefined,
+            choices,
+          )}
           choices={Object.fromEntries(
             Object.entries(choices).map(([name, list]) => [
               name,
@@ -78,26 +87,48 @@ export function SectionPanel({
   );
 }
 
-// withChoiceName gives a parameter with choices the name of its choice, or
-// the names of a list, as its value: the claim stores names, while
-// field.value is the value of the request.
+// withChoiceName gives a parameter with choices the names that the claim
+// stores as its value, else the names of the value of the request.
 function withChoiceName(
   field: ClusterField,
   choices: Record<string, Choice[]>,
+  claimed: Record<string, unknown>,
 ): ClusterField {
   const list = Object.hasOwn(choices, field.label)
     ? choices[field.label]
     : undefined;
   if (!list) return field;
-  const nameOf = (value: unknown) =>
-    (
-      list.find((c) => c.name === value) ??
-      list.find((c) => equalJSON(c.value, value))
-    )?.name;
   return {
     ...field,
-    value: Array.isArray(field.value)
-      ? field.value.map(nameOf).filter((n) => n !== undefined)
-      : nameOf(field.value),
+    value: Object.hasOwn(claimed, field.label)
+      ? claimed[field.label]
+      : namesOf(field.value, list),
   };
+}
+
+// schemaWithNames gives a list parameter whose choices are each a whole
+// list the schema of one name: the claim stores one name for it.
+function schemaWithNames(
+  schema: OpenAPISchema | undefined,
+  choices: Record<string, Choice[]>,
+): OpenAPISchema | undefined {
+  const properties = schema?.properties;
+  if (!properties) return schema;
+  const names = Object.keys(choices).filter((name) =>
+    choices[name].every((c) => Array.isArray(c.value)),
+  );
+  if (names.length === 0) return schema;
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      ...Object.fromEntries(names.map((name) => [name, { type: "string" }])),
+    },
+  };
+}
+
+function asObject(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }

@@ -119,8 +119,8 @@ export function fieldSchemaFromOpenAPI(
  * claimValueOf returns the claim value of an editor input, or undefined for
  * an empty input, which resets the field: an empty string, a number that is
  * not finite, an empty list or map, resources without a request or a limit,
- * and no Secret reference. A toggle keeps false. Resources drop an empty
- * requests or limits.
+ * and no Secret reference. A toggle keeps false, and a list of choices keeps
+ * an empty list. Resources drop an empty requests or limits.
  */
 export function claimValueOf(editor: SettingEditor, value: unknown): unknown {
   switch (editor.kind) {
@@ -136,6 +136,8 @@ export function claimValueOf(editor: SettingEditor, value: unknown): unknown {
       return value;
     case "resources":
       return resourcesOf(value);
+    case "choices":
+      return value;
     default:
       return isEmpty(value) ? undefined : value;
   }
