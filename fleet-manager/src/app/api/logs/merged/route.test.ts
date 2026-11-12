@@ -174,4 +174,25 @@ describe("GET /api/logs/merged", () => {
       },
     ]);
   });
+
+  it("reads a log only as fast as the client reads the answer", async () => {
+    let pulled = 0;
+    vi.mocked(followPodLog).mockImplementation(
+      async () =>
+        new ReadableStream<string>({
+          pull(controller) {
+            pulled++;
+            controller.enqueue(`line ${pulled}`);
+          },
+        }),
+    );
+
+    const response = await call("log=n%2Fa&log=n%2Fb");
+    const reader = response.body!.getReader();
+    await reader.read();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(pulled).toBeLessThan(100);
+    await reader.cancel();
+  });
 });

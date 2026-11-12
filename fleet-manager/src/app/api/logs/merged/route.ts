@@ -79,48 +79,75 @@ function merged(
   const encoder = new TextEncoder();
   const readers: ReadableStreamDefaultReader<string>[] = [];
   let cancelled = false;
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      const frame = (event: string, data: unknown) => {
-        if (cancelled) return;
-        controller.enqueue(
-          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
-        );
-      };
-      const follow = async (req: PodLogRequest, source: number) => {
-        // The error can quote the API server, so the page gets a fixed text,
-        // except for the fixed texts of PodLogNotFound and PodLogUnavailable.
-        const broke = `The log stream of pod ${req.pod} broke`;
-        let lines: ReadableStream<string>;
-        try {
-          lines = await followPodLog(req, signal);
-        } catch (error) {
-          const known =
-            error instanceof PodLogNotFound ||
-            error instanceof PodLogUnavailable;
-          frame("failure", { source, message: known ? error.message : broke });
-          return;
-        }
-        try {
-          const reader = lines.getReader();
-          readers.push(reader);
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            frame("line", { source, line: value });
+  let waiting: (() => void)[] = [];
+  const wake = () => {
+    const woken = waiting;
+    waiting = [];
+    woken.forEach((resolve) => resolve());
+  };
+  return new ReadableStream<Uint8Array>(
+    {
+      start(controller) {
+        // A log is read only while the client reads the answer, so a slow
+        // client does not grow the queue of this process.
+        const demand = async () => {
+          while (!cancelled && (controller.desiredSize ?? 0) <= 0) {
+            await new Promise<void>((resolve) => waiting.push(resolve));
           }
-          frame("end", { source });
-        } catch {
-          frame("failure", { source, message: broke });
-        }
-      };
-      void Promise.all(reqs.map(follow)).then(() => {
-        if (!cancelled) controller.close();
-      });
+        };
+        const frame = (event: string, data: unknown) => {
+          if (cancelled) return;
+          controller.enqueue(
+            encoder.encode(
+              `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`,
+            ),
+          );
+        };
+        const follow = async (req: PodLogRequest, source: number) => {
+          // The error can quote the API server, so the page gets a fixed text,
+          // except for the fixed texts of PodLogNotFound and PodLogUnavailable.
+          const broke = `The log stream of pod ${req.pod} broke`;
+          let lines: ReadableStream<string>;
+          try {
+            lines = await followPodLog(req, signal);
+          } catch (error) {
+            const known =
+              error instanceof PodLogNotFound ||
+              error instanceof PodLogUnavailable;
+            frame("failure", {
+              source,
+              message: known ? error.message : broke,
+            });
+            return;
+          }
+          try {
+            const reader = lines.getReader();
+            readers.push(reader);
+            for (;;) {
+              await demand();
+              if (cancelled) return;
+              const { done, value } = await reader.read();
+              if (done) break;
+              frame("line", { source, line: value });
+            }
+            frame("end", { source });
+          } catch {
+            frame("failure", { source, message: broke });
+          }
+        };
+        void Promise.all(reqs.map(follow)).then(() => {
+          if (!cancelled) controller.close();
+        });
+      },
+      pull() {
+        wake();
+      },
+      async cancel() {
+        cancelled = true;
+        wake();
+        await Promise.all(readers.map((r) => r.cancel()));
+      },
     },
-    async cancel() {
-      cancelled = true;
-      await Promise.all(readers.map((r) => r.cancel()));
-    },
-  });
+    new CountQueuingStrategy({ highWaterMark: 16 }),
+  );
 }
