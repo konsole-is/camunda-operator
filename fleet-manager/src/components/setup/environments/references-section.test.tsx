@@ -137,6 +137,20 @@ describe("ReferencesSection", () => {
     expect(list.textContent).toContain("At most 64 allowed releases.");
   });
 
+  it("says that an empty list allows no Elasticsearch and no PostgreSQL preset", () => {
+    renderEditor("production");
+    expect(
+      screen.getByText(
+        "No Elasticsearch preset is allowed, so the built-in Elasticsearch of a claim can use none.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "No PostgreSQL preset is allowed, so the built-in PostgreSQL of a claim can use none.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("says that an empty list allows no release and no cluster preset", () => {
     const sources = environmentFixtures();
     sources.environments[0].spec.releases = undefined;

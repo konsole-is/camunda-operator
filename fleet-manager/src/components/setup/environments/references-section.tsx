@@ -79,6 +79,7 @@ export function ReferencesSection({
           available={namesOf(sources.elasticsearchPresets)}
           selected={spec.presets?.elasticsearchCluster ?? []}
           empty="No Elasticsearch preset exists."
+          noneText="No Elasticsearch preset is allowed, so the built-in Elasticsearch of a claim can use none."
           onChange={(list) => presets("elasticsearchCluster", list)}
         />
         <NameChecklist
@@ -86,6 +87,7 @@ export function ReferencesSection({
           available={namesOf(sources.databasePresets)}
           selected={spec.presets?.databaseServer ?? []}
           empty="No PostgreSQL preset exists."
+          noneText="No PostgreSQL preset is allowed, so the built-in PostgreSQL of a claim can use none."
           onChange={(list) => presets("databaseServer", list)}
         />
       </EditorSection>

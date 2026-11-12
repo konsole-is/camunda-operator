@@ -95,7 +95,7 @@ export function AllowedEditor({
                 object={schema?.type === "object"}
                 parameters={parameters}
                 onChange={(value, found) => {
-                  textErrors.current[id] = value === undefined ? found : [];
+                  textErrors.current[id] = found;
                   update(row, { value });
                   reportText();
                 }}

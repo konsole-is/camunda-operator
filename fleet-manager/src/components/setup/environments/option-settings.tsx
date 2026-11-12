@@ -165,7 +165,7 @@ function ParameterSettingRow({
           object={setting.schema?.type === "object"}
           parameters={others}
           onChange={(value, found) => {
-            valueErrors.current = value === undefined ? found : [];
+            valueErrors.current = found;
             report();
             set({ value });
           }}

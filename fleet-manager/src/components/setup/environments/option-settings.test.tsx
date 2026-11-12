@@ -244,4 +244,18 @@ describe("OptionSettings", () => {
       "Resource: arn:aws:sqs:*:*:team-a-*",
     );
   });
+
+  it("blocks Review while a template has an unknown placeholder", () => {
+    const { previewChange } = renderEditor("production", sectionFixtures());
+    fireEvent.change(
+      within(group("Role for each cluster", "inlinePolicy")).getByLabelText(
+        "inlinePolicy",
+      ),
+      { target: { value: "Resource: '{{ .claimName }}'\n" } },
+    );
+    const review = screen.getByRole("button", { name: "Review" });
+    expect(review).toHaveProperty("disabled", true);
+    fireEvent.click(review);
+    expect(previewChange).not.toHaveBeenCalled();
+  });
 });
