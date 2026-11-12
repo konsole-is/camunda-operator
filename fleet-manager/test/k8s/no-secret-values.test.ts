@@ -31,8 +31,10 @@ import {
   testGitConnection,
   testPrometheusQuery,
 } from "@/app/setup/settings/actions";
+import { GET as controllerPodsRoute } from "@/app/api/controller-pods/route";
 import { GET as healthz } from "@/app/api/healthz/route";
 import { GET as logsRoute } from "@/app/api/logs/route";
+import { GET as mergedLogsRoute } from "@/app/api/logs/merged/route";
 import { GET as metricsRoute } from "@/app/api/metrics/route";
 import { GET as partitionsRoute } from "@/app/api/partitions/route";
 import { GET as usageRoute } from "@/app/api/usage/route";
@@ -172,6 +174,14 @@ async function watchText(watch: string): Promise<string> {
 }
 
 const ROUTE_CALLS: Record<string, () => Promise<string>> = {
+  "api/controller-pods": async () =>
+    (
+      await controllerPodsRoute(
+        new Request(
+          `http://localhost/api/controller-pods?registration=${namespace}-missing`,
+        ),
+      )
+    ).text(),
   "api/healthz": async () => healthz().text(),
   // envtest runs no kubelet, so no pod has a log: the call reads a pod that
   // does not exist.
@@ -180,6 +190,14 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
       await logsRoute(
         new Request(
           `http://localhost/api/logs?namespace=${namespace}&pod=missing`,
+        ),
+      )
+    ).text(),
+  "api/logs/merged": async () =>
+    (
+      await mergedLogsRoute(
+        new Request(
+          `http://localhost/api/logs/merged?log=${namespace}%2Fmissing`,
         ),
       )
     ).text(),
