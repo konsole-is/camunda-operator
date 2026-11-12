@@ -142,6 +142,7 @@ make fleet-test             # fleet-manager/ only: vitest; needs make setup-envt
 make fleet-build            # fleet-manager/ only: next build
 make fleet-generate         # then `git status --porcelain fleet-manager/src/generated` prints nothing
 make fleet-gallery          # fleet-manager/ only: screenshots of each gallery story into fleet-manager/ui-gallery, axe check, shared watch check; needs make setup-envtest
+make fleet-stories-test     # fleet-manager/ only: each Storybook story under a sub-path, screenshots into fleet-manager/ui-stories, axe, render, play, and request checks
 make fleet-scenarios        # then `git status --porcelain fleet-manager/e2e/scenarios` prints nothing; needs make setup-envtest
 make fleet-scenarios-test   # fleet-manager/ only: the pages in Playwright on the page scenarios, screenshots into fleet-manager/ui-pages, axe check; needs make setup-envtest
 ```
