@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parameterFields } from "@/lib/fields";
+import { type ClusterField, parameterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { mergeCluster } from "@/lib/merge";
@@ -244,5 +244,120 @@ describe("SelectionSettingsEditor", () => {
       [...overridesSteps.slice(0, 4), { field: "preset" }],
       "large",
     );
+  });
+
+  describe("allowed", () => {
+    const CHOICES: OpenAPISchema = {
+      type: "object",
+      properties: {
+        tier: { type: "object" },
+        policies: { type: "array", items: { type: "string" } },
+      },
+    };
+    const stepsOf = (name: string) => [
+      ...overridesSteps.slice(0, 4),
+      { field: name },
+    ];
+    // choiceField returns an editable parameter that the environment sets
+    // to value.
+    const choiceField = (label: string, value: unknown) =>
+      ({
+        key: label,
+        label,
+        value,
+        state: { kind: "environment" },
+        claimSteps: stepsOf(label),
+      }) as unknown as ClusterField;
+    const wholeLists = {
+      policies: [
+        { name: "standard", value: ["a", "b"] },
+        { name: "wide", value: ["a", "b", "c"] },
+      ],
+    };
+
+    it("picks a choice by name and shows the name of the value", async () => {
+      const { set } = renderEditor({
+        fields: [choiceField("tier", { size: 2 })],
+        schema: CHOICES,
+        allowed: {
+          tier: [
+            { name: "silver", value: { size: 1 } },
+            { name: "gold", value: { size: 2 } },
+          ],
+        },
+      });
+      const select = within(settingRow("tier")).getByRole<HTMLSelectElement>(
+        "combobox",
+      );
+      expect(select.value).toBe("gold");
+      await userEvent.selectOptions(select, "silver");
+      expect(set).toHaveBeenLastCalledWith(stepsOf("tier"), "silver");
+    });
+
+    it("shows the name that claimed holds when two choices have one value", () => {
+      renderEditor({
+        fields: [choiceField("tier", { size: 2 })],
+        schema: CHOICES,
+        allowed: {
+          tier: [
+            { name: "silver", value: { size: 2 } },
+            { name: "gold", value: { size: 2 } },
+          ],
+        },
+        claimed: { tier: "gold" },
+      });
+      expect(
+        within(settingRow("tier")).getByRole<HTMLSelectElement>("combobox")
+          .value,
+      ).toBe("gold");
+    });
+
+    it("a list parameter picks its choices with a checkbox for each name", async () => {
+      const { set } = renderEditor({
+        fields: [choiceField("policies", ["arn:sqs"])],
+        schema: CHOICES,
+        allowed: {
+          policies: [
+            { name: "sqs", value: "arn:sqs" },
+            { name: "sns", value: "arn:sns" },
+          ],
+        },
+      });
+      const box = (name: string) =>
+        within(settingRow("policies")).getByRole("checkbox", { name });
+      expect(box("sqs").getAttribute("aria-checked")).toBe("true");
+      expect(box("sns").getAttribute("aria-checked")).toBe("false");
+      await userEvent.click(box("sns"));
+      expect(set).toHaveBeenLastCalledWith(stepsOf("policies"), ["sqs", "sns"]);
+    });
+
+    it("a list parameter whose choices are whole lists picks one name", async () => {
+      const { set } = renderEditor({
+        fields: [choiceField("policies", ["a", "b"])],
+        schema: CHOICES,
+        allowed: wholeLists,
+        claimed: { policies: "standard" },
+      });
+      const select = within(
+        settingRow("policies"),
+      ).getByRole<HTMLSelectElement>("combobox");
+      expect(select.value).toBe("standard");
+      await userEvent.selectOptions(select, "wide");
+      expect(set).toHaveBeenLastCalledWith(stepsOf("policies"), "wide");
+    });
+
+    it("a list parameter whose choices are whole lists picks one name also from an empty list", async () => {
+      const { set } = renderEditor({
+        fields: [choiceField("policies", [])],
+        schema: CHOICES,
+        allowed: wholeLists,
+        claimed: { policies: [] },
+      });
+      await userEvent.selectOptions(
+        within(settingRow("policies")).getByRole("combobox"),
+        "standard",
+      );
+      expect(set).toHaveBeenLastCalledWith(stepsOf("policies"), "standard");
+    });
   });
 });

@@ -2,9 +2,8 @@
 
 import { LockedField } from "@/components/fleet/locked-field";
 import { secretRefsOf } from "@/components/fleet/secret-ref-picker";
-import { type ClusterField, lockLabel } from "@/lib/fields";
+import { lockLabel } from "@/lib/fields";
 import { useResources } from "@/lib/k8s/hooks";
-import { namesOf } from "@/lib/policy/options";
 import type { OpenAPISchema } from "@/lib/schema";
 import { claimAfter } from "@/lib/session";
 import type { ClaimSection } from "../claim";
@@ -18,9 +17,8 @@ type Choice = { name: string; value: unknown };
 /**
  * SectionPanel edits one selection of the claim: its option is locked as
  * chosen at creation, and the parameters that the claim may set have
- * editors. section comes from the claim after the pending changes. After
- * a discard or a write, the editors show the values of the session again.
- * It follows the Secrets of the namespace while it is open, and renders
+ * editors. section comes from the claim after the pending changes. It
+ * follows the Secrets of the namespace while it is open, and renders
  * nothing without a session.
  */
 export function SectionPanel({
@@ -45,11 +43,11 @@ export function SectionPanel({
     (p) =>
       p.section === section.section && p.registration === section.registration,
   );
-  const claimed = asObject(selection?.parameters);
-  const choices = Object.fromEntries(
-    Object.entries(policies).flatMap(([name, p]) =>
-      p.allowed?.length ? [[name, p.allowed as Choice[]]] : [],
-    ),
+  const allowed = Object.fromEntries(
+    Object.entries(policies).map(([name, p]) => [
+      name,
+      p.allowed as Choice[] | undefined,
+    ]),
   );
   const editable = section.parameters.some((f) => !f.lock && f.claimSteps);
   return (
@@ -62,19 +60,10 @@ export function SectionPanel({
       {editable ? (
         <SelectionSettingsEditor
           key={generation}
-          fields={section.parameters.map((f) =>
-            withChoiceName(f, choices, claimed),
-          )}
-          schema={schemaWithNames(
-            registration?.spec.parameters as OpenAPISchema | undefined,
-            choices,
-          )}
-          choices={Object.fromEntries(
-            Object.entries(choices).map(([name, list]) => [
-              name,
-              list.map((c) => c.name),
-            ]),
-          )}
+          fields={section.parameters}
+          schema={registration?.spec.parameters as OpenAPISchema | undefined}
+          allowed={allowed}
+          claimed={asObject(selection?.parameters)}
           secrets={secrets}
           errors={errors}
           set={own(set)}
@@ -86,46 +75,6 @@ export function SectionPanel({
       )}
     </div>
   );
-}
-
-// withChoiceName gives a parameter with choices the names that the claim
-// stores as its value, else the names of the value of the request.
-function withChoiceName(
-  field: ClusterField,
-  choices: Record<string, Choice[]>,
-  claimed: Record<string, unknown>,
-): ClusterField {
-  const list = Object.hasOwn(choices, field.label)
-    ? choices[field.label]
-    : undefined;
-  if (!list) return field;
-  return {
-    ...field,
-    value: Object.hasOwn(claimed, field.label)
-      ? claimed[field.label]
-      : namesOf(field.value, list),
-  };
-}
-
-// schemaWithNames gives a list parameter whose choices are each a whole
-// list the schema of one name: the claim stores one name for it.
-function schemaWithNames(
-  schema: OpenAPISchema | undefined,
-  choices: Record<string, Choice[]>,
-): OpenAPISchema | undefined {
-  const properties = schema?.properties;
-  if (!properties) return schema;
-  const names = Object.keys(choices).filter((name) =>
-    choices[name].every((c) => Array.isArray(c.value)),
-  );
-  if (names.length === 0) return schema;
-  return {
-    ...schema,
-    properties: {
-      ...properties,
-      ...Object.fromEntries(names.map((name) => [name, { type: "string" }])),
-    },
-  };
 }
 
 function asObject(value: unknown): Record<string, unknown> {
