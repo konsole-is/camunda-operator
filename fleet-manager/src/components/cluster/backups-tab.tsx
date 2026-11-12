@@ -33,18 +33,22 @@ const HEADING = "font-heading text-base font-semibold";
 /**
  * BackupsTab is the content of the Backups tab: the backup storage and the
  * schedules, the backups, and the restores of one cluster. actions is the
- * node of the cluster.backups.actions slot, shown in the header.
+ * node of the cluster.backups.actions slot, shown in the header. When
+ * rowActions is set, the backup table has an Actions column with its node
+ * for each row.
  */
 export function BackupsTab({
   storage,
   backups,
   restores,
   actions,
+  rowActions,
 }: {
   storage: BackupStorage;
   backups: BackupRow[];
   restores: RestoreRow[];
   actions?: ReactNode;
+  rowActions?: (row: BackupRow) => ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -57,7 +61,7 @@ export function BackupsTab({
         <StorageSection storage={storage} />
         <ScheduleSection schedules={storage.schedules} />
       </div>
-      <BackupsSection rows={backups} />
+      <BackupsSection rows={backups} rowActions={rowActions} />
       <RestoresSection rows={restores} />
     </div>
   );
@@ -203,8 +207,15 @@ function ScheduleSection({ schedules }: { schedules: ScheduleView[] }) {
   );
 }
 
-function BackupsSection({ rows }: { rows: BackupRow[] }) {
+function BackupsSection({
+  rows,
+  rowActions,
+}: {
+  rows: BackupRow[];
+  rowActions?: (row: BackupRow) => ReactNode;
+}) {
   const [open, setOpen] = useState<string | undefined>();
+  const columns = rowActions ? 9 : 8;
   return (
     <section aria-label="Backups" className={PANEL}>
       <h2 className={HEADING}>Backups</h2>
@@ -222,6 +233,7 @@ function BackupsSection({ rows }: { rows: BackupRow[] }) {
               <TableHead>Phase</TableHead>
               <TableHead>Step</TableHead>
               <TableHead>Version</TableHead>
+              {rowActions && <TableHead>Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -260,10 +272,15 @@ function BackupsSection({ rows }: { rows: BackupRow[] }) {
                     </TableCell>
                     <TableCell className="text-text-2">{row.step}</TableCell>
                     <TableCell className="text-text-2">{row.version}</TableCell>
+                    {rowActions && (
+                      <TableCell className="min-w-56 whitespace-normal">
+                        {rowActions(row)}
+                      </TableCell>
+                    )}
                   </TableRow>
                   {expanded && (
                     <TableRow id={id} className="hover:bg-transparent">
-                      <TableCell colSpan={8} className="bg-panel-2/50">
+                      <TableCell colSpan={columns} className="bg-panel-2/50">
                         {row.details.length === 0 ? (
                           <p className="text-sm text-muted">No details yet.</p>
                         ) : (
