@@ -160,4 +160,13 @@ describe("resolvedErrors", () => {
       resolvedErrors(draft, [view()], selections, () => ({ owner: "me" })),
     ).toEqual([]);
   });
+
+  it("leaves out a parameter whose value the draft does not know yet", () => {
+    const draft = draftOf({ storage: selections });
+    expect(
+      resolvedErrors(draft, [view()], selections, () => ({
+        owner: undefined,
+      })),
+    ).toEqual([]);
+  });
 });

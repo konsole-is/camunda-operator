@@ -37,13 +37,13 @@ export type StorageDraft = {
 
 /**
  * ControllerParameters returns the parameters that the claim controller
- * adds to request before it creates it, for the schema check of
- * resolvedErrors.
+ * adds to request, for the schema check of resolvedErrors. A value that the
+ * draft does not know yet is undefined, and the check leaves it out.
  */
 export type ControllerParameters = (
   request: RequestParameters,
   registration: PluginRegistration,
-) => Record<string, unknown>;
+) => Record<string, unknown | undefined>;
 
 /**
  * picksOf returns the selections of view in picks. A section that picks
@@ -317,9 +317,14 @@ function schemaErrors(
     );
     const schema = registration?.spec.parameters;
     if (!registration || !isObject(schema)) return [];
-    const checked = validate(schema, {
+    const added = controllerParameters(request, registration);
+    const later = Object.keys(added).filter((k) => added[k] === undefined);
+    const known = Object.fromEntries(
+      Object.entries(added).filter(([k]) => !later.includes(k)),
+    );
+    const checked = validate(withoutProperties(schema, later), {
       ...request.parameters,
-      ...controllerParameters(request, registration),
+      ...known,
     });
     if (checked.ok) return [];
     const [first] = checked.errors;
@@ -327,4 +332,21 @@ function schemaErrors(
       `The policy gives ${registration.spec.label} a value that its schema refuses: ${first.path} ${first.message}. Pick another option, or ask your admin to change the policy of the Environment.`,
     ];
   });
+}
+
+function withoutProperties(
+  schema: Record<string, unknown>,
+  names: readonly string[],
+): Record<string, unknown> {
+  if (names.length === 0) return schema;
+  const properties = isObject(schema.properties) ? schema.properties : {};
+  return {
+    ...schema,
+    properties: Object.fromEntries(
+      Object.entries(properties).filter(([k]) => !names.includes(k)),
+    ),
+    ...(Array.isArray(schema.required) && {
+      required: schema.required.filter((k) => !names.includes(k)),
+    }),
+  };
 }

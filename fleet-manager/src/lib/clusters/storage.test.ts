@@ -588,24 +588,47 @@ describe("storageErrors and a live list that changed after the pick", () => {
     ]);
   });
 
-  it("leaves the release to a later step while no release is known", () => {
-    const data = dataOf(
-      {
-        releases: { allowed: ["r1"] },
-        presets: { elasticsearchCluster: ["small"] },
-        parameters: { elasticsearch: { preset: { claimEditable: true } } },
+  it("leaves the release to a later step while no release is known, and checks the other parameters", () => {
+    const schema = elasticsearch.spec.parameters as {
+      properties: Record<string, unknown>;
+    };
+    const constrained = {
+      ...elasticsearch,
+      spec: {
+        ...elasticsearch.spec,
+        parameters: {
+          ...schema,
+          properties: {
+            ...schema.properties,
+            releaseRef: { type: "string", enum: ["camunda-8-9"] },
+          },
+        },
       },
-      { ElasticsearchClusterPreset: [preset("small")] },
-    );
-
-    expect(
-      storageErrors(
-        picking("elasticsearch", { preset: "small" }),
-        data,
-        {},
-        [],
+    } as PluginRegistration;
+    const withReplicas = (replicas: number) => ({
+      ...dataOf(
+        {
+          releases: { allowed: ["camunda-8-9"] },
+          presets: { elasticsearchCluster: ["small"] },
+          parameters: {
+            elasticsearch: {
+              preset: { claimEditable: true },
+              overrides: { value: { replicas } },
+            },
+          },
+        },
+        { ElasticsearchClusterPreset: [preset("small")] },
       ),
-    ).toEqual([]);
+      registrations: [constrained, existing],
+    });
+    const draft = picking("elasticsearch", { preset: "small" });
+
+    expect(storageErrors(draft, withReplicas(1), {}, [])).toEqual([]);
+    expect(storageErrors(draft, withReplicas(0), {}, [])).toEqual([
+      expect.stringMatching(
+        /^The policy gives New Elasticsearch cluster a value that its schema refuses: /,
+      ),
+    ]);
   });
 
   it("refuses a locked policy value that the schema of its registration refuses", () => {

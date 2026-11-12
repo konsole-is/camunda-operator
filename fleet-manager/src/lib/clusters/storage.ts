@@ -121,9 +121,8 @@ export function storageErrors(
   const storage = storageDraftOf(draft, data);
   const errors = [...draftErrors(storage, views, cardErrors), ...conflicts];
   if (errors.length > 0) return errors;
-  // A later step picks the release when the Environment gives no default,
-  // so a name stands in for it until then.
-  const release = releaseOf(draft, data.environment) ?? "release";
+  // A later step picks the release when the Environment gives no default.
+  const release = releaseOf(draft, data.environment);
   return resolvedErrors(
     storage,
     views,
