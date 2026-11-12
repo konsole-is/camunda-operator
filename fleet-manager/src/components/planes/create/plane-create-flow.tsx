@@ -421,12 +421,18 @@ export function PlaneCreateFlow({
     [],
   );
   const [secrets, setSecrets] = useState<SecretRefs>([]);
+  const [secretsError, setSecretsError] = useState<string>();
+  const onSecrets = useCallback((refs: SecretRefs, error?: string) => {
+    setSecrets(refs);
+    setSecretsError(error);
+  }, []);
   const steps = planeSteps(
     models,
     selectorErrors,
     readErrors,
     sectionErrors,
-    secrets,
+    // While the Secrets cannot be read, no picked reference can be verified.
+    secretsError === undefined ? secrets : [],
   );
   const flow = useCreateFlow({ steps, initial: EMPTY_PLANE_DRAFT });
   const namespace = flow.draft.namespace;
@@ -502,11 +508,16 @@ export function PlaneCreateFlow({
           Could not read {e.kind}: {e.message}
         </p>
       ))}
+      {existing !== undefined && secretsError !== undefined && (
+        <p role="alert" className="text-sm text-bad">
+          Could not read Secret: {secretsError}
+        </p>
+      )}
       {existing !== undefined && (
         <NamespaceSecrets
           key={existing}
           namespace={existing}
-          onChange={setSecrets}
+          onChange={onSecrets}
         />
       )}
       <WizardStepper
@@ -559,13 +570,13 @@ function NamespaceSecrets({
   onChange,
 }: {
   namespace: string;
-  onChange: (secrets: SecretRefs) => void;
+  onChange: (secrets: SecretRefs, error?: string) => void;
 }) {
-  const refs = secretRefsOf(useResources("Secret", { namespace }, []).items);
-  const key = JSON.stringify(refs);
+  const { items, error } = useResources("Secret", { namespace }, []);
+  const key = JSON.stringify(secretRefsOf(items));
   useEffect(() => {
-    onChange(JSON.parse(key) as SecretRefs);
-  }, [key, onChange]);
+    onChange(JSON.parse(key) as SecretRefs, error);
+  }, [key, error, onChange]);
   return null;
 }
 

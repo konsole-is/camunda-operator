@@ -597,6 +597,48 @@ describe("planeSectionViews", () => {
     ],
   };
 
+  it("asks to keep one option of a section that now takes one selection", () => {
+    const c: PlaneContext = {
+      ...ctx,
+      sections: [
+        ...sections,
+        {
+          metadata: { name: "dns-zone" },
+          spec: {
+            label: "DNS zone",
+            selection: "One",
+            appliesTo: ["CamundaManagementClusterClaim"],
+          },
+        } as unknown as PluginSection,
+      ],
+    };
+    const option = (registration: string) => ({
+      registration,
+      label: registration,
+      isDefault: false,
+      parameters: [],
+    });
+    const dnsZone = {
+      name: "dns-zone",
+      label: "DNS zone",
+      selection: "One" as const,
+      required: false,
+      options: [option("route53"), option("azure-dns")],
+    };
+    const d = draft({
+      storage: {
+        ...withDatabase,
+        "dns-zone": [
+          { section: "dns-zone", registration: "route53" },
+          { section: "dns-zone", registration: "azure-dns" },
+        ],
+      },
+    });
+    expect(storageErrors(d, c, [], { others: [dnsZone] })).toEqual([
+      "Choose one option for DNS zone.",
+    ]);
+  });
+
   it("treats a section named constructor that has no pick as empty", () => {
     const c: PlaneContext = {
       ...live,
@@ -1017,6 +1059,47 @@ describe("storageErrors and a live choice that is gone", () => {
     expect(errorsOf(d, c, { DatabaseServerPreset: [preset("large")] })).toEqual(
       ["Fix the PostgreSQL version of New PostgreSQL server."],
     );
+  });
+
+  it("passes a database registration whose schema requires the databases that the controller sets", () => {
+    const custom = builtin("custom-db", "Custom database", {
+      databases: { type: "array", items: { type: "string" }, minItems: 1 },
+    });
+    const c: PlaneContext = {
+      ...live({
+        sections: {
+          "management-database": { required: true, allowed: ["custom-db"] },
+        },
+      }),
+      registrations: [
+        {
+          ...custom,
+          spec: {
+            ...custom.spec,
+            controller: undefined,
+            parameters: {
+              type: "object",
+              properties: {
+                databases: {
+                  type: "array",
+                  items: { type: "string" },
+                  minItems: 1,
+                },
+              },
+              required: ["databases"],
+            },
+          },
+        } as PluginRegistration,
+      ],
+    };
+    const d = draft({
+      storage: {
+        "management-database": [
+          { section: "management-database", registration: "custom-db" },
+        ],
+      },
+    });
+    expect(errorsOf(d, c, {})).toEqual([]);
   });
 
   it("refuses a DatabaseConfig that the policy gives an app that does not run once it is gone", () => {

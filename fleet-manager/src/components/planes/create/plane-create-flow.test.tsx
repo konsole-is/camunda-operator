@@ -303,6 +303,44 @@ describe("PlaneCreateFlow", () => {
       ).toBeTruthy();
     },
   );
+  it("shows a failed read of the Secrets and refuses a picked SMTP Secret while it lasts", async () => {
+    watch.added.Secret = [
+      { metadata: { name: "smtp" }, keys: ["username", "password"] },
+    ];
+    show();
+    await fillBasics();
+    await userEvent.click(next());
+    await userEvent.click(next());
+    await userEvent.type(screen.getByLabelText("Username"), "admin");
+    await userEvent.type(screen.getByLabelText("Email"), "admin@example.com");
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Run Web Modeler" }),
+    );
+    await userEvent.type(
+      screen.getByLabelText("SMTP host"),
+      "smtp.example.com",
+    );
+    await userEvent.type(
+      screen.getByLabelText("From address"),
+      "modeler@example.com",
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Credentials Secret" }),
+      "smtp",
+    );
+    expect(next().disabled).toBe(false);
+    watch.failing = "Secret";
+    await userEvent.type(screen.getByLabelText("From name"), "M");
+    expect(
+      screen
+        .getAllByRole("alert")
+        .some(
+          (a) => a.textContent === "Could not read Secret: Secret is forbidden",
+        ),
+    ).toBe(true);
+    expect(next().disabled).toBe(true);
+  });
+
   it("blocks Next on Components and versions until the admin username is set", async () => {
     show();
     await fillBasics();

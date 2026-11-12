@@ -325,6 +325,9 @@ function selectionErrors(
       return !option || option.disabledReason !== undefined;
     });
     if (unusable) return [`Choose another option for ${view.label}.`];
+    if (view.selection === "One" && picked.length > 1) {
+      return [`Choose one option for ${view.label}.`];
+    }
     return view.required && picked.length === 0 && view !== views.databases
       ? [`Choose an option for ${view.label}.`]
       : [];
@@ -413,6 +416,7 @@ function policyErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
   // checkAllowed does not check a locked value against the schema of its
   // registration, and the built-in controller refuses a request of a built-in
   // registration whose parameters the schema refuses.
+  const databases = databaseSection(ctx.sections)?.metadata.name;
   return ("value" in resolved ? (resolved.value.requests ?? []) : []).flatMap(
     (request) => {
       const registration = ctx.registrations.find(
@@ -420,7 +424,16 @@ function policyErrors(draft: PlaneDraft, ctx: PlaneContext): string[] {
       );
       const schema = registration?.spec.parameters;
       if (!registration || !isObject(schema)) return [];
-      const checked = validate(schema, request.parameters ?? {});
+      // The claim controller sets databases on the request of the database
+      // section (WithDatabases of camundamanagementclusterclaim).
+      const parameters =
+        request.section === databases
+          ? {
+              ...request.parameters,
+              databases: DATABASE_APPS.filter((app) => runs(app, running)),
+            }
+          : (request.parameters ?? {});
+      const checked = validate(schema, parameters);
       if (checked.ok) return [];
       const [first] = checked.errors;
       return [
