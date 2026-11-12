@@ -41,13 +41,10 @@ type DetailProps = {
  * podSelector selects, with their live usage, and the given conditions.
  * The Overview tab ends with children, the Metrics tab charts the metrics
  * ref, and the Settings tab holds settings. Without metrics, the Metrics
- * tab shows the live usage only. The Logs tab follows the logs of the
- * pods, and with controllerLogs also those of the controller pods. The
- * Events tab lists the events of the pods, their workloads, the Services
- * and PVCs that relatedSelector selects (podSelector without it), and
- * eventRefs. Logs and events load only while their tab
- * is open. It reads nothing else, so any page can mount it for any
- * component. It needs a QueryClientProvider above it.
+ * tab shows the live usage only. With controllerLogs, the Logs tab also
+ * follows the controller pods. The Events tab lists the events of the
+ * pods, of the Services and PVCs that relatedSelector selects (podSelector
+ * without it), and of eventRefs. It needs a QueryClientProvider above it.
  */
 export function ComponentDetail({
   namespace,
@@ -110,7 +107,7 @@ export function ComponentDetail({
  * ComponentDetailView is ComponentDetail with its pods and usage given.
  * An undefined usage is not loaded yet. Without metricsTab, the Metrics
  * tab shows the live usage of the pods and no charts. Without logsTab or
- * eventsTab, that tab says that there is nothing to show.
+ * eventsTab, that tab says there is nothing to show.
  */
 export function ComponentDetailView({
   title,

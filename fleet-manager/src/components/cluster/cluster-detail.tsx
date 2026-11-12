@@ -22,11 +22,8 @@ import { PartitionTable } from "./partition-table";
 /**
  * ClusterComponentDetail is the component detail of one card of the
  * cluster page, or of an app embedded in a card. podSelector is the pod
- * selector of the page. An embedded app shows the pods, the charts, the
- * logs, and the events of its host. The events of the owner resource, the
- * CamundaOptimize for Optimize and the cluster for every other card,
- * belong to it too. id must be a used card or an app embedded in one, as
- * componentOf gives.
+ * selector of the page. id must be a used card or an app embedded in one,
+ * as componentOf gives.
  */
 export function ClusterComponentDetail({
   id,

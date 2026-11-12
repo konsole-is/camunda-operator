@@ -18,13 +18,9 @@ const LEVEL_TONE: Record<string, string> = {
 };
 
 /**
- * LogViewer shows log lines and follows new ones. Pause keeps the lines
- * that show and counts the new ones, and Follow shows them all again. The
- * level and text filters apply to the lines that show. A new source ends
- * Pause, so the lines of the new source show. controls go first
- * in the toolbar. Each line shows its time in UTC, its pod when the lines
- * come from more than one pod, its level, its logger, and its message. A
- * line with other fields opens to show them.
+ * LogViewer shows log lines and follows new ones. A new source ends
+ * Pause, so the lines of the new source show. controls go first in the
+ * toolbar.
  */
 export function LogViewer({
   lines,

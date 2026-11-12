@@ -4,9 +4,8 @@ import { age } from "./age";
 
 /**
  * EventList lists the given events.k8s.io/v1 Events, newest first, with
- * the reason, the note, how many times it happened, and its age. A
- * Warning event is marked. With showObject, an event that has a regarding
- * object also names it as "<kind>/<name>". An empty list says "No events".
+ * their age. With showObject, an event names its regarding object. An
+ * empty list says "No events".
  */
 export function EventList({
   events,
