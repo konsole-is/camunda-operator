@@ -24,14 +24,9 @@ const ALLOW: Step[] = [{ field: "spec" }, { field: "allowVersionDowngrade" }];
 
 /**
  * ReleasePanel edits the release, the preset, and the platform config of
- * the claim. The release select offers releaseChoices. A downgrade sets
- * allowVersionDowngrade to its target too, and another release sets it
- * back to the value of the claim. The preset select offers the presets
- * that the Environment allows and the current one. The empty platform
- * config option removes spec.platformConfigRef. Once downgradeDone and
- * nothing is pending, Clear removes allowVersionDowngrade and opens the
- * review. A field error of a select shows under it. It renders nothing
- * without a session.
+ * the claim. Once downgradeDone and nothing is pending, Clear removes
+ * allowVersionDowngrade and opens the review. It renders nothing without a
+ * session.
  */
 export function ReleasePanel({ context }: { context: ClusterSlotContext }) {
   const edit = useClusterEdit();

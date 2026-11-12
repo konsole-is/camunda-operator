@@ -18,8 +18,7 @@ type Choice = { name: string; value: unknown };
  * SectionPanel edits one selection of the claim: its option is locked as
  * chosen at creation, and the parameters that the claim may set have
  * editors. section comes from the claim after the pending changes. It
- * follows the Secrets of the namespace while it is open, and renders
- * nothing without a session.
+ * renders nothing without a session.
  */
 export function SectionPanel({
   context,
