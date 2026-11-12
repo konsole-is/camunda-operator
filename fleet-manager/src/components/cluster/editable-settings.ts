@@ -22,6 +22,7 @@ export type SettingEditor =
   | { kind: "number"; integer: boolean; minimum?: number; maximum?: number }
   | { kind: "toggle" }
   | { kind: "select"; options: readonly string[] }
+  | { kind: "choices"; options: readonly string[] }
   | { kind: "resources" }
   | { kind: "storageSize" }
   | { kind: "env" }
@@ -159,6 +160,7 @@ export function editorValueOf(
       return false;
     case "env":
     case "tolerations":
+    case "choices":
       return [];
     case "keyValue":
     case "resources":
@@ -328,8 +330,10 @@ export function settingChange(
  * spec.parameters of its registration. A locked parameter is read only. An
  * object parameter with properties gives one setting for each property,
  * and a change of one writes the whole parameter. Any other parameter is
- * one setting. choices make a select of a string parameter. A parameter
- * resets to the environment.
+ * one setting. A parameter in choices picks the names of its choices,
+ * whatever its schema, because the claim stores the names: one name, or a
+ * list of names for a list parameter. A parameter resets to the
+ * environment.
  */
 export function selectionSettingsOf(
   fields: readonly ClusterField[],
@@ -349,9 +353,19 @@ export function selectionSettingsOf(
     };
     if (field.lock || !field.claimSteps)
       return [{ ...base, ...(field.lock && { lock: field.lock }) }];
+    const options = Object.hasOwn(choices ?? {}, name)
+      ? choices?.[name]
+      : undefined;
     const property = Object.hasOwn(properties, name)
       ? properties[name]
       : undefined;
+    if (options) {
+      const list =
+        Array.isArray(field.value) ||
+        fieldSchemaFromOpenAPI(property)?.type === "array";
+      const editor = { kind: list ? "choices" : "select", options } as const;
+      return [{ ...base, editor, steps: field.claimSteps }];
+    }
     const inner = propertiesOf(property);
     if (Object.keys(inner).length > 0)
       return Object.entries(inner).map(([part, partSchema]) => {
@@ -369,14 +383,7 @@ export function selectionSettingsOf(
           }),
         };
       });
-    const own = fieldSchemaFromOpenAPI(property);
-    const options = Object.hasOwn(choices ?? {}, name)
-      ? choices?.[name]
-      : undefined;
-    const editor =
-      options && (own === undefined || own.type === "string")
-        ? ({ kind: "select", options } as const)
-        : editorOf(name, own);
+    const editor = editorOf(name, fieldSchemaFromOpenAPI(property));
     return [{ ...base, ...(editor && { editor, steps: field.claimSteps }) }];
   });
 }

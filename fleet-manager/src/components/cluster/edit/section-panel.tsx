@@ -18,8 +18,8 @@ type Choice = { name: string; value: unknown };
 /**
  * SectionPanel edits one selection of the claim: its option is locked as
  * chosen at creation, and the parameters that the claim may set have
- * editors. A parameter with choices of the Environment picks a choice by
- * its name. section comes from the claim after the pending changes. After
+ * editors. A parameter with choices of the Environment picks its choices
+ * by name. section comes from the claim after the pending changes. After
  * a discard or a write, the editors show the values of the session again.
  * It follows the Secrets of the namespace while it is open, and renders
  * nothing without a session.
@@ -79,9 +79,9 @@ export function SectionPanel({
   );
 }
 
-// withChoiceName gives a parameter with choices the name of its choice as
-// its value: the claim stores the name, while field.value is the value of
-// the request.
+// withChoiceName gives a parameter with choices the name of its choice, or
+// the names of a list, as its value: the claim stores names, while
+// field.value is the value of the request.
 function withChoiceName(
   field: ClusterField,
   choices: Record<string, Choice[]>,
@@ -90,7 +90,15 @@ function withChoiceName(
     ? choices[field.label]
     : undefined;
   if (!list) return field;
-  const byName = list.find((c) => c.name === field.value);
-  const byValue = list.find((c) => equalJSON(c.value, field.value));
-  return { ...field, value: (byName ?? byValue)?.name };
+  const nameOf = (value: unknown) =>
+    (
+      list.find((c) => c.name === value) ??
+      list.find((c) => equalJSON(c.value, value))
+    )?.name;
+  return {
+    ...field,
+    value: Array.isArray(field.value)
+      ? field.value.map(nameOf).filter((n) => n !== undefined)
+      : nameOf(field.value),
+  };
 }

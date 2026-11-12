@@ -216,6 +216,18 @@ describe("SelectionSettingsEditor", () => {
     expect(screen.getByText(SHRINK)).toBeDefined();
   });
 
+  it("choices make a select also for a parameter whose schema is an object", async () => {
+    const { set } = renderEditor({
+      choices: { overrides: ["small", "large"] },
+    });
+    const select = within(settingRow("overrides")).getByRole("combobox");
+    expect(
+      screen.queryAllByRole("group", { name: "overrides.replicas" }),
+    ).toEqual([]);
+    await userEvent.selectOptions(select, "large");
+    expect(set).toHaveBeenLastCalledWith(overridesSteps, "large");
+  });
+
   it("choices make a select", async () => {
     const { set } = renderEditor({
       fields: fieldsOf(true),

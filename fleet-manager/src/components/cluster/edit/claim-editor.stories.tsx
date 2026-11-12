@@ -7,15 +7,15 @@ import {
 } from "./claim-editor-story";
 import { WAITING_FOR_GITOPS, WAITING_ON_LIVE } from "./waiting-panel";
 
-// ACCESS gives the claim the access option Gateway, whose host prefix the
-// claim may change and whose zone the admin sets.
+// ACCESS gives the claim the access option Gateway, whose host prefix and
+// sources the claim may change and whose zone the admin sets.
 const ACCESS: StoryCluster = {
   claimSpec: {
     plugins: [
       {
         section: "access",
         registration: "gateway-access",
-        parameters: { hostPrefix: "orders" },
+        parameters: { hostPrefix: "orders", sources: ["office"] },
       },
     ],
   },
@@ -26,6 +26,13 @@ const ACCESS: StoryCluster = {
         "gateway-access": {
           hostPrefix: { claimEditable: true, value: "camunda" },
           zone: { value: "payments.example.com" },
+          sources: {
+            claimEditable: true,
+            allowed: [
+              { name: "office", label: "Office", value: "10.0.0.0/16" },
+              { name: "vpn", label: "VPN", value: "10.8.0.0/16" },
+            ],
+          },
         },
       },
     },
@@ -57,6 +64,7 @@ const ACCESS: StoryCluster = {
                 description: "The first label of each host name.",
               },
               zone: { type: "string" },
+              sources: { type: "array", items: { type: "string" } },
             },
           },
         },

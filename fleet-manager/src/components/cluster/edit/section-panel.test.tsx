@@ -49,6 +49,7 @@ const harness = {
         hostPrefix: { type: "string" },
         zone: { type: "string" },
         tier: { type: "string" },
+        policies: { type: "array", items: { type: "string" } },
       },
     },
   },
@@ -62,7 +63,7 @@ function contextOf(): ClusterSlotContext {
     {
       section: "access",
       registration: "fleet-harness",
-      parameters: { hostPrefix: "orders", tier: "gold" },
+      parameters: { hostPrefix: "orders", tier: "gold", policies: ["sqs"] },
     },
   ];
   return slotContext({
@@ -80,6 +81,21 @@ function contextOf(): ClusterSlotContext {
                 allowed: [
                   { name: "silver", label: "Silver", value: { size: 1 } },
                   { name: "gold", label: "Gold", value: { size: 2 } },
+                ],
+              },
+              policies: {
+                claimEditable: true,
+                allowed: [
+                  {
+                    name: "sqs",
+                    label: "SQS",
+                    value: "arn:aws:iam::aws:policy/sqs",
+                  },
+                  {
+                    name: "sns",
+                    label: "SNS",
+                    value: "arn:aws:iam::aws:policy/sns",
+                  },
                 ],
               },
             },
@@ -154,7 +170,11 @@ describe("a section panel", () => {
       plugins: [
         {
           ...before.plugins![0],
-          parameters: { hostPrefix: "orders-eu", tier: "gold" },
+          parameters: {
+            hostPrefix: "orders-eu",
+            tier: "gold",
+            policies: ["sqs"],
+          },
         },
       ],
     });
@@ -205,6 +225,21 @@ describe("a section panel", () => {
     expect(written.spec.plugins![0].parameters).toEqual({
       hostPrefix: "orders",
       tier: "silver",
+      policies: ["sqs"],
+    });
+  });
+
+  it("a list parameter with choices picks its choices by name", async () => {
+    panel();
+    const policies = row("policies");
+    const box = (name: string) =>
+      within(policies).getByRole<HTMLButtonElement>("checkbox", { name });
+    expect(box("sqs").getAttribute("aria-checked")).toBe("true");
+    expect(box("sns").getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(box("sns"));
+    const written = await save();
+    expect(written.spec.plugins![0].parameters).toMatchObject({
+      policies: ["sqs", "sns"],
     });
   });
 

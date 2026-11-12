@@ -288,6 +288,15 @@ function Editor({
           onChange={onChange}
         />
       );
+    case "choices":
+      return (
+        <ChoicesEditor
+          label={label}
+          options={editor.options}
+          defaultValue={initial as string[]}
+          onChange={onChange}
+        />
+      );
     case "resources":
       return (
         <ResourcesEditor
@@ -572,6 +581,46 @@ function SelectEditor({
         ))}
       </NativeSelect>
     </div>
+  );
+}
+
+// ChoicesEditor picks names from options. A change gives the picked names
+// in the order of options.
+function ChoicesEditor({
+  label,
+  options,
+  defaultValue,
+  onChange,
+}: {
+  label: string;
+  options: readonly string[];
+  defaultValue: string[];
+  onChange: (value: unknown) => void;
+}) {
+  const id = useId();
+  const [picked, setPicked] = useState(defaultValue);
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-1.5">
+      <legend className="mb-1 text-sm font-medium text-muted">{label}</legend>
+      {options.map((option, i) => (
+        <div key={option} className="flex items-center gap-2">
+          <Checkbox
+            id={`${id}-${i}`}
+            checked={picked.includes(option)}
+            onCheckedChange={(checked) => {
+              const next = options.filter((o) =>
+                o === option ? checked === true : picked.includes(o),
+              );
+              setPicked(next);
+              onChange(next);
+            }}
+          />
+          <label htmlFor={`${id}-${i}`} className="text-sm text-text">
+            {option}
+          </label>
+        </div>
+      ))}
+    </fieldset>
   );
 }
 
