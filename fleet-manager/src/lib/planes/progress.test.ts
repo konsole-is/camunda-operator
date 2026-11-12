@@ -76,6 +76,7 @@ describe("planeProgressRows", () => {
           requests: [
             {
               section: "dns-zone",
+              registration: "route53",
               name: "plane-a-dns-zone",
               outputsReady: "True",
               ready: "False",
@@ -89,8 +90,8 @@ describe("planeProgressRows", () => {
       ["environment", "Environment and policy"],
       ["database", "Databases"],
       ["access", "Access"],
-      ["section:mail", "Mail relay"],
-      ["section:dns-zone", "DNS zone"],
+      ["section:mail/relay", "Mail relay"],
+      ["section:dns-zone/route53", "DNS zone"],
       ["managementCluster", "Management cluster"],
     ]);
     expect(rows[4]).toMatchObject({
@@ -100,6 +101,54 @@ describe("planeProgressRows", () => {
         { label: "Ready", condition: { status: "False" } },
       ],
     });
+  });
+
+  it("gives each selection of a section with many selections its own row and request", () => {
+    const withMany = [
+      ...sections,
+      { metadata: { name: "monitoring" }, spec: { label: "Monitoring" } },
+    ] as PluginSection[];
+    const request = (registration: string, ready: string) => ({
+      section: "monitoring",
+      registration,
+      name: `plane-a-${registration}`,
+      outputsReady: "True",
+      ready,
+    });
+    const rows = planeProgressRows(
+      claim(
+        [
+          database,
+          { section: "monitoring", registration: "prometheus" },
+          { section: "monitoring", registration: "grafana" },
+        ],
+        {
+          requests: [
+            request("prometheus", "True"),
+            request("grafana", "False"),
+          ],
+        } as unknown as CamundaManagementClusterClaim["status"],
+      ),
+      withMany,
+    );
+    expect(
+      rows
+        .filter((r) => r.id.startsWith("section:"))
+        .map((r) => [r.id, r.label, r.detail, r.checks[1].condition]),
+    ).toEqual([
+      [
+        "section:monitoring/prometheus",
+        "Monitoring: prometheus",
+        "plane-a-prometheus",
+        { status: "True" },
+      ],
+      [
+        "section:monitoring/grafana",
+        "Monitoring: grafana",
+        "plane-a-grafana",
+        { status: "False" },
+      ],
+    ]);
   });
 
   it("leaves out the access row without an access selection", () => {

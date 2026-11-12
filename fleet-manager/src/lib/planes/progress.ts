@@ -40,9 +40,11 @@ export function planeProgressRows(
   };
   const database = sectionOf(sections, "managementDatabases");
   const access = sectionOf(sections, "externalAccess");
-  const others = (claim?.spec.plugins ?? [])
-    .map((p) => p.section)
-    .filter((s) => s !== database && s !== access);
+  const others = (claim?.spec.plugins ?? []).filter(
+    (p) => p.section !== database && p.section !== access,
+  );
+  const inSection = (name: string) =>
+    others.filter((p) => p.section === name).length;
   const selectsAccess = (claim?.spec.plugins ?? []).some(
     (p) => p.section === access,
   );
@@ -53,14 +55,18 @@ export function planeProgressRows(
     environment,
     requestRow("database", "Databases", database, claim),
     ...(selectsAccess ? [requestRow("access", "Access", access, claim)] : []),
-    ...others.map((name) =>
-      requestRow(
-        `section:${name}`,
-        sections.find((s) => s.metadata.name === name)?.spec.label ?? name,
-        name,
+    ...others.map(({ section, registration }) => {
+      const label =
+        sections.find((s) => s.metadata.name === section)?.spec.label ??
+        section;
+      return requestRow(
+        `section:${section}/${registration}`,
+        inSection(section) > 1 ? `${label}: ${registration}` : label,
+        section,
         claim,
-      ),
-    ),
+        registration,
+      );
+    }),
     {
       id: "managementCluster",
       label: "Management cluster",
@@ -79,8 +85,13 @@ function requestRow(
   label: string,
   section: string | undefined,
   claim: CamundaManagementClusterClaim | undefined,
+  registration?: string,
 ): ProgressRow {
-  const request = claim?.status?.requests?.find((r) => r.section === section);
+  const request = claim?.status?.requests?.find(
+    (r) =>
+      r.section === section &&
+      (registration === undefined || r.registration === registration),
+  );
   return {
     id,
     label,
