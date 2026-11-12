@@ -64,7 +64,7 @@ func TestClusterGracePeriod(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server, preset, release := goldenMinimalDatabaseServer()
 			merged := MergeSpec(server.Spec, preset, release)
-			comp, _, err := ClusterComponent(server, merged, RequestedStorage{}, nil, "", nil, "", nil, gracePeriod)
+			comp, _, err := ClusterComponent(server, merged, RequestedStorage{}, nil, "", nil, "", gracePeriod)
 			require.NoError(t, err)
 
 			var existing []client.Object
@@ -93,7 +93,7 @@ func TestClusterGracePeriod(t *testing.T) {
 func TestClusterGracePeriodKeepsTheOwnerOfAForeignServiceAccount(t *testing.T) {
 	server, preset, release := goldenMinimalDatabaseServer()
 	merged := MergeSpec(server.Spec, preset, release)
-	comp, _, err := ClusterComponent(server, merged, RequestedStorage{}, nil, "", nil, "", nil, 30*time.Minute)
+	comp, _, err := ClusterComponent(server, merged, RequestedStorage{}, nil, "", nil, "", 30*time.Minute)
 	require.NoError(t, err)
 
 	foreign := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{

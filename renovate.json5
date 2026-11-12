@@ -286,7 +286,7 @@
       matchFileNames: ["test/e2e/matrix/8.9.env"],
       matchDepNames: ["cloudnative-pg/plugin-barman-cloud"],
       versioning: "semver",
-      allowedVersions: "<0.15.0",
+      allowedVersions: "<0.17.0",
     },
     {
       // The Camunda images of the 8.9 line. Semver reads 8.10.0-alpha1 and

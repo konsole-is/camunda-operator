@@ -10,11 +10,11 @@ The manager never runs the CLI itself. The Jobs that the operator creates run it
 - Helm 3.8 or later, for the OCI registry.
 - The [ECK operator](https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html), version 3.5 or later, if you use `ElasticsearchCluster`. The manager looks for the ECK CRDs when it starts. If it does not find them, every `ElasticsearchCluster` reports `Ready=False` with reason `ECKNotInstalled`. If you install ECK after the manager, restart the manager.
 - The [CloudNativePG operator](https://cloudnative-pg.io/documentation/current/installation_upgrade/), version 1.29 or later, if you use `DatabaseServer`. With an earlier version, the API server rejects the CloudNativePG cluster of a `DatabaseServer`, and `ClusterReady` reports `False`. The manager looks for the CloudNativePG CRDs when it starts. If it does not find them, every `DatabaseServer` reports `Ready=False` with reason `CNPGNotInstalled`. If you install CloudNativePG after the manager, restart the manager.
-- The [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/), version 0.14 or later, and [cert-manager](https://cert-manager.io/docs/installation/), if you use `DatabaseServer` with `spec.archive`. Both install into the namespace of the CloudNativePG operator. Without the plugin, a `DatabaseServer` with an archive reports `Ready=False` with reason `BarmanPluginNotInstalled`. If you install the plugin after the manager, restart the manager.
+- The [Barman Cloud plugin](https://cloudnative-pg.io/plugin-barman-cloud/docs/installation/), version 0.16 or later, and [cert-manager](https://cert-manager.io/docs/installation/), if you use `DatabaseServer` with `spec.archive`. Both install into the namespace of the CloudNativePG operator. With an earlier version of the plugin, the instance pods cannot read the archive settings, and the uploads of the write-ahead log fail. Without the plugin, a `DatabaseServer` with an archive reports `Ready=False` with reason `BarmanPluginNotInstalled`. If you install the plugin after the manager, restart the manager.
 - A PostgreSQL server that a `DatabaseServerConfig` describes, if you use `Database` without a `DatabaseServer`. The operator runs PostgreSQL only through `DatabaseServer`.
 - The [Keycloak Operator](https://www.keycloak.org/operator/installation), if you use `CamundaManagementCluster` with `spec.identityProvider.keycloak`. The other two identity provider modes do not need it. The manager looks for the Keycloak CRDs when it starts. If it does not find them, every `CamundaManagementCluster` in that mode reports `Ready=False` with reason `KeycloakOperatorNotInstalled`. If you install the Keycloak Operator after the manager, restart the manager. Install the Keycloak Operator release that matches `spec.identityProvider.keycloak.version`. With Camunda 8.9, keep that version below 26.7.0. [The operator runs Keycloak](crds/camundamanagementcluster.md#the-operator-runs-keycloak) gives the reason. Camunda documents the same prerequisite in [Keycloak deployment](https://docs.camunda.io/docs/self-managed/deployment/helm/configure/operator-based-infrastructure/#keycloak-deployment).
 
-The end-to-end suite of each release runs against ECK 3.5.0, CloudNativePG 1.30.1, the Barman Cloud plugin 0.14.0, and the Keycloak Operator 26.6.4.
+The end-to-end suite of each release runs against ECK 3.5.0, CloudNativePG 1.30.1, the Barman Cloud plugin 0.16.0, and the Keycloak Operator 26.6.4.
 
 ### Install CloudNativePG and the Barman Cloud plugin
 
@@ -22,7 +22,7 @@ Install [cert-manager](https://cert-manager.io/docs/installation/) first. The pl
 
 ```bash
 kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.30/releases/cnpg-1.30.1.yaml
-kubectl apply --server-side -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.14.0/manifest.yaml
+kubectl apply --server-side -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.16.0/manifest.yaml
 kubectl rollout status deployment/cnpg-controller-manager -n cnpg-system
 kubectl rollout status deployment/barman-cloud -n cnpg-system
 ```
@@ -160,6 +160,8 @@ A successful verification prints the certificate subject and the matched claims.
 
 ## Upgrade
 
+If you use `DatabaseServer` with `spec.archive`, [upgrade the Barman Cloud plugin first](#upgrade-the-barman-cloud-plugin-first).
+
 ```bash
 helm upgrade camunda-operator \
   oci://ghcr.io/konsole-is/charts/camunda-operator \
@@ -172,6 +174,17 @@ Without `--set` or `-f`, Helm keeps the values of the last release. If you pass 
 The CRDs carry the annotation `helm.sh/resource-policy: keep`. Helm updates them in place and never deletes them.
 
 To upgrade a manifest install, apply the `install.yaml` of the new release with `--server-side`, as in [Install without Helm](#install-without-helm). Make the same mirror edits again before you apply.
+
+### Upgrade the Barman Cloud plugin first
+
+From this release, a `DatabaseServer` with an archive needs the Barman Cloud plugin 0.16 or later. Upgrade the plugin before you upgrade the operator:
+
+```bash
+kubectl apply --server-side -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.16.0/manifest.yaml
+kubectl rollout status deployment/barman-cloud -n cnpg-system
+```
+
+With an earlier plugin, a new server and the cluster that a [rollback](crds/databaseserver.md#recovery) creates cannot read the archive settings, and they write no archive. A server that archived before the upgrade continues to archive. If you upgraded the operator first, upgrade the plugin now. The servers then start to archive.
 
 ### Connectors no longer use the cluster ServiceAccount
 
