@@ -1,6 +1,7 @@
 import type { Story } from "@/gallery/registry";
 import { ResourcesEditor } from "./resources-editor";
 import { SchedulingEditor } from "./scheduling-editor";
+import { StorageSizeEditor } from "./storage-size-editor";
 import { YamlEditor } from "./yaml-editor";
 
 export const workloadEditorStories: Story[] = [
@@ -74,5 +75,21 @@ export const workloadEditorStories: Story[] = [
     component: "YamlEditor",
     name: "Empty",
     render: () => <YamlEditor label="Extra environment sources" />,
+  },
+  {
+    component: "StorageSizeEditor",
+    name: "Below the current size",
+    render: () => (
+      <StorageSizeEditor
+        label="storageSize"
+        defaultValue="16Gi"
+        current="32Gi"
+      />
+    ),
+  },
+  {
+    component: "StorageSizeEditor",
+    name: "Not set",
+    render: () => <StorageSizeEditor label="storageSize" />,
   },
 ];

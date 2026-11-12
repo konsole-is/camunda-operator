@@ -17,7 +17,10 @@ import {
   type DraftPath,
   useCreateFlow,
 } from "@/components/create/use-create-flow";
-import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
+import {
+  type SecretRefs,
+  secretRefsOf,
+} from "@/components/fleet/secret-ref-picker";
 import { Toast, useWriteToast } from "@/components/fleet/toast";
 import { WizardStepper } from "@/components/fleet/wizard-stepper";
 import type { Plane, PlaneSources } from "@/components/planes/plane";
@@ -551,11 +554,7 @@ function NamespaceSecrets({
   namespace: string;
   onChange: (secrets: SecretRefs) => void;
 }) {
-  const { items } = useResources("Secret", { namespace }, []);
-  const refs = items.map((s) => ({
-    name: s.metadata?.name ?? "",
-    keys: s.keys,
-  }));
+  const refs = secretRefsOf(useResources("Secret", { namespace }, []).items);
   const key = JSON.stringify(refs);
   useEffect(() => {
     onChange(JSON.parse(key) as SecretRefs);

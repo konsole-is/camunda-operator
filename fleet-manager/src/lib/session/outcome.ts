@@ -22,7 +22,8 @@ export type WriteOutcome =
  * outcomeOf maps a result to what the session shows. A Stale error gives
  * STALE_CLAIM_MESSAGE and nothing else. An error whose path names a pending
  * field or a field below it, with or without the leading spec, goes to that
- * pending field. It does not change s.
+ * pending field. An error at an object inside spec that holds pending fields
+ * goes to each of them. It does not change s.
  */
 export function outcomeOf(
   result: WriteResult | Preview,
@@ -43,7 +44,10 @@ export function outcomeOf(
   const targets = targetsOf(s);
   for (const error of errors) {
     const path = error.path && pendingPath(error.path, targets);
+    const below = error.path ? pendingBelow(error.path, targets) : [];
     if (path) fields.push({ path, message: error.message });
+    else if (below.length > 0)
+      for (const p of below) fields.push({ path: p, message: error.message });
     else messages.push(error.message);
   }
   return { ok: false, stale: false, fields, messages };
@@ -109,6 +113,26 @@ function removedItems(s: Session, list: readonly Step[]): number[] {
         length(valueAt(withChanges(s.claim, changes), list)) < before,
     )
     .map(([index]) => index);
+}
+
+// pendingBelow returns none for the root of spec, which holds every field.
+function pendingBelow(
+  path: FieldPath,
+  targets: Map<FieldPath, FieldPath>,
+): FieldPath[] {
+  const object =
+    path === "spec" || path.startsWith("spec.") ? path : child("spec", path);
+  if (object === "spec") return [];
+  return [
+    ...new Set(
+      [...targets]
+        .filter(
+          ([target]) =>
+            target.startsWith(`${object}.`) || target.startsWith(`${object}[`),
+        )
+        .map(([, pending]) => pending),
+    ),
+  ];
 }
 
 function pendingPath(
