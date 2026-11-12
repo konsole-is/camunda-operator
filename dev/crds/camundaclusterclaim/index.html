@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -464,6 +464,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -547,6 +559,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -2787,7 +2967,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">fleet.camunda.io/environment</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production</span>
 </span></code></pre></div>
 <p>When no <code>Environment</code> exists in the Kubernetes cluster, a namespace without the label is valid too. The registrations then give the policy. A claim can select each registration of a section. It can change only the parameters in <code>claimEditable</code> of the registration. When at least one <code>Environment</code> exists, a claim in a namespace without the label is refused with <code>NoEnvironment</code>.</p>
-<p>On its first check, the claim records the policy of its <code>Environment</code> in <code>status.resolvedPolicy</code>, and the name of the <code>Environment</code> in <code>status.environment</code>. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of <code>spec.sections</code>, <code>spec.parameters</code>, or <code>spec.deletionPolicy</code> of the <code>Environment</code> does not change the claim. The claim checks a new preset or release against the current <code>spec.presets.camundaCluster</code> and <code>spec.releases.allowed</code> of the <code>Environment</code>. A preset or release that the cluster already uses stays allowed when the <code>Environment</code> drops it. Other changes of such a claim, such as a suspend or a parameter, still apply. A change to a value that the <code>Environment</code> does not list gives <code>Ready</code> <code>False</code> with reason <code>NotAllowed</code>. The requests and the cluster then stay as they are.</p>
+<p>On its first check, the claim records the policy of its <code>Environment</code> in <code>status.resolvedPolicy</code>, and the name of the <code>Environment</code> in <code>status.environment</code>. The policy holds the allowed registrations of each section, the parameter values, the claim-editable parameters, and the deletion default. A later change of <code>spec.sections</code>, <code>spec.parameters</code>, or <code>spec.deletionPolicy</code> of the <code>Environment</code> does not change the claim. The claim checks a new preset or release against the current lists of the <code>Environment</code>. <code>spec.presetRef</code> must be in <code>spec.presets.camundaCluster</code>, and the release in <code>spec.releases.allowed</code>. The preset of the built-in Elasticsearch must be in <code>spec.presets.elasticsearchCluster</code>, and the preset of the built-in PostgreSQL in <code>spec.presets.databaseServer</code>. This preset is the parameter <code>preset</code> of the option, from the claim or from the policy. When the policy sets the preset, the message names <code>spec.parameters.&lt;registration&gt;.preset</code> of the <code>Environment</code>. You cannot change that preset in the claim, so ask the admin of the <code>Environment</code> to correct the value or the list. Without an <code>Environment</code>, a claim can use any preset. A preset or release that the cluster or its storage already uses stays allowed when the <code>Environment</code> drops it. Other changes of such a claim, such as a suspend or a parameter, still apply. A change to a value that the <code>Environment</code> does not list gives <code>Ready</code> <code>False</code> with reason <code>NotAllowed</code>. The requests and the cluster then stay as they are.</p>
 <p>A section of the policy that does not apply to a cluster claim, such as <code>management-database</code>, is never required for a cluster. A claim that selects an option in such a section is refused with <code>NotAllowed</code>. The <a href="../pluginsection/#claim-kinds">PluginSection</a> page says what <code>appliesTo</code> does.</p>
 <p><code>spec.releaseRef</code> and <code>spec.platformConfigRef</code> are optional. Without them, the cluster gets <code>spec.releases.default</code> and <code>spec.platformConfigRef</code> of the <code>Environment</code>. A later change of that default moves the cluster to the new release.</p>
 <h2 id="plugin-requests">Plugin requests<a class="headerlink" href="#plugin-requests" title="Permanent link">&para;</a></h2>
@@ -3022,7 +3202,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 <tr>
 <td><code>NotAllowed</code></td>
-<td>The <code>Environment</code> does not allow the preset, the release, or a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. A selected section does not apply to a cluster claim. A selected registration does not serve its section. The deletion policy of the claim, or the default of the <code>Environment</code>, is <code>Orphan</code>, and a selected registration does not list <code>Orphan</code> in <code>spec.deletionPolicies</code>. The claim selects two options of a section that takes one, or two selections get the same request name. The message names the value.</td>
+<td>The <code>Environment</code> does not allow the preset, the release, or a registration, or a required section has no option. The <code>Environment</code> does not list the preset of the built-in Elasticsearch or PostgreSQL. A parameter is not claim-editable, or it is not a JSON object. A selected section does not apply to a cluster claim. A selected registration does not serve its section. The deletion policy of the claim, or the default of the <code>Environment</code>, is <code>Orphan</code>, and a selected registration does not list <code>Orphan</code> in <code>spec.deletionPolicies</code>. The claim selects two options of a section that takes one, or two selections get the same request name. The message names the value.</td>
 <td>Pick an allowed value, or change the <code>Environment</code>. Select one option of a section that takes one. For <code>Orphan</code>, set <code>spec.deletionPolicy: Delete</code>, or pick a registration that supports <code>Orphan</code>.</td>
 </tr>
 <tr>

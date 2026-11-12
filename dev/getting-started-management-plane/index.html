@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -654,6 +654,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -737,6 +749,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-manager/change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-manager/fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-manager/cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-manager/management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-manager/environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-manager/backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -2747,6 +2927,7 @@
 The management plane is a <code>CamundaManagementCluster</code>. It runs Management Identity, Console, and a Keycloak that the operator creates for you. Management Identity is the identity system that Console, Web Modeler, and Optimize sign in through. Camunda explains it in <a href="https://docs.camunda.io/docs/self-managed/components/management-identity/overview/">Management Identity</a>.</p>
 <p>The guide follows one path. CloudNativePG runs the PostgreSQL server for the databases. You reach each component through a port forward, not an Ingress. The sizes fit a local kind cluster. They are not production sizes.</p>
 <p>The <a href="../guides/management-plane/">Management plane</a> guide covers the other identity providers, Web Modeler, and the routing for a real domain.</p>
+<p>The <a href="../fleet-manager/management-planes/">fleet manager</a> creates a management plane from a form, as a claim.</p>
 <h2 id="the-ready-made-manifests">The ready-made manifests<a class="headerlink" href="#the-ready-made-manifests" title="Permanent link">&para;</a></h2>
 <p>The manifests on this page come from <a href="https://github.com/konsole-is/camunda-operator/tree/main/config/example/camunda-management-cluster/keycloak"><code>config/example/camunda-management-cluster/keycloak</code></a>. The link shows the <code>main</code> branch. Select the tag of your release on GitHub to get the manifests of that version.</p>
 <p>That directory is written for a real domain, so this page changes some values. The changes are:</p>

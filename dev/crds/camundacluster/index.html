@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -464,6 +464,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -547,6 +559,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -3346,7 +3526,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <p>The operator creates no Ingress. You route traffic to the cluster. <code>spec.externalUrl</code> tells the cluster its public base URL for OIDC redirects and links.</p>
 <h2 id="authentication">Authentication<a class="headerlink" href="#authentication" title="Permanent link">&para;</a></h2>
 <p>The authentication method, basic or OIDC, comes from the <a href="../camundaplatformconfig/">CamundaPlatformConfig</a> that <code>platformConfigRef</code> names. A cluster cannot choose its own method.</p>
-<p>Under basic authentication the operator creates the admin user <code>admin</code>. It stores the credentials in the Secret <code>&lt;name&gt;-camunda-admin</code>, under the keys <code>username</code>, <code>password</code>, and <code>email</code>. To rotate the password, set <code>spec.auth.basic.passwordRotation</code> to a new value. <code>status.adminPassword.rotation</code> records the value that the operator applied.</p>
+<p>Under basic authentication the operator creates the admin user <code>admin</code>. It stores the credentials in the Secret <code>&lt;name&gt;-camunda-admin</code>, under the keys <code>username</code>, <code>password</code>, and <code>email</code>. To rotate the password, set <code>spec.auth.basic.passwordRotation</code> to a new value. The rotation restarts the connectors pods, and no other pod. <code>status.adminPassword.rotation</code> records the value that the operator applied.</p>
 <p>Under OIDC the identity provider authenticates every caller, and <code>spec.auth.admin</code> names the identities that get the <code>admin</code> role. An OIDC cluster without <code>spec.auth.admin</code> has no administrator.</p>
 <p>The <a href="../../guides/authentication/">authentication guide</a> explains both methods, the admin role, and the rotation with its failure modes.</p>
 <h2 id="version">Version<a class="headerlink" href="#version" title="Permanent link">&para;</a></h2>

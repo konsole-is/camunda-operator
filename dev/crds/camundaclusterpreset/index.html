@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -464,6 +464,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -547,6 +559,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -1127,6 +1307,17 @@
       Table of contents
     </label>
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#description" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Description
+      
+    </span>
+  </a>
+  
+</li>
       
         <li class="md-nav__item">
   <a href="#merge-rules" class="md-nav__link">
@@ -2529,6 +2720,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#description" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Description
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#merge-rules" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2678,6 +2880,18 @@
 Hold "Alt" / "Option" to enable pan &amp; zoom
 </div>
 </div>
+<h2 id="description">Description<a class="headerlink" href="#description" title="Permanent link">&para;</a></h2>
+<p>The annotation <code>kubernetes.io/description</code> holds a short text that says what the preset is for. The <a href="../../fleet-manager/install/">fleet manager</a> shows this text on the card of the preset when a user creates a cluster. A preset without the annotation gets a card without a description.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterPreset</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">medium</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">kubernetes.io/description</span><span class="p">:</span><span class="w"> </span><span class="s">"For</span><span class="nv"> </span><span class="s">production</span><span class="nv"> </span><span class="s">workloads</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">three</span><span class="nv"> </span><span class="s">brokers</span><span class="nv"> </span><span class="s">and</span><span class="nv"> </span><span class="s">replication."</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="c1"># ... the rest of your preset</span>
+</span></code></pre></div>
+<p>The operator does not read the annotation. A change to it changes no cluster.</p>
 <h2 id="merge-rules">Merge rules<a class="headerlink" href="#merge-rules" title="Permanent link">&para;</a></h2>
 <p>The cluster starts from <code>spec.cluster</code> of the preset. The <a href="../camundarelease/">CamundaRelease</a> of <code>releaseRef</code> merges over it, and the cluster spec merges over both. Each field merges as the table says. The instance-bound fields always come from the cluster.</p>
 <table>
@@ -2748,7 +2962,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </table>
 <p>Each cluster reads the Secret of <code>auth.clientSecretRef</code> in its own namespace. Every namespace with a cluster that inherits the client needs that Secret.</p>
 <h2 id="changes">Changes<a class="headerlink" href="#changes" title="Permanent link">&para;</a></h2>
-<p>When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under <code>auth.basic</code> is the exception: it rolls no pods. A <code>passwordRotation</code> there rotates the admin password of each cluster, see <a href="../camundacluster/#authentication">Authentication</a>.</p>
+<p>When you edit the spec of a preset, every cluster that references it takes the new baseline and rolls its pods. A change of <code>auth.basic.adminEmail</code> rolls no pods, and a change under <code>connectors.serviceAccount</code> rolls only the connectors pods. A new <code>auth.basic.passwordRotation</code> rotates the admin password of each cluster and rolls only the connectors pods, see <a href="../camundacluster/#authentication">Authentication</a>.</p>
 <p>A preset can lower <code>zeebe.storageSize</code>. A cluster that already applied a larger size keeps its volumes and records the Warning event <code>StorageShrinkIgnored</code>. A larger size grows the volumes of every cluster in place, if the storage class allows volume expansion. See <a href="../../guides/operations/#grow-storage">Operations: Grow storage</a>.</p>
 <p>A change of <code>zeebe.storageClassName</code> reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the Warning event <code>StorageClassChangeIgnored</code>. Volumes that <code>whenDeleted: Retain</code> kept from a deleted cluster of the same name keep their class.</p>
 <h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Permanent link">&para;</a></h2>
@@ -2791,38 +3005,38 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <li>The API server checks a preset alone. The referencing cluster checks the merged spec, see <a href="../camundacluster/#validation-rules">Validation rules</a>.</li>
 </ul>
 <h2 id="a-production-shaped-example">A production-shaped example<a class="headerlink" href="#a-production-shaped-example" title="Permanent link">&para;</a></h2>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterPreset</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">medium</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">cluster</span><span class="p">:</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">podLabels</span><span class="p">:</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">      </span><span class="nt">company.com/team</span><span class="p">:</span><span class="w"> </span><span class="s">"automation-ops"</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nt">podAnnotations</span><span class="p">:</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">      </span><span class="nt">company.com/cluster-preset</span><span class="p">:</span><span class="w"> </span><span class="s">"medium"</span>
-</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nt">zeebe</span><span class="p">:</span>
-</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">      </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">      </span><span class="nt">replicationFactor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
-</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
-</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">        </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"1"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="s">"2Gi"</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">        </span><span class="nt">limits</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"2"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="s">"4Gi"</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">      </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="s">"ssd"</span>
-</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">      </span><span class="nt">storageSize</span><span class="p">:</span><span class="w"> </span><span class="s">"32Gi"</span>
-</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">      </span><span class="nt">extraEnv</span><span class="p">:</span>
-</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JAVA_TOOL_OPTIONS</span>
-</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"-XX:+ExitOnOutOfMemoryError</span><span class="nv"> </span><span class="s">-Xmx1g"</span>
-</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">    </span><span class="nt">gateway</span><span class="p">:</span>
-</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">      </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Standalone</span>
-</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
-</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">        </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"500m"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="s">"1Gi"</span><span class="w"> </span><span class="p p-Indicator">}</span>
-</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">    </span><span class="nt">connectors</span><span class="p">:</span>
-</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
-</span><span id="__span-1-32"><a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">        </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"250m"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="s">"512Mi"</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">core.camunda.io/v1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CamundaClusterPreset</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">medium</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">cluster</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">podLabels</span><span class="p">:</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">company.com/team</span><span class="p">:</span><span class="w"> </span><span class="s">"automation-ops"</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">podAnnotations</span><span class="p">:</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="nt">company.com/cluster-preset</span><span class="p">:</span><span class="w"> </span><span class="s">"medium"</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">    </span><span class="nt">zeebe</span><span class="p">:</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">      </span><span class="nt">partitions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">      </span><span class="nt">replicationFactor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">        </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"1"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="s">"2Gi"</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">        </span><span class="nt">limits</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"2"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="s">"4Gi"</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">      </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="s">"ssd"</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">      </span><span class="nt">storageSize</span><span class="p">:</span><span class="w"> </span><span class="s">"32Gi"</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">      </span><span class="nt">extraEnv</span><span class="p">:</span>
+</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">JAVA_TOOL_OPTIONS</span>
+</span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="w">          </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"-XX:+ExitOnOutOfMemoryError</span><span class="nv"> </span><span class="s">-Xmx1g"</span>
+</span><span id="__span-2-23"><a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="w">    </span><span class="nt">gateway</span><span class="p">:</span>
+</span><span id="__span-2-24"><a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="w">      </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Standalone</span>
+</span><span id="__span-2-25"><a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="__span-2-26"><a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a><span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-2-27"><a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a><span class="w">        </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"500m"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="s">"1Gi"</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</span><span id="__span-2-28"><a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a><span class="w">    </span><span class="nt">connectors</span><span class="p">:</span>
+</span><span id="__span-2-29"><a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-2-30"><a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a><span class="w">      </span><span class="nt">replicas</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-2-31"><a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a><span class="w">      </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-2-32"><a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a><span class="w">        </span><span class="nt">requests</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> cpu</span><span class="p">:</span><span class="w"> </span><span class="s">"250m"</span><span class="p p-Indicator">,</span><span class="nt"> memory</span><span class="p">:</span><span class="w"> </span><span class="s">"512Mi"</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span></code></pre></div>
 <h2 id="related">Related<a class="headerlink" href="#related" title="Permanent link">&para;</a></h2>
 <ul>

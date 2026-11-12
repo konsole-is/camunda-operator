@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -464,6 +464,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -547,6 +559,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -2811,6 +2991,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </div>
 <h2 id="environment-and-policy">Environment and policy<a class="headerlink" href="#environment-and-policy" title="Permanent link">&para;</a></h2>
 <p>A plane claim follows the <code>Environment</code> of its own namespace, as a <a href="../camundaclusterclaim/#environment-and-policy">CamundaClusterClaim</a> does. The label <code>fleet.camunda.io/environment</code> of the namespace names it. The claim records the policy of that <code>Environment</code> in <code>status.resolvedPolicy</code> on its first check. A later change of the <code>Environment</code> does not change the policy of the claim.</p>
+<p>The preset of the built-in PostgreSQL, the parameter <code>preset</code> of <code>management-database-server</code>, must be in <code>spec.presets.databaseServer</code> of the current <code>Environment</code>. The preset comes from the claim or from the policy. Otherwise the claim is refused with <code>NotAllowed</code>. When the policy sets the preset, the message names <code>spec.parameters.management-database-server.preset</code> of the <code>Environment</code>. You cannot change that preset in the claim, so ask the admin of the <code>Environment</code> to correct the value or the list. A preset that the database server already uses stays allowed when the <code>Environment</code> drops it.</p>
 <p>A section of the policy that does not apply to a plane claim, such as <code>secondary-storage</code>, is never required for a plane. A claim that selects an option in such a section is refused with <code>NotAllowed</code>. The <a href="../pluginsection/#claim-kinds">PluginSection</a> page says what <code>appliesTo</code> does, and its <a href="../pluginsection/#core-sections">core sections</a> list the claim kinds of each core section.</p>
 <p><code>spec.platformConfigRef</code> is optional. Without it, the plane gets <code>spec.platformConfigRef</code> of the <code>Environment</code>. When neither names a platform config, the claim is refused with <code>MissingInput</code>.</p>
 <h2 id="served-environments">Served environments<a class="headerlink" href="#served-environments" title="Permanent link">&para;</a></h2>
@@ -2996,7 +3177,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 <tr>
 <td><code>NotAllowed</code></td>
-<td>The <code>Environment</code> does not allow a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. A selected section does not apply to a plane claim. A selected registration does not serve its section. The deletion policy is <code>Orphan</code>, and a selected registration does not list <code>Orphan</code>. The message names the value.</td>
+<td>The <code>Environment</code> does not allow the preset of the built-in PostgreSQL or a registration, or a required section has no option. A parameter is not claim-editable, or it is not a JSON object. A selected section does not apply to a plane claim. A selected registration does not serve its section. The deletion policy is <code>Orphan</code>, and a selected registration does not list <code>Orphan</code>. The message names the value.</td>
 <td>Pick an allowed value, or change the <code>Environment</code>. For <code>Orphan</code>, set <code>spec.deletionPolicy: Delete</code>, or pick a registration that supports <code>Orphan</code>.</td>
 </tr>
 <tr>

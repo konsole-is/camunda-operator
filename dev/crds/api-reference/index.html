@@ -60,7 +60,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -462,6 +462,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -545,6 +557,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -16809,13 +16989,13 @@ use, for each preset kind.</p>
 </tr>
 <tr>
 <td><code>elasticsearchCluster</code> <em>string array</em></td>
-<td>ElasticsearchCluster are the names of the ElasticsearchClusterPresets<br />that the built-in Elasticsearch of a claim can use.</td>
+<td>ElasticsearchCluster are the names of the ElasticsearchClusterPresets<br />that the built-in Elasticsearch of a claim can use: the parameter<br />preset of the registration elasticsearch.</td>
 <td></td>
 <td>items:MinLength: 1 <br />Optional: {} <br /></td>
 </tr>
 <tr>
 <td><code>databaseServer</code> <em>string array</em></td>
-<td>DatabaseServer are the names of the DatabaseServerPresets that the<br />built-in PostgreSQL of a claim can use.</td>
+<td>DatabaseServer are the names of the DatabaseServerPresets that the<br />built-in PostgreSQL of a claim can use: the parameter preset of the<br />registrations database-server and management-database-server.</td>
 <td></td>
 <td>items:MinLength: 1 <br />Optional: {} <br /></td>
 </tr>
@@ -16886,7 +17066,7 @@ fleet.camunda.io/environment names.</p>
 </tr>
 <tr>
 <td><code>presets</code> <em><a href="#environmentpresets">EnvironmentPresets</a></em></td>
-<td>Presets lists, for each preset kind, the presets that a claim of the<br />environment can use. The claim controller checks a new claim, and a<br />preset change of an existing claim, against the current lists.</td>
+<td>Presets lists, for each preset kind, the presets that a claim of the<br />environment can use. The claim controller checks a new claim, and a<br />preset change of an existing claim, against the current lists. A list<br />that is empty or not set allows no preset of its kind. A preset that<br />an existing claim already uses stays allowed when a list drops it.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>

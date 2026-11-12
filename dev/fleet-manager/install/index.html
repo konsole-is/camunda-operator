@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -466,6 +466,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -662,6 +674,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -2611,7 +2791,7 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>port-forward<span class="w"> </span>service/camunda-operator-fleet-manager<span class="w"> </span><span class="m">3000</span>:3000
 </span></code></pre></div>
 <p>Then open <a href="http://localhost:3000">http://localhost:3000</a> in a browser.</p>
-<p>In this version, the Fleet page and the Setup page show only their title. This is expected, and the install works.</p>
+<p>The Fleet page lists the Camunda clusters of this Kubernetes cluster, as <a href="../fleet-view/">The fleet view</a> shows. The Setup page has a list of its pages at the side. In this version, two of them work: <strong>Environments</strong>, as <a href="../environments/">Environments</a> shows, and <strong>Settings</strong>, as <a href="../settings/#settings-page">Settings page</a> shows. The other items of the list show "This page could not be found." This is expected, and the install works.</p>
 <p>To set the cluster name, the Git repository, and the Prometheus address, see <a href="../settings/">Fleet manager settings</a>.</p>
 <h2 id="trust-a-private-ca">Trust a private CA<a class="headerlink" href="#trust-a-private-ca" title="Permanent link">&para;</a></h2>
 <p>If a private CA signs the certificate of your Git server or your Prometheus server, the fleet manager does not trust it by default. Give the fleet manager the CA bundle in a ConfigMap. The bundle is a PEM file, and it can hold more than one CA. Put the ConfigMap in the release namespace:</p>

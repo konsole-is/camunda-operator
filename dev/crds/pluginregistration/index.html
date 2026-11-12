@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -464,6 +464,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -547,6 +559,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -2816,6 +2996,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tbody>
 </table>
 <p>Without an <code>Environment</code>, a new cluster claim selects <code>elasticsearch</code> for its secondary storage, and a new management plane claim selects <code>management-database-server</code> for its databases. A claim selects the other options only when you pick them.</p>
+<p>In a namespace of an <code>Environment</code>, the <code>preset</code> of <code>elasticsearch</code> must be in <code>spec.presets.elasticsearchCluster</code>. The <code>preset</code> of <code>database-server</code> and of <code>management-database-server</code> must be in <code>spec.presets.databaseServer</code>. Otherwise the claim is refused with <code>NotAllowed</code>. See <a href="../environment/#policy">Environment</a>.</p>
 <p>Every input of a built-in registration is optional. Every built-in registration supports the deletion policies <code>Delete</code> and <code>Orphan</code>. The registrations of existing resources write nothing, so both policies keep everything in place.</p>
 <p>On <code>elasticsearch</code>, the input <code>backup-storage/objectStorageConfig</code> or <code>cloud-identity/serviceAccountAnnotations</code> fixes the ServiceAccount of the Elasticsearch pods to <code>&lt;claim&gt;-es-es</code>, which the cloud identity trusts. It then replaces the ServiceAccount settings of the preset. Without both inputs, the preset decides the ServiceAccount.</p>
 <p>The operator serves the requests of all six built-in registrations. See <a href="../pluginrequest/#built-in-requests">Built-in requests</a>.</p>

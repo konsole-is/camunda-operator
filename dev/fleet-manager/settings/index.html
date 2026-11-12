@@ -16,7 +16,7 @@
         <link rel="prev" href="../install/">
       
       
-        <link rel="next" href="../../guides/presets/">
+        <link rel="next" href="../change-a-cluster/">
       
       
         
@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -466,6 +466,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -745,6 +757,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#metrics-of-the-charts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics of the charts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#secret-values" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -770,6 +793,174 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2749,6 +2940,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#metrics-of-the-charts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics of the charts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#secret-values" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2871,7 +3073,7 @@
 <p>The credentials fields list the Secrets of the release namespace by name. A setting can name a Secret that does not exist. The field then keeps the name and marks it <code>(not found)</code>. It also shows <code>The Secret &lt;name&gt; does not exist in namespace &lt;namespace&gt;.</code> A save keeps that name until you pick another Secret or <strong>None</strong>. To correct it, create the Secret, as <a href="#git-credentials">Git credentials</a> and <a href="#prometheus-credentials">Prometheus credentials</a> show. If the page cannot list the Secrets, it shows <code>Could not list the Secrets of namespace &lt;namespace&gt;: &lt;message&gt;</code>. The fields then keep each name and do not mark it <code>(not found)</code>.</p>
 <p><strong>Test the connection</strong> connects to the Git repository with the saved settings. <strong>Test the query</strong> sends a query to Prometheus with the saved settings. Both buttons show the result, or the error and its cause. The tests use the saved settings, not the values in the fields. So while the page has a change that you did not save, both buttons are off. Save the change to turn the buttons on again.</p>
 <p><strong>Save</strong> writes only the settings that you changed. If someone changed the ConfigMap after you opened the page, the save writes nothing. It shows <code>The ConfigMap fleet-manager-settings changed since you opened it.</code> Select <strong>Reload</strong> to get the current settings, then make your change again.</p>
-<p>When <code>prometheus.url</code> is not set, the page shows <code>Charts do not show. Everything else works.</code> The pages then show no charts of metrics. Set <strong>Prometheus URL</strong> to show the charts.</p>
+<p>When <code>prometheus.url</code> is not set, the page shows <code>Charts do not show. Everything else works.</code> The <strong>Metrics</strong> tab of a component then shows no charts. Set <strong>Prometheus URL</strong> to show the charts. <a href="#metrics-of-the-charts">Metrics of the charts</a> lists the metrics that Prometheus must hold.</p>
 <p>Below the settings, the page shows if metrics-server serves the live CPU and memory of the pods. With <code>metrics-server found</code>, the pages show the live CPU and memory. With <code>metrics-server not found</code>, the pages hide them.</p>
 <p>The page shows the <code>kubectl port-forward</code> command that opens the fleet manager, as <a href="../install/#open-it">Open it</a> shows.</p>
 <p>The permissions table lists what the fleet manager can do in the release namespace. The page cannot change these permissions. The chart sets them.</p>
@@ -3084,6 +3286,62 @@
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">token</span><span class="o">=</span>&lt;token&gt;
 </span></code></pre></div>
 <p>Then set <code>prometheus.credentialsSecretRef</code> to <code>fleet-prometheus</code>. Without the setting, the fleet manager sends no credentials to Prometheus.</p>
+<h2 id="metrics-of-the-charts">Metrics of the charts<a class="headerlink" href="#metrics-of-the-charts" title="Permanent link">&para;</a></h2>
+<p>The <strong>Metrics</strong> tab of a component on <a href="../cluster-page/">the cluster page</a> shows the live CPU and memory of each pod. Below them, it shows charts over the last hour, 6 hours, or 24 hours. The live rows come from metrics-server. The charts come from Prometheus, and each chart reads one metric:</p>
+<table>
+<thead>
+<tr>
+<th>Chart</th>
+<th>Metric</th>
+<th>Where Prometheus gets it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td><code>container_cpu_usage_seconds_total</code></td>
+<td>The <a href="https://github.com/google/cadvisor/blob/master/docs/storage/prometheus.md">cAdvisor metrics</a> of the kubelet</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td><code>container_memory_working_set_bytes</code></td>
+<td>The <a href="https://github.com/google/cadvisor/blob/master/docs/storage/prometheus.md">cAdvisor metrics</a> of the kubelet</td>
+</tr>
+<tr>
+<td>Disk used</td>
+<td><code>kubelet_volume_stats_used_bytes</code></td>
+<td>The <a href="https://kubernetes.io/docs/reference/instrumentation/metrics/">kubelet metrics</a>, for each PersistentVolumeClaim of the pods</td>
+</tr>
+<tr>
+<td>Process instances activated</td>
+<td><code>zeebe_element_instance_events_total</code></td>
+<td>The brokers</td>
+</tr>
+<tr>
+<td>Records processed</td>
+<td><code>zeebe_stream_processor_records_total</code></td>
+<td>The brokers</td>
+</tr>
+<tr>
+<td>Records exported</td>
+<td><code>zeebe_exporter_events_total</code></td>
+<td>The brokers</td>
+</tr>
+<tr>
+<td>Requests dropped by backpressure</td>
+<td><code>zeebe_dropped_request_count_total</code></td>
+<td>The brokers</td>
+</tr>
+<tr>
+<td>Partition health</td>
+<td><code>zeebe_health</code></td>
+<td>The brokers</td>
+</tr>
+</tbody>
+</table>
+<p>Each chart has one line for each pod. The Disk used chart has one line for each PersistentVolumeClaim. A component whose pods have no PersistentVolumeClaim, such as the gateway, has no Disk used chart. Prometheus must keep the labels <code>namespace</code> and <code>pod</code> on each series, and <code>namespace</code> and <code>persistentvolumeclaim</code> on the disk series. The kubelet and cAdvisor metrics carry these labels when Prometheus scrapes the kubelet. A <code>ServiceMonitor</code> or a <code>PodMonitor</code> of the Prometheus Operator adds <code>namespace</code> and <code>pod</code> to the metrics of the brokers.</p>
+<p>Camunda documents the metrics of the brokers in <a href="https://docs.camunda.io/docs/self-managed/operational-guides/monitoring/metrics/#available-metrics">Camunda components metrics</a>. The fleet manager shows the five charts of the brokers for each Camunda 8.9 patch release. The 8.9 metrics page names these metrics. The version is the one that the cluster reports in <code>status.management.version</code>. For another version or a pre-release, the Metrics tab of the brokers shows only CPU, Memory, and Disk used. A line names the version: <code>The app has no Camunda charts for version &lt;version&gt; yet.</code> For a cluster without a reported version, the tab shows the same three charts. Its line is <code>The cluster reports no Camunda version yet, so the Camunda charts do not show.</code></p>
+<p>A chart without data for the range does not show. When no chart has data, the tab shows <code>No metric has data for this range.</code> Without <code>prometheus.url</code>, the tab shows <code>Prometheus is not configured, so the charts do not show.</code> When Prometheus does not answer, the tab shows <code>Prometheus did not answer. The charts show again when it answers.</code></p>
 <h2 id="secret-values">Secret values<a class="headerlink" href="#secret-values" title="Permanent link">&para;</a></h2>
 <p>The fleet manager shows the names of Secrets and the names of their keys. It never shows the value of a key, and no page and no response of the fleet manager holds one.</p>
 <h2 id="secrets-in-git-mode">Secrets in Git mode<a class="headerlink" href="#secrets-in-git-mode" title="Permanent link">&para;</a></h2>
@@ -3160,13 +3418,13 @@
         
         
           
-          <a href="../../guides/presets/" class="md-footer__link md-footer__link--next" aria-label="Next: Presets">
+          <a href="../change-a-cluster/" class="md-footer__link md-footer__link--next" aria-label="Next: Change a cluster">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Presets
+                Change a cluster
               </div>
             </div>
             <div class="md-footer__button md-icon">

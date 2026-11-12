@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://konsole-is.github.io/camunda-operator/dev/guides/presets/">
       
       
-        <link rel="prev" href="../../fleet-manager/settings/">
+        <link rel="prev" href="../../fleet-manager/backups/">
       
       
         <link rel="next" href="../secondary-storage/">
@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -464,6 +464,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -547,6 +559,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -2811,7 +2991,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span></code></pre></div>
 <p>Most fields merge like this, value by value. A few blocks replace as a whole: <code>scheduling</code>, <code>auth.admin</code>, <code>auth.basic</code>, and <code>backup.dump.scratchVolume</code>. A cluster that sets <code>auth.admin</code> names every administrator again. The <a href="../../crds/camundaclusterpreset/#merge-rules">merge rules</a> hold the full table.</p>
 <h2 id="change-a-fleet">Change a fleet<a class="headerlink" href="#change-a-fleet" title="Permanent link">&para;</a></h2>
-<p>When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change under <code>auth.basic</code> rolls no pods. A larger <code>storageSize</code> grows the volumes of every cluster in place. A lower <code>storageSize</code> is ignored for a cluster that applied a larger size. That cluster keeps its volumes and records the event <code>StorageShrinkIgnored</code>. A new <code>storageClassName</code> reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the event <code>StorageClassChangeIgnored</code>. Volumes that <code>whenDeleted: Retain</code> kept from a deleted cluster of the same name keep their class.</p>
+<p>When you edit a preset, every cluster that references it takes the new baseline and rolls its pods. A change of <code>auth.basic.adminEmail</code> rolls no pods. A new <code>auth.basic.passwordRotation</code> rotates the admin password of each cluster and rolls only the connectors pods. A larger <code>storageSize</code> grows the volumes of every cluster in place. A lower <code>storageSize</code> is ignored for a cluster that applied a larger size. That cluster keeps its volumes and records the event <code>StorageShrinkIgnored</code>. A new <code>storageClassName</code> reaches only the clusters that do not have a broker StatefulSet yet. A cluster that inherits the class and has a broker StatefulSet, also a suspended one, keeps its class and records the event <code>StorageClassChangeIgnored</code>. Volumes that <code>whenDeleted: Retain</code> kept from a deleted cluster of the same name keep their class.</p>
 <p>You can roll versions in two ways. Name the release for the way you pick:</p>
 <ul>
 <li>To move every resource at one time, edit the release in place. Name it for the minor line, for example <code>camunda-8-9</code>. Every resource that references it rolls its pods, whatever preset sizes it.</li>
@@ -2868,7 +3048,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../../fleet-manager/settings/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Fleet manager settings">
+          <a href="../../fleet-manager/backups/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Back up and restore a cluster">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -2878,7 +3058,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
                 Previous
               </span>
               <div class="md-ellipsis">
-                Fleet manager settings
+                Back up and restore a cluster
               </div>
             </div>
           </a>

@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -464,6 +464,18 @@
       
         
       
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
     
     
     
@@ -547,6 +559,174 @@
     
   
     Fleet manager settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/change-a-cluster/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Change a cluster
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/fleet-view/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The fleet view
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/cluster-page/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    The cluster page
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/management-planes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management planes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../fleet-manager/backups/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Back up and restore a cluster
   
 
     
@@ -2738,7 +2918,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <p>If the management API or Elasticsearch is unreachable during a step, the backup retries for 10 minutes. After that, the step fails and the backup resumes exporting. The resume of exporting is retried for 30 minutes. After that, the backup ends as <code>Failed</code> with reason <code>ResumeFailed</code>, and exporting stays paused. If the cluster is suspended during the run, the backup waits in its step.</p>
 <h2 id="changes">Changes<a class="headerlink" href="#changes" title="Permanent link">&para;</a></h2>
 <p>A backup on a cluster that is still rolling out waits in <code>Pending</code> with reason <code>Progressing</code> before it starts. It also waits while Zeebe runs another Elasticsearch endpoint or snapshot repository than the <code>SecondaryStorageConfig</code> of the cluster declares. The same applies to another bucket than the <code>ObjectStorageConfig</code> declares, and to another Camunda version than <code>status.management.version</code> of the cluster. The backup starts when Zeebe runs what the contracts and the cluster declare.</p>
-<p>Do not change the storage or the backup bucket of the cluster while a backup runs. The backup fails, and the message names the recorded and the current value.</p>
+<p>Do not change the storage or the backup bucket of the cluster before the backup of the Zeebe partitions completes. The backup fails, and the message names the recorded and the current value. After that part completes, a change of the storage or the bucket does not affect the backup.</p>
 <p>Do not change the configuration of Zeebe after the backup started. If Zeebe rolls to another configuration before the operator sees the backup of the Zeebe partitions complete, the step fails at once. The backup then ends as <code>Failed</code>, even if Camunda later reports that part as complete. The message names the recorded and the current config hash.</p>
 <p>Do not change the Camunda version of the cluster after the backup started. A version change can keep the config hash of Zeebe. If Zeebe moves to another version before the operator sees the backup of the Zeebe partitions complete, the step fails at once. The message names the version in <code>status.version</code> and the current version. A restore needs the one version that took every part of the backup.</p>
 <p>If you delete the cluster during the run, the backup ends as <code>Failed</code>. This is also the case when you create a new cluster under the same name. The backup does not touch the new cluster.</p>
