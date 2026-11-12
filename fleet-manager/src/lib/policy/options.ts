@@ -80,6 +80,8 @@ export function claimEditable(
     return {
       ...base,
       claimEditable: true,
+      // The values of the choices stay with the claim controller, and the
+      // cards pick choices by name.
       ...("value" in policy && {
         value: namesOf(policy.value, policy.allowed ?? []),
       }),
@@ -305,9 +307,12 @@ function conditionOf(registration: PluginRegistration, type: string) {
   return registration.status?.conditions?.find((c) => c.type === type);
 }
 
-// The values of the choices stay with the claim controller, and the
-// cards pick choices by name.
-function namesOf(
+/**
+ * namesOf returns value as the names of choices: the name of the choice
+ * whose value it is, else a list of the names of its items when each item
+ * is the value of a choice, else value itself.
+ */
+export function namesOf(
   value: unknown,
   choices: readonly { name: string; value: unknown }[],
 ): unknown {

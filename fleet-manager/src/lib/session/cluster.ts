@@ -14,6 +14,7 @@ import type { Resource } from "@/lib/k8s/kinds";
 import type { FieldPath } from "@/lib/merge";
 import {
   checkAllowed,
+  checkDeletionPolicy,
   checkSlotConflicts,
   equalJSON,
   releaseMove,
@@ -54,12 +55,12 @@ type Claim = Resource<"CamundaClusterClaim">;
  * s, before review: each refused field in spec.cluster, the first value that
  * the resolved policy does not allow, the first field that a selected slot
  * fills, each section parameter that fails the schema of its registration,
- * and a release move that skips a minor, downgrades without
- * allowVersionDowngrade set to its version, or names no release. It checks
- * a preset and a release that s sets against the Environment, also without
- * a resolved policy. After a reset of the release, the move goes to the
- * default release of the Environment. Types and ranges of the CRD are left
- * to the dry run.
+ * a refused deletion policy, and a release move that skips a minor,
+ * downgrades without allowVersionDowngrade set to its version, or names no
+ * release. It checks a preset and a release that s sets against the
+ * Environment, also without a resolved policy. After a reset of the
+ * release, the move goes to the default release of the Environment. Types
+ * and ranges of the CRD are left to the dry run.
  */
 export function validateClusterClaim(
   s: Session<Claim>,
@@ -107,6 +108,17 @@ export function validateClusterClaim(
   );
 
   errors.push(...changedParameterErrors(s.claim, after, ctx, policy));
+
+  // DeletionPolicy of pkg/claimpolicy: the claim, else the resolved policy.
+  errors.push(
+    ...messagesOf(
+      checkDeletionPolicy(
+        spec.deletionPolicy || policy?.deletionPolicy || "Delete",
+        selections,
+        generated<PluginRegistration[]>(ctx.registrations),
+      ),
+    ),
+  );
 
   // A claim without a release runs the default release of the Environment.
   const fallback = ctx.environment?.spec.releases?.default;

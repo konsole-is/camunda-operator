@@ -22,6 +22,7 @@ export type SettingEditor =
   | { kind: "number"; integer: boolean; minimum?: number; maximum?: number }
   | { kind: "toggle" }
   | { kind: "select"; options: readonly string[] }
+  | { kind: "choices"; options: readonly string[] }
   | { kind: "resources" }
   | { kind: "storageSize" }
   | { kind: "env" }
@@ -118,8 +119,8 @@ export function fieldSchemaFromOpenAPI(
  * claimValueOf returns the claim value of an editor input, or undefined for
  * an empty input, which resets the field: an empty string, a number that is
  * not finite, an empty list or map, resources without a request or a limit,
- * and no Secret reference. A toggle keeps false. Resources drop an empty
- * requests or limits.
+ * and no Secret reference. A toggle keeps false, and a list of choices keeps
+ * an empty list. Resources drop an empty requests or limits.
  */
 export function claimValueOf(editor: SettingEditor, value: unknown): unknown {
   switch (editor.kind) {
@@ -135,6 +136,8 @@ export function claimValueOf(editor: SettingEditor, value: unknown): unknown {
       return value;
     case "resources":
       return resourcesOf(value);
+    case "choices":
+      return value;
     default:
       return isEmpty(value) ? undefined : value;
   }
@@ -159,6 +162,7 @@ export function editorValueOf(
       return false;
     case "env":
     case "tolerations":
+    case "choices":
       return [];
     case "keyValue":
     case "resources":
@@ -328,8 +332,10 @@ export function settingChange(
  * spec.parameters of its registration. A locked parameter is read only. An
  * object parameter with properties gives one setting for each property,
  * and a change of one writes the whole parameter. Any other parameter is
- * one setting. choices make a select of a string parameter. A parameter
- * resets to the environment.
+ * one setting. A parameter in choices picks the names of its choices,
+ * whatever its schema, because the claim stores the names: one name, or a
+ * list of names for a list parameter. A parameter resets to the
+ * environment.
  */
 export function selectionSettingsOf(
   fields: readonly ClusterField[],
@@ -349,9 +355,18 @@ export function selectionSettingsOf(
     };
     if (field.lock || !field.claimSteps)
       return [{ ...base, ...(field.lock && { lock: field.lock }) }];
+    const options = Object.hasOwn(choices ?? {}, name)
+      ? choices?.[name]
+      : undefined;
     const property = Object.hasOwn(properties, name)
       ? properties[name]
       : undefined;
+    if (options) {
+      const own = fieldSchemaFromOpenAPI(property);
+      const list = own ? own.type === "array" : Array.isArray(field.value);
+      const editor = { kind: list ? "choices" : "select", options } as const;
+      return [{ ...base, editor, steps: field.claimSteps }];
+    }
     const inner = propertiesOf(property);
     if (Object.keys(inner).length > 0)
       return Object.entries(inner).map(([part, partSchema]) => {
@@ -369,14 +384,7 @@ export function selectionSettingsOf(
           }),
         };
       });
-    const own = fieldSchemaFromOpenAPI(property);
-    const options = Object.hasOwn(choices ?? {}, name)
-      ? choices?.[name]
-      : undefined;
-    const editor =
-      options && (own === undefined || own.type === "string")
-        ? ({ kind: "select", options } as const)
-        : editorOf(name, own);
+    const editor = editorOf(name, fieldSchemaFromOpenAPI(property));
     return [{ ...base, ...(editor && { editor, steps: field.claimSteps }) }];
   });
 }

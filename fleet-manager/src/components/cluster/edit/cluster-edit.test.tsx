@@ -54,6 +54,10 @@ const partitions: Step[] = [
 ];
 const releaseRef: Step[] = [{ field: "spec" }, { field: "releaseRef" }];
 const presetRef: Step[] = [{ field: "spec" }, { field: "presetRef" }];
+const allowDowngrade: Step[] = [
+  { field: "spec" },
+  { field: "allowVersionDowngrade" },
+];
 const schedule: Step[] = [
   { field: "spec" },
   { field: "attachments" },
@@ -65,8 +69,10 @@ const PRECONDITION = "CamundaClusterClaim/team-a/orders";
 function Probe() {
   const edit = useClusterEdit();
   const [refusal, setRefusal] = useState<string>();
+  const [opened, setOpened] = useState<boolean>();
   return (
     <div>
+      <p>Opened {opened === undefined ? "unknown" : opened ? "yes" : "no"}</p>
       <p>Session {edit.session ? "open" : "none"}</p>
       <p>Pending {edit.pending}</p>
       <p>Refusal {refusal ?? "none"}</p>
@@ -94,6 +100,23 @@ function Probe() {
         Missing release
       </button>
       <button onClick={() => edit.set(presetRef, "large")}>Large preset</button>
+      <button
+        onClick={() => edit.invalid(replicas, "Replicas: Enter 1 or more")}
+      >
+        Show replicas error
+      </button>
+      <button onClick={() => edit.invalid(replicas, undefined)}>
+        Clear replicas error
+      </button>
+      <button onClick={() => setOpened(edit.review())}>Try review</button>
+      <button
+        onClick={() => {
+          edit.set(releaseRef, "camunda-8-9-0");
+          edit.set(allowDowngrade, "8.9.0");
+        }}
+      >
+        Downgrade
+      </button>
       <button
         onClick={() => {
           edit.set(suspend, true);
@@ -231,6 +254,14 @@ async function confirm(label: string) {
   fireEvent.click(button);
 }
 
+// removedLines returns the removed lines of the claim diff of the review.
+function removedLines() {
+  const figure = within(dialog()!).getByRole("figure", {
+    name: "Changes to the claim",
+  });
+  return [...figure.querySelectorAll("del")].map((d) => d.textContent?.trim());
+}
+
 function openReview() {
   fireEvent.click(within(bar()!).getByRole("button", { name: "Review" }));
 }
@@ -326,6 +357,48 @@ describe("ClusterEditProvider", () => {
     expect(text("Pending 2")).toBeTruthy();
     update(slotContext({ claim: claim("42", { suspend: true }) }));
     expect(text("Pending 1")).toBeTruthy();
+  });
+
+  it("an error that an editor shows blocks the review and names the field until the editor clears it", () => {
+    page();
+    click("Scale");
+    click("Show replicas error");
+    const review = within(bar()!).getByRole<HTMLButtonElement>("button", {
+      name: "Review",
+    });
+    expect(review.disabled).toBe(true);
+    expect(within(bar()!).getByText("Replicas: Enter 1 or more")).toBeTruthy();
+    click("Try review");
+    expect(text("Opened no")).toBeTruthy();
+    expect(dialog()).toBeNull();
+    click("Clear replicas error");
+    expect(review.disabled).toBe(false);
+    expect(within(bar()!).queryByText("Replicas: Enter 1 or more")).toBeNull();
+    click("Try review");
+    expect(text("Opened yes")).toBeTruthy();
+    expect(dialog()).toBeTruthy();
+  });
+
+  it("review says that it did not open the review without a pending change or with a validation error", () => {
+    page();
+    click("Try review");
+    expect(text("Opened no")).toBeTruthy();
+    click("Missing release");
+    click("Try review");
+    expect(text("Opened no")).toBeTruthy();
+    expect(dialog()).toBeNull();
+  });
+
+  it("closing the review gives the focus back to Review of the change bar", async () => {
+    page();
+    click("Suspend");
+    openReview();
+    expect(dialog()).toBeTruthy();
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(dialog()).toBeNull());
+    expect(document.activeElement).toBe(
+      within(bar()!).getByRole("button", { name: "Review" }),
+    );
   });
 
   it("a validation error blocks the review and shows on the bar", () => {
@@ -1055,6 +1128,95 @@ describe("ClusterEditProvider", () => {
       screen.getByRole("list", { name: "Field errors", hidden: true })
         .textContent,
     ).toContain("spec.cluster.zeebe.replicas: must be 1 or more");
+  });
+
+  it("a downgrade asks for the downgrade confirm", async () => {
+    page();
+    click("Downgrade");
+    openReview();
+    expect(
+      within(dialog()!).getByRole("note", { name: "Caution" }).textContent,
+    ).toContain("This change moves the cluster from 8.9.1 to 8.9.0.");
+    await waitFor(() =>
+      expect(
+        within(dialog()!)
+          .getByRole("button", { name: "Downgrade" })
+          .getAttribute("data-variant"),
+      ).toBe("destructive"),
+    );
+    cleanup();
+    fakeWriter.reset("git");
+    page(slotContext({ writeMode: "git" }));
+    click("Downgrade");
+    openReview();
+    expect(
+      within(dialog()!).getByRole("button", { name: "Push downgrade" }),
+    ).toBeTruthy();
+  });
+
+  it("the next save adds the reset of allowVersionDowngrade as a diff line and writes it", async () => {
+    page(
+      slotContext({ claim: claim("41", { allowVersionDowngrade: "8.9.1" }) }),
+    );
+    click("Suspend");
+    openReview();
+    expect(removedLines()).toEqual(["allowVersionDowngrade: 8.9.1"]);
+    await confirm("Save");
+    await waitFor(() => expect(fakeWriter.applied).toHaveLength(1));
+    const spec = (
+      fakeWriter.applied[0].apply[0] as Resource<"CamundaClusterClaim">
+    ).spec;
+    expect(spec.allowVersionDowngrade).toBeUndefined();
+    expect(spec.suspend).toBe(true);
+  });
+
+  it("keeps allowVersionDowngrade while the cluster runs another version", () => {
+    page(
+      slotContext({ claim: claim("41", { allowVersionDowngrade: "8.9.0" }) }),
+    );
+    click("Suspend");
+    openReview();
+    expect(removedLines()).toEqual([]);
+  });
+
+  it("opening the page writes nothing when allowVersionDowngrade can go", async () => {
+    page(
+      slotContext({ claim: claim("41", { allowVersionDowngrade: "8.9.1" }) }),
+    );
+    await act(async () => {});
+    expect(text("Pending 0")).toBeTruthy();
+    expect(bar()).toBeNull();
+    expect(fakeWriter.previewed).toEqual([]);
+    expect(fakeWriter.applied).toEqual([]);
+  });
+
+  it("closing the review gives the focus to Discard while Review is disabled", async () => {
+    fakeWriter.results = [
+      {
+        ok: false,
+        errors: [
+          {
+            code: "Invalid",
+            message: "must be 1 or more",
+            path: "spec.cluster.zeebe.replicas",
+          },
+        ],
+      },
+    ];
+    page();
+    click("Scale");
+    openReview();
+    await confirm("Save");
+    await waitFor(() =>
+      expect(within(dialog()!).getByRole("alert").textContent).toContain(
+        "must be 1 or more",
+      ),
+    );
+    fireEvent.click(within(dialog()!).getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(dialog()).toBeNull());
+    expect(document.activeElement).toBe(
+      within(bar()!).getByRole("button", { name: "Discard" }),
+    );
   });
 
   it("rendering the page previews and writes nothing", async () => {

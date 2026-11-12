@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleAlert } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { Button } from "@/components/ui/button";
 import type { FieldError } from "@/lib/session";
 
@@ -9,18 +9,21 @@ import type { FieldError } from "@/lib/session";
  * ChangeBar says how many changes wait for review and offers Discard and
  * Review. It renders nothing while count is 0. Review is disabled while
  * blocked is set or errors is not empty. It shows blocked and the errors
- * without a path; an error with a path shows next to its field.
+ * without a path; an error with a path shows next to its field. reviewRef
+ * gets the Review button.
  */
 export function ChangeBar({
   count,
   blocked,
   errors = [],
+  reviewRef,
   onDiscard,
   onReview,
 }: {
   count: number;
   blocked?: string;
   errors?: readonly FieldError[];
+  reviewRef?: Ref<HTMLButtonElement>;
   onDiscard?: () => void;
   onReview?: () => void;
 }): ReactNode {
@@ -64,6 +67,7 @@ export function ChangeBar({
           Discard
         </Button>
         <Button
+          ref={reviewRef}
           disabled={Boolean(blocked) || errors.length > 0}
           onClick={() => onReview?.()}
         >

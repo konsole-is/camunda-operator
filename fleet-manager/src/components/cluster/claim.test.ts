@@ -218,6 +218,31 @@ describe("claimView", () => {
     });
   });
 
+  it("reads whether the claim suspends the cluster", () => {
+    expect(view(claimOf({ suspend: true })).suspend).toBe(true);
+    expect(view(claimOf()).suspend).toBe(false);
+  });
+
+  it("gives each section the id of its selection, with the registration in a section of many", () => {
+    const many = {
+      ...section("access", "Access"),
+      spec: { label: "Access", selection: "Many", appliesTo: [] },
+    } as unknown as Resource<"PluginSection">;
+    const v = view(
+      claimOf({
+        plugins: [
+          { section: "access", registration: "gateway-access" },
+          { section: "storage", registration: "rustfs" },
+        ],
+      }),
+      { sections: [many, section("storage", "Storage")] },
+    );
+    expect(v.sections.map((s) => s.id)).toEqual([
+      "section:access/gateway-access",
+      "section:storage",
+    ]);
+  });
+
   it("reads the attachments of the claim", () => {
     const v = view(
       claimOf({
