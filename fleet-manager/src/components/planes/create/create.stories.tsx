@@ -585,6 +585,24 @@ export const planeCreateStories: Story[] = [
   },
   {
     component: "PlaneCreateFlow",
+    name: "Storage and access with a default that keeps the resources",
+    render: () => (
+      <PlaneCreateStory
+        data={{
+          ...data,
+          environments: data.environments.map((e) =>
+            e.metadata.name === "production"
+              ? { ...e, spec: { ...e.spec, deletionPolicy: "Orphan" as const } }
+              : e,
+          ),
+        }}
+        step="storage"
+        initial={{ ...components, storage: reviewStorage }}
+      />
+    ),
+  },
+  {
+    component: "PlaneCreateFlow",
     name: "Review in direct mode",
     render: () => (
       <PlaneCreateStory

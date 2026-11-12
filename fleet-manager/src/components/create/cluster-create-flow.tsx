@@ -30,7 +30,7 @@ import {
 } from "@/lib/clusters/draft";
 import {
   type StorageData,
-  deletionChoice,
+  clusterDeletion,
   draftAccessPatterns,
   storageErrors,
   storageViews,
@@ -174,9 +174,10 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
         ? renderHosts(patterns, name, namespace)
         : [];
     const conflicts = hostConflicts(hosts, takenHosts(accessRequests));
-    const deletion = deletionChoice(draft, data);
+    const deletion = clusterDeletion(draft, data);
     return {
       environment,
+      data,
       views,
       presets,
       takenNames,
@@ -201,10 +202,10 @@ export function ClusterCreateFlow({ initial }: { initial: ClusterCreateData }) {
       ];
     },
     storage: (draft) => {
-      const { views, conflicts } = derive(draft);
+      const { data, conflicts } = derive(draft);
       return [
         ...storageFailures,
-        ...storageErrors(draft, views, cardErrors, conflicts),
+        ...storageErrors(draft, data, cardErrors, conflicts),
       ];
     },
   };

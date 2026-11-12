@@ -11,7 +11,7 @@ import {
   pickerEnvironment,
   syncedNamespace,
 } from "./draft";
-import type { DeletionChoice } from "./storage";
+import type { DeletionChoice } from "@/lib/policy";
 
 function environment(
   name: string,

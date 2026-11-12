@@ -248,22 +248,46 @@ function checkParameters(
 
     const known = (policy.allowed ?? []).map((c) => c.name);
     if (known.length === 0) continue;
-    const name = nameOf(value);
-    const names = name !== undefined ? [name] : listOfNames(value);
-    if (!names) {
+    const refused = refusedName(value, known);
+    if (refused?.kind === "notName") {
       return notAllowed(
         `parameter "${key}" of registration "${selection.registration}" takes a name of its choices or a list of names`,
       );
     }
-    const unknown = names.find((n) => !known.includes(n));
-    if (unknown !== undefined) {
+    if (refused) {
       return notAllowed(
-        `parameter "${key}" of registration "${selection.registration}" has the name "${unknown}", which is not one of ${known.join(", ")}`,
+        `parameter "${key}" of registration "${selection.registration}" has the name "${refused.name}", which is not one of ${known.join(", ")}`,
       );
     }
   }
 
   return undefined;
+}
+
+/**
+ * NameRefusal is why a parameter with choices refuses a value: the value is
+ * neither a name nor a list of names, or it holds a name that is not one of
+ * the choices.
+ */
+export type NameRefusal =
+  { kind: "notName" } | { kind: "unknownName"; name: string };
+
+/**
+ * refusedName returns why known, the names of the choices, refuses value, by
+ * checkNames of pkg/claimpolicy, or undefined when it passes. An empty known
+ * refuses every value.
+ */
+export function refusedName(
+  value: unknown,
+  known: readonly string[],
+): NameRefusal | undefined {
+  const name = nameOf(value);
+  const names = name !== undefined ? [name] : listOfNames(value);
+  if (!names) return { kind: "notName" };
+  const unknown = names.find((n) => !known.includes(n));
+  return unknown === undefined
+    ? undefined
+    : { kind: "unknownName", name: unknown };
 }
 
 function notAllowed(message: string): { refusal: Refusal } {
