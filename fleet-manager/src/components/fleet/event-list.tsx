@@ -3,16 +3,18 @@ import { cn } from "@/lib/utils";
 import { age } from "./age";
 
 /**
- * EventList lists the events.k8s.io/v1 Events of an object, newest first,
- * with the reason, the note, how many times it happened, and its age. A
- * Warning event is marked. An empty list says "No events".
+ * EventList lists the given events.k8s.io/v1 Events, newest first, with
+ * their age. With showObject, an event names its regarding object. An
+ * empty list says "No events".
  */
 export function EventList({
   events,
   now,
+  showObject = false,
 }: {
   events: Resource<"Event">[];
   now: string;
+  showObject?: boolean;
 }) {
   if (events.length === 0)
     return <p className="text-sm text-muted">No events</p>;
@@ -55,6 +57,11 @@ export function EventList({
               )}
             </span>
             <span className="min-w-0 flex-1 text-text-2">
+              {showObject && event.regarding && (
+                <span className="mr-2 font-mono text-xs break-all text-muted">
+                  {`${event.regarding.kind}/${event.regarding.name}`}
+                </span>
+              )}
               {event.note}
               {count && count > 1 ? (
                 <span className="text-muted">{` (${count} times)`}</span>

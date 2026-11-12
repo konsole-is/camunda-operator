@@ -43,7 +43,9 @@ type EnvironmentSpec struct {
 	PlatformConfigRef string `json:"platformConfigRef,omitempty"`
 	// Presets lists, for each preset kind, the presets that a claim of the
 	// environment can use. The claim controller checks a new claim, and a
-	// preset change of an existing claim, against the current lists.
+	// preset change of an existing claim, against the current lists. A list
+	// that is empty or not set allows no preset of its kind. A preset that
+	// an existing claim already uses stays allowed when a list drops it.
 	// +optional
 	Presets EnvironmentPresets `json:"presets,omitzero"`
 	// Releases lists the CamundaReleases that a claim of the environment can
@@ -91,13 +93,15 @@ type EnvironmentPresets struct {
 	// +optional
 	CamundaCluster []string `json:"camundaCluster,omitempty"`
 	// ElasticsearchCluster are the names of the ElasticsearchClusterPresets
-	// that the built-in Elasticsearch of a claim can use.
+	// that the built-in Elasticsearch of a claim can use: the parameter
+	// preset of the registration elasticsearch.
 	// +listType=set
 	// +kubebuilder:validation:items:MinLength=1
 	// +optional
 	ElasticsearchCluster []string `json:"elasticsearchCluster,omitempty"`
 	// DatabaseServer are the names of the DatabaseServerPresets that the
-	// built-in PostgreSQL of a claim can use.
+	// built-in PostgreSQL of a claim can use: the parameter preset of the
+	// registrations database-server and management-database-server.
 	// +listType=set
 	// +kubebuilder:validation:items:MinLength=1
 	// +optional

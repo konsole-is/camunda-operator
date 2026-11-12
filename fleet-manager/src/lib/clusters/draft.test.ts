@@ -5,10 +5,13 @@ import {
   type BasicsContext,
   type ClusterDraft,
   basicsErrors,
+  clusterClaimOf,
+  draftSelections,
   offeredPresets,
   pickerEnvironment,
   syncedNamespace,
 } from "./draft";
+import type { DeletionChoice } from "@/lib/policy";
 
 function environment(
   name: string,
@@ -369,5 +372,214 @@ describe("syncedNamespace", () => {
   it("returns an existing namespace as it is", () => {
     const choice = { kind: "existing" as const, name: "team-a" };
     expect(syncedNamespace(choice, creating)).toBe(choice);
+  });
+});
+
+function draftWith(
+  spec: ClusterDraft["claim"]["spec"],
+  storage?: ClusterDraft["storage"],
+): ClusterDraft {
+  return {
+    environment: "prod",
+    namespace: { kind: "existing", name: "team-a" },
+    claim: { metadata: { name: "orders" }, spec },
+    ...(storage && { storage }),
+  };
+}
+
+describe("draftSelections", () => {
+  it("gives the selections section after section, in the order the step reported them", () => {
+    expect(
+      draftSelections(
+        draftWith(
+          {},
+          {
+            access: [{ section: "access", registration: "gateway" }],
+            "volume-encryption": [],
+            "connectors-permissions": [
+              { section: "connectors-permissions", registration: "a" },
+              { section: "connectors-permissions", registration: "b" },
+            ],
+          },
+        ),
+      ),
+    ).toEqual([
+      { section: "access", registration: "gateway" },
+      { section: "connectors-permissions", registration: "a" },
+      { section: "connectors-permissions", registration: "b" },
+    ]);
+  });
+
+  it("gives no selections before step 2 reported any", () => {
+    expect(draftSelections(draftWith({}))).toEqual([]);
+  });
+});
+
+describe("clusterClaimOf", () => {
+  const deleting: DeletionChoice = {
+    defaultPolicy: "Delete",
+    keepAllowed: true,
+    alwaysDeleted: [],
+    policy: "Delete",
+  };
+  const env = environment("prod", {
+    releases: { allowed: ["r1", "r2"], default: "r1" },
+    platformConfigRef: "pc",
+  });
+
+  it("writes the default release when the draft picks none", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, deleting).spec
+        .releaseRef,
+    ).toBe("r1");
+  });
+
+  it("writes the picked release also when it is the default", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", releaseRef: "r1" }),
+        env,
+        deleting,
+      ).spec.releaseRef,
+    ).toBe("r1");
+  });
+
+  it("writes the picked release that is not the default", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", releaseRef: "r2" }),
+        env,
+        deleting,
+      ).spec.releaseRef,
+    ).toBe("r2");
+  });
+
+  it("writes no platform config when the pick is the environment default", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", platformConfigRef: "pc" }),
+        env,
+        deleting,
+      ).spec,
+    ).not.toHaveProperty("platformConfigRef");
+  });
+
+  it("writes no platform config when the draft picks none", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, deleting).spec,
+    ).not.toHaveProperty("platformConfigRef");
+  });
+
+  it("writes a platform config that differs from the environment default", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", platformConfigRef: "other" }),
+        env,
+        deleting,
+      ).spec.platformConfigRef,
+    ).toBe("other");
+  });
+
+  it("writes no release without an Environment and without a pick", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), undefined, deleting)
+        .spec,
+    ).not.toHaveProperty("releaseRef");
+  });
+
+  it("writes the step 2 selections with their names, never a value", () => {
+    const claim = clusterClaimOf(
+      draftWith(
+        { presetRef: "small" },
+        {
+          "connectors-permissions": [
+            {
+              section: "connectors-permissions",
+              registration: "aws-connectors-role",
+              parameters: { extraPolicyArns: ["sqs"] },
+            },
+          ],
+        },
+      ),
+      env,
+      deleting,
+    );
+
+    expect(claim.spec.plugins).toEqual([
+      {
+        section: "connectors-permissions",
+        registration: "aws-connectors-role",
+        parameters: { extraPolicyArns: ["sqs"] },
+      },
+    ]);
+    expect(JSON.stringify(claim)).not.toContain("arn:");
+  });
+
+  it("leaves plugins out when no section has a selection", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small" }, { access: [] }),
+        env,
+        deleting,
+      ).spec,
+    ).not.toHaveProperty("plugins");
+  });
+
+  it("copies the cluster and the attachments that the draft sets", () => {
+    const spec = clusterClaimOf(
+      draftWith({
+        presetRef: "small",
+        cluster: { zeebe: { replicas: 3 } },
+        attachments: { optimize: {} },
+      } as ClusterDraft["claim"]["spec"]),
+      env,
+      deleting,
+    ).spec;
+
+    expect(spec.cluster).toEqual({ zeebe: { replicas: 3 } });
+    expect(spec.attachments).toEqual({ optimize: {} });
+  });
+
+  it("writes the deletion policy of the choice when it differs from the default", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, {
+        ...deleting,
+        defaultPolicy: "Orphan",
+        keepAllowed: false,
+      }).spec.deletionPolicy,
+    ).toBe("Delete");
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, {
+        ...deleting,
+        policy: "Orphan",
+      }).spec.deletionPolicy,
+    ).toBe("Orphan");
+  });
+
+  it("writes no deletion policy when the policy of the choice is the default", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, deleting).spec,
+    ).not.toHaveProperty("deletionPolicy");
+  });
+
+  it("writes the policy of the choice, not a pick of the draft that the choice refuses", () => {
+    expect(
+      clusterClaimOf(
+        draftWith({ presetRef: "small", deletionPolicy: "Orphan" }),
+        env,
+        { ...deleting, keepAllowed: false },
+      ).spec,
+    ).not.toHaveProperty("deletionPolicy");
+  });
+
+  it("names the claim and its namespace", () => {
+    expect(
+      clusterClaimOf(draftWith({ presetRef: "small" }), env, deleting),
+    ).toEqual({
+      apiVersion: "fleet.camunda.io/v1alpha1",
+      kind: "CamundaClusterClaim",
+      metadata: { name: "orders", namespace: "team-a" },
+      spec: { presetRef: "small", releaseRef: "r1" },
+    });
   });
 });

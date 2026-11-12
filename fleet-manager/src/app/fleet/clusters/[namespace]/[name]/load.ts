@@ -4,8 +4,8 @@ import { clusterOptimize } from "@/components/cluster/optimize";
 import { clusterFieldsInputOf } from "@/components/cluster/settings";
 import { fieldDocsOf } from "@/lib/fielddocs";
 import { clusterFields } from "@/lib/fields";
-import type { KindName, Resource } from "@/lib/k8s/kinds";
-import { get, list, type ListOptions } from "@/lib/k8s/read";
+import { listOrEmpty } from "@/lib/k8s/list-or-empty";
+import { get } from "@/lib/k8s/read";
 import {
   ACCESS_SECTION,
   CLAIM_LABEL,
@@ -29,6 +29,7 @@ export async function loadClusterPage(
 
   const inNamespace = { namespace };
   const podSelector = `${CLUSTER_LABEL}=${ownerName(name)}`;
+  const claimName = cluster.metadata?.labels?.[CLAIM_LABEL];
   const [
     namespaceObject,
     environments,
@@ -37,6 +38,7 @@ export async function loadClusterPage(
     releases,
     storage,
     accessRequests,
+    requests,
     pods,
     backupsES,
     backupsRDBMS,
@@ -52,6 +54,8 @@ export async function loadClusterPage(
     optimizes,
     sections,
     registrations,
+    platformConfigs,
+    managementAuthConfigs,
   ] = await Promise.all([
     get("Namespace", undefined, namespace).catch(() => undefined),
     listOrEmpty("Environment", {}),
@@ -62,6 +66,10 @@ export async function loadClusterPage(
     listOrEmpty("PluginRequest", {
       namespace,
       labelSelector: `${SECTION_LABEL}=${ACCESS_SECTION}`,
+    }),
+    listOrEmpty("PluginRequest", {
+      namespace,
+      labelSelector: `${CLAIM_LABEL}=${claimName ?? ""}`,
     }),
     listOrEmpty("Pod", { namespace, labelSelector: podSelector }),
     listOrEmpty("LogicalBackupElasticsearch", inNamespace),
@@ -78,8 +86,9 @@ export async function loadClusterPage(
     listOrEmpty("CamundaOptimize", inNamespace),
     listOrEmpty("PluginSection", {}),
     listOrEmpty("PluginRegistration", {}),
+    listOrEmpty("CamundaPlatformConfig", {}),
+    listOrEmpty("ManagementAuthConfig", {}),
   ]);
-  const claimName = cluster.metadata?.labels?.[CLAIM_LABEL];
   const fields = clusterFields(
     clusterFieldsInputOf({
       cluster,
@@ -105,6 +114,7 @@ export async function loadClusterPage(
     releases,
     storage,
     accessRequests,
+    requests,
     pods,
     podSelector,
     backups: { elasticsearch: backupsES, rdbms: backupsRDBMS },
@@ -124,13 +134,8 @@ export async function loadClusterPage(
     optimizes,
     sections,
     registrations,
+    platformConfigs,
+    managementAuthConfigs,
     fieldDocs: fieldDocsOf(fields),
   };
-}
-
-function listOrEmpty<K extends KindName>(
-  kind: K,
-  opts: ListOptions,
-): Promise<Resource<K>[]> {
-  return list(kind, opts).catch(() => []);
 }

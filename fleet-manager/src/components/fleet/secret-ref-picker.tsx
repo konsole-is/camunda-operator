@@ -12,6 +12,16 @@ export type SecretKeyRef = { name: string; key: string };
 /** SecretRefs are the Secrets of a namespace with their key names, never their values. */
 export type SecretRefs = { name: string; keys: string[] }[];
 
+/** secretRefsOf returns the name and the key names of each Secret, and nothing else. */
+export function secretRefsOf(
+  items: readonly { metadata?: { name?: string }; keys: string[] }[],
+): SecretRefs {
+  return items.map((s) => ({
+    name: s.metadata?.name ?? "",
+    keys: [...s.keys],
+  }));
+}
+
 /**
  * SecretRefPicker picks a Secret and one of its keys. It shows names only:
  * it never has a Secret value. onChange gets the reference when both are

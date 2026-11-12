@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { type TemplateData, parseTemplate, render } from ".";
+import { type TemplateData, parseTemplate, render, renderJSON } from ".";
 
 const data: TemplateData = {
   namespace: "team-a",
   claim: "orders",
   request: "orders-backup-storage",
   serviceAccount: "orders-camunda",
-  parameters: { x: "eu-1", size: 3, on: true, obj: { a: 1 }, none: null },
+  parameters: {
+    x: "eu-1",
+    size: 3,
+    on: true,
+    obj: { a: 1 },
+    list: ["a", "b"],
+    none: null,
+  },
   outputs: { y: "bucket-1" },
   pods: "orders-zeebe-0|orders-zeebe-1",
 };
@@ -205,12 +212,13 @@ describe("render", () => {
       render("{{ .parameters.size }}/{{ .parameters.on }}", data, "parameter"),
     ).toEqual({ text: "3/true" }));
 
-  it.each(["obj", "none"])(
-    "refuses the parameter %s, which is not text",
+  it.each(["obj", "list", "none"])(
+    "refuses the parameter %s, which is not text, and says that the plugin prints it in another form",
     (name) =>
-      expect(
-        render(`{{ .parameters.${name} }}`, data, "parameter"),
-      ).toMatchObject({ field: `parameters.${name}` }),
+      expect(render(`{{ .parameters.${name} }}`, data, "parameter")).toEqual({
+        error: `parameter "${name}" is not a string, a number, or a boolean, and the plugin prints such a value in another form`,
+        field: `parameters.${name}`,
+      }),
   );
 
   it("fills a parameter whose name has a letter outside ASCII, as Go does", () =>
@@ -286,4 +294,115 @@ describe("parseTemplate", () => {
       error: "unknown placeholder .foo",
       field: "foo",
     }));
+});
+
+describe("a template parameter", () => {
+  it("refuses .outputs at the field, as pluginkit does", () =>
+    expect(parseTemplate("{{ .outputs.bucket }}", "parameter")).toEqual({
+      error:
+        "the placeholder .outputs.bucket is not allowed: a template parameter cannot read the outputs",
+      field: "outputs.bucket",
+    }));
+
+  it("refuses .outputs in render too", () =>
+    expect(render("{{ .outputs.y }}", data, "parameter")).toEqual({
+      error:
+        "the placeholder .outputs.y is not allowed: a template parameter cannot read the outputs",
+      field: "outputs.y",
+    }));
+
+  it("keeps .outputs in a grant template", () =>
+    expect(parseTemplate("{{ .outputs.bucket }}", "grant")).toEqual({
+      parameters: [],
+      outputs: ["bucket"],
+      usesPods: false,
+    }));
+});
+
+describe("renderJSON", () => {
+  const values: TemplateData = {
+    namespace: "team-a",
+    claim: "orders",
+    request: "orders-connectors-permissions",
+    serviceAccount: "orders-connectors",
+    parameters: { region: "eu-west-1" },
+    outputs: {},
+  };
+
+  it("renders each string leaf and keeps the keys and the other values", () =>
+    expect(
+      renderJSON(
+        {
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Resource:
+                "arn:aws:sqs:{{ .parameters.region }}:*:{{ .namespace }}-*",
+              Max: 3,
+              On: true,
+              None: null,
+            },
+          ],
+        },
+        values,
+        "parameter",
+      ),
+    ).toEqual({
+      value: {
+        Version: "2012-10-17",
+        Statement: [
+          {
+            Resource: "arn:aws:sqs:eu-west-1:*:team-a-*",
+            Max: 3,
+            On: true,
+            None: null,
+          },
+        ],
+      },
+    }));
+
+  it("does not render a key", () =>
+    expect(
+      renderJSON({ "{{ .namespace }}": "x" }, values, "parameter"),
+    ).toEqual({ value: { "{{ .namespace }}": "x" } }));
+
+  it("renders a string value", () =>
+    expect(renderJSON("{{ .serviceAccount }}", values, "parameter")).toEqual({
+      value: "orders-connectors",
+    }));
+
+  it("names the path of the leaf with the error", () =>
+    expect(
+      renderJSON(
+        { Statement: [{ Resource: "{{ .claimName }}" }] },
+        values,
+        "parameter",
+      ),
+    ).toEqual({
+      error: "unknown placeholder .claimName",
+      field: "claimName",
+      path: "Statement[0].Resource",
+    }));
+
+  it("gives an empty path for an error of a string value", () =>
+    expect(renderJSON("{{ .claimName }}", values, "parameter")).toEqual({
+      error: "unknown placeholder .claimName",
+      field: "claimName",
+      path: "",
+    }));
+
+  it("keeps a quote of a value inside its string", () =>
+    expect(
+      renderJSON(
+        { a: "{{ .parameters.q }}" },
+        { ...values, parameters: { q: '"x"' } },
+        "parameter",
+      ),
+    ).toEqual({ value: { a: '"x"' } }));
+
+  it("does not change the value it renders", () => {
+    const value = { a: ["{{ .namespace }}"] };
+    renderJSON(value, values, "parameter");
+    expect(value).toEqual({ a: ["{{ .namespace }}"] });
+  });
 });

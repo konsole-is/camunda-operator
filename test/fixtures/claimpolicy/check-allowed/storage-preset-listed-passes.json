@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "name": "An Elasticsearch preset that the Environment lists passes",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "elasticsearchCluster": [
+            "small"
+          ]
+        }
+      }
+    },
+    "policy": {
+      "sections": {
+        "secondary-storage": {
+          "allowed": [
+            "elasticsearch",
+            "database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "elasticsearch": {
+          "preset": {
+            "claimEditable": true
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch",
+        "parameters": {
+          "preset": "small"
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}

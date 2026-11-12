@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
+import { parseLogLine } from "@/lib/observe/logs";
 import type { LogLine } from "@/lib/observe/types";
 import { LogViewer } from "./log-viewer";
 
@@ -100,5 +101,113 @@ describe("LogViewer", () => {
     );
     expect(screen.getByText("retry")).toBeTruthy();
     expect(screen.queryByText("disk full")).toBeNull();
+  });
+
+  it("shows the pod of each line when the lines come from more than one pod", () => {
+    render(
+      <LogViewer
+        lines={[
+          { ...parseLogLine("a"), pod: "p-0" },
+          { ...parseLogLine("b"), pod: "p-1" },
+        ]}
+      />,
+    );
+    const log = screen.getByRole("log");
+    expect(within(log).getByText("p-0")).toBeTruthy();
+    expect(within(log).getByText("p-1")).toBeTruthy();
+  });
+
+  it("shows no pod column for the lines of one pod", () => {
+    render(
+      <LogViewer
+        lines={[
+          { ...parseLogLine("a"), pod: "p-0" },
+          { ...parseLogLine("b"), pod: "p-0" },
+        ]}
+      />,
+    );
+    expect(within(screen.getByRole("log")).queryByText("p-0")).toBeNull();
+  });
+
+  it("shows the logger of a JSON line as a column", () => {
+    render(
+      <LogViewer
+        lines={[parseLogLine('{"msg":"m","logger":"io.camunda.zeebe","x":1}')]}
+      />,
+    );
+    const logger = within(screen.getByRole("log")).getByText(
+      "io.camunda.zeebe",
+    );
+    expect(logger.closest("summary")).not.toBeNull();
+    expect(logger.closest("pre")).toBeNull();
+  });
+
+  it("puts the controls before the filters", () => {
+    render(
+      <LogViewer lines={[]} controls={<button type="button">Pick</button>} />,
+    );
+    const pick = screen.getByRole("button", { name: "Pick" });
+    const pause = screen.getByRole("button", { name: "Pause" });
+    expect(
+      pick.compareDocumentPosition(pause) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("shows the time of a line in UTC and says so", () => {
+    render(
+      <LogViewer
+        lines={[{ ...line("late"), time: "2026-10-15T13:59:07+02:00" }]}
+      />,
+    );
+    expect(within(screen.getByRole("log")).getByText("11:59:07")).toBeTruthy();
+    expect(screen.getByText("Time (UTC)")).toBeTruthy();
+  });
+
+  it("shows a time without an offset as it is, in any time zone", () => {
+    const zone = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      render(
+        <LogViewer
+          lines={[{ ...line("local"), time: "2026-10-15T11:59:07.120" }]}
+        />,
+      );
+      expect(
+        within(screen.getByRole("log")).getByText("2026-10-15T11:59:07.120"),
+      ).toBeTruthy();
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
+  });
+
+  it("shows a time it cannot read as it is", () => {
+    render(<LogViewer lines={[{ ...line("odd"), time: "yesterday" }]} />);
+    expect(within(screen.getByRole("log")).getByText("yesterday")).toBeTruthy();
+  });
+
+  it("says nothing about the time when no line has one", () => {
+    render(<LogViewer lines={[parseLogLine("plain")]} />);
+    expect(screen.queryByText("Time (UTC)")).toBeNull();
+  });
+
+  it("ends Pause and keeps the filters when the source changes", async () => {
+    const { rerender } = render(
+      <LogViewer lines={[line("a"), line("b", "error")]} source="p-0" />,
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Level" }),
+      "error",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Pause" }));
+
+    rerender(<LogViewer lines={[line("c", "error")]} source="p-1" />);
+
+    expect(screen.getByText("c")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+    expect(
+      (screen.getByRole("combobox", { name: "Level" }) as HTMLSelectElement)
+        .value,
+    ).toBe("error");
   });
 });

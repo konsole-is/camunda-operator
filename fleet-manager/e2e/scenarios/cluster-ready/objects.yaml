@@ -2956,16 +2956,19 @@ metadata:
                   .: {}
                   f:description: {}
                   f:type: {}
+              f:title: {}
               f:type: {}
             f:preset:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
             f:releaseRef:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
           f:required: {}
           f:type: {}
@@ -3057,16 +3060,19 @@ spec:
             description: The volume size of each instance, for example 20Gi. The size
               only grows.
             type: string
+        title: Overrides
         type: object
       preset:
         description: The name of the DatabaseServerPreset that the PostgreSQL server
           starts from.
         minLength: 1
+        title: Preset
         type: string
       releaseRef:
         description: The name of the CamundaRelease that gives the PostgreSQL major
           version. The claim controller sets it to the release of the claim.
         minLength: 1
+        title: Release
         type: string
     required:
     - preset
@@ -3166,16 +3172,19 @@ metadata:
                   .: {}
                   f:description: {}
                   f:type: {}
+              f:title: {}
               f:type: {}
             f:preset:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
             f:releaseRef:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
           f:required: {}
           f:type: {}
@@ -3267,16 +3276,19 @@ spec:
             description: The volume size of each node, for example 50Gi. An override
               never lowers the live storage size.
             type: string
+        title: Overrides
         type: object
       preset:
         description: The name of the ElasticsearchClusterPreset that the Elasticsearch
           cluster starts from.
         minLength: 1
+        title: Preset
         type: string
       releaseRef:
         description: The name of the CamundaRelease that gives the Elasticsearch version.
           The claim controller sets it to the release of the claim.
         minLength: 1
+        title: Release
         type: string
     required:
     - preset
@@ -3342,16 +3354,19 @@ metadata:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
             f:keycloak:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
             f:webModeler:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
           f:type: {}
         f:sections: {}
@@ -3414,14 +3429,17 @@ spec:
       identity:
         description: The name of the DatabaseConfig of Management Identity.
         minLength: 1
+        title: Management Identity
         type: string
       keycloak:
         description: The name of the DatabaseConfig of Keycloak.
         minLength: 1
+        title: Keycloak
         type: string
       webModeler:
         description: The name of the DatabaseConfig of Web Modeler.
         minLength: 1
+        title: Web Modeler
         type: string
     type: object
   sections:
@@ -3476,6 +3494,7 @@ metadata:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
           f:required: {}
           f:type: {}
@@ -3535,6 +3554,7 @@ spec:
       name:
         description: The name of an ObjectStorageConfig in the namespace of the claim.
         minLength: 1
+        title: Name
         type: string
     required:
     - name
@@ -3591,6 +3611,7 @@ metadata:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
           f:required: {}
           f:type: {}
@@ -3650,6 +3671,7 @@ spec:
         description: The name of a SecondaryStorageConfig in the namespace of the
           claim.
         minLength: 1
+        title: Name
         type: string
     required:
     - name
@@ -3722,17 +3744,20 @@ metadata:
                 .: {}
                 f:enum: {}
                 f:type: {}
+              f:title: {}
               f:type: {}
             f:preset:
               .: {}
               f:description: {}
               f:minLength: {}
+              f:title: {}
               f:type: {}
             f:version:
               .: {}
               f:default: {}
               f:description: {}
               f:pattern: {}
+              f:title: {}
               f:type: {}
           f:required: {}
           f:type: {}
@@ -3805,16 +3830,19 @@ spec:
           - identity
           - webModeler
           type: string
+        title: Databases
         type: array
       preset:
         description: The name of the DatabaseServerPreset that the PostgreSQL server
           starts from.
         minLength: 1
+        title: Preset
         type: string
       version:
         default: "17"
         description: The PostgreSQL major version of the server, for example 17.
         pattern: ^\d+$
+        title: PostgreSQL version
         type: string
     required:
     - preset
@@ -4022,8 +4050,8 @@ metadata:
 spec:
   appliesTo:
   - CamundaClusterClaim
-  description: The cloud permissions of the Connectors, apart from the cloud identity
-    of the cluster.
+  description: The Connectors get a cloud role of their own. A connector task uses
+    it when it signs in with the default credentials of its cloud.
   emptyOptionLabel: No cloud permissions
   label: Connectors permissions
   order: 70

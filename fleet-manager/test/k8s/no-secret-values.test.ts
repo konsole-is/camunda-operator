@@ -9,25 +9,43 @@ import {
   KubernetesObjectApi,
   PatchStrategy,
 } from "@kubernetes/client-node";
-import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, inject, it, vi } from "vitest";
 import { ping } from "@/app/dev/watch-probe/actions";
 import {
+  applyBackupChange,
   applyClaimChange,
   previewClaimChange,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
+import {
+  createPlane,
+  previewPlaneCreate,
+} from "@/app/fleet/planes/new/actions";
+import {
+  applyEnvironmentChange,
+  applyNamespaceLabel,
+  previewEnvironmentChange,
+  previewNamespaceLabel,
+} from "@/app/setup/environments/actions";
 import {
   saveSettings,
   testGitConnection,
   testPrometheusQuery,
 } from "@/app/setup/settings/actions";
+import { GET as controllerPodsRoute } from "@/app/api/controller-pods/route";
 import { GET as healthz } from "@/app/api/healthz/route";
 import { GET as logsRoute } from "@/app/api/logs/route";
+import { GET as mergedLogsRoute } from "@/app/api/logs/merged/route";
+import { GET as metricsRoute } from "@/app/api/metrics/route";
 import { GET as partitionsRoute } from "@/app/api/partitions/route";
 import { GET as usageRoute } from "@/app/api/usage/route";
+import { GET as warningsRoute } from "@/app/api/warnings/route";
 import { GET as watchRoute } from "@/app/api/watch/route";
 import { defaultCache } from "@/lib/k8s/cache";
+import { get } from "@/lib/k8s/read";
 import * as secrets from "@/lib/secrets";
 import * as settings from "@/lib/settings";
+import { createChangeOf } from "@/lib/write/create";
+import { kubeRequest } from "../scenarios/kube";
 
 // The data layer reads KUBECONFIG through kubeConfig, on its first call.
 process.env.KUBECONFIG = inject("kubeconfig");
@@ -58,12 +76,14 @@ function assertNoValue(text: string): void {
 // address is http://, so testGit stops before a request: connections.test.ts
 // covers the Git answer.
 let echo: http.Server;
+const echoed: string[] = [];
 
 beforeAll(async () => {
   echo = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
     req.on("end", () => {
+      echoed.push(req.url ?? "");
       res.writeHead(401, { "WWW-Authenticate": 'Basic realm="x"' });
       res.end(
         `${req.headers.authorization ?? ""} ${Buffer.concat(chunks).toString()}`,
@@ -83,6 +103,40 @@ beforeAll(async () => {
     kind: "Secret",
     metadata: { name: "leak", namespace },
     stringData: values,
+  });
+  await api.create({
+    apiVersion: "core.camunda.io/v1",
+    kind: "CamundaCluster",
+    metadata: { name: "leak", namespace },
+    spec: { storageRef: "storage", platformConfigRef: "platform" },
+  });
+  // A version in the range of the backpressure query makes the warnings
+  // route ask Prometheus.
+  await kubeRequest(
+    kc,
+    "PATCH",
+    `/apis/core.camunda.io/v1/namespaces/${namespace}/camundaclusters/leak/status`,
+    {
+      status: {
+        management: {
+          auth: { method: "none" },
+          endpoint: "http://leak-gateway:9600",
+          partitions: 1,
+          version: "8.9.0",
+        },
+      },
+    },
+    "application/merge-patch+json",
+  );
+  await api.create({
+    apiVersion: "v1",
+    kind: "Pod",
+    metadata: {
+      name: "leak-zeebe-0",
+      namespace,
+      labels: { "camunda.io/cluster": "leak", "camunda.io/component": "zeebe" },
+    },
+    spec: { containers: [{ name: "zeebe", image: "camunda/zeebe" }] },
   });
   process.env.FLEET_NAMESPACE = namespace;
   Object.assign(process.env, {
@@ -143,6 +197,14 @@ async function watchText(watch: string): Promise<string> {
 }
 
 const ROUTE_CALLS: Record<string, () => Promise<string>> = {
+  "api/controller-pods": async () =>
+    (
+      await controllerPodsRoute(
+        new Request(
+          `http://localhost/api/controller-pods?registration=${namespace}-missing`,
+        ),
+      )
+    ).text(),
   "api/healthz": async () => healthz().text(),
   // envtest runs no kubelet, so no pod has a log: the call reads a pod that
   // does not exist.
@@ -151,6 +213,14 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
       await logsRoute(
         new Request(
           `http://localhost/api/logs?namespace=${namespace}&pod=missing`,
+        ),
+      )
+    ).text(),
+  "api/logs/merged": async () =>
+    (
+      await mergedLogsRoute(
+        new Request(
+          `http://localhost/api/logs/merged?log=${namespace}%2Fmissing`,
         ),
       )
     ).text(),
@@ -163,6 +233,17 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
         ),
       )
     ).text(),
+  // The cluster has a broker pod, so the route asks Prometheus with the
+  // credentials of the Secret and answers with the result.
+  "api/metrics": async () => {
+    const response = await metricsRoute(
+      new Request(
+        `http://localhost/api/metrics?namespace=${namespace}&cluster=leak&component=zeebe`,
+      ),
+    );
+    expect(response.status).toBe(200);
+    return response.text();
+  },
   "api/partitions": async () =>
     (
       await partitionsRoute(
@@ -171,11 +252,43 @@ const ROUTE_CALLS: Record<string, () => Promise<string>> = {
         ),
       )
     ).text(),
+  "api/warnings": async () => {
+    await vi.waitFor(async () =>
+      expect(
+        (await get("CamundaCluster", namespace, "leak"))?.status?.management
+          ?.version,
+      ).toBe("8.9.0"),
+    );
+    const before = echoed.length;
+    const text = await (await warningsRoute()).text();
+    expect(
+      echoed.slice(before).some((url) => url.includes("zeebe_received")),
+    ).toBe(true);
+    return text;
+  },
   "api/watch": () => watchText(`kind=Secret&namespace=${namespace}`),
 };
 // "<file under src>#<export>".
 const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/dev/watch-probe/actions.ts#ping": () => ping(),
+  // The backup does not exist, so the delete refuses and writes nothing.
+  "app/fleet/clusters/[namespace]/[name]/actions.ts#applyBackupChange": () =>
+    applyBackupChange(
+      { namespace, name: "leak" },
+      {
+        intent: "Delete backup leak",
+        apply: [],
+        delete: [
+          {
+            apiVersion: "core.camunda.io/v1",
+            kind: "LogicalBackupElasticsearch",
+            namespace,
+            name: "leak",
+          },
+        ],
+        directOnly: true,
+      },
+    ),
   "app/fleet/clusters/[namespace]/[name]/actions.ts#previewClaimChange": () =>
     previewClaimChange(claimChange()),
   // The precondition names a claim that does not exist, so the write
@@ -184,6 +297,28 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
     applyClaimChange({
       ...claimChange(),
       preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
+    }),
+  "app/fleet/planes/new/actions.ts#previewPlaneCreate": () =>
+    previewPlaneCreate(planeCreate()),
+  // The claim has no spec that the API server accepts, so the write
+  // refuses it and leaves nothing behind.
+  "app/fleet/planes/new/actions.ts#createPlane": () =>
+    createPlane(planeCreate()),
+  "app/setup/environments/actions.ts#previewEnvironmentChange": () =>
+    previewEnvironmentChange(environmentChange()),
+  // A precondition for an object that does not exist refuses with Stale,
+  // so these writes leave nothing behind.
+  "app/setup/environments/actions.ts#applyEnvironmentChange": () =>
+    applyEnvironmentChange({
+      ...environmentChange(),
+      preconditions: { [`Environment//${namespace}`]: "1" },
+    }),
+  "app/setup/environments/actions.ts#previewNamespaceLabel": () =>
+    previewNamespaceLabel(labelChange()),
+  "app/setup/environments/actions.ts#applyNamespaceLabel": () =>
+    applyNamespaceLabel({
+      ...labelChange(),
+      preconditions: { [`Namespace//${namespace}-gone`]: "1" },
     }),
   "app/setup/settings/actions.ts#saveSettings": async () =>
     saveSettings(
@@ -194,6 +329,37 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/setup/settings/actions.ts#testPrometheusQuery": () =>
     testPrometheusQuery(),
 };
+
+function environmentChange() {
+  return {
+    intent: "Create the environment leak",
+    apply: [
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        metadata: { name: namespace },
+        spec: { displayName: "Leak" },
+      },
+    ],
+  };
+}
+
+function labelChange() {
+  return {
+    intent: "Add the namespace leak to the environment leak",
+    apply: [
+      {
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: {
+          name: `${namespace}-gone`,
+          labels: { "fleet.camunda.io/environment": namespace },
+        },
+      },
+    ],
+    directOnly: true,
+  };
+}
 
 function claimChange() {
   return {
@@ -208,6 +374,15 @@ function claimChange() {
     ],
   };
 }
+function planeCreate() {
+  return createChangeOf("Create the management plane leak", {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "CamundaManagementClusterClaim",
+    metadata: { name: "leak", namespace },
+    spec: {},
+  });
+}
+
 const LIBRARY_CALLS: Record<string, () => Promise<unknown>> = {
   "settings#appPermissions": () => settings.appPermissions(),
   "settings#getSettings": () => settings.getSettings(),

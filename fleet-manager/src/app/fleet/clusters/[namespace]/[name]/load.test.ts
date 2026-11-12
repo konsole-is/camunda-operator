@@ -55,6 +55,24 @@ describe("loadClusterPage", () => {
     });
   });
 
+  it("lists the requests of the claim of the cluster by the claim label", async () => {
+    k8s.cluster = {
+      kind: "CamundaCluster",
+      metadata: {
+        namespace: "team-a",
+        name: "orders",
+        labels: { "fleet.camunda.io/claim": "orders-claim" },
+      },
+    };
+    await loadClusterPage("team-a", "orders");
+    expect(
+      k8s.lists.filter((l) => l.kind === "PluginRequest").map((l) => l.opts),
+    ).toContainEqual({
+      namespace: "team-a",
+      labelSelector: "fleet.camunda.io/claim=orders-claim",
+    });
+  });
+
   it("lists the namespaced kinds in the namespace and the cluster-scoped kinds everywhere", async () => {
     named("orders");
     await loadClusterPage("team-a", "orders");
@@ -79,6 +97,8 @@ describe("loadClusterPage", () => {
       "DatabaseServerPreset",
       "PluginSection",
       "PluginRegistration",
+      "CamundaPlatformConfig",
+      "ManagementAuthConfig",
     ]) {
       expect(listOf(kind)).toEqual({});
     }
@@ -142,5 +162,17 @@ describe("loadClusterPage", () => {
     k8s.failing = "CamundaOptimize";
     const data = await loadClusterPage("team-a", "orders");
     expect(data?.optimizes).toEqual([]);
+  });
+
+  it("gives no platform configs and no management auth configs when their lists fail", async () => {
+    named("orders");
+    k8s.failing = "CamundaPlatformConfig";
+    expect(
+      (await loadClusterPage("team-a", "orders"))?.platformConfigs,
+    ).toEqual([]);
+    k8s.failing = "ManagementAuthConfig";
+    expect(
+      (await loadClusterPage("team-a", "orders"))?.managementAuthConfigs,
+    ).toEqual([]);
   });
 });

@@ -10,7 +10,13 @@ import {
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeEventSource } from "../../../test/fakes/event-source";
-import { useGitGone, useGitSync, useResource, useResources } from "./hooks";
+import {
+  useGitGone,
+  useGitSync,
+  useResource,
+  useResources,
+  useWatchesFresh,
+} from "./hooks";
 import { watchId } from "./shared-watch";
 
 // TanStack Query sends cache updates to the hooks on a later tick, so the
@@ -331,6 +337,26 @@ describe("useResources", () => {
 
     s.emit("snapshot", { watch, kind: "Pod", objects: [pod("b")] });
     await waitFor(() => expect(result.current).toEqual({ items: [pod("b")] }));
+  });
+});
+
+describe("useWatchesFresh", () => {
+  it("is false before the snapshot and true after an empty snapshot that keeps the empty list", async () => {
+    const initial: never[] = [];
+    const { result } = renderHook(
+      () => ({
+        list: useResources("Pod", { namespace: "team" }, initial),
+        fresh: useWatchesFresh([
+          { kind: "Pod", opts: { namespace: "team" } },
+        ])[0],
+      }),
+      { wrapper },
+    );
+    expect(result.current.fresh).toBe(false);
+    const s = await source();
+    s.emit("snapshot", { watch: s.ids()[0], kind: "Pod", objects: [] });
+    await waitFor(() => expect(result.current.fresh).toBe(true));
+    expect(result.current.list.items).toEqual([]);
   });
 });
 

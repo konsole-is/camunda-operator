@@ -115,6 +115,15 @@ export function staleError(ref: ObjectRef): ApiError {
   };
 }
 
+/** existsError is the Stale error of a create of ref whose object exists. */
+export function existsError(ref: ObjectRef): ApiError {
+  return {
+    code: "Stale",
+    message: `The ${ref.kind} ${ref.name} exists already. Pick another name.`,
+    ref,
+  };
+}
+
 function pathOf(field: string | undefined): { path?: string } {
   if (!field) return {};
   return { path: field.startsWith(".") ? field.slice(1) : field };

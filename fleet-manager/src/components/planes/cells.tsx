@@ -15,8 +15,14 @@ export function PlaneName({ plane }: { plane: Plane }) {
   );
 }
 
-/** PlaneServes is the environments of plane, or its raw namespace selector. */
+/**
+ * PlaneServes is the environments of plane, or its raw namespace selector, or
+ * says that it serves no cluster without a cluster selector.
+ */
 export function PlaneServes({ plane }: { plane: Plane }) {
+  if ("noClusterSelector" in plane.serves) {
+    return <span>No cluster, because it has no cluster selector</span>;
+  }
   return "environments" in plane.serves ? (
     <span>{plane.serves.environments.join(", ")}</span>
   ) : (

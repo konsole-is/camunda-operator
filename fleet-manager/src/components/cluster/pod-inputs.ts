@@ -15,8 +15,8 @@ export type PodContext = {
 /**
  * podInputs returns the settings of a merged cluster spec that the
  * operator renders into the pod template of process p, through its
- * environment or its config hash. When the results for the
- * spec before and after a change differ, the pods of p restart.
+ * environment, its config hash, or its service account. When the results
+ * for the spec before and after a change differ, the pods of p restart.
  */
 export function podInputs(
   spec: CamundaClusterSpec,
@@ -57,8 +57,27 @@ export function podInputs(
         oidc.connectorsClaim && spec.connectors?.enabled === true,
     },
     secret,
+    account: accountOf(spec),
     buckets: [spec.backupStorageRef, spec.documentStorageRef],
     backup: backupOf(spec, ctx.storage, p),
+  };
+}
+
+// accountOf follows serviceAccountHash in
+// pkg/components/camundacluster/mutations.go and identityPodLabels in
+// components.go. The operator rolls the pods for the annotations of an
+// account that it creates, and for an Azure client ID on any account.
+function accountOf(spec: CamundaClusterSpec): unknown {
+  const account = spec.serviceAccount;
+  if (!account) return undefined;
+  return {
+    name: account.name,
+    creates: account.create !== false,
+    annotations: account.create === false ? undefined : account.annotations,
+    azure: Object.hasOwn(
+      account.annotations ?? {},
+      "azure.workload.identity/client-id",
+    ),
   };
 }
 

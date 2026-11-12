@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "name": "The preset of a choice is checked, not the name of the choice",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "elasticsearchCluster": [
+            "small"
+          ]
+        }
+      }
+    },
+    "policy": {
+      "sections": {
+        "secondary-storage": {
+          "allowed": [
+            "elasticsearch",
+            "database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "elasticsearch": {
+          "preset": {
+            "claimEditable": true,
+            "allowed": [
+              {
+                "name": "big",
+                "label": "Big",
+                "value": "large"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch",
+        "parameters": {
+          "preset": "big"
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "ElasticsearchClusterPreset \"large\" is not in spec.presets.elasticsearchCluster of Environment \"dev\""
+    }
+  }
+}

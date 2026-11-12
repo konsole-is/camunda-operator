@@ -40,8 +40,17 @@ function cluster(
     apiVersion: "core.camunda.io/v1",
     kind: "CamundaManagementCluster",
     metadata: { namespace, name, labels },
-    spec: { identityProvider: { keycloak: {} }, ...spec },
+    spec: { identityProvider: { keycloak: {} }, clusterSelector: {}, ...spec },
     status,
+  } as never;
+}
+
+function environment(name: string) {
+  return {
+    apiVersion: "fleet.camunda.io/v1alpha1",
+    kind: "Environment",
+    metadata: { name },
+    spec: {},
   } as never;
 }
 
@@ -57,12 +66,16 @@ function claim(namespace: string, name: string, environments: string[]) {
 function Harness({
   environment,
   initial,
+  toolbar,
 }: {
-  environment: string;
+  environment?: string | null;
   initial: PlaneSources;
+  toolbar?: boolean;
 }) {
   const { planes } = usePlanes(initial);
-  return <PlanesTable planes={planes} environment={environment} />;
+  return (
+    <PlanesTable planes={planes} environment={environment} toolbar={toolbar} />
+  );
 }
 
 const managed = (name: string, environments: string[], status?: object) => ({
@@ -81,6 +94,7 @@ const initial: PlaneSources = {
   clusters: [a.cluster, b.cluster],
   claims: [a.claim, b.claim],
   namespaces: [],
+  environments: [],
 };
 
 describe("PlanesTable", () => {
@@ -107,6 +121,25 @@ describe("PlanesTable", () => {
     rerender(<Harness environment="staging" initial={initial} />);
     expect(screen.getByRole("link", { name: /plane-a/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /plane-b/ })).toBeTruthy();
+  });
+
+  it("shows every plane without an environment", () => {
+    render(<Harness initial={initial} />);
+    expect(screen.getByRole("link", { name: /plane-a/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /plane-b/ })).toBeTruthy();
+  });
+
+  it("has a search box by default", () => {
+    render(<Harness environment="production" initial={initial} />);
+    expect(screen.getByRole("searchbox")).toBeTruthy();
+  });
+
+  it("has no search box without the toolbar", () => {
+    render(
+      <Harness environment="production" initial={initial} toolbar={false} />,
+    );
+    expect(screen.getByRole("link", { name: /plane-a/ })).toBeTruthy();
+    expect(screen.queryByRole("searchbox")).toBeNull();
   });
 
   it("links each plane to its page", () => {
@@ -165,6 +198,7 @@ describe("PlanesTable", () => {
           clusters: [stopped.cluster],
           claims: [stopped.claim],
           namespaces: [],
+          environments: [],
         }}
       />,
     );
@@ -201,6 +235,7 @@ describe("PlanesTable", () => {
           },
         } as never,
       ],
+      environments: [environment("production"), environment("staging")],
     };
     render(<Harness environment="production" initial={legacy} />);
     const row = screen.getByRole("row", { name: /legacy/ });
@@ -226,7 +261,12 @@ describe("PlanesTable", () => {
     render(
       <Harness
         environment="production"
-        initial={{ clusters: [c.cluster], claims: [c.claim], namespaces: [] }}
+        initial={{
+          clusters: [c.cluster],
+          claims: [c.claim],
+          namespaces: [],
+          environments: [],
+        }}
       />,
     );
     const row = screen.getByRole("row", { name: /plane-c/ });

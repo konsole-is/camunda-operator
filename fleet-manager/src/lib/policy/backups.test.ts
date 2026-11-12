@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  type BackupLike,
   type RestoreLike,
+  type RollBackupLike,
   clusterBackups,
   clusterRestores,
+  rollSensitiveBackup,
   runningBackup,
   runningRestore,
 } from "./backups";
@@ -13,13 +14,18 @@ const cluster = { metadata: { namespace: "team-a", name: "orders" } };
 function backup(
   name: string,
   phase: string | undefined,
-  over: { kind?: string; namespace?: string; cluster?: string } = {},
-): BackupLike {
+  over: {
+    kind?: string;
+    namespace?: string;
+    cluster?: string;
+    status?: RollBackupLike["status"];
+  } = {},
+): RollBackupLike {
   return {
     kind: over.kind ?? "LogicalBackupRDBMS",
     metadata: { namespace: over.namespace ?? "team-a", name },
     spec: { clusterRef: { name: over.cluster ?? "orders" } },
-    status: phase === undefined ? {} : { phase },
+    status: { ...(phase === undefined ? {} : { phase }), ...over.status },
   };
 }
 
@@ -90,6 +96,96 @@ describe("runningBackup", () => {
 
   it("has no result without backups", () => {
     expect(runningBackup(cluster, [])).toBeUndefined();
+  });
+});
+
+describe("rollSensitiveBackup", () => {
+  const es = (state?: string) =>
+    backup("es-1", "Running", {
+      kind: "LogicalBackupElasticsearch",
+      status: state === undefined ? {} : { runtime: { state } },
+    });
+
+  it.each(["Pending", undefined, "Completed", "Failed"])(
+    "gives no backup for the phase %s",
+    (phase) => {
+      expect(
+        rollSensitiveBackup(cluster, [backup("b", phase)]),
+      ).toBeUndefined();
+    },
+  );
+
+  it("gives no backup for a backup without a phase", () => {
+    expect(
+      rollSensitiveBackup(cluster, [
+        { ...backup("b", undefined), status: undefined },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("says whether a PostgreSQL backup has its Zeebe backup id", () => {
+    expect(rollSensitiveBackup(cluster, [backup("db-1", "Running")])).toEqual({
+      kind: "LogicalBackupRDBMS",
+      namespace: "team-a",
+      name: "db-1",
+      hasZeebeBackupId: false,
+    });
+    expect(
+      rollSensitiveBackup(cluster, [
+        backup("db-1", "Running", { status: { zeebeBackupId: 0 } }),
+      ]),
+    ).toEqual({
+      kind: "LogicalBackupRDBMS",
+      namespace: "team-a",
+      name: "db-1",
+      hasZeebeBackupId: true,
+    });
+  });
+
+  it.each([
+    [undefined, false],
+    ["Pending", false],
+    ["InProgress", false],
+    ["Completed", true],
+    ["Failed", true],
+  ])(
+    "an Elasticsearch partition backup in state %s is final: %s",
+    (state, final) => {
+      expect(rollSensitiveBackup(cluster, [es(state)])).toEqual({
+        kind: "LogicalBackupElasticsearch",
+        namespace: "team-a",
+        name: "es-1",
+        partitionsFinal: final,
+      });
+    },
+  );
+
+  it("picks the Running backup of the cluster", () => {
+    expect(
+      rollSensitiveBackup(cluster, [
+        backup("a-pending", "Pending"),
+        backup("b-other", "Running", { cluster: "payments" }),
+        backup("c-running", "Running"),
+      ])?.name,
+    ).toBe("c-running");
+  });
+
+  it("picks the first Running backup by name", () => {
+    expect(
+      rollSensitiveBackup(cluster, [
+        backup("b", "Running"),
+        backup("a", "Running"),
+      ])?.name,
+    ).toBe("a");
+  });
+
+  it("skips another kind and another namespace", () => {
+    expect(
+      rollSensitiveBackup(cluster, [
+        backup("b", "Running", { kind: "BackupSchedule" }),
+        backup("c", "Running", { namespace: "team-b" }),
+      ]),
+    ).toBeUndefined();
   });
 });
 

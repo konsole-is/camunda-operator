@@ -1,4 +1,9 @@
-export { clusterFields, type ClusterFieldsInput } from "./cluster";
+export {
+  clusterFields,
+  COMPONENTS,
+  optimizeClaimNames,
+  type ClusterFieldsInput,
+} from "./cluster";
 export { lockLabel, stateLabel, stateNote } from "./labels";
 export { parameterFields } from "./parameters";
 export type {
@@ -14,3 +19,10 @@ export {
   refusedSteps,
   type RefusedField,
 } from "./claim";
+export {
+  componentFieldPaths,
+  fieldSchemaOf,
+  fullSchemaOf,
+  type SchemaGroup,
+} from "./schema";
+export type { FieldSchema, SchemaRoot } from "@/generated/fieldschema";

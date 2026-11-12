@@ -10,6 +10,7 @@ import {
   resolve,
   resolveInputs,
   slotFields,
+  targetServiceAccount,
   type PolicyResult,
 } from "@/lib/policy";
 import {
@@ -116,12 +117,8 @@ describe("the folders of test/fixtures/claimpolicy", () => {
     expect(missingFolders(fixtureFolders())).toEqual([]);
   });
 
-  it("names the excluded folders order, target-service-account, and check-served", () => {
-    expect([...EXCLUDED]).toEqual([
-      "order",
-      "target-service-account",
-      "check-served",
-    ]);
+  it("names the excluded folders order and check-served", () => {
+    expect([...EXCLUDED]).toEqual(["order", "check-served"]);
   });
 
   it("fails on a folder that is in neither list", () => {
@@ -233,6 +230,15 @@ const RUNNERS: Record<AppRule, Runner> = {
       input.selections ?? [],
       input.overrides,
     ),
+  "target-service-account": (input) => ({
+    value: {
+      serviceAccountName: targetServiceAccount(
+        input.kind,
+        input.claim,
+        input.section,
+      ),
+    },
+  }),
   "check-deletion-policy": (input) =>
     checkDeletionPolicy(
       input.policy,

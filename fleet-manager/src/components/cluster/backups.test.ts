@@ -7,10 +7,10 @@ import {
   type BackupStorageInput,
   type RestoreObject,
   backupRowsOf,
+  newestBackupRowOf,
   archiveLocation,
   backupStorageOf,
   bucketLocation,
-  dateTime,
   duration,
   restoreRowsOf,
 } from "./backups";
@@ -89,13 +89,29 @@ describe("duration", () => {
   });
 });
 
-describe("dateTime", () => {
-  it("writes the UTC date and minute", () => {
-    expect(dateTime("2026-10-18T11:58:31Z")).toBe("2026-10-18 11:58 UTC");
+describe("newestBackupRowOf", () => {
+  it("gives the first row of backupRowsOf", () => {
+    const backups = [
+      esBackup("old", { phase: "Failed" }, { created: "2026-10-17T02:00:00Z" }),
+      esBackup(
+        "new",
+        { phase: "Completed" },
+        { created: "2026-10-18T02:00:00Z" },
+      ),
+      esBackup(
+        "other",
+        { phase: "Completed" },
+        { cluster: "billing", created: "2026-10-19T02:00:00Z" },
+      ),
+    ];
+    expect(newestBackupRowOf(cluster, backups, now)).toEqual(
+      backupRowsOf(cluster, backups, now)[0],
+    );
+    expect(newestBackupRowOf(cluster, backups, now)?.name).toBe("new");
   });
 
-  it.each([undefined, "", "not a time"])("writes - for %j", (iso) => {
-    expect(dateTime(iso)).toBe("-");
+  it("gives undefined without a backup of the cluster", () => {
+    expect(newestBackupRowOf(cluster, [], now)).toBeUndefined();
   });
 });
 

@@ -36,6 +36,8 @@ import (
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
+	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
 	"github.com/konsole-is/camunda-operator/test/utils"
@@ -57,6 +59,12 @@ const maxHealthDumps = 3
 // process, such as /actuator/health/readiness, sits under it, and the path
 // itself reports every indicator the process has.
 const actuatorHealthPath = "/actuator/health"
+
+// The fleet and plugin kinds that the claim flows read.
+const (
+	environmentResource   = "environments.fleet.camunda.io"
+	pluginRequestResource = "pluginrequests.plugins.camunda.io"
+)
 
 // apply applies obj through kubectl. obj must carry its apiVersion and kind.
 func apply(obj client.Object) error {
@@ -141,6 +149,33 @@ func expectGone(g Gomega, resource, name, namespace string) {
 	exists, err := utils.Exists(resource, name, namespace)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(exists).To(BeFalse(), "%s %q still exists", resource, name)
+}
+
+// claimRequests returns the requests that the claim reports in
+// status.requests, as request name by section. It is written for Eventually.
+func claimRequests(g Gomega, resource, name, namespace string) map[string]string {
+	var claim struct {
+		Status struct {
+			Requests []fleetv1alpha1.RequestStatus `json:"requests"`
+		} `json:"status"`
+	}
+	g.Expect(utils.Get(resource, name, namespace, &claim)).To(Succeed())
+
+	requests := make(map[string]string, len(claim.Status.Requests))
+	for _, r := range claim.Status.Requests {
+		requests[r.Section] = r.Name
+	}
+
+	return requests
+}
+
+// requestOutput returns the output key of the PluginRequest name. It is
+// written for Eventually.
+func requestOutput(g Gomega, name, namespace, key string) string {
+	var request pluginsv1alpha1.PluginRequest
+	g.Expect(utils.Get(pluginRequestResource, name, namespace, &request)).To(Succeed())
+
+	return request.Status.Outputs[key]
 }
 
 // suspend sets spec.suspend on the cluster and waits until it reports Ready
@@ -349,6 +384,10 @@ func dumpDiagnostics(testNamespace string) {
 		// CamundaOptimize with a dangling reference from one with a Secret
 		// that lacks the key.
 		"management identity contracts": {"get", "managementauthconfigs", "-o", "yaml"},
+		// An Environment is cluster-scoped. Its Ready message names each
+		// object it refers to that does not exist, which is why a claim in
+		// its namespaces reports InvalidReference.
+		"environments": {"get", environmentResource, "-o", "yaml"},
 		// A Service answers on its ClusterIP only once kube-proxy programmed
 		// an endpoint for it. A ready pod is not enough, so the slices are
 		// the only record of whether a refused connection had a target. YAML
@@ -530,10 +569,14 @@ func containerPortNumber(container corev1.Container, port intstr.IntOrString) in
 }
 
 // customResourceKinds are the namespaced custom resources of this operator,
-// in the order a reader follows a failure: the storage backends first, then
-// the cluster, then what attaches to it, then the backups of it, and last the
-// restores that read them.
+// in the order a reader follows a failure: the claims and their plugin
+// requests first, then the storage backends, then the cluster, then what
+// attaches to it, then the backups of it, and last the restores that read
+// them.
 var customResourceKinds = []string{
+	"camundaclusterclaims",
+	"camundamanagementclusterclaims",
+	"pluginrequests",
 	"elasticsearchclusters",
 	"databaseservers",
 	"databaseserverconfigs",

@@ -117,7 +117,7 @@ func Sections() []pluginsv1alpha1.PluginSection {
 		}),
 		section(SectionConnectorsPermissions, pluginsv1alpha1.PluginSectionSpec{
 			Label:            "Connectors permissions",
-			Description:      "The cloud permissions of the Connectors, apart from the cloud identity of the cluster.",
+			Description:      "The Connectors get a cloud role of their own. A connector task uses it when it signs in with the default credentials of its cloud.",
 			Order:            70,
 			EmptyOptionLabel: "No cloud permissions",
 			Slot:             pluginsv1alpha1.SlotConnectorsIdentity,

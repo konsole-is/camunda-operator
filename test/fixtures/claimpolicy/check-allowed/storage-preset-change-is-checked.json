@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "name": "A preset change of an existing claim is checked against the current list",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "elasticsearchCluster": [
+            "medium"
+          ]
+        }
+      }
+    },
+    "policy": {
+      "sections": {
+        "secondary-storage": {
+          "allowed": [
+            "elasticsearch",
+            "database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "elasticsearch": {
+          "preset": {
+            "claimEditable": true
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch",
+        "parameters": {
+          "preset": "large"
+        }
+      }
+    ],
+    "requests": [
+      {
+        "metadata": {
+          "name": "orders-secondary-storage"
+        },
+        "spec": {
+          "section": "secondary-storage",
+          "registration": "elasticsearch",
+          "parameters": {
+            "preset": "small"
+          }
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "ElasticsearchClusterPreset \"large\" is not in spec.presets.elasticsearchCluster of Environment \"dev\""
+    }
+  }
+}

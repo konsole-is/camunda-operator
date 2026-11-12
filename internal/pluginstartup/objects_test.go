@@ -129,6 +129,17 @@ func TestParameterSchemasAreOpenAPIAndCoverClaimEditable(t *testing.T) {
 	}
 }
 
+func TestEachParameterHasATitle(t *testing.T) {
+	for _, r := range Registrations("0.3.0", testServiceAccount) {
+		var schema apiextensionsv1.JSONSchemaProps
+		require.NoError(t, json.Unmarshal(r.Spec.Parameters.Raw, &schema), r.Name)
+
+		for name, property := range schema.Properties {
+			assert.NotEmpty(t, property.Title, "%s: parameter %s has no title", r.Name, name)
+		}
+	}
+}
+
 func outputKeys(outputs []pluginsv1alpha1.OutputDecl) []string {
 	keys := make([]string, 0, len(outputs))
 	for _, o := range outputs {

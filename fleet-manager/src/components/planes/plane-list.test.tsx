@@ -25,7 +25,7 @@ function cluster(
     apiVersion: "core.camunda.io/v1",
     kind: "CamundaManagementCluster",
     metadata: { namespace, name, labels },
-    spec: { identityProvider: { keycloak: {} }, ...spec },
+    spec: { identityProvider: { keycloak: {} }, clusterSelector: {}, ...spec },
     status,
   } as never;
 }
@@ -73,6 +73,7 @@ const keycloakPlane = planesOf({
   ],
   claims: [claim("platform", "plane-a", ["production", "staging"])],
   namespaces: [],
+  environments: [],
 });
 
 function threePlanes(): Plane[] {
@@ -108,6 +109,7 @@ function threePlanes(): Plane[] {
       claim("platform", "broken", ["staging"]),
     ],
     namespaces: [],
+    environments: [],
   });
 }
 
@@ -169,6 +171,7 @@ describe("PlaneList", () => {
       ],
       claims: [claim("platform", "stopped", ["production"])],
       namespaces: [],
+      environments: [],
     });
     render(<PlaneList planes={suspended} />);
     const cells = within(screen.getByRole("row", { name: /stopped/ }))
@@ -229,6 +232,7 @@ describe("PlaneList", () => {
       ),
       claims: [],
       namespaces: [],
+      environments: [],
     });
     render(<PlaneList planes={planes} />);
     expect(screen.getByText("Page 1 of 2")).toBeTruthy();
@@ -248,6 +252,7 @@ describe("PlaneList", () => {
       ],
       claims: [],
       namespaces: [],
+      environments: [],
     });
     render(<PlaneList planes={planes} />);
     const row = screen.getByRole("row", { name: /legacy/ });

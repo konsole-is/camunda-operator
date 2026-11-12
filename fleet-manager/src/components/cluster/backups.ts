@@ -3,7 +3,7 @@ import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import type { StatusTone } from "@/components/fleet/status";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { DatabaseServerSpec } from "@/generated/crds/databaseserver";
-import { formatBytes } from "@/components/fleet/units";
+import { dateTime, formatBytes } from "@/components/fleet/units";
 import type { Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
 import { mergeDatabaseServer } from "@/lib/merge";
@@ -64,17 +64,6 @@ const DASH = "-";
 const FINAL = ["Completed", "Failed"];
 
 /**
- * dateTime writes an RFC 3339 time as "2026-10-18 11:58 UTC", the same on
- * every machine. It writes "-" for an unset or bad time.
- */
-export function dateTime(iso: string | undefined): string {
-  const ms = parse(iso);
-  if (ms === undefined) return DASH;
-  const text = new Date(ms).toISOString();
-  return `${text.slice(0, 10)} ${text.slice(11, 16)} UTC`;
-}
-
-/**
  * duration writes the time from from to to in its two largest units, such as
  * "12m 5s" or "2d 4h", and leaves out a second unit of zero. It writes "-"
  * when a time is unset or bad, and "0s" when to is before from.
@@ -133,6 +122,19 @@ export function backupRowsOf(
       details: detailsOf(b),
     };
   });
+}
+
+/**
+ * newestBackupRowOf returns the first row of backupRowsOf, or undefined
+ * when cluster has no backup.
+ */
+export function newestBackupRowOf(
+  cluster: ClusterLike,
+  backups: readonly BackupObject[],
+  now: string,
+): BackupRow | undefined {
+  const newest = newestFirst(clusterBackups(cluster, backups))[0];
+  return newest ? backupRowsOf(cluster, [newest], now)[0] : undefined;
 }
 
 /**

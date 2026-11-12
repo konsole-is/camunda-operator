@@ -6,7 +6,11 @@ import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
 import { mergeCluster, type ManagedFieldsEntry } from "@/lib/merge";
 import { loadMergeFixtures } from "../../../test/merge/fixtures";
-import { clusterFields, type ClusterFieldsInput } from "./cluster";
+import {
+  clusterFields,
+  optimizeClaimNames,
+  type ClusterFieldsInput,
+} from "./cluster";
 import { pathFrom } from "./walk";
 import { lockLabel, stateLabel, stateNote } from "./labels";
 import type { ClusterField } from "./types";
@@ -683,6 +687,34 @@ describe("clusterFields", () => {
     expect(field("spec.webapp.replicas").group).toBe("optimize");
   });
 
+  it("a field that only the claim of an attachment sets is a claim field", () => {
+    const spec = { clusterRef: { name: "orders" }, managementAuthRef: "auth" };
+    const fields = fieldsOf({
+      spec: {},
+      claim: claim({
+        attachments: {
+          optimize: {
+            managementAuthConfigRef: "auth",
+            webapp: { replicas: 3 },
+          },
+        },
+      }),
+      optimize: {
+        kind: "CamundaOptimize",
+        metadata: { name: "orders", managedFields: [owns(CLAIM, { spec })] },
+        spec,
+      } as unknown as Resource<"CamundaOptimize">,
+    });
+    const field = (path: string) => at(fields, path, "CamundaOptimize");
+    expect(view(field("spec.webapp.replicas"))).toMatchObject({
+      value: 3,
+      state: "Changed in the claim",
+    });
+    expect(field("spec.webapp.replicas").claimPath).toBe(
+      "spec.attachments.optimize.webapp.replicas",
+    );
+  });
+
   it("the backup schedule fields follow the attachment of the claim", () => {
     const spec = { clusterRef: { name: "orders" }, schedule: "0 2 * * *" };
     const fields = fieldsOf({
@@ -790,6 +822,25 @@ describe("claimSteps", () => {
       { field: "spec" },
       { field: "plugins" },
       { item: { section: "volume-encryption", registration: "x" } },
+    ]);
+  });
+});
+
+describe("optimizeClaimNames", () => {
+  it("names the auth reference as the claim does", () => {
+    expect(optimizeClaimNames(["managementAuthRef"])).toEqual([
+      "managementAuthConfigRef",
+    ]);
+  });
+
+  it("keeps every other name", () => {
+    expect(optimizeClaimNames(["importer", "replicas"])).toEqual([
+      "importer",
+      "replicas",
+    ]);
+    expect(optimizeClaimNames(["webapp", "managementAuthRef"])).toEqual([
+      "webapp",
+      "managementAuthRef",
     ]);
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 import type { DiffLine } from "@/lib/diff";
 import type { Step } from "@/lib/fields";
 import { CLAIM_LABEL } from "@/lib/labels";
@@ -12,7 +12,7 @@ import {
   type Session,
 } from "@/lib/session";
 import type { Preview, WriteMode, WriteResult } from "@/lib/write/types";
-import { ClaimReview } from "./claim-review";
+import { ClaimReview, type ReviewConfirm } from "./claim-review";
 import { Toast, useWriteToast } from "./toast";
 
 /**
@@ -27,6 +27,7 @@ export function ClaimReviewStory({
   mode,
   impacts = [],
   caution,
+  confirm,
   mergedLines,
   preview = { objects: [], errors: [] },
   result = { ok: true, mode: "direct" },
@@ -35,7 +36,8 @@ export function ClaimReviewStory({
   changes: { steps: Step[]; value?: unknown }[];
   mode: WriteMode;
   impacts?: string[];
-  caution?: string;
+  caution?: ReactNode;
+  confirm?: ReviewConfirm;
   mergedLines?: DiffLine[];
   preview?: Preview;
   result?: WriteResult;
@@ -65,6 +67,7 @@ export function ClaimReviewStory({
         intent={`Change the claim ${claim.metadata.name}`}
         impacts={impacts}
         caution={caution}
+        confirm={confirm}
         mergedLines={mergedLines}
         preview={async () => preview}
         apply={async () => result}

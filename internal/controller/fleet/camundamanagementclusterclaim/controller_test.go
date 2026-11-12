@@ -182,6 +182,23 @@ var _ = Describe("CamundaManagementClusterClaim controller", func() {
 		})
 	})
 
+	It("keeps a database server preset that the Environment drops", func() {
+		environment := planeEnvironment()
+		fixDatabasePreset(environment, "small", "small")
+		claim := newClaim(newEnvironmentNamespace(environment), environment.Name)
+		create(claim)
+		eventuallyPlane(claim, nil)
+
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(environment), environment)).To(Succeed())
+		environment.Spec.Presets.DatabaseServer = []string{"medium"}
+		Expect(k8sClient.Update(ctx, environment)).To(Succeed())
+		update(claim, func(c *fleetv1alpha1.CamundaManagementClusterClaim) { c.Spec.Versions.Console = "8.9.123" })
+
+		eventuallyPlane(claim, func(g Gomega, plane *v1.CamundaManagementCluster) {
+			g.Expect(plane.Spec.Console.Version).To(Equal("8.9.123"))
+		})
+	})
+
 	It("shows the Ready reason and message of the plane on ManagementClusterReady", func() {
 		claim := newPlaneClaim()
 		create(claim)

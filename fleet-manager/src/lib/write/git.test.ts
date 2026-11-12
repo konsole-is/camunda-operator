@@ -228,6 +228,76 @@ describe("the Git writer", slow, () => {
     );
   });
 
+  it("a create of an object that exists in the cluster fails with Stale and makes no commit", async () => {
+    repo = await serveBareRepository();
+    live.set("CamundaClusterClaim/team-a/orders", claim("team-a", "orders"));
+
+    const result = await writerFor().apply({
+      intent: "Create orders",
+      apply: [claim("team-a", "orders")],
+      create: ["CamundaClusterClaim/team-a/orders"],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Stale",
+          message: expect.stringContaining("exists already"),
+          ref: claimRef("team-a", "orders"),
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["Initial commit"]);
+  });
+
+  it("a create of an object whose file is in the repository fails with Stale, names the file, and makes no commit", async () => {
+    repo = await serveBareRepository();
+    await repo.commitFromOtherClone(
+      {
+        "team-a/camundaclusterclaims/orders.yaml":
+          "kind: CamundaClusterClaim\n",
+      },
+      "Other admin",
+    );
+
+    const result = await writerFor().apply({
+      intent: "Create orders",
+      apply: [claim("team-a", "orders")],
+      create: ["CamundaClusterClaim/team-a/orders"],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Stale",
+          message: expect.stringContaining(
+            "team-a/camundaclusterclaims/orders.yaml",
+          ),
+          ref: claimRef("team-a", "orders"),
+        }),
+      ],
+    });
+    expect(await repo.log()).toEqual(["Other admin", "Initial commit"]);
+  });
+
+  it("a create of a new namespace and its claim makes one commit", async () => {
+    repo = await serveBareRepository();
+
+    const result = await writerFor().apply({
+      intent: "Create team-b with the claim orders",
+      apply: [namespace("team-b"), claim("team-b", "orders")],
+      create: ["Namespace//team-b", "CamundaClusterClaim/team-b/orders"],
+    });
+
+    ok(result);
+    expect(await repo.log()).toEqual([
+      "Create team-b with the claim orders",
+      "Initial commit",
+    ]);
+  });
+
   it("skips the dry run of an ExternalSecret and commits it", async () => {
     repo = await serveBareRepository();
     const externalSecret: KubeObject = {

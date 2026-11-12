@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Creates the kind cluster of the fleet manager journeys and installs what
 # the journeys need: the operator and the fleet manager from the chart, a Git
-# server with a private CA, RustFS, the fake plugin, and one sample
-# CamundaCluster with its two PluginRequests. CI only: never run it against a
-# cluster that you use.
+# server with a private CA, RustFS, the fake plugin, and the claim of
+# claim.yaml, from which the claim controller writes the CamundaCluster
+# camundacluster-sample and its PluginRequests. CI only: never run it
+# against a cluster that you use.
 #
 # Usage: up.sh (make fleet-harness-up runs it)
 #
@@ -69,13 +70,27 @@ sed -e "s|__FAKEPLUGIN_IMAGE__|$fakeplugin_image|" -e "s|__ACCESS_EXTERNAL_URL__
   "$harness/fakeplugin.yaml" | kubectl apply -f -
 kubectl rollout status deployment/fakeplugin -n fleet-harness --timeout=120s
 
-echo "==> Applying the sample CamundaCluster"
-# The sample names a preset, a release, and storage that do not exist, so the
-# operator starts no Camunda pod. The pages need only the object.
-kubectl apply -n fleet-smoke -f config/samples/core_v1_camundacluster.yaml
-
-echo "==> Applying the bucket contract and the PluginRequests of the sample"
+echo "==> Applying the bucket contract and the claim"
 kubectl apply -f "$harness/backup-storage.yaml"
-kubectl apply -f "$harness/requests.yaml"
+kubectl label namespace fleet-smoke fleet.camunda.io/environment=fleet-harness --overwrite
+# The app applies the claim with the field manager fleet-manager and without
+# force, so a field that another manager owns would refuse its write.
+kubectl apply --server-side --field-manager=fleet-manager -f "$harness/claim.yaml"
+
+echo "==> Waiting for the claim controller to write the cluster and its requests"
+for object in camundacluster/camundacluster-sample \
+  pluginrequest/camundacluster-sample-access \
+  pluginrequest/camundacluster-sample-backup-storage; do
+  for _ in $(seq 150); do
+    kubectl get -n fleet-smoke "$object" >/dev/null 2>&1 && break
+    sleep 2
+  done
+  kubectl get -n fleet-smoke "$object" >/dev/null 2>&1 || {
+    echo "FAIL: the claim controller did not write $object in fleet-smoke within 300 seconds" >&2
+    kubectl get -n fleet-smoke camundaclusterclaim/camundacluster-sample -o yaml >&2 || true
+    exit 1
+  }
+  echo "ok: $object exists"
+done
 
 echo "==> The harness is up"

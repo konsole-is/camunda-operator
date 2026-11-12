@@ -23,9 +23,24 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
+        id: setup-go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+
+      # The Makefile builds its Go tools into bin/ with go install, and each
+      # build downloads the sources of the tool from the Go module proxy. The
+      # module cache of setup-go does not hold them: every job saves under the
+      # same key, and the job that saves first can be one that builds other
+      # tools. So this job keeps bin/ in a cache of its own. When the key
+      # changes, the newest older cache is restored, and the Makefile builds
+      # only the tools whose version changed.
+      - name: Restore the Go tools
+        uses: actions/cache@v6
+        with:
+          path: bin
+          key: go-tools-test-${{ runner.os }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('Makefile', '.custom-gcl.yml', 'go.mod') }}
+          restore-keys: go-tools-test-${{ runner.os }}-go${{ steps.setup-go.outputs.go-version }}-
 
       # The Go module proxy sometimes drops a connection, so tidy is retried.
       # Tidy downloads the modules that the later steps need. A plain
@@ -34,6 +49,12 @@ jobs:
         run: |
           hack/ci-retry.sh make tidy
           git diff --exit-code -- go.mod go.sum api/go.mod api/go.sum conformance/go.mod conformance/go.sum
+
+      # A cache miss builds the tools, and the module proxy sometimes drops a
+      # connection. The retry keeps one dropped download from failing the
+      # job. With the tools in the cache, this step builds nothing.
+      - name: Build the Go tools
+        run: hack/ci-retry.sh make controller-gen setup-envtest
 
       # Four test packages start this image through testcontainers. The pull
       # of testcontainers ignores an error in the pull stream, so a failed
@@ -49,8 +70,11 @@ jobs:
           done
           exit 1
 
+      # make test runs make fmt, which rewrites files and checks nothing
+      # here. The Lint job checks the format. "-o fmt" skips fmt and the
+      # build of golangci-lint that only fmt needs in this job.
       - name: Running Tests
-        run: make test
+        run: make -o fmt test
         env:
           # The runner VM is discarded after the job, so the Ryuk reaper of
           # testcontainers adds nothing here, and waiting for it is the one

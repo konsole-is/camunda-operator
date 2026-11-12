@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { PodTable } from "./pod-table";
+import { PodTable, USAGE_UNAVAILABLE } from "./pod-table";
 
 afterEach(cleanup);
 
@@ -27,7 +27,7 @@ describe("PodTable", () => {
   it("hides the usage column when usage is unavailable", () => {
     render(<PodTable pods={pods} usage="unavailable" now={now} />);
     expect(screen.queryByRole("columnheader", { name: "Usage" })).toBeNull();
-    expect(screen.getByText(/Usage is not available/)).toBeTruthy();
+    expect(screen.getByText(USAGE_UNAVAILABLE)).toBeTruthy();
     const row = screen.getByRole("row", { name: /orders-zeebe-0/ });
     expect(row.textContent).toContain("1/2");
     expect(row.textContent).toContain("2");
@@ -98,4 +98,9 @@ describe("PodTable", () => {
     expect(node("orders-zeebe-0")).toBe("node-2");
     expect(node("orders-zeebe-1")).toBe("-");
   });
+
+  it("says that usage is not available without claiming why, as a failed read looks the same", () =>
+    expect(USAGE_UNAVAILABLE).toBe(
+      "Usage is not available. The cluster has no metrics server, or the app could not read the usage.",
+    ));
 });

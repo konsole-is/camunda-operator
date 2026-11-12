@@ -1,9 +1,25 @@
+import type { Environment } from "@/generated/crds/environment";
 import type { PluginRegistration } from "@/generated/crds/pluginregistration";
-import type { PluginSelection, PolicyResult } from "./types";
+import type { ResolvedPolicy } from "./resolve";
+import type { PluginSelection, PolicyResult, SectionView } from "./types";
 
 /** DeletionPolicy is a deletion policy of a claim or of a request. */
 export type DeletionPolicy =
   PluginRegistration["spec"]["deletionPolicies"][number];
+
+/**
+ * deletionPolicyOf returns the deletion policy that the requests of a claim
+ * get, by the rule of DeletionPolicy of pkg/claimpolicy: own, the
+ * spec.deletionPolicy of the claim, when it is set, else the default of
+ * resolved, its status.resolvedPolicy, else Delete. A claim falls back to
+ * Delete, not to the current default of its Environment.
+ */
+export function deletionPolicyOf(
+  own: DeletionPolicy | "" | undefined,
+  resolved: ResolvedPolicy | undefined,
+): DeletionPolicy {
+  return own || resolved?.deletionPolicy || "Delete";
+}
 
 /**
  * checkDeletionPolicy refuses with NotAllowed the deletion policy Orphan when
@@ -41,5 +57,66 @@ export function checkDeletionPolicy(
       reason: "NotAllowed",
       message: `the deletion policy is Orphan, and these registrations do not support it: ${names}`,
     },
+  };
+}
+
+/**
+ * DeletionChoice is the deletion choice of a create flow. defaultPolicy is
+ * the default that deletionChoice took. keepAllowed is false when
+ * checkDeletionPolicy refuses Orphan for the selections. alwaysDeleted lists
+ * each selection whose registration does not list Orphan, as "<option
+ * label> (<section label>)". policy is the policy that the claim gets: the
+ * pick, else the default, and Delete when that is Orphan and keepAllowed is
+ * false.
+ */
+export type DeletionChoice = {
+  defaultPolicy: DeletionPolicy;
+  keepAllowed: boolean;
+  alwaysDeleted: { section: string; label: string }[];
+  policy: DeletionPolicy;
+};
+
+/**
+ * deletionChoice returns the deletion choice of a claim with selections
+ * and the deletion pick picked under environment. views give the labels of
+ * alwaysDeleted. A selection outside views shows by the label of its
+ * registration and the name of its section. defaultPolicy replaces the
+ * default of environment, Delete when unset or without an Environment, as
+ * for a claim whose resolved policy records a deletion policy.
+ */
+export function deletionChoice(
+  picked: DeletionPolicy | undefined,
+  selections: readonly PluginSelection[],
+  environment: Environment | undefined,
+  registrations: readonly PluginRegistration[],
+  views: readonly SectionView[] = [],
+  defaultPolicy: DeletionPolicy = environment?.spec.deletionPolicy || "Delete",
+): DeletionChoice {
+  const keepAllowed =
+    "value" in checkDeletionPolicy("Orphan", selections, registrations);
+  const alwaysDeleted = selections.flatMap((s) => {
+    const registration = registrations.find(
+      (r) => r.metadata.name === s.registration,
+    );
+    if (
+      !registration ||
+      registration.spec.deletionPolicies.includes("Orphan")
+    ) {
+      return [];
+    }
+    const view = views.find((v) => v.name === s.section);
+    const option =
+      view?.options.find((o) => o.registration === s.registration)?.label ??
+      registration.spec.label;
+    return [
+      { section: s.section, label: `${option} (${view?.label ?? s.section})` },
+    ];
+  });
+  const policy = picked ?? defaultPolicy;
+  return {
+    defaultPolicy,
+    keepAllowed,
+    alwaysDeleted,
+    policy: policy === "Orphan" && !keepAllowed ? "Delete" : policy,
   };
 }

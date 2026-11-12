@@ -88,6 +88,59 @@ export function runningBackup(
     BackupRef | undefined;
 }
 
+/** RollBackupLike is the part of a backup object that rollSensitiveBackup reads. */
+export type RollBackupLike = BackupLike & {
+  status?: { zeebeBackupId?: number; runtime?: { state?: string } };
+};
+
+/**
+ * RollSensitiveBackup is a backup with phase Running, with the facts that
+ * the backup warning needs.
+ */
+export type RollSensitiveBackup =
+  | (BackupRef & {
+      kind: "LogicalBackupElasticsearch";
+      partitionsFinal: boolean;
+    })
+  | (BackupRef & { kind: "LogicalBackupRDBMS"; hasZeebeBackupId: boolean });
+
+/**
+ * rollSensitiveBackup returns the backup of cluster that a roll of the
+ * brokers can fail, or undefined. It finds the backups of the cluster by the
+ * rules of clusterBackups, and takes only a backup with phase Running: a
+ * pending backup waits for the rollout. With more than one, the result is
+ * the first by name. partitionsFinal is true when the backup of the Zeebe
+ * partitions of an Elasticsearch backup is Completed or Failed.
+ * hasZeebeBackupId is true when a PostgreSQL backup has set
+ * status.zeebeBackupId.
+ */
+export function rollSensitiveBackup(
+  cluster: ClusterLike,
+  backups: readonly RollBackupLike[],
+): RollSensitiveBackup | undefined {
+  const [first] = clusterBackups(cluster, backups)
+    .filter((b) => b.status?.phase === "Running")
+    .sort(byName);
+  if (!first) return undefined;
+  const ref = {
+    namespace: cluster.metadata?.namespace ?? "",
+    name: first.metadata?.name ?? "",
+  };
+  if (first.kind === "LogicalBackupElasticsearch") {
+    const state = first.status?.runtime?.state;
+    return {
+      kind: first.kind,
+      ...ref,
+      partitionsFinal: state === "Completed" || state === "Failed",
+    };
+  }
+  return {
+    kind: "LogicalBackupRDBMS",
+    ...ref,
+    hasZeebeBackupId: typeof first.status?.zeebeBackupId === "number",
+  };
+}
+
 /**
  * runningRestore returns the running restore of cluster in restores, or
  * undefined, by the rules of runningBackup. A logical restore names the
@@ -124,9 +177,7 @@ function firstRunning(
     .filter(
       (o) => o.status?.phase !== "Completed" && o.status?.phase !== "Failed",
     )
-    .sort((a, b) =>
-      (a.metadata?.name ?? "").localeCompare(b.metadata?.name ?? ""),
-    );
+    .sort(byName);
   return first
     ? {
         kind: first.kind!,
@@ -134,4 +185,8 @@ function firstRunning(
         name: first.metadata?.name ?? "",
       }
     : undefined;
+}
+
+function byName(a: Meta, b: Meta): number {
+  return (a.metadata?.name ?? "").localeCompare(b.metadata?.name ?? "");
 }

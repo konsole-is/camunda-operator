@@ -12,7 +12,12 @@ import {
   REVISION_ANNOTATION,
 } from "@/lib/labels";
 import { type ClusterPageData, ClusterView } from "./cluster-view";
-import { ACTION_SLOTS, type ActionSlots } from "./slots";
+import {
+  ACTION_SLOTS,
+  type ActionSlots,
+  type ClusterSlotContext,
+  type ClusterSlots,
+} from "./slots";
 
 const live = vi.hoisted(() => ({
   objects: {} as Record<string, unknown[]>,
@@ -152,6 +157,7 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     releases: [],
     storage: [],
     accessRequests: [],
+    requests: [],
     pods: [brokerPod(0), brokerPod(1), brokerPod(2)],
     podSelector: "camunda.io/cluster=orders",
     backups: { elasticsearch: [], rdbms: [] },
@@ -167,6 +173,8 @@ function data(over: Partial<ClusterPageData> = {}): ClusterPageData {
     optimizes: [],
     sections: [],
     registrations: [],
+    platformConfigs: [],
+    managementAuthConfigs: [],
     fieldDocs: {},
     ...over,
   };
@@ -238,6 +246,32 @@ describe("ClusterView", () => {
       expect(container.querySelector("[data-action-slot]")).toBeNull();
       expect(screen.queryByRole("button", { name: /^Slot / })).toBeNull();
     }
+  });
+
+  it("watches the platform configs and the management auth configs of every namespace", () => {
+    render(view());
+    expect(live.calls).toContainEqual({
+      kind: "CamundaPlatformConfig",
+      opts: {},
+    });
+    expect(live.calls).toContainEqual({
+      kind: "ManagementAuthConfig",
+      opts: {},
+    });
+  });
+
+  it("an unmanaged cluster gets no edit host, also with claim actions", () => {
+    const claimActions = { preview: vi.fn(), apply: vi.fn() };
+    render(
+      view({
+        initial: data({ cluster: cluster({ labels: {} }) }),
+        claimActions,
+      }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Unsaved changes" }),
+    ).toBeNull();
+    expect(screen.queryByText(/^Changes are off/)).toBeNull();
   });
 
   it("a managed cluster mounts the nodes of the slots", () => {
@@ -719,6 +753,52 @@ describe("Backups tab", () => {
     ).toBeTruthy();
   });
 
+  const twoBackups = () =>
+    data({
+      backups: {
+        elasticsearch: [
+          esBackup("nightly-1", "Completed", "2026-10-18T02:00:00Z"),
+          esBackup("manual-1", "Completed", "2026-10-18T10:00:00Z"),
+        ],
+        rdbms: [],
+      },
+    });
+  const rowSlots: ClusterSlots = {
+    "cluster.backups.actions": <button>Back up now</button>,
+    "cluster.backups.row": (_ctx, row) => <button>Delete {row.name}</button>,
+  };
+
+  it("a managed cluster mounts the row slot on each backup row and keeps the header slot", () => {
+    const { container } = render(
+      view({ initial: twoBackups(), slots: rowSlots }),
+    );
+    for (const name of ["nightly-1", "manual-1"]) {
+      const row = screen
+        .getByRole("button", { name: `Details of ${name}` })
+        .closest("tr")!;
+      const mount = row.querySelector(
+        '[data-action-slot="cluster.backups.row"]',
+      );
+      expect(mount?.textContent).toBe(`Delete ${name}`);
+    }
+    const header = container.querySelector(
+      '[data-action-slot="cluster.backups.actions"]',
+    );
+    expect(header?.textContent).toBe("Back up now");
+  });
+
+  it("an unmanaged cluster mounts no row slot", () => {
+    const initial = twoBackups();
+    render(
+      view({
+        initial: { ...initial, cluster: cluster({ labels: {} }) },
+        slots: rowSlots,
+      }),
+    );
+    expect(screen.queryByRole("button", { name: /^Delete/ })).toBeNull();
+    expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
+  });
+
   it("follows a backup that appears after the first render", () => {
     const { rerender } = render(view());
     expect(screen.getByText("No backups yet.")).toBeTruthy();
@@ -856,6 +936,17 @@ describe("Backups tab", () => {
     expect(live.calls).toContainEqual({
       kind: "CamundaOptimize",
       opts: { namespace: "team-a" },
+    });
+  });
+
+  it("watches the PluginRequests of the claim of the cluster by the claim label", () => {
+    render(view());
+    expect(live.calls).toContainEqual({
+      kind: "PluginRequest",
+      opts: {
+        namespace: "team-a",
+        labelSelector: `${CLAIM_LABEL}=orders`,
+      },
     });
   });
 
@@ -1194,20 +1285,106 @@ describe("Endpoints tab", () => {
   });
 });
 
+describe("slot context", () => {
+  it("gives a render function the live claim, the merged spec, the write mode, and the open component", () => {
+    let seen: ClusterSlotContext | undefined;
+    window.history.replaceState(null, "", "?tab=overview&component=zeebe");
+    render(
+      view({
+        writeMode: "git",
+        slots: {
+          "cluster.header.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      }),
+    );
+    expect(seen?.cluster.metadata?.name).toBe("orders");
+    expect(seen?.claim?.metadata?.name).toBe("orders");
+    expect(seen?.merged.spec.presetRef).toBe("medium");
+    expect(seen?.writeMode).toBe("git");
+    expect(seen?.openId).toBe("zeebe");
+    expect(seen?.now).toBe(now);
+  });
+
+  it("gives the requests of the claim and no request of another claim", () => {
+    let seen: ClusterSlotContext | undefined;
+    const request = (kind: string, claimName: string) =>
+      nsObject("PluginRequest", `${claimName}-secondary-storage`, {
+        claimRef: { kind, name: claimName },
+        section: "secondary-storage",
+        registration: "elasticsearch",
+      });
+    render(
+      view({
+        initial: data({
+          requests: [
+            request("CamundaClusterClaim", "orders"),
+            request("CamundaManagementClusterClaim", "orders"),
+          ],
+        }),
+        slots: {
+          "cluster.header.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      }),
+    );
+    expect(seen?.requests.map((r) => r.spec.claimRef)).toEqual([
+      { kind: "CamundaClusterClaim", name: "orders" },
+    ]);
+  });
+
+  it("gives the environment of the namespace and the storage of spec.storageRef", () => {
+    let seen: ClusterSlotContext | undefined;
+    const storage = (name: string) =>
+      ({
+        kind: "SecondaryStorageConfig",
+        metadata: { namespace: "team-a", name },
+        spec: { type: "elasticsearch" },
+      }) as unknown as Resource<"SecondaryStorageConfig">;
+    render(
+      view({
+        initial: data({
+          cluster: cluster({ spec: { storageRef: "search" } }),
+          storage: [storage("other"), storage("search")],
+        }),
+        slots: {
+          "cluster.header.actions": (c) => {
+            seen = c;
+            return null;
+          },
+        },
+      }),
+    );
+    expect(seen?.environment?.metadata?.name).toBe("prod");
+    expect(seen?.storage?.metadata?.name).toBe("search");
+    expect(seen?.writeMode).toBeUndefined();
+    expect(seen?.openId).toBeUndefined();
+  });
+});
+
 describe("Claim tab", () => {
   const editor: ActionSlots = { "cluster.claim.editor": <p>editor</p> };
 
-  it("renders the read view beside the claim editor slot", () => {
+  it("a filled claim editor slot shows in place of the read view", async () => {
+    render(
+      view({ slots: { "cluster.claim.editor": () => <p>Claim editor</p> } }),
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Claim" }));
+    expect(screen.getByText("Claim editor")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Basics" })).toBeNull();
+  });
+
+  it("an empty claim editor slot keeps the read view", () => {
     window.history.replaceState(null, "", "?tab=claim");
-    const { container } = render(view({ slots: editor }));
-    expect(screen.getAllByText("Set at creation").length).toBeGreaterThan(0);
-    const slot = container.querySelector(
-      '[data-action-slot="cluster.claim.editor"]',
-    );
-    expect(slot?.textContent).toBe("editor");
-    expect(screen.getByRole("region", { name: "Basics" }).contains(slot)).toBe(
-      false,
-    );
+    const { container } = render(view());
+    expect(screen.getByRole("region", { name: "Basics" })).toBeTruthy();
+    expect(
+      container.querySelector('[data-action-slot="cluster.claim.editor"]'),
+    ).not.toBeNull();
   });
 
   it("says that the claim is missing and keeps the editor slot", () => {

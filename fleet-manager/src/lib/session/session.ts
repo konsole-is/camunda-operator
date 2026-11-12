@@ -162,6 +162,19 @@ export function discard<C extends ClaimObject>(
   return compactAppended({ ...s, pending });
 }
 
+/**
+ * fieldLock returns the lock that refuses each change at steps: the lock of
+ * steps or of a field above it. A lock can name a list item by its keys
+ * while steps name it by its index. setValue and resetValue can also refuse
+ * a value that changes a locked field below steps.
+ */
+export function fieldLock<C extends ClaimObject>(
+  s: Session<C>,
+  steps: readonly Step[],
+): FieldLock | undefined {
+  return lockOf(s.locks, steps) ?? lockOf(s.locks, rekeyed(s.claim, steps));
+}
+
 /** claimAfter returns a copy of the claim with each pending change applied. */
 export function claimAfter<C extends ClaimObject>(s: Session<C>): C {
   return withChanges(s.claim, [...s.pending.values()]);

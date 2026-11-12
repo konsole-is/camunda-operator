@@ -22,21 +22,11 @@ export function TypedConfirm({
   pending?: boolean;
   onConfirm?: () => void;
 }) {
-  const id = useId();
   const [typed, setTyped] = useState("");
   return (
     <div className="flex max-w-md flex-col gap-3">
       {children && <div className="text-sm text-text-2">{children}</div>}
-      <label htmlFor={id} className="text-sm text-muted">
-        Type <span className="font-medium text-text">{name}</span> to confirm
-      </label>
-      <Input
-        id={id}
-        value={typed}
-        autoComplete="off"
-        spellCheck={false}
-        onChange={(event) => setTyped(event.target.value)}
-      />
+      <TypedField name={name} value={typed} onChange={setTyped} />
       <Button
         variant="destructive"
         className="self-start"
@@ -45,6 +35,36 @@ export function TypedConfirm({
       >
         {confirmLabel}
       </Button>
+    </div>
+  );
+}
+
+/**
+ * TypedField is the labeled input of a typed confirm, "Type name to
+ * confirm". Its owner holds the value and compares it to name.
+ */
+export function TypedField({
+  name,
+  value,
+  onChange,
+}: {
+  name: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex flex-col gap-3">
+      <label htmlFor={id} className="text-sm text-muted">
+        Type <span className="font-medium text-text">{name}</span> to confirm
+      </label>
+      <Input
+        id={id}
+        value={value}
+        autoComplete="off"
+        spellCheck={false}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </div>
   );
 }

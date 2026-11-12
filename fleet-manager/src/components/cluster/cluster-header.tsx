@@ -22,7 +22,8 @@ export type ClusterHeaderProps = {
   actions?: ReactNode;
 };
 
-const STORAGE_LABEL = {
+/** STORAGE_LABEL is the name of each type of secondary storage, as a user reads it. */
+export const STORAGE_LABEL = {
   elasticsearch: "Elasticsearch",
   rdbms: "Relational database",
 } as const;

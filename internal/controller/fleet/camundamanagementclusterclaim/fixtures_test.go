@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -175,6 +176,17 @@ func planeEnvironment() *fleetv1alpha1.Environment {
 				pluginstartup.SectionAccess:        {Allowed: []string{registrationAccess}},
 				pluginstartup.SectionCloudIdentity: {Allowed: []string{registrationIdentity}},
 			},
+		},
+	}
+}
+
+// fixDatabasePreset sets the preset of management-database-server in
+// environment to preset, and its database server preset list to listed.
+func fixDatabasePreset(environment *fleetv1alpha1.Environment, preset string, listed ...string) {
+	environment.Spec.Presets.DatabaseServer = listed
+	environment.Spec.Parameters = map[string]fleetv1alpha1.ParameterPolicies{
+		pluginstartup.RegistrationManagementDatabaseServer: {
+			"preset": {Value: &apiextensionsv1.JSON{Raw: []byte(`"` + preset + `"`)}},
 		},
 	}
 }

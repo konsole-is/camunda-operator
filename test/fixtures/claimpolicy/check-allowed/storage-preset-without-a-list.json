@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "name": "An Environment without a list for the preset kind allows no preset",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "camundaCluster": [
+            "small"
+          ]
+        }
+      }
+    },
+    "policy": {
+      "sections": {
+        "secondary-storage": {
+          "allowed": [
+            "elasticsearch",
+            "database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "elasticsearch": {
+          "preset": {
+            "value": "small"
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch"
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "ElasticsearchClusterPreset \"small\" of spec.parameters.elasticsearch.preset is not in spec.presets.elasticsearchCluster of Environment \"dev\""
+    }
+  }
+}

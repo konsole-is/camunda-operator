@@ -23,9 +23,24 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
+        id: setup-go
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+
+      # The Makefile builds its Go tools into bin/ with go install, and each
+      # build downloads the sources of the tool from the Go module proxy. The
+      # module cache of setup-go does not hold them: every job saves under the
+      # same key, and the job that saves first can be one that builds other
+      # tools. So this job keeps bin/ in a cache of its own. When the key
+      # changes, the newest older cache is restored, and the Makefile builds
+      # only the tools whose version changed.
+      - name: Restore the Go tools
+        uses: actions/cache@v6
+        with:
+          path: bin
+          key: go-tools-lint-${{ runner.os }}-go${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('Makefile', '.custom-gcl.yml', 'go.mod') }}
+          restore-keys: go-tools-lint-${{ runner.os }}-go${{ steps.setup-go.outputs.go-version }}-
 
       # The Go module proxy sometimes drops a connection. The retry keeps
       # one dropped download from failing the job.
@@ -34,6 +49,12 @@ jobs:
           hack/ci-retry.sh go mod download
           hack/ci-retry.sh go -C api mod download
           hack/ci-retry.sh go -C conformance mod download
+
+      # A cache miss builds the tools, and the module proxy sometimes drops a
+      # connection. The retry keeps one dropped download from failing the
+      # job. With the tools in the cache, this step builds nothing.
+      - name: Build the Go tools
+        run: hack/ci-retry.sh make golangci-lint controller-gen crd-ref-docs setup-envtest
 
       - name: Check linter configuration
         run: make lint-config

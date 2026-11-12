@@ -38,3 +38,19 @@ export function environmentOf(
     message: `namespace "${namespaceName}" has the label ${ENVIRONMENT_LABEL}=${name}, and no Environment "${name}" exists`,
   };
 }
+
+/**
+ * environmentNameOf returns the name of the Environment of namespace, by the
+ * rule of environmentOf, or undefined when the namespace belongs to none. It
+ * takes the JSON form of the objects, as the watch of the browser gives
+ * them.
+ */
+export function environmentNameOf(
+  namespace: { metadata?: { name?: string; labels?: Record<string, string> } },
+  environments: readonly { metadata: { name?: string } }[],
+): string | undefined {
+  return environmentOf(
+    namespace as V1Namespace,
+    environments as readonly Environment[],
+  ).environment?.metadata.name;
+}

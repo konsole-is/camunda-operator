@@ -2,7 +2,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TopologyBox } from "./topology";
-import { TopologyView } from "./topology-view";
+import { TopologyBoxes, TopologyView } from "./topology-view";
 
 afterEach(cleanup);
 
@@ -71,5 +71,30 @@ describe("TopologyView", () => {
       screen.getByRole("img", { name: "Brokers: Not ready (Degraded)" }),
     ).toBeTruthy();
     expect(screen.queryByRole("img", { name: /^Operate:/ })).toBeNull();
+  });
+});
+
+describe("TopologyBoxes", () => {
+  it("marks a new box and a removed box", () => {
+    render(
+      <TopologyBoxes
+        boxes={boxes}
+        marks={{ zeebe: "new", operate: "removed" }}
+        label="After the change"
+      />,
+    );
+    const list = screen.getByRole("list", { name: "After the change" });
+    const [brokers, operate] = within(list)
+      .getAllByRole("listitem")
+      .filter((li) => li.parentElement === list);
+    expect(within(brokers).getByText("New")).toBeTruthy();
+    expect(within(operate).getByText("Removed")).toBeTruthy();
+  });
+
+  it("leaves out the pods and the empty note when pods is false", () => {
+    render(<TopologyBoxes boxes={boxes} pods={false} label="Now" />);
+    expect(screen.queryByRole("list", { name: "Pods of Brokers" })).toBeNull();
+    expect(screen.queryByText("No pods")).toBeNull();
+    expect(screen.getByText("Embedded: Gateway")).toBeTruthy();
   });
 });

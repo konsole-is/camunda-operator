@@ -36,10 +36,12 @@ test("the chart install serves the app and shows the sample cluster", async ({
   ).toEqual([]);
   await shot(page, "fleet", { dir: JOURNEYS_DIR });
 
-  // TODO(#625): assert the cluster name on the fleet page when the fleet view
-  // lists clusters. The cluster page reads the CamundaCluster through the
-  // same informer, which lists every namespace.
-  await page.goto(`/fleet/clusters/${namespace}/${name}`);
+  const link = page.getByRole("link", { name, exact: true });
+  await expect(link).toHaveAttribute(
+    "href",
+    `/fleet/clusters/${namespace}/${name}`,
+  );
+  await link.click();
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
   await shot(page, "cluster", { dir: JOURNEYS_DIR });
 

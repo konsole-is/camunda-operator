@@ -142,6 +142,22 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		return res, fmt.Errorf("reading the CamundaOptimize of the claim: %w", err)
 	}
 
+	var requests pluginsv1alpha1.PluginRequestList
+	if err := r.List(
+		ctx,
+		&requests,
+		client.InNamespace(claim.Namespace),
+		client.MatchingLabels{fleetv1alpha1.LabelClaim: claim.Name},
+	); err != nil {
+		return res, fmt.Errorf("listing the PluginRequests of the claim: %w", err)
+	}
+	res.requests = claimrequests.Own(
+		requests.Items,
+		pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: claim.Name},
+		claim.Spec.Plugins,
+		res.sections,
+	)
+
 	presetRef, releaseRef := components.ChangedReferences(claim, res.live)
 	if err := claimpolicy.CheckAllowed(claimpolicy.AllowedInput{
 		Environment: environment,
@@ -151,6 +167,7 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 		PresetRef:   presetRef,
 		ReleaseRef:  releaseRef,
 		Selections:  claim.Spec.Plugins,
+		Requests:    res.requests,
 	}); err != nil {
 		return res, err
 	}
@@ -174,22 +191,6 @@ func (r *Reconciler) preCheck(ctx context.Context, claim *fleetv1alpha1.CamundaC
 	if res.order, err = claimpolicy.Order(claim.Spec.Plugins, res.registrations); err != nil {
 		return res, err
 	}
-
-	var requests pluginsv1alpha1.PluginRequestList
-	if err := r.List(
-		ctx,
-		&requests,
-		client.InNamespace(claim.Namespace),
-		client.MatchingLabels{fleetv1alpha1.LabelClaim: claim.Name},
-	); err != nil {
-		return res, fmt.Errorf("listing the PluginRequests of the claim: %w", err)
-	}
-	res.requests = claimrequests.Own(
-		requests.Items,
-		pluginsv1alpha1.ClaimRef{Kind: pluginsv1alpha1.ClaimKindCamundaClusterClaim, Name: claim.Name},
-		claim.Spec.Plugins,
-		res.sections,
-	)
 
 	return res, nil
 }

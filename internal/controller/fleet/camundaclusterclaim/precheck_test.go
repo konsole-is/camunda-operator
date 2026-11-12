@@ -84,6 +84,16 @@ var _ = Describe("CamundaClusterClaim precheck", func() {
 			}, fleetv1alpha1.ReasonNotAllowed, presetName,
 		),
 		Entry(
+			"an Elasticsearch preset that the Environment does not list", func() *fleetv1alpha1.CamundaClusterClaim {
+				environment := elasticsearchEnvironment("small")
+				createEnvironment(environment)
+				claim := newClaim(newNamespace(map[string]string{fleetv1alpha1.LabelEnvironment: environment.Name}))
+				claim.Spec.Plugins[0] = elasticsearchSelection("large")
+				return claim
+			}, fleetv1alpha1.ReasonNotAllowed,
+			`ElasticsearchClusterPreset "large" is not in spec.presets.elasticsearchCluster`,
+		),
+		Entry(
 			"parameters that are not a JSON object", func() *fleetv1alpha1.CamundaClusterClaim {
 				claim := newClaim(newNamespace(nil))
 				claim.Spec.Plugins[0].Parameters = &apiextensionsv1.JSON{Raw: []byte(`["existing-es"]`)}

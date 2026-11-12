@@ -38,6 +38,7 @@ import (
 
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 	"github.com/konsole-is/camunda-operator/internal/manager"
+	"github.com/konsole-is/camunda-operator/internal/pluginstartup"
 	"github.com/konsole-is/camunda-operator/internal/reconcilers"
 	"github.com/konsole-is/camunda-operator/internal/version"
 	"github.com/konsole-is/camunda-operator/pkg/grace"
@@ -60,6 +61,8 @@ const (
 	// /manager.
 	deployedManager = "manager"
 )
+
+var operatorAccount = pluginsv1alpha1.ServiceAccountRef{Namespace: operatorNamespace, Name: operatorServiceAccount}
 
 // objectsFile is the output file of the state after the seed.
 const objectsFile = "objects.yaml"
@@ -99,6 +102,14 @@ func generate(ctx context.Context, sc *scenario) (_ map[string][]unstructured.Un
 		return nil, err
 	}
 	sim := newSimulator(c)
+
+	// In a cluster, the built-in PluginSections and PluginRegistrations exist
+	// before a claim does. A claim that reconciles before them reports
+	// InvalidReference first, and its conditions then come out in another
+	// order.
+	if err := pluginstartup.New(c, version.Version(), operatorAccount).Apply(ctx); err != nil {
+		return nil, fmt.Errorf("applying the built-in plugin objects: %w", err)
+	}
 
 	namespace := &unstructured.Unstructured{}
 	namespace.SetAPIVersion("v1")
@@ -279,10 +290,7 @@ func runReconcilers(
 		// A go run build reports version.Dev, so the outputs do not change
 		// with the release.
 		OperatorVersion: version.Version(),
-		ServiceAccount: pluginsv1alpha1.ServiceAccountRef{
-			Namespace: operatorNamespace,
-			Name:      operatorServiceAccount,
-		},
+		ServiceAccount:  operatorAccount,
 	}); err != nil {
 		return err
 	}

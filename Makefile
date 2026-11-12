@@ -513,15 +513,23 @@ $(GOLANGCI_LINT_SCHEMA): | $(LOCALBIN)
 	curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --max-time 60 \
 		-o "$@.tmp" "https://golangci-lint.run/jsonschema/$(notdir $@)" && mv -f "$@.tmp" "$@"
 
+# The custom binary with the plugins of .custom-gcl.yml replaces the versioned file, so the link that go-install-tool
+# checks stays in place and a later call builds nothing. The copy of .custom-gcl.yml beside the binary records the
+# config it was built from. A changed config, or a new plain binary from go-install-tool, builds it again.
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
-	@test -f .custom-gcl.yml && { \
-		echo "Building custom golangci-lint with plugins..." && \
-		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
-		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
-	} || true
+	@[ ! -f .custom-gcl.yml ] || { \
+		set -e; \
+		built="$(GOLANGCI_LINT)-$(GOLANGCI_LINT_VERSION)"; \
+		if ! cmp -s .custom-gcl.yml "$$built.custom-gcl.yml" || [ "$$built" -nt "$$built.custom-gcl.yml" ]; then \
+			echo "Building custom golangci-lint with plugins..."; \
+			"$(GOLANGCI_LINT)" custom --destination "$(LOCALBIN)" --name golangci-lint-custom; \
+			mv -f "$(LOCALBIN)/golangci-lint-custom" "$$built"; \
+			cp .custom-gcl.yml "$$built.custom-gcl.yml"; \
+		fi; \
+	}
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
@@ -723,7 +731,7 @@ fleet-build: fleet-install ## Build the fleet manager with next build.
 fleet-generate: fleet-install ## Generate fleet-manager/src/generated from the CRDs and the condition types of api/.
 	mkdir -p $(FLEET_DIR)/src/generated
 	go run ./hack/tsconditions -api api -out $(FLEET_DIR)/src/generated/conditions.ts
-	go run ./hack/tsfielddocs -crds config/crd/bases -out $(FLEET_DIR)/src/generated/fielddocs.ts
+	go run ./hack/tsfielddocs -crds config/crd/bases -out $(FLEET_DIR)/src/generated/fielddocs.ts -schema-out $(FLEET_DIR)/src/generated/fieldschema.ts
 	$(FLEET_PNPM) run generate
 
 .PHONY: fleet-scenarios

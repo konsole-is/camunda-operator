@@ -24,6 +24,8 @@ import (
 	"slices"
 	"strings"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
 	fleetv1alpha1 "github.com/konsole-is/camunda-operator/api/fleet/v1alpha1"
 	pluginsv1alpha1 "github.com/konsole-is/camunda-operator/api/plugins/v1alpha1"
 )
@@ -44,6 +46,47 @@ type AllowedInput struct {
 	PresetRef  string                          `json:"presetRef,omitempty"`
 	ReleaseRef string                          `json:"releaseRef,omitempty"`
 	Selections []fleetv1alpha1.PluginSelection `json:"selections,omitempty"`
+	// Requests are the live PluginRequests of the claim.
+	Requests []pluginsv1alpha1.PluginRequest `json:"requests,omitempty"`
+}
+
+// The built-in registrations whose parameter preset names a preset, as
+// pluginstartup names them.
+const (
+	registrationElasticsearch            = "elasticsearch"
+	registrationDatabaseServer           = "database-server"
+	registrationManagementDatabaseServer = "management-database-server"
+
+	presetParameter = "preset"
+)
+
+// presetList is the list of an Environment that names the presets of one
+// preset kind.
+type presetList struct {
+	kind  string
+	field string
+	names func(fleetv1alpha1.EnvironmentPresets) []string
+}
+
+var (
+	elasticsearchPresets = presetList{
+		kind:  "ElasticsearchClusterPreset",
+		field: "spec.presets.elasticsearchCluster",
+		names: func(p fleetv1alpha1.EnvironmentPresets) []string { return p.ElasticsearchCluster },
+	}
+	databaseServerPresets = presetList{
+		kind:  "DatabaseServerPreset",
+		field: "spec.presets.databaseServer",
+		names: func(p fleetv1alpha1.EnvironmentPresets) []string { return p.DatabaseServer },
+	}
+)
+
+// storagePresetLists holds the preset list of each built-in registration
+// whose parameter preset names a preset.
+var storagePresetLists = map[string]presetList{
+	registrationElasticsearch:            elasticsearchPresets,
+	registrationDatabaseServer:           databaseServerPresets,
+	registrationManagementDatabaseServer: databaseServerPresets,
 }
 
 // CheckAllowed refuses with NotAllowed the first value of a claim that its
@@ -63,6 +106,14 @@ type AllowedInput struct {
 //     claim-editable passes only with a value equal as JSON to the value of
 //     the snapshot. A claim-editable key with choices takes only the name of
 //     a choice or a list of such names.
+//  7. A preset of a selection of the built-in elasticsearch,
+//     database-server, or management-database-server, in claim order, that
+//     the current Environment does not list in
+//     spec.presets.elasticsearchCluster or spec.presets.databaseServer. The
+//     preset is the parameter preset that Resolve gives the request of the
+//     selection, from the claim or from the snapshot. A preset that the
+//     request in Requests of the same section and registration already
+//     carries passes. An empty list allows no preset.
 //
 // Without an Environment, every preset and release passes. The registrations
 // and the parameters are always checked against the snapshot, so a later
@@ -108,7 +159,7 @@ func CheckAllowed(in AllowedInput) error {
 		}
 	}
 
-	return nil
+	return checkStoragePresets(in)
 }
 
 func checkRefs(in AllowedInput) error {
@@ -136,6 +187,79 @@ func checkRefs(in AllowedInput) error {
 	}
 
 	return nil
+}
+
+func checkStoragePresets(in AllowedInput) error {
+	if in.Environment == nil {
+		return nil
+	}
+
+	for _, s := range in.Selections {
+		list, ok := storagePresetLists[s.Registration]
+		if !ok {
+			continue
+		}
+
+		parameters, err := requestParameters(s, in.Policy.Parameters[s.Registration])
+		if err != nil {
+			return err
+		}
+
+		preset, ok := presetOf(parameters)
+		if !ok || slices.Contains(list.names(in.Environment.Spec.Presets), preset) || inUse(s, preset, in.Requests) {
+			continue
+		}
+
+		claimed, err := decodeObject(s.Parameters)
+		if err != nil {
+			return fmt.Errorf("parameters of the selection of section %q: %w", s.Section, err)
+		}
+		_, set := claimed[presetParameter]
+		if set && in.Policy.Parameters[s.Registration][presetParameter].ClaimEditable {
+			return refuse(
+				fleetv1alpha1.ReasonNotAllowed,
+				"%s %q is not in %s of Environment %q",
+				list.kind,
+				preset,
+				list.field,
+				in.Environment.Name,
+			)
+		}
+
+		return refuse(
+			fleetv1alpha1.ReasonNotAllowed,
+			"%s %q of spec.parameters.%s.%s is not in %s of Environment %q",
+			list.kind,
+			preset,
+			s.Registration,
+			presetParameter,
+			list.field,
+			in.Environment.Name,
+		)
+	}
+
+	return nil
+}
+
+// presetOf returns the parameter preset of parameters. A value that is not a
+// name is no preset: the parameter schema of the registration refuses it.
+func presetOf(parameters *apiextensionsv1.JSON) (string, bool) {
+	object, err := decodeObject(parameters)
+	if err != nil {
+		return "", false
+	}
+
+	return nameOf(object[presetParameter])
+}
+
+func inUse(selection fleetv1alpha1.PluginSelection, preset string, requests []pluginsv1alpha1.PluginRequest) bool {
+	return slices.ContainsFunc(requests, func(r pluginsv1alpha1.PluginRequest) bool {
+		if r.Spec.Section != selection.Section || r.Spec.Registration != selection.Registration {
+			return false
+		}
+		live, ok := presetOf(r.Spec.Parameters)
+		return ok && live == preset
+	})
 }
 
 func appliesTo(section string, kind pluginsv1alpha1.ClaimKind, sections []pluginsv1alpha1.PluginSection) bool {

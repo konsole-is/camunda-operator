@@ -13,6 +13,14 @@ export const CLAIM_LABEL = "fleet.camunda.io/claim";
 export const REVISION_ANNOTATION = "fleet.camunda.io/revision";
 
 /**
+ * ALLOW_VERSION_DOWNGRADE_ANNOTATION on a CamundaCluster approves a downgrade
+ * to the version it holds. It is AllowVersionDowngradeAnnotation of
+ * pkg/components/camundacluster.
+ */
+export const ALLOW_VERSION_DOWNGRADE_ANNOTATION =
+  "camunda.io/allow-version-downgrade";
+
+/**
  * LAST_APPLIED_ANNOTATION holds the last applied file of kubectl apply
  * without --server-side. It is LastAppliedConfigAnnotation of k8s.io/api/core/v1.
  */
@@ -68,6 +76,28 @@ export const BACKUP_SCHEDULE_LABEL = "camunda.io/backup-schedule";
  * pkg/labels.
  */
 export const MANAGEMENT_CLUSTER_ANNOTATION = "camunda.io/management-cluster";
+
+/**
+ * SUSPENSION_HOLD_PREFIX starts the key of an annotation that suspends a
+ * CamundaCluster, whatever spec.suspend says. It is SuspensionHoldPrefix of
+ * api/v1.
+ */
+export const SUSPENSION_HOLD_PREFIX = "suspension-hold.camunda.io/";
+
+/**
+ * DESCRIPTION_ANNOTATION holds a short text that says what an object is
+ * for. It is a well-known Kubernetes annotation. The operator does not read it.
+ */
+export const DESCRIPTION_ANNOTATION = "kubernetes.io/description";
+
+/** presetDescription gives the trimmed DESCRIPTION_ANNOTATION of preset, or undefined when it is missing or blank. */
+export function presetDescription(preset: {
+  metadata?: { annotations?: Record<string, string> };
+}): string | undefined {
+  const description =
+    preset.metadata?.annotations?.[DESCRIPTION_ANNOTATION]?.trim();
+  return description || undefined;
+}
 
 /** isManaged says whether a claim made the object: it carries CLAIM_LABEL with a value. */
 export function isManaged(object: {

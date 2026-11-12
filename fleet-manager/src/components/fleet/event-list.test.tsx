@@ -132,4 +132,37 @@ describe("EventList", () => {
     render(<EventList now={now} events={[]} />);
     expect(screen.getByText("No events")).toBeTruthy();
   });
+
+  it("names the object of each event with showObject", () => {
+    render(
+      <EventList
+        now={now}
+        showObject
+        events={[
+          {
+            reason: "Created",
+            eventTime: "2026-10-15T10:00:00Z",
+            regarding: { kind: "StatefulSet", name: "orders-zeebe" },
+          },
+        ]}
+      />,
+    );
+    expect(items()[0]).toContain("StatefulSet/orders-zeebe");
+  });
+
+  it("names no object without showObject", () => {
+    render(
+      <EventList
+        now={now}
+        events={[
+          {
+            reason: "Created",
+            eventTime: "2026-10-15T10:00:00Z",
+            regarding: { kind: "StatefulSet", name: "orders-zeebe" },
+          },
+        ]}
+      />,
+    );
+    expect(items()[0]).not.toContain("StatefulSet/orders-zeebe");
+  });
 });

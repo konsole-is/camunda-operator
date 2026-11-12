@@ -28,7 +28,8 @@ limitations under the License.
 //     makes to the samples it copies.
 //   - seed: required. The Kubernetes objects that a user applies. The
 //     generator applies them with server-side apply before the reconcilers
-//     start, the Namespaces first.
+//     start, the Namespaces first. The built-in PluginSections and
+//     PluginRegistrations of the operator exist before the seed.
 //   - workload: optional. Each step changes what the workload simulator
 //     reports for one object, for the rest of the scenario. A step has kind
 //     (StatefulSet, Deployment, or Job), namespace, and name, and then
@@ -78,9 +79,11 @@ limitations under the License.
 // the scenario and of the operator namespace camunda-system, with its
 // status and its managed fields, and every cluster-scoped object of the
 // operator. Events are of the events.k8s.io API, without an Event that has
-// the field manager kube-apiserver. The generator removes a generated file
-// of a state that is gone, and never a file that a person wrote. A scenario
-// writes its files only after each of its states settled.
+// the field manager kube-apiserver, and without the Event that the
+// framework records for an apply that updated an object. The generator
+// removes a generated file of a state that is gone, and never a file that a
+// person wrote. A scenario writes its files only after each of its states
+// settled.
 //
 // The outputs are normalized, so the same input always writes the same
 // bytes: UIDs come from the kind, namespace, and name of an object, there is

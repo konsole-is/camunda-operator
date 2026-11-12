@@ -41,6 +41,21 @@ describe("PlaneServes", () => {
     expect(screen.getByText("production, staging")).toBeTruthy();
   });
 
+  it("says that a plane without a cluster selector serves no cluster", () => {
+    render(
+      <PlaneServes
+        plane={plane({
+          managed: false,
+          serves: { selector: "Every namespace", noClusterSelector: true },
+        })}
+      />,
+    );
+    expect(
+      screen.getByText("No cluster, because it has no cluster selector"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Every namespace")).toBeNull();
+  });
+
   it("shows the raw selector of a plane without a claim", () => {
     render(
       <PlaneServes

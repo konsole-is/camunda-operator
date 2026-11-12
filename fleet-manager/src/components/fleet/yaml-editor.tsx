@@ -91,10 +91,12 @@ export function YamlEditor({
   );
 }
 
-function check(
-  text: string,
-  schema?: OpenAPISchema,
-): [unknown, ValidationError[]] {
+/**
+ * parseYaml returns the value of YAML text, or undefined and the error of
+ * text that does not parse, that has an alias which holds itself, or that
+ * has a number that is not finite. Empty text is no value and no error.
+ */
+export function parseYaml(text: string): [unknown, ValidationError[]] {
   if (text.trim() === "") return [undefined, []];
   let value: unknown;
   try {
@@ -124,7 +126,15 @@ function check(
       undefined,
       [{ path: "", message: "Use a finite number, not .nan or .inf" }],
     ];
-  if (!schema) return [value, []];
+  return [value, []];
+}
+
+function check(
+  text: string,
+  schema?: OpenAPISchema,
+): [unknown, ValidationError[]] {
+  const [value, errors] = parseYaml(text);
+  if (value === undefined || !schema) return [value, errors];
   const result = validate(schema, value);
   return [value, result.ok ? [] : result.errors];
 }

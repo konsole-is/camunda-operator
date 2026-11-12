@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "Without an Environment, every Elasticsearch and PostgreSQL preset passes",
+  "input": {
+    "policy": {
+      "sections": {
+        "secondary-storage": {
+          "allowed": [
+            "elasticsearch",
+            "database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "elasticsearch": {
+          "preset": {
+            "claimEditable": true
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "secondary-storage",
+        "registration": "elasticsearch",
+        "parameters": {
+          "preset": "large"
+        }
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}

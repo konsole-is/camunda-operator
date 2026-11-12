@@ -73,6 +73,23 @@ export function slotFields(
   return { value: fields };
 }
 
+/**
+ * targetServiceAccount returns the ServiceAccount that a request of claim of
+ * kind in section targets, by the rule of TargetServiceAccount of
+ * pkg/claimpolicy: <claim>-management for a plane claim, <claim>-connectors
+ * for a section with the slot connectorsIdentity, and <claim>-camunda for
+ * every other section, also for none.
+ */
+export function targetServiceAccount(
+  kind: ClaimKind,
+  claim: string,
+  section: PluginSection | undefined,
+): string {
+  if (kind === "CamundaManagementClusterClaim") return `${claim}-management`;
+  if (section?.spec.slot === "connectorsIdentity") return `${claim}-connectors`;
+  return `${claim}-camunda`;
+}
+
 /** sectionOf returns the section named name, or refuses with InvalidReference. */
 export function sectionOf(
   name: string,

@@ -20,6 +20,7 @@ import {
   isManaged,
   labelSelectorString,
   matchesSelector,
+  presetDescription,
 } from ".";
 import { parseSelector } from "@/lib/k8s/selector";
 
@@ -127,6 +128,49 @@ describe("isManaged", () => {
     ["an empty claim label", { metadata: { labels: { [CLAIM_LABEL]: "" } } }],
   ])("is false with %s", (_, object) => {
     expect(isManaged(object)).toBe(false);
+  });
+});
+
+describe("presetDescription", () => {
+  const withAnnotations = (annotations?: Record<string, string>) => ({
+    metadata: { name: "small", annotations },
+  });
+
+  it("gives the text of the kubernetes.io/description annotation", () => {
+    expect(
+      presetDescription(
+        withAnnotations({
+          "kubernetes.io/description": "For tests and demos. One broker.",
+        }),
+      ),
+    ).toBe("For tests and demos. One broker.");
+  });
+
+  it("trims the text", () => {
+    expect(
+      presetDescription(
+        withAnnotations({ "kubernetes.io/description": "  Production.\n" }),
+      ),
+    ).toBe("Production.");
+  });
+
+  it.each(["", "   ", "\n"])(
+    "gives nothing for a blank annotation %j",
+    (value) => {
+      expect(
+        presetDescription(
+          withAnnotations({ "kubernetes.io/description": value }),
+        ),
+      ).toBeUndefined();
+    },
+  );
+
+  it("gives nothing without the annotation", () => {
+    expect(presetDescription({})).toBeUndefined();
+    expect(presetDescription(withAnnotations())).toBeUndefined();
+    expect(
+      presetDescription(withAnnotations({ description: "not the key" })),
+    ).toBeUndefined();
   });
 });
 

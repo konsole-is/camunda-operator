@@ -1834,12 +1834,17 @@ var _ = Describe("LogicalBackupElasticsearch controller", func() {
 		backup := r.newBackup()
 		backupID(backup)
 
-		expectReady(backup, metav1.ConditionFalse, v1.ReasonConnectionFailed)
-		Consistently(func(g Gomega) {
+		// One read for all of them, so the bound cannot elapse between them.
+		Eventually(func(g Gomega) {
 			current := currentBackup(backup)
+			ready := meta.FindStatusCondition(current.Status.Conditions, v1.ConditionReady)
+			g.Expect(ready).NotTo(BeNil())
+			g.Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+			g.Expect(ready.Reason).To(Equal(v1.ReasonConnectionFailed))
 			g.Expect(current.Status.Step).To(Equal(v1.StepPauseExporting))
 			g.Expect(current.Status.Phase).To(Equal(v1.LogicalBackupRunning))
-		}, "1s", interval).Should(Succeed())
+			g.Expect(current.Status.UnreachableSince).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
 	})
 
 	// Round 12 P2: a management API that stays unreachable mid-pause was

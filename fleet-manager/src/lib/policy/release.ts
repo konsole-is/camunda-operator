@@ -31,13 +31,14 @@ export function releaseMove(
     allowed: releaseAllowed(target.metadata.name ?? "", environment),
     target: target.spec.version,
     ...(current && { current }),
-    downgrade: Boolean(want && have && below(want, have)),
+    downgrade: Boolean(want && have && versionBelow(want, have)),
     ...(skip && { skippedMinor: `${have[0]}.${have[1] + 1}` }),
     ...(backup && { backup }),
   };
 }
 
-function parseVersion(
+/** parseVersion reads a version of the form major.minor.patch, or gives undefined, as the operator does. */
+export function parseVersion(
   version: string | undefined,
 ): [number, number, number] | undefined {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? "");
@@ -46,7 +47,11 @@ function parseVersion(
     : undefined;
 }
 
-function below(want: readonly number[], have: readonly number[]): boolean {
+/** versionBelow reports whether the parsed version want is lower than have. */
+export function versionBelow(
+  want: readonly number[],
+  have: readonly number[],
+): boolean {
   const i = want.findIndex((n, j) => n !== have[j]);
   return i >= 0 && want[i] < have[i];
 }

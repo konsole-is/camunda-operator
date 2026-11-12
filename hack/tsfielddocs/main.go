@@ -14,21 +14,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Command tsfielddocs writes the field docs of the fleet manager: for each
-// kind and field path, the description of the CRD schema and the anchor of
-// the Go type that holds the field in docs/crds/api-reference.md. The
-// FieldHelp component shows them next to a form label.
+// Command tsfielddocs writes two files of the fleet manager: the field docs,
+// and the field schema of CamundaClusterClaim.
 //
-// It reads each CRD in the crds directory and takes the Go type of its kind
-// from the scheme of internal/manager. A field path joins the JSON names from
-// the root with dots, and an array adds no segment. The walk skips
-// apiVersion, kind, and metadata, and does not go into a map value. It stops
-// at a field whose type is not a struct of the api module, because the API
-// reference has no anchor for its sub-fields. The anchor is a # and the type
-// name in lower case, as crd-ref-docs writes it. A field of an inline
+// The field docs hold, for each kind and field path, the description of the
+// CRD schema and the anchor of the Go type that holds the field in
+// docs/crds/api-reference.md. The FieldHelp component shows them next to a
+// form label. It reads each CRD in the crds directory and takes the Go type
+// of its kind from the scheme of internal/manager. A field path joins the
+// JSON names from the root with dots, and an array adds no segment. The walk
+// skips apiVersion, kind, and metadata, and does not go into a map value. It
+// stops at a field whose type is not a struct of the api module, because the
+// API reference has no anchor for its sub-fields. The anchor is a # and the
+// type name in lower case, as crd-ref-docs writes it. A field of an inline
 // embedded struct belongs to the struct that embeds it, as in the reference.
 //
-// Usage: tsfielddocs -crds <dir> -out <file>
+// The field schema holds the type, enum, and range of each field under
+// spec.cluster and spec.attachments.optimize of the claim, with no
+// descriptions, so that the browser can load it. Its walk does not go into a
+// list, a map, or a type outside the api module. It also keeps the whole CRD
+// schema of the fields that the YAML editor checks, once for each name.
+//
+// Usage: tsfielddocs -crds <dir> -out <file> -schema-out <file>
 package main
 
 import (
@@ -81,7 +88,8 @@ export const fieldDocs: FieldDocs = `
 
 func main() {
 	crds := flag.String("crds", "config/crd/bases", "the directory of the CRDs")
-	out := flag.String("out", "fleet-manager/src/generated/fielddocs.ts", "the file to write")
+	out := flag.String("out", "fleet-manager/src/generated/fielddocs.ts", "the file of the field docs")
+	schemaOut := flag.String("schema-out", "fleet-manager/src/generated/fieldschema.ts", "the file of the field schema")
 	flag.Parse()
 
 	scheme := runtime.NewScheme()
@@ -104,6 +112,23 @@ func main() {
 
 	if err := os.WriteFile(*out, raw, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "tsfielddocs: writing the field docs: %v\n", err)
+		os.Exit(1)
+	}
+
+	schemas, err := buildSchemas(*crds, scheme)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "tsfielddocs:", err)
+		os.Exit(1)
+	}
+
+	raw, err = renderSchemas(schemas)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "tsfielddocs:", err)
+		os.Exit(1)
+	}
+
+	if err := os.WriteFile(*schemaOut, raw, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "tsfielddocs: writing the field schema: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -134,14 +159,33 @@ func build(dir string, scheme *runtime.Scheme) (map[string]map[string]map[string
 
 // buildCRD returns the group, the kind, and the field docs of the CRD in path.
 func buildCRD(path string, scheme *runtime.Scheme) (string, string, map[string]fieldDoc, error) {
-	raw, err := os.ReadFile(path)
+	crd, kind, s, err := loadCRD(path, scheme)
 	if err != nil {
 		return "", "", nil, err
 	}
 
+	docs, err := walk(kind, s, apiModule)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("%s: %w", crd.Spec.Names.Kind, err)
+	}
+
+	return crd.Spec.Group, crd.Spec.Names.Kind, docs, nil
+}
+
+// loadCRD returns the CRD in path, the Go type of its kind in scheme, and
+// the schema of its one served version.
+func loadCRD(
+	path string,
+	scheme *runtime.Scheme,
+) (*apiextensionsv1.CustomResourceDefinition, reflect.Type, *apiextensionsv1.JSONSchemaProps, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
 	var crd apiextensionsv1.CustomResourceDefinition
 	if err := yaml.Unmarshal(raw, &crd); err != nil {
-		return "", "", nil, fmt.Errorf("parsing the CRD: %w", err)
+		return nil, nil, nil, fmt.Errorf("parsing the CRD: %w", err)
 	}
 
 	served := slices.DeleteFunc(
@@ -149,7 +193,7 @@ func buildCRD(path string, scheme *runtime.Scheme) (string, string, map[string]f
 		func(v apiextensionsv1.CustomResourceDefinitionVersion) bool { return !v.Served },
 	)
 	if len(served) != 1 {
-		return "", "", nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"%s serves %d versions, and the generated names hold no version",
 			crd.Name,
 			len(served),
@@ -158,21 +202,16 @@ func buildCRD(path string, scheme *runtime.Scheme) (string, string, map[string]f
 
 	version := served[0]
 	if version.Schema == nil || version.Schema.OpenAPIV3Schema == nil {
-		return "", "", nil, fmt.Errorf("version %s of %s has no schema", version.Name, crd.Name)
+		return nil, nil, nil, fmt.Errorf("version %s of %s has no schema", version.Name, crd.Name)
 	}
 
 	gvk := schema.GroupVersionKind{Group: crd.Spec.Group, Version: version.Name, Kind: crd.Spec.Names.Kind}
 	obj, err := scheme.New(gvk)
 	if err != nil {
-		return "", "", nil, fmt.Errorf("the scheme of internal/manager has no Go type for %s: %w", gvk, err)
+		return nil, nil, nil, fmt.Errorf("the scheme of internal/manager has no Go type for %s: %w", gvk, err)
 	}
 
-	docs, err := walk(reflect.TypeOf(obj).Elem(), version.Schema.OpenAPIV3Schema, apiModule)
-	if err != nil {
-		return "", "", nil, fmt.Errorf("%s: %w", gvk.Kind, err)
-	}
-
-	return crd.Spec.Group, crd.Spec.Names.Kind, docs, nil
+	return &crd, reflect.TypeOf(obj).Elem(), version.Schema.OpenAPIV3Schema, nil
 }
 
 // walk returns the docs of every field path of the kind root that s
@@ -270,16 +309,26 @@ func inModule(pkg, local string) bool {
 	return pkg == local || strings.HasPrefix(pkg, local+"/")
 }
 
-// render returns fielddocs.ts for docs. encoding/json sorts the keys, so the
-// output is the same for the same input.
+// render returns fielddocs.ts for docs.
 func render(docs map[string]map[string]map[string]fieldDoc) ([]byte, error) {
+	body, err := encode(docs)
+	if err != nil {
+		return nil, fmt.Errorf("encoding the field docs: %w", err)
+	}
+
+	return slices.Concat([]byte(header), body, []byte(";\n")), nil
+}
+
+// encode returns v as indented JSON without a final newline. encoding/json
+// sorts the keys of a map, so the output is the same for the same input.
+func encode(v any) ([]byte, error) {
 	var body bytes.Buffer
 	enc := json.NewEncoder(&body)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(docs); err != nil {
-		return nil, fmt.Errorf("encoding the field docs: %w", err)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
 	}
 
-	return slices.Concat([]byte(header), bytes.TrimRight(body.Bytes(), "\n"), []byte(";\n")), nil
+	return bytes.TrimRight(body.Bytes(), "\n"), nil
 }

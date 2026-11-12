@@ -10,6 +10,7 @@ export {
   changeOf,
   claimAfter,
   discard,
+  fieldLock,
   openSession,
   rebase,
   resetValue,

@@ -1,6 +1,9 @@
 // This module runs in the browser and on the server, so it imports types only.
 import type { LogLine } from "./types";
 
+/** MAX_LOG_STREAMS is the number of logs that one view follows at most. */
+export const MAX_LOG_STREAMS = 10;
+
 /**
  * LogFilter selects log lines. level compares without case, text is a
  * substring of the raw line without case, and request compares exactly. An

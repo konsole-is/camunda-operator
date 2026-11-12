@@ -1,12 +1,29 @@
 import { randomUUID } from "node:crypto";
 import {
+  type V1Namespace,
   KubeConfig,
   KubernetesObjectApi,
   PatchStrategy,
 } from "@kubernetes/client-node";
 import { beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
+import { keptPaths } from "@/components/fleet/change-review";
+import {
+  draftOf,
+  namespaceLabelChange,
+  updateChange,
+} from "@/components/setup/environments/draft";
+import { withSectionPolicy } from "@/components/setup/environments/sections";
+import { withParameterPolicy } from "@/components/setup/environments/settings";
+import type { Environment } from "@/generated/crds/environment";
+import { createChangeOf } from "@/lib/write/create";
 import type { KubeObject } from "@/lib/write/types";
-import { directWriter, refKey } from "@/lib/write/writer";
+import {
+  directWriter,
+  firstExisting,
+  listObjects,
+  readObject,
+  refKey,
+} from "@/lib/write/writer";
 import { createClientSideApplied } from "./client-side-apply";
 
 const kc = new KubeConfig();
@@ -25,6 +42,34 @@ const environmentRef = (name: string) => ({
   apiVersion: "fleet.camunda.io/v1alpha1",
   kind: "Environment",
   name,
+});
+const planeClaim = (
+  namespace: string,
+  name: string,
+  identity = "8.9.0",
+): KubeObject => ({
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaManagementClusterClaim",
+  metadata: { name, namespace },
+  spec: {
+    environments: ["prod"],
+    management: {
+      identityProvider: { oidc: {} },
+      identity: { admin: { claimName: "sub", claimValue: "admin" } },
+    },
+    versions: { identity },
+  },
+});
+const planeClaimRef = (namespace: string, name: string) => ({
+  apiVersion: "fleet.camunda.io/v1alpha1",
+  kind: "CamundaManagementClusterClaim",
+  namespace,
+  name,
+});
+const newNamespace = (name: string): KubeObject => ({
+  apiVersion: "v1",
+  kind: "Namespace",
+  metadata: { name, labels: { "fleet.camunda.io/environment": "prod" } },
 });
 const live = (name: string) =>
   api.read({
@@ -427,6 +472,113 @@ describe("the direct writer against envtest", () => {
     });
   });
 
+  it("a Namespace apply with only the environment label adds the label and keeps the labels of another manager", async () => {
+    const labelled = `label-${randomUUID().slice(0, 8)}`;
+    await api.create({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: labelled, labels: { team: "a" } },
+    });
+    const created = await api.read({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: labelled },
+    });
+
+    const result = await writer.apply({
+      intent: `Add ${labelled} to staging`,
+      apply: [
+        {
+          apiVersion: "v1",
+          kind: "Namespace",
+          metadata: {
+            name: labelled,
+            labels: { "fleet.camunda.io/environment": "staging" },
+          },
+        },
+      ],
+      preconditions: {
+        [refKey({ kind: "Namespace", name: labelled })]:
+          created.metadata!.resourceVersion!,
+      },
+      directOnly: true,
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    const after = await api.read({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: labelled },
+    });
+    expect(after.metadata?.labels).toMatchObject({
+      team: "a",
+      "fleet.camunda.io/environment": "staging",
+    });
+  });
+
+  it("a namespace that a create made keeps its fixed labels when it joins an environment", async () => {
+    const made = `made-${randomUUID().slice(0, 8)}`;
+    const readNamespace = async () =>
+      (await api.read({
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: { name: made },
+      })) as V1Namespace;
+    expect(
+      await writer.apply(
+        createChangeOf(
+          `Create the claim orders in ${made}`,
+          {
+            apiVersion: "fleet.camunda.io/v1alpha1",
+            kind: "CamundaClusterClaim",
+            metadata: { name: "orders", namespace: made },
+            spec: { presetRef: "small" },
+          },
+          { name: made, labels: { team: "payments" } },
+        ),
+      ),
+    ).toEqual({ ok: true, mode: "direct" });
+
+    expect(
+      await writer.apply(
+        namespaceLabelChange(await readNamespace(), "staging"),
+      ),
+    ).toEqual({ ok: true, mode: "direct" });
+    expect((await readNamespace()).metadata?.labels).toMatchObject({
+      team: "payments",
+      "fleet.camunda.io/environment": "staging",
+    });
+  });
+
+  it("a namespace label change leaves out and keeps a label that another manager owns", async () => {
+    const shared = `shared-${randomUUID().slice(0, 8)}`;
+    await api.create({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: shared, labels: { owner: "ops" } },
+    });
+    const before = (await api.read({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: shared },
+    })) as V1Namespace;
+    const change = namespaceLabelChange(before, "staging");
+    expect(change.apply[0].metadata.labels).toEqual({
+      "fleet.camunda.io/environment": "staging",
+    });
+
+    expect(await writer.apply(change)).toEqual({ ok: true, mode: "direct" });
+    const after = await api.read({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: shared },
+    });
+    expect(after.metadata?.labels).toMatchObject({
+      owner: "ops",
+      "fleet.camunda.io/environment": "staging",
+    });
+  });
+
   it("an apply with a precondition for a deleted object fails with Stale and creates nothing", async () => {
     await writer.apply({
       intent: "Create",
@@ -550,6 +702,180 @@ describe("the direct writer against envtest", () => {
     });
   });
 
+  it("a create of an object that exists fails with Stale, names it, and changes nothing", async () => {
+    await writer.apply({
+      intent: "Create",
+      apply: [environment(name, { displayName: "One" })],
+    });
+    const before = await live(name);
+
+    const result = await writer.apply({
+      intent: "Create again",
+      apply: [environment(name, { displayName: "Two" })],
+      create: [`Environment//${name}`],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        expect.objectContaining({
+          code: "Stale",
+          message: expect.stringContaining(`${name} exists already`),
+          ref: environmentRef(name),
+        }),
+      ],
+    });
+    expect((await live(name)).metadata?.resourceVersion).toBe(
+      before.metadata?.resourceVersion,
+    );
+  });
+
+  it("a preview of a create of an object that exists returns the same error", async () => {
+    await writer.apply({
+      intent: "Create",
+      apply: [environment(name, { displayName: "One" })],
+    });
+
+    const preview = await writer.preview({
+      intent: "Create again",
+      apply: [environment(name, { displayName: "Two" })],
+      create: [`Environment//${name}`],
+    });
+
+    expect(preview).toEqual({
+      objects: [],
+      errors: [
+        expect.objectContaining({
+          code: "Stale",
+          message: expect.stringContaining(`${name} exists already`),
+          ref: environmentRef(name),
+        }),
+      ],
+    });
+  });
+
+  it("a new namespace and its claim go in one change, the namespace first", async () => {
+    const ns = `plane-${randomUUID().slice(0, 8)}`;
+
+    const result = await writer.apply({
+      intent: `Create ${ns} with the plane plane-a`,
+      apply: [newNamespace(ns), planeClaim(ns, "plane-a")],
+      create: [
+        `Namespace//${ns}`,
+        `CamundaManagementClusterClaim/${ns}/plane-a`,
+      ],
+    });
+
+    expect(result).toEqual({ ok: true, mode: "direct" });
+    expect(
+      await api.read({
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: { name: ns },
+      }),
+    ).toMatchObject({
+      metadata: { labels: { "fleet.camunda.io/environment": "prod" } },
+    });
+    expect(
+      await api.read({
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "CamundaManagementClusterClaim",
+        metadata: { name: "plane-a", namespace: ns },
+      }),
+    ).toMatchObject({ spec: { environments: ["prod"] } });
+  });
+
+  it("a preview of a new namespace and its claim shows the claim as rendered and writes nothing", async () => {
+    const ns = `plane-${randomUUID().slice(0, 8)}`;
+
+    const preview = await writer.preview({
+      intent: `Create ${ns} with the plane plane-a`,
+      apply: [newNamespace(ns), planeClaim(ns, "plane-a")],
+      create: [
+        `Namespace//${ns}`,
+        `CamundaManagementClusterClaim/${ns}/plane-a`,
+      ],
+    });
+
+    expect(preview.errors).toEqual([]);
+    expect(preview.objects).toEqual([
+      expect.objectContaining({
+        ref: { apiVersion: "v1", kind: "Namespace", name: ns },
+        after: expect.objectContaining({
+          metadata: expect.objectContaining({ name: ns }),
+        }),
+      }),
+      expect.objectContaining({
+        ref: planeClaimRef(ns, "plane-a"),
+        after: expect.objectContaining({
+          spec: expect.objectContaining({ environments: ["prod"] }),
+        }),
+      }),
+    ]);
+    expect(preview.objects.map((o) => o.before)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(
+      await readObject(kc, { apiVersion: "v1", kind: "Namespace", name: ns }),
+    ).toBeUndefined();
+  });
+
+  it("a claim that fails after its new namespace was created names the namespace, and a save into that namespace then succeeds", async () => {
+    const ns = `plane-${randomUUID().slice(0, 8)}`;
+
+    const result = await writer.apply({
+      intent: `Create ${ns} with the plane plane-a`,
+      apply: [newNamespace(ns), planeClaim(ns, "plane-a", "8.9")],
+      create: [
+        `Namespace//${ns}`,
+        `CamundaManagementClusterClaim/${ns}/plane-a`,
+      ],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      createdNamespace: ns,
+      errors: [
+        expect.objectContaining({
+          code: "Invalid",
+          message: expect.stringContaining(
+            `The fleet manager created the namespace ${ns}, but not the CamundaManagementClusterClaim plane-a.`,
+          ),
+          ref: planeClaimRef(ns, "plane-a"),
+        }),
+      ],
+    });
+    expect(
+      await readObject(kc, { apiVersion: "v1", kind: "Namespace", name: ns }),
+    ).toBeDefined();
+    expect(await readObject(kc, planeClaimRef(ns, "plane-a"))).toBeUndefined();
+
+    expect(
+      await writer.apply({
+        intent: "Create the plane plane-a",
+        apply: [planeClaim(ns, "plane-a")],
+        create: [`CamundaManagementClusterClaim/${ns}/plane-a`],
+      }),
+    ).toEqual({ ok: true, mode: "direct" });
+  });
+
+  it("a create of a claim in an existing namespace is dry-run, so the API server refuses an invalid claim", async () => {
+    const result = await writer.apply({
+      intent: "Create the plane plane-a",
+      apply: [planeClaim(namespace, "plane-a", "8.9")],
+      create: [`CamundaManagementClusterClaim/${namespace}/plane-a`],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      errors: [expect.objectContaining({ code: "Invalid" })],
+    });
+    expect(
+      await readObject(kc, planeClaimRef(namespace, "plane-a")),
+    ).toBeUndefined();
+  });
+
   it("applies a ConfigMap with the field manager fleet-manager, and a stale resourceVersion fails with Stale", async () => {
     const configMap = (value: string): KubeObject => ({
       apiVersion: "v1",
@@ -615,5 +941,160 @@ describe("the direct writer against envtest", () => {
       expect(shown).not.toContain(Buffer.from(value).toString("base64"));
     }
     expect(preview.objects[0].diff.some((l) => l.op !== "same")).toBe(true);
+  });
+
+  it("firstExisting gives the first ref whose object exists, or nothing when none exists", async () => {
+    const backupRef = (kind: string) => ({
+      apiVersion: "core.camunda.io/v1",
+      kind,
+      namespace,
+      name,
+    });
+    expect(
+      await writer.apply({
+        intent: "Back up",
+        apply: [
+          {
+            apiVersion: "core.camunda.io/v1",
+            kind: "LogicalBackupRDBMS",
+            metadata: { name, namespace },
+            spec: { clusterRef: { name: "orders" } },
+          },
+        ],
+      }),
+    ).toEqual({ ok: true, mode: "direct" });
+
+    expect(
+      await firstExisting(
+        [
+          backupRef("LogicalBackupElasticsearch"),
+          backupRef("LogicalBackupRDBMS"),
+        ],
+        kc,
+      ),
+    ).toEqual(backupRef("LogicalBackupRDBMS"));
+    expect(
+      await firstExisting([backupRef("LogicalBackupElasticsearch")], kc),
+    ).toBeUndefined();
+  });
+
+  it("listObjects gives the objects of a kind in one namespace", async () => {
+    const restore = (ns: string): KubeObject => ({
+      apiVersion: "core.camunda.io/v1",
+      kind: "LogicalRestoreRDBMS",
+      metadata: { name, namespace: ns },
+      spec: {
+        backupRef: { name: "dump-1" },
+        targetClusterRef: { name: "orders" },
+      },
+    });
+    const other = `write-${randomUUID().slice(0, 8)}`;
+    await api.create({
+      apiVersion: "v1",
+      kind: "Namespace",
+      metadata: { name: other },
+    });
+    for (const ns of [namespace, other]) {
+      expect(
+        await writer.apply({ intent: "Restore", apply: [restore(ns)] }),
+      ).toEqual({ ok: true, mode: "direct" });
+    }
+
+    const listed = await listObjects("LogicalRestoreRDBMS", namespace, kc);
+    expect(
+      listed.map((o) => [o.metadata.namespace, o.metadata.name, o.spec]),
+    ).toEqual([[namespace, name, restore(namespace).spec]]);
+  });
+});
+
+describe("a save of the Environment editor against envtest", () => {
+  const EXISTING = { sections: ["object-storage"], registrations: ["aws-s3"] };
+  const kubectlChoice = { name: "kubectl", label: "Kubectl", value: "k" };
+  const appChoice = { name: "app", label: "App", value: "a" };
+  const policyOf = (env: Environment) => env.spec.parameters?.["aws-s3"]?.tier;
+  const read = async () => (await live(name)) as unknown as Environment;
+  const save = async (draft: Environment["spec"]) => {
+    const change = updateChange(await read(), { name, spec: draft }, EXISTING);
+    return { change, preview: await writer.preview(change) };
+  };
+
+  const createByKubectl = (tier: object) =>
+    createClientSideApplied(
+      api,
+      environment(name, {
+        sections: {
+          "object-storage": { required: true, allowed: ["aws-s3"] },
+        },
+        parameters: { "aws-s3": { tier } },
+      }),
+    );
+
+  it("removes the last choice that the app applied, and keeps a choice of kubectl, which the review names", async () => {
+    await createByKubectl({ claimEditable: true, allowed: [kubectlChoice] });
+    const withApp = withParameterPolicy(
+      draftOf(await read()).spec,
+      "aws-s3",
+      "tier",
+      { claimEditable: true, allowed: [appChoice] },
+    );
+    const first = await save(withApp);
+    expect(await writer.apply(first.change)).toEqual({
+      ok: true,
+      mode: "direct",
+    });
+    expect(
+      policyOf(await read())
+        ?.allowed?.map((c) => c.name)
+        .sort(),
+    ).toEqual(["app", "kubectl"]);
+
+    const none = withParameterPolicy(
+      draftOf(await read()).spec,
+      "aws-s3",
+      "tier",
+      { claimEditable: true, allowed: [] },
+    );
+    const { change, preview } = await save(none);
+    expect(preview.errors).toEqual([]);
+    expect(keptPaths(change.apply[0], preview.objects[0].after)).toEqual([
+      "spec.parameters.aws-s3.tier.allowed",
+    ]);
+    expect(await writer.apply(change)).toEqual({ ok: true, mode: "direct" });
+    expect(policyOf(await read())?.allowed).toEqual([kubectlChoice]);
+  });
+
+  it("refuses to turn A claim can change it off while kubectl owns a choice", async () => {
+    await createByKubectl({ claimEditable: true, allowed: [kubectlChoice] });
+    const off = withParameterPolicy(
+      draftOf(await read()).spec,
+      "aws-s3",
+      "tier",
+      {},
+    );
+    const { preview } = await save(off);
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        code: "Invalid",
+        message: expect.stringContaining("allowed needs claimEditable: true"),
+      }),
+    ]);
+  });
+
+  it("turns Required and A claim can change it off, which kubectl set", async () => {
+    await createByKubectl({ claimEditable: true });
+    const spec = withParameterPolicy(
+      withSectionPolicy(draftOf(await read()).spec, "object-storage", {
+        required: false,
+        allowed: ["aws-s3"],
+      }),
+      "aws-s3",
+      "tier",
+      {},
+    );
+    const { change } = await save(spec);
+    expect(await writer.apply(change)).toEqual({ ok: true, mode: "direct" });
+    const saved = await read();
+    expect(saved.spec.sections?.["object-storage"]?.required).toBe(false);
+    expect(policyOf(saved)?.claimEditable).toBe(false);
   });
 });

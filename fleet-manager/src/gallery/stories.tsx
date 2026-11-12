@@ -1,13 +1,19 @@
+import { backupActionsStories } from "@/components/cluster/backup-actions.stories";
+import { backupReviewStories } from "@/components/cluster/backup-review.stories";
 import { backupsStories } from "@/components/cluster/backups.stories";
 import { cardsStories } from "@/components/cluster/cards.stories";
 import { clusterStories } from "@/components/cluster/cluster.stories";
 import { detailStories } from "@/components/cluster/detail.stories";
+import { claimEditorStories } from "@/components/cluster/edit/claim-editor.stories";
 import { settingsStories } from "@/components/cluster/settings.stories";
+import { settingsEditorStories } from "@/components/cluster/settings-editor.stories";
+import { topologyEditorStories } from "@/components/cluster/topology-editor.stories";
 import { confirmStories } from "@/components/fleet/confirm.stories";
 import { createFlowStories } from "@/components/fleet/create-flow.stories";
 import { dataTableStories } from "@/components/fleet/data-table.stories";
 import { workloadEditorStories } from "@/components/fleet/workload-editors.stories";
 import { editorStories } from "@/components/fleet/editors.stories";
+import { fleetViewStories } from "@/components/fleet-view/fleet-view.stories";
 import { helpStories } from "@/components/fleet/help.stories";
 import { lockedFieldStories } from "@/components/fleet/locked-field.stories";
 import { observeStories } from "@/components/fleet/observe.stories";
@@ -17,6 +23,7 @@ import { reviewStories } from "@/components/fleet/review.stories";
 import { sectionCardsStories } from "@/components/fleet/section-cards.stories";
 import { shellStories } from "@/components/fleet/shell.stories";
 import { statusStories } from "@/components/fleet/status.stories";
+import { environmentStories } from "@/components/setup/environments/environments.stories";
 import { settingsPageStories } from "@/components/setup/settings-page.stories";
 import { uiStories } from "@/components/ui/ui.stories";
 import type { Story } from "./registry";
@@ -27,10 +34,12 @@ export const stories: readonly Story[] = [
   ...statusStories,
   ...lockedFieldStories,
   ...reviewStories,
+  ...backupReviewStories,
   ...confirmStories,
   ...helpStories,
   ...dataTableStories,
   ...planesStories,
+  ...fleetViewStories,
   ...planeCreateStories,
   ...editorStories,
   ...workloadEditorStories,
@@ -38,10 +47,15 @@ export const stories: readonly Story[] = [
   ...createFlowStories,
   ...observeStories,
   ...clusterStories,
+  ...topologyEditorStories,
+  ...claimEditorStories,
   ...cardsStories,
   ...detailStories,
   ...backupsStories,
+  ...backupActionsStories,
   ...settingsStories,
+  ...settingsEditorStories,
   ...settingsPageStories,
+  ...environmentStories,
   ...uiStories,
 ];

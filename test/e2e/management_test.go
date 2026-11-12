@@ -889,7 +889,7 @@ var _ = Describe("CamundaManagementCluster with OIDC", Ordered, Label(utils.Labe
 
 		By("creating the client secret and the two platform configs")
 		Expect(apply(oidcManagementClientSecret())).To(Succeed())
-		Expect(apply(oidcManagementPlatformConfig())).To(Succeed())
+		Expect(apply(oidcManagementPlatformConfig(mcOIDCPlatform, mcOIDCNamespace))).To(Succeed())
 		Expect(apply(basicPlatform(mcOIDCClusterPlatform))).To(Succeed())
 
 		cluster.Labels = map[string]string{mcFlowLabel: mcOIDCFlowValue}
@@ -946,7 +946,7 @@ var _ = Describe("CamundaManagementCluster with OIDC", Ordered, Label(utils.Labe
 		var contract v1.ManagementAuthConfig
 		Expect(utils.Get(authConfigResource, mcOIDCName, "", &contract)).To(Succeed())
 		Expect(contract.Spec.ClientID).To(Equal(mcOIDCOptimizeClient))
-		Expect(contract.Spec.IssuerURL).To(Equal(oidcIssuerURL()))
+		Expect(contract.Spec.IssuerURL).To(Equal(oidcIssuerURL(mcOIDCNamespace)))
 	})
 
 	It("gives Web Modeler a user of its own on the basic-auth cluster", func() {
@@ -1616,19 +1616,20 @@ func oidcManagementClientSecret() *corev1.Secret {
 }
 
 // oidcIssuerURL is the issuer of the realm that testdata/keycloak.yaml serves
-// in the namespace of the oidc flow.
-func oidcIssuerURL() string {
-	return fmt.Sprintf("http://keycloak.%s.svc:8080/realms/%s", mcOIDCNamespace, ccOIDCRealm)
+// in realmNamespace.
+func oidcIssuerURL(realmNamespace string) string {
+	return fmt.Sprintf("http://keycloak.%s.svc:8080/realms/%s", realmNamespace, ccOIDCRealm)
 }
 
-// oidcManagementPlatformConfig returns the platform config of the management
-// plane of the oidc flow: the realm of testdata/keycloak.yaml and the client
-// of every component that authenticates through it.
+// oidcManagementPlatformConfig returns the platform config, named name, of a
+// management plane in the oidc mode: the realm of testdata/keycloak.yaml in
+// realmNamespace, and the client of every component that authenticates
+// through it.
 //
 // The three endpoints are set by hand. The operator makes no request to the
 // identity provider, and the ManagementAuthConfig carries all three.
-func oidcManagementPlatformConfig() *v1.CamundaPlatformConfig {
-	issuer := oidcIssuerURL()
+func oidcManagementPlatformConfig(name, realmNamespace string) *v1.CamundaPlatformConfig {
+	issuer := oidcIssuerURL(realmNamespace)
 	secretRef := v1.SecretKeyRef{
 		Name:      mcOIDCClientSecretName,
 		Namespace: namespace,
@@ -1637,7 +1638,7 @@ func oidcManagementPlatformConfig() *v1.CamundaPlatformConfig {
 
 	return &v1.CamundaPlatformConfig{
 		TypeMeta:   metav1.TypeMeta{APIVersion: v1.GroupVersion.String(), Kind: "CamundaPlatformConfig"},
-		ObjectMeta: metav1.ObjectMeta{Name: mcOIDCPlatform},
+		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: v1.CamundaPlatformConfigSpec{
 			Auth: &v1.PlatformAuthSpec{
 				Method: v1.AuthenticationMethodOIDC,

@@ -29,6 +29,7 @@ const data: Record<string, unknown[]> = {
     },
   ],
   Namespace: [],
+  Environment: [],
 };
 
 const failing = vi.hoisted(() => ({ kind: "" }));
@@ -60,6 +61,7 @@ describe("PlanesPage", () => {
     ).toEqual([
       "CamundaManagementCluster",
       "CamundaManagementClusterClaim",
+      "Environment",
       "Namespace",
     ]);
     expect(screen.getByRole("row", { name: /plane-a/ })).toBeTruthy();

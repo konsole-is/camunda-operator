@@ -110,6 +110,7 @@ const sources: PlaneSources = {
             adminCredentialsSecretRef: { name: "keycloak-admin" },
           },
         },
+        clusterSelector: {},
         namespaceSelector: { matchLabels: { team: "payments" } },
       },
       { conditions: [{ type: "Ready", status: "True", reason: "Healthy" }] },
@@ -139,6 +140,15 @@ const sources: PlaneSources = {
       },
     } as never,
   ],
+  environments: ["production", "staging", "sandbox"].map(
+    (name) =>
+      ({
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        metadata: { name },
+        spec: {},
+      }) as never,
+  ),
 };
 
 const planes = planesOf(sources);

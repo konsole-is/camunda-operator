@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "name": "A plane database server preset that the Environment does not list is refused",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {
+        "presets": {
+          "databaseServer": [
+            "small"
+          ]
+        }
+      }
+    },
+    "kind": "CamundaManagementClusterClaim",
+    "policy": {
+      "sections": {
+        "management-database": {
+          "allowed": [
+            "management-database-server"
+          ]
+        }
+      },
+      "parameters": {
+        "management-database-server": {
+          "preset": {
+            "claimEditable": true
+          }
+        }
+      }
+    },
+    "selections": [
+      {
+        "section": "management-database",
+        "registration": "management-database-server",
+        "parameters": {
+          "preset": "large"
+        }
+      }
+    ]
+  },
+  "result": {
+    "refusal": {
+      "reason": "NotAllowed",
+      "message": "DatabaseServerPreset \"large\" is not in spec.presets.databaseServer of Environment \"dev\""
+    }
+  }
+}

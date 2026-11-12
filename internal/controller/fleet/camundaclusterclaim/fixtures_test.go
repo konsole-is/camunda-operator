@@ -223,6 +223,28 @@ func allowingEnvironment(sections map[string][]string) *fleetv1alpha1.Environmen
 	}
 }
 
+// elasticsearchEnvironment returns allowingEnvironment with elasticsearch
+// in secondary-storage, a claim-editable preset, and listed as the
+// Elasticsearch preset list.
+func elasticsearchEnvironment(listed ...string) *fleetv1alpha1.Environment {
+	environment := allowingEnvironment(map[string][]string{
+		pluginstartup.SectionSecondaryStorage: {pluginstartup.RegistrationElasticsearch},
+	})
+	environment.Spec.Presets.ElasticsearchCluster = listed
+	environment.Spec.Parameters = map[string]fleetv1alpha1.ParameterPolicies{
+		pluginstartup.RegistrationElasticsearch: {"preset": {ClaimEditable: true}},
+	}
+	return environment
+}
+
+// elasticsearchSelection selects elasticsearch in secondary-storage with
+// preset.
+func elasticsearchSelection(preset string) fleetv1alpha1.PluginSelection {
+	s := selection(pluginstartup.SectionSecondaryStorage, pluginstartup.RegistrationElasticsearch)
+	s.Parameters = &apiextensionsv1.JSON{Raw: []byte(`{"preset":"` + preset + `"}`)}
+	return s
+}
+
 // newClaim returns a claim orders in namespace that names the suite preset,
 // release, and platform config, and selects existing-secondary-storage
 // before selections, so that its cluster has spec.storageRef.
