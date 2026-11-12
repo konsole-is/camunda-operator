@@ -17,6 +17,12 @@ import {
   previewClaimChange,
 } from "@/app/fleet/clusters/[namespace]/[name]/actions";
 import {
+  applyEnvironmentChange,
+  applyNamespaceLabel,
+  previewEnvironmentChange,
+  previewNamespaceLabel,
+} from "@/app/setup/environments/actions";
+import {
   saveSettings,
   testGitConnection,
   testPrometheusQuery,
@@ -269,6 +275,22 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
       ...claimChange(),
       preconditions: { [`CamundaClusterClaim/${namespace}/leak`]: "1" },
     }),
+  "app/setup/environments/actions.ts#previewEnvironmentChange": () =>
+    previewEnvironmentChange(environmentChange()),
+  // A precondition for an object that does not exist refuses with Stale,
+  // so these writes leave nothing behind.
+  "app/setup/environments/actions.ts#applyEnvironmentChange": () =>
+    applyEnvironmentChange({
+      ...environmentChange(),
+      preconditions: { [`Environment//${namespace}`]: "1" },
+    }),
+  "app/setup/environments/actions.ts#previewNamespaceLabel": () =>
+    previewNamespaceLabel(labelChange()),
+  "app/setup/environments/actions.ts#applyNamespaceLabel": () =>
+    applyNamespaceLabel({
+      ...labelChange(),
+      preconditions: { [`Namespace//${namespace}-gone`]: "1" },
+    }),
   "app/setup/settings/actions.ts#saveSettings": async () =>
     saveSettings(
       { "git.path": "y" },
@@ -278,6 +300,37 @@ const ACTION_CALLS: Record<string, () => Promise<unknown>> = {
   "app/setup/settings/actions.ts#testPrometheusQuery": () =>
     testPrometheusQuery(),
 };
+
+function environmentChange() {
+  return {
+    intent: "Create the environment leak",
+    apply: [
+      {
+        apiVersion: "fleet.camunda.io/v1alpha1",
+        kind: "Environment",
+        metadata: { name: namespace },
+        spec: { displayName: "Leak" },
+      },
+    ],
+  };
+}
+
+function labelChange() {
+  return {
+    intent: "Add the namespace leak to the environment leak",
+    apply: [
+      {
+        apiVersion: "v1",
+        kind: "Namespace",
+        metadata: {
+          name: `${namespace}-gone`,
+          labels: { "fleet.camunda.io/environment": namespace },
+        },
+      },
+    ],
+    directOnly: true,
+  };
+}
 
 function claimChange() {
   return {
