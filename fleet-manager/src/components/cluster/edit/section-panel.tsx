@@ -30,7 +30,7 @@ export function SectionPanel({
   context: ClusterSlotContext;
   section: ClaimSection;
 }) {
-  const { session, pending, set, reset, invalid } = useClusterEdit();
+  const { session, pending, set, reset, invalid, errors } = useClusterEdit();
   const { generation, own } = useEditorGeneration(pending);
   const namespace = context.cluster.metadata?.namespace ?? "";
   const secrets = secretRefsOf(useResources("Secret", { namespace }, []).items);
@@ -76,6 +76,7 @@ export function SectionPanel({
             ]),
           )}
           secrets={secrets}
+          errors={errors}
           set={own(set)}
           reset={own(reset)}
           invalid={invalid}

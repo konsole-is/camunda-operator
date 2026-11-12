@@ -622,8 +622,8 @@ function ChoicesEditor({
   );
 }
 
-// errorsAt returns the errors at the claim path of steps or below it.
-function errorsAt(
+/** errorsAt returns the errors at the claim path of steps or below it, none without steps. */
+export function errorsAt(
   errors: readonly FieldError[],
   steps: Step[] | undefined,
 ): FieldError[] {

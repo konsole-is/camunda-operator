@@ -90,6 +90,41 @@ async function save() {
     .spec;
 }
 
+// refuse makes the next write fail with an error at path.
+function refuse(path: string) {
+  fakeWriter.results = [
+    {
+      ok: false,
+      errors: [
+        {
+          code: "Invalid",
+          message: "the schedule is not a cron expression",
+          path,
+        },
+      ],
+    },
+  ];
+}
+
+// saveAndGoBack saves the change, waits for the refusal, and closes the
+// review.
+async function saveAndGoBack() {
+  fireEvent.click(within(bar()!).getByRole("button", { name: "Review" }));
+  const dialog = screen.getByRole("dialog", { name: "Review the change" });
+  const button = within(dialog).getByRole<HTMLButtonElement>("button", {
+    name: "Save",
+  });
+  await waitFor(() => expect(button.disabled).toBe(false));
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(within(dialog).getByRole("alert").textContent).toContain(
+      "the schedule is not a cron expression",
+    ),
+  );
+  fireEvent.click(within(dialog).getByRole("button", { name: "Back" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+}
+
 beforeEach(() => {
   Element.prototype.scrollIntoView = () => {};
   fakeWriter.reset();
@@ -281,6 +316,52 @@ describe("the Attachments panel", () => {
       within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
         .disabled,
     ).toBe(false);
+  });
+
+  it("a completed count of 0 is an error, and a failed count of 0 is not", async () => {
+    panel({ backupStorage: rdbmsBackups });
+    fireEvent.click(box("Back up on a schedule"));
+    await userEvent.type(field("Failed backups to keep"), "0");
+    expect(
+      within(bar()!).getByRole<HTMLButtonElement>("button", { name: "Review" })
+        .disabled,
+    ).toBe(false);
+    await userEvent.type(field("Completed backups to keep"), "0");
+    expect(
+      within(bar()!).getByText("Completed backups to keep: Enter 1 or more"),
+    ).toBeTruthy();
+  });
+
+  it("a refused write shows its message beside the field that the change set", async () => {
+    refuse("spec.attachments.backupSchedule.schedule");
+    panel({
+      backupStorage: rdbmsBackups,
+      claim: claim("41", {
+        attachments: { backupSchedule: { schedule: "0 2 * * *" } },
+      }),
+    });
+    await userEvent.clear(field("Schedule (cron, UTC)"));
+    await userEvent.type(field("Schedule (cron, UTC)"), "every night");
+    await saveAndGoBack();
+    expect(field("Schedule (cron, UTC)").getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+    expect(
+      within(attachments()).getByText("the schedule is not a cron expression"),
+    ).toBeTruthy();
+  });
+
+  it("a refused write of a new attachment shows its message beside the toggle", async () => {
+    refuse("spec.attachments.backupSchedule.schedule");
+    panel({ backupStorage: rdbmsBackups });
+    fireEvent.click(box("Back up on a schedule"));
+    await saveAndGoBack();
+    const note = within(attachments()).getByText(
+      "the schedule is not a cron expression",
+    );
+    expect(note.closest("fieldset")?.querySelector("label")?.textContent).toBe(
+      "Back up on a schedule",
+    );
   });
 
   it("the backup schedule needs a backup storage option", () => {

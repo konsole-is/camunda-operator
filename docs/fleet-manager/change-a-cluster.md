@@ -90,7 +90,7 @@ Each storage and access option has its own panel. The option shows **Chosen at c
 **Attachments** has two parts:
 
 - **Attach Optimize** adds `spec.attachments.optimize` with the first `ManagementAuthConfig` by name. Then you can pick another **ManagementAuthConfig** and enter the **External URL**. The URL shows **Filled by Access** when an access option gives it. **Optimize settings** opens the settings of Optimize on the **Overview** tab. Optimize needs Elasticsearch as secondary storage and a `ManagementAuthConfig`. Without them, the checkbox is disabled and says which one is missing.
-- **Back up on a schedule** adds `spec.attachments.backupSchedule` with the cron `0 2 * * *`. Then you can change the **Schedule (cron, UTC)**, **Completed backups to keep**, and **Failed backups to keep**. These numbers are whole numbers of 0 or more. An empty number uses the default of the schedule. Without a backup storage option, the checkbox is disabled.
+- **Back up on a schedule** adds `spec.attachments.backupSchedule` with the cron `0 2 * * *`. Then you can change the **Schedule (cron, UTC)**, **Completed backups to keep**, and **Failed backups to keep**. **Completed backups to keep** is 1 or more, and **Failed backups to keep** is 0 or more. An empty number uses the default of the schedule. Without a backup storage option, the checkbox is disabled.
 
 **Change schedule** on the **Backups** tab opens the **Attachments** panel.
 

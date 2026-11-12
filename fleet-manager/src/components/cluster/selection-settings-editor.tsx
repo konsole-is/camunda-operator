@@ -5,7 +5,8 @@ import type { SecretRefs } from "@/components/fleet/secret-ref-picker";
 import type { ClusterField, Step } from "@/lib/fields";
 import type { OpenAPISchema } from "@/lib/schema";
 import { selectionSettingsOf } from "./editable-settings";
-import { SettingRow } from "./settings-editor";
+import type { FieldError } from "@/lib/session";
+import { errorsAt, SettingRow } from "./settings-editor";
 
 /**
  * SelectionSettingsEditor edits the parameters of one selection. fields are
@@ -17,12 +18,15 @@ import { SettingRow } from "./settings-editor";
  * choices, whatever its schema. It holds no session: set and reset get
  * claim steps from the root of the claim.
  * invalid gets the error that a parameter shows, as SettingRow gives it.
+ * errors are the field errors of the claim, and each shows at the
+ * parameter whose claim path holds it.
  */
 export function SelectionSettingsEditor({
   fields,
   schema,
   choices,
   secrets,
+  errors = [],
   set,
   reset,
   invalid,
@@ -31,6 +35,7 @@ export function SelectionSettingsEditor({
   schema: OpenAPISchema | undefined;
   choices?: Partial<Record<string, readonly string[]>>;
   secrets?: SecretRefs;
+  errors?: readonly FieldError[];
   set: (steps: Step[], value: unknown) => void;
   reset: (steps: Step[]) => void;
   invalid?: (steps: Step[], message: string | undefined) => void;
@@ -43,6 +48,7 @@ export function SelectionSettingsEditor({
           key={`${setting.key}:${resets}`}
           setting={setting}
           secrets={secrets}
+          errors={errorsAt(errors, setting.steps)}
           set={set}
           reset={reset}
           invalid={invalid}

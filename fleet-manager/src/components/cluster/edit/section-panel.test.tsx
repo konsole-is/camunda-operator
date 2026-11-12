@@ -296,6 +296,21 @@ describe("a section panel", () => {
     });
   });
 
+  it("a parameter that fails the schema of its registration shows the error beside it", async () => {
+    const context = contextOf();
+    const registration = structuredClone(harness);
+    const schema = registration.spec.parameters as {
+      properties: Record<string, object>;
+    };
+    schema.properties.hostPrefix = { type: "string", pattern: "^[a-z-]+$" };
+    context.registrations = [registration];
+    panel(context);
+    await userEvent.type(within(row("hostPrefix")).getByRole("textbox"), "X");
+    expect(
+      within(row("hostPrefix")).getByRole("alert").textContent,
+    ).toBeTruthy();
+  });
+
   it("says when no parameter can change", () => {
     const context = contextOf();
     context.claim!.status!.resolvedPolicy!.parameters!["fleet-harness"] = {
