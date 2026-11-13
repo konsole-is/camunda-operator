@@ -18,13 +18,13 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/konsole-is/camunda-operator/api v0.2.1-0.20261024225545-5c9b1c4af551
 	github.com/konsole-is/camunda-operator/conformance v0.0.0-20261021214556-8982ff45676b
-	github.com/onsi/ginkgo/v2 v2.33.0
+	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.94.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/sourcehawk/go-crd-condition-metrics v1.1.0
-	github.com/sourcehawk/operator-component-framework v0.24.0
+	github.com/sourcehawk/operator-component-framework v0.24.1
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0

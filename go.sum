@@ -339,8 +339,8 @@ github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee h1:W5t00kpgFd
 github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
-github.com/onsi/ginkgo/v2 v2.33.0 h1:C8gBA6Uc2ZEubiV+SXiu5tZnMTwEmXHgkJwGozKtZf8=
-github.com/onsi/ginkgo/v2 v2.33.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
+github.com/onsi/ginkgo/v2 v2.33.1 h1:62XfWJbEIjPSCSDYrsCPP/SHcmH7O0M8ne8zfqQ2iz4=
+github.com/onsi/ginkgo/v2 v2.33.1/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
 github.com/onsi/gomega v1.44.0 h1:eAiGl3Pw5jz5GQdDff0BcxYpAX1JxW8xD7mFUuwNfZQ=
 github.com/onsi/gomega v1.44.0/go.mod h1:e/C2HwaZ1DhvjzXXuFhcR7hY7Sh9pl7MmoWKEjzwcdA=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
@@ -385,8 +385,8 @@ github.com/sourcehawk/go-crd-condition-metrics v1.1.0 h1:wV+vSyCCxjIdhBjZENzzoGe
 github.com/sourcehawk/go-crd-condition-metrics v1.1.0/go.mod h1:hzmkaQhFMu4Mqylzu4HGO/dN8rsSEmI6/ivwlchTVrw=
 github.com/sourcehawk/go-prometheus-gaugevecset v1.1.0 h1:M0R2IZrKYT9dvJ+2bnPb69UVfFzHmS1pkBNbRTbXkM4=
 github.com/sourcehawk/go-prometheus-gaugevecset v1.1.0/go.mod h1:lNJLSekPoA5pzxuyNMNf5XrE5Kvbaqe3kZ4Fe06R1rg=
-github.com/sourcehawk/operator-component-framework v0.24.0 h1:lOF3o12aaHnKaZEElxfoRJcYjSssnIT+7CiWdpVJXjI=
-github.com/sourcehawk/operator-component-framework v0.24.0/go.mod h1:7kanoHzIfsd7VR6+WzZYZ1+N0CCLakABHyZb1q3MerE=
+github.com/sourcehawk/operator-component-framework v0.24.1 h1:sOtY3dp6EMp5szXaFZ2vN8IkPEMSZxwOS+mlJJXmnCw=
+github.com/sourcehawk/operator-component-framework v0.24.1/go.mod h1:Kl5SmRRG+P2zvUUSX17uO4rbXYgiY9e2sk/vfgN8w9M=
 github.com/spf13/cobra v1.10.2 h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=
 github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiTUUS4=
 github.com/spf13/pflag v1.0.9/go.mod h1:McXfInJRrz4CZXVZOBLb0bTZqETkiAhM9Iw0y3An2Bg=
