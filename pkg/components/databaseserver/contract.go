@@ -47,9 +47,8 @@ const maxRecoveryWindows = 256
 // archive of the server gives it. The windows of that capability come from
 // status.archive.history of server as it stands when the component is built.
 // Only a record that a rollback can read at location, where the server
-// archives to now, gives a window. The windows start no earlier than
-// status.archive.reachableFrom while that is later than the start of the
-// retention period at now.
+// archives to now, gives a window. now is the time from which the retention
+// period counts back.
 //
 // A read-only registration guards the contract on the superuser Secret and
 // blocks while that Secret is absent. A contract that named a Secret before
@@ -131,14 +130,12 @@ func ContractComponent(
 }
 
 // pitrCapability renders the point-in-time-recovery capability the server
-// publishes at now. A server with an archive declares the retention its bucket
-// enforces, windows from its archive history, and that the operator rolls it
-// back on request. A server without one declares that no restore can reach it,
-// and that nobody rolls it back.
+// publishes at now. A server without an archive declares that no restore can
+// reach it, and that nobody rolls it back.
 //
 // A server with no window to publish declares the same as a server without an
 // archive, unless it runs a recovery. A restore that asked for that recovery
-// waits for a contract that declares operator.
+// reads a contract that does not declare operator as one that nobody answers.
 //
 // A server whose ObjectStore another owner holds declares the same as a server
 // without an archive. It archives nothing while the name is held, and a

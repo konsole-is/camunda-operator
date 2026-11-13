@@ -3035,7 +3035,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pitrcapability"
       },
       "spec.pitr.windows": {
-        "description": "Windows are the continuous intervals of time that a restore can reach,\noldest first. A new window starts only where the archive breaks. So\nthe maximum of 256 limits the breaks, not the time that the windows\ncover. A restore accepts a point only when a window reaches it, also\nwhen the point is inside the retention period. When Windows is unset, a\nrestore can reach every point of the retention period up to the\npresent. Windows require enabled: true.\n\nA DatabaseServer publishes the intervals of its archive here. For a\nmanaged database, one open window is sufficient. It starts when the\ndatabase started to keep backups, and its lag is how far the latest\nrestorable time is behind the present.",
+        "description": "Windows are the continuous intervals of time that a restore can reach,\noldest first. A new window starts only where the archive breaks. So\nthe maximum of 256 limits the breaks, not the time that the windows\ncover. When Windows holds a window, a restore accepts a point only when\na window reaches it, also when the point is inside the retention period.\nWhen Windows is unset, a restore can reach every point of the retention\nperiod up to the present. Windows require enabled: true.\n\nA DatabaseServer publishes here the intervals of its archive that a\nrestore can still read at the location that it archives to now. It\npublishes the newest 256 of them. The lag of an open window is how far the latest\nrestorable time is behind the present.",
         "anchor": "#pitrcapability"
       },
       "spec.pitr.windows.from": {

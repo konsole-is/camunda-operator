@@ -113,22 +113,22 @@ export interface DatabaseServerConfigSpec {
      * Windows are the continuous intervals of time that a restore can reach,
      * oldest first. A new window starts only where the archive breaks. So
      * the maximum of 256 limits the breaks, not the time that the windows
-     * cover. A restore accepts a point only when a window reaches it, also
-     * when the point is inside the retention period. When Windows is unset, a
-     * restore can reach every point of the retention period up to the
-     * present. Windows require enabled: true.
+     * cover. When Windows holds a window, a restore accepts a point only when
+     * a window reaches it, also when the point is inside the retention period.
+     * When Windows is unset, a restore can reach every point of the retention
+     * period up to the present. Windows require enabled: true.
      *
-     * A DatabaseServer publishes the intervals of its archive here. For a
-     * managed database, one open window is sufficient. It starts when the
-     * database started to keep backups, and its lag is how far the latest
+     * A DatabaseServer publishes here the intervals of its archive that a
+     * restore can still read at the location that it archives to now. It
+     * publishes the newest 256 of them. The lag of an open window is how far the latest
      * restorable time is behind the present.
      *
      * @maxItems 256
      *
      * Items: RecoveryWindow is one continuous interval of time that a point-in-time
-     * restore of the server can reach. Uploads to the archive extend the open
-     * window. A new window starts only where the archive breaks. It has the
-     * meanings of ArchiveRecord on a DatabaseServer.
+     * restore of the server can reach. The open window extends to the present,
+     * less its lag. A new window starts only where the archive breaks. On a
+     * DatabaseServer, each window comes from one record of status.archive.history.
      */
     windows?: {
       /**

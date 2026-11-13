@@ -1930,9 +1930,8 @@ var _ = Describe("DatabaseServer controller", func() {
 
 	// CloudNativePG reports the condition on the first upload that fails, and
 	// the plugin uploads that segment again. A server that reported every one
-	// of them would report an archive that is running. The record and the
-	// contract still stop at the failed upload, so no restore is admitted to a
-	// point that the archive can miss.
+	// of them would report an archive that is running. A restore refuses a
+	// point after the mark that the contract carries.
 	It("marks the record but keeps the archive True while a failed upload is inside the grace period", func() {
 		bucket := archiveBucket()
 		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
