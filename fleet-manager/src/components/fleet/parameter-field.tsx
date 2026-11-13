@@ -53,6 +53,9 @@ export function ParameterField({
   onValue: (value: unknown, parse?: ValidationError[]) => void;
 }) {
   const [rowErrors, setRowErrors] = useState(false);
+  // YAML can give a value that rows read, and a swap to rows would drop the
+  // text that the user types.
+  const [mounted] = useState(value);
   const schema = rule.schema ?? {};
   const rules = rule.claimEditable ? schemaRules(schema) : [];
   const hints = <RuleHints id={`${id}-rules`} rules={rules} />;
@@ -89,7 +92,7 @@ export function ParameterField({
   const editor = parameterEditorOf(
     rule.name,
     rule.allowedLists ? { type: "string" } : schema,
-    rule.allowed?.map((a) => a.name),
+    { choices: rule.allowed?.map((a) => a.name), value: mounted },
   )!;
   const labelOf = (name: string, index: number) =>
     rule.allowed?.[index]?.label ?? (name === "" ? "Empty" : name);
@@ -257,7 +260,7 @@ export function ParameterField({
 }
 
 // RowsEditor is the input of an editor kind that shows the errors of its
-// own rows. A value of null is its empty input.
+// own rows.
 function RowsEditor({
   label,
   editor,
@@ -272,7 +275,7 @@ function RowsEditor({
   value: unknown;
   onChange: (value: unknown, errors: ValidationError[]) => void;
 }) {
-  const initial = editorValueOf(editor, value ?? undefined);
+  const initial = editorValueOf(editor, value);
   // An edit that clears a Secret key changes value, and the Secret must
   // stay on offer.
   const [secrets] = useState(() =>

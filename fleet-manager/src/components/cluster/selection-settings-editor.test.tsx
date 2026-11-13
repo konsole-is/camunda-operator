@@ -388,4 +388,112 @@ describe("SelectionSettingsEditor", () => {
       expect(set).toHaveBeenLastCalledWith(stepsOf("policies"), "standard");
     });
   });
+
+  describe("a name of a cluster field", () => {
+    const field = (label: string, value: unknown) =>
+      ({
+        key: label,
+        label,
+        value,
+        state: { kind: "environment" },
+        claimSteps: [...overridesSteps.slice(0, 4), { field: label }],
+      }) as unknown as ClusterField;
+    const textarea = (label: string) =>
+      within(settingRow(label))
+        .getAllByRole<HTMLTextAreaElement>("textbox")
+        .find((t) => t.tagName === "TEXTAREA");
+
+    it("edits an extraEnv map of strings with key and value rows", () => {
+      renderEditor({
+        fields: [field("extraEnv", { TZ: "UTC" })],
+        schema: {
+          type: "object",
+          properties: {
+            extraEnv: {
+              type: "object",
+              additionalProperties: { type: "string" },
+            },
+          },
+        },
+      });
+      expect(
+        within(settingRow("extraEnv")).getByRole("textbox", { name: "Key" }),
+      ).toHaveProperty("value", "TZ");
+    });
+
+    it("edits a tolerations string as text", () => {
+      renderEditor({
+        fields: [field("tolerations", "all")],
+        schema: {
+          type: "object",
+          properties: { tolerations: { type: "string" } },
+        },
+      });
+      expect(
+        within(settingRow("tolerations")).getByRole("textbox"),
+      ).toHaveProperty("value", "all");
+    });
+
+    it("shows a value that the editor of the name cannot read as YAML", () => {
+      renderEditor({
+        fields: [field("extraEnv", { TZ: "UTC" })],
+        schema: {
+          type: "object",
+          properties: { extraEnv: { type: "array" } },
+        },
+      });
+      expect(textarea("extraEnv")?.value).toContain("TZ: UTC");
+    });
+
+    it("shows a value of a parameter without a schema that the editor of the name cannot read as YAML", () => {
+      renderEditor({
+        fields: [field("tolerations", "all")],
+        schema: undefined,
+      });
+      expect(textarea("tolerations")?.value).toContain("all");
+    });
+
+    it("keeps the editors of the overrides and shows a part they cannot read as YAML", () => {
+      renderEditor({
+        fields: [field("overrides", { resources: "big", storageSize: "50Gi" })],
+      });
+      expect(textarea("overrides.resources")?.value).toContain("big");
+      expect(
+        within(settingRow("overrides.storageSize")).getByRole("textbox", {
+          name: "Amount",
+        }),
+      ).toHaveProperty("value", "50");
+    });
+
+    it("shows an empty map for a part of null", () => {
+      renderEditor({ fields: [field("overrides", { podLabels: null })] });
+      expect(
+        within(settingRow("overrides.podLabels")).queryByRole("textbox", {
+          name: "Key",
+        }),
+      ).toBeNull();
+      expect(
+        within(settingRow("overrides.podLabels")).getByRole("button", {
+          name: "Add an entry",
+        }),
+      ).toBeDefined();
+    });
+
+    it("keeps the YAML editor once the YAML gives a value that rows read", () => {
+      const props = { schema: undefined, set: () => {}, reset: () => {} };
+      const { rerender } = render(
+        <SelectionSettingsEditor
+          fields={[field("tolerations", "all")]}
+          {...props}
+        />,
+      );
+      rerender(
+        <SelectionSettingsEditor
+          fields={[field("tolerations", [{ key: "a" }])]}
+          {...props}
+        />,
+      );
+      expect(textarea("tolerations")).toBeDefined();
+    });
+  });
 });

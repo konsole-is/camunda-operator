@@ -328,6 +328,91 @@ describe("ParameterField", () => {
     expect(screen.getByRole("option", { name: "orders-db" })).toBeTruthy();
   });
 
+  describe("a name of a cluster field with another shape", () => {
+    it("edits an extraEnv map of strings with key and value rows", () => {
+      render(
+        <ParameterField
+          id="p"
+          rule={editable(
+            { type: "object", additionalProperties: { type: "string" } },
+            { name: "extraEnv" },
+          )}
+          value={{ TZ: "UTC" }}
+          onValue={() => {}}
+        />,
+      );
+      expect(screen.getByRole("textbox", { name: "Key" })).toHaveProperty(
+        "value",
+        "TZ",
+      );
+    });
+
+    it("edits a tolerations string as text", () => {
+      render(
+        <ParameterField
+          id="p"
+          rule={editable({ type: "string" }, { name: "tolerations" })}
+          value="all"
+          onValue={() => {}}
+        />,
+      );
+      expect(screen.getByLabelText("Replicas")).toHaveProperty("value", "all");
+    });
+
+    it.each<[string, ParameterRule["schema"], unknown, string]>([
+      ["extraEnv", { type: "array" }, { TZ: "UTC" }, "TZ: UTC"],
+      ["tolerations", undefined, "all", "all"],
+      ["resources", {}, "big", "big"],
+    ])(
+      "shows a %s value that the editor of the name cannot read as YAML",
+      (name, schema, value, text) => {
+        render(
+          <ParameterField
+            id="p"
+            rule={editable(schema, { name })}
+            value={value}
+            onValue={() => {}}
+          />,
+        );
+        const input = screen.getByLabelText("Replicas");
+        expect(input.tagName).toBe("TEXTAREA");
+        expect((input as HTMLTextAreaElement).value).toContain(text);
+      },
+    );
+
+    it("keeps the YAML editor once the YAML gives a value that rows read", () => {
+      const rule = editable(undefined, { name: "tolerations" });
+      const { rerender } = render(
+        <ParameterField id="p" rule={rule} value="all" onValue={() => {}} />,
+      );
+      rerender(
+        <ParameterField
+          id="p"
+          rule={rule}
+          value={[{ key: "a" }]}
+          onValue={() => {}}
+        />,
+      );
+      expect(screen.getByLabelText("Replicas").tagName).toBe("TEXTAREA");
+    });
+  });
+
+  it("edits an object with a declared property that is not a string as YAML", () => {
+    render(
+      <ParameterField
+        id="p"
+        rule={editable({
+          type: "object",
+          properties: { retries: { type: "integer" } },
+          additionalProperties: { type: "string" },
+        })}
+        value={{ retries: 3 }}
+        onValue={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Replicas").tagName).toBe("TEXTAREA");
+  });
+
   it("shows the locked summary of a rule that a claim cannot change", () => {
     render(
       <ParameterField

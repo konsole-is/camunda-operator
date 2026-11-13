@@ -132,7 +132,13 @@ export function SettingRow({
   const [mounted] = useState(setting.value);
   // The caller remounts the rows when the pending changes end.
   const { generation, own } = useEditorGeneration(0, setting.value);
-  const { editor, steps } = setting;
+  // YAML can give a value that rows read, and a swap to rows would drop
+  // the text that the user types.
+  const [yaml] = useState(
+    setting.editor?.kind === "yaml" ? setting.editor : undefined,
+  );
+  const { steps } = setting;
+  const editor = setting.editor && (yaml ?? setting.editor);
   const shows = useShownError(
     steps && setting.holder ? [...steps, ...setting.holder.rest] : steps,
     invalid,

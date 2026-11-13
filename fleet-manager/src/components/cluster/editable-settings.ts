@@ -212,19 +212,20 @@ export function selectionSettingsOf(
       const editor = parameterEditorOf(
         name,
         property ?? (Array.isArray(field.value) ? { type: "array" } : {}),
-        options,
+        { choices: options },
       );
       return [{ ...base, editor, steps: field.claimSteps }];
     }
     const inner = propertiesOf(property);
     if (Object.keys(inner).length > 0)
       return Object.entries(inner).map(([part, partSchema]) => {
-        const editor = parameterEditorOf(part, partSchema);
+        const value = valueAt(field.value, [{ field: part }]);
+        const editor = parameterEditorOf(part, partSchema, { value });
         return {
           ...base,
           key: `${field.key}.${part}`,
           label: `${name}.${part}`,
-          value: valueAt(field.value, [{ field: part }]),
+          value,
           ...(editor && {
             ...blockReset(name, "environment"),
             editor,
@@ -233,7 +234,7 @@ export function selectionSettingsOf(
           }),
         };
       });
-    const editor = parameterEditorOf(name, property);
+    const editor = parameterEditorOf(name, property, { value: field.value });
     return [{ ...base, ...(editor && { editor, steps: field.claimSteps }) }];
   });
 }

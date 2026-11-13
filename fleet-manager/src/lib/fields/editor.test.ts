@@ -173,13 +173,143 @@ describe("parameterEditorOf", () => {
 
   it("picks from the choices whatever the schema", () => {
     expect(
-      parameterEditorOf("policies", { type: "array" }, ["sqs", "s3"]),
+      parameterEditorOf(
+        "policies",
+        { type: "array" },
+        { choices: ["sqs", "s3"] },
+      ),
     ).toEqual({ kind: "choices", options: ["sqs", "s3"] });
-    expect(parameterEditorOf("preset", undefined, ["small"])).toEqual({
-      kind: "select",
-      options: ["small"],
-    });
+    expect(
+      parameterEditorOf("preset", undefined, { choices: ["small"] }),
+    ).toEqual({ kind: "select", options: ["small"] });
   });
+
+  it.each<[string, unknown, SettingEditor]>([
+    ["extraEnv", { type: "array", items: { type: "object" } }, { kind: "env" }],
+    ["extraEnv", undefined, { kind: "env" }],
+    ["tolerations", { type: "array" }, { kind: "tolerations" }],
+    [
+      "resources",
+      { type: "object", properties: { requests: { type: "object" } } },
+      { kind: "resources" },
+    ],
+    [
+      "storageSize",
+      { "x-kubernetes-int-or-string": true },
+      { kind: "storageSize" },
+    ],
+  ])(
+    "gives %s the editor of its name for the schema %o",
+    (name, schema, editor) => {
+      expect(parameterEditorOf(name, schema)).toEqual(editor);
+    },
+  );
+
+  it.each<[string, unknown, SettingEditor]>([
+    [
+      "extraEnv",
+      { type: "object", additionalProperties: { type: "string" } },
+      { kind: "keyValue" },
+    ],
+    [
+      "extraEnv",
+      { type: "array", items: { type: "string" } },
+      { kind: "yaml", schema: { type: "array", items: { type: "string" } } },
+    ],
+    ["tolerations", { type: "string" }, { kind: "text" }],
+    [
+      "resources",
+      { type: "object", additionalProperties: { type: "string" } },
+      { kind: "keyValue" },
+    ],
+    [
+      "resources",
+      { type: "object", properties: { requests: { type: "string" } } },
+      {
+        kind: "yaml",
+        schema: {
+          type: "object",
+          properties: { requests: { type: "string" } },
+        },
+      },
+    ],
+    ["storageSize", { type: "integer" }, { kind: "number", integer: true }],
+  ])(
+    "gives %s the editor of the schema %o, which the editor of the name cannot write",
+    (name, schema, editor) => {
+      expect(parameterEditorOf(name, schema)).toEqual(editor);
+    },
+  );
+
+  it.each<[string, unknown, unknown]>([
+    ["extraEnv", { type: "array" }, { TZ: "UTC" }],
+    ["extraEnv", { type: "array" }, ["TZ=UTC"]],
+    ["extraEnv", undefined, [{ name: "TZ", value: 1 }]],
+    ["extraEnv", undefined, [{ name: "TZ", valueFrom: "secret" }]],
+    ["tolerations", undefined, "all"],
+    ["tolerations", { type: "array" }, [null]],
+    ["tolerations", { type: "array" }, [{ tolerationSeconds: "60" }]],
+    ["resources", {}, "big"],
+    ["resources", { type: "object" }, { requests: "1" }],
+    ["resources", { type: "object" }, { limits: { cpu: true } }],
+    ["storageSize", undefined, { size: "1Gi" }],
+    [
+      "tags",
+      { type: "object", additionalProperties: { type: "string" } },
+      { team: 1 },
+    ],
+  ])(
+    "edits a %s parameter with the schema %o and the value %o, which its editor cannot read, as YAML",
+    (name, schema, value) => {
+      expect(parameterEditorOf(name, schema, { value })).toEqual({
+        kind: "yaml",
+        ...(schema !== undefined && { schema }),
+      });
+    },
+  );
+
+  it.each<[string, unknown, unknown, SettingEditor["kind"]]>([
+    [
+      "extraEnv",
+      undefined,
+      [
+        { name: "A", value: "b" },
+        { name: "B", valueFrom: { secretKeyRef: { name: "s", key: "k" } } },
+      ],
+      "env",
+    ],
+    [
+      "tolerations",
+      undefined,
+      [{ key: "a", tolerationSeconds: 60 }],
+      "tolerations",
+    ],
+    [
+      "resources",
+      undefined,
+      { requests: { cpu: 1, memory: "1Gi" } },
+      "resources",
+    ],
+    ["storageSize", undefined, "50Gi", "storageSize"],
+    ["storageSize", undefined, 1024, "storageSize"],
+    [
+      "tags",
+      { type: "object", additionalProperties: { type: "string" } },
+      { team: "orders" },
+      "keyValue",
+    ],
+    [
+      "tags",
+      { type: "object", additionalProperties: { type: "string" } },
+      null,
+      "keyValue",
+    ],
+  ])(
+    "keeps the editor of a %s parameter with the schema %o for the value %o",
+    (name, schema, value, kind) => {
+      expect(parameterEditorOf(name, schema, { value })?.kind).toBe(kind);
+    },
+  );
 });
 
 describe("fieldSchemaFromOpenAPI", () => {
@@ -210,6 +340,33 @@ describe("fieldSchemaFromOpenAPI", () => {
       }),
     ).toEqual({});
   });
+
+  it("gives a map of strings with declared strings the object type", () => {
+    expect(
+      fieldSchemaFromOpenAPI({
+        type: "object",
+        properties: { team: { type: "string" } },
+        patternProperties: { "^x-": {} },
+        additionalProperties: { type: "string" },
+      }),
+    ).toEqual({ type: "object" });
+  });
+
+  it.each([
+    ["properties", { properties: { retries: { type: "integer" } } }],
+    ["patternProperties", { patternProperties: { "^n-": { type: "number" } } }],
+  ])(
+    "gives a map of strings with declared %s that are not strings no type",
+    (_, declared) => {
+      expect(
+        fieldSchemaFromOpenAPI({
+          type: "object",
+          ...declared,
+          additionalProperties: { type: "string" },
+        }),
+      ).toEqual({});
+    },
+  );
 
   it("gives undefined for a value that is not a schema", () => {
     expect(fieldSchemaFromOpenAPI(undefined)).toBeUndefined();
@@ -310,5 +467,11 @@ describe("the claim value of each editor", () => {
     [{ kind: "secretRef" }, undefined],
   ])("an unset %o shows as its empty value", (editor, empty) => {
     expect(editorValueOf(editor, undefined)).toEqual(empty);
+    if (editor.kind !== "yaml")
+      expect(editorValueOf(editor, null)).toEqual(empty);
+  });
+
+  it("YAML shows null as it is", () => {
+    expect(editorValueOf({ kind: "yaml" }, null)).toBeNull();
   });
 });
