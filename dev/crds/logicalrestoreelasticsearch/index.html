@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -3041,6 +3041,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <li>The <code>spec.backupStorageRef</code> of the target names the <code>ObjectStorageConfig</code> that the backup wrote to.</li>
 <li>The target runs the exact Camunda version that the backup recorded in <code>status.version</code>, because that version is part of every snapshot name. The restore sets this version on the target in <code>Pending</code>. So this rule fails only when the backup recorded no version, or a value that is not of the form <code>x.y.z</code>.</li>
 </ul>
+<p>After the restore, the target runs the version of the backup. To run a newer version, upgrade the target again, one minor at a time, as <a href="../camundacluster/#upgrade">CamundaCluster: Upgrade</a> says.</p>
 <h3 id="why-the-downgrade-is-safe-here">Why the downgrade is safe here<a class="headerlink" href="#why-the-downgrade-is-safe-here" title="Permanent link">&para;</a></h3>
 <p>The restore can set a version below the one the brokers run. Camunda does not support a downgrade of a running cluster, but a restore is not one. No broker runs while the version changes, and the restore erases the broker volumes before a broker of the older version starts. Outside a restore, the cluster refuses a downgrade with <code>VersionDowngradeRefused</code>, see <a href="../camundacluster/#downgrade-on-purpose">CamundaCluster: Downgrade on purpose</a>. What stays on the cluster after the restore is in <a href="../../guides/operations/#the-version-after-a-logical-restore">The version after a logical restore</a>.</p>
 <h2 id="the-backend">The backend<a class="headerlink" href="#the-backend" title="Permanent link">&para;</a></h2>

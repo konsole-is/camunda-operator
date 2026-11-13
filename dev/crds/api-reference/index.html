@@ -60,7 +60,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -12913,7 +12913,7 @@ A backup runs one time. To try again, create a new CR.</p>
 </tr>
 <tr>
 <td><code>version</code> <em>string</em></td>
-<td>Version is the Camunda version of the cluster when the backup started,<br />as the management binding reported it. A restore compares it with the<br />version of its target. A relational backup restores to the same Camunda<br />minor or to one minor newer. A restore can read the version only here,<br />because a suspended cluster has no management binding. The backup<br />starts only when Zeebe runs this version. After the Zeebe backup<br />request, a poll that finds Zeebe on another version fails the backup<br />at once with both versions in the message.</td>
+<td>Version is the Camunda version of the cluster when the backup started,<br />as the management binding reported it. A restore sets this version on<br />its target, and it refuses a backup that recorded no version of the<br />form x.y.z. A restore can read the version only here,<br />because a suspended cluster has no management binding. The backup<br />starts only when Zeebe runs this version. After the Zeebe backup<br />request, a poll that finds Zeebe on another version fails the backup<br />at once with both versions in the message.</td>
 <td></td>
 <td>Optional: {} <br /></td>
 </tr>

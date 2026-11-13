@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2924,15 +2924,7 @@
 </tr>
 <tr>
 <td>"Backup my-cluster-manual-1 recorded no Camunda version, so it cannot be restored."</td>
-<td>For both kinds. Choose another backup. A backup without a version of the form <code>x.y.z</code> does not restore.</td>
-</tr>
-<tr>
-<td>"Backup my-cluster-manual-1 has Camunda 8.8.4. It restores only into Camunda 8.8 or 8.9, and the cluster has 8.10.1."</td>
-<td>Only for PostgreSQL. Choose a backup whose Camunda minor is the minor of the cluster, or one minor below it.</td>
-</tr>
-<tr>
-<td>"The cluster has no Camunda version yet, so the version rule cannot be checked."</td>
-<td>Only for PostgreSQL. Wait until the cluster reports its version.</td>
+<td>Choose another backup. A backup without a version of the form <code>x.y.z</code> does not restore.</td>
 </tr>
 <tr>
 <td>"Changes are off: the fleet manager could not read its settings."</td>
@@ -2940,7 +2932,7 @@
 </tr>
 </tbody>
 </table>
-<p>An Elasticsearch backup has no minor rule. The restore sets the exact version of the backup on the cluster, as <a href="../../crds/logicalrestoreelasticsearch/#compatibility">LogicalRestoreElasticsearch: Compatibility</a> shows. A PostgreSQL backup restores only into the same Camunda minor or one minor newer, as <a href="../../crds/logicalrestorerdbms/#compatibility">LogicalRestoreRDBMS: Compatibility</a> shows. A cluster that ran the newer minor comes back on the minor of the backup. <a href="../../guides/operations/#the-version-after-a-logical-restore">The version after a logical restore</a> shows how to upgrade it again.</p>
+<p><strong>Restore</strong> has one version rule for both kinds: the backup recorded a version of the form <code>x.y.z</code>. The restore sets that version on the cluster, as <a href="../../crds/logicalrestoreelasticsearch/#compatibility">LogicalRestoreElasticsearch: Compatibility</a> and <a href="../../crds/logicalrestorerdbms/#compatibility">LogicalRestoreRDBMS: Compatibility</a> show. A cluster that ran a newer version comes back on the version of the backup. <a href="../../guides/operations/#the-version-after-a-logical-restore">The version after a logical restore</a> shows how to upgrade it again.</p>
 <p>While a backup of the cluster runs, <strong>Restore</strong> stays on, and the confirm says that the new restore waits. For example:</p>
 <blockquote>
 <p>Backup my-cluster-manual-1 is running. The new restore waits until it ends.</p>

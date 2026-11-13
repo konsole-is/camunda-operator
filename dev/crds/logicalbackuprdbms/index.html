@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -3003,7 +3003,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <li><code>status.backupId</code> identifies the dump.</li>
 <li><code>status.objectKey</code> is the full key of the dump in the bucket.</li>
 <li><code>status.zeebeBackupId</code> is the Zeebe backup that pairs with the dump.</li>
-<li><code>status.version</code> is the Camunda version of the cluster when the backup started. A restore of this backup needs a cluster on the same Camunda minor, or one minor newer.</li>
+<li><code>status.version</code> is the Camunda version of the cluster when the backup started. A restore of this backup sets this version on the cluster.</li>
 <li><code>status.storageSizes.zeebe</code> is the recorded size of one Zeebe data volume, when the operator can compute it.</li>
 </ul>
 <p><code>status.jobName</code> names the dump Job while it exists. <code>status.bucketRef</code> and <code>status.bucketLocation</code> record the bucket that holds the dump. <code>status.failureMessage</code> says why a <code>Failed</code> backup failed. <code>status.completionTime</code> is when the backup ended. <code>status.observedGeneration</code> is the last generation that the operator reconciled.</p>
