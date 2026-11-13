@@ -230,24 +230,34 @@ func (r *DatabaseServerReconciler) archiveStart(
 }
 
 // reportedArchiveOutage returns the stop in the write-ahead log uploads that
-// the server reports on ArchiveReady and on its open archive record, or nil
-// when it reports on none.
+// the server reports on ArchiveReady, or nil when it reports none.
 func reportedArchiveOutage(
 	outage *components.ArchiveOutage,
 	merged v1.DatabaseServerSpec,
 ) *components.ArchiveOutage {
-	// An unconfirmed outage is none of them. CloudNativePG raises its condition
-	// on one failed upload, and the plugin uploads the segment again, so a
-	// reported outage waits for the grace period of
-	// components.ArchiveOutageGracePeriod.
-	//
-	// A suspended server reports on none either. Its instances are gone, so it
-	// writes no write-ahead log to lose, and what CloudNativePG left on the
-	// condition describes the server that ran before the suspension. A server
-	// that asks for no archive is the same case: the cluster carries no archive
-	// plugin, and what stands on the condition is what the server archived
-	// before.
-	if outage == nil || !outage.Confirmed || merged.Suspend || !components.Archiving(merged) {
+	// CloudNativePG raises its condition on one failed upload, and the plugin
+	// uploads the segment again, so a reported outage waits for the grace
+	// period of components.ArchiveOutageGracePeriod.
+	if outage = liveArchiveOutage(outage, merged); outage == nil || !outage.Confirmed {
+		return nil
+	}
+
+	return outage
+}
+
+// liveArchiveOutage returns the stop in the write-ahead log uploads that
+// CloudNativePG reports, confirmed or not, or nil when it reports none or the
+// server does not run with an archive.
+func liveArchiveOutage(
+	outage *components.ArchiveOutage,
+	merged v1.DatabaseServerSpec,
+) *components.ArchiveOutage {
+	// The instances of a suspended server are gone, so it writes no
+	// write-ahead log to lose, and what CloudNativePG left on the condition
+	// describes the server that ran before the suspension. A server that asks
+	// for no archive is the same case: the cluster carries no archive plugin,
+	// and what stands on the condition is what the server archived before.
+	if outage == nil || merged.Suspend || !components.Archiving(merged) {
 		return nil
 	}
 
@@ -499,7 +509,7 @@ func pendingArchiveOutageWait(
 	merged v1.DatabaseServerSpec,
 	now time.Time,
 ) time.Duration {
-	if outage == nil || outage.Confirmed || merged.Suspend || !components.Archiving(merged) {
+	if outage = liveArchiveOutage(outage, merged); outage == nil || outage.Confirmed {
 		return 0
 	}
 

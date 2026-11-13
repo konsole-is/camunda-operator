@@ -820,9 +820,9 @@ export interface DatabaseServerStatus {
       to?: string;
       /**
        * UnverifiedFrom is when CloudNativePG first reported that the uploads of
-       * the write-ahead log fail. It is set after CloudNativePG has reported
-       * this for five minutes, while the server runs and asks for an archive.
-       * The archive can miss the write-ahead log after it, and the write-ahead
+       * the write-ahead log fail. It is set at that first report, while the
+       * server runs and asks for an archive. ArchiveReady reports the failure
+       * only after five minutes. The archive can miss the write-ahead log after it, and the write-ahead
        * log before it that the segment of the first failed upload held.
        * When the uploads work again, the plugin uploads the segments that it
        * held back. The field is then cleared, and a restore can reach the whole

@@ -148,7 +148,7 @@ status:
 - `serverName` is the directory in the bucket that holds the archive.
 - `objectStorageRef` and `location` name the bucket and the path. Each server writes under a path of its own, so one bucket can hold the archives of many servers.
 - `from` is the earliest point a restore can reach in the archive. `to` is the end of the archive: a restore reaches each point before `to`, but not `to` itself. The record without `to` is the archive that the server writes now.
-- `unverifiedFrom` is set on the open record when uploads fail for five minutes. It is when CloudNativePG first reported the failure. The segment of the failed upload holds write-ahead log from before that moment. A restore to a point after `unverifiedFrom`, or shortly before it, can find no data.
+- `unverifiedFrom` is set on the open record when CloudNativePG first reports that uploads fail, and it is the time of that report. The segment of the failed upload holds write-ahead log from before that moment. A restore to a point after `unverifiedFrom`, or shortly before it, can find no data. `ArchiveReady` reports the failure only after five minutes.
 
 The server closes the open record and opens a new one in these cases:
 

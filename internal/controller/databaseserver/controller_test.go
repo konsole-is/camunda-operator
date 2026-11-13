@@ -1930,8 +1930,10 @@ var _ = Describe("DatabaseServer controller", func() {
 
 	// CloudNativePG reports the condition on the first upload that fails, and
 	// the plugin uploads that segment again. A server that reported every one
-	// of them would report an archive that is running.
-	It("keeps the archive True while a failed upload is inside the grace period", func() {
+	// of them would report an archive that is running. The record and the
+	// contract still stop at the failed upload, so no restore is admitted to a
+	// point that the archive can miss.
+	It("marks the record but keeps the archive True while a failed upload is inside the grace period", func() {
 		bucket := archiveBucket()
 		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
@@ -1943,13 +1945,23 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
 
-		reportArchiving(server, metav1.ConditionFalse, metav1.Now())
+		stoppedAt := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
+		reportArchiving(server, metav1.ConditionFalse, stoppedAt)
+
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history[0].UnverifiedFrom).NotTo(BeNil())
+			g.Expect(history[0].UnverifiedFrom.Time).To(BeTemporally("==", stoppedAt.Time))
+
+			windows := publishedContract(g, server).Spec.PITR.Windows
+			g.Expect(windows).To(HaveLen(1))
+			g.Expect(windows[0].UnverifiedFrom).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
 			condition := conditionOf(server, v1.ConditionArchiveReady)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), condition.Message)
-			g.Expect(archiveHistory(server)[0].UnverifiedFrom).To(BeNil())
 		}, 3*time.Second, interval).Should(Succeed())
 	})
 

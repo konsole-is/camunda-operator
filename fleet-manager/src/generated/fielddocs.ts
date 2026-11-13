@@ -2845,7 +2845,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#archiverecord"
       },
       "status.archive.history.unverifiedFrom": {
-        "description": "UnverifiedFrom is when CloudNativePG first reported that the uploads of\nthe write-ahead log fail. It is set after CloudNativePG has reported\nthis for five minutes, while the server runs and asks for an archive.\nThe archive can miss the write-ahead log after it, and the write-ahead\nlog before it that the segment of the first failed upload held.\nWhen the uploads work again, the plugin uploads the segments that it\nheld back. The field is then cleared, and a restore can reach the whole\ninterval again. Only the record that the server writes to now has it.",
+        "description": "UnverifiedFrom is when CloudNativePG first reported that the uploads of\nthe write-ahead log fail. It is set at that first report, while the\nserver runs and asks for an archive. ArchiveReady reports the failure\nonly after five minutes. The archive can miss the write-ahead log after it, and the write-ahead\nlog before it that the segment of the first failed upload held.\nWhen the uploads work again, the plugin uploads the segments that it\nheld back. The field is then cleared, and a restore can reach the whole\ninterval again. Only the record that the server writes to now has it.",
         "anchor": "#archiverecord"
       },
       "status.archive.reachableFrom": {
