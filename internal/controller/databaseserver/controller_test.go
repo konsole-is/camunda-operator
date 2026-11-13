@@ -1909,7 +1909,9 @@ var _ = Describe("DatabaseServer controller", func() {
 			windows := publishedContract(g, server).Spec.PITR.Windows
 			g.Expect(windows).To(HaveLen(1))
 			g.Expect(windows[0].UnverifiedFrom).NotTo(BeNil())
-			g.Expect(windows[0].UnverifiedFrom.Time).To(BeTemporally("==", stoppedAt.Time))
+			g.Expect(windows[0].UnverifiedFrom.Time).To(
+				BeTemporally("==", stoppedAt.Add(-components.ArchiveLag)),
+			)
 		}, timeout, interval).Should(Succeed())
 
 		By("running the uploads again")

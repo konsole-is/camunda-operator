@@ -167,10 +167,15 @@ func recoveryWindows(history []v1.ArchiveRecord) []v1.RecoveryWindow {
 	windows := make([]v1.RecoveryWindow, 0, len(history))
 	for _, record := range history {
 		window := v1.RecoveryWindow{
-			Location:       record.Location,
-			From:           record.From,
-			To:             record.To.DeepCopy(),
-			UnverifiedFrom: record.UnverifiedFrom.DeepCopy(),
+			Location: record.Location,
+			From:     record.From,
+			To:       record.To.DeepCopy(),
+		}
+		if record.UnverifiedFrom != nil {
+			// The segment whose upload failed began before the record's time,
+			// by at most archive_timeout while the server writes.
+			cutoff := metav1.NewTime(record.UnverifiedFrom.Add(-ArchiveLag))
+			window.UnverifiedFrom = &cutoff
 		}
 		if record.To == nil {
 			window.Lag = &metav1.Duration{Duration: ArchiveLag}

@@ -118,11 +118,14 @@ func TestPITRCapabilityPublishesTheArchiveHistory(t *testing.T) {
 		}, pitrCapability(server, archiving, "").Windows, "an open record is an open window with the archive lag",
 	)
 
+	// The upload that failed at hour 2 carried the segment before it, so the
+	// window ends ArchiveLag before the failure.
 	server.Status.Archive.History[0].UnverifiedFrom = new(windowTime(2))
+	cutoff := metav1.NewTime(windowTime(2).Add(-ArchiveLag))
 	assert.Equal(
 		t, []v1.RecoveryWindow{
-			{Location: location, From: windowTime(0), UnverifiedFrom: new(windowTime(2)), Lag: lag},
-		}, pitrCapability(server, archiving, "").Windows, "unverifiedFrom carries over",
+			{Location: location, From: windowTime(0), UnverifiedFrom: &cutoff, Lag: lag},
+		}, pitrCapability(server, archiving, "").Windows, "unverifiedFrom moves back by the archive lag",
 	)
 
 	server.Status.Archive.History[0].UnverifiedFrom = nil

@@ -148,7 +148,7 @@ status:
 - `serverName` is the directory in the bucket that holds the archive.
 - `objectStorageRef` and `location` name the bucket and the path. Each server writes under a path of its own, so one bucket can hold the archives of many servers.
 - `from` is the earliest point a restore can reach in the archive. `to` is the end of the archive: a restore reaches each point before `to`, but not `to` itself. The record without `to` is the archive that the server writes now.
-- `unverifiedFrom` is set on the open record while uploads fail. A restore to a point after it can find no data.
+- `unverifiedFrom` is set on the open record when uploads fail for five minutes. It is when CloudNativePG first reported the failure. The segment of the failed upload holds write-ahead log from before that moment. A restore to a point after `unverifiedFrom`, or shortly before it, can find no data.
 
 The server closes the open record and opens a new one in these cases:
 
@@ -158,7 +158,7 @@ The server closes the open record and opens a new one in these cases:
 
 A new record starts at the first base backup of the new archive. No restore can reach a point between two records. A rollback reads only the location that the server archives to now. A point in a record of an earlier location is refused, and the message names both locations.
 
-The contract publishes each record as a [recovery window](databaseserverconfig.md#recovery-windows) in `pitr.windows`, with the same `from`, `to`, `unverifiedFrom`, and `location`. A history of more than 256 records publishes the newest 256. The open window gets `lag: 6m0s`. CloudNativePG uploads the write-ahead log in segments, and closes a segment at least every five minutes while the server writes. So a point of the last six minutes can be missing from the bucket. A `PointInTimeRestore` of such a point waits in `Pending` until the point is six minutes old.
+The contract publishes each record as a [recovery window](databaseserverconfig.md#recovery-windows) in `pitr.windows`, with the same `from`, `to`, and `location`. The `unverifiedFrom` of a window is six minutes before the one of its record. A history of more than 256 records publishes the newest 256. The open window gets `lag: 6m0s`. CloudNativePG uploads the write-ahead log in segments, and closes a segment at least every five minutes while the server writes. So a point of the last six minutes can be missing from the bucket. A `PointInTimeRestore` of such a point waits in `Pending` until the point is six minutes old.
 
 ```yaml
 apiVersion: core.camunda.io/v1
