@@ -85,6 +85,164 @@ describe("ParameterField", () => {
     expect(onValue).toHaveBeenLastCalledWith("s3");
   });
 
+  it("picks allowed names of a list with a checkbox for each", async () => {
+    const onValue = vi.fn();
+    render(
+      <ParameterField
+        id="p"
+        rule={editable(
+          { type: "array", items: { type: "string" } },
+          {
+            allowed: [
+              { name: "sqs", label: "SQS access" },
+              { name: "s3", label: "S3 read" },
+            ],
+          },
+        )}
+        value={["s3"]}
+        onValue={onValue}
+      />,
+    );
+    await userEvent.click(screen.getByRole("checkbox", { name: "SQS access" }));
+    expect(onValue).toHaveBeenLastCalledWith(["sqs", "s3"]);
+  });
+
+  it("picks one name for a list whose choices are whole lists", () => {
+    render(
+      <ParameterField
+        id="p"
+        rule={editable(
+          { type: "array", items: { type: "string" } },
+          {
+            allowed: [{ name: "base", label: "Base policies" }],
+            allowedLists: true,
+          },
+        )}
+        value="base"
+        onValue={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Replicas").tagName).toBe("SELECT");
+  });
+
+  describe("a map of strings", () => {
+    const map = { type: "object", additionalProperties: { type: "string" } };
+
+    it("shows a key and value row for each entry", () => {
+      render(
+        <ParameterField
+          id="p"
+          rule={editable(map)}
+          value={{ team: "orders" }}
+          onValue={() => {}}
+        />,
+      );
+      expect(screen.getByRole("textbox", { name: "Key" })).toHaveProperty(
+        "value",
+        "team",
+      );
+      expect(screen.getByRole("textbox", { name: "Value" })).toHaveProperty(
+        "value",
+        "orders",
+      );
+    });
+
+    it("gives the map after an edit", async () => {
+      const onValue = vi.fn();
+      render(
+        <ParameterField
+          id="p"
+          rule={editable(map)}
+          value={undefined}
+          onValue={onValue}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add an entry" }),
+      );
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Key" }),
+        "tier",
+      );
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Value" }),
+        "gold",
+      );
+      expect(onValue).toHaveBeenLastCalledWith({ tier: "gold" }, []);
+    });
+
+    it("gives undefined once no entry is left", async () => {
+      const onValue = vi.fn();
+      render(
+        <ParameterField
+          id="p"
+          rule={editable(map)}
+          value={{ team: "orders" }}
+          onValue={onValue}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Remove entry 1" }),
+      );
+      expect(onValue).toHaveBeenLastCalledWith(undefined, []);
+    });
+
+    it("gives the errors of the rows and hides the error of the parent", async () => {
+      const onValue = vi.fn();
+      render(
+        <ParameterField
+          id="p"
+          rule={editable(map)}
+          value={{ team: "orders" }}
+          error="is required"
+          onValue={onValue}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add an entry" }),
+      );
+      await userEvent.type(
+        screen.getAllByRole("textbox", { name: "Key" })[1],
+        "team",
+      );
+      expect(onValue.mock.lastCall?.[1]).toEqual([
+        { path: "1.key", message: "team is set twice" },
+      ]);
+      expect(screen.getByText("team is set twice")).toBeTruthy();
+      expect(screen.queryByText("is required")).toBeNull();
+    });
+  });
+
+  it.each<[string, ParameterRule["schema"]]>([
+    ["a schema without a type", {}],
+    ["no schema", undefined],
+  ])("edits a value with %s as YAML", (_, schema) => {
+    render(
+      <ParameterField
+        id="p"
+        rule={editable(schema)}
+        value="eu-west-1"
+        onValue={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Replicas").tagName).toBe("TEXTAREA");
+  });
+
+  it("picks the editor of a field that the name gives", () => {
+    render(
+      <ParameterField
+        id="p"
+        rule={editable({ type: "string" }, { name: "storageSize" })}
+        value="50Gi"
+        onValue={() => {}}
+      />,
+    );
+    expect(screen.getByRole("textbox", { name: "Amount" })).toHaveProperty(
+      "value",
+      "50",
+    );
+  });
+
   it("shows the locked summary of a rule that a claim cannot change", () => {
     render(
       <ParameterField

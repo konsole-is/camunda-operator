@@ -39,7 +39,10 @@ export type SchemaEditor = Exclude<SettingEditor, { kind: "secretRef" }>;
 export function editorOf(
   path: string,
   schema: FieldSchema | undefined,
-  { choices, openAPI }: { choices?: readonly string[]; openAPI?: OpenAPISchema } = {},
+  {
+    choices,
+    openAPI,
+  }: { choices?: readonly string[]; openAPI?: OpenAPISchema } = {},
 ): SchemaEditor | undefined {
   if (choices)
     return schema?.type === "array"

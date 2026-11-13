@@ -292,8 +292,6 @@ function startsWith(names: readonly string[], prefix: readonly string[]) {
   return prefix.every((name, i) => names[i] === name);
 }
 
-
-
 function isEmpty(value: unknown): boolean {
   if (value === undefined || value === null) return true;
   if (Array.isArray(value)) return value.length === 0;
@@ -303,4 +301,3 @@ function isEmpty(value: unknown): boolean {
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-

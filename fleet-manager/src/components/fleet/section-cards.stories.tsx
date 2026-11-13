@@ -109,6 +109,29 @@ export const sectionCardsStories: Story[] = [
       },
     ],
   }),
+  story("Map parameter", {
+    ...backupStorage,
+    options: [
+      {
+        registration: "aws-s3",
+        label: "New S3 bucket",
+        description: "A bucket for this cluster, deleted with the claim.",
+        isDefault: true,
+        parameters: [
+          {
+            name: "tags",
+            label: "Bucket tags",
+            schema: {
+              type: "object",
+              additionalProperties: { type: "string" },
+            },
+            claimEditable: true,
+            value: { team: "orders", "cost-center": "4711" },
+          },
+        ],
+      },
+    ],
+  }),
   story("Option that needs an input", {
     name: "volume-encryption",
     label: "Volume encryption",

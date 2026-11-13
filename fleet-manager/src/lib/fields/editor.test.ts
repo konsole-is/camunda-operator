@@ -106,7 +106,10 @@ describe("parameterEditorOf", () => {
     ["replicas", { kind: "number", integer: true, minimum: 1 }],
     ["storageSize", { kind: "storageSize" }],
     ["resources", { kind: "resources" }],
-    ["scheduling", { kind: "yaml", schema: OVERRIDES.scheduling as OpenAPISchema }],
+    [
+      "scheduling",
+      { kind: "yaml", schema: OVERRIDES.scheduling as OpenAPISchema },
+    ],
     ["podLabels", { kind: "keyValue", format: "label" }],
   ])("reads the registration schema of the override %s", (name, editor) => {
     expect(parameterEditorOf(name, OVERRIDES[name])).toEqual(editor);
