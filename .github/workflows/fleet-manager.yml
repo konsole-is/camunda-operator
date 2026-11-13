@@ -203,19 +203,27 @@ jobs:
         with:
           name: storybook
           path: storybook
-      # A run that waited in the gh-pages queue can start after the pull
-      # request closed and its preview was removed.
-      - name: Skip a closed pull request
+      # A run that waited in the gh-pages queue, or a re-run, can start after
+      # the pull request closed or after a newer push published its preview.
+      - name: Skip a closed pull request or an old build
         id: target
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          state=open
+          publish=true
           if [ -n "${PR}" ]; then
-            state=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq .state)
+            live=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq '.state + " " + .head.sha')
+            state=${live%% *}
+            head=${live#* }
+            if [ "${state}" != "open" ]; then
+              echo "Pull request ${PR} is ${state}."
+              publish=false
+            elif [ "${head}" != "${SHA}" ]; then
+              echo "Pull request ${PR} is at ${head}, and this build is of ${SHA}."
+              publish=false
+            fi
           fi
-          echo "Pull request state: ${state}"
-          echo "publish=$([ "${state}" = open ] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
+          echo "publish=${publish}" >> "${GITHUB_OUTPUT}"
       - name: Place the Storybook on the site
         id: place
         if: ${{ steps.target.outputs.publish == 'true' }}

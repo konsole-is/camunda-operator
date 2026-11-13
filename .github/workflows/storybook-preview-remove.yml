@@ -35,6 +35,18 @@ jobs:
       PR: ${{ github.event.pull_request.number }}
       SHA: ${{ github.event.pull_request.head.sha }}
     steps:
+      # The pull request can reopen while this job waits in the gh-pages
+      # queue, or before a re-run of this job.
+      - name: Skip a reopened pull request
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq .state)
+          if [ "${state}" != "closed" ]; then
+            echo "Pull request ${PR} is ${state}."
+          fi
+          echo "remove=$([ "${state}" = "closed" ] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
       # The merge ref of a closed pull request can be gone, so the script
       # comes from the base branch.
       - name: Clone the preview script
@@ -58,8 +70,10 @@ jobs:
         with:
           node-version-file: src/fleet-manager/.node-version
       - name: Remove the preview from the site
+        if: ${{ steps.target.outputs.remove == 'true' }}
         run: node src/fleet-manager/scripts/storybook-preview.mts remove site "pr-preview/pr-${PR}"
       - name: Push the site
+        if: ${{ steps.target.outputs.remove == 'true' }}
         working-directory: site
         run: |
           git config user.name "github-actions[bot]"
@@ -72,6 +86,7 @@ jobs:
           git commit -q -m "Remove the Storybook of pull request ${PR}"
           ../src/hack/ci-retry.sh git push origin gh-pages
       - name: Edit the preview comment
+        if: ${{ steps.target.outputs.remove == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
