@@ -74,7 +74,7 @@ export const changeSchema: z.ZodType<Change> = z
   )
   .refine(
     (c) => {
-      const deleted = (c.delete ?? []).map(refKey);
+      const deleted: string[] = (c.delete ?? []).map(refKey);
       return Object.keys(c.uids ?? {}).every((key) => deleted.includes(key));
     },
     {
