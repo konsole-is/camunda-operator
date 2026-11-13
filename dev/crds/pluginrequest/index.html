@@ -3155,9 +3155,9 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 <tr>
 <td><code>existing-database-configs</code></td>
-<td><code>keycloak</code>, <code>identity</code>, <code>webModeler</code>: <code>DatabaseConfig</code> names</td>
+<td><code>keycloak</code>, <code>identity</code>, <code>webModeler</code>: <code>DatabaseConfig</code> names, <code>databases</code></td>
 <td>none</td>
-<td><code>keycloakDatabaseConfig</code>, <code>identityDatabaseConfig</code>, <code>webModelerDatabaseConfig</code>, one for each name that you set</td>
+<td><code>keycloakDatabaseConfig</code>, <code>identityDatabaseConfig</code>, <code>webModelerDatabaseConfig</code>, one for each name that you set for a listed component</td>
 </tr>
 <tr>
 <td><code>management-database-server</code></td>
@@ -3252,7 +3252,8 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </span><span id="__span-7-15"><a id="__codelineno-7-15" name="__codelineno-7-15" href="#__codelineno-7-15"></a><span class="w">      </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-backup-bucket, waiting</span>
 </span><span id="__span-7-16"><a id="__codelineno-7-16" name="__codelineno-7-16" href="#__codelineno-7-16"></a><span class="w">      </span><span class="nt">severity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Warning</span>
 </span></code></pre></div>
-<p><code>existing-database-configs</code> refuses two fields with the same name, with reason <code>InvalidParameters</code>, and the message names both fields.</p>
+<p><code>existing-database-configs</code> reads only the names of the components that <code>databases</code> lists. A management plane claim sets <code>databases</code> to the components of its plane that need a database. See <a href="../camundamanagementclusterclaim/#databases">Databases</a>. For example, a plane with the <code>oidc</code> or <code>externalKeycloak</code> identity provider does not list <code>keycloak</code>. The request then ignores a Keycloak name that the policy of the <code>Environment</code> gives. Without <code>databases</code>, the request reads each name that it holds.</p>
+<p>Two names that the request reads must be different. Otherwise the operator refuses the request with reason <code>InvalidParameters</code>, and the message names both fields.</p>
 <p>When the claim or you delete the request, the contracts stay, with both deletion policies. The request goes away at once.</p>
 <h3 id="elasticsearch">Elasticsearch<a class="headerlink" href="#elasticsearch" title="Permanent link">&para;</a></h3>
 <p>A request of <code>elasticsearch</code> runs an Elasticsearch cluster for the claim <code>&lt;claim&gt;</code>. The claim writes the request, and fills <code>releaseRef</code> with the <code>CamundaRelease</code> of the claim. A request of the claim <code>orders</code>:</p>

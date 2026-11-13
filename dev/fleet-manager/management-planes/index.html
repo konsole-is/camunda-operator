@@ -2854,7 +2854,7 @@
 <p><strong>Databases</strong> shows the database options that the policy of the environment allows. The option with the <strong>Default</strong> label is the default of the policy:</p>
 <ul>
 <li><strong>New PostgreSQL server</strong> creates one <code>DatabaseServer</code> <code>&lt;plane&gt;-db</code> and one <code>Database</code> for each component that runs, for example <code>my-plane-keycloak</code> and <code>my-plane-identity</code>.</li>
-<li><strong>Existing databases</strong> uses <code>DatabaseConfig</code> objects of the namespace of the plane. Pick one for each component that runs. Two components cannot use the same <code>DatabaseConfig</code>. A new namespace has no <code>DatabaseConfig</code>, so this option is off for it.</li>
+<li><strong>Existing databases</strong> uses <code>DatabaseConfig</code> objects of the namespace of the plane. Pick one for each component that runs. Two components that run cannot use the same <code>DatabaseConfig</code>. A new namespace has no <code>DatabaseConfig</code>, so this option is off for it.</li>
 </ul>
 <p><strong>Access</strong> shows the access options that the policy allows, and <strong>No access from outside</strong>.</p>
 <p>With an access option, the plane gets one host. The pattern of the option makes the host from the name and the namespace of the plane, for example <code>{name}.{namespace}.example.com</code>. <strong>Hostname</strong> shows the host and its pattern. You cannot change the host here. Each component serves over <code>https</code> under a fixed path on that host:</p>
