@@ -110,10 +110,12 @@ export interface DatabaseServerConfigSpec {
      */
     retentionPeriodDays?: number;
     /**
-     * Windows are the intervals of time that a restore can reach, oldest
-     * first. A restore accepts a point only when a window reaches it, also
-     * when the point is inside the retention period. When Windows is unset,
-     * a restore can reach every point of the retention period up to the
+     * Windows are the continuous intervals of time that a restore can reach,
+     * oldest first. A new window starts only where the archive breaks. So
+     * the maximum of 256 limits the breaks, not the time that the windows
+     * cover. A restore accepts a point only when a window reaches it, also
+     * when the point is inside the retention period. When Windows is unset, a
+     * restore can reach every point of the retention period up to the
      * present. Windows require enabled: true.
      *
      * A DatabaseServer publishes the intervals of its archive here. For a
@@ -123,8 +125,10 @@ export interface DatabaseServerConfigSpec {
      *
      * @maxItems 256
      *
-     * Items: RecoveryWindow is one interval of time that a point-in-time restore of the
-     * server can reach. It has the meanings of ArchiveRecord on a DatabaseServer.
+     * Items: RecoveryWindow is one continuous interval of time that a point-in-time
+     * restore of the server can reach. Uploads to the archive extend the open
+     * window. A new window starts only where the archive breaks. It has the
+     * meanings of ArchiveRecord on a DatabaseServer.
      */
     windows?: {
       /**

@@ -2845,7 +2845,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#archiverecord"
       },
       "status.archive.history.unverifiedFrom": {
-        "description": "UnverifiedFrom is when CloudNativePG first reported that the uploads of\nthe write-ahead log fail. It is set at that first report, while the\nserver runs and asks for an archive. ArchiveReady reports the failure\nonly after five minutes. The archive can miss the write-ahead log after it, and the write-ahead\nlog before it that the segment of the first failed upload held.\nWhen the uploads work again, the plugin uploads the segments that it\nheld back. The field is then cleared, and a restore can reach the whole\ninterval again. Only the record that the server writes to now has it.",
+        "description": "UnverifiedFrom is when CloudNativePG first reported that the uploads of\nthe write-ahead log fail. It is set at that first report, while the\nserver runs and asks for an archive. ArchiveReady reports the failure\nonly after five minutes. The archive can miss the write-ahead log after\nit, and the write-ahead log before it that the segment of the first\nfailed upload held. When the uploads work again, the plugin uploads the\nsegments that it held back. The field is then cleared, and a restore\ncan reach the whole interval again. Only the record that the server\nwrites to now has it.",
         "anchor": "#archiverecord"
       },
       "status.archive.reachableFrom": {
@@ -3035,7 +3035,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pitrcapability"
       },
       "spec.pitr.windows": {
-        "description": "Windows are the intervals of time that a restore can reach, oldest\nfirst. A restore accepts a point only when a window reaches it, also\nwhen the point is inside the retention period. When Windows is unset,\na restore can reach every point of the retention period up to the\npresent. Windows require enabled: true.\n\nA DatabaseServer publishes the intervals of its archive here. For a\nmanaged database, one open window is sufficient. It starts when the\ndatabase started to keep backups, and its lag is how far the latest\nrestorable time is behind the present.",
+        "description": "Windows are the continuous intervals of time that a restore can reach,\noldest first. A new window starts only where the archive breaks. So\nthe maximum of 256 limits the breaks, not the time that the windows\ncover. A restore accepts a point only when a window reaches it, also\nwhen the point is inside the retention period. When Windows is unset, a\nrestore can reach every point of the retention period up to the\npresent. Windows require enabled: true.\n\nA DatabaseServer publishes the intervals of its archive here. For a\nmanaged database, one open window is sufficient. It starts when the\ndatabase started to keep backups, and its lag is how far the latest\nrestorable time is behind the present.",
         "anchor": "#pitrcapability"
       },
       "spec.pitr.windows.from": {

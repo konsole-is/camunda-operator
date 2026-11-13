@@ -106,6 +106,8 @@ spec:
 
 `pitr.windows` lists the intervals of time that the server can restore, oldest first. When the list is set, a `PointInTimeRestore` accepts a point only when a window holds it. The point must also be inside the retention period. Without windows, a restore can ask for every point of the retention period up to the present.
 
+A window is one continuous interval of time that the archive covers. Uploads extend the open window, and they do not start a new one. A new window starts only where the archive breaks. For a `DatabaseServer`, that is a rollback, a move to another location, or an archive that is turned off and on again. The limit of 256 windows counts these breaks, not time.
+
 ```yaml
 apiVersion: core.camunda.io/v1
 kind: DatabaseServerConfig

@@ -126,8 +126,10 @@ func (r RecoveryRequest) AnsweredBy(outcome *RecoveryOutcome) bool {
 		outcome.TargetTime == r.TargetTime
 }
 
-// RecoveryWindow is one interval of time that a point-in-time restore of the
-// server can reach. It has the meanings of ArchiveRecord on a DatabaseServer.
+// RecoveryWindow is one continuous interval of time that a point-in-time
+// restore of the server can reach. Uploads to the archive extend the open
+// window. A new window starts only where the archive breaks. It has the
+// meanings of ArchiveRecord on a DatabaseServer.
 // +kubebuilder:validation:XValidation:rule="!has(self.lag) || !has(self.to)",message="lag is allowed only on an open window, one without to"
 type RecoveryWindow struct {
 	// Location is where the archive of this window is, in the form of
@@ -187,10 +189,12 @@ type PITRCapability struct {
 	// +kubebuilder:default=external
 	// +optional
 	Recovery RecoveryMode `json:"recovery,omitempty"`
-	// Windows are the intervals of time that a restore can reach, oldest
-	// first. A restore accepts a point only when a window reaches it, also
-	// when the point is inside the retention period. When Windows is unset,
-	// a restore can reach every point of the retention period up to the
+	// Windows are the continuous intervals of time that a restore can reach,
+	// oldest first. A new window starts only where the archive breaks. So
+	// the maximum of 256 limits the breaks, not the time that the windows
+	// cover. A restore accepts a point only when a window reaches it, also
+	// when the point is inside the retention period. When Windows is unset, a
+	// restore can reach every point of the retention period up to the
 	// present. Windows require enabled: true.
 	//
 	// A DatabaseServer publishes the intervals of its archive here. For a

@@ -113,7 +113,7 @@ _Appears in:_
 | `location` _string_ | Location is where in object storage the server wrote this archive: the<br />provider, the bucket, and the path, as one URL. Two intervals hold the<br />same archive only when their locations are equal. The name of an<br />ObjectStorageConfig is not sufficient, because you can edit the object<br />or create it again with the same name. A record without a location gets<br />the current location of the server. |  | Optional: \{\} <br /> |
 | `from` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | From is the earliest point that a recovery from this archive can reach:<br />the time when its first base backup completed. |  |  |
 | `to` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | To is the end of this archive. A recovery from it can reach each point<br />before To, but not To itself. It is unset while the server still writes<br />to this archive. |  | Optional: \{\} <br /> |
-| `unverifiedFrom` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | UnverifiedFrom is when CloudNativePG first reported that the uploads of<br />the write-ahead log fail. It is set at that first report, while the<br />server runs and asks for an archive. ArchiveReady reports the failure<br />only after five minutes. The archive can miss the write-ahead log after it, and the write-ahead<br />log before it that the segment of the first failed upload held.<br />When the uploads work again, the plugin uploads the segments that it<br />held back. The field is then cleared, and a restore can reach the whole<br />interval again. Only the record that the server writes to now has it. |  | Optional: \{\} <br /> |
+| `unverifiedFrom` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | UnverifiedFrom is when CloudNativePG first reported that the uploads of<br />the write-ahead log fail. It is set at that first report, while the<br />server runs and asks for an archive. ArchiveReady reports the failure<br />only after five minutes. The archive can miss the write-ahead log after<br />it, and the write-ahead log before it that the segment of the first<br />failed upload held. When the uploads work again, the plugin uploads the<br />segments that it held back. The field is then cleared, and a restore<br />can reach the whole interval again. Only the record that the server<br />writes to now has it. |  | Optional: \{\} <br /> |
 
 
 #### AttachedClusterStatus
@@ -2953,7 +2953,7 @@ _Appears in:_
 | `enabled` _boolean_ | Enabled reports whether the server performs continuous WAL archiving. | false | Optional: \{\} <br /> |
 | `retentionPeriodDays` _integer_ | RetentionPeriodDays is how many days into the past a point-in-time<br />restore can go. It is the declared policy of the server. Windows can<br />limit a restore more. Required when enabled is true.<br />The maximum is 36500 days, which is a hundred years. A reader counts<br />the reachable window in nanoseconds, and that count overflows at about<br />292 years. The maximum stays well below that limit. |  | Maximum: 36500 <br />Optional: \{\} <br /> |
 | `recovery` _[RecoveryMode](#recoverymode)_ | Recovery says who rolls the server back to a point in time. Defaults to<br />external. The value operator means that the publisher of this contract<br />answers spec.recovery. It requires enabled: true. The value external<br />means that nobody answers, and you roll the server back manually. | external | Enum: [operator external] <br />Optional: \{\} <br /> |
-| `windows` _[RecoveryWindow](#recoverywindow) array_ | Windows are the intervals of time that a restore can reach, oldest<br />first. A restore accepts a point only when a window reaches it, also<br />when the point is inside the retention period. When Windows is unset,<br />a restore can reach every point of the retention period up to the<br />present. Windows require enabled: true.<br />A DatabaseServer publishes the intervals of its archive here. For a<br />managed database, one open window is sufficient. It starts when the<br />database started to keep backups, and its lag is how far the latest<br />restorable time is behind the present. |  | MaxItems: 256 <br />Optional: \{\} <br /> |
+| `windows` _[RecoveryWindow](#recoverywindow) array_ | Windows are the continuous intervals of time that a restore can reach,<br />oldest first. A new window starts only where the archive breaks. So<br />the maximum of 256 limits the breaks, not the time that the windows<br />cover. A restore accepts a point only when a window reaches it, also<br />when the point is inside the retention period. When Windows is unset, a<br />restore can reach every point of the retention period up to the<br />present. Windows require enabled: true.<br />A DatabaseServer publishes the intervals of its archive here. For a<br />managed database, one open window is sufficient. It starts when the<br />database started to keep backups, and its lag is how far the latest<br />restorable time is behind the present. |  | MaxItems: 256 <br />Optional: \{\} <br /> |
 | `lastRecovery` _[RecoveryOutcome](#recoveryoutcome)_ | LastRecovery is how the last recovery request ended. It is unset until<br />the first answer. The answer to each later request replaces it. |  | Optional: \{\} <br /> |
 
 
@@ -3429,8 +3429,10 @@ _Appears in:_
 
 
 
-RecoveryWindow is one interval of time that a point-in-time restore of the
-server can reach. It has the meanings of ArchiveRecord on a DatabaseServer.
+RecoveryWindow is one continuous interval of time that a point-in-time
+restore of the server can reach. Uploads to the archive extend the open
+window. A new window starts only where the archive breaks. It has the
+meanings of ArchiveRecord on a DatabaseServer.
 
 
 
