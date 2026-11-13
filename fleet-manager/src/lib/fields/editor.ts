@@ -29,7 +29,8 @@ export type SchemaEditor = Exclude<SettingEditor, { kind: "secretRef" }>;
  *  1. With choices: a pick of names for an array, else a select of one.
  *  2. By the last name of path: resources, storageSize, extraEnv
  *     (environment variables), and tolerations.
- *  3. A field of fullSchemaOf: YAML checked against that schema.
+ *  3. Without openAPI, a field of fullSchemaOf: YAML checked against that
+ *     schema.
  *  4. An enum: a select of its values. A boolean: a toggle. An integer or a
  *     number: a number in its range. A string or an int-or-string: text.
  *  5. An object: a map of strings, with label rules for podLabels.
@@ -49,9 +50,8 @@ export function editorOf(
       ? { kind: "choices", options: choices }
       : { kind: "select", options: choices };
   const last = path.slice(path.lastIndexOf(".") + 1);
-  const byName = BY_NAME[last];
-  if (byName) return byName;
-  const full = fullSchemaOf(path);
+  if (Object.hasOwn(BY_NAME, last)) return BY_NAME[last];
+  const full = openAPI ? undefined : fullSchemaOf(path);
   if (full) return { kind: "yaml", schema: full };
   if (schema === undefined) return undefined;
   if (schema.enum) return { kind: "select", options: schema.enum };

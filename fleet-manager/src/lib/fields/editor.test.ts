@@ -151,12 +151,21 @@ describe("parameterEditorOf", () => {
     expect(parameterEditorOf("free", {})).toEqual({ kind: "yaml", schema: {} });
   });
 
-  it("keeps the CRD schema of a field that the YAML editor knows by name", () => {
+  it("checks YAML against the registration schema also for a name of fullSchemaOf", () => {
     expect(parameterEditorOf("extraEnvFrom", { type: "array" })).toEqual({
       kind: "yaml",
-      schema: fullSchemas.extraEnvFrom,
+      schema: { type: "array" },
     });
   });
+
+  it.each(["constructor", "toString"])(
+    "reads the schema of a parameter named %s",
+    (name) => {
+      expect(parameterEditorOf(name, { type: "string" })).toEqual({
+        kind: "text",
+      });
+    },
+  );
 
   it("gives no editor to a parameter without a schema", () => {
     expect(parameterEditorOf("free", undefined)).toBeUndefined();

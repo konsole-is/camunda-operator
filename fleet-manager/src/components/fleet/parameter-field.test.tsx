@@ -243,6 +243,65 @@ describe("ParameterField", () => {
     );
   });
 
+  it("checks its YAML against the registration schema, not the field of its name", async () => {
+    const onValue = vi.fn();
+    render(
+      <ParameterField
+        id="p"
+        rule={editable(
+          { type: "array", items: { type: "string" } },
+          { name: "extraEnvFrom" },
+        )}
+        value={undefined}
+        onValue={onValue}
+      />,
+    );
+    await userEvent.type(screen.getByLabelText("Replicas"), "- a");
+    expect(onValue).toHaveBeenLastCalledWith(["a"], []);
+    expect(
+      screen.getByLabelText("Replicas").getAttribute("aria-invalid"),
+    ).toBeNull();
+  });
+
+  it("shows an empty map for a value of null", () => {
+    render(
+      <ParameterField
+        id="p"
+        rule={editable({
+          type: "object",
+          nullable: true,
+          additionalProperties: { type: "string" },
+        })}
+        value={null}
+        onValue={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Add an entry" })).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Key" })).toBeNull();
+  });
+
+  it("keeps the Secret keys of environment variables without a Secret list", () => {
+    const onValue = vi.fn();
+    render(
+      <ParameterField
+        id="p"
+        rule={editable({ type: "array" }, { name: "extraEnv" })}
+        value={[
+          {
+            name: "DB_PASSWORD",
+            valueFrom: { secretKeyRef: { name: "orders-db", key: "password" } },
+          },
+        ]}
+        onValue={onValue}
+      />,
+    );
+    expect(onValue).not.toHaveBeenCalled();
+    expect(screen.getByRole("combobox", { name: "Secret" })).toHaveProperty(
+      "value",
+      "orders-db",
+    );
+  });
+
   it("shows the locked summary of a rule that a claim cannot change", () => {
     render(
       <ParameterField

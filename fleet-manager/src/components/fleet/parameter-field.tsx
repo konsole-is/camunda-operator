@@ -25,6 +25,7 @@ import { KeyValueEditor } from "./key-value-editor";
 import { LockedField } from "./locked-field";
 import { ResourcesEditor, type Resources } from "./resources-editor";
 import { SchedulingEditor, type Toleration } from "./scheduling-editor";
+import type { SecretRefs } from "./secret-ref-picker";
 import { StorageSizeEditor } from "./storage-size-editor";
 import { YamlEditor } from "./yaml-editor";
 
@@ -256,8 +257,7 @@ export function ParameterField({
 }
 
 // RowsEditor is the input of an editor kind that shows the errors of its
-// own rows. It has no Secret to offer, so an environment variable takes a
-// value.
+// own rows. A value of null is its empty input.
 function RowsEditor({
   label,
   editor,
@@ -272,7 +272,7 @@ function RowsEditor({
   value: unknown;
   onChange: (value: unknown, errors: ValidationError[]) => void;
 }) {
-  const initial = editorValueOf(editor, value);
+  const initial = editorValueOf(editor, value ?? undefined);
   switch (editor.kind) {
     case "keyValue":
       return (
@@ -303,7 +303,8 @@ function RowsEditor({
       return (
         <EnvEditor
           label={label}
-          secrets={[]}
+          // SecretRefPicker drops a reference to a Secret that secrets lack.
+          secrets={secretKeysOf(initial as EnvVar[])}
           defaultValue={initial as EnvVar[]}
           onChange={onChange}
         />
@@ -317,6 +318,16 @@ function RowsEditor({
         />
       );
   }
+}
+
+function secretKeysOf(env: readonly EnvVar[]): SecretRefs {
+  const keys = new Map<string, string[]>();
+  for (const entry of env) {
+    const ref = entry.valueFrom?.secretKeyRef;
+    if (ref?.name && ref.key)
+      keys.set(ref.name, [...(keys.get(ref.name) ?? []), ref.key]);
+  }
+  return [...keys].map(([name, list]) => ({ name, keys: list }));
 }
 
 /**
