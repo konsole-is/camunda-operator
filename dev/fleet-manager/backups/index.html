@@ -2882,6 +2882,11 @@
 <p>Restore my-cluster-restore-1 reads the backup my-cluster-manual-20261110-143005. Delete the backup after the restore ends.</p>
 </blockquote>
 <p>A delete during the restore can leave the secondary storage of the cluster empty, as <a href="../../crds/logicalrestoreelasticsearch/">LogicalRestoreElasticsearch</a> shows. When the page cannot read its settings, <strong>Delete</strong> is off with the same reason as <strong>Back up now</strong>.</p>
+<p><strong>Delete backup</strong> deletes only the backup that the page showed. Someone can delete that backup and create a new backup with the same name after the page showed it. Then <strong>Delete backup</strong> deletes nothing. The new backup stays, and the page shows the kind and the name of the backup:</p>
+<blockquote>
+<p>The LogicalBackupElasticsearch my-cluster-manual-20261110-143005 changed since you opened it.</p>
+</blockquote>
+<p>A PostgreSQL backup shows <code>LogicalBackupRDBMS</code> as its kind.</p>
 <p>The operator removes the artifacts before the resource goes. When it cannot reach them, the artifacts stay in the bucket, and an event on the backup names them. The Deletion section of <a href="../../crds/logicalbackupelasticsearch/#deletion">LogicalBackupElasticsearch</a> and <a href="../../crds/logicalbackuprdbms/#deletion">LogicalBackupRDBMS</a> names the cases.</p>
 <h2 id="restore-from-a-backup">Restore from a backup<a class="headerlink" href="#restore-from-a-backup" title="Permanent link">&para;</a></h2>
 <p>Each row of a <code>Completed</code> backup has <strong>Restore</strong>. A backup in another phase has no <strong>Restore</strong>. <strong>Restore</strong> opens a confirm. Its first line says that the restore loses everything that the cluster wrote after the backup. Under it, the confirm lists these facts:</p>
