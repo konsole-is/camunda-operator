@@ -44,10 +44,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Only the storybook-preview job can write.
+permissions:
+  contents: read
+
 jobs:
   fleet-manager:
     name: Run on Ubuntu
     runs-on: ubuntu-latest
+    outputs:
+      storybook: ${{ steps.upload-storybook.outcome }}
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
@@ -81,10 +87,14 @@ jobs:
           name: fleet-test-reports
           path: fleet-manager/test-reports/
           if-no-files-found: error
+      # A reviewer gets the preview also when a check failed.
       - name: Build the Storybook
         id: storybook
+        if: ${{ !cancelled() }}
         run: make fleet-build-stories
       - name: Upload the Storybook
+        id: upload-storybook
+        if: ${{ !cancelled() && steps.storybook.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: storybook
@@ -93,9 +103,10 @@ jobs:
           retention-days: 7
       # The gallery and the page scenarios need the gallery build, and one
       # make call builds it once. -k runs each check also when one before it
-      # fails.
+      # fails. -o fleet-build-stories checks the Storybook that the step
+      # above built and uploaded, and does not build it again.
       - name: Build the fleet manager, check the UI gallery and the stories, and run the page scenarios
-        run: make -k fleet-gallery fleet-stories-test fleet-scenarios-test FLEET_PLAYWRIGHT_FLAGS=--with-deps
+        run: make -k -o fleet-build-stories fleet-gallery fleet-stories-test fleet-scenarios-test FLEET_PLAYWRIGHT_FLAGS=--with-deps
       - name: Upload the UI gallery
         id: gallery
         if: ${{ !cancelled() }}
@@ -138,6 +149,103 @@ jobs:
           PAGES_URL: ${{ steps.pages.outputs.artifact-url }}
         run: |
           echo "UI pages: [ui-pages](${PAGES_URL}). Open index.html in the archive." >> "${GITHUB_STEP_SUMMARY}"
+
+  # Publishes the Storybook of the fleet-manager job on GitHub Pages: the
+  # build of a pull request to pr-preview/pr-<number>/, the build of main to
+  # storybook/. This job holds the only write token of the workflow. It
+  # installs and builds nothing: it runs git, gh, and the preview script,
+  # which uses Node.js built-ins only.
+  storybook-preview:
+    name: Publish the Storybook preview
+    needs: fleet-manager
+    # A pull request from a fork gets no preview, and its run stays green.
+    if: >-
+      ${{ !cancelled()
+      && needs.fleet-manager.outputs.storybook == 'success'
+      && ((github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository)
+        || (github.event_name != 'pull_request' && github.ref == 'refs/heads/main')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push to gh-pages
+      pull-requests: write   # write the preview comment
+    # Every workflow that pushes to gh-pages runs in this group. With the
+    # default queue, a new pending run cancels the pending one before it.
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+      queue: max
+    env:
+      PR: ${{ github.event.pull_request.number }}
+      SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Clone the preview script
+        uses: actions/checkout@v7
+        with:
+          path: src
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fleet-manager/scripts/
+            /fleet-manager/.node-version
+            /hack/ci-retry.sh
+      - name: Clone the site
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          path: site
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: src/fleet-manager/.node-version
+      - name: Download the Storybook
+        uses: actions/download-artifact@v8
+        with:
+          name: storybook
+          path: storybook
+      - name: Place the Storybook on the site
+        id: place
+        run: |
+          if [ -n "${PR}" ]; then folder="pr-preview/pr-${PR}"; else folder="storybook"; fi
+          node src/fleet-manager/scripts/storybook-preview.mts place site storybook "${folder}"
+          echo "url=https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/${folder}/" >> "${GITHUB_OUTPUT}"
+      # The message names the pull request without #, because GitHub adds
+      # each commit that names #<number> to the timeline of that pull request.
+      - name: Push the site
+        working-directory: site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The Storybook on the site is the same as this build."
+            exit 0
+          fi
+          if [ -n "${PR}" ]; then
+            git commit -q -m "Publish the Storybook of pull request ${PR} at ${SHA}"
+          else
+            git commit -q -m "Publish the Storybook of main at ${SHA}"
+          fi
+          ../src/hack/ci-retry.sh git push origin gh-pages
+      - name: Write the preview comment
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.place.outputs.url }}
+        run: |
+          body=$(node src/fleet-manager/scripts/storybook-preview.mts comment published "${URL}" "${SHA}")
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- storybook-preview -->"))) | .id')
+          if [ -n "${ids}" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ids%%$'\n'*}" -f body="${body}" > /dev/null
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="${body}" > /dev/null
+          fi
+      - name: Link the Storybook in the job summary
+        env:
+          URL: ${{ steps.place.outputs.url }}
+        run: |
+          echo "Storybook: [${URL}](${URL}). GitHub Pages can take a minute to show a new push." >> "${GITHUB_STEP_SUMMARY}"
 
   image:
     name: Build and test the image
