@@ -55,8 +55,32 @@ Before it deletes anything, the operator compares the backup against the target.
 - The partition count of the target is the count that the backup recorded in `status.partitionsCount`.
 - The `spec.backupStorageRef` of the target names the `ObjectStorageConfig` that the backup wrote to.
 - The target runs the exact Camunda version that the backup recorded in `status.version`, because that version is part of every snapshot name. The restore sets this version on the target in `Pending`. So this rule fails only when the backup recorded no version, or a value that is not of the form `x.y.z`.
+- The backup is at most one minor newer than the version that the brokers of the target run. The cluster refuses a larger step, see [CamundaCluster: A skipped minor is refused](camundacluster.md#a-skipped-minor-is-refused).
 
 After the restore, the target runs the version of the backup. To run a newer version, upgrade the target again, one minor at a time, as [CamundaCluster: Upgrade](camundacluster.md#upgrade) says.
+
+### A backup more than one minor newer than the brokers
+
+An older backup, a backup of the same minor, and a backup one minor newer pass this rule. The restore compares the two versions in `Pending`, before it suspends the target or sets its version. A breach fails the restore at once and leaves the target as it was. A breach of any other rule fails the restore after it suspended the target.
+
+The failed restore reports the breach:
+
+```yaml
+status:
+  phase: Failed
+  terminalReason: IncompatibleTarget
+  failureMessage: the backup was taken with Camunda 8.11.0, and the brokers of CamundaCluster
+    my-cluster-ns/my-cluster run 8.9.9. Camunda upgrades one minor at a time, so the cluster
+    cannot move to the version of the backup. Upgrade the cluster one minor at a time, first
+    to the latest patch of 8.10, until it runs at most one minor below 8.11.0. Then create
+    a new restore
+```
+
+To restore this backup:
+
+1. Upgrade the target one minor at a time, as [CamundaCluster: Upgrade](camundacluster.md#upgrade) says. Stop when the brokers run at most one minor below the version of the backup.
+2. Delete the failed restore.
+3. Create a new restore of the same backup.
 
 ### Why the downgrade is safe here
 
@@ -155,7 +179,7 @@ Deleting the restore removes its Jobs and their pods. The broker volumes stay, a
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster, or a claim Lease that no backup or restore holds. The message names it. | Wait. The restore starts when the holder gives the cluster back. If the message names a claim Lease to delete, delete it. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the Elasticsearch of the target. | Read [The backend](#the-backend). |
 | `Ready` | `WaitingForHandover` | The target does not hold its Elasticsearch yet, or pods still write it. | Wait. The message names what the restore waits for. |
-| `Ready` | `IncompatibleTarget` | The target cannot hold the backup, or its version moved after `Pending`. The message names both values. | Read [Compatibility](#compatibility). Create a new restore against a target that fits. |
+| `Ready` | `IncompatibleTarget` | The target cannot hold the backup, the backup is more than one minor newer than the version that the brokers run, or the version of the target moved after `Pending`. The message names both values. | Read [Compatibility](#compatibility). Create a new restore against a target that fits. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, the backup is not completed, or the snapshot repository has a name the operator cannot place. | Read the message. Create the resource, wait for the backup, or register the repository. |
 | `Ready` | `ConnectionFailed` | The Elasticsearch of the target does not answer, or it refuses the credentials. | Make sure that the endpoint answers and that the credentials of the `SecondaryStorageConfig` are valid. |
 | `Ready` | `MissingSecret` | A pod of a restore Job cannot start, because a Secret it needs does not exist. | Create the Secret that the message names. |

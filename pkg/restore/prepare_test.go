@@ -360,6 +360,89 @@ func TestPrepareWritesNoVersionItCannotWrite(t *testing.T) {
 	}
 }
 
+// The CamundaCluster controller refuses a version more than one minor above
+// the version that the brokers carry, so a written version would never reach
+// them. The restore fails before it writes anything on the cluster.
+func TestPrepareRefusesABackupMoreThanOneMinorAboveTheBrokers(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	running := w.live(t)
+	delete(running.Annotations, holdKey(w.restore))
+	running.Spec.Suspend = false
+	require.NoError(t, w.client.Update(t.Context(), running))
+	w.cluster = running
+	w.input.Cluster = running
+	w.input.Target.StatefulSet.Status.Replicas = 3
+	w.input.Version = "8.11.0"
+
+	outcome := w.look(t)
+
+	require.NotNil(t, outcome.Failure)
+	assert.False(t, outcome.Done)
+	assert.Equal(t, v1.ReasonIncompatibleTarget, outcome.Failure.Reason)
+	assert.Contains(t, outcome.Failure.Message, "8.11.0")
+	assert.Contains(t, outcome.Failure.Message, "run 8.9.9")
+	assert.Contains(t, outcome.Failure.Message, "8.10", "the message names the next minor to upgrade to")
+	assert.Contains(t, outcome.Failure.Message, "create a new restore")
+	assert.Empty(t, *w.applies, "the step wrote on a cluster whose version it cannot move")
+	assert.False(t, w.progress().ClusterSuspended)
+	assert.Equal(t, "8.9.9", w.live(t).Spec.Version)
+}
+
+// The rule is the one of the CamundaCluster controller: only a skip of a
+// minor upward is refused. A downgrade, a patch, the next minor, and a new
+// major all go through.
+func TestPrepareMovesTheBrokersToEveryVersionTheClusterAccepts(t *testing.T) {
+	t.Parallel()
+
+	for name, version := range map[string]string{
+		"an older minor":   "8.7.4",
+		"the same minor":   "8.9.2",
+		"the next minor":   "8.10.0",
+		"the next major":   "9.0.0",
+		"an older version": "7.23.1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			w := newPrepareWorld(t)
+			w.input.Version = version
+
+			outcome := w.look(t)
+
+			assert.Nil(t, outcome.Failure)
+			require.Len(t, w.appliesBy(FieldManagerTargetVersion), 1)
+			assert.Equal(t, version, w.live(t).Spec.Version)
+		})
+	}
+}
+
+// A restore that moved its cluster keeps the answer it got before the move,
+// while the brokers still carry the old version and once they carry the new
+// one.
+func TestPrepareKeepsItsAnswerAfterItMovedTheCluster(t *testing.T) {
+	t.Parallel()
+
+	w := newPrepareWorld(t)
+	w.input.Version = "8.10.0"
+
+	written := w.look(t)
+	require.Nil(t, written.Failure)
+	w.cluster.Spec.Version = "8.10.0"
+	w.cluster.Annotations[components.AllowVersionDowngradeAnnotation] = "8.10.0"
+
+	rolling := w.look(t)
+	require.Nil(t, rolling.Failure)
+	assert.False(t, rolling.Done)
+
+	w.input.Target.Version = "8.10.0"
+	moved := w.look(t)
+
+	assert.Nil(t, moved.Failure)
+	assert.True(t, moved.Done)
+}
+
 func TestPrepareRejectsAnIncompleteTarget(t *testing.T) {
 	t.Parallel()
 

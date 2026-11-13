@@ -263,6 +263,8 @@ You do not suspend the cluster before a restore. The restore does it:
 
 The restore waits in `Pending` until the brokers are stopped and the cluster carries that version. It erases nothing in `Pending`. Then it rebuilds the secondary storage (logical kinds only) and gives every broker a new data volume.
 
+A logical restore of a backup more than one minor newer than the version that the brokers run fails at once, and it leaves the cluster as it was. The [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md#a-backup-more-than-one-minor-newer-than-the-brokers) and [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md#a-backup-more-than-one-minor-newer-than-the-brokers) pages say what to do.
+
 Each write carries a field manager of its own. A GitOps tool shows these names in a conflict message:
 
 | Field | Field manager | At the end of the restore |
@@ -274,7 +276,7 @@ Each write carries a field manager of its own. A GitOps tool shows these names i
 ### When the cluster starts again
 
 - **The restore reaches `Completed`.** It removes its hold and withdraws `spec.suspend`, and the cluster starts a moment later. A cluster that you suspended yourself stays suspended. `status.clusterSuspended` on the restore is `true` only when the restore applied the suspension.
-- **The restore fails.** The cluster stays suspended, and the restore keeps its hold until you delete it. The broker volumes can be empty or half written. Brokers that start over such volumes do more damage than a cluster that is down. Read `status.failureMessage`, correct the cause, delete the failed restore, and create a new one.
+- **The restore fails after it suspended the cluster.** The cluster stays suspended, and the restore keeps its hold until you delete it. The broker volumes can be empty or half written. Brokers that start over such volumes do more damage than a cluster that is down. Read `status.failureMessage`, correct the cause, delete the failed restore, and create a new one.
 - **You delete a restore that runs.** The restore removes its hold when its work stops, and `spec.suspend: true` stays. Start the cluster yourself when you know what its volumes hold.
 
 ### Find out what suspended the cluster
