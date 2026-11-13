@@ -208,6 +208,49 @@ func TestRenderTemplateNamesAMissingParameterOrOutput(t *testing.T) {
 	assert.ErrorContains(t, err, `output "bucketName" has no value`)
 }
 
+// pkg/pluginkit of the plugins repository and the template preview of the
+// fleet manager hold the same cases in the same order.
+func TestRenderTemplatePrintsOnlyAStringANumberOrABoolean(t *testing.T) {
+	tests := []struct {
+		name       string
+		parameters string // spec.parameters as the API server serves it
+		want       string
+		wantErr    string // empty: no error
+	}{
+		{
+			"a list",
+			`{"v":["a","b"]}`,
+			"",
+			`parameter "v" is a list: a template prints only a string, a number, or a boolean`,
+		},
+		{
+			"an object",
+			`{"v":{"a":1,"k":"v"}}`,
+			"",
+			`parameter "v" is an object: a template prints only a string, a number, or a boolean`,
+		},
+		{"null", `{"v":null}`, "", `parameter "v" is null: a template prints only a string, a number, or a boolean`},
+		// The API server stores the number 1.0 as 1, and 1e3 as 1000.
+		{"the number 1.0", `{"v":1}`, "1", ""},
+		{"the number 1e3", `{"v":1000}`, "1000", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var data templateData
+			require.NoError(t, decodeNumbers([]byte(tt.parameters), &data.parameters))
+
+			got, err := renderTemplate("{{ .parameters.v }}", grantPlaceholders, data)
+
+			if tt.wantErr != "" {
+				assert.EqualError(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestRenderJSONTemplateRendersStringLeavesOnly(t *testing.T) {
 	raw := []byte(`{"{{ .namespace }}":"{{ .namespace }}","n":3,"b":true,"list":["{{ .request }}",null]}`)
 

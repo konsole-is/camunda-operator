@@ -10,9 +10,6 @@ const data: TemplateData = {
     x: "eu-1",
     size: 3,
     on: true,
-    obj: { a: 1 },
-    list: ["a", "b"],
-    none: null,
   },
   outputs: { y: "bucket-1" },
   pods: "orders-zeebe-0|orders-zeebe-1",
@@ -212,13 +209,39 @@ describe("render", () => {
       render("{{ .parameters.size }}/{{ .parameters.on }}", data, "parameter"),
     ).toEqual({ text: "3/true" }));
 
-  it.each(["obj", "list", "none"])(
-    "refuses the parameter %s, which is not text, and says that the plugin prints it in another form",
-    (name) =>
-      expect(render(`{{ .parameters.${name} }}`, data, "parameter")).toEqual({
-        error: `parameter "${name}" is not a string, a number, or a boolean, and the plugin prints such a value in another form`,
-        field: `parameters.${name}`,
-      }),
+  // pkg/pluginkit of the plugins repository and the conformance module hold
+  // the same cases in the same order.
+  const onlyText = "a template prints only a string, a number, or a boolean";
+  it.each([
+    [
+      "a list",
+      '{"v":["a","b"]}',
+      { error: `parameter "v" is a list: ${onlyText}`, field: "parameters.v" },
+    ],
+    [
+      "an object",
+      '{"v":{"a":1,"k":"v"}}',
+      {
+        error: `parameter "v" is an object: ${onlyText}`,
+        field: "parameters.v",
+      },
+    ],
+    [
+      "null",
+      '{"v":null}',
+      { error: `parameter "v" is null: ${onlyText}`, field: "parameters.v" },
+    ],
+    // The API server stores the number 1.0 as 1, and 1e3 as 1000.
+    ["the number 1.0", '{"v":1}', { text: "1" }],
+    ["the number 1e3", '{"v":1000}', { text: "1000" }],
+  ])("renders %s as pluginkit does", (_, parameters, want) =>
+    expect(
+      render(
+        "{{ .parameters.v }}",
+        { ...data, parameters: JSON.parse(parameters) },
+        "grant",
+      ),
+    ).toEqual(want),
   );
 
   it("fills a parameter whose name has a letter outside ASCII, as Go does", () =>

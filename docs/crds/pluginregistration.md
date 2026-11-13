@@ -137,6 +137,8 @@ Each entry of `grantTemplates` is one permission statement that the option asks 
 | `{{ .parameters.<name> }}` | A parameter of the request. |
 | `{{ .outputs.<key> }}` | An output of the request. |
 
+A template prints only a string, a number, or a boolean. A placeholder of a parameter whose value is a list, an object, or null is an error.
+
 `requiresInputs` names the inputs that must have a value before the plugin writes the grant. A metric query in `metricQueries` uses the same placeholders, and also `{{ .pods }}`, a regular expression of the pod names of the request.
 
 ## Acceptance

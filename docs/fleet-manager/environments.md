@@ -142,7 +142,7 @@ A template parameter cannot read `.outputs`. The editor shows `the placeholder .
 
 The preview under the editor renders the template for a claim of the environment, which you pick. It shows what a new claim gets. An existing claim keeps the policy it recorded. A parameter that holds an object renders as YAML. If the environment has no claim yet, the preview uses the example claim `example` in the first namespace by name. If the environment has no namespace, the preview asks you to add one first. If no section of the option applies to a cluster claim or a management plane claim, the preview says so.
 
-The preview cannot show a template that reads a parameter whose value is an object, a list, or null. It shows `parameter "<name>" is not a string, a number, or a boolean, and the plugin prints such a value in another form`.
+A template cannot read a parameter whose value is an object, a list, or null. The preview shows the error that the plugin gives for such a request, for example `parameter "extraPolicyArns" is a list: a template prints only a string, a number, or a boolean`. The page saves such a template, but the plugin refuses each request of the option with this error and the reason `InvalidParameters`.
 
 ## Limits set at install
 
