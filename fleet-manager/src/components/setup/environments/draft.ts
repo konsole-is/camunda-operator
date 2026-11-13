@@ -275,14 +275,16 @@ function setEntry<T>(
   return next;
 }
 
-/** deleteChange deletes live when it still has its resourceVersion. */
+/** deleteChange deletes live when it still has its resourceVersion and its UID. */
 export function deleteChange(live: Environment): Change {
   const name = live.metadata.name ?? "";
+  const uid = live.metadata.uid;
   return {
     intent: `Delete the environment ${name}`,
     apply: [],
     delete: [{ apiVersion: API_VERSION, kind: KIND, name }],
     ...preconditionOf(KIND, name, live.metadata.resourceVersion),
+    ...(uid ? { uids: { [refKey({ kind: KIND, name })]: uid } } : {}),
   };
 }
 

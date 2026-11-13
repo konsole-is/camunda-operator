@@ -111,9 +111,11 @@ export function diffView(
  * applies and deletes in the order of the change, and a failure keeps the
  * objects written before it. A delete of an object that is gone succeeds.
  * An apply with a precondition fails with Stale when the object was
- * deleted since the page read it. After a delete between the preview and
- * the write, a kind that the app may not delete, such as a Namespace, can
- * exist again, with the error of that delete beside Stale.
+ * deleted since the page read it. A delete with a precondition or a UID
+ * fails with Stale when the object changed or was created again since.
+ * After a delete between the preview and the write, a kind that the app
+ * may not delete, such as a Namespace, can exist again, with the error of
+ * that delete beside Stale.
  *
  * A create of an object that exists fails with Stale in the dry run. An
  * object in a namespace that the same change makes is not dry-run, and the
@@ -157,16 +159,13 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
 
   const deleteObject = (
     ref: ObjectRef,
-    preconditions: { resourceVersion?: string; uid?: string },
+    preconditions: DeletePreconditions,
     dryRun: boolean,
   ) =>
     send<unknown>("DELETE", `${pathOf(ref)}${dryRun ? "?dryRun=All" : ""}`, {
       apiVersion: "v1",
       kind: "DeleteOptions",
-      ...(preconditions.resourceVersion === undefined &&
-      preconditions.uid === undefined
-        ? {}
-        : { preconditions }),
+      ...(preconditionsSet(preconditions) ? { preconditions } : {}),
     });
 
   const undoCreate = async (ref: ObjectRef, uid: string) => {
@@ -252,15 +251,17 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       }
     }
     for (const ref of change.delete ?? []) {
-      const resourceVersion = change.preconditions?.[refKey(ref)];
+      const preconditions = deletePreconditions(change, ref);
       try {
         const before = await read(ref);
         if (before === undefined) continue;
-        await deleteObject(ref, { resourceVersion }, true);
+        await deleteObject(ref, preconditions, true);
         objects.push(previewObject(ref, before, undefined));
       } catch (error) {
         if (isNotFound(error)) continue;
-        errors.push(...apiErrorsOf(error, ref, resourceVersion !== undefined));
+        errors.push(
+          ...apiErrorsOf(error, ref, preconditionsSet(preconditions)),
+        );
       }
     }
     return { objects, errors, uids, fresh };
@@ -316,16 +317,16 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
       }
     }
     for (const ref of change.delete ?? []) {
-      const resourceVersion = change.preconditions?.[refKey(ref)];
+      const preconditions = deletePreconditions(change, ref);
       try {
-        await deleteObject(ref, { resourceVersion }, false);
+        await deleteObject(ref, preconditions, false);
       } catch (error) {
         if (isNotFound(error)) {
           continue;
         }
         return {
           ok: false,
-          errors: apiErrorsOf(error, ref, resourceVersion !== undefined),
+          errors: apiErrorsOf(error, ref, preconditionsSet(preconditions)),
         };
       }
     }
@@ -333,6 +334,26 @@ export function directWriter(kc: KubeConfig = kubeConfig()): Writer {
   };
 
   return { mode: "direct", preview, apply };
+}
+
+type DeletePreconditions = { resourceVersion?: string; uid?: string };
+
+function deletePreconditions(
+  change: Change,
+  ref: ObjectRef,
+): DeletePreconditions {
+  const key = refKey(ref);
+  return {
+    resourceVersion: change.preconditions?.[key],
+    uid: change.uids?.[key],
+  };
+}
+
+function preconditionsSet(preconditions: DeletePreconditions): boolean {
+  return (
+    preconditions.resourceVersion !== undefined ||
+    preconditions.uid !== undefined
+  );
 }
 
 // The app never deletes a namespace on its own, so the namespace stays.

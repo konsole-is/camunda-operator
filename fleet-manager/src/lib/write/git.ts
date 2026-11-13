@@ -101,15 +101,17 @@ type Remote = {
  * apply makes no commit when the fleet manager does not write a ref, a
  * Secret is in the change (Invalid), an object with a precondition changed
  * or was deleted in the cluster (Stale) or has a file that GitOps has not
- * applied yet (Conflict), an object of create exists in the cluster or has
- * a file in the repository (Stale), or the dry run against the cluster
- * fails. The dry run skips an ExternalSecret and an object in a namespace
- * that the same change creates. The preview shows them as rendered. The
+ * applied yet (Conflict), an object to delete with a UID is gone from the
+ * cluster or has another UID there (Stale), an object of create exists in
+ * the cluster or has a file in the repository (Stale), or the dry run
+ * against the cluster fails. The dry run skips an ExternalSecret and an
+ * object in a namespace that the same change creates. The preview shows them as rendered. The
  * dry run of an object that GitOps applied with server-side apply, or of a
  * custom resource that GitOps applied with client-side apply, drops each
  * field of GitOps that the change leaves out, except the revision annotation. Any other object is dry-run as the app. A delete of
  * an object without a file, and a file behind a symbolic link of the
- * repository, are Invalid.
+ * repository, are Invalid. The UID is checked only before the push: GitOps
+ * later deletes the object of that name, whatever its UID.
  *
  * When another push lands first, apply fetches and commits again on top
  * of it once. It fails with Conflict when that push changed a file of the
@@ -219,10 +221,15 @@ export function gitWriter(options: GitWriterOptions): Writer {
     const errors: ApiError[] = [];
     for (const ref of refsOf(change)) {
       const expected = change.preconditions?.[refKey(ref)];
-      if (expected === undefined) continue;
+      const uid = change.uids?.[refKey(ref)];
+      if (expected === undefined && uid === undefined) continue;
       try {
         const object = await read(ref);
-        if (object?.metadata.resourceVersion !== expected) {
+        if (
+          (expected !== undefined &&
+            object?.metadata.resourceVersion !== expected) ||
+          (uid !== undefined && object?.metadata.uid !== uid)
+        ) {
           errors.push(staleError(ref));
         }
       } catch (error) {

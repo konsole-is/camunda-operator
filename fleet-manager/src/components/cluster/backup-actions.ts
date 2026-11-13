@@ -206,19 +206,20 @@ export function backupChange(
   };
 }
 
-/** deleteBackupChange is the change that deletes the backup of row in namespace, straight to the cluster. */
+/**
+ * deleteBackupChange is the change that deletes the backup of row in
+ * namespace, straight to the cluster. With the uid of row, it deletes only
+ * that backup, not a new backup of the same name.
+ */
 export function deleteBackupChange(namespace: string, row: BackupRow): Change {
+  const { kind, name, uid } = row;
   return {
-    intent: `Delete backup ${row.name}`,
+    intent: `Delete backup ${name}`,
     apply: [],
-    delete: [
-      {
-        apiVersion: CORE_V1,
-        kind: row.kind,
-        namespace,
-        name: row.name,
-      },
-    ],
+    delete: [{ apiVersion: CORE_V1, kind, namespace, name }],
+    ...(uid === undefined
+      ? {}
+      : { uids: { [refKey({ kind, namespace, name })]: uid } }),
     directOnly: true,
   };
 }

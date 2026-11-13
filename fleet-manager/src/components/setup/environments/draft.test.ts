@@ -468,7 +468,7 @@ describe("the changes", () => {
     ).toEqual({ note: "kept" });
   });
 
-  it("deleteChange deletes the environment with the resourceVersion of live", () => {
+  it("deleteChange deletes the environment with the resourceVersion and the UID of live", () => {
     expect(deleteChange(live)).toEqual({
       intent: "Delete the environment staging",
       apply: [],
@@ -480,6 +480,7 @@ describe("the changes", () => {
         },
       ],
       preconditions: { "Environment//staging": "12" },
+      uids: { "Environment//staging": "u-1" },
     });
   });
 

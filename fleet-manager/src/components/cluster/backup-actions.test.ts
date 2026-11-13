@@ -296,6 +296,13 @@ describe("backup rules", () => {
     });
   });
 
+  it("delete carries the UID of the row, so it deletes only the backup that the page showed", () => {
+    expect(deleteBackupChange("team-a", row({ uid: "u-1" }))).toMatchObject({
+      delete: [{ kind: "LogicalBackupElasticsearch", name: "orders-manual-1" }],
+      uids: { "LogicalBackupElasticsearch/team-a/orders-manual-1": "u-1" },
+    });
+  });
+
   it("the delete confirm names the artifacts of each kind, and a scheduled backup says what its schedule keeps", () => {
     expect(deleteLines(row())).toEqual({
       goes: [
