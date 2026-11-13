@@ -132,7 +132,7 @@ spec:
 
 For a managed database with a rolling retention, one open window is sufficient. Set `from` to the time when the database started to keep backups. Set `lag` to how far its latest restorable time is behind the present. The retention period limits the start of the window.
 
-A restore gets `PitrUnavailable` for a point before the first window, between two windows, after `unverifiedFrom`, or less than `lag` ago. The message names the windows that the server can restore. A `DatabaseServer` publishes the windows of its archive, from `status.archive.history`. Until the first base backup of its archive completes, it publishes `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet.
+A restore gets `PitrUnavailable` for a point before the first window, between two windows, after `unverifiedFrom`, or less than `lag` ago. The message names the windows that the server can restore. A `DatabaseServer` publishes the windows of its archive that a rollback can read. See [the archive history](databaseserver.md#the-archive-history). While it has no such window and runs no rollback, it publishes `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet.
 
 ## Recovery request
 

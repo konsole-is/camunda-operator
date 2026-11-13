@@ -99,7 +99,7 @@ spec:
   # ... the rest of your server
 ```
 
-The contract of a server with an archive declares `pitr.enabled: true`, `pitr.recovery: operator`, `pitr.retentionPeriodDays`, and `pitr.windows`. A [PointInTimeRestore](pointintimerestore.md) reads these values. Until the first base backup completes, the contract declares `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet.
+The contract of a server with an archive declares `pitr.enabled: true`, `pitr.recovery: operator`, `pitr.retentionPeriodDays`, and `pitr.windows`. A [PointInTimeRestore](pointintimerestore.md) reads these values. Until the first base backup completes, the contract declares `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet. The same is true after the archive moves to another location, until the first base backup there completes.
 
 ### Retention
 
@@ -158,7 +158,12 @@ The server closes the open record and opens a new one in these cases:
 
 A new record starts at the first base backup of the new archive. No restore can reach a point between two records. A rollback reads only the location that the server archives to now. A point in a record of an earlier location is refused, and the message names both locations.
 
-The contract publishes each record as a [recovery window](databaseserverconfig.md#recovery-windows) in `pitr.windows`, with the same `from`, `to`, and `location`. The `unverifiedFrom` of a window is six minutes before the one of its record. A history of more than 256 records publishes the newest 256. The open window gets `lag: 6m0s`. CloudNativePG uploads the write-ahead log in segments, and closes a segment at least every five minutes while the server writes. So a point of the last six minutes can be missing from the bucket. A `PointInTimeRestore` of such a point waits in `Pending` until the point is six minutes old.
+The contract publishes the archive history as [recovery windows](databaseserverconfig.md#recovery-windows) in `pitr.windows`:
+
+- Each record at the location that the server archives to now gives one window, with the same `from`, `to`, and `location`. A record of an earlier location gives no window, because a rollback cannot read it.
+- The `unverifiedFrom` of a window is six minutes before the one of its record.
+- The open window gets `lag: 6m0s`. CloudNativePG uploads the write-ahead log in segments, and closes a segment at least every five minutes while the server writes. So a point of the last six minutes can be missing from the bucket. A `PointInTimeRestore` of such a point waits in `Pending` until the point is six minutes old.
+- A history of more than 256 records publishes the newest 256.
 
 ```yaml
 apiVersion: core.camunda.io/v1
@@ -182,6 +187,8 @@ spec:
 ```
 
 After a raised retention period, `status.archive.reachableFrom` can be later than the start of the retention period. Then no window starts before `reachableFrom`, and a record that ends before it gives no window.
+
+While a rollback runs, the contract keeps `pitr.recovery: operator`, also when no window is left.
 
 ### Base backups are not the backup model
 

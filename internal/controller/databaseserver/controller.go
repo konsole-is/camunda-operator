@@ -489,8 +489,15 @@ func (r *DatabaseServerReconciler) buildComponents(
 	built.archive = archive
 	built.archiveDestination = destination
 
+	// A held archive is not applied, so the server still archives to the
+	// location that the running rollback recorded.
+	location := resolved.archiveLocation
+	if resolved.holdArchive {
+		location = server.Status.Recovery.Archive.Location
+	}
 	built.contract, err = components.ContractComponent(
-		server, merged, resolved.contractWithdrawn, resolved.contractTaken, resolved.archiveTaken, time.Now(),
+		server, merged, resolved.contractWithdrawn, resolved.contractTaken, resolved.archiveTaken,
+		location, time.Now(),
 	)
 	if err != nil {
 		return built, fmt.Errorf("building contract component: %w", err)

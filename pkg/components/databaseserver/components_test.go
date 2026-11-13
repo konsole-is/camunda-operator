@@ -189,7 +189,7 @@ func assertDatabaseServerGoldens(
 		)
 	}
 
-	contract, err := ContractComponent(server, merged, "", "", "", goldenNow)
+	contract, err := ContractComponent(server, merged, "", "", "", archive.ArchiveLocation(server), goldenNow)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "contract.yaml"), contract,
@@ -251,22 +251,24 @@ func archiveSpec() *v1.DatabaseServerArchiveSpec {
 	}
 }
 
-// archiveStatus is the archive history of every archive golden case: one
-// archive that the server left, and the one it writes now. The contract
-// publishes both as windows.
-func archiveStatus() *v1.DatabaseServerArchiveStatus {
+// archiveStatus is the archive history of every archive golden case, at
+// location: one archive that the server left, and the one it writes now. The
+// contract publishes both as windows.
+func archiveStatus(location string) *v1.DatabaseServerArchiveStatus {
 	return &v1.DatabaseServerArchiveStatus{
 		History: []v1.ArchiveRecord{
 			{
-				ServerName: "my-cluster-db",
-				Location:   "s3://camunda-backups/clusters/databaseserver/my-cluster-ns/old",
-				From:       metav1.NewTime(time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC)),
-				To:         new(metav1.NewTime(time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC))),
+				ServerName:       "my-cluster-db",
+				ObjectStorageRef: goldenBucketName,
+				Location:         location,
+				From:             metav1.NewTime(time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC)),
+				To:               new(metav1.NewTime(time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC))),
 			},
 			{
-				ServerName: "my-cluster-db",
-				Location:   "s3://camunda-backups/clusters/databaseserver/my-cluster-ns/new",
-				From:       metav1.NewTime(time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)),
+				ServerName:       "my-cluster-db",
+				ObjectStorageRef: goldenBucketName,
+				Location:         location,
+				From:             metav1.NewTime(time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)),
 			},
 		},
 	}
@@ -281,7 +283,6 @@ func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
 
 	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
-	server.Status.Archive = archiveStatus()
 	archive := &ArchiveStorage{
 		Config: archiveBucket(v1.S3StorageAuth{
 			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
@@ -289,6 +290,7 @@ func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
 		}),
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(
 		t, "archive-workload-identity", server, MergeSpec(server.Spec, preset, release), archive,
 	)
@@ -301,7 +303,6 @@ func TestDatabaseServerGoldenArchiveCredentials(t *testing.T) {
 
 	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
-	server.Status.Archive = archiveStatus()
 	archive := &ArchiveStorage{
 		Config: archiveBucket(v1.S3StorageAuth{
 			Type: v1.ObjectStorageAuthTypeCredentials,
@@ -316,6 +317,7 @@ func TestDatabaseServerGoldenArchiveCredentials(t *testing.T) {
 		Credentials: &objectstore.Credentials{AccessKeyID: "minio-root", SecretAccessKey: "minio-secret"},
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(
 		t, "archive-credentials", server, MergeSpec(server.Spec, preset, release), archive,
 	)
@@ -328,7 +330,6 @@ func TestDatabaseServerGoldenArchiveGCSCredentials(t *testing.T) {
 
 	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
-	server.Status.Archive = archiveStatus()
 	archive := &ArchiveStorage{
 		Config: &v1.ObjectStorageConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: goldenBucketName},
@@ -351,6 +352,7 @@ func TestDatabaseServerGoldenArchiveGCSCredentials(t *testing.T) {
 		},
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(
 		t, "archive-gcs-credentials", server, MergeSpec(server.Spec, preset, release), archive,
 	)
@@ -364,7 +366,6 @@ func TestDatabaseServerGoldenArchiveAzureWorkloadIdentity(t *testing.T) {
 
 	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
-	server.Status.Archive = archiveStatus()
 	archive := &ArchiveStorage{
 		Config: &v1.ObjectStorageConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: goldenBucketName},
@@ -385,6 +386,7 @@ func TestDatabaseServerGoldenArchiveAzureWorkloadIdentity(t *testing.T) {
 		},
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(
 		t, "archive-azure-workload-identity", server, MergeSpec(server.Spec, preset, release), archive,
 	)
@@ -403,7 +405,6 @@ func TestDatabaseServerGoldenSuspended(t *testing.T) {
 
 	server := goldenRealisticDatabaseServer()
 	server.Spec.Archive = archiveSpec()
-	server.Status.Archive = archiveStatus()
 	server.Spec.Suspend = true
 	archive := &ArchiveStorage{
 		Config: archiveBucket(v1.S3StorageAuth{
@@ -412,6 +413,7 @@ func TestDatabaseServerGoldenSuspended(t *testing.T) {
 		}),
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(t, "suspended", server, MergeSpec(server.Spec, nil, nil), archive)
 }
 
@@ -446,14 +448,13 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 	render := func(suspend bool) (cluster, contract, archived string) {
 		server, preset, release := goldenMinimalDatabaseServer()
 		server.Spec.Archive = archiveSpec()
-		server.Status.Archive = archiveStatus()
-		server.Status.Archive = archiveStatus()
+		server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 		server.Spec.Suspend = suspend
 		merged := MergeSpec(server.Spec, preset, release)
 
 		clusterComp, _, err := ClusterComponent(server, merged, requestedOf(merged), archive, "", nil, "", 0)
 		require.NoError(t, err)
-		contractComp, err := ContractComponent(server, merged, "", "", "", goldenNow)
+		contractComp, err := ContractComponent(server, merged, "", "", "", archive.ArchiveLocation(server), goldenNow)
 		require.NoError(t, err)
 		archiveComp, _, err := ArchiveComponent(server, merged, archive, nil, nil, "", "")
 		require.NoError(t, err)

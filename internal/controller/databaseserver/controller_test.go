@@ -2012,6 +2012,16 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(archiveHistory(server)).To(HaveLen(1))
 		}, 2*time.Second, interval).Should(Succeed())
 
+		// A rollback reads only the bucket the server writes to now, so the
+		// window of the bucket it left leaves the contract, and no window is
+		// left.
+		Eventually(func(g Gomega) {
+			pitr := publishedContract(g, server).Spec.PITR
+			g.Expect(pitr.Enabled).To(BeFalse())
+			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeExternal))
+			g.Expect(pitr.Windows).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
 		openedAt := metav1.NewTime(closedAt.Add(5 * time.Second))
 		completeBaseBackup(server, "second", openedAt)
 
@@ -2025,16 +2035,17 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(history[1].To).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 
-		// The contract publishes both: the closed window of the bucket the
-		// server left, and the open window of the one it writes now.
+		// The contract publishes the open window of the bucket the server
+		// writes now, and nothing of the bucket it left.
 		Eventually(func(g Gomega) {
-			windows := publishedContract(g, server).Spec.PITR.Windows
-			g.Expect(windows).To(HaveLen(2))
-			g.Expect(windows[0].To).To(HaveValue(HaveField("Time", BeTemporally("==", closedAt.Time))))
-			g.Expect(windows[0].Lag).To(BeNil())
-			g.Expect(windows[1].From.Time).To(BeTemporally("==", openedAt.Time))
-			g.Expect(windows[1].To).To(BeNil())
-			g.Expect(windows[1].Lag).NotTo(BeNil())
+			pitr := publishedContract(g, server).Spec.PITR
+			g.Expect(pitr.Enabled).To(BeTrue())
+			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeOperator))
+			g.Expect(pitr.Windows).To(HaveLen(1))
+			g.Expect(pitr.Windows[0].Location).To(Equal(archiveHistory(server)[1].Location))
+			g.Expect(pitr.Windows[0].From.Time).To(BeTemporally("==", openedAt.Time))
+			g.Expect(pitr.Windows[0].To).To(BeNil())
+			g.Expect(pitr.Windows[0].Lag).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
 

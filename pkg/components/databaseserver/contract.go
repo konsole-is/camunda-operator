@@ -46,8 +46,10 @@ const maxRecoveryWindows = 256
 // CloudNativePG writes, and the point-in-time-recovery capability that the
 // archive of the server gives it. The windows of that capability come from
 // status.archive.history of server as it stands when the component is built.
-// They start no earlier than status.archive.reachableFrom while that is later
-// than the start of the retention period at now.
+// Only a record that a rollback can read at location, where the server
+// archives to now, gives a window. The windows start no earlier than
+// status.archive.reachableFrom while that is later than the start of the
+// retention period at now.
 //
 // A read-only registration guards the contract on the superuser Secret and
 // blocks while that Secret is absent. A contract that named a Secret before
@@ -89,6 +91,7 @@ func ContractComponent(
 	withdrawn string,
 	contractTaken string,
 	archiveTaken string,
+	location string,
 	now time.Time,
 ) (*component.Component, error) {
 	superuser, err := secret.NewBuilder(superuserSecretRef(server)).Build()
@@ -111,7 +114,7 @@ func ContractComponent(
 				UsernameKey: SuperuserUsernameKey,
 				PasswordKey: SuperuserPasswordKey,
 			},
-			PITR: pitrCapability(server, merged, archiveTaken, now),
+			PITR: pitrCapability(server, merged, archiveTaken, location, now),
 		},
 	}).WithGuard(takenGuard[v1.DatabaseServerConfig](contractTaken)).Build()
 	if err != nil {
@@ -133,8 +136,9 @@ func ContractComponent(
 // back on request. A server without one declares that no restore can reach it,
 // and that nobody rolls it back.
 //
-// A server whose archive history is empty declares the same as a server
-// without an archive.
+// A server with no window to publish declares the same as a server without an
+// archive, unless it runs a recovery. A restore that asked for that recovery
+// waits for a contract that declares operator.
 //
 // A server whose ObjectStore another owner holds declares the same as a server
 // without an archive. It archives nothing while the name is held, and a
@@ -144,27 +148,41 @@ func pitrCapability(
 	server *v1.DatabaseServer,
 	merged v1.DatabaseServerSpec,
 	archiveTaken string,
+	location string,
 	now time.Time,
 ) *v1.PITRCapability {
-	var history []v1.ArchiveRecord
-	if server.Status.Archive != nil {
-		history = server.Status.Archive.History
+	disabled := &v1.PITRCapability{Enabled: false, Recovery: v1.RecoveryModeExternal}
+	if merged.Archive == nil || archiveTaken != "" || server.Status.Archive == nil {
+		return disabled
 	}
 
-	// While the history is empty, the server refuses every recovery request,
-	// so no restore can reach a point yet.
-	if merged.Archive == nil || archiveTaken != "" || len(history) == 0 {
-		return &v1.PITRCapability{Enabled: false, Recovery: v1.RecoveryModeExternal}
-	}
+	placed := placedArchives(server.Status.Archive.History, location, merged.Archive.ObjectStorageRef)
+	windows := recoveryWindows(placed, prunedFloor(server, merged.Archive.RetentionPeriodDays, now))
 
-	floor := prunedFloor(server, merged.Archive.RetentionPeriodDays, now)
+	running := server.Status.Recovery != nil && server.Status.Recovery.CompletedAt == nil
+	if len(windows) == 0 && !running {
+		return disabled
+	}
 
 	return &v1.PITRCapability{
 		Enabled:             true,
 		RetentionPeriodDays: new(merged.Archive.RetentionPeriodDays),
 		Recovery:            v1.RecoveryModeOperator,
-		Windows:             recoveryWindows(history, floor),
+		Windows:             windows,
 	}
+}
+
+// placedArchives returns the records of history that a rollback can read at
+// location through bucket, with their location filled in.
+func placedArchives(history []v1.ArchiveRecord, location, bucket string) []v1.ArchiveRecord {
+	placed := make([]v1.ArchiveRecord, 0, len(history))
+	for _, record := range history {
+		if record, err := placeArchive(record, location, bucket); err == nil {
+			placed = append(placed, record)
+		}
+	}
+
+	return placed
 }
 
 // prunedFloor returns status.archive.reachableFrom while it is later than the
