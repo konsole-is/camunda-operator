@@ -265,6 +265,8 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 		Entry("accepts minutes", "6m", ""),
 		Entry("accepts a compound duration", "1h30m0.5s", ""),
 		Entry("accepts zero", "0s", ""),
+		Entry("accepts the µs that time.Duration writes", (1500*time.Nanosecond).String(), ""),
+		Entry("accepts the Greek μs", "2μs", ""),
 		Entry("rejects a word for the unit", "5minutes", "spec.pitr.windows[0].lag"),
 		Entry("rejects a negative duration", "-1m", "spec.pitr.windows[0].lag"),
 		Entry("rejects a number without a unit", "300", "spec.pitr.windows[0].lag"),
