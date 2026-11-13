@@ -11,3 +11,5 @@ test-results/
 test-reports/
 playwright-report/
 ui-pages/
+storybook-static/
+ui-stories/

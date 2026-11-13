@@ -36,6 +36,12 @@ describe("renderIndex", () => {
     expect(html).not.toContain("<A>");
   });
 
+  it("uses the title it is given", () => {
+    const html = renderIndex([], "Fleet manager stories");
+    expect(html).toContain("<title>Fleet manager stories</title>");
+    expect(html).toContain("<h1>Fleet manager stories</h1>");
+  });
+
   it("says so when there are no shots", () => {
     expect(renderIndex([])).toContain("No stories");
   });
