@@ -3090,6 +3090,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 </tbody>
 </table>
+<p>A template prints only a string, a number, or a boolean. A placeholder of a parameter whose value is a list, an object, or null is an error.</p>
 <p><code>requiresInputs</code> names the inputs that must have a value before the plugin writes the grant. A metric query in <code>metricQueries</code> uses the same placeholders, and also <code>{{ .pods }}</code>, a regular expression of the pod names of the request.</p>
 <h2 id="acceptance">Acceptance<a class="headerlink" href="#acceptance" title="Permanent link">&para;</a></h2>
 <p>The operator checks each registration and reports the result in the <code>Accepted</code> condition. The fleet manager offers the option only when <code>Accepted</code> and <code>Ready</code> are both <code>True</code>. The operator sets <code>Accepted</code>. The plugin controller sets <code>Ready</code>. On the built-in registrations, the operator sets <code>Ready</code> too.</p>
