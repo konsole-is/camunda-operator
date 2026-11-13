@@ -32,12 +32,12 @@ import { YamlEditor } from "./yaml-editor";
 /**
  * ParameterField is the field of one parameter rule with value. A locked
  * rule shows its summary as set by the admin. An editable rule gets the
- * editor that parameterEditorOf picks from its name, its schema, and its
- * allowed names, and shows the allowed names by their labels. onValue gets
- * undefined for a cleared field. It also gets the errors of an editor that
- * shows its own: the errors of the rows of a map or a list, or, from
- * YamlEditor, the errors of text that does not parse. error shows while
- * the editor shows no error of its own.
+ * editor that parameterEditorOf picks, with the allowed names shown by
+ * their labels. onValue gets undefined for a cleared field, but "" for a
+ * cleared text field and [] for choices with none checked. It also gets the
+ * errors of an editor that shows its own, but from YamlEditor only those of
+ * text that does not parse. error shows while the editor shows no error of
+ * its own.
  */
 export function ParameterField({
   id,
