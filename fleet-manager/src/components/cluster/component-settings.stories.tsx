@@ -1,6 +1,6 @@
+import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { CamundaReleaseSpec } from "@/generated/crds/camundarelease";
-import type { Story } from "@/gallery/registry";
 import { fieldDocsOf } from "@/lib/fielddocs";
 import { clusterFields } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
@@ -19,7 +19,9 @@ const preset: CamundaClusterSpec = {
   gateway: { replicas: 2 },
 };
 
-function settings(
+// argsOf gives the settings of component of the cluster orders with spec,
+// whose fields belong to the managers of managedFields.
+function argsOf(
   component: Process,
   spec: CamundaClusterSpec,
   managedFields: ManagedFieldsEntry[],
@@ -63,14 +65,12 @@ function settings(
     ],
     registrations: [],
   });
-  return (
-    <ComponentSettings
-      groups={componentSettings(fields, component, merged.spec)}
-      docs={fieldDocsOf(fields)}
-      operatorVersion="0.2.0"
-      cluster={{ namespace: "team-a", name: "orders" }}
-    />
-  );
+  return {
+    groups: componentSettings(fields, component, merged.spec),
+    docs: fieldDocsOf(fields),
+    operatorVersion: "0.2.0",
+    cluster: { namespace: "team-a", name: "orders" },
+  };
 }
 
 const owned = (manager: string, fields: object, time: string) => ({
@@ -79,77 +79,78 @@ const owned = (manager: string, fields: object, time: string) => ({
   fieldsV1: { "f:spec": fields },
 });
 
-export const settingsStories: Story[] = [
-  {
-    component: "ComponentSettings",
-    name: "Brokers with a filled and a resized field",
-    render: () =>
-      settings(
-        "zeebe",
+const meta = {
+  title: "cluster/ComponentSettings",
+  component: ComponentSettings,
+} satisfies Meta<typeof ComponentSettings>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const BrokersWithAFilledAndAResizedField: Story = {
+  name: "Brokers with a filled and a resized field",
+  args: argsOf(
+    "zeebe",
+    {
+      zeebe: {
+        replicas: 5,
+        storageClassName: "encrypted",
+        storageSize: "64Gi",
+      },
+      podLabels: { team: "orders" },
+    },
+    [
+      owned(
+        CLAIM,
+        { "f:zeebe": { "f:replicas": {}, "f:storageClassName": {} } },
+        "2026-10-01T00:00:00Z",
+      ),
+      owned(
+        "pvc-autoresizer",
+        { "f:zeebe": { "f:storageSize": {} } },
+        "2026-10-02T00:00:00Z",
+      ),
+    ],
+  ),
+};
+
+export const GatewayWithEmbeddedApps: Story = {
+  name: "Gateway with embedded apps",
+  args: argsOf(
+    "gateway",
+    {
+      gateway: { mode: "Standalone" },
+      operate: { replicas: 1, podLabels: { team: "orders" } },
+      tasklist: { replicas: 1 },
+    },
+    [
+      owned(
+        CLAIM,
         {
-          zeebe: {
-            replicas: 5,
-            storageClassName: "encrypted",
-            storageSize: "64Gi",
+          "f:gateway": { "f:mode": {} },
+          "f:operate": {
+            "f:replicas": {},
+            "f:podLabels": { "f:team": {} },
           },
-          podLabels: { team: "orders" },
+          "f:tasklist": { "f:replicas": {} },
         },
-        [
-          owned(
-            CLAIM,
-            { "f:zeebe": { "f:replicas": {}, "f:storageClassName": {} } },
-            "2026-10-01T00:00:00Z",
-          ),
-          owned(
-            "pvc-autoresizer",
-            { "f:zeebe": { "f:storageSize": {} } },
-            "2026-10-02T00:00:00Z",
-          ),
-        ],
+        "2026-10-01T00:00:00Z",
       ),
-  },
-  {
-    component: "ComponentSettings",
-    name: "Gateway with embedded apps",
-    render: () =>
-      settings(
-        "gateway",
-        {
-          gateway: { mode: "Standalone" },
-          operate: { replicas: 1, podLabels: { team: "orders" } },
-          tasklist: { replicas: 1 },
-        },
-        [
-          owned(
-            CLAIM,
-            {
-              "f:gateway": { "f:mode": {} },
-              "f:operate": {
-                "f:replicas": {},
-                "f:podLabels": { "f:team": {} },
-              },
-              "f:tasklist": { "f:replicas": {} },
-            },
-            "2026-10-01T00:00:00Z",
-          ),
-        ],
+    ],
+  ),
+};
+
+export const NotManaged: Story = {
+  name: "Not managed",
+  args: argsOf(
+    "zeebe",
+    { zeebe: { replicas: 3, storageSize: "64Gi" } },
+    [
+      owned(
+        "kubectl-client-side-apply",
+        { "f:zeebe": { "f:replicas": {}, "f:storageSize": {} } },
+        "2026-10-01T00:00:00Z",
       ),
-  },
-  {
-    component: "ComponentSettings",
-    name: "Not managed",
-    render: () =>
-      settings(
-        "zeebe",
-        { zeebe: { replicas: 3, storageSize: "64Gi" } },
-        [
-          owned(
-            "kubectl-client-side-apply",
-            { "f:zeebe": { "f:replicas": {}, "f:storageSize": {} } },
-            "2026-10-01T00:00:00Z",
-          ),
-        ],
-        false,
-      ),
-  },
-];
+    ],
+    false,
+  ),
+};

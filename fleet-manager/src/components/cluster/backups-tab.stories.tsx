@@ -1,4 +1,4 @@
-import type { Story } from "@/gallery/registry";
+import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import type { KindName, Resource } from "@/lib/k8s/kinds";
 import { BACKUP_SCHEDULE_LABEL } from "@/lib/labels";
 import {
@@ -227,51 +227,45 @@ const pgRestores = [
   ),
 ] as RestoreObject[];
 
-export const backupsStories: Story[] = [
-  {
-    component: "BackupsTab",
-    name: "Elasticsearch with backups and a running restore",
-    render: () => (
-      <BackupsTab
-        storage={backupStorageOf(
-          input({
-            cluster: cluster("camunda-backups"),
-            spec: { storageRef: "orders-es", backupStorageRef: "backups" },
-            storage: [
-              obj("SecondaryStorageConfig", "orders-es", {
-                type: "elasticsearch",
-                elasticsearch: { endpoint: "http://orders-es:9200" },
-              }),
-            ],
-            objectStorage: [s3Backups],
-            schedules: [nightly],
+const meta = {
+  title: "cluster/BackupsTab",
+  component: BackupsTab,
+} satisfies Meta<typeof BackupsTab>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const ElasticsearchWithBackupsAndARunningRestore: Story = {
+  name: "Elasticsearch with backups and a running restore",
+  args: {
+    storage: backupStorageOf(
+      input({
+        cluster: cluster("camunda-backups"),
+        spec: { storageRef: "orders-es", backupStorageRef: "backups" },
+        storage: [
+          obj("SecondaryStorageConfig", "orders-es", {
+            type: "elasticsearch",
+            elasticsearch: { endpoint: "http://orders-es:9200" },
           }),
-        )}
-        backups={backupRowsOf(cluster(), esBackups, now)}
-        restores={restoreRowsOf(cluster(), esRestores)}
-      />
+        ],
+        objectStorage: [s3Backups],
+        schedules: [nightly],
+      }),
     ),
+    backups: backupRowsOf(cluster(), esBackups, now),
+    restores: restoreRowsOf(cluster(), esRestores),
   },
-  {
-    component: "BackupsTab",
-    name: "PostgreSQL with point-in-time restore",
-    render: () => (
-      <BackupsTab
-        storage={backupStorageOf(pgInput)}
-        backups={backupRowsOf(cluster(), pgBackups, now)}
-        restores={restoreRowsOf(cluster(), pgRestores)}
-      />
-    ),
+};
+
+export const PostgreSQLWithPointInTimeRestore: Story = {
+  name: "PostgreSQL with point-in-time restore",
+  args: {
+    storage: backupStorageOf(pgInput),
+    backups: backupRowsOf(cluster(), pgBackups, now),
+    restores: restoreRowsOf(cluster(), pgRestores),
   },
-  {
-    component: "BackupsTab",
-    name: "No backup storage",
-    render: () => (
-      <BackupsTab
-        storage={backupStorageOf(input({}))}
-        backups={[]}
-        restores={[]}
-      />
-    ),
-  },
-];
+};
+
+export const NoBackupStorage: Story = {
+  name: "No backup storage",
+  args: { storage: backupStorageOf(input({})), backups: [], restores: [] },
+};

@@ -1,5 +1,4 @@
-"use client";
-
+import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { ClaimReviewStory } from "@/components/fleet/claim-review-story";
 import type { Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
@@ -52,25 +51,14 @@ const deletionPolicy: Step[] = ["spec", "deletionPolicy"].map((field) => ({
 
 type Change = { steps: Step[]; value: unknown };
 
-const CHANGES: Record<"rolls" | "keeps", Change[]> = {
-  rolls: [{ steps: resources, value: { limits: { cpu: "2" } } }],
-  keeps: [{ steps: deletionPolicy, value: "Orphan" }],
-};
+// ROLLS changes the resources of the brokers, so they roll. KEEPS changes
+// only the deletion policy.
+const ROLLS: Change[] = [{ steps: resources, value: { limits: { cpu: "2" } } }];
+const KEEPS: Change[] = [{ steps: deletionPolicy, value: "Orphan" }];
 
-/**
- * BackupReviewStory shows ClaimReview with the props of backupReview for a
- * change of claim orders while backup nightly-20261110 runs. rolls changes
- * the resources of the brokers, keeps the deletion policy.
- */
-export function BackupReviewStory({
-  change,
-  mode,
-}: {
-  change: "rolls" | "keeps";
-  mode: WriteMode;
-}) {
-  // ClaimReview previews each new session, so changes keeps its identity.
-  const changes = CHANGES[change];
+// argsOf gives the review of changes to the claim orders in mode while the
+// backup nightly-20261110 runs.
+function argsOf(changes: Change[], mode: WriteMode) {
   const [{ steps, value }] = changes;
   let session = openSession({
     claim,
@@ -105,7 +93,27 @@ export function BackupReviewStory({
     mode,
     { backupsHref: "?tab=backups" },
   );
-  return (
-    <ClaimReviewStory claim={claim} changes={changes} mode={mode} {...props} />
-  );
+  return { claim, changes, mode, ...props };
 }
+
+const meta = {
+  title: "cluster/ClaimReview",
+  component: ClaimReviewStory,
+} satisfies Meta<typeof ClaimReviewStory>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const BackupCaution: Story = {
+  name: "Backup caution",
+  args: argsOf(ROLLS, "direct"),
+};
+
+export const BackupCautionInGitMode: Story = {
+  name: "Backup caution in Git mode",
+  args: argsOf(ROLLS, "git"),
+};
+
+export const BackupDoesNotRoll: Story = {
+  name: "Backup does not roll",
+  args: argsOf(KEEPS, "direct"),
+};
