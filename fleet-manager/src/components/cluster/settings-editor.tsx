@@ -28,8 +28,10 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import {
+  editorValueOf,
   lockLabel,
   pathFrom,
+  type SettingEditor,
   stateLabel,
   stateNote,
   type Step,
@@ -37,12 +39,7 @@ import {
 import type { ValidationError } from "@/lib/schema";
 import type { FieldError } from "@/lib/session";
 import { useEditorGeneration } from "./edit/editor-generation";
-import {
-  editorValueOf,
-  type Setting,
-  type SettingEditor,
-  settingChange,
-} from "./editable-settings";
+import { type Setting, settingChange } from "./editable-settings";
 import type { SettingsGroup } from "./settings";
 
 /**
