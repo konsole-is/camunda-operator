@@ -1,6 +1,11 @@
+import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { useState } from "react";
+import { fn } from "storybook/test";
+import { useCreateFlow } from "@/components/create/use-create-flow";
+import { WizardStepper } from "@/components/fleet/wizard-stepper";
+import { planesOf } from "@/components/planes/plane";
 import type { CamundaManagementClusterClaim } from "@/generated/crds/camundamanagementclusterclaim";
 import type { PluginSection } from "@/generated/crds/pluginsection";
-import type { Story } from "@/gallery/registry";
 import {
   CLAIM_LABEL,
   ENVIRONMENT_LABEL,
@@ -8,9 +13,15 @@ import {
 } from "@/lib/labels";
 import { EMPTY_ADMIN } from "@/lib/planes/components";
 import { EMPTY_PLANE_DRAFT, type PlaneDraft } from "@/lib/planes/draft";
-import { PlaneCreateStory } from "./create-story";
+import type { ValidationError } from "@/lib/schema";
+import {
+  type PlaneCreateData,
+  type PlaneModels,
+  type PlaneReview,
+  PlaneStepBody,
+  planeSteps,
+} from "./plane-create-flow";
 import { PlaneProgressView } from "./plane-progress";
-import type { PlaneCreateData } from "./plane-create-flow";
 
 const environment = (
   name: string,
@@ -397,260 +408,282 @@ const progressClaim = {
   },
 } as unknown as CamundaManagementClusterClaim;
 
-/** planeCreateStories are the gallery stories of the plane create flow. */
-export const planeCreateStories: Story[] = [
-  {
-    component: "PlaneCreateFlow",
-    name: "Basics",
-    render: () => <PlaneCreateStory data={data} initial={basics} />,
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Basics with no Environment",
-    render: () => (
-      <PlaneCreateStory
-        data={{ ...data, environments: [] }}
-        initial={EMPTY_PLANE_DRAFT}
+// PlaneCreateFlow watches its lists live, so the stories show its steps
+// with this harness over fixture data. The harness owns the draft, which
+// starts at initial, and opens at step.
+function PlaneCreateHarness({
+  data,
+  initial,
+  step,
+  ...review
+}: PlaneReview & {
+  data: PlaneCreateData;
+  initial: PlaneDraft;
+  step: string;
+}) {
+  const models: PlaneModels = {
+    environments: data.environments as PlaneModels["environments"],
+    namespaces: data.namespaces as PlaneModels["namespaces"],
+    clusters: data.clusters as PlaneModels["clusters"],
+    platformConfigs: data.platformConfigs as PlaneModels["platformConfigs"],
+    releases: data.releases as PlaneModels["releases"],
+    sections: data.sections as PlaneModels["sections"],
+    registrations: data.registrations as PlaneModels["registrations"],
+    accessRequests: data.accessRequests as PlaneModels["accessRequests"],
+    authConfigs: data.authConfigs.map((c) => c.metadata?.name ?? ""),
+    objects: {
+      DatabaseServerPreset:
+        data.databaseServerPresets as PlaneModels["objects"]["DatabaseServerPreset"],
+      DatabaseConfig:
+        data.databaseConfigs as PlaneModels["objects"]["DatabaseConfig"],
+    },
+    planes: planesOf(data.planes),
+    sources: data.planes,
+    images: data.images,
+  };
+  const [selectorErrors, setSelectorErrors] = useState<ValidationError[]>([]);
+  const [sectionErrors, setSectionErrors] = useState<
+    Record<string, ValidationError[]>
+  >({});
+  const steps = planeSteps(models, selectorErrors, [], sectionErrors);
+  const flow = useCreateFlow({ steps, initial });
+  const reached = steps.slice(0, steps.findIndex((s) => s.id === step) + 1);
+  return (
+    <WizardStepper
+      steps={steps.map((s) => ({
+        id: s.id,
+        label: s.label,
+        errors: reached.includes(s) ? s.check?.(flow.draft) : undefined,
+      }))}
+      current={step}
+    >
+      <PlaneStepBody
+        current={step}
+        draft={flow.draft}
+        set={flow.set}
+        models={models}
+        secrets={[{ name: "keycloak-admin", keys: ["password", "username"] }]}
+        onSelectorErrors={setSelectorErrors}
+        onSectionErrors={(section, errors) =>
+          setSectionErrors((current) => ({ ...current, [section]: errors }))
+        }
+        review={review}
       />
-    ),
+    </WizardStepper>
+  );
+}
+
+const meta = {
+  title: "planes/create/PlaneCreateFlow",
+  component: PlaneCreateHarness,
+  args: {
+    data,
+    initial: basics,
+    step: "basics",
+    mode: "direct",
+    preview: fn(async () => ({ objects: [], errors: [] })),
+    create: fn(async () => ({ ok: true as const, mode: "direct" as const })),
+    onWritten: fn(),
   },
-  {
-    component: "PlaneCreateFlow",
-    name: "External Keycloak",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        initial={{
-          ...basics,
-          mode: "externalKeycloak",
-          externalKeycloak: {
-            url: "https://keycloak.example.com/auth",
-            realm: "camunda-platform",
-            adminSecret: "keycloak-admin",
+} satisfies Meta<typeof PlaneCreateHarness>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const Basics: Story = { name: "Basics" };
+
+export const BasicsWithNoEnvironment: Story = {
+  name: "Basics with no Environment",
+  args: { data: { ...data, environments: [] }, initial: EMPTY_PLANE_DRAFT },
+};
+
+export const ExternalKeycloak: Story = {
+  name: "External Keycloak",
+  args: {
+    initial: {
+      ...basics,
+      mode: "externalKeycloak",
+      externalKeycloak: {
+        url: "https://keycloak.example.com/auth",
+        realm: "camunda-platform",
+        adminSecret: "keycloak-admin",
+      },
+    },
+  },
+};
+
+export const EnvironmentsServedWithEveryResult: Story = {
+  name: "Environments served with every result",
+  args: {
+    step: "served",
+    initial: {
+      ...basics,
+      platformConfig: "sso",
+      mode: "oidc",
+      served: ["production", "staging"],
+    },
+  },
+};
+
+export const KeycloakModePreview: Story = {
+  name: "Keycloak mode preview",
+  args: { step: "served" },
+};
+
+export const ComponentsAndVersionsInKeycloakMode: Story = {
+  name: "Components and versions in Keycloak mode",
+  args: { step: "components", initial: { ...components, webModeler: true } },
+};
+
+export const ComponentsAndVersionsInOidcMode: Story = {
+  name: "Components and versions in OIDC mode",
+  args: {
+    step: "components",
+    initial: {
+      ...components,
+      platformConfig: "sso",
+      mode: "oidc",
+      admin: { ...EMPTY_ADMIN, claimName: "sub" },
+    },
+  },
+};
+
+export const KeycloakVersionWithAWarning: Story = {
+  name: "Keycloak version with a warning",
+  args: {
+    step: "components",
+    initial: { ...components, versions: { keycloak: "26.7.0" } },
+  },
+};
+
+export const StorageAndAccessWithNoAccessFromOutside: Story = {
+  name: "Storage and access with no access from outside",
+  args: {
+    step: "storage",
+    initial: {
+      ...components,
+      urls: { keycloak: "https://management.example.com/auth" },
+    },
+  },
+};
+
+export const StorageAndAccessWithAnAccessOption: Story = {
+  name: "Storage and access with an access option",
+  args: {
+    step: "storage",
+    initial: {
+      ...components,
+      storage: {
+        "management-database": [
+          {
+            section: "management-database",
+            registration: "existing-database-configs",
+            parameters: { keycloak: "keycloak-db", identity: "identity-db" },
           },
-        }}
-      />
-    ),
+        ],
+        access: [{ section: "access", registration: "gateway" }],
+      },
+    },
   },
-  {
-    component: "PlaneCreateFlow",
-    name: "Environments served with every result",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        step="served"
-        initial={{
-          ...basics,
-          platformConfig: "sso",
-          mode: "oidc",
-          served: ["production", "staging"],
-        }}
-      />
-    ),
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Keycloak mode preview",
-    render: () => (
-      <PlaneCreateStory data={data} step="served" initial={basics} />
-    ),
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Components and versions in Keycloak mode",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        step="components"
-        initial={{ ...components, webModeler: true }}
-      />
-    ),
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Components and versions in OIDC mode",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        step="components"
-        initial={{
-          ...components,
-          platformConfig: "sso",
-          mode: "oidc",
-          admin: { ...EMPTY_ADMIN, claimName: "sub" },
-        }}
-      />
-    ),
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Keycloak version with a warning",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        step="components"
-        initial={{ ...components, versions: { keycloak: "26.7.0" } }}
-      />
-    ),
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Storage and access with no access from outside",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        step="storage"
-        initial={{
-          ...components,
-          urls: { keycloak: "https://management.example.com/auth" },
-        }}
-      />
-    ),
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Storage and access with an access option",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        step="storage"
-        initial={{
-          ...components,
-          storage: {
-            "management-database": [
-              {
-                section: "management-database",
-                registration: "existing-database-configs",
-                parameters: {
-                  keycloak: "keycloak-db",
-                  identity: "identity-db",
-                },
-              },
-            ],
-            access: [{ section: "access", registration: "gateway" }],
-          },
-        }}
-      />
-    ),
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Storage and access with a taken host",
-    render: () => (
-      <PlaneCreateStory
-        data={{
-          ...data,
-          accessRequests: [
-            {
-              apiVersion: "plugins.camunda.io/v1alpha1",
-              kind: "PluginRequest",
-              metadata: { namespace: "ops", name: "plane-b-access" },
-              spec: {
-                claimRef: {
-                  kind: "CamundaManagementClusterClaim",
-                  name: "plane-b",
-                },
-                section: "access",
-                registration: "gateway",
-              },
-              status: {
-                outputs: { managementHost: "plane-a.mgmt.example.com" },
-              },
+};
+
+export const StorageAndAccessWithATakenHost: Story = {
+  name: "Storage and access with a taken host",
+  args: {
+    data: {
+      ...data,
+      accessRequests: [
+        {
+          apiVersion: "plugins.camunda.io/v1alpha1",
+          kind: "PluginRequest",
+          metadata: { namespace: "ops", name: "plane-b-access" },
+          spec: {
+            claimRef: {
+              kind: "CamundaManagementClusterClaim",
+              name: "plane-b",
             },
-          ] as unknown as PlaneCreateData["accessRequests"],
-        }}
-        step="storage"
-        initial={{
-          ...components,
-          storage: { access: [{ section: "access", registration: "gateway" }] },
-        }}
-      />
-    ),
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Storage and access with a pick of a section that is gone",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        step="storage"
-        initial={{
-          ...components,
-          storage: {
-            "dns-zone": [{ section: "dns-zone", registration: "route53" }],
+            section: "access",
+            registration: "gateway",
           },
-        }}
-      />
-    ),
+          status: { outputs: { managementHost: "plane-a.mgmt.example.com" } },
+        },
+      ] as unknown as PlaneCreateData["accessRequests"],
+    },
+    step: "storage",
+    initial: {
+      ...components,
+      storage: { access: [{ section: "access", registration: "gateway" }] },
+    },
   },
-  {
-    component: "PlaneCreateFlow",
-    name: "Storage and access with a default that keeps the resources",
-    render: () => (
-      <PlaneCreateStory
-        data={{
-          ...data,
-          environments: data.environments.map((e) =>
-            e.metadata.name === "production"
-              ? { ...e, spec: { ...e.spec, deletionPolicy: "Orphan" as const } }
-              : e,
-          ),
-        }}
-        step="storage"
-        initial={{ ...components, storage: reviewStorage }}
-      />
-    ),
+};
+
+export const StorageAndAccessWithAPickOfASectionThatIsGone: Story = {
+  name: "Storage and access with a pick of a section that is gone",
+  args: {
+    step: "storage",
+    initial: {
+      ...components,
+      storage: {
+        "dns-zone": [{ section: "dns-zone", registration: "route53" }],
+      },
+    },
   },
-  {
-    component: "PlaneCreateFlow",
-    name: "Review in direct mode",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        step="review"
-        initial={{ ...components, storage: reviewStorage }}
-      />
-    ),
+};
+
+export const StorageAndAccessWithADefaultThatKeepsTheResources: Story = {
+  name: "Storage and access with a default that keeps the resources",
+  args: {
+    data: {
+      ...data,
+      environments: data.environments.map((e) =>
+        e.metadata.name === "production"
+          ? { ...e, spec: { ...e.spec, deletionPolicy: "Orphan" as const } }
+          : e,
+      ),
+    },
+    step: "storage",
+    initial: { ...components, storage: reviewStorage },
   },
-  {
-    component: "PlaneCreateFlow",
-    name: "Review in Git mode",
-    render: () => (
-      <PlaneCreateStory
-        data={data}
-        step="review"
-        mode="git"
-        initial={{
-          ...components,
-          namespace: {
-            kind: "new",
-            name: "team-plane",
-            labels: { [ENVIRONMENT_LABEL]: "production", team: "platform" },
-          },
-          storage: reviewStorage,
-        }}
-      />
-    ),
+};
+
+export const ReviewInDirectMode: Story = {
+  name: "Review in direct mode",
+  args: { step: "review", initial: { ...components, storage: reviewStorage } },
+};
+
+export const ReviewInGitMode: Story = {
+  name: "Review in Git mode",
+  args: {
+    step: "review",
+    mode: "git",
+    initial: {
+      ...components,
+      namespace: {
+        kind: "new",
+        name: "team-plane",
+        labels: { [ENVIRONMENT_LABEL]: "production", team: "platform" },
+      },
+      storage: reviewStorage,
+    },
   },
-  {
-    component: "PlaneCreateFlow",
-    name: "Progress with every row pending",
-    render: () => (
-      <PlaneProgressView
-        name="plane-a"
-        sections={data.sections as unknown as PluginSection[]}
-      />
-    ),
-  },
-  {
-    component: "PlaneCreateFlow",
-    name: "Progress with the databases ready",
-    render: () => (
-      <PlaneProgressView
-        name="plane-a"
-        sections={data.sections as unknown as PluginSection[]}
-        claim={progressClaim}
-      />
-    ),
-  },
-];
+};
+
+export const ProgressWithEveryRowPending: Story = {
+  name: "Progress with every row pending",
+  render: () => (
+    <PlaneProgressView
+      name="plane-a"
+      sections={data.sections as unknown as PluginSection[]}
+    />
+  ),
+};
+
+export const ProgressWithTheDatabasesReady: Story = {
+  name: "Progress with the databases ready",
+  render: () => (
+    <PlaneProgressView
+      name="plane-a"
+      sections={data.sections as unknown as PluginSection[]}
+      claim={progressClaim}
+    />
+  ),
+};

@@ -13,17 +13,13 @@ import { createFlowStories } from "@/components/fleet/create-flow.stories";
 import { dataTableStories } from "@/components/fleet/data-table.stories";
 import { workloadEditorStories } from "@/components/fleet/workload-editors.stories";
 import { editorStories } from "@/components/fleet/editors.stories";
-import { fleetViewStories } from "@/components/fleet-view/fleet-view.stories";
 import { helpStories } from "@/components/fleet/help.stories";
 import { lockedFieldStories } from "@/components/fleet/locked-field.stories";
 import { observeStories } from "@/components/fleet/observe.stories";
-import { planeCreateStories } from "@/components/planes/create/create.stories";
-import { planesStories } from "@/components/planes/planes.stories";
 import { reviewStories } from "@/components/fleet/review.stories";
 import { sectionCardsStories } from "@/components/fleet/section-cards.stories";
 import { shellStories } from "@/components/fleet/shell.stories";
 import { statusStories } from "@/components/fleet/status.stories";
-import { environmentStories } from "@/components/setup/environments/environments.stories";
 import type { Story } from "./registry";
 
 /** Every story of the gallery. A new component adds its stories file here. */
@@ -36,9 +32,6 @@ export const stories: readonly Story[] = [
   ...confirmStories,
   ...helpStories,
   ...dataTableStories,
-  ...planesStories,
-  ...fleetViewStories,
-  ...planeCreateStories,
   ...editorStories,
   ...workloadEditorStories,
   ...sectionCardsStories,
@@ -53,5 +46,4 @@ export const stories: readonly Story[] = [
   ...backupActionsStories,
   ...settingsStories,
   ...settingsEditorStories,
-  ...environmentStories,
 ];
