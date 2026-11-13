@@ -76,7 +76,8 @@ Obey these rules:
 
 A story can import `@/lib/fielddocs`, because Storybook replaces `server-only` with an empty module. A module that
 uses Node.js APIs, such as the file system or the Kubernetes client, fails in the browser. Give the story fixture
-data instead.
+data instead. Server actions, the functions of a file with `"use server"`, load such modules too. Do not import them
+in a component file. Let the page give them to the component as props.
 
 Some components still have their stories in the older gallery format: a stories file that exports a list and has
 no default export. Storybook does not read these files. For a new component, write a Storybook stories file.

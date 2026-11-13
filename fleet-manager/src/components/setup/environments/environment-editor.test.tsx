@@ -21,14 +21,6 @@ import type { EnvironmentSources } from "./sources";
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 const sync = vi.hoisted(() => ({ state: "waiting" }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
-// The editor gets its writes as props. The page module of the server
-// actions loads the writer, which a component test does not need.
-vi.mock("@/app/setup/environments/actions", () => ({
-  previewEnvironmentChange: vi.fn(),
-  applyEnvironmentChange: vi.fn(),
-  previewNamespaceLabel: vi.fn(),
-  applyNamespaceLabel: vi.fn(),
-}));
 vi.mock("@/lib/k8s/hooks", () => ({
   useGitSync: () => sync.state,
   useGitGone: () => sync.state,
