@@ -181,6 +181,8 @@ spec:
   # ... the rest of the published contract
 ```
 
+After a raised retention period, `status.archive.reachableFrom` can be later than the start of the retention period. Then no window starts before `reachableFrom`, and a record that ends before it gives no window.
+
 ### Base backups are not the backup model
 
 The base backups belong to the archive. [BackupSchedule](backupschedule.md) and [LogicalBackupRDBMS](logicalbackuprdbms.md) take logical dumps instead, and they never use these base backups. Run both on one cluster. The logical backups restore the Camunda data. The archive restores the server to a point in time.

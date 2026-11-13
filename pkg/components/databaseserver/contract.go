@@ -46,6 +46,8 @@ const maxRecoveryWindows = 256
 // CloudNativePG writes, and the point-in-time-recovery capability that the
 // archive of the server gives it. The windows of that capability come from
 // status.archive.history of server as it stands when the component is built.
+// They start no earlier than status.archive.reachableFrom while that is later
+// than the start of the retention period at now.
 //
 // A read-only registration guards the contract on the superuser Secret and
 // blocks while that Secret is absent. A contract that named a Secret before
@@ -87,6 +89,7 @@ func ContractComponent(
 	withdrawn string,
 	contractTaken string,
 	archiveTaken string,
+	now time.Time,
 ) (*component.Component, error) {
 	superuser, err := secret.NewBuilder(superuserSecretRef(server)).Build()
 	if err != nil {
@@ -108,7 +111,7 @@ func ContractComponent(
 				UsernameKey: SuperuserUsernameKey,
 				PasswordKey: SuperuserPasswordKey,
 			},
-			PITR: pitrCapability(server, merged, archiveTaken),
+			PITR: pitrCapability(server, merged, archiveTaken, now),
 		},
 	}).WithGuard(takenGuard[v1.DatabaseServerConfig](contractTaken)).Build()
 	if err != nil {
@@ -125,7 +128,7 @@ func ContractComponent(
 }
 
 // pitrCapability renders the point-in-time-recovery capability the server
-// publishes. A server with an archive declares the retention its bucket
+// publishes at now. A server with an archive declares the retention its bucket
 // enforces, windows from its archive history, and that the operator rolls it
 // back on request. A server without one declares that no restore can reach it,
 // and that nobody rolls it back.
@@ -137,7 +140,12 @@ func ContractComponent(
 // without an archive. It archives nothing while the name is held, and a
 // rollback reads the archive of that ObjectStore, so a capability here sends a
 // restore to the archive of another server.
-func pitrCapability(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, archiveTaken string) *v1.PITRCapability {
+func pitrCapability(
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+	archiveTaken string,
+	now time.Time,
+) *v1.PITRCapability {
 	var history []v1.ArchiveRecord
 	if server.Status.Archive != nil {
 		history = server.Status.Archive.History
@@ -149,28 +157,52 @@ func pitrCapability(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, arc
 		return &v1.PITRCapability{Enabled: false, Recovery: v1.RecoveryModeExternal}
 	}
 
+	floor := prunedFloor(server, merged.Archive.RetentionPeriodDays, now)
+
 	return &v1.PITRCapability{
 		Enabled:             true,
 		RetentionPeriodDays: new(merged.Archive.RetentionPeriodDays),
 		Recovery:            v1.RecoveryModeOperator,
-		Windows:             recoveryWindows(history),
+		Windows:             recoveryWindows(history, floor),
 	}
 }
 
-// recoveryWindows returns the windows that history gives a restore, oldest
-// first. It keeps the newest maxRecoveryWindows records, the most that a
-// contract holds.
-func recoveryWindows(history []v1.ArchiveRecord) []v1.RecoveryWindow {
-	if older := len(history) - maxRecoveryWindows; older > 0 {
-		history = history[older:]
+// prunedFloor returns status.archive.reachableFrom while it is later than the
+// start of the retention period at now, and nil otherwise.
+func prunedFloor(server *v1.DatabaseServer, retentionDays int32, now time.Time) *metav1.Time {
+	if server.Status.Archive == nil || server.Status.Archive.ReachableFrom == nil {
+		return nil
 	}
 
+	// In steady state the floor trails the retention period by up to a
+	// minute. Admission checks the retention period itself, and a clip to
+	// that floor would change the contract each minute.
+	floor := server.Status.Archive.ReachableFrom
+	if !floor.After(now.Add(-time.Duration(retentionDays) * 24 * time.Hour)) {
+		return nil
+	}
+
+	return floor
+}
+
+// recoveryWindows returns the windows that history gives a restore, oldest
+// first. A window starts no earlier than floor, and a record that ends at or
+// before floor gives none. It keeps the newest maxRecoveryWindows windows, the
+// most that a contract holds.
+func recoveryWindows(history []v1.ArchiveRecord, floor *metav1.Time) []v1.RecoveryWindow {
 	windows := make([]v1.RecoveryWindow, 0, len(history))
 	for _, record := range history {
+		if floor != nil && record.To != nil && !record.To.After(floor.Time) {
+			continue
+		}
+
 		window := v1.RecoveryWindow{
 			Location: record.Location,
 			From:     record.From,
 			To:       record.To.DeepCopy(),
+		}
+		if floor != nil && window.From.Before(floor) {
+			window.From = *floor
 		}
 		if record.UnverifiedFrom != nil {
 			// The segment whose upload failed began before the record's time,
@@ -182,6 +214,10 @@ func recoveryWindows(history []v1.ArchiveRecord) []v1.RecoveryWindow {
 			window.Lag = &metav1.Duration{Duration: ArchiveLag}
 		}
 		windows = append(windows, window)
+	}
+
+	if older := len(windows) - maxRecoveryWindows; older > 0 {
+		windows = windows[older:]
 	}
 
 	return windows

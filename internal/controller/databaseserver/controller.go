@@ -490,7 +490,7 @@ func (r *DatabaseServerReconciler) buildComponents(
 	built.archiveDestination = destination
 
 	built.contract, err = components.ContractComponent(
-		server, merged, resolved.contractWithdrawn, resolved.contractTaken, resolved.archiveTaken,
+		server, merged, resolved.contractWithdrawn, resolved.contractTaken, resolved.archiveTaken, time.Now(),
 	)
 	if err != nil {
 		return built, fmt.Errorf("building contract component: %w", err)

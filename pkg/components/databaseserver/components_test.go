@@ -65,6 +65,10 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 // a server is derived from it, so the goldens need one that does not move.
 const goldenServerUID = "b7e4d2a1-3c58-4f60-9a1d-2e5f8c0b4d71"
 
+// goldenNow is the clock of every golden render, so a golden contract does not
+// move with the day the test runs.
+var goldenNow = time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+
 // goldenMinimalDatabaseServer is the minimal example of the CRD doc with a
 // deterministic name, resolved against the "standard" preset and the
 // "camunda-8-9" release of the doc.
@@ -185,7 +189,7 @@ func assertDatabaseServerGoldens(
 		)
 	}
 
-	contract, err := ContractComponent(server, merged, "", "", "")
+	contract, err := ContractComponent(server, merged, "", "", "", goldenNow)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "contract.yaml"), contract,
@@ -449,7 +453,7 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 
 		clusterComp, _, err := ClusterComponent(server, merged, requestedOf(merged), archive, "", nil, "", 0)
 		require.NoError(t, err)
-		contractComp, err := ContractComponent(server, merged, "", "", "")
+		contractComp, err := ContractComponent(server, merged, "", "", "", goldenNow)
 		require.NoError(t, err)
 		archiveComp, _, err := ArchiveComponent(server, merged, archive, nil, nil, "", "")
 		require.NoError(t, err)
