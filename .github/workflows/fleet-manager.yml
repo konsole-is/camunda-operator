@@ -203,8 +203,22 @@ jobs:
         with:
           name: storybook
           path: storybook
+      # A run that waited in the gh-pages queue can start after the pull
+      # request closed and its preview was removed.
+      - name: Skip a closed pull request
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state=open
+          if [ -n "${PR}" ]; then
+            state=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR}" --jq .state)
+          fi
+          echo "Pull request state: ${state}"
+          echo "publish=$([ "${state}" = open ] && echo true || echo false)" >> "${GITHUB_OUTPUT}"
       - name: Place the Storybook on the site
         id: place
+        if: ${{ steps.target.outputs.publish == 'true' }}
         run: |
           if [ -n "${PR}" ]; then folder="pr-preview/pr-${PR}"; else folder="storybook"; fi
           node src/fleet-manager/scripts/storybook-preview.mts place site storybook "${folder}"
@@ -212,6 +226,7 @@ jobs:
       # The message names the pull request without #, because GitHub adds
       # each commit that names #<number> to the timeline of that pull request.
       - name: Push the site
+        if: ${{ steps.target.outputs.publish == 'true' }}
         working-directory: site
         run: |
           git config user.name "github-actions[bot]"
@@ -228,7 +243,7 @@ jobs:
           fi
           ../src/hack/ci-retry.sh git push origin gh-pages
       - name: Write the preview comment
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ steps.target.outputs.publish == 'true' && github.event_name == 'pull_request' }}
         env:
           GH_TOKEN: ${{ github.token }}
           URL: ${{ steps.place.outputs.url }}
@@ -242,6 +257,7 @@ jobs:
             gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="${body}" > /dev/null
           fi
       - name: Link the Storybook in the job summary
+        if: ${{ steps.target.outputs.publish == 'true' }}
         env:
           URL: ${{ steps.place.outputs.url }}
         run: |

@@ -1,0 +1,141 @@
+name: Storybook preview
+
+# Removes the Storybook preview of a pull request from gh-pages when the pull
+# request closes, merged or not. Each week, the sweep removes the previews of
+# pull requests that closed while no removal ran. The Fleet manager workflow
+# publishes the previews.
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remove:
+    name: Remove the preview of the closed pull request
+    # A pull request from a fork has no preview.
+    if: >-
+      ${{ github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push to gh-pages
+      pull-requests: write   # edit the preview comment
+    # Every workflow that pushes to gh-pages runs in this group. With the
+    # default queue, a new pending run cancels the pending one before it.
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+      queue: max
+    env:
+      PR: ${{ github.event.pull_request.number }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      # The merge ref of a closed pull request can be gone, so the script
+      # comes from the base branch.
+      - name: Clone the preview script
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          path: src
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fleet-manager/scripts/
+            /fleet-manager/.node-version
+            /hack/ci-retry.sh
+      - name: Clone the site
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          path: site
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: src/fleet-manager/.node-version
+      - name: Remove the preview from the site
+        run: node src/fleet-manager/scripts/storybook-preview.mts remove site "pr-preview/pr-${PR}"
+      - name: Push the site
+        working-directory: site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The site has no preview of pull request ${PR}."
+            exit 0
+          fi
+          git commit -q -m "Remove the Storybook of pull request ${PR}"
+          ../src/hack/ci-retry.sh git push origin gh-pages
+      - name: Edit the preview comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- storybook-preview -->"))) | .id')
+          if [ -z "${ids}" ]; then
+            echo "The pull request has no preview comment."
+            exit 0
+          fi
+          url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/pr-preview/pr-${PR}/"
+          body=$(node src/fleet-manager/scripts/storybook-preview.mts comment removed "${url}" "${SHA}")
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ids%%$'\n'*}" -f body="${body}" > /dev/null
+
+  sweep:
+    name: Remove the previews of closed pull requests
+    if: ${{ github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push to gh-pages
+      pull-requests: read    # list the open pull requests
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: Clone the preview script
+        uses: actions/checkout@v7
+        with:
+          path: src
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /fleet-manager/scripts/
+            /fleet-manager/.node-version
+            /hack/ci-retry.sh
+      - name: Clone the site
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+          path: site
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: src/fleet-manager/.node-version
+      - name: Remove the stale previews from the site
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          open=$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open --limit 1000 --json number --jq '.[].number')
+          # One argument for each number of an open pull request.
+          # shellcheck disable=SC2086
+          stale=$(node src/fleet-manager/scripts/storybook-preview.mts stale site ${open})
+          for folder in ${stale}; do
+            node src/fleet-manager/scripts/storybook-preview.mts remove site "${folder}"
+          done
+      - name: Push the site
+        working-directory: site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The site has no preview of a closed pull request."
+            exit 0
+          fi
+          git commit -q -m "Remove the Storybook previews of closed pull requests"
+          ../src/hack/ci-retry.sh git push origin gh-pages
