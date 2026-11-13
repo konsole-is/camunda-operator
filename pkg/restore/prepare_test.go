@@ -425,18 +425,18 @@ func TestPrepareKeepsItsAnswerAfterItMovedTheCluster(t *testing.T) {
 	t.Parallel()
 
 	w := newPrepareWorld(t)
-	w.input.Version = "8.10.0"
+	w.input.Version = newerVersion
 
 	written := w.look(t)
 	require.Nil(t, written.Failure)
-	w.cluster.Spec.Version = "8.10.0"
-	w.cluster.Annotations[components.AllowVersionDowngradeAnnotation] = "8.10.0"
+	w.cluster.Spec.Version = newerVersion
+	w.cluster.Annotations[components.AllowVersionDowngradeAnnotation] = newerVersion
 
 	rolling := w.look(t)
 	require.Nil(t, rolling.Failure)
 	assert.False(t, rolling.Done)
 
-	w.input.Target.Version = "8.10.0"
+	w.input.Target.Version = newerVersion
 	moved := w.look(t)
 
 	assert.Nil(t, moved.Failure)

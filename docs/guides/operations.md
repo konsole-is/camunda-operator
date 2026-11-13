@@ -263,7 +263,7 @@ You do not suspend the cluster before a restore. The restore does it:
 
 The restore waits in `Pending` until the brokers are stopped and the cluster carries that version. It erases nothing in `Pending`. Then it rebuilds the secondary storage (logical kinds only) and gives every broker a new data volume.
 
-A logical restore of a backup more than one minor newer than the version that the brokers run fails at once, and it leaves the cluster as it was. The [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md#a-backup-more-than-one-minor-newer-than-the-brokers) and [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md#a-backup-more-than-one-minor-newer-than-the-brokers) pages say what to do.
+A logical restore fails at once when the backup is more than one minor newer than the brokers. It leaves the cluster as it was. The [LogicalRestoreRDBMS](../crds/logicalrestorerdbms.md#a-backup-more-than-one-minor-newer-than-the-brokers) and [LogicalRestoreElasticsearch](../crds/logicalrestoreelasticsearch.md#a-backup-more-than-one-minor-newer-than-the-brokers) pages say what to do.
 
 Each write carries a field manager of its own. A GitOps tool shows these names in a conflict message:
 

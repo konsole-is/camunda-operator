@@ -104,7 +104,7 @@ If a restore of the namespace has that name, the fleet manager adds `-2`, `-3`, 
 
 **Restore** has one version rule for both kinds: the backup recorded a version of the form `x.y.z`. The restore sets that version on the cluster, as [LogicalRestoreElasticsearch: Compatibility](../crds/logicalrestoreelasticsearch.md#compatibility) and [LogicalRestoreRDBMS: Compatibility](../crds/logicalrestorerdbms.md#compatibility) show. A cluster that ran a newer version comes back on the version of the backup. [The version after a logical restore](../guides/operations.md#the-version-after-a-logical-restore) shows how to upgrade it again.
 
-**Restore** stays on for a backup more than one minor newer than the version that the brokers of the cluster run. Such a restore fails at once with the reason `IncompatibleTarget`, and it leaves the cluster as it was. [LogicalRestoreRDBMS: A backup more than one minor newer than the brokers](../crds/logicalrestorerdbms.md#a-backup-more-than-one-minor-newer-than-the-brokers) says what to do. The same rule applies to an Elasticsearch backup.
+**Restore** stays on for a backup more than one minor newer than the brokers of the cluster. Such a restore fails at once with the reason `IncompatibleTarget`, and it leaves the cluster as it was. [LogicalRestoreRDBMS: A backup more than one minor newer than the brokers](../crds/logicalrestorerdbms.md#a-backup-more-than-one-minor-newer-than-the-brokers) says what to do. The same rule applies to an Elasticsearch backup.
 
 While a backup of the cluster runs, **Restore** stays on, and the confirm says that the new restore waits. For example:
 
