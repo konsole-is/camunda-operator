@@ -259,9 +259,10 @@ func checkAction(action *parse.ActionNode, allowed placeholders, notAllowed func
 }
 
 // renderTemplate fills the placeholders of text from data. It refuses what
-// checkTemplate refuses, and a parameter or an output that text references
-// and data does not hold. It is the conformance copy of the renderer of
-// pluginkit, and both hold the same named test cases.
+// checkTemplate refuses, a parameter or an output that text references and
+// data does not hold, and a referenced parameter that is a list, an object,
+// or null. It is the conformance copy of the renderer of pluginkit, and both
+// hold the same named test cases.
 func renderTemplate(text string, allowed placeholders, data templateData) (string, error) {
 	if err := checkTemplate(text, allowed); err != nil {
 		return "", err
@@ -284,8 +285,18 @@ func renderTemplate(text string, allowed placeholders, data templateData) (strin
 		}
 
 		name := field.Ident[1]
-		if _, ok := data.parameters[name]; field.Ident[0] == "parameters" && !ok {
-			return "", fmt.Errorf("parameter %q has no value", name)
+		if field.Ident[0] == "parameters" {
+			value, ok := data.parameters[name]
+			if !ok {
+				return "", fmt.Errorf("parameter %q has no value", name)
+			}
+			if form := unprintableForm(value); form != "" {
+				return "", fmt.Errorf(
+					"parameter %q is %s: a template prints only a string, a number, or a boolean",
+					name,
+					form,
+				)
+			}
 		}
 		if _, ok := data.outputs[name]; field.Ident[0] == "outputs" && !ok {
 			return "", fmt.Errorf("output %q has no value", name)
@@ -312,6 +323,22 @@ func renderTemplate(text string, allowed placeholders, data templateData) (strin
 	}
 
 	return out.String(), nil
+}
+
+// unprintableForm names the JSON form of value when text/template would print
+// it in a Go form, such as [a b], map[k:v], or <no value>, and returns ""
+// otherwise.
+func unprintableForm(value any) string {
+	switch value.(type) {
+	case nil:
+		return "null"
+	case []any:
+		return "a list"
+	case map[string]any:
+		return "an object"
+	}
+
+	return ""
 }
 
 // renderJSONTemplate runs renderTemplate on each string value of raw, at any

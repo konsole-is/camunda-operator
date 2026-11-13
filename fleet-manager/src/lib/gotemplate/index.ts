@@ -86,8 +86,9 @@ export function parseTemplate(
  * render fills the placeholders of a template of kind from data. It fails
  * as parseTemplate does, and also for a parameter, an output, or .pods that
  * data does not hold. A parameter renders when it is a string, a number, or
- * a boolean; another value is an error that names it. A number can print
- * other than in pluginkit, as for 1.0, 1e3, and integers above 2^53. In a
+ * a boolean. A list, an object, or null is an error that names it, with the
+ * message of pluginkit. A number from the API server prints as in pluginkit,
+ * except an integer above 2^53, which JavaScript rounds. In a
  * metric query, a value in a "..." or '...' string is escaped for it, a
  * value outside a string must be a decimal number or a duration, and a
  * placeholder in a backtick string, in a comment, or right after a
@@ -107,11 +108,15 @@ export function render(
         field: `parameters.${name}`,
       };
     }
-    if (
-      !["string", "number", "boolean"].includes(typeof data.parameters[name])
-    ) {
+    const value = data.parameters[name];
+    if (!["string", "number", "boolean"].includes(typeof value)) {
+      const form = Array.isArray(value)
+        ? "a list"
+        : value === null
+          ? "null"
+          : "an object";
       return {
-        error: `parameter "${name}" is not a string, a number, or a boolean, and the plugin prints such a value in another form`,
+        error: `parameter "${name}" is ${form}: a template prints only a string, a number, or a boolean`,
         field: `parameters.${name}`,
       };
     }
