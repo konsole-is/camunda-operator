@@ -223,8 +223,8 @@ export function runningSelection(
 /**
  * databaseConfigErrors returns the errors of an existing-database-configs
  * selection: one for each running app without a DatabaseConfig, and one
- * for each DatabaseConfig that two apps share. selection holds the names
- * of the request, policy values included.
+ * for each DatabaseConfig that two running apps share. selection holds the
+ * names of the request, policy values included.
  */
 export function databaseConfigErrors(
   selection: PluginSelection | undefined,
@@ -235,14 +235,12 @@ export function databaseConfigErrors(
   const apps = new Map<string, string[]>();
   const missing: string[] = [];
   for (const app of DATABASE_APPS) {
+    if (!runs(app, running)) continue;
     const name = parameters[app];
     if (typeof name !== "string" || name === "") {
-      if (runs(app, running)) {
-        missing.push(`Pick a DatabaseConfig for ${VERSION_LABEL[app]}.`);
-      }
+      missing.push(`Pick a DatabaseConfig for ${VERSION_LABEL[app]}.`);
       continue;
     }
-    // The handler refuses two equal names also for an app that does not run.
     apps.set(name, [...(apps.get(name) ?? []), VERSION_LABEL[app]]);
   }
   return [

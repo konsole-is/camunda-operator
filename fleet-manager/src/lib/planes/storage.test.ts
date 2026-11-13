@@ -185,11 +185,20 @@ describe("databaseConfigErrors", () => {
     ]);
   });
 
-  it("refuses an equal name of an app that does not run, as the request holds it", () => {
+  it("accepts the name of a running app that an app that does not run also has", () => {
     expect(
       databaseConfigErrors(
         configs({ keycloak: "db", identity: "db", webModeler: "modeler" }),
         { ...all, keycloak: false },
+      ),
+    ).toEqual([]);
+  });
+
+  it("names only the running apps that share a name", () => {
+    expect(
+      databaseConfigErrors(
+        configs({ keycloak: "db", identity: "db", webModeler: "db" }),
+        { ...all, webModeler: false },
       ),
     ).toEqual([
       "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use db.",
@@ -417,12 +426,10 @@ describe("storageErrors", () => {
       ).toEqual([]);
     });
 
-    it("refuses a name that the policy gives that app and a running app picks", () => {
+    it("accepts a name that the policy gives that app and a running app picks", () => {
       expect(
         errorsOf({ claimEditable: true, value: "db" }, { identity: "db" }),
-      ).toEqual([
-        "Pick a different DatabaseConfig for each app. Keycloak and Management Identity both use db.",
-      ]);
+      ).toEqual([]);
     });
   });
 

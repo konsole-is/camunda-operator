@@ -130,7 +130,7 @@ The operator serves the requests of six [built-in registrations](pluginregistrat
 | `database-server` | `preset` (required), `releaseRef` (required), `overrides`: `instances`, `resources`, `storageSize`, `scheduling`, `podLabels` | `storageClassName`, `objectStorageConfig`, `serviceAccountAnnotations` | `secondaryStorageConfig` |
 | `existing-object-storage` | `name` (required): an `ObjectStorageConfig` | none | `objectStorageConfig` |
 | `existing-secondary-storage` | `name` (required): a `SecondaryStorageConfig` | none | `secondaryStorageConfig` |
-| `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names | none | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set |
+| `existing-database-configs` | `keycloak`, `identity`, `webModeler`: `DatabaseConfig` names, `databases` | none | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each name that you set for a listed component |
 | `management-database-server` | `preset` (required), `version`, `databases` | `storageClassName` | `keycloakDatabaseConfig`, `identityDatabaseConfig`, `webModelerDatabaseConfig`, one for each listed component |
 
 The operator serves a request only when its label `plugins.camunda.io/registration` and `spec.registration` name the same built-in registration. A request that already holds the finalizer `plugins.camunda.io/cleanup` stays served after a change of the label, so that its deletion completes.
@@ -217,7 +217,9 @@ status:
       severity: Warning
 ```
 
-`existing-database-configs` refuses two fields with the same name, with reason `InvalidParameters`, and the message names both fields.
+`existing-database-configs` reads only the names of the components that `databases` lists. A management plane claim sets `databases` to the components of its plane that need a database. See [Databases](camundamanagementclusterclaim.md#databases). For example, a plane with the `oidc` or `externalKeycloak` identity provider does not list `keycloak`. The request then ignores a Keycloak name that the policy of the `Environment` gives. Without `databases`, the request reads each name that it holds.
+
+Two names that the request reads must be different. Otherwise the operator refuses the request with reason `InvalidParameters`, and the message names both fields.
 
 When the claim or you delete the request, the contracts stay, with both deletion policies. The request goes away at once.
 
