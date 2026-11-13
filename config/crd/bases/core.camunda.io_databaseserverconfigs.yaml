@@ -203,7 +203,13 @@ spec:
                             duration such as 5m. A restore cannot reach a point that is less than
                             Lag in the past. An open window without a lag reaches the present. You
                             can set Lag only on an open window.
+                          maxLength: 32
+                          pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
                           type: string
+                          x-kubernetes-validations:
+                          - message: lag must be a duration of at most 2562047h, such
+                              as 6m
+                            rule: duration(self) >= duration('0s')
                         location:
                           description: |-
                             Location is where the archive of this window is, in the form of

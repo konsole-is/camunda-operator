@@ -151,6 +151,10 @@ type RecoveryWindow struct {
 	// duration such as 5m. A restore cannot reach a point that is less than
 	// Lag in the past. An open window without a lag reaches the present. You
 	// can set Lag only on an open window.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$`
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="lag must be a duration of at most 2562047h, such as 6m"
 	// +optional
 	Lag *metav1.Duration `json:"lag,omitempty"`
 }

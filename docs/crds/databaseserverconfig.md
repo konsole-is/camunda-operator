@@ -220,7 +220,7 @@ The [API reference](api-reference.md#databaseserverconfig) lists every field of 
 - If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and from 1 to 36500.
 - If `spec.pitr.recovery` is `operator`, `spec.pitr.enabled` must be `true`.
 - If `spec.pitr.windows` is set, `spec.pitr.enabled` must be `true`. The list holds 256 windows at most.
-- Only a window without `to` can have `lag`.
+- Only a window without `to` can have `lag`. `lag` is a duration without a sign, such as `6m` or `1h30m`, of at most `2562047h`.
 - `spec.recovery.targetTime` and `spec.pitr.lastRecovery.targetTime` must be RFC 3339 with a zone, for example `2026-08-20T14:30:00Z`.
 - `spec.recovery.requestedBy` must name a namespace and a name, separated by `/`.
 - `spec.recovery.requestID` and `spec.pitr.lastRecovery.requestID` must be a UUID.
