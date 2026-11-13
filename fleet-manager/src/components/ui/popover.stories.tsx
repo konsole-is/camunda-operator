@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 const meta = {
   title: "ui/Popover",
   component: Popover,
-  args: { open: true, onOpenChange: fn() },
+  args: { defaultOpen: true, onOpenChange: fn() },
 } satisfies Meta<typeof Popover>;
 export default meta;
 type Story = StoryObj<typeof meta>;

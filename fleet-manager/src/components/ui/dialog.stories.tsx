@@ -11,7 +11,7 @@ import {
 const meta = {
   title: "ui/Dialog",
   component: Dialog,
-  args: { open: true, onOpenChange: fn() },
+  args: { defaultOpen: true, onOpenChange: fn() },
   parameters: {
     // An open modal dialog blocks the page it is on, so the docs page shows
     // it in a frame of its own.

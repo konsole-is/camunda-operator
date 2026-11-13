@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { fn } from "storybook/test";
 import { Button } from "./button";
 import {
   Tooltip,
@@ -10,7 +11,7 @@ import {
 const meta = {
   title: "ui/Tooltip",
   component: Tooltip,
-  args: { open: true },
+  args: { defaultOpen: true, onOpenChange: fn() },
   decorators: [
     (Story) => (
       <div className="pt-12">
