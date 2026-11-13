@@ -281,6 +281,77 @@ describe("SectionCards", () => {
     ]);
   });
 
+  describe("a map of strings", () => {
+    const tagged: OptionView = {
+      registration: "tuning",
+      label: "Tuning",
+      isDefault: true,
+      parameters: [
+        {
+          name: "tags",
+          label: "Tags",
+          schema: { type: "object", additionalProperties: { type: "string" } },
+          claimEditable: true,
+        },
+      ],
+    };
+
+    it("edits the map as key and value rows and submits it", async () => {
+      const onChange = vi.fn();
+      render(
+        <SectionCards section={section({}, tagged)} onChange={onChange} />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add an entry" }),
+      );
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Key" }),
+        "team",
+      );
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Value" }),
+        "orders",
+      );
+      expect(onChange).toHaveBeenLastCalledWith(
+        [
+          {
+            section: "connectors-permissions",
+            registration: "tuning",
+            parameters: { tags: { team: "orders" } },
+          },
+        ],
+        [],
+      );
+    });
+
+    it("reports a key that the map sets twice", async () => {
+      const onChange = vi.fn();
+      render(
+        <SectionCards
+          section={section({}, tagged)}
+          defaultValue={[
+            {
+              section: "connectors-permissions",
+              registration: "tuning",
+              parameters: { tags: { team: "orders" } },
+            },
+          ]}
+          onChange={onChange}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Add an entry" }),
+      );
+      await userEvent.type(
+        screen.getAllByRole("textbox", { name: "Key" })[1],
+        "team",
+      );
+      expect(onChange.mock.lastCall![1]).toEqual([
+        { path: "tuning/tags", message: "team is set twice" },
+      ]);
+    });
+  });
+
   it("takes a new policy default and keeps a value that the user set", async () => {
     const onChange = vi.fn();
     const policy = (retention: number, bucket: string): OptionView => ({

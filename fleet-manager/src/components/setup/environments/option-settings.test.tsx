@@ -203,6 +203,65 @@ describe("OptionSettings", () => {
     expect(previewChange).not.toHaveBeenCalled();
   });
 
+  describe("a map of strings", () => {
+    function withLabels() {
+      const sources = withRustfsSchema();
+      const rustfs = sources.registrations.find(
+        (r) => r.metadata.name === "rustfs",
+      )!;
+      rustfs.spec.parameters = {
+        type: "object",
+        properties: {
+          labels: {
+            type: "object",
+            additionalProperties: { type: "string" },
+            title: "Labels",
+          },
+        },
+      };
+      return sources;
+    }
+    // The rows of the map are a group of the same name inside the settings.
+    const labelsGroup = () =>
+      within(screen.getByRole("region", { name: "RustFS" })).getAllByRole(
+        "group",
+        { name: "Labels" },
+      )[0];
+
+    it("saves the rows of key and value as the environment value", async () => {
+      const actions = renderEditor("production", withLabels());
+      const labels = labelsGroup();
+      fireEvent.click(
+        within(labels).getByRole("button", { name: "Add an entry" }),
+      );
+      fireEvent.change(within(labels).getByRole("textbox", { name: "Key" }), {
+        target: { value: "team" },
+      });
+      fireEvent.change(within(labels).getByRole("textbox", { name: "Value" }), {
+        target: { value: "orders" },
+      });
+      expect(await save(actions)).toMatchObject({
+        parameters: { rustfs: { labels: { value: { team: "orders" } } } },
+      });
+    });
+
+    it("blocks Review while a key is set twice", () => {
+      const { previewChange } = renderEditor("production", withLabels());
+      const labels = labelsGroup();
+      const add = within(labels).getByRole("button", { name: "Add an entry" });
+      fireEvent.click(add);
+      fireEvent.click(add);
+      for (const key of within(labels).getAllByRole("textbox", {
+        name: "Key",
+      }))
+        fireEvent.change(key, { target: { value: "team" } });
+      const review = screen.getByRole("button", { name: "Review" });
+      expect(review).toHaveProperty("disabled", true);
+      fireEvent.click(review);
+      expect(previewChange).not.toHaveBeenCalled();
+    });
+  });
+
   it("shows the limits by label with (limit set at install)", () => {
     renderEditor("production", sectionFixtures());
     const role = screen.getByRole("region", { name: "Role for each cluster" });

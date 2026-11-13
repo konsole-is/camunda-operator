@@ -4,6 +4,15 @@ export {
   optimizeClaimNames,
   type ClusterFieldsInput,
 } from "./cluster";
+export {
+  claimValueOf,
+  editorOf,
+  editorValueOf,
+  fieldSchemaFromOpenAPI,
+  parameterEditorOf,
+  type SchemaEditor,
+  type SettingEditor,
+} from "./editor";
 export { lockLabel, stateLabel, stateNote } from "./labels";
 export { parameterFields } from "./parameters";
 export type {
