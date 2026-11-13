@@ -26,7 +26,7 @@ import (
 )
 
 // oneMinorNewer is the version one minor release after the version of the
-// fixture pair. A relational backup restores with it.
+// fixture pair.
 const oneMinorNewer = "8.10.0"
 
 // pair returns a compatible relational pair. Each test changes the one fact
@@ -109,6 +109,7 @@ func TestCheck(t *testing.T) {
 
 				return in
 			}(),
+			want: []string{"8.9.9", "8.9.12", "exact version"},
 		},
 		{
 			name: "one minor newer",
@@ -118,6 +119,7 @@ func TestCheck(t *testing.T) {
 
 				return in
 			}(),
+			want: []string{"8.9.9", oneMinorNewer, "exact version"},
 		},
 		{
 			name: "two minors newer",
@@ -127,7 +129,7 @@ func TestCheck(t *testing.T) {
 
 				return in
 			}(),
-			want: []string{"8.9.9", "8.11.0", "same Camunda minor or one minor newer"},
+			want: []string{"8.9.9", "8.11.0", "exact version"},
 		},
 		{
 			name: "the target is older than the backup",
@@ -137,7 +139,7 @@ func TestCheck(t *testing.T) {
 
 				return in
 			}(),
-			want: []string{oneMinorNewer, "8.9.9", "same Camunda minor or one minor newer"},
+			want: []string{oneMinorNewer, "8.9.9", "exact version"},
 		},
 		{
 			name: "another major version",
@@ -147,7 +149,7 @@ func TestCheck(t *testing.T) {
 
 				return in
 			}(),
-			want: []string{"same Camunda minor or one minor newer"},
+			want: []string{"9.0.0", "exact version"},
 		},
 		{
 			name: "the target version is not a version of the form x.y.z",
@@ -207,11 +209,11 @@ func TestParseVersion(t *testing.T) {
 
 	tests := []struct {
 		value string
-		want  version
+		want  [3]int
 		valid bool
 	}{
-		{value: "8.9.9", want: version{major: 8, minor: 9, patch: 9}, valid: true},
-		{value: "8.10.12", want: version{major: 8, minor: 10, patch: 12}, valid: true},
+		{value: "8.9.9", want: [3]int{8, 9, 9}, valid: true},
+		{value: "8.10.12", want: [3]int{8, 10, 12}, valid: true},
 		{value: "8.9", valid: false},
 		{value: "8.9.9.1", valid: false},
 		{value: "8.9.x", valid: false},

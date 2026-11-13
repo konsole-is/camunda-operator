@@ -3881,7 +3881,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#logicalbackupstoragesizes"
       },
       "status.version": {
-        "description": "Version is the Camunda version of the cluster when the backup started,\nas the management binding reported it. A restore compares it with the\nversion of its target. A relational backup restores to the same Camunda\nminor or to one minor newer. A restore can read the version only here,\nbecause a suspended cluster has no management binding. The backup\nstarts only when Zeebe runs this version. After the Zeebe backup\nrequest, a poll that finds Zeebe on another version fails the backup\nat once with both versions in the message.",
+        "description": "Version is the Camunda version of the cluster when the backup started,\nas the management binding reported it. A restore sets this version on\nits target, and it refuses a backup that recorded no version of the\nform x.y.z. A restore can read the version only here,\nbecause a suspended cluster has no management binding. The backup\nstarts only when Zeebe runs this version. After the Zeebe backup\nrequest, a poll that finds Zeebe on another version fails the backup\nat once with both versions in the message.",
         "anchor": "#logicalbackuprdbmsstatus"
       },
       "status.workloadConfigHash": {

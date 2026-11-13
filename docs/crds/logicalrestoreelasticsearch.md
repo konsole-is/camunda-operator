@@ -56,6 +56,8 @@ Before it deletes anything, the operator compares the backup against the target.
 - The `spec.backupStorageRef` of the target names the `ObjectStorageConfig` that the backup wrote to.
 - The target runs the exact Camunda version that the backup recorded in `status.version`, because that version is part of every snapshot name. The restore sets this version on the target in `Pending`. So this rule fails only when the backup recorded no version, or a value that is not of the form `x.y.z`.
 
+After the restore, the target runs the version of the backup. To run a newer version, upgrade the target again, one minor at a time, as [CamundaCluster: Upgrade](camundacluster.md#upgrade) says.
+
 ### Why the downgrade is safe here
 
 The restore can set a version below the one the brokers run. Camunda does not support a downgrade of a running cluster, but a restore is not one. No broker runs while the version changes, and the restore erases the broker volumes before a broker of the older version starts. Outside a restore, the cluster refuses a downgrade with `VersionDowngradeRefused`, see [CamundaCluster: Downgrade on purpose](camundacluster.md#downgrade-on-purpose). What stays on the cluster after the restore is in [The version after a logical restore](../guides/operations.md#the-version-after-a-logical-restore).

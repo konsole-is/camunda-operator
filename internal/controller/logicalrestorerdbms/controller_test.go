@@ -698,10 +698,8 @@ var _ = Describe("LogicalRestoreRDBMS compatibility", func() {
 		Expect(reached.Status.FailureMessage).To(ContainSubstring("did not record"))
 	})
 
-	// The version rule of a relational backup accepts the same minor or one
-	// minor newer. The restore carries the target to the version of the
-	// backup in every case, so a target of an older minor is moved forward
-	// instead of refused.
+	// The restore carries the target to the version of the backup in every
+	// case, so a target of an older minor is moved forward instead of refused.
 	It("moves a target of an older Camunda minor to the version of the backup", func() {
 		w := newWorld()
 		backup := createBackup(w, func(b *v1.LogicalBackupRDBMS) { b.Status.Version = "8.10.0" })
@@ -728,12 +726,30 @@ var _ = Describe("LogicalRestoreRDBMS compatibility", func() {
 		expectPhase(lrr, v1.LogicalRestoreRestoringSecondaryStorage)
 	})
 
-	// The version rule would accept this target as it is. The restore still
-	// moves it back to the version of the backup, so the cluster comes back
-	// one minor behind where it was and the owner upgrades forward again.
+	// The cluster comes back one minor behind where it was, and the owner
+	// upgrades forward again.
 	It("moves a target of a newer Camunda minor back to the version of the backup", func() {
 		w := newWorld()
 		w.rollBrokerImage("8.10.0")
+		backup := createBackup(w)
+
+		lrr := createRestore(w, backup.Name)
+
+		Eventually(func(g Gomega) {
+			var cluster v1.CamundaCluster
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.cluster), &cluster)).To(Succeed())
+			g.Expect(cluster.Spec.Version).To(Equal(worldVersion))
+		}, timeout, interval).Should(Succeed())
+
+		w.rollBrokerImage(worldVersion)
+		expectPhase(lrr, v1.LogicalRestoreRestoringSecondaryStorage)
+	})
+
+	// The restore application runs with the version of the backup, so the
+	// minor that the target ran before the restore is no rule.
+	It("moves a target two Camunda minors newer back to the version of the backup", func() {
+		w := newWorld(func(c *v1.CamundaCluster) { c.Spec.Version = "8.11.2" })
+		w.rollBrokerImage("8.11.2")
 		backup := createBackup(w)
 
 		lrr := createRestore(w, backup.Name)

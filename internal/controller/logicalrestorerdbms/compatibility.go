@@ -55,15 +55,6 @@ type compatibility struct {
 	TargetVersion string
 }
 
-// version is a Camunda version as the rule reads it. The patch level is
-// parsed so that a version that is not of the form x.y.z is refused, and it
-// takes part in no comparison: the rule is written on the major and the minor.
-type version struct {
-	major int
-	minor int
-	patch int
-}
-
 // errNotVersion says that a value is not a Camunda version. It reads as the
 // tail of "the version %q, which ...".
 var errNotVersion = errors.New("is not a version of the form x.y.z")
@@ -142,10 +133,10 @@ func check(in compatibility) *conditions.PreCheckFailure {
 	return checkVersions(in)
 }
 
-// checkVersions applies the version rule of a relational backup: the target
-// runs the same Camunda minor as the backup, or one minor newer. The patch
-// level is free. A backup that recorded no version fails closed, because
-// nothing then proves that the target can read it.
+// checkVersions applies the version rule of a relational backup. Such a backup
+// restores only with the exact version it was taken with, because the restore
+// application runs with the version of the broker image. A backup that
+// recorded no version fails closed.
 func checkVersions(in compatibility) *conditions.PreCheckFailure {
 	if in.BackupVersion == "" {
 		return incompatible(
@@ -154,25 +145,19 @@ func checkVersions(in compatibility) *conditions.PreCheckFailure {
 		)
 	}
 
-	source, err := parseVersion(in.BackupVersion)
-	if err != nil {
-		return incompatible(
-			"the backup recorded the Camunda version %q, which %s", in.BackupVersion, err,
-		)
+	if _, err := parseVersion(in.BackupVersion); err != nil {
+		return incompatible("the backup recorded the Camunda version %q, which %s", in.BackupVersion, err)
 	}
 
-	target, err := parseVersion(in.TargetVersion)
-	if err != nil {
-		return incompatible(
-			"the target cluster runs the Camunda version %q, which %s", in.TargetVersion, err,
-		)
+	if _, err := parseVersion(in.TargetVersion); err != nil {
+		return incompatible("the target cluster runs the Camunda version %q, which %s", in.TargetVersion, err)
 	}
 
-	if target.major != source.major || target.minor < source.minor || target.minor > source.minor+1 {
+	if in.BackupVersion != in.TargetVersion {
 		return incompatible(
 			"the backup was taken with Camunda %s and the target cluster runs %s. A relational backup "+
-				"restores only into a cluster that runs the same Camunda minor or one minor newer. "+
-				"The patch level does not matter",
+				"restores only with the exact version it was taken with, because the restore application "+
+				"runs with the version of the broker image",
 			in.BackupVersion, in.TargetVersion,
 		)
 	}
@@ -180,24 +165,25 @@ func checkVersions(in compatibility) *conditions.PreCheckFailure {
 	return nil
 }
 
-// parseVersion reads a version of the form x.y.z. The error reads as the tail
-// of "the version %q, which ...", so the caller names the version once.
-func parseVersion(value string) (version, error) {
+// parseVersion reads a version of the form x.y.z and returns its three
+// numbers. The exact-version rule compares the recorded strings, so the parse
+// exists to refuse a value that names no version at all.
+func parseVersion(value string) ([3]int, error) {
 	parts := strings.Split(value, ".")
 	if len(parts) != 3 {
-		return version{}, errNotVersion
+		return [3]int{}, errNotVersion
 	}
 
-	numbers := make([]int, 0, len(parts))
-	for _, part := range parts {
+	var numbers [3]int
+	for i, part := range parts {
 		number, err := strconv.Atoi(part)
 		if err != nil || number < 0 {
-			return version{}, errNotVersion
+			return [3]int{}, errNotVersion
 		}
-		numbers = append(numbers, number)
+		numbers[i] = number
 	}
 
-	return version{major: numbers[0], minor: numbers[1], patch: numbers[2]}, nil
+	return numbers, nil
 }
 
 // incompatible builds the failure of a target that cannot hold the backup.

@@ -323,12 +323,9 @@ On a PostgreSQL cluster, keep the retained dumps inside the primary-storage rete
 
 ## What an upgrade does to the backups you hold
 
-A backup records the Camunda version of the cluster in `status.version`. Do not change the version of the cluster while a backup runs. The backup fails when Zeebe moves to another version before the Zeebe part of the backup is final. A PostgreSQL backup whose Zeebe backup has not started yet first waits 10 minutes for the recorded version to return. A restore compares `status.version` against the version the cluster runs:
+A backup records the Camunda version of the cluster in `status.version`. Do not change the version of the cluster while a backup runs. The backup fails when Zeebe moves to another version before the Zeebe part of the backup is final. A PostgreSQL backup whose Zeebe backup has not started yet first waits 10 minutes for the recorded version to return. A restore of either kind sets the cluster to the exact version in `status.version`, also when the cluster runs a newer minor. It refuses a backup that recorded no version of the form `x.y.z`.
 
-- A `LogicalRestoreElasticsearch` needs the exact version of the backup.
-- A `LogicalRestoreRDBMS` needs the same Camunda minor as the backup, or one minor newer. Camunda migrates its own schema one minor at a time, as [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/) states.
-
-You do not lower `spec.version` by hand for a restore. The restore sets the cluster to the version of the backup. [The version after a logical restore](./operations.md#the-version-after-a-logical-restore) says what the restore writes on the cluster and what you do after it.
+You do not change `spec.version` by hand for a restore. [The version after a logical restore](./operations.md#the-version-after-a-logical-restore) says what the restore writes on the cluster and what you do after it.
 
 **Take a backup before every upgrade.** The most common reason to restore is an upgrade that went wrong, and the backup you want is the one from just before it.
 

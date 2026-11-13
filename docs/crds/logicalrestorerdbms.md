@@ -53,10 +53,9 @@ Before it erases anything, the operator compares the backup against the target. 
 - The target is the cluster that the backup was taken from. The restore application reads the primary-storage backup under the prefix of the cluster it runs as.
 - The target stores its data in a relational database. For an Elasticsearch cluster, use a [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md).
 - The `spec.backupStorageRef` of the target names the `ObjectStorageConfig` that the backup wrote to.
-- The target runs the Camunda minor of the backup, or one minor newer. Camunda migrates its schema one minor at a time, see [Version compatibility checks](https://docs.camunda.io/docs/self-managed/components/orchestration-cluster/core-settings/concepts/version-compatibility/).
-- The backup recorded its Camunda version in `status.version`, in the form `x.y.z`.
+- The target runs the exact Camunda version that the backup recorded in `status.version`. The restore sets this version on the target in `Pending`. So this rule fails only when the backup recorded no version, or a value that is not of the form `x.y.z`.
 
-The restore sets the version of the backup on the target in `Pending`, even when the target runs one minor newer. So a target that ran a newer minor comes back on the minor of the backup. Upgrade it forward again after the restore. The rules compare no partition count, because a relational backup records none.
+After the restore, the target runs the version of the backup. To run a newer version, upgrade the target again, one minor at a time, as [CamundaCluster: Upgrade](camundacluster.md#upgrade) says. The rules compare no partition count, because a relational backup records none.
 
 ### Why the downgrade is safe here
 

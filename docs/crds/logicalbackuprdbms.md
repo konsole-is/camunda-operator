@@ -85,7 +85,7 @@ A restore needs these fields:
 - `status.backupId` identifies the dump.
 - `status.objectKey` is the full key of the dump in the bucket.
 - `status.zeebeBackupId` is the Zeebe backup that pairs with the dump.
-- `status.version` is the Camunda version of the cluster when the backup started. A restore of this backup needs a cluster on the same Camunda minor, or one minor newer.
+- `status.version` is the Camunda version of the cluster when the backup started. A restore of this backup sets this version on the cluster.
 - `status.storageSizes.zeebe` is the recorded size of one Zeebe data volume, when the operator can compute it.
 
 `status.jobName` names the dump Job while it exists. `status.bucketRef` and `status.bucketLocation` record the bucket that holds the dump. `status.failureMessage` says why a `Failed` backup failed. `status.completionTime` is when the backup ended. `status.observedGeneration` is the last generation that the operator reconciled.

@@ -412,34 +412,31 @@ describe("restore rules", () => {
     ).toBeUndefined();
   });
 
-  it("an Elasticsearch backup restores when it recorded an x.y.z version", () => {
-    const c = context({ clusterVersion: "8.10.1" });
-    expect(restoreBlock(c, row({ version: "8.9.4" }))).toBeUndefined();
-    for (const version of ["-", "8.9"]) {
-      expect(restoreBlock(c, row({ version }))).toBe(
-        "Backup orders-manual-1 recorded no Camunda version, so it cannot be restored.",
-      );
+  it("a backup of either kind restores when it recorded an x.y.z version, whatever version the cluster has", () => {
+    for (const [kind, storage] of [
+      ["LogicalBackupElasticsearch", es],
+      ["LogicalBackupRDBMS", rdbms],
+    ] as const) {
+      for (const clusterVersion of [
+        "8.8.9",
+        "8.9.0",
+        "8.10.2",
+        "8.11.0",
+        "9.9.4",
+        "latest",
+        undefined,
+      ]) {
+        const c = context({ storage, clusterVersion });
+        expect(
+          restoreBlock(c, row({ kind, version: "8.9.4" })),
+        ).toBeUndefined();
+        for (const version of ["-", "8.9"]) {
+          expect(restoreBlock(c, row({ kind, version }))).toBe(
+            "Backup orders-manual-1 recorded no Camunda version, so it cannot be restored.",
+          );
+        }
+      }
     }
-  });
-
-  it("an RDBMS backup restores into the same minor or one minor newer", () => {
-    const dump = row({ kind: "LogicalBackupRDBMS", version: "8.9.4" });
-    const at = (clusterVersion?: string) =>
-      restoreBlock(context({ storage: rdbms, clusterVersion }), dump);
-    for (const version of ["8.9.0", "8.9.9", "8.10.2"]) {
-      expect(at(version)).toBeUndefined();
-    }
-    for (const version of ["8.8.9", "8.11.0", "9.9.4"]) {
-      expect(at(version)).toBe(
-        `Backup orders-manual-1 has Camunda 8.9.4. It restores only into Camunda 8.9 or 8.10, and the cluster has ${version}.`,
-      );
-    }
-    expect(at(undefined)).toBe(
-      "The cluster has no Camunda version yet, so the version rule cannot be checked.",
-    );
-    expect(at("latest")).toBe(
-      "The cluster has no Camunda version yet, so the version rule cannot be checked.",
-    );
   });
 
   it("restore is off when the page cannot write and while a restore of the cluster has not ended", () => {
