@@ -150,7 +150,7 @@ func TestDatabaseConfigsRefuseEqualNamesOfListedDatabases(t *testing.T) {
 }
 
 func TestDatabaseConfigsRefuseDatabasesThatAreNotAListOfStrings(t *testing.T) {
-	for _, databases := range []string{`"identity"`, `[1]`} {
+	for _, databases := range []string{`"identity"`, `[1]`, `null`, `[null]`} {
 		t.Run(databases, func(t *testing.T) {
 			request := requestFor(
 				pluginstartup.RegistrationExistingDatabaseConfigs,

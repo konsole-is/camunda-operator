@@ -184,9 +184,24 @@ func decodeDatabases(parameters *apiextensionsv1.JSON) ([]string, error) {
 		return nil, fmt.Errorf("decoding the parameters: %w", err)
 	}
 
-	var listed []string
-	if raw, ok := object["databases"]; ok && json.Unmarshal(raw, &listed) != nil {
-		return nil, errors.New("decoding the parameters: spec.parameters.databases is not a list of strings")
+	raw, ok := object["databases"]
+	if !ok {
+		return nil, nil
+	}
+
+	notAList := errors.New("decoding the parameters: spec.parameters.databases is not a list of strings")
+	var items []any
+	if err := json.Unmarshal(raw, &items); err != nil || items == nil {
+		return nil, notAList
+	}
+
+	listed := make([]string, 0, len(items))
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			return nil, notAList
+		}
+		listed = append(listed, s)
 	}
 
 	return listed, nil
