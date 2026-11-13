@@ -273,6 +273,11 @@ function RowsEditor({
   onChange: (value: unknown, errors: ValidationError[]) => void;
 }) {
   const initial = editorValueOf(editor, value ?? undefined);
+  // An edit that clears a Secret key changes value, and the Secret must
+  // stay on offer.
+  const [secrets] = useState(() =>
+    editor.kind === "env" ? secretKeysOf(initial as EnvVar[]) : [],
+  );
   switch (editor.kind) {
     case "keyValue":
       return (
@@ -304,7 +309,7 @@ function RowsEditor({
         <EnvEditor
           label={label}
           // SecretRefPicker drops a reference to a Secret that secrets lack.
-          secrets={secretKeysOf(initial as EnvVar[])}
+          secrets={secrets}
           defaultValue={initial as EnvVar[]}
           onChange={onChange}
         />

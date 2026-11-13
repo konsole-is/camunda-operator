@@ -302,6 +302,32 @@ describe("ParameterField", () => {
     );
   });
 
+  it("keeps offering a Secret of the value after the draft drops it", () => {
+    const rule = editable({ type: "array" }, { name: "extraEnv" });
+    const { rerender } = render(
+      <ParameterField
+        id="p"
+        rule={rule}
+        value={[
+          {
+            name: "DB_PASSWORD",
+            valueFrom: { secretKeyRef: { name: "orders-db", key: "password" } },
+          },
+        ]}
+        onValue={() => {}}
+      />,
+    );
+    rerender(
+      <ParameterField
+        id="p"
+        rule={rule}
+        value={[{ name: "DB_PASSWORD" }]}
+        onValue={() => {}}
+      />,
+    );
+    expect(screen.getByRole("option", { name: "orders-db" })).toBeTruthy();
+  });
+
   it("shows the locked summary of a rule that a claim cannot change", () => {
     render(
       <ParameterField
