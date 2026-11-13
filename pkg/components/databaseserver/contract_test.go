@@ -18,6 +18,7 @@ package databaseserver
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,7 +50,8 @@ func TestPublishedNamesFollowTheCluster(t *testing.T) {
 func TestPITRCapabilityFollowsTheArchive(t *testing.T) {
 	t.Parallel()
 
-	without := pitrCapability(v1.DatabaseServerSpec{}, "")
+	server := archiveServer()
+	without := pitrCapability(server, v1.DatabaseServerSpec{}, "")
 	require.NotNil(t, without)
 	assert.False(t, without.Enabled)
 	assert.Nil(t, without.RetentionPeriodDays)
@@ -58,22 +60,107 @@ func TestPITRCapabilityFollowsTheArchive(t *testing.T) {
 		Archive: &v1.DatabaseServerArchiveSpec{RetentionPeriodDays: 30},
 	}
 
-	with := pitrCapability(archiving, "")
+	// No base backup of the archive has completed, so no restore can reach a
+	// point yet.
+	empty := pitrCapability(server, archiving, "")
+	require.NotNil(t, empty)
+	assert.False(t, empty.Enabled)
+	assert.Nil(t, empty.RetentionPeriodDays)
+	assert.Empty(t, empty.Windows)
+	assert.Equal(t, v1.RecoveryModeExternal, empty.Recovery)
+
+	server.Status.Archive = &v1.DatabaseServerArchiveStatus{
+		History: []v1.ArchiveRecord{{ServerName: "my-cluster-db", From: windowTime(0)}},
+	}
+	with := pitrCapability(server, archiving, "")
 	require.NotNil(t, with)
 	assert.True(t, with.Enabled)
+	assert.Equal(t, v1.RecoveryModeOperator, with.Recovery)
 	require.NotNil(t, with.RetentionPeriodDays)
 	assert.Equal(t, int32(30), *with.RetentionPeriodDays)
 
 	// A server whose ObjectStore another owner holds archives nothing, so it
 	// declares nothing a restore can reach. A capability here sends a restore
 	// to the archive that the other owner writes.
-	taken := pitrCapability(archiving, ArchiveTakenMessage("my-cluster-db", metav1.OwnerReference{
+	taken := pitrCapability(server, archiving, ArchiveTakenMessage("my-cluster-db", metav1.OwnerReference{
 		Kind: "DatabaseServer", Name: "other",
 	}))
 	require.NotNil(t, taken)
 	assert.False(t, taken.Enabled)
 	assert.Nil(t, taken.RetentionPeriodDays)
+	assert.Empty(t, taken.Windows)
 	assert.Equal(t, v1.RecoveryModeExternal, taken.Recovery)
+}
+
+// windowTime is a fixed point plus the given number of hours.
+func windowTime(hours int) metav1.Time {
+	return metav1.NewTime(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(hours) * time.Hour))
+}
+
+// The contract publishes each archive the server wrote as a window, and follows
+// the history as a record gets unverifiedFrom, closes, and opens.
+func TestPITRCapabilityPublishesTheArchiveHistory(t *testing.T) {
+	t.Parallel()
+
+	archiving := v1.DatabaseServerSpec{
+		Archive: &v1.DatabaseServerArchiveSpec{RetentionPeriodDays: 30},
+	}
+	location := "s3://camunda-backups/clusters/databaseserver/my-cluster-ns/a"
+	lag := &metav1.Duration{Duration: ArchiveLag}
+	server := archiveServer()
+	server.Status.Archive = &v1.DatabaseServerArchiveStatus{
+		History: []v1.ArchiveRecord{{ServerName: "my-cluster-db", Location: location, From: windowTime(0)}},
+	}
+
+	assert.Equal(
+		t, []v1.RecoveryWindow{
+			{Location: location, From: windowTime(0), Lag: lag},
+		}, pitrCapability(server, archiving, "").Windows, "an open record is an open window with the archive lag",
+	)
+
+	server.Status.Archive.History[0].UnverifiedFrom = new(windowTime(2))
+	assert.Equal(
+		t, []v1.RecoveryWindow{
+			{Location: location, From: windowTime(0), UnverifiedFrom: new(windowTime(2)), Lag: lag},
+		}, pitrCapability(server, archiving, "").Windows, "unverifiedFrom carries over",
+	)
+
+	server.Status.Archive.History[0].UnverifiedFrom = nil
+	server.Status.Archive.History[0].To = new(windowTime(5))
+	server.Status.Archive.History = append(server.Status.Archive.History, v1.ArchiveRecord{
+		ServerName: recoveredClusterName, Location: location + "-r1", From: windowTime(6),
+	})
+	assert.Equal(
+		t, []v1.RecoveryWindow{
+			{Location: location, From: windowTime(0), To: new(windowTime(5))},
+			{Location: location + "-r1", From: windowTime(6), Lag: lag},
+		}, pitrCapability(server, archiving, "").Windows, "a closed record has no lag, and the new one is open",
+	)
+}
+
+// A contract holds at most 256 windows. A server with a longer history
+// publishes the newest 256 records.
+func TestPITRCapabilityKeepsTheNewestWindows(t *testing.T) {
+	t.Parallel()
+
+	history := make([]v1.ArchiveRecord, 0, 300)
+	for i := range 300 {
+		history = append(history, v1.ArchiveRecord{From: windowTime(2 * i), To: new(windowTime(2*i + 1))})
+	}
+	history[299].To = nil
+	server := archiveServer()
+	server.Status.Archive = &v1.DatabaseServerArchiveStatus{History: history}
+
+	windows := pitrCapability(
+		server, v1.DatabaseServerSpec{
+			Archive: &v1.DatabaseServerArchiveSpec{RetentionPeriodDays: 30},
+		}, "",
+	).Windows
+
+	require.Len(t, windows, 256)
+	assert.Equal(t, windowTime(2*44), windows[0].From)
+	assert.Equal(t, windowTime(2*299), windows[255].From)
+	assert.Nil(t, windows[255].To)
 }
 
 // The contract must not be published before CloudNativePG has written the

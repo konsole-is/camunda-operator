@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -246,6 +247,27 @@ func archiveSpec() *v1.DatabaseServerArchiveSpec {
 	}
 }
 
+// archiveStatus is the archive history of every archive golden case: one
+// archive that the server left, and the one it writes now. The contract
+// publishes both as windows.
+func archiveStatus() *v1.DatabaseServerArchiveStatus {
+	return &v1.DatabaseServerArchiveStatus{
+		History: []v1.ArchiveRecord{
+			{
+				ServerName: "my-cluster-db",
+				Location:   "s3://camunda-backups/clusters/databaseserver/my-cluster-ns/old",
+				From:       metav1.NewTime(time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC)),
+				To:         new(metav1.NewTime(time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC))),
+			},
+			{
+				ServerName: "my-cluster-db",
+				Location:   "s3://camunda-backups/clusters/databaseserver/my-cluster-ns/new",
+				From:       metav1.NewTime(time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)),
+			},
+		},
+	}
+}
+
 // A server whose bucket uses workload identity gets the identity annotation on
 // the ServiceAccount that the operator creates, and an archive Secret that
 // carries the region alone: the plugin reads the region of an S3 bucket from a
@@ -255,6 +277,7 @@ func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
 
 	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
+	server.Status.Archive = archiveStatus()
 	archive := &ArchiveStorage{
 		Config: archiveBucket(v1.S3StorageAuth{
 			Type:             v1.ObjectStorageAuthTypeWorkloadIdentity,
@@ -274,6 +297,7 @@ func TestDatabaseServerGoldenArchiveCredentials(t *testing.T) {
 
 	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
+	server.Status.Archive = archiveStatus()
 	archive := &ArchiveStorage{
 		Config: archiveBucket(v1.S3StorageAuth{
 			Type: v1.ObjectStorageAuthTypeCredentials,
@@ -300,6 +324,7 @@ func TestDatabaseServerGoldenArchiveGCSCredentials(t *testing.T) {
 
 	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
+	server.Status.Archive = archiveStatus()
 	archive := &ArchiveStorage{
 		Config: &v1.ObjectStorageConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: goldenBucketName},
@@ -335,6 +360,7 @@ func TestDatabaseServerGoldenArchiveAzureWorkloadIdentity(t *testing.T) {
 
 	server, preset, release := goldenMinimalDatabaseServer()
 	server.Spec.Archive = archiveSpec()
+	server.Status.Archive = archiveStatus()
 	archive := &ArchiveStorage{
 		Config: &v1.ObjectStorageConfig{
 			ObjectMeta: metav1.ObjectMeta{Name: goldenBucketName},
@@ -373,6 +399,7 @@ func TestDatabaseServerGoldenSuspended(t *testing.T) {
 
 	server := goldenRealisticDatabaseServer()
 	server.Spec.Archive = archiveSpec()
+	server.Status.Archive = archiveStatus()
 	server.Spec.Suspend = true
 	archive := &ArchiveStorage{
 		Config: archiveBucket(v1.S3StorageAuth{
@@ -415,6 +442,8 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 	render := func(suspend bool) (cluster, contract, archived string) {
 		server, preset, release := goldenMinimalDatabaseServer()
 		server.Spec.Archive = archiveSpec()
+		server.Status.Archive = archiveStatus()
+		server.Status.Archive = archiveStatus()
 		server.Spec.Suspend = suspend
 		merged := MergeSpec(server.Spec, preset, release)
 

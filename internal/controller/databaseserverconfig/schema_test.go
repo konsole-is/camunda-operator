@@ -17,6 +17,8 @@ limitations under the License.
 package databaseserverconfig
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -58,6 +60,12 @@ func pitrWithOutcome(mutate func(*v1.RecoveryOutcome)) *v1.PITRCapability {
 		RetentionPeriodDays: new(int32(7)),
 		LastRecovery:        outcome,
 	}
+}
+
+// windowAt is a fixed point plus the given number of hours, for the windows
+// of the schema cases.
+func windowAt(hours int) metav1.Time {
+	return metav1.NewTime(time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC).Add(time.Duration(hours) * time.Hour))
 }
 
 var _ = Describe("DatabaseServerConfig schema", func() {
@@ -127,6 +135,45 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 			func(o *v1.DatabaseServerConfig) {
 				o.Spec.PITR = &v1.PITRCapability{Recovery: v1.RecoveryModeOperator}
 			}, "recovery: operator requires enabled: true",
+		),
+		Entry(
+			"accepts a closed window and an open window with lag", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{
+					Enabled:             true,
+					RetentionPeriodDays: new(int32(7)),
+					Windows: []v1.RecoveryWindow{
+						{From: windowAt(0), To: new(windowAt(2))},
+						{From: windowAt(3), Lag: &metav1.Duration{Duration: 5 * time.Minute}},
+					},
+				}
+			}, "",
+		),
+		Entry(
+			"rejects lag on a closed window", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{
+					Enabled:             true,
+					RetentionPeriodDays: new(int32(7)),
+					Windows: []v1.RecoveryWindow{
+						{From: windowAt(0), To: new(windowAt(2)), Lag: &metav1.Duration{Duration: time.Minute}},
+					},
+				}
+			}, "lag is allowed only on an open window",
+		),
+		Entry(
+			"rejects windows on a server that archives nothing", func(o *v1.DatabaseServerConfig) {
+				o.Spec.PITR = &v1.PITRCapability{Windows: []v1.RecoveryWindow{{From: windowAt(0)}}}
+			}, "windows require enabled: true",
+		),
+		Entry(
+			"rejects more than 256 windows", func(o *v1.DatabaseServerConfig) {
+				windows := make([]v1.RecoveryWindow, 257)
+				for i := range windows {
+					windows[i] = v1.RecoveryWindow{From: windowAt(2 * i), To: new(windowAt(2*i + 1))}
+				}
+				o.Spec.PITR = &v1.PITRCapability{
+					Enabled: true, RetentionPeriodDays: new(int32(7)), Windows: windows,
+				}
+			}, "spec.pitr.windows",
 		),
 		Entry(
 			"rejects an unknown recovery mode", func(o *v1.DatabaseServerConfig) {

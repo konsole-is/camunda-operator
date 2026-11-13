@@ -813,8 +813,9 @@ export interface DatabaseServerStatus {
        */
       serverName: string;
       /**
-       * To is the latest point that a recovery from this archive can reach. It
-       * is unset while the server still writes to this archive.
+       * To is the end of this archive. A recovery from it can reach each point
+       * before To, but not To itself. It is unset while the server still writes
+       * to this archive.
        */
       to?: string;
       /**

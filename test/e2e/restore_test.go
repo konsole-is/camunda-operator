@@ -41,6 +41,7 @@ import (
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
 	components "github.com/konsole-is/camunda-operator/pkg/components/camundacluster"
+	dscomponents "github.com/konsole-is/camunda-operator/pkg/components/databaseserver"
 	"github.com/konsole-is/camunda-operator/pkg/labels"
 	"github.com/konsole-is/camunda-operator/pkg/logicalbackup"
 	"github.com/konsole-is/camunda-operator/pkg/restore"
@@ -822,6 +823,11 @@ func itRunsAPointInTimeRestoreThroughTheDatabaseServer(cluster *v1.CamundaCluste
 		}, pitrBackupCoverage, 10*time.Second).Should(Succeed())
 
 		time.Sleep(pitrClockGap)
+
+		// The contract reaches a point only once it is ArchiveLag old. The
+		// wait is here, before lost, so that the restore is admitted as soon
+		// as it is created and no later backup can carry lost back.
+		time.Sleep(time.Until(at.Add(dscomponents.ArchiveLag)))
 
 		lost = startInstance(cluster)
 		expectInstanceExported(cluster, lost)

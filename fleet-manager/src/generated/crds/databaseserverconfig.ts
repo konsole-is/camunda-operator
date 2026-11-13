@@ -101,13 +101,62 @@ export interface DatabaseServerConfigSpec {
     recovery?: "operator" | "external";
     /**
      * RetentionPeriodDays is how many days into the past a point-in-time
-     * restore can go. Required when enabled is true.
+     * restore can go. It is the declared policy of the server. Windows can
+     * limit a restore more. Required when enabled is true.
      *
      * The maximum is 36500 days, which is a hundred years. A reader counts
      * the reachable window in nanoseconds, and that count overflows at about
      * 292 years. The maximum stays well below that limit.
      */
     retentionPeriodDays?: number;
+    /**
+     * Windows are the intervals of time that a restore can reach, oldest
+     * first. A restore accepts a point only when a window reaches it, also
+     * when the point is inside the retention period. When Windows is unset,
+     * a restore can reach every point of the retention period up to the
+     * present. Windows require enabled: true.
+     *
+     * A DatabaseServer publishes the intervals of its archive here. For a
+     * managed database, one open window is sufficient. It starts when the
+     * database started to keep backups, and its lag is how far the latest
+     * restorable time is behind the present.
+     *
+     * @maxItems 256
+     *
+     * Items: RecoveryWindow is one interval of time that a point-in-time restore of the
+     * server can reach. It has the meanings of ArchiveRecord on a DatabaseServer.
+     */
+    windows?: {
+      /**
+       * From is the earliest point that a restore can reach in this window.
+       */
+      from: string;
+      /**
+       * Lag is how far the end of an open window is behind the present, as a
+       * duration such as 5m. A restore cannot reach a point that is less than
+       * Lag in the past. An open window without a lag reaches the present. You
+       * can set Lag only on an open window.
+       */
+      lag?: string;
+      /**
+       * Location is where the archive of this window is, in the form of
+       * ArchiveRecord.Location of a DatabaseServer. It is information for the
+       * reader. A restore does not read it.
+       */
+      location?: string;
+      /**
+       * To is the end of this window. A restore can reach every point before
+       * To, but not To itself. A point at To is in the next window, if a
+       * window starts there. When To is unset, the window is open: the server
+       * still writes to it, and it continues to the present, less Lag.
+       */
+      to?: string;
+      /**
+       * UnverifiedFrom is the point after which this window can miss parts of
+       * the write-ahead log. A restore cannot reach a point after it.
+       */
+      unverifiedFrom?: string;
+    }[];
   };
   /**
    * Port is the port of the server.

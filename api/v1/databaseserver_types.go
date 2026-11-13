@@ -69,8 +69,9 @@ type DatabaseServerMonitoringSpec struct {
 // DatabaseServerArchiveSpec points a server at the bucket of its continuous
 // archive. The archive holds the write-ahead log of every instance, and the
 // base backups that a recovery starts from. A server with an archive publishes
-// pitr.enabled true on its contract. A server without one publishes false,
-// and no point-in-time restore can reach it.
+// pitr.enabled true on its contract once the first base backup of the archive
+// completes, with the windows of status.archive.history. A server without one
+// publishes false, and no point-in-time restore can reach it.
 //
 // The archive is not the backup model of the operator. BackupSchedule and
 // LogicalBackupRDBMS take logical dumps and never use these base backups.
@@ -333,8 +334,9 @@ type ArchiveRecord struct {
 	// From is the earliest point that a recovery from this archive can reach:
 	// the time when its first base backup completed.
 	From metav1.Time `json:"from"`
-	// To is the latest point that a recovery from this archive can reach. It
-	// is unset while the server still writes to this archive.
+	// To is the end of this archive. A recovery from it can reach each point
+	// before To, but not To itself. It is unset while the server still writes
+	// to this archive.
 	// +optional
 	To *metav1.Time `json:"to,omitempty"`
 	// UnverifiedFrom is the point after which this archive can miss parts of

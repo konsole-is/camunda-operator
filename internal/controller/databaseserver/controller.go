@@ -384,6 +384,10 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A taken ObjectStore writes none for the same reason. The server takes
 	// the archive off the cluster while that name is held, so nothing of this
 	// server reaches the bucket that a record here names.
+	//
+	// The contract applied above publishes the history as this pass read it.
+	// A change here reaches the contract on the next pass, which the status
+	// write of this pass starts.
 	if !resolved.holdArchive && resolved.clusterTaken == "" && resolved.archiveTaken == "" {
 		now := metav1.Now()
 		advanceArchiveFloor(&server, resolved.merged, now)

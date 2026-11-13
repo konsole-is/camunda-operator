@@ -2841,7 +2841,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#archiverecord"
       },
       "status.archive.history.to": {
-        "description": "To is the latest point that a recovery from this archive can reach. It\nis unset while the server still writes to this archive.",
+        "description": "To is the end of this archive. A recovery from it can reach each point\nbefore To, but not To itself. It is unset while the server still writes\nto this archive.",
         "anchor": "#archiverecord"
       },
       "status.archive.history.unverifiedFrom": {
@@ -3031,8 +3031,32 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pitrcapability"
       },
       "spec.pitr.retentionPeriodDays": {
-        "description": "RetentionPeriodDays is how many days into the past a point-in-time\nrestore can go. Required when enabled is true.\n\nThe maximum is 36500 days, which is a hundred years. A reader counts\nthe reachable window in nanoseconds, and that count overflows at about\n292 years. The maximum stays well below that limit.",
+        "description": "RetentionPeriodDays is how many days into the past a point-in-time\nrestore can go. It is the declared policy of the server. Windows can\nlimit a restore more. Required when enabled is true.\n\nThe maximum is 36500 days, which is a hundred years. A reader counts\nthe reachable window in nanoseconds, and that count overflows at about\n292 years. The maximum stays well below that limit.",
         "anchor": "#pitrcapability"
+      },
+      "spec.pitr.windows": {
+        "description": "Windows are the intervals of time that a restore can reach, oldest\nfirst. A restore accepts a point only when a window reaches it, also\nwhen the point is inside the retention period. When Windows is unset,\na restore can reach every point of the retention period up to the\npresent. Windows require enabled: true.\n\nA DatabaseServer publishes the intervals of its archive here. For a\nmanaged database, one open window is sufficient. It starts when the\ndatabase started to keep backups, and its lag is how far the latest\nrestorable time is behind the present.",
+        "anchor": "#pitrcapability"
+      },
+      "spec.pitr.windows.from": {
+        "description": "From is the earliest point that a restore can reach in this window.",
+        "anchor": "#recoverywindow"
+      },
+      "spec.pitr.windows.lag": {
+        "description": "Lag is how far the end of an open window is behind the present, as a\nduration such as 5m. A restore cannot reach a point that is less than\nLag in the past. An open window without a lag reaches the present. You\ncan set Lag only on an open window.",
+        "anchor": "#recoverywindow"
+      },
+      "spec.pitr.windows.location": {
+        "description": "Location is where the archive of this window is, in the form of\nArchiveRecord.Location of a DatabaseServer. It is information for the\nreader. A restore does not read it.",
+        "anchor": "#recoverywindow"
+      },
+      "spec.pitr.windows.to": {
+        "description": "To is the end of this window. A restore can reach every point before\nTo, but not To itself. A point at To is in the next window, if a\nwindow starts there. When To is unset, the window is open: the server\nstill writes to it, and it continues to the present, less Lag.",
+        "anchor": "#recoverywindow"
+      },
+      "spec.pitr.windows.unverifiedFrom": {
+        "description": "UnverifiedFrom is the point after which this window can miss parts of\nthe write-ahead log. A restore cannot reach a point after it.",
+        "anchor": "#recoverywindow"
       },
       "spec.port": {
         "description": "Port is the port of the server.",

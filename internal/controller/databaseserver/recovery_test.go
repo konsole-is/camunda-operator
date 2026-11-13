@@ -2167,6 +2167,15 @@ var _ = Describe("DatabaseServer recovery", func() {
 		makeClusterHealthy(server, "7000000000000000001")
 		expectCondition(server, v1.ConditionContractReady, metav1.ConditionTrue)
 
+		// The server takes a request only from a contract that declares
+		// recovery: operator, and the contract declares it from the first base
+		// backup on. A suspended server applies no contract, so the
+		// declaration has to stand before the suspension.
+		completeBaseBackup(server, "base-1", metav1.NewTime(time.Now().Add(-time.Hour).Truncate(time.Second)))
+		Eventually(func(g Gomega) {
+			g.Expect(publishedContract(g, server).OperatorRecovers()).To(BeTrue())
+		}, timeout, interval).Should(Succeed())
+
 		suspend(server)
 		hibernate(server)
 

@@ -18,6 +18,7 @@ package databaseserver
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -28,11 +29,23 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/databaseserverconfig"
 )
 
+// ArchiveLag is how far the end of the archive that a server writes now is
+// behind the present. CloudNativePG sets archive_timeout to five minutes, and
+// the operator does not change it. Thus PostgreSQL closes a segment of the
+// write-ahead log at least every five minutes while the server writes. The
+// lag gives the upload of that segment one more minute.
+const ArchiveLag = 6 * time.Minute
+
+// maxRecoveryWindows is the maximum of spec.pitr.windows on a
+// DatabaseServerConfig.
+const maxRecoveryWindows = 256
+
 // ContractComponent builds the contract component: the DatabaseServerConfig
 // that the spec names, published in the namespace of the CR. It carries the
 // address of the primary instance, a reference to the superuser Secret that
 // CloudNativePG writes, and the point-in-time-recovery capability that the
-// archive of the server gives it.
+// archive of the server gives it. The windows of that capability are
+// status.archive.history of server as it stands when the component is built.
 //
 // A read-only registration guards the contract on the superuser Secret and
 // blocks while that Secret is absent. A contract that named a Secret before
@@ -95,7 +108,7 @@ func ContractComponent(
 				UsernameKey: SuperuserUsernameKey,
 				PasswordKey: SuperuserPasswordKey,
 			},
-			PITR: pitrCapability(merged, archiveTaken),
+			PITR: pitrCapability(server, merged, archiveTaken),
 		},
 	}).WithGuard(takenGuard[v1.DatabaseServerConfig](contractTaken)).Build()
 	if err != nil {
@@ -113,15 +126,25 @@ func ContractComponent(
 
 // pitrCapability renders the point-in-time-recovery capability the server
 // publishes. A server with an archive declares the retention its bucket
-// enforces, and that the operator rolls it back on request. A server without
-// one declares that no restore can reach it, and that nobody rolls it back.
+// enforces, the windows of its archive history, and that the operator rolls it
+// back on request. A server without one declares that no restore can reach it,
+// and that nobody rolls it back.
+//
+// A server whose archive history is empty declares the same as a server
+// without an archive. No base backup of its archive has completed, so no
+// restore can reach a point yet.
 //
 // A server whose ObjectStore another owner holds declares the same as a server
 // without an archive. It archives nothing while the name is held, and a
 // rollback reads the archive of that ObjectStore, so a capability here sends a
 // restore to the archive of another server.
-func pitrCapability(merged v1.DatabaseServerSpec, archiveTaken string) *v1.PITRCapability {
-	if merged.Archive == nil || archiveTaken != "" {
+func pitrCapability(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, archiveTaken string) *v1.PITRCapability {
+	var history []v1.ArchiveRecord
+	if server.Status.Archive != nil {
+		history = server.Status.Archive.History
+	}
+
+	if merged.Archive == nil || archiveTaken != "" || len(history) == 0 {
 		return &v1.PITRCapability{Enabled: false, Recovery: v1.RecoveryModeExternal}
 	}
 
@@ -129,7 +152,33 @@ func pitrCapability(merged v1.DatabaseServerSpec, archiveTaken string) *v1.PITRC
 		Enabled:             true,
 		RetentionPeriodDays: new(merged.Archive.RetentionPeriodDays),
 		Recovery:            v1.RecoveryModeOperator,
+		Windows:             recoveryWindows(history),
 	}
+}
+
+// recoveryWindows returns the windows that history gives a restore, oldest
+// first. It keeps the newest maxRecoveryWindows records, the most that a
+// contract holds.
+func recoveryWindows(history []v1.ArchiveRecord) []v1.RecoveryWindow {
+	if older := len(history) - maxRecoveryWindows; older > 0 {
+		history = history[older:]
+	}
+
+	windows := make([]v1.RecoveryWindow, 0, len(history))
+	for _, record := range history {
+		window := v1.RecoveryWindow{
+			Location:       record.Location,
+			From:           record.From,
+			To:             record.To.DeepCopy(),
+			UnverifiedFrom: record.UnverifiedFrom.DeepCopy(),
+		}
+		if record.To == nil {
+			window.Lag = &metav1.Duration{Duration: ArchiveLag}
+		}
+		windows = append(windows, window)
+	}
+
+	return windows
 }
 
 // ContractTakenMessage says that a DatabaseServerConfig of the name the merged
