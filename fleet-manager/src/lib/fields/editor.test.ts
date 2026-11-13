@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { fullSchemas } from "@/generated/fieldschema";
+import { type FieldSchema, fullSchemas } from "@/generated/fieldschema";
 import {
   claimValueOf,
   editorOf,
   editorValueOf,
   fieldSchemaFromOpenAPI,
+  parameterEditorOf,
   type SettingEditor,
 } from "./editor";
+import type { OpenAPISchema } from "@/lib/schema";
 import { fieldSchemaOf } from "./schema";
 
 // The overrides properties of the elasticsearch registration, as
@@ -67,17 +69,104 @@ describe("editorOf", () => {
   it("gives no editor to a field without a schema", () => {
     expect(editorOf("connectors.version", undefined)).toBeUndefined();
   });
+});
 
+describe("editorOf with choices", () => {
+  it("picks names from the choices for a list", () => {
+    expect(
+      editorOf(
+        "policies",
+        { type: "array", items: { type: "string" } },
+        { choices: ["sqs", "s3"] },
+      ),
+    ).toEqual({ kind: "choices", options: ["sqs", "s3"] });
+  });
+
+  it.each<[string, FieldSchema | undefined]>([
+    ["a string", { type: "string" }],
+    ["an enum", { type: "string", enum: ["gp3", "io2"] }],
+    ["an object", {}],
+    ["no schema", undefined],
+  ])("picks one name from the choices for %s", (_, schema) => {
+    expect(editorOf("access", schema, { choices: ["publish"] })).toEqual({
+      kind: "select",
+      options: ["publish"],
+    });
+  });
+
+  it("takes the choices before the name of the field", () => {
+    expect(
+      editorOf("resources", { type: "object" }, { choices: ["small"] }),
+    ).toEqual({ kind: "select", options: ["small"] });
+  });
+});
+
+describe("parameterEditorOf", () => {
   it.each<[string, SettingEditor]>([
     ["replicas", { kind: "number", integer: true, minimum: 1 }],
     ["storageSize", { kind: "storageSize" }],
     ["resources", { kind: "resources" }],
-    ["scheduling", { kind: "yaml" }],
+    ["scheduling", { kind: "yaml", schema: OVERRIDES.scheduling as OpenAPISchema }],
     ["podLabels", { kind: "keyValue", format: "label" }],
   ])("reads the registration schema of the override %s", (name, editor) => {
-    expect(editorOf(name, fieldSchemaFromOpenAPI(OVERRIDES[name]))).toEqual(
-      editor,
-    );
+    expect(parameterEditorOf(name, OVERRIDES[name])).toEqual(editor);
+  });
+
+  it("gives a map of strings key and value rows", () => {
+    expect(
+      parameterEditorOf("tags", {
+        type: "object",
+        additionalProperties: { type: "string" },
+      }),
+    ).toEqual({ kind: "keyValue" });
+  });
+
+  it("checks YAML of an object against the whole registration schema", () => {
+    const schema = {
+      type: "object",
+      properties: { instances: { type: "integer", minimum: 1 } },
+    };
+    expect(parameterEditorOf("overrides", schema)).toEqual({
+      kind: "yaml",
+      schema,
+    });
+  });
+
+  it("checks YAML of a list against the whole registration schema", () => {
+    const schema = {
+      type: "array",
+      maxItems: 10,
+      items: { type: "string", pattern: "^arn:" },
+    };
+    expect(parameterEditorOf("managedPolicyArns", schema)).toEqual({
+      kind: "yaml",
+      schema,
+    });
+  });
+
+  it("edits a parameter whose schema has no type as YAML", () => {
+    expect(parameterEditorOf("free", {})).toEqual({ kind: "yaml", schema: {} });
+  });
+
+  it("keeps the CRD schema of a field that the YAML editor knows by name", () => {
+    expect(parameterEditorOf("extraEnvFrom", { type: "array" })).toEqual({
+      kind: "yaml",
+      schema: fullSchemas.extraEnvFrom,
+    });
+  });
+
+  it("gives no editor to a parameter without a schema", () => {
+    expect(parameterEditorOf("free", undefined)).toBeUndefined();
+  });
+
+  it("picks from the choices whatever the schema", () => {
+    expect(
+      parameterEditorOf("policies", { type: "array" }, ["sqs", "s3"]),
+    ).toEqual({ kind: "choices", options: ["sqs", "s3"] });
+    expect(parameterEditorOf("preset", undefined, ["small"])).toEqual({
+      kind: "select",
+      options: ["small"],
+    });
   });
 });
 

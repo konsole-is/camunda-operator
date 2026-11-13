@@ -17,23 +17,34 @@ export type SettingEditor =
   | { kind: "secretRef" }
   | { kind: "yaml"; schema?: OpenAPISchema };
 
+/** SchemaEditor is an editor that a schema picks: any but a Secret reference. */
+export type SchemaEditor = Exclude<SettingEditor, { kind: "secretRef" }>;
+
 /**
  * editorOf returns the editor of the field at path with schema, or
- * undefined when the field has no schema. The first rule that holds wins:
+ * undefined when the field has neither a schema nor choices. choices are
+ * names that the field takes in place of its values. openAPI is the
+ * schema that schema comes from. The first rule that holds wins:
  *
- *  1. By the last name of path: resources, storageSize, extraEnv
+ *  1. With choices: a pick of names for an array, else a select of one.
+ *  2. By the last name of path: resources, storageSize, extraEnv
  *     (environment variables), and tolerations.
- *  2. A field of fullSchemaOf: YAML checked against that schema.
- *  3. An enum: a select of its values. A boolean: a toggle. An integer or a
+ *  3. A field of fullSchemaOf: YAML checked against that schema.
+ *  4. An enum: a select of its values. A boolean: a toggle. An integer or a
  *     number: a number in its range. A string or an int-or-string: text.
- *  4. An object: a map of strings, with label rules for podLabels.
- *  5. Anything else: YAML, checked against the type of the schema when it
- *     has one.
+ *  5. An object: a map of strings, with label rules for podLabels.
+ *  6. Anything else: YAML, checked against openAPI, else against the type
+ *     of the schema when it has one.
  */
 export function editorOf(
   path: string,
   schema: FieldSchema | undefined,
-): SettingEditor | undefined {
+  { choices, openAPI }: { choices?: readonly string[]; openAPI?: OpenAPISchema } = {},
+): SchemaEditor | undefined {
+  if (choices)
+    return schema?.type === "array"
+      ? { kind: "choices", options: choices }
+      : { kind: "select", options: choices };
   const last = path.slice(path.lastIndexOf(".") + 1);
   const byName = BY_NAME[last];
   if (byName) return byName;
@@ -54,11 +65,29 @@ export function editorOf(
     return last === "podLabels"
       ? { kind: "keyValue", format: "label" }
       : { kind: "keyValue" };
+  if (openAPI) return { kind: "yaml", schema: openAPI };
   if (schema.type === undefined) return { kind: "yaml" };
   return { kind: "yaml", schema: openAPIOf(schema) };
 }
 
-const BY_NAME: Partial<Record<string, SettingEditor>> = {
+/**
+ * parameterEditorOf returns the editor of the parameter name of a
+ * registration, with schema its property schema, or undefined when it has
+ * neither a schema nor choices. choices are the names that the claim
+ * stores in place of the values.
+ */
+export function parameterEditorOf(
+  name: string,
+  schema: unknown,
+  choices?: readonly string[],
+): SchemaEditor | undefined {
+  return editorOf(name, fieldSchemaFromOpenAPI(schema), {
+    ...(choices && { choices }),
+    ...(isObject(schema) && { openAPI: schema as OpenAPISchema }),
+  });
+}
+
+const BY_NAME: Partial<Record<string, SchemaEditor>> = {
   resources: { kind: "resources" },
   storageSize: { kind: "storageSize" },
   extraEnv: { kind: "env" },

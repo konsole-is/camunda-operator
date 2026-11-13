@@ -189,6 +189,20 @@ describe("SelectionSettingsEditor", () => {
     ]);
   });
 
+  it("checks a YAML part against its registration schema", async () => {
+    const invalid = vi.fn();
+    const { set } = renderEditor({ invalid });
+    await userEvent.type(
+      within(settingRow("overrides.scheduling")).getByRole("textbox"),
+      "- a",
+    );
+    expect(set).not.toHaveBeenCalled();
+    expect(invalid).toHaveBeenLastCalledWith(
+      [...overridesSteps, { field: "scheduling" }],
+      expect.stringMatching(/^overrides\.scheduling: /),
+    );
+  });
+
   it("a parameter resets to the environment", async () => {
     const { reset } = renderEditor();
     const replicas = settingRow("overrides.replicas");

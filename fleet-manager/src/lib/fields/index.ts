@@ -9,6 +9,8 @@ export {
   editorOf,
   editorValueOf,
   fieldSchemaFromOpenAPI,
+  parameterEditorOf,
+  type SchemaEditor,
   type SettingEditor,
 } from "./editor";
 export { lockLabel, stateLabel, stateNote } from "./labels";

@@ -7,9 +7,9 @@ import {
   editorOf,
   type FieldLock,
   type FieldState,
-  fieldSchemaFromOpenAPI,
   fieldSchemaOf,
   optimizeClaimNames,
+  parameterEditorOf,
   type SchemaRoot,
   type SettingEditor,
   type Step,
@@ -208,15 +208,18 @@ export function selectionSettingsOf(
       ? properties[name]
       : undefined;
     if (options) {
-      const own = fieldSchemaFromOpenAPI(property);
-      const list = own ? own.type === "array" : Array.isArray(field.value);
-      const editor = { kind: list ? "choices" : "select", options } as const;
+      // Without a schema, the value tells whether the parameter is a list.
+      const editor = parameterEditorOf(
+        name,
+        property ?? (Array.isArray(field.value) ? { type: "array" } : {}),
+        options,
+      );
       return [{ ...base, editor, steps: field.claimSteps }];
     }
     const inner = propertiesOf(property);
     if (Object.keys(inner).length > 0)
       return Object.entries(inner).map(([part, partSchema]) => {
-        const editor = editorOf(part, fieldSchemaFromOpenAPI(partSchema));
+        const editor = parameterEditorOf(part, partSchema);
         return {
           ...base,
           key: `${field.key}.${part}`,
@@ -230,7 +233,7 @@ export function selectionSettingsOf(
           }),
         };
       });
-    const editor = editorOf(name, fieldSchemaFromOpenAPI(property));
+    const editor = parameterEditorOf(name, property);
     return [{ ...base, ...(editor && { editor, steps: field.claimSteps }) }];
   });
 }
