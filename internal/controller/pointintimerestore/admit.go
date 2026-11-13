@@ -500,12 +500,7 @@ func (r *Reconciler) resolveFailed(
 
 // pitrAvailable reports why the server cannot serve the requested point at
 // now, or nil when it can. The DatabaseServerConfig is the capability
-// declaration of the server. This operator never restores the server itself,
-// and it never uses the admin credentials of the contract.
-//
-// A contract that declares windows serves only a point that one of them
-// reaches. A contract without windows serves every point of its retention
-// period up to now.
+// declaration of the server.
 func pitrAvailable(server *v1.DatabaseServerConfig, want, now time.Time) *conditions.PreCheckFailure {
 	pitr := server.Spec.PITR
 	if pitr == nil || !pitr.Enabled {

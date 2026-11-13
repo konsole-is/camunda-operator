@@ -44,7 +44,7 @@ const maxRecoveryWindows = 256
 // that the spec names, published in the namespace of the CR. It carries the
 // address of the primary instance, a reference to the superuser Secret that
 // CloudNativePG writes, and the point-in-time-recovery capability that the
-// archive of the server gives it. The windows of that capability are
+// archive of the server gives it. The windows of that capability come from
 // status.archive.history of server as it stands when the component is built.
 //
 // A read-only registration guards the contract on the superuser Secret and
@@ -70,8 +70,8 @@ const maxRecoveryWindows = 256
 //
 // The withdrawn message is the ClusterTaken message when the contract must go
 // because a CloudNativePG cluster of the name the server derives is not this
-// server's, and empty otherwise. When it is set, the feature gate is off and
-// the framework removes the published contract, because the contract names the
+// server's, and empty otherwise. When it is set, the framework removes the
+// contract that this server published, because the contract names the
 // endpoint and the superuser Secret of a database this server does not own. A
 // consumer then reads InvalidReference instead of the endpoint of another
 // database. A contract the server never published is not removed by that gate,
@@ -126,13 +126,12 @@ func ContractComponent(
 
 // pitrCapability renders the point-in-time-recovery capability the server
 // publishes. A server with an archive declares the retention its bucket
-// enforces, the windows of its archive history, and that the operator rolls it
+// enforces, windows from its archive history, and that the operator rolls it
 // back on request. A server without one declares that no restore can reach it,
 // and that nobody rolls it back.
 //
 // A server whose archive history is empty declares the same as a server
-// without an archive. No base backup of its archive has completed, so no
-// restore can reach a point yet.
+// without an archive.
 //
 // A server whose ObjectStore another owner holds declares the same as a server
 // without an archive. It archives nothing while the name is held, and a
@@ -144,6 +143,8 @@ func pitrCapability(server *v1.DatabaseServer, merged v1.DatabaseServerSpec, arc
 		history = server.Status.Archive.History
 	}
 
+	// While the history is empty, the server refuses every recovery request,
+	// so no restore can reach a point yet.
 	if merged.Archive == nil || archiveTaken != "" || len(history) == 0 {
 		return &v1.PITRCapability{Enabled: false, Recovery: v1.RecoveryModeExternal}
 	}
