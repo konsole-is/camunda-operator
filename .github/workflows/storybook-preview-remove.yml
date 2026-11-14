@@ -33,7 +33,6 @@ jobs:
       queue: max
     env:
       PR: ${{ github.event.pull_request.number }}
-      SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       # The pull request can reopen while this job waits in the gh-pages
       # queue, or before a re-run of this job.
@@ -97,7 +96,7 @@ jobs:
             exit 0
           fi
           url="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/pr-preview/pr-${PR}/"
-          body=$(node src/fleet-manager/scripts/storybook-preview.mts comment removed "${url}" "${SHA}")
+          body=$(node src/fleet-manager/scripts/storybook-preview.mts comment removed "${url}")
           gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${ids%%$'\n'*}" -f body="${body}" > /dev/null
 
   sweep:

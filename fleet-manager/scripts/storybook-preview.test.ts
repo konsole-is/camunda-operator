@@ -240,6 +240,12 @@ describe("previewComment", () => {
     expect(body).toMatch(/removed/);
     expect(body).not.toContain(`](${url})`);
   });
+
+  it("names no commit after the pull request closed", () => {
+    const body = previewComment("removed", url, sha);
+
+    expect(body).not.toContain("0123456");
+  });
 });
 
 describe("the command line", () => {

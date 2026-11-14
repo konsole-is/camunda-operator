@@ -6,7 +6,8 @@
 //   node scripts/storybook-preview.mts place <site> <from> <folder>
 //   node scripts/storybook-preview.mts remove <site> <folder>
 //   node scripts/storybook-preview.mts stale <site> [<open pull request number>...]
-//   node scripts/storybook-preview.mts comment published|removed <url> <sha>
+//   node scripts/storybook-preview.mts comment published <url> <sha>
+//   node scripts/storybook-preview.mts comment removed <url>
 import fs from "node:fs";
 import path from "node:path";
 
@@ -93,25 +94,25 @@ export function stalePreviews(
 
 /**
  * previewComment returns the body of the preview comment. It starts with
- * PREVIEW_MARKER and names the commit by its short SHA.
+ * PREVIEW_MARKER. A published comment names the commit by its short SHA. A
+ * removed comment names no commit and ignores sha.
  */
 export function previewComment(
   state: "published" | "removed",
   url: string,
   sha: string,
 ): string {
-  const commit = sha.slice(0, 7);
   if (state === "published") {
     return `${PREVIEW_MARKER}
 **Storybook preview:** [${url}](${url})
 
-Built from ${commit}. Each push to this pull request replaces the preview. After a push, GitHub Pages can take a minute to show the new build.
+Built from ${sha.slice(0, 7)}. Each push to this pull request replaces the preview. After a push, GitHub Pages can take a minute to show the new build.
 `;
   }
   return `${PREVIEW_MARKER}
 **Storybook preview:** removed
 
-The pull request closed, so the workflow removed its Storybook preview. The last preview was built from ${commit}.
+The pull request closed, so the workflow removed its Storybook preview.
 `;
 }
 
