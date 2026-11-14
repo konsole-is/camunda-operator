@@ -1,9 +1,5 @@
-import type { Story } from "@/gallery/registry";
 import { CLAIM_LABEL, ENVIRONMENT_LABEL } from "@/lib/labels";
-import { NotAttachedChip } from "./not-attached-chip";
 import { type PlaneSources, planesOf } from "./plane";
-import { PlaneList } from "./plane-list";
-import { PlanesTable } from "./planes-table";
 
 function cluster(
   name: string,
@@ -37,7 +33,8 @@ function claim(
   } as never;
 }
 
-const notAttached = [
+/** notAttached are two clusters that the plane production cannot serve. */
+export const notAttached = [
   {
     namespace: "team-billing",
     name: "billing",
@@ -151,27 +148,8 @@ const sources: PlaneSources = {
   ),
 };
 
-const planes = planesOf(sources);
-
-export const planesStories: Story[] = [
-  {
-    component: "PlaneList",
-    name: "Mixed planes",
-    render: () => <PlaneList planes={planes} />,
-  },
-  {
-    component: "PlaneList",
-    name: "No planes",
-    render: () => <PlaneList planes={[]} />,
-  },
-  {
-    component: "PlanesTable",
-    name: "Planes of production",
-    render: () => <PlanesTable planes={planes} environment="production" />,
-  },
-  {
-    component: "NotAttachedChip",
-    name: "Open",
-    render: () => <NotAttachedChip clusters={notAttached} defaultOpen />,
-  },
-];
+/**
+ * planes holds five planes: ready, not ready, in OIDC mode, one with no
+ * claim, and one claim with no CamundaManagementCluster yet.
+ */
+export const planes = planesOf(sources);

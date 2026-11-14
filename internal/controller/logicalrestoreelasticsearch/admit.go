@@ -79,8 +79,10 @@ type resolution struct {
 // what the restore reads, the backup id and the identity of the target, then
 // claims the cluster and carries it to the state the restore needs:
 // suspended, its brokers stopped, and running the Camunda version of the
-// backup. From then on the restore never returns here, and a reference that
-// breaks runs through the mid-run grace of its phase instead.
+// backup. It fails the restore, and leaves the cluster as it was, when the
+// cluster refuses to move to that version. From then on the restore never
+// returns here, and a reference that breaks runs through the mid-run grace of
+// its phase instead.
 func (r *Reconciler) admit(
 	ctx context.Context,
 	lres *v1.LogicalRestoreElasticsearch,
@@ -163,6 +165,11 @@ func (r *Reconciler) admit(
 	)
 	if err != nil {
 		return restore.Outcome{}, err
+	}
+	if prepared.Failure != nil && prepared.Failure.Reason == v1.ReasonIncompatibleTarget {
+		r.fail(lres, prepared.Failure.Reason, prepared.Failure.Message)
+
+		return restore.Outcome{}, nil
 	}
 	if prepared.Failure != nil {
 		return r.waiting(lres, prepared.Failure), nil

@@ -94,6 +94,20 @@ describe("the Storybook stories", () => {
       "GitLayoutPreview",
       "MetricsServerLine",
       "PermissionsTable",
+      "FleetView",
+      "AttentionPanel",
+      "ComponentDots",
+      "ClusterTable",
+      "PlaneList",
+      "PlanesTable",
+      "NotAttachedChip",
+      "PlaneCreateFlow",
+      "EnvironmentList",
+      "EnvironmentEditor",
+      "SectionsTable",
+      "OptionSettings",
+      "TemplatePreview",
+      "ImpactLine",
     ]) {
       expect(components).toContain(name);
     }

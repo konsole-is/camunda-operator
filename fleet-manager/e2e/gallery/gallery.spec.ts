@@ -31,7 +31,9 @@ for (const width of WIDTHS) {
           name: a.getAttribute("data-story-name") ?? "",
         })),
       );
-    expect(stories.length).toBeGreaterThan(0);
+    await expect(
+      page.getByRole("heading", { name: "Component gallery" }),
+    ).toBeVisible();
     // Each story costs a page load, an axe run, and a screenshot.
     test.setTimeout(Math.max(300_000, stories.length * 10_000));
 
