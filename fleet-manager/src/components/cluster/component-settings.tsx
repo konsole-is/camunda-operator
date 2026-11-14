@@ -1,5 +1,9 @@
 import { FieldHelp } from "@/components/fleet/field-help";
-import { FieldState, FieldValue } from "@/components/fleet/field-state";
+import {
+  FIELD_TABLE,
+  FieldState,
+  FieldValue,
+} from "@/components/fleet/field-state";
 import {
   TableBody,
   TableHead,
@@ -9,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import type { FieldDoc } from "@/generated/fielddocs";
 import type { ClusterField } from "@/lib/fields";
+import { cn } from "@/lib/utils";
 import { claimFieldHref, type SettingsGroup } from "./settings";
 
 /**
@@ -49,18 +54,23 @@ export function ComponentSettings({
                 className="w-full text-sm"
               >
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className={FIELD_TABLE.row}>
                     <TableHead>Field</TableHead>
                     <TableHead>Value</TableHead>
-                    <TableHead>State</TableHead>
+                    <TableHead className={FIELD_TABLE.stateHead}>
+                      State
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {group.fields.map((field) => (
-                    <TableRow key={field.key}>
+                    <TableRow key={field.key} className={FIELD_TABLE.row}>
                       <th
                         scope="row"
-                        className="px-2 py-2 text-left align-top font-normal"
+                        className={cn(
+                          "px-2 py-2 text-left align-top font-normal",
+                          FIELD_TABLE.field,
+                        )}
                       >
                         <span className="inline-flex items-center gap-1">
                           <code className="text-text break-words">
@@ -73,10 +83,20 @@ export function ComponentSettings({
                           />
                         </span>
                       </th>
-                      <TableCell className="max-w-80 align-top break-words whitespace-normal">
+                      <TableCell
+                        className={cn(
+                          "max-w-80 align-top break-words whitespace-normal",
+                          FIELD_TABLE.value,
+                        )}
+                      >
                         <FieldValue value={field.value} />
                       </TableCell>
-                      <TableCell className="align-top whitespace-normal">
+                      <TableCell
+                        className={cn(
+                          "align-top whitespace-normal",
+                          FIELD_TABLE.state,
+                        )}
+                      >
                         <FieldState
                           field={field}
                           claimHref={claimHrefOf(field, cluster)}

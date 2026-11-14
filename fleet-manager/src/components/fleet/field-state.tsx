@@ -7,6 +7,19 @@ import {
   stateNote,
 } from "@/lib/fields";
 
+/**
+ * FIELD_TABLE holds the classes of a table with a field, its value, and its
+ * state in each row. Below 640 px a row shows the state under the value, and
+ * the head hides the State column.
+ */
+export const FIELD_TABLE = {
+  row: "max-sm:grid max-sm:grid-cols-2",
+  field: "max-sm:row-span-2 max-sm:[&_code]:[overflow-wrap:anywhere]",
+  value: "max-sm:pb-0",
+  state: "max-sm:col-start-2",
+  stateHead: "max-sm:hidden",
+};
+
 /** FieldValue shows the value of a ClusterField, or Not set when it has none. */
 export function FieldValue({ value }: { value: unknown }) {
   if (value === undefined) return <span className="text-muted">Not set</span>;

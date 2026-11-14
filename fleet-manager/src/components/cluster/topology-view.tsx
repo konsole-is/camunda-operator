@@ -58,7 +58,7 @@ export function TopologyBoxes({
   return (
     <ul
       aria-label={label}
-      className="grid gap-3 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]"
     >
       {boxes.map((box) => {
         const mark = marks?.[box.process];
