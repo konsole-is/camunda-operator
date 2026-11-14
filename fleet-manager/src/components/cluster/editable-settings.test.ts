@@ -114,12 +114,13 @@ describe("settingsOf", () => {
   });
 
   it("a value that the editor of a field cannot keep opens as YAML", () => {
+    const toleration = { key: "spot", operator: "Exists", extra: true };
     const tolerations = setting(
       processSettings("zeebe", "zeebe", {
         preset: {
           zeebe: {
             scheduling: {
-              tolerations: [{ key: "spot", operator: "Exists", extra: true }],
+              tolerations: [toleration],
             },
           },
         },
