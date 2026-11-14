@@ -239,9 +239,15 @@ describe("design tokens", () => {
         barSelectedColor: value("--accent"),
         barHoverColor: value("--accent-hover"),
         inputBg: value("--panel"),
-        inputBorder: value("--border"),
         inputTextColor: value("--text"),
       });
     },
   );
+
+  it("gives an input of the light Storybook theme an edge of at least 3:1", () => {
+    const { inputBorder, inputBg, appContentBg } = themes.light;
+    expect(inputBorder).toBe(tokenValue("--faint", "light")?.toLowerCase());
+    expect(contrast(inputBorder, inputBg)).toBeGreaterThanOrEqual(3);
+    expect(contrast(inputBorder, appContentBg)).toBeGreaterThanOrEqual(3);
+  });
 });

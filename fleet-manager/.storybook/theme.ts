@@ -27,7 +27,7 @@ const light = create({
   barHoverColor: "#963808",
   barSelectedColor: "#b5440b",
   inputBg: "#ffffff",
-  inputBorder: "#d3d9e8",
+  inputBorder: "#59637d",
   inputTextColor: "#0d1430",
 });
 
