@@ -1,0 +1,31 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./jsx-runtime-CndCZlyt.js";import{a as n,i as r,n as i,o as a,r as o,s,t as c}from"./table-DGxvrdAu.js";import{a as l,n as u,t as d}from"./topology-PI2JSrmt.js";function f(e){let{cluster:t,spec:n,optimizes:r,accessOutputs:i}=e,a=l(n,[]),o=e=>{let t=h[e];if(!t)return;let n=a.find(e=>e.process===t);if(n)return{label:n.label,embedded:!1};let r=a.find(e=>e.embedded.some(e=>e.process===t));return r?{label:r.label,embedded:!0}:{label:d[t],embedded:!1}},s=t.spec.externalUrl?.replace(/\/+$/,``)||void 0,c=(t.status?.endpoints??[]).map(e=>({key:`CamundaCluster/${e.name}`,owner:`CamundaCluster`,name:e.name,url:e.protocol===`GRPC`?i?.[m]:s===void 0?void 0:`${s}${e.pathPrefix??``}`,service:e.service,port:e.port,protocol:e.protocol,servedBy:o(e.name)})),u=t.metadata?.name,f=r.filter(e=>e.spec.clusterRef.name===u).flatMap(e=>{let t=p(e.spec.externalUrl);return(e.status?.endpoints??[]).map(n=>({key:`CamundaOptimize/${e.metadata?.name}/${n.name}`,owner:`CamundaOptimize`,name:n.name,url:t===void 0?void 0:`${t}${n.pathPrefix??``}`,service:n.service,port:n.port,protocol:n.protocol,servedBy:{label:`Optimize`,embedded:!1}}))});return[...c,...f]}function p(e){if(e!==void 0)try{return new URL(e).origin}catch{return}}var m,h;function g(){return(g=e((()=>{u(),m=`grpcHost`,h={default:`gateway`,rest:`gateway`,grpc:`gateway`,operate:`operate`,tasklist:`tasklist`,admin:`admin`,connectors:`connectors`}})))()}function _({rows:e}){return(0,y.jsxs)(`section`,{"aria-label":`Endpoints`,className:`flex flex-col gap-3 rounded-lg border border-border bg-panel p-4`,children:[(0,y.jsx)(`h2`,{className:`font-heading text-base font-semibold`,children:`Endpoints`}),e.length===0?(0,y.jsx)(`p`,{className:`text-sm text-muted`,children:`This cluster reports no endpoints yet.`}):(0,y.jsxs)(c,{label:`Endpoints table`,"aria-label":`Endpoints`,children:[(0,y.jsx)(n,{children:(0,y.jsxs)(a,{children:[(0,y.jsx)(r,{children:`Name`}),(0,y.jsx)(r,{children:`Public URL`}),(0,y.jsx)(r,{children:`Service`}),(0,y.jsx)(r,{children:`Protocol`}),(0,y.jsx)(r,{children:`Served by`})]})}),(0,y.jsx)(i,{children:e.map(e=>(0,y.jsxs)(a,{children:[(0,y.jsx)(`th`,{scope:`row`,className:`px-2 py-2 text-left font-medium whitespace-nowrap text-text`,children:e.name}),(0,y.jsx)(o,{className:`break-all whitespace-normal`,children:(0,y.jsx)(v,{row:e})}),(0,y.jsx)(o,{children:(0,y.jsxs)(`code`,{className:`text-xs text-text-2`,children:[e.service,`:`,e.port]})}),(0,y.jsx)(o,{className:`text-text-2`,children:e.protocol}),(0,y.jsx)(o,{className:`text-text-2`,children:e.servedBy?(0,y.jsxs)(y.Fragment,{children:[(0,y.jsx)(`span`,{children:e.servedBy.label}),e.servedBy.embedded&&(0,y.jsx)(`span`,{className:`ml-1 text-muted`,children:`(embedded)`})]}):`-`})]},e.key))})]})]})}function v({row:e}){return e.url===void 0?(0,y.jsx)(`span`,{className:`text-muted`,children:`No external URL`}):/^https?:\/\//.test(e.url)?(0,y.jsx)(`a`,{href:e.url,target:`_blank`,rel:`noreferrer`,className:`text-info underline-offset-4 hover:underline`,children:e.url}):(0,y.jsx)(`code`,{className:`text-xs text-text`,children:e.url})}var y;function b(){return(b=e((()=>{y=t(),s(),_.__docgenInfo={description:`EndpointsTab is the content of the Endpoints tab: one row for each route.`,methods:[],displayName:`EndpointsTab`,props:{rows:{required:!0,tsType:{name:`Array`,elements:[{name:`signature`,type:`object`,raw:`{
+  key: string;
+  owner: "CamundaCluster" | "CamundaOptimize";
+  name: string;
+  url?: string;
+  service: string;
+  port: number;
+  protocol: "HTTP" | "GRPC";
+  servedBy?: { label: string; embedded: boolean };
+}`,signature:{properties:[{key:`key`,value:{name:`string`,required:!0}},{key:`owner`,value:{name:`union`,raw:`"CamundaCluster" | "CamundaOptimize"`,elements:[{name:`literal`,value:`"CamundaCluster"`},{name:`literal`,value:`"CamundaOptimize"`}],required:!0}},{key:`name`,value:{name:`string`,required:!0}},{key:`url`,value:{name:`string`,required:!1}},{key:`service`,value:{name:`string`,required:!0}},{key:`port`,value:{name:`number`,required:!0}},{key:`protocol`,value:{name:`union`,raw:`"HTTP" | "GRPC"`,elements:[{name:`literal`,value:`"HTTP"`},{name:`literal`,value:`"GRPC"`}],required:!0}},{key:`servedBy`,value:{name:`signature`,type:`object`,raw:`{ label: string; embedded: boolean }`,signature:{properties:[{key:`label`,value:{name:`string`,required:!0}},{key:`embedded`,value:{name:`boolean`,required:!0}}]},required:!1}}]}}],raw:`EndpointRow[]`},description:``}}}})))()}var x,S,C,w,T,E,D;function O(){return(O=e((()=>{g(),b(),x=(e,t,n=`orders-gateway`)=>({name:e,pathPrefix:t,port:8080,protocol:`HTTP`,service:n}),S={kind:`CamundaCluster`,metadata:{namespace:`team-a`,name:`orders`},spec:{presetRef:`medium`,externalUrl:`https://orders.example.com`},status:{endpoints:[x(`admin`,`/admin`),x(`connectors`,`/inbound`,`orders-connectors`),x(`default`,`/`),{name:`grpc`,port:26500,protocol:`GRPC`,service:`orders-gateway`},x(`operate`,`/operate`),x(`rest`,`/v2`),x(`tasklist`,`/tasklist`)]}},C={kind:`CamundaOptimize`,metadata:{namespace:`team-a`,name:`orders-optimize`},spec:{clusterRef:{name:`orders`},externalUrl:`https://orders.example.com/optimize`},status:{endpoints:[x(`optimize`,`/optimize`,`orders-optimize-webapp`)]}},w={title:`cluster/EndpointsTab`,component:_},T={name:`Embedded apps and an Optimize`,args:{rows:f({cluster:S,spec:{connectors:{enabled:!0}},optimizes:[C],accessOutputs:{grpcHost:`grpc.orders.example.com:443`}})}},E={name:`No endpoints yet`,args:{rows:[]}},D=[`EmbeddedAppsAndAnOptimize`,`NoEndpointsYet`],T.parameters={...T.parameters,docs:{...T.parameters?.docs,source:{originalSource:`{
+  name: "Embedded apps and an Optimize",
+  args: {
+    rows: endpointRows({
+      cluster,
+      spec: {
+        connectors: {
+          enabled: true
+        }
+      } as CamundaClusterSpec,
+      optimizes: [optimize],
+      accessOutputs: {
+        grpcHost: "grpc.orders.example.com:443"
+      }
+    })
+  }
+}`,...T.parameters?.docs?.source}}},E.parameters={...E.parameters,docs:{...E.parameters?.docs,source:{originalSource:`{
+  name: "No endpoints yet",
+  args: {
+    rows: []
+  }
+}`,...E.parameters?.docs?.source}}}})))()}O();export{T as EmbeddedAppsAndAnOptimize,E as NoEndpointsYet,D as __namedExportsOrder,w as default};
