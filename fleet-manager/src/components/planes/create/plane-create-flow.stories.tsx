@@ -674,6 +674,7 @@ export const ReviewInGitMode: Story = {
 
 export const ProgressWithEveryRowPending: Story = {
   name: "Progress with every row pending",
+  parameters: { controls: { disable: true } },
   render: () => (
     <PlaneProgressView
       name="plane-a"
@@ -684,6 +685,7 @@ export const ProgressWithEveryRowPending: Story = {
 
 export const ProgressWithTheDatabasesReady: Story = {
   name: "Progress with the databases ready",
+  parameters: { controls: { disable: true } },
   render: () => (
     <PlaneProgressView
       name="plane-a"

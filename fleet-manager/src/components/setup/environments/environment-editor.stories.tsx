@@ -59,8 +59,15 @@ const meta = {
     },
   },
   // The editor keeps the draft of the Environment that it opened with, so a
-  // new name from the Controls panel remounts it.
-  render: (args) => <EnvironmentEditor key={args.name} {...args} />,
+  // change of that Environment from the Controls panel remounts it.
+  render: (args) => (
+    <EnvironmentEditor
+      key={`${args.name}:${JSON.stringify(
+        args.sources.environments.find((e) => e.metadata.name === args.name),
+      )}`}
+      {...args}
+    />
+  ),
 } satisfies Meta<typeof EnvironmentEditor>;
 export default meta;
 type Story = StoryObj<typeof meta>;
