@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "name": "A selection that leaves out a claim-editable key passes",
+  "input": {
+    "environment": {
+      "metadata": {
+        "name": "dev"
+      },
+      "spec": {}
+    },
+    "policy": {
+      "sections": {
+        "backup-storage": {
+          "allowed": [
+            "s3"
+          ]
+        }
+      },
+      "parameters": {
+        "s3": {
+          "bucket": {
+            "claimEditable": true,
+            "value": "team-backups"
+          }
+        }
+      },
+      "deletionPolicy": "Delete"
+    },
+    "selections": [
+      {
+        "section": "backup-storage",
+        "registration": "s3"
+      }
+    ]
+  },
+  "result": {
+    "value": {}
+  }
+}

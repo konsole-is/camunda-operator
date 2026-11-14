@@ -192,9 +192,9 @@ export function valueErrors(
 
 /**
  * ValueProblem is why a value of a claim-editable parameter does not pass:
- * a required parameter without a value, a refusal of the names of its
- * choices, a count of names outside the schema, or the errors of the
- * schema.
+ * a required parameter that neither the value nor the policy gives a value,
+ * a refusal of the names of its choices, a count of names outside the
+ * schema, or the errors of the schema.
  */
 export type ValueProblem =
   | { kind: "required" }
@@ -204,10 +204,24 @@ export type ValueProblem =
   | { kind: "schema"; errors: ValidationError[] };
 
 /**
+ * givesNoValue says that value gives rule no value of its own: value is
+ * undefined, or rule is required and value is "" or an empty list. A claim
+ * leaves such a value out, so the value of the policy, rule.value, applies.
+ */
+export function givesNoValue(
+  rule: Pick<EditableParameter, "required">,
+  value: unknown,
+): boolean {
+  const empty = value === "" || (Array.isArray(value) && value.length === 0);
+  return value === undefined || (empty && rule.required === true);
+}
+
+/**
  * valueProblem returns the problem of value, the value of rule in option,
- * or undefined when it passes. claimed says that the claim sets the value:
- * only then is it checked against the names of the choices, as the claim
- * controller does.
+ * or undefined when it passes. A value that givesNoValue names passes,
+ * unless rule is required and rule.value gives no value either. claimed
+ * says that the claim sets the value: only then is it checked against the
+ * names of the choices, as the claim controller does.
  */
 export function valueProblem(
   option: OptionView,
@@ -215,9 +229,10 @@ export function valueProblem(
   value: unknown,
   claimed: boolean,
 ): ValueProblem | undefined {
-  const empty = value === "" || (Array.isArray(value) && value.length === 0);
-  if (value === undefined || (empty && rule.required)) {
-    return rule.required ? { kind: "required" } : undefined;
+  if (givesNoValue(rule, value)) {
+    return rule.required && givesNoValue(rule, rule.value)
+      ? { kind: "required" }
+      : undefined;
   }
   const names =
     option.choices?.parameter === rule.name

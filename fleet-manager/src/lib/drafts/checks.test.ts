@@ -4,6 +4,7 @@ import type { EditableParameter, OptionView, SectionView } from "@/lib/policy";
 import {
   type StorageDraft,
   draftErrors,
+  givesNoValue,
   goneSections,
   picksOf,
   requestSchemaErrors,
@@ -240,6 +241,51 @@ describe("valueProblem", () => {
     expect(
       valueProblem(option(), { ...preset, required: true }, "", false),
     ).toEqual({ kind: "required" });
+  });
+
+  it.each([
+    ["no value", undefined],
+    ["an empty text", ""],
+    ["an empty list", []],
+  ])(
+    "passes %s of a required parameter whose policy gives a value",
+    (_, value) => {
+      const required = { ...preset, required: true, value: "large" };
+      expect(valueProblem(option(), required, value, true)).toBeUndefined();
+    },
+  );
+
+  it.each([
+    ["no policy value", undefined],
+    ["an empty policy value", ""],
+  ])("asks for a required value with %s", (_, policyValue) => {
+    const required = { ...preset, required: true, value: policyValue };
+    expect(valueProblem(option(), required, undefined, false)).toEqual({
+      kind: "required",
+    });
+  });
+
+  it("checks an empty text of a parameter that is not required, because the claim sets it", () => {
+    expect(
+      valueProblem(option(), { ...preset, value: "large" }, "", true),
+    ).toEqual({ kind: "schema", errors: [expect.anything()] });
+  });
+});
+
+describe("givesNoValue", () => {
+  it.each([
+    [false, undefined, true],
+    [true, undefined, true],
+    [true, "", true],
+    [true, [], true],
+    [false, "", false],
+    [false, [], false],
+    [true, "x", false],
+    [true, {}, false],
+    [true, false, false],
+    [true, 0, false],
+  ])("for required %s, %j gives no value: %s", (required, value, none) => {
+    expect(givesNoValue({ required }, value)).toBe(none);
   });
 });
 
