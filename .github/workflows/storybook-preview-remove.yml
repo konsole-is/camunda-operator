@@ -3,8 +3,7 @@ name: Storybook preview
 # Removes the Storybook preview of a pull request from gh-pages when the pull
 # request closes, merged or not. Each week, the sweep removes the previews of
 # pull requests that closed while no removal ran, and squashes the history of
-# gh-pages into one commit, so that old previews do not stay in the
-# repository. The Fleet manager workflow publishes the previews.
+# gh-pages into one commit. The Fleet manager workflow publishes the previews.
 on:
   pull_request:
     types: [closed]
@@ -155,8 +154,6 @@ jobs:
           git commit -q -m "Remove the Storybook previews of closed pull requests"
           ../src/hack/ci-retry.sh git push origin gh-pages
       # The other writers of gh-pages clone the branch inside the gh-pages
-      # group, so none of them pushes onto the old history. A push from
-      # outside the group is not lost: the squash pushes with a lease on the
-      # head that it read.
+      # group, so none of them pushes onto the old history.
       - name: Squash the history of the site
         run: node src/fleet-manager/scripts/storybook-preview.mts squash site

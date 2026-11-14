@@ -123,8 +123,7 @@ export function squashSite(siteDir: string, attempts = 3): boolean {
       "+refs/heads/gh-pages:refs/remotes/origin/gh-pages",
     );
     const head = git(siteDir, "rev-parse", "refs/remotes/origin/gh-pages");
-    // A shallow clone hides the parents from the history, but the commit
-    // object still names them.
+    // In a shallow clone, the commit object still names its parents.
     if (!/^parent /m.test(git(siteDir, "cat-file", "commit", head))) {
       return false;
     }
