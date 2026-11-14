@@ -416,6 +416,35 @@ describe("resolvedErrors", () => {
     ).toEqual([]);
   });
 
+  it("reports a policy value that the schema of its own property refuses while the controller parameter is not known", () => {
+    const strict = {
+      ...store,
+      spec: {
+        ...store.spec,
+        parameterValues: { owner: "" },
+        parameters: {
+          type: "object",
+          required: ["owner"],
+          properties: {
+            owner: { type: "string", minLength: 1 },
+            releaseRef: { type: "string" },
+          },
+        },
+      },
+    } as PluginRegistration;
+    const draft = {
+      ...draftOf({ storage: selections }),
+      registrations: [strict],
+    };
+    expect(
+      resolvedErrors(draft, [view()], selections, () => ({
+        releaseRef: undefined,
+      })),
+    ).toEqual([
+      expect.stringMatching(/^The policy gives Store a value that its schema/),
+    ]);
+  });
+
   describe("with a composed rule in the schema", () => {
     const composed = (rule: Record<string, unknown>) =>
       ({

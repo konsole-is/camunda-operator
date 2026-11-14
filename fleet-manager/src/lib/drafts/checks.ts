@@ -46,7 +46,8 @@ export type StorageDraft = {
 /**
  * ControllerParameters returns the parameters that the claim controller
  * adds to request, for the schema check of resolvedErrors. A value that the
- * draft does not know yet is undefined, and the check skips that request.
+ * draft does not know yet is undefined, and the check of that request then
+ * holds only what requestSchemaErrors finds without it.
  */
 export type ControllerParameters = (
   request: RequestParameters,
@@ -434,7 +435,7 @@ function schemaErrors(
       request.parameters ?? {},
       controllerParameters(request, registration),
     );
-    if (!checked.whole || checked.errors.length === 0) return [];
+    if (checked.errors.length === 0) return [];
     const [first] = checked.errors;
     return [
       `The policy gives ${registration.spec.label} a value that its schema refuses: ${first.path} ${first.message}. Pick another option, or ask your admin to change the policy of the Environment.`,
