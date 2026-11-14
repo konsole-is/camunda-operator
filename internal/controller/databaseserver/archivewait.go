@@ -192,12 +192,11 @@ func (r *DatabaseServerReconciler) wal() WriteAheadLog {
 }
 
 // archivedThrough reports whether last, the name that pg_stat_archiver gives
-// for the last archived file, is segment or a segment after it.
+// for the last archived file, is segment or a later segment of its timeline.
 //
-// A name counts only when its first 24 characters are hexadecimal: the
-// timeline, the log, and the segment, in that order. A .partial and a .backup
-// file start with the segment they belong to. A .history file names a
-// timeline only, and it counts as nothing archived, as the empty name does.
+// A name counts only when it is a segment or a .backup file, whose first 24
+// characters name its segment. A .partial file, a .history file, a segment of
+// another timeline, and the empty name count as nothing archived.
 func archivedThrough(last, segment string) bool {
 	archived, ok := segmentOf(last)
 	if !ok {
@@ -206,15 +205,16 @@ func archivedThrough(last, segment string) bool {
 
 	wanted, ok := segmentOf(segment)
 
-	return ok && archived >= wanted
+	// The first 8 characters are the timeline.
+	return ok && archived[:8] == wanted[:8] && archived >= wanted
 }
 
-// segmentOf returns the 24 hexadecimal characters that name a segment of the
-// write-ahead log, in upper case, and whether name starts with them.
+// segmentOf returns the segment that name is, or that a .backup file names,
+// in upper case, and whether name is one of the two.
 func segmentOf(name string) (string, bool) {
 	const segmentLength = 24
 
-	if len(name) < segmentLength {
+	if len(name) < segmentLength || (len(name) > segmentLength && !strings.HasSuffix(name, ".backup")) {
 		return "", false
 	}
 

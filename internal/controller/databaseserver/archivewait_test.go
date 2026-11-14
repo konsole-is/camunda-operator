@@ -165,7 +165,7 @@ var _ = Describe("DatabaseServer recovery from the archive it writes now", func(
 
 // The recovery starts only once the archive holds the segment it closed. A
 // name that counts as later than it starts a recovery that PostgreSQL fails,
-// and one that never counts holds the rollback until it is refused.
+// and one that never counts holds the rollback for the whole wait.
 func TestArchivedThrough(t *testing.T) {
 	t.Parallel()
 
@@ -181,11 +181,13 @@ func TestArchivedThrough(t *testing.T) {
 		{name: "a segment of a later log", last: "000000010000000B00000001", want: true},
 		{name: "an earlier segment", last: "000000010000000A00000041", want: false},
 		{name: "an earlier log", last: "000000010000000900000099", want: false},
-		{name: "a later timeline", last: "000000020000000A00000001", want: true},
+		{name: "a later timeline at a later position", last: "000000020000000A00000043", want: false},
+		{name: "a later timeline at an earlier position", last: "000000020000000A00000001", want: false},
 		{name: "a lower case name of the closed segment", last: "000000010000000a00000042", want: true},
-		{name: "the partial file of the closed segment", last: closed + ".partial", want: true},
-		{name: "the partial file of an earlier segment", last: "000000010000000A00000041.partial", want: false},
+		{name: "the partial file of the closed segment", last: closed + ".partial", want: false},
+		{name: "the partial file of a later segment", last: "000000010000000A00000043.partial", want: false},
 		{name: "a backup label in the closed segment", last: closed + ".00000028.backup", want: true},
+		{name: "a backup label in a later segment", last: "000000010000000A00000043.00000028.backup", want: true},
 		{name: "a backup label in an earlier segment", last: "000000010000000A00000040.00000028.backup", want: false},
 		{name: "a timeline history file", last: "00000002.history", want: false},
 		{name: "nothing archived yet", last: "", want: false},
