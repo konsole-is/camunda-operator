@@ -717,6 +717,36 @@ describe("SectionCards", () => {
     );
   });
 
+  it("checks a typed empty list against the schema of a required parameter with a policy value", async () => {
+    const onChange = vi.fn();
+    const option: OptionView = {
+      registration: "tuning",
+      label: "Tuning",
+      isDefault: true,
+      parameters: [
+        {
+          name: "zones",
+          label: "Zones",
+          schema: { type: "array", items: { type: "string" }, minItems: 1 },
+          required: true,
+          claimEditable: true,
+          value: ["a"],
+        },
+      ],
+    };
+    render(<SectionCards section={section({}, option)} onChange={onChange} />);
+    const zones = screen.getByRole("textbox", { name: "Zones" });
+    await userEvent.clear(zones);
+    // user-event reads "[" as the start of a key name, so "[[" types one "[".
+    await userEvent.type(zones, "[[]");
+    expect(onChange.mock.lastCall![1]).toEqual([
+      { path: "tuning/zones", message: "must NOT have fewer than 1 items" },
+    ]);
+    expect(
+      screen.queryByText("No value. The inherited value applies."),
+    ).toBeNull();
+  });
+
   it("checks an empty list against the schema of an optional parameter", async () => {
     const onChange = vi.fn();
     const option: OptionView = {

@@ -205,9 +205,9 @@ export type ValueProblem =
 
 /**
  * givesNoValue says that value gives rule no value of its own: value is
- * undefined, or rule is required and value is an empty list, or "" that
- * neither the enum of its schema nor its choices hold. A claim leaves such
- * a value out, so the value of the policy, rule.value, applies.
+ * undefined, or rule is required and value is an empty list of its choices,
+ * or "" that neither the enum of its schema nor its choices hold. A claim
+ * leaves such a value out, so the value of the policy, rule.value, applies.
  */
 export function givesNoValue(
   rule: Pick<EditableParameter, "required" | "schema" | "allowed">,
@@ -222,7 +222,7 @@ export function givesNoValue(
     ];
     return !members.includes("");
   }
-  return Array.isArray(value) && value.length === 0;
+  return !!rule.allowed && Array.isArray(value) && value.length === 0;
 }
 
 /**

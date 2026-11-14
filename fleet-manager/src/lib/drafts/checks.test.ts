@@ -246,7 +246,6 @@ describe("valueProblem", () => {
   it.each([
     ["no value", undefined],
     ["an empty text", ""],
-    ["an empty list", []],
   ])(
     "passes %s of a required parameter whose policy gives a value",
     (_, value) => {
@@ -254,6 +253,18 @@ describe("valueProblem", () => {
       expect(valueProblem(option(), required, value, true)).toBeUndefined();
     },
   );
+
+  it("passes an empty list of choices of a required parameter whose policy gives a value", () => {
+    const zones: EditableParameter = {
+      name: "zones",
+      label: "Zones",
+      claimEditable: true,
+      required: true,
+      allowed: [{ name: "a", label: "a" }],
+      value: ["a"],
+    };
+    expect(valueProblem(option(), zones, [], true)).toBeUndefined();
+  });
 
   it.each([
     ["no policy value", undefined],
@@ -277,7 +288,7 @@ describe("givesNoValue", () => {
     [false, undefined, true],
     [true, undefined, true],
     [true, "", true],
-    [true, [], true],
+    [true, [], false],
     [false, "", false],
     [false, [], false],
     [true, "x", false],
@@ -286,6 +297,12 @@ describe("givesNoValue", () => {
     [true, 0, false],
   ])("for required %s, %j gives no value: %s", (required, value, none) => {
     expect(givesNoValue({ required }, value)).toBe(none);
+  });
+
+  it("takes an empty list as no value only for a required parameter with choices", () => {
+    const allowed = [{ name: "a", label: "a" }];
+    expect(givesNoValue({ required: true, allowed }, [])).toBe(true);
+    expect(givesNoValue({ required: false, allowed }, [])).toBe(false);
   });
 
   it("takes an empty text as a value of a required parameter whose enum or choices hold it", () => {
