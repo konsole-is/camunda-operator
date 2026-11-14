@@ -67,6 +67,8 @@ Obey these rules:
 - Put the props in `args`, so that the Controls panel can change them. Put shared props in the `args` of `meta`.
 - Use `fn()` for each event handler. If the handler returns a promise, use `fn(async () => value)`.
 - Use `render` only for markup around the component. Put a layout wrapper into `decorators`.
+- If the page keeps the state of the component, write a function `<Component>Harness` that keeps it, and pass the
+  handlers of `args` through to the component.
 - If a user gets to a state through the UI, write a `play` function that does the same input.
 - If a component reads the path or the query, set them with
   `parameters: { nextjs: { navigation: { pathname, query } } }`.
@@ -83,9 +85,6 @@ uses Node.js APIs, such as the file system or the Kubernetes client, fails in th
 data instead. Server actions, the functions of a file with `"use server"`, load such modules too. Do not import them
 in a component file. Let the page give them to the component as props.
 
-Some components still have their stories in the older gallery format: a stories file that exports a list and has
-no default export. Storybook does not read these files. For a new component, write a Storybook stories file.
-
 ## Check the stories
 
 Run the stories check from the repository root:
@@ -96,12 +95,13 @@ make fleet-stories-test
 
 The check builds Storybook into `fleet-manager/storybook-static` and serves the build under a sub-path, as GitHub
 Pages does. Then it opens each story at 1440 px and at 390 px, first in the dark theme and then in the light
-theme. The check fails when one of these occurs:
+theme. It also opens the Docs page of `ui/Button` in both themes. The check fails when one of these occurs:
 
+- The story does not load, for example because its stories file throws on import.
 - The story throws when it renders.
 - The `play` function of the story fails.
 - The page scrolls sideways.
-- axe finds a violation of serious or critical impact, in one of the two themes.
+- axe finds a violation of serious or critical impact, in one of the two themes, on a story or on the Docs page.
 - The story requests a file outside the Storybook folder, for example from `/api/watch` or from another host.
 
 The check writes a screenshot of each story at each width and in each theme into `fleet-manager/ui-stories`. The

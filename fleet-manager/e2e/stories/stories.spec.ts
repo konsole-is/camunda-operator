@@ -1,22 +1,93 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { type APIRequestContext, expect, test } from "@playwright/test";
+import {
+  type APIRequestContext,
+  type Page,
+  expect,
+  test,
+} from "@playwright/test";
 import { blockingViolations } from "../axe";
-import type { Shot } from "../gallery/gallery-index";
+import type { Shot } from "./stories-index";
 
 const OUT = path.resolve("ui-stories");
 const WIDTHS = [1440, 390];
 
 // The events of the Storybook channel that mean that a story failed: its
-// render threw, its play function threw, or it could not be shown.
+// render threw, its play function threw, it could not be shown, its stories
+// file did not load (storyMissing), or the preview did not load.
 const FAILURES = [
   "storyThrewException",
   "playFunctionThrewException",
   "storyErrored",
+  "storyMissing",
+  "configError",
 ];
+
+// A story that does not load never sends storyFinished.
+const DONE = ["storyFinished", "docsRendered", "storyMissing", "configError"];
 
 type Entry = { id: string; title: string; name: string; type: string };
 type StoryEvent = { name: string; message: string };
+
+// recordStoryEvents makes each page that loads next keep the events of its
+// Storybook channel, because the body classes do not show a failed play
+// function. errorsOf then waits for a DONE event and returns one line for
+// each failure. storyMissing carries no message, so its line holds the
+// console errors of the page, where Storybook logs why the file failed.
+async function recordStoryEvents(page: Page) {
+  const consoleErrors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error") consoleErrors.push(m.text());
+  });
+  await page.addInitScript((failures) => {
+    type Channel = { emit: (name: string, ...args: unknown[]) => void };
+    const events: { name: string; message: string }[] = [];
+    let channel: Channel | undefined;
+    Object.assign(globalThis, { __storyEvents: events });
+    Object.defineProperty(globalThis, "__STORYBOOK_ADDONS_CHANNEL__", {
+      configurable: true,
+      get: () => channel,
+      set: (value: Channel) => {
+        channel = value;
+        const emit = value.emit.bind(value);
+        value.emit = (name, ...args) => {
+          const detail = args[0] as
+            { message?: string; description?: string } | undefined;
+          events.push({
+            name,
+            message: failures.includes(name)
+              ? String(detail?.message ?? detail?.description ?? "")
+              : "",
+          });
+          emit(name, ...args);
+        };
+      },
+    });
+  }, FAILURES);
+  return {
+    async open(url: string) {
+      consoleErrors.length = 0;
+      await page.goto(url);
+    },
+    async errorsOf(): Promise<string[]> {
+      await page.waitForFunction(
+        (done) =>
+          (
+            globalThis as unknown as { __storyEvents: StoryEvent[] }
+          ).__storyEvents.some((e) => done.includes(e.name)),
+        DONE,
+      );
+      const events = await page.evaluate(
+        () =>
+          (globalThis as unknown as { __storyEvents: StoryEvent[] })
+            .__storyEvents,
+      );
+      return events
+        .filter((e) => FAILURES.includes(e.name))
+        .map((e) => `${e.name}: ${e.message || consoleErrors.join("\n")}`);
+    },
+  };
+}
 
 async function storiesOf(request: APIRequestContext): Promise<Entry[]> {
   const index = (await (await request.get("index.json")).json()) as {
@@ -50,6 +121,27 @@ const THEMES = [
   { theme: "light", suffix: "-light", title: " in the light theme" },
 ] as const;
 
+// A Docs page renders every story of its stories file, so the check opens
+// one Docs page, not each of them.
+for (const { theme, title } of THEMES)
+  test(`the Docs page of a component${title}`, async ({ page }) => {
+    const storybook = await recordStoryEvents(page);
+    await storybook.open(
+      `iframe.html?id=ui-button--docs&viewMode=docs&globals=theme:${theme}`,
+    );
+    expect.soft(await storybook.errorsOf(), "the Docs page throws").toEqual([]);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Button" }),
+    ).toBeVisible();
+    expect
+      .soft(await page.evaluate(() => document.documentElement.className))
+      .toBe(theme);
+    expect(
+      await blockingViolations(page),
+      `axe violations in the Docs page${title}`,
+    ).toEqual([]);
+  });
+
 for (const { theme, suffix, title } of THEMES)
   for (const width of WIDTHS) {
     test(`every story at ${width} px${title}`, async ({
@@ -70,33 +162,7 @@ for (const { theme, suffix, title } of THEMES)
       // Each story costs a page load, an axe run, and a screenshot.
       test.setTimeout(Math.max(300_000, stories.length * 2 * 2_000));
 
-      // The body classes do not show a failed play function, so the events of
-      // the channel tell when a story finished and whether it failed.
-      await page.addInitScript((failures) => {
-        type Channel = { emit: (name: string, ...args: unknown[]) => void };
-        const events: { name: string; message: string }[] = [];
-        let channel: Channel | undefined;
-        Object.assign(globalThis, { __storyEvents: events });
-        Object.defineProperty(globalThis, "__STORYBOOK_ADDONS_CHANNEL__", {
-          configurable: true,
-          get: () => channel,
-          set: (value: Channel) => {
-            channel = value;
-            const emit = value.emit.bind(value);
-            value.emit = (name, ...args) => {
-              const detail = args[0] as
-                { message?: string; description?: string } | undefined;
-              events.push({
-                name,
-                message: failures.includes(name)
-                  ? String(detail?.message ?? detail?.description ?? "")
-                  : "",
-              });
-              emit(name, ...args);
-            };
-          },
-        });
-      }, FAILURES);
+      const storybook = await recordStoryEvents(page);
       await page.setViewportSize({ width, height: 900 });
 
       const shots: Shot[] = [];
@@ -104,26 +170,11 @@ for (const { theme, suffix, title } of THEMES)
       await mkdir(OUT, { recursive: true });
       for (const story of stories) {
         await test.step(story.id, async () => {
-          await page.goto(
+          await storybook.open(
             `iframe.html?id=${story.id}&viewMode=story&globals=theme:${theme}`,
           );
-          await page.waitForFunction(() =>
-            (
-              globalThis as unknown as { __storyEvents: StoryEvent[] }
-            ).__storyEvents.some((e) => e.name === "storyFinished"),
-          );
-          const events = await page.evaluate(
-            () =>
-              (globalThis as unknown as { __storyEvents: StoryEvent[] })
-                .__storyEvents,
-          );
           expect
-            .soft(
-              events
-                .filter((e) => FAILURES.includes(e.name))
-                .map((e) => `${e.name}: ${e.message}`),
-              `story ${story.id} throws`,
-            )
+            .soft(await storybook.errorsOf(), `story ${story.id} throws`)
             .toEqual([]);
 
           expect

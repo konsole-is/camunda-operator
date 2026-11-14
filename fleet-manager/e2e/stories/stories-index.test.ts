@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Shot, renderIndex } from "./gallery-index";
+import { type Shot, renderIndex } from "./stories-index";
 
 const shot = (
   id: string,
@@ -11,6 +11,7 @@ const shot = (
   component,
   name,
   width,
+  theme: "dark",
   file: `${id}-${width}.png`,
 });
 
@@ -39,7 +40,7 @@ describe("renderIndex", () => {
       light(390),
       light(1440),
       shot("logo/default", "Logo", "Default", 390),
-      { ...shot("logo/default", "Logo", "Default", 1440), theme: "dark" },
+      shot("logo/default", "Logo", "Default", 1440),
     ]);
     const order = [...html.matchAll(/src="([^"]+)"/g)].map((m) => m[1]);
     expect(order).toEqual([
@@ -59,8 +60,8 @@ describe("renderIndex", () => {
     expect(html).not.toContain("<A>");
   });
 
-  it("uses the title it is given", () => {
-    const html = renderIndex([], "Fleet manager stories");
+  it("names the stories in its title and heading", () => {
+    const html = renderIndex([]);
     expect(html).toContain("<title>Fleet manager stories</title>");
     expect(html).toContain("<h1>Fleet manager stories</h1>");
   });

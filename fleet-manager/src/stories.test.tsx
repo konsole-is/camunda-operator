@@ -4,13 +4,11 @@ import { describe, expect, it } from "vitest";
 
 type StoriesModule = { default?: { title?: string } };
 
-// The gallery stories files have no default export, so only the files in
-// Component Story Format remain.
 const csf = Object.entries(
   import.meta.glob<StoriesModule>("./components/**/*.stories.tsx", {
     eager: true,
   }),
-).filter(([, module]) => module.default);
+);
 
 describe("the Storybook stories", () => {
   it("gives each stories file the title of its directory and a component name", () => {

@@ -141,8 +141,8 @@ make fleet-lint             # fleet-manager/ only: eslint, prettier --check, tsc
 make fleet-test             # fleet-manager/ only: vitest; needs make setup-envtest; keeps the log and a JUnit report in fleet-manager/test-reports
 make fleet-build            # fleet-manager/ only: next build
 make fleet-generate         # then `git status --porcelain fleet-manager/src/generated` prints nothing
-make fleet-gallery          # fleet-manager/ only: screenshots of each gallery story into fleet-manager/ui-gallery, axe check, shared watch check; needs make setup-envtest
-make fleet-stories-test     # fleet-manager/ only: each Storybook story under a sub-path, screenshots into fleet-manager/ui-stories, axe, render, play, and request checks
+make fleet-app-test         # fleet-manager/ only: no test page or test reader in the production build, shared watch check; needs make setup-envtest
+make fleet-stories-test     # fleet-manager/ only: each Storybook story and one Docs page under a sub-path, screenshots into fleet-manager/ui-stories, axe, load, render, play, and request checks
 make fleet-scenarios        # then `git status --porcelain fleet-manager/e2e/scenarios` prints nothing; needs make setup-envtest
 make fleet-scenarios-test   # fleet-manager/ only: the pages in Playwright on the page scenarios, screenshots into fleet-manager/ui-pages, axe check; needs make setup-envtest
 ```
@@ -150,7 +150,7 @@ make fleet-scenarios-test   # fleet-manager/ only: the pages in Playwright on th
 Run the `fleet-*` gates when a change touches `fleet-manager/`. Run `make fleet-generate` also
 when a change touches a CRD or a condition type of `api/`. They need the Node.js
 of `fleet-manager/.node-version`, which `.tool-versions` pins too. pnpm refuses any other version.
-`make fleet-test`, `make fleet-gallery`, and `make fleet-scenarios-test` also need Go, because they
+`make fleet-test`, `make fleet-app-test`, and `make fleet-scenarios-test` also need Go, because they
 run `make setup-envtest`.
 
 Run `make fleet-scenarios` for every change, not only a change under `fleet-manager/`. A change

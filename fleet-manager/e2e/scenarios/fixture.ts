@@ -40,7 +40,7 @@ type ScenarioApps = { open(file: string): Promise<ScenarioApp> };
 /**
  * test runs a page test against the page scenario e2e/scenarios/<name>,
  * which the file sets with test.use({ scenarioName: "<name>" }). Each file
- * gets its own envtest, the scenario, and a server of the gallery build
+ * gets its own envtest, the scenario, and a server of the envtest build
  * that reads the scenario as APP_USER. The tests of a file share them and
  * run in order. baseURL is the app.
  */

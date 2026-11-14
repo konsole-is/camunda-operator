@@ -10,7 +10,7 @@ import {
   followPodLog,
   parseObserveFile,
   podUsage,
-} from "./readers.gallery";
+} from "./readers.envtest";
 
 vi.mock("./kube", () => ({ podUsage: vi.fn(), podUsageFrom: vi.fn() }));
 vi.mock("./pod-log", async (real) => ({
@@ -47,7 +47,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe("followPodLog of the gallery build", () => {
+describe("followPodLog of the envtest build", () => {
   it("reads the log lines of a pod from observe.yaml, the last tailLines of them", async () => {
     await observe(`schemaVersion: 1
 logs:
@@ -152,7 +152,7 @@ logs:
   });
 });
 
-describe("podUsage of the gallery build", () => {
+describe("podUsage of the envtest build", () => {
   it("reads the usage of the selected pods from observe.yaml", async () => {
     await observe(`schemaVersion: 1
 usage:

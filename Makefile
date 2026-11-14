@@ -747,16 +747,16 @@ FLEET_PLAYWRIGHT_FLAGS ?=
 fleet-playwright: fleet-install ## Install the Chromium browser that the fleet manager Playwright tests use.
 	$(FLEET_PNPM) exec playwright install chromium $(FLEET_PLAYWRIGHT_FLAGS)
 
-.PHONY: fleet-build-gallery
-fleet-build-gallery: fleet-install ## Build the fleet manager with FLEET_DEV_GALLERY=1 into fleet-manager/.next-gallery, with the gallery stories and the test readers of the page scenarios.
-	$(FLEET_PNPM) run build:gallery
+.PHONY: fleet-build-envtest
+fleet-build-envtest: fleet-install ## Build the fleet manager with FLEET_ENVTEST_BUILD=1 into fleet-manager/.next-envtest, with the test pages and the test readers that the checks on envtest need.
+	$(FLEET_PNPM) run build:envtest
 
-.PHONY: fleet-gallery
-fleet-gallery: fleet-build fleet-build-gallery fleet-playwright setup-envtest ## Screenshot each fleet manager gallery story at 1440 px and 390 px into fleet-manager/ui-gallery, fail on a serious or critical axe violation, and check that a page of 8 data hooks opens one watch connection.
-	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run gallery
+.PHONY: fleet-app-test
+fleet-app-test: fleet-build fleet-build-envtest fleet-playwright setup-envtest ## Check that the production build of the fleet manager has no test page and no test reader, and that a page of 8 data hooks opens one watch connection on envtest.
+	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run app-test
 
 .PHONY: fleet-scenarios-test
-fleet-scenarios-test: fleet-build-gallery fleet-playwright setup-envtest ## Run the fleet manager pages in Playwright against the page scenarios on envtest, with screenshots in the dark and the light theme in fleet-manager/ui-pages. Fails on a serious or critical axe violation in either theme.
+fleet-scenarios-test: fleet-build-envtest fleet-playwright setup-envtest ## Run the fleet manager pages in Playwright against the page scenarios on envtest, with screenshots in the dark and the light theme in fleet-manager/ui-pages. Fails on a serious or critical axe violation in either theme.
 	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run scenarios
 
 .PHONY: fleet-build-stories
@@ -764,7 +764,7 @@ fleet-build-stories: fleet-install ## Build the Storybook of the fleet manager i
 	$(FLEET_PNPM) run build-storybook
 
 .PHONY: fleet-stories-test
-fleet-stories-test: fleet-build-stories fleet-playwright ## Screenshot each story of the built Storybook at 1440 px and 390 px, in the dark and the light theme, into fleet-manager/ui-stories, served under a sub-path. Fails when a story throws, its play function fails, it scrolls sideways, it has a serious or critical axe violation in either theme, or it requests a file outside the Storybook.
+fleet-stories-test: fleet-build-stories fleet-playwright ## Screenshot each story of the built Storybook at 1440 px and 390 px, in the dark and the light theme, into fleet-manager/ui-stories, served under a sub-path, and open one Docs page in both themes. Fails when a story does not load, throws, its play function fails, it scrolls sideways, it has a serious or critical axe violation in either theme, or it requests a file outside the Storybook.
 	$(FLEET_PNPM) run stories
 
 # The kind cluster of the fleet manager journeys. The harness targets run in

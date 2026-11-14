@@ -7,7 +7,7 @@ import {
   startEnvtest,
 } from "../test/envtest/envtest";
 
-/** EnvtestApp is an envtest control plane and a server of the gallery build that reads it. */
+/** EnvtestApp is an envtest control plane and a server of the envtest build that reads it. */
 export interface EnvtestApp {
   envtest: Envtest;
   /** baseURL is the http:// address of the app on 127.0.0.1. */
@@ -34,7 +34,7 @@ const READY_TIMEOUT_MS = 60_000;
 
 /**
  * startEnvtestApp starts envtest and then next start of the
- * FLEET_DEV_GALLERY=1 build in .next-gallery, which make fleet-build-gallery
+ * FLEET_ENVTEST_BUILD=1 build in .next-envtest, which make fleet-build-envtest
  * builds. It resolves when readyPath answers 200. It rejects when the app
  * exits or does not answer within 60 s, and when prepare rejects. On a
  * rejection nothing keeps running.
@@ -56,7 +56,7 @@ export async function startEnvtestApp(
         env: {
           ...process.env,
           ...prepared.env,
-          FLEET_DEV_GALLERY: "1",
+          FLEET_ENVTEST_BUILD: "1",
           KUBECONFIG: prepared.kubeconfigPath ?? envtest.kubeconfigPath,
           NEXT_TELEMETRY_DISABLED: "1",
         },
