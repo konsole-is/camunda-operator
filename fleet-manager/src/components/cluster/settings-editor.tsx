@@ -321,7 +321,6 @@ function Editor({
               ? String(current)
               : undefined
           }
-          // A size that was a number stays one for a whole amount without a unit.
           onChange={(size, errors) =>
             valid(
               typeof current === "number" && /^\d+$/.test(size ?? "")

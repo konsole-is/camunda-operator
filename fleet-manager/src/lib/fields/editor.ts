@@ -51,8 +51,9 @@ type YamlEditor = Extract<SchemaEditor, { kind: "yaml" }>;
  *  6. Anything else: YAML, checked against openAPI, else against the type
  *     of the schema when it has one.
  *
- * value is the value that the editor opens with. When the editor of rule 2,
- * 4, or 5 cannot keep it as it is, the result is YAML, checked as in rule 6.
+ * value is the value that the editor opens with. When the editor of rule
+ * 2, or the text or map editor of rules 4 and 5, cannot keep it, the
+ * result is YAML, checked as in rule 6.
  */
 export function editorOf(
   path: string,
@@ -87,9 +88,9 @@ export function editorOf(
  * parameterEditorOf returns the editor of a registration parameter with
  * schema its property schema, or undefined only when schema is not an
  * object and there are no choices. choices are the names that the claim
- * stores in place of the values. The editor depends on the schema only, not
- * on the name of the parameter: rules 1 and 4 to 6 of editorOf. A value
- * that the editor cannot keep as it is gives YAML.
+ * stores in place of the values. The editor does not depend on the name of
+ * the parameter: rules 1 and 4 to 6 of editorOf. A value that the text or
+ * map editor cannot keep gives YAML.
  */
 export function parameterEditorOf(
   schema: unknown,
@@ -104,10 +105,10 @@ export function parameterEditorOf(
 
 /**
  * overrideEditorOf returns the editor of the part name of the parameter
- * overrides of a registration, with schema its property schema. Its
- * resources, storageSize, extraEnv, and tolerations replace the fields of
- * those names, so a part gets the editor of the field when schema fits it,
- * as in editorOf. A value that the editor cannot keep as it is gives YAML.
+ * overrides of a registration, with schema its property schema, or
+ * undefined as editorOf. A part named resources, storageSize, extraEnv, or
+ * tolerations gets the editor of that cluster field when schema fits it and
+ * the editor can keep value, else YAML.
  */
 export function overrideEditorOf(
   name: string,
@@ -220,8 +221,8 @@ function isListOfObjects(schema: Record<string, unknown>): boolean {
 }
 
 // reads tells whether editor can show value and keep it in an edit. It
-// checks only the editors that fail on a value of another shape or drop a
-// part of it.
+// returns true for any value with a number, toggle, select, choices, or
+// YAML editor.
 function reads(editor: SchemaEditor, value: unknown): boolean {
   if (value === undefined || value === null) return true;
   switch (editor.kind) {
@@ -254,7 +255,8 @@ function reads(editor: SchemaEditor, value: unknown): boolean {
 
 const ENV_FIELDS = ["name", "value", "valueFrom"];
 
-// keepsEnv tells whether the env editor keeps entry as it is.
+// keepsEnv returns true only when the env editor keeps entry, apart from an
+// empty value that it can add.
 function keepsEnv(entry: unknown): boolean {
   if (
     !isObject(entry) ||
@@ -291,9 +293,9 @@ const TOLERATION_FIELDS = [
   "tolerationSeconds",
 ];
 
-// keepsToleration tells whether the tolerations editor keeps toleration as
-// it is. It writes a value only for an operator other than Exists, and
-// seconds only for the effect NoExecute.
+// keepsToleration returns true only when the tolerations editor keeps
+// toleration, apart from a default operator that it adds and empty fields
+// that it drops.
 function keepsToleration(toleration: unknown): boolean {
   return (
     isObject(toleration) &&
@@ -301,6 +303,8 @@ function keepsToleration(toleration: unknown): boolean {
     ["key", "operator", "value", "effect"].every(
       (f) => toleration[f] === undefined || isString(toleration[f]),
     ) &&
+    // The editor writes a value only for an operator other than Exists, and
+    // seconds only for the effect NoExecute.
     !(toleration.operator === "Exists" && toleration.value) &&
     (toleration.tolerationSeconds === undefined ||
       (Number.isInteger(toleration.tolerationSeconds) &&

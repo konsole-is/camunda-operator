@@ -60,8 +60,7 @@ export type Setting = {
  * field as a whole: then the setting has a holder. A setting takes the
  * state of its fields, a claim state first, and the lock of any of them. A
  * locked setting has no editor and no steps. A field that belongs to no
- * setting is a read-only setting of its own, after the others. A value
- * that the editor of its field cannot keep as it is opens in YAML.
+ * setting is a read-only setting of its own, after the others.
  */
 export function settingsOf(input: {
   group: SettingsGroup;
@@ -181,11 +180,10 @@ export function settingChange(
  * object parameter with properties gives one setting for each property,
  * and a change of one writes the whole parameter. Any other parameter is
  * one setting. A property of overrides gets its editor from
- * overrideEditorOf, and any other parameter from its schema only, whatever
- * its name. A parameter in choices picks the names of its choices,
- * whatever its schema, because the claim stores the names: one name, or a
- * list of names for a list parameter. A parameter resets to the
- * environment.
+ * overrideEditorOf, and any other parameter from parameterEditorOf. A
+ * parameter in choices picks the names of its choices, whatever its schema,
+ * because the claim stores the names: one name, or a list of names for a
+ * list parameter. A parameter resets to the environment.
  */
 export function selectionSettingsOf(
   fields: readonly ClusterField[],
