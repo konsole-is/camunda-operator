@@ -25,8 +25,8 @@
     ".storybook/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    ".next-gallery/types/**/*.ts",
-    ".next-gallery/dev/types/**/*.ts"
+    ".next-envtest/types/**/*.ts",
+    ".next-envtest/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }

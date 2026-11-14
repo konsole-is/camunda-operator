@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { WatchProbe } from "@/gallery/watch-probe";
+import { WatchProbe } from "./watch-probe";
 
-// The watch check of make fleet-gallery opens this page against envtest. It
+// The watch check of make fleet-app-test opens this page against envtest. It
 // mounts 8 data hooks, so over HTTP/1.1 a connection per hook would leave
 // the browser no connection for the link and the action.
 export default function WatchProbePage() {

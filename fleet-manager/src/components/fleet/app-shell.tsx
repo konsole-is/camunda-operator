@@ -8,7 +8,7 @@ import { TopNav } from "./top-nav";
  * AppShell is the frame of every page: the logo, the top navigation, and the
  * theme switch, an optional banner (the Git waiting banner), an optional side
  * navigation, and the page. A banner needs its own page gutter, because
- * AppShell adds none. pathname goes to TopNav, for the gallery. AppShell
+ * AppShell adds none. pathname goes to TopNav, for a story. AppShell
  * needs a ThemeProvider above it.
  */
 export function AppShell({

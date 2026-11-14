@@ -68,6 +68,14 @@ const preview: Preview = {
     },
   },
   initialGlobals: { theme: "dark" },
+  // Recharts measures the labels of a chart axis once and keeps the widths.
+  // A chart that renders before the font of the app loads keeps the widths
+  // of the fallback font and shows other axis labels.
+  loaders: [
+    async () => {
+      await document.fonts.load('400 11px "IBM Plex Sans"');
+    },
+  ],
   parameters: {
     nextjs: { appDirectory: true },
     layout: "padded",

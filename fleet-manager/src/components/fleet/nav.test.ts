@@ -13,7 +13,7 @@ describe("sectionOf", () => {
     ["/setup/presets/gold", "setup"],
     ["/fleetwide", undefined],
     ["/setup-old", undefined],
-    ["/dev/gallery", undefined],
+    ["/dev/watch-probe", undefined],
     ["/", undefined],
   ])("puts %s in %s", (pathname, section) => {
     expect(sectionOf(pathname)).toBe(section);

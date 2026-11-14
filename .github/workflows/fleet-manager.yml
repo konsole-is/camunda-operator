@@ -101,26 +101,12 @@ jobs:
           path: fleet-manager/storybook-static/
           if-no-files-found: error
           retention-days: 7
-      # The gallery and the page scenarios need the gallery build, and one
+      # The app checks and the page scenarios need the envtest build, and one
       # make call builds it once. -k runs each check also when one before it
       # fails. -o fleet-build-stories checks the Storybook that the step
       # above built and uploaded, and does not build it again.
-      - name: Build the fleet manager, check the UI gallery and the stories, and run the page scenarios
-        run: make -k -o fleet-build-stories fleet-gallery fleet-stories-test fleet-scenarios-test FLEET_PLAYWRIGHT_FLAGS=--with-deps
-      - name: Upload the UI gallery
-        id: gallery
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: ui-gallery
-          path: fleet-manager/ui-gallery/
-          if-no-files-found: warn
-      - name: Link the UI gallery in the job summary
-        if: ${{ !cancelled() && steps.gallery.outputs.artifact-url != '' }}
-        env:
-          GALLERY_URL: ${{ steps.gallery.outputs.artifact-url }}
-        run: |
-          echo "UI gallery: [ui-gallery](${GALLERY_URL}). Open index.html in the archive." >> "${GITHUB_STEP_SUMMARY}"
+      - name: Build the fleet manager, check the app and the stories, and run the page scenarios
+        run: make -k -o fleet-build-stories fleet-app-test fleet-stories-test fleet-scenarios-test FLEET_PLAYWRIGHT_FLAGS=--with-deps
       - name: Upload the stories screenshots
         id: stories
         if: ${{ !cancelled() }}

@@ -12,7 +12,7 @@ const ITEM =
 /**
  * TopNav holds the two parts of the app, Fleet and Setup, and marks the part
  * of the current path with aria-current="page". pathname replaces the route
- * path, for the gallery.
+ * path, for a story.
  */
 export function TopNav({ pathname }: { pathname?: string }) {
   const route = usePathname();
