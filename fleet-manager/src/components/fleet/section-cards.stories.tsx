@@ -1,12 +1,7 @@
-import type { Story } from "@/gallery/registry";
+import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { fn } from "storybook/test";
 import type { SectionView } from "@/lib/policy/types";
 import { SectionCards } from "./section-cards";
-
-const story = (name: string, section: SectionView): Story => ({
-  component: "SectionCards",
-  name,
-  render: () => <SectionCards section={section} />,
-});
 
 const backupStorage: SectionView = {
   name: "backup-storage",
@@ -83,174 +78,220 @@ const connectorsPermissions: SectionView = {
   ],
 };
 
-export const sectionCardsStories: Story[] = [
-  story("Default and empty option", backupStorage),
-  story("Required section", { ...backupStorage, required: true }),
-  story("Allowed checkboxes", connectorsPermissions),
-  story("Allowed select", {
-    ...connectorsPermissions,
-    options: [
-      {
-        registration: "gcp-pubsub",
-        label: "Pub/Sub topics",
-        isDefault: true,
-        parameters: [
-          {
-            name: "access",
-            label: "Topic access",
-            schema: { type: "string" },
-            claimEditable: true,
-            allowed: [
-              { name: "publish", label: "Publish to the team topics" },
-              { name: "subscribe", label: "Subscribe to the team topics" },
+const meta = {
+  title: "fleet/SectionCards",
+  component: SectionCards,
+  args: { section: backupStorage, onChange: fn() },
+} satisfies Meta<typeof SectionCards>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+export const DefaultAndEmptyOption: Story = {
+  name: "Default and empty option",
+};
+
+export const RequiredSection: Story = {
+  name: "Required section",
+  args: { section: { ...backupStorage, required: true } },
+};
+
+export const AllowedCheckboxes: Story = {
+  name: "Allowed checkboxes",
+  args: { section: connectorsPermissions },
+};
+
+export const AllowedSelect: Story = {
+  name: "Allowed select",
+  args: {
+    section: {
+      ...connectorsPermissions,
+      options: [
+        {
+          registration: "gcp-pubsub",
+          label: "Pub/Sub topics",
+          isDefault: true,
+          parameters: [
+            {
+              name: "access",
+              label: "Topic access",
+              schema: { type: "string" },
+              claimEditable: true,
+              allowed: [
+                { name: "publish", label: "Publish to the team topics" },
+                { name: "subscribe", label: "Subscribe to the team topics" },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
+
+export const MapParameter: Story = {
+  name: "Map parameter",
+  args: {
+    section: {
+      ...backupStorage,
+      options: [
+        {
+          registration: "aws-s3",
+          label: "New S3 bucket",
+          description: "A bucket for this cluster, deleted with the claim.",
+          isDefault: true,
+          parameters: [
+            {
+              name: "tags",
+              label: "Bucket tags",
+              schema: {
+                type: "object",
+                additionalProperties: { type: "string" },
+              },
+              claimEditable: true,
+              value: { team: "orders", "cost-center": "4711" },
+            },
+          ],
+        },
+      ],
+    },
+  },
+};
+
+export const OptionThatNeedsAnInput: Story = {
+  name: "Option that needs an input",
+  args: {
+    section: {
+      name: "volume-encryption",
+      label: "Volume encryption",
+      selection: "One",
+      emptyOptionLabel: "Unencrypted volumes",
+      required: false,
+      options: [
+        {
+          registration: "aws-ebs",
+          label: "Encrypted volumes",
+          isDefault: false,
+          disabledReason: "Needs an encryption key",
+          parameters: [],
+        },
+      ],
+    },
+  },
+};
+
+export const PresetCards: Story = {
+  name: "Preset cards",
+  args: {
+    section: {
+      name: "secondary-storage",
+      label: "Secondary storage",
+      selection: "One",
+      required: true,
+      options: [
+        {
+          registration: "elasticsearch",
+          label: "New Elasticsearch",
+          isDefault: true,
+          parameters: [
+            {
+              name: "preset",
+              label: "Preset",
+              claimEditable: true,
+              value: "small",
+            },
+          ],
+          choices: {
+            parameter: "preset",
+            items: [
+              {
+                name: "small",
+                specs: [
+                  { label: "Version", value: "8.19" },
+                  { label: "Nodes", value: "1" },
+                  { label: "Memory", value: "2 GiB" },
+                ],
+              },
+              {
+                name: "large",
+                specs: [
+                  { label: "Version", value: "8.19" },
+                  { label: "Nodes", value: "3" },
+                  { label: "Memory", value: "8 GiB" },
+                ],
+              },
             ],
           },
-        ],
-      },
-    ],
-  }),
-  story("Map parameter", {
-    ...backupStorage,
-    options: [
-      {
-        registration: "aws-s3",
-        label: "New S3 bucket",
-        description: "A bucket for this cluster, deleted with the claim.",
-        isDefault: true,
-        parameters: [
-          {
-            name: "tags",
-            label: "Bucket tags",
-            schema: {
-              type: "object",
-              additionalProperties: { type: "string" },
-            },
-            claimEditable: true,
-            value: { team: "orders", "cost-center": "4711" },
+        },
+        {
+          registration: "existing-secondary-storage",
+          label: "Existing storage",
+          isDefault: false,
+          parameters: [],
+        },
+      ],
+    },
+  },
+};
+
+export const ParameterRules: Story = {
+  name: "Parameter rules",
+  args: {
+    section: {
+      name: "team-storage",
+      label: "Team storage",
+      selection: "One",
+      required: true,
+      options: [
+        {
+          registration: "team-bucket",
+          label: "Team bucket",
+          description: "A bucket that the team shares.",
+          isDefault: true,
+          schema: {
+            type: "object",
+            "x-kubernetes-validations": [
+              {
+                rule: "self.minSizeGi <= self.maxSizeGi",
+                message: "The minimum size must not be above the maximum size",
+              },
+            ],
           },
-        ],
-      },
-    ],
-  }),
-  story("Option that needs an input", {
-    name: "volume-encryption",
-    label: "Volume encryption",
-    selection: "One",
-    emptyOptionLabel: "Unencrypted volumes",
-    required: false,
-    options: [
-      {
-        registration: "aws-ebs",
-        label: "Encrypted volumes",
-        isDefault: false,
-        disabledReason: "Needs an encryption key",
-        parameters: [],
-      },
-    ],
-  }),
-  story("Preset cards", {
-    name: "secondary-storage",
-    label: "Secondary storage",
-    selection: "One",
-    required: true,
-    options: [
-      {
-        registration: "elasticsearch",
-        label: "New Elasticsearch",
-        isDefault: true,
-        parameters: [
-          {
-            name: "preset",
-            label: "Preset",
-            claimEditable: true,
-            value: "small",
-          },
-        ],
-        choices: {
-          parameter: "preset",
-          items: [
+          parameters: [
             {
-              name: "small",
-              specs: [
-                { label: "Version", value: "8.19" },
-                { label: "Nodes", value: "1" },
-                { label: "Memory", value: "2 GiB" },
-              ],
+              name: "name",
+              label: "Bucket name",
+              schema: {
+                type: "string",
+                "x-kubernetes-validations": [
+                  {
+                    rule: "self.startsWith('team-')",
+                    message: "The name must start with team-",
+                  },
+                ],
+              },
+              claimEditable: true,
+              value: "team-orders",
             },
             {
-              name: "large",
-              specs: [
-                { label: "Version", value: "8.19" },
-                { label: "Nodes", value: "3" },
-                { label: "Memory", value: "8 GiB" },
-              ],
+              name: "maxSizeGi",
+              label: "Maximum size in GiB",
+              schema: {
+                type: "integer",
+                "x-kubernetes-validations": [{ rule: "self % 10 == 0" }],
+              },
+              claimEditable: true,
+              value: 50,
+            },
+            {
+              name: "minSizeGi",
+              label: "Minimum size in GiB",
+              schema: { type: "integer" },
+              claimEditable: true,
+              value: 10,
             },
           ],
         },
-      },
-      {
-        registration: "existing-secondary-storage",
-        label: "Existing storage",
-        isDefault: false,
-        parameters: [],
-      },
-    ],
-  }),
-  story("Parameter rules", {
-    name: "team-storage",
-    label: "Team storage",
-    selection: "One",
-    required: true,
-    options: [
-      {
-        registration: "team-bucket",
-        label: "Team bucket",
-        description: "A bucket that the team shares.",
-        isDefault: true,
-        schema: {
-          type: "object",
-          "x-kubernetes-validations": [
-            {
-              rule: "self.minSizeGi <= self.maxSizeGi",
-              message: "The minimum size must not be above the maximum size",
-            },
-          ],
-        },
-        parameters: [
-          {
-            name: "name",
-            label: "Bucket name",
-            schema: {
-              type: "string",
-              "x-kubernetes-validations": [
-                {
-                  rule: "self.startsWith('team-')",
-                  message: "The name must start with team-",
-                },
-              ],
-            },
-            claimEditable: true,
-            value: "team-orders",
-          },
-          {
-            name: "maxSizeGi",
-            label: "Maximum size in GiB",
-            schema: {
-              type: "integer",
-              "x-kubernetes-validations": [{ rule: "self % 10 == 0" }],
-            },
-            claimEditable: true,
-            value: 50,
-          },
-          {
-            name: "minSizeGi",
-            label: "Minimum size in GiB",
-            schema: { type: "integer" },
-            claimEditable: true,
-            value: 10,
-          },
-        ],
-      },
-    ],
-  }),
-];
+      ],
+    },
+  },
+};

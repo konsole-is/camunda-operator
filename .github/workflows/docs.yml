@@ -10,10 +10,13 @@ on:
       - .github/workflows/docs.yml
 
 # mike commits each version to the gh-pages branch. The release workflow
-# deploys there too, in the same group, so two pushes never race.
+# and the Storybook previews push there too, in the same group, so two
+# pushes never race. With the default queue, a new pending run cancels the
+# pending one before it.
 concurrency:
   group: gh-pages
   cancel-in-progress: false
+  queue: max
 
 jobs:
   dev:

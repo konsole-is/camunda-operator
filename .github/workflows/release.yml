@@ -403,11 +403,13 @@ jobs:
     if: ${{ github.event_name == 'release' && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
 
-    # The Docs workflow deploys dev in the same group, so two pushes to
-    # gh-pages never race.
+    # The Docs workflow and the Storybook previews push to gh-pages in the
+    # same group, so two pushes never race. With the default queue, a new
+    # pending run cancels the pending one before it.
     concurrency:
       group: gh-pages
       cancel-in-progress: false
+      queue: max
 
     permissions:
       contents: write   # push to gh-pages
