@@ -105,3 +105,19 @@ In CI, the `Fleet manager` workflow (`.github/workflows/fleet-manager.yml`) runs
 static build for 7 days, and `ui-stories` holds the screenshots and `index.html`.
 
 To build Storybook without the check, run `make fleet-build-stories`.
+
+## Open the Storybook of a pull request
+
+When a pull request from this repository changes `fleet-manager/`, CI publishes its Storybook on GitHub Pages at
+`https://konsole-is.github.io/camunda-operator/pr-preview/pr-<number>/`. A comment on the pull request gives the
+link and the commit of the build.
+
+- Each push replaces the preview and edits the same comment. After a push, GitHub Pages can take a minute to show
+  the new build.
+- CI publishes the preview when Storybook builds, also when another check fails.
+- A pull request from a fork gets no preview. To see its stories, download the `storybook` artifact of its run.
+- When the pull request closes, merged or not, CI removes the preview and edits the comment. A weekly run removes a
+  preview that a closed pull request left.
+- The Storybook of `main` is at <https://konsole-is.github.io/camunda-operator/storybook/>.
+
+The preview is public, so a story uses invented fixture data only.

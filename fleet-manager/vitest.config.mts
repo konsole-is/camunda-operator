@@ -34,6 +34,7 @@ export default defineConfig({
             "src/**/*.test.ts",
             "test/**/*.test.ts",
             "e2e/**/*.test.ts",
+            "scripts/**/*.test.ts",
           ],
           exclude: [...configDefaults.exclude, "test/k8s/**"],
         },
