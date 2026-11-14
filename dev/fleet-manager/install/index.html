@@ -607,6 +607,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#theme" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theme
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#trust-a-private-ca" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2707,6 +2718,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#theme" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theme
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#trust-a-private-ca" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2793,6 +2815,32 @@
 <p>Then open <a href="http://localhost:3000">http://localhost:3000</a> in a browser.</p>
 <p>The Fleet page lists the Camunda clusters of this Kubernetes cluster, as <a href="../fleet-view/">The fleet view</a> shows. The Setup page has a list of its pages at the side. In this version, two of them work: <strong>Environments</strong>, as <a href="../environments/">Environments</a> shows, and <strong>Settings</strong>, as <a href="../settings/#settings-page">Settings page</a> shows. The other items of the list show "This page could not be found." This is expected, and the install works.</p>
 <p>To set the cluster name, the Git repository, and the Prometheus address, see <a href="../settings/">Fleet manager settings</a>.</p>
+<h2 id="theme">Theme<a class="headerlink" href="#theme" title="Permanent link">&para;</a></h2>
+<p>The fleet manager has a light theme and a dark theme. On the first visit, it uses the light or dark setting of your operating system.</p>
+<p>The three buttons at the right of the top bar select the theme:</p>
+<table>
+<thead>
+<tr>
+<th>Button</th>
+<th>Theme</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>System</strong></td>
+<td>The setting of the operating system. The page changes when that setting changes.</td>
+</tr>
+<tr>
+<td><strong>Light</strong></td>
+<td>The light theme.</td>
+</tr>
+<tr>
+<td><strong>Dark</strong></td>
+<td>The dark theme.</td>
+</tr>
+</tbody>
+</table>
+<p>The page changes at once, without a reload, so a form that you are filling in keeps its values. The browser keeps the choice for one year in the cookie <code>fleet-theme</code>. Another browser does not have the cookie, so it uses the setting of the operating system. <strong>System</strong> removes the cookie.</p>
 <h2 id="trust-a-private-ca">Trust a private CA<a class="headerlink" href="#trust-a-private-ca" title="Permanent link">&para;</a></h2>
 <p>If a private CA signs the certificate of your Git server or your Prometheus server, the fleet manager does not trust it by default. Give the fleet manager the CA bundle in a ConfigMap. The bundle is a PEM file, and it can hold more than one CA. Put the ConfigMap in the release namespace:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>camunda-operator-system<span class="w"> </span>create<span class="w"> </span>configmap<span class="w"> </span>fleet-manager-ca<span class="w"> </span>--from-file<span class="o">=</span>ca.crt<span class="o">=</span>&lt;path<span class="w"> </span>to<span class="w"> </span>the<span class="w"> </span>PEM<span class="w"> </span>CA<span class="w"> </span>bundle&gt;
