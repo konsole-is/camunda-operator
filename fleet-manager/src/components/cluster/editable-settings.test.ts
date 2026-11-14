@@ -270,16 +270,25 @@ describe("settingsOf", () => {
 });
 
 describe("settingChange", () => {
-  it("an empty value resets the field", () => {
-    const labels = setting(
+  const labels = () =>
+    setting(
       processSettings("zeebe", "zeebe", {
         claim: { cluster: { zeebe: { podLabels: { team: "a" } } } },
       }),
       "podLabels",
     );
-    expect(settingChange(labels, {})).toEqual({
+
+  it("no value resets the field", () => {
+    expect(settingChange(labels(), undefined)).toEqual({
       steps: steps("spec", "cluster", "zeebe", "podLabels"),
       value: undefined,
+    });
+  });
+
+  it("an empty map writes {}", () => {
+    expect(settingChange(labels(), {})).toEqual({
+      steps: steps("spec", "cluster", "zeebe", "podLabels"),
+      value: {},
     });
   });
 });

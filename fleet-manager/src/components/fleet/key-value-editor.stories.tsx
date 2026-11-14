@@ -20,3 +20,23 @@ export const Labels: Story = {
 };
 
 export const Empty: Story = { name: "Empty" };
+
+export const NoEntriesOverInherited: Story = {
+  name: "No entries over an inherited value",
+  args: { label: "Pod labels", format: "label", emptyMap: "inherited" },
+};
+
+export const EmptyMap: Story = {
+  name: "Empty map over an inherited value",
+  args: {
+    label: "Pod labels",
+    format: "label",
+    emptyMap: "inherited",
+    defaultValue: {},
+  },
+};
+
+export const EmptyChoice: Story = {
+  name: "Empty map as a value",
+  args: { label: "Value", emptyMap: "unset", defaultValue: {} },
+};

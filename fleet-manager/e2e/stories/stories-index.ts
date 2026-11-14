@@ -1,14 +1,10 @@
-/**
- * One screenshot of one story at one width, as gallery.spec.ts and
- * stories.spec.ts record it.
- */
+/** One screenshot of one story at one width, as stories.spec.ts records it. */
 export type Shot = {
   id: string;
   component: string;
   name: string;
   width: number;
-  /** theme is absent for a shot of the gallery, which has only dark. */
-  theme?: "dark" | "light";
+  theme: "dark" | "light";
   file: string;
 };
 
@@ -24,12 +20,10 @@ const escape = (text: string) =>
  * in first-seen order, a row per story, and its widths side by side, widest
  * first, with the dark shot of a width before its light shot. The caption of
  * a light shot names the theme. The image paths stay relative, so the page
- * works from the artifact. title is the title and the heading of the page.
+ * works from the artifact.
  */
-export function renderIndex(
-  shots: readonly Shot[],
-  title = "Fleet manager UI gallery",
-): string {
+export function renderIndex(shots: readonly Shot[]): string {
+  const title = "Fleet manager stories";
   const components = new Map<string, Map<string, Shot[]>>();
   for (const s of shots) {
     const byStory = components.get(s.component) ?? new Map<string, Shot[]>();

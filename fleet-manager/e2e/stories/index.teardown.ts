@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "@playwright/test";
-import { type Shot, renderIndex } from "../gallery/gallery-index";
+import { type Shot, renderIndex } from "./stories-index";
 
 const OUT = path.resolve("ui-stories");
 
@@ -18,8 +18,5 @@ test("write the stories index", async () => {
       ...(JSON.parse(await readFile(path.join(OUT, file), "utf8")) as Shot[]),
     );
   }
-  await writeFile(
-    path.join(OUT, "index.html"),
-    renderIndex(shots, "Fleet manager stories"),
-  );
+  await writeFile(path.join(OUT, "index.html"), renderIndex(shots));
 });

@@ -8,7 +8,7 @@ import { SETUP_ITEMS, setupItemOf } from "./nav";
 /**
  * SetupNav is the side navigation of the Setup pages. It marks the Setup page
  * of the current path, on its list page and on its detail pages. pathname
- * replaces the route path, for the gallery.
+ * replaces the route path, for a story.
  */
 export function SetupNav({ pathname }: { pathname?: string }) {
   const route = usePathname();

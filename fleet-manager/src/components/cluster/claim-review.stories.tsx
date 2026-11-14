@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { fn } from "storybook/test";
-import { ClaimReviewStory } from "@/components/fleet/claim-review-story";
+import { ClaimReviewHarness } from "@/components/fleet/fixtures";
 import type { Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
@@ -100,8 +100,16 @@ function argsOf(changes: Change[], mode: WriteMode) {
 
 const meta = {
   title: "cluster/ClaimReview",
-  component: ClaimReviewStory,
-} satisfies Meta<typeof ClaimReviewStory>;
+  component: ClaimReviewHarness,
+  args: {
+    preview: fn(async () => ({ objects: [], errors: [] })),
+    apply: fn(async () => ({ ok: true as const, mode: "direct" as const })),
+    show: fn(),
+    onWritten: fn(),
+    onRefused: fn(),
+    onCancel: fn(),
+  },
+} satisfies Meta<typeof ClaimReviewHarness>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 

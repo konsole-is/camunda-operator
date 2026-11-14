@@ -352,9 +352,10 @@ export function fieldSchemaFromOpenAPI(
 /**
  * claimValueOf returns the claim value of an editor input, or undefined for
  * an empty input, which resets the field: an empty string, a number that is
- * not finite, an empty list or map, resources without a request or a limit,
- * and no Secret reference. A toggle keeps false, and a list of choices keeps
- * an empty list. Resources drop an empty requests or limits.
+ * not finite, an empty list, an empty YAML map, resources without a request
+ * or a limit, and no Secret reference. A toggle keeps false, a list of
+ * choices keeps an empty list, and a map of strings keeps {}. Resources
+ * drop an empty requests or limits.
  */
 export function claimValueOf(editor: SettingEditor, value: unknown): unknown {
   switch (editor.kind) {
@@ -371,6 +372,7 @@ export function claimValueOf(editor: SettingEditor, value: unknown): unknown {
     case "resources":
       return resourcesOf(value);
     case "choices":
+    case "keyValue":
       return value;
     default:
       return isEmpty(value) ? undefined : value;
@@ -380,8 +382,9 @@ export function claimValueOf(editor: SettingEditor, value: unknown): unknown {
 /**
  * editorValueOf returns the input of an editor for a claim value. An unset
  * value, undefined or null, is the empty input of the editor: an empty
- * string, false, an empty list or map, or undefined for a number and a
- * Secret reference. For YAML, the result keeps null.
+ * string, false, an empty list, an empty map for resources, or undefined
+ * for a number, a map of strings, and a Secret reference. For YAML, the
+ * result keeps null.
  */
 export function editorValueOf(
   editor: SettingEditor,
@@ -403,7 +406,6 @@ export function editorValueOf(
     case "tolerations":
     case "choices":
       return [];
-    case "keyValue":
     case "resources":
       return {};
     default:

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { ping } from "@/app/dev/watch-probe/actions";
+import { ping } from "./actions";
 import { useResource, useResources } from "@/lib/k8s/hooks";
 
 /**

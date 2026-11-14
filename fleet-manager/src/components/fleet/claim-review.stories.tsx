@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { fn } from "storybook/test";
 import type { Step } from "@/lib/fields";
 import { STALE_CLAIM_MESSAGE } from "@/lib/session";
-import { ClaimReviewStory } from "./claim-review-story";
-import { ordersClaim } from "./fixtures";
+import type { Preview } from "@/lib/write/types";
+import { ClaimReviewHarness, ordersClaim } from "./fixtures";
 
 const replicas: Step[] = [
   { field: "spec" },
@@ -13,7 +14,7 @@ const replicas: Step[] = [
 
 const meta = {
   title: "fleet/ClaimReview",
-  component: ClaimReviewStory,
+  component: ClaimReviewHarness,
   args: {
     claim: {
       ...ordersClaim,
@@ -22,8 +23,14 @@ const meta = {
     changes: [{ steps: replicas, value: 5 }],
     mode: "direct",
     impacts: ["Broker pods restart."],
+    preview: fn(async (): Promise<Preview> => ({ objects: [], errors: [] })),
+    apply: fn(async () => ({ ok: true as const, mode: "direct" as const })),
+    show: fn(),
+    onWritten: fn(),
+    onRefused: fn(),
+    onCancel: fn(),
   },
-} satisfies Meta<typeof ClaimReviewStory>;
+} satisfies Meta<typeof ClaimReviewHarness>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
@@ -43,7 +50,7 @@ export const PreviewRefused: Story = {
   args: {
     changes: [{ steps: replicas, value: 0 }],
     impacts: [],
-    preview: {
+    preview: fn(async (): Promise<Preview> => ({
       objects: [],
       errors: [
         {
@@ -52,16 +59,16 @@ export const PreviewRefused: Story = {
           path: "spec.cluster.zeebe.replicas",
         },
       ],
-    },
+    })),
   },
 };
 
 export const Stale: Story = {
   name: "Stale",
   args: {
-    preview: {
+    preview: fn(async (): Promise<Preview> => ({
       objects: [],
       errors: [{ code: "Stale", message: STALE_CLAIM_MESSAGE }],
-    },
+    })),
   },
 };

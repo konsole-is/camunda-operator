@@ -1174,6 +1174,18 @@ describe("storageSummary", () => {
     ]);
   });
 
+  it("shows an empty map as {}", () => {
+    const summary = summaryOf({
+      "connectors-permissions": [
+        pick("connectors-permissions", "aws-connectors-role", {
+          tags: {},
+        }),
+      ],
+    });
+
+    expect(summary.picks[0].values).toEqual([{ label: "tags", value: "{}" }]);
+  });
+
   it("shows another typed value as written", () => {
     const summary = summaryOf({
       "connectors-permissions": [

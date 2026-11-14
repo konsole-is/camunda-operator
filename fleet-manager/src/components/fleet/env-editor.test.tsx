@@ -194,4 +194,63 @@ describe("EnvEditor", () => {
       { path: "2.secret", message: "Pick a Secret and a key" },
     ]);
   });
+
+  it("describes the name and the value by the hint of the field", () => {
+    render(
+      <>
+        <EnvEditor
+          label="Environment variables"
+          secrets={secrets}
+          defaultValue={[{ name: "TZ", value: "UTC" }]}
+          describedBy="hint"
+        />
+        <p id="hint">Checked after you save</p>
+      </>,
+    );
+    for (const name of ["Name", "Value"])
+      expect(
+        screen.getByRole("textbox", {
+          name,
+          description: "Checked after you save",
+        }),
+      ).toBeTruthy();
+  });
+
+  it("describes the Secret and key selects by the error of their row", async () => {
+    render(
+      <EnvEditor
+        label="Environment variables"
+        secrets={secrets}
+        defaultValue={[{ name: "DB_PASSWORD", value: "" }]}
+      />,
+    );
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Source" }),
+      "secret",
+    );
+    for (const name of ["Secret", "Key"])
+      expect(
+        screen.getByRole("combobox", {
+          name,
+          description: "Pick a Secret and a key",
+        }),
+      ).toBeTruthy();
+  });
+
+  it("describes the name by the error of its row", async () => {
+    render(
+      <EnvEditor
+        label="Environment variables"
+        secrets={secrets}
+        defaultValue={[{ name: "TZ", value: "UTC" }]}
+      />,
+    );
+    await userEvent.clear(screen.getByRole("textbox", { name: "Name" }));
+    expect(
+      screen.getByRole("textbox", {
+        name: "Name",
+        description: "Enter a name",
+      }),
+    ).toBeTruthy();
+  });
 });

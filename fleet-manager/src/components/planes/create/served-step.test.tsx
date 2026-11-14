@@ -185,6 +185,29 @@ describe("ServedStep", () => {
     ]);
   });
 
+  it("describes the cluster label inputs by the hint of the labels", async () => {
+    render(<Harness />);
+    await userEvent.click(screen.getByRole("button", { name: "Add an entry" }));
+    expect(
+      screen.getByRole("textbox", {
+        name: "Key",
+        description:
+          "Leave empty to serve every cluster in these environments.",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("keeps an empty map of cluster labels once the last row goes", async () => {
+    render(<Harness initial={{ ...draft, clusterLabels: { tier: "gold" } }} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove entry 1" }),
+    );
+    expect(previewRows().map((r) => r.textContent)).toEqual([
+      expect.stringContaining("team-a/c1"),
+      expect.stringContaining("team-a/c2"),
+    ]);
+  });
+
   it("reports the errors of the cluster labels", async () => {
     const onSelectorErrors = vi.fn();
     render(<Harness onSelectorErrors={onSelectorErrors} />);

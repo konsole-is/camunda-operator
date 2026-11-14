@@ -32,6 +32,8 @@ export type ParameterSetting = {
   schema?: OpenAPISchema;
   /** registrationSummary is lockedSummary of the value that the registration gives the parameter. */
   registrationSummary: string;
+  /** registrationSet tells whether the registration gives the parameter a value. */
+  registrationSet: boolean;
   value?: unknown;
   claimEditable: boolean;
   allowed: NamedValue[];
@@ -125,6 +127,7 @@ function settingsOf(
             : parameter,
         ...(parameterSchema && { schema: parameterSchema }),
         registrationSummary: lockedSummary(own(values, parameter)),
+        registrationSet: own(values, parameter) !== undefined,
         ...(policy.value !== undefined && { value: policy.value }),
         claimEditable: policy.claimEditable ?? false,
         allowed: policy.allowed ?? [],

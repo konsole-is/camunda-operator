@@ -350,6 +350,81 @@ describe("SectionCards", () => {
         { path: "tuning/tags", message: "team is set twice" },
       ]);
     });
+
+    describe("with a value of the environment", () => {
+      const inherited: OptionView = {
+        ...tagged,
+        parameters: [
+          {
+            name: "tags",
+            label: "Tags",
+            schema: {
+              type: "object",
+              additionalProperties: { type: "string" },
+            },
+            claimEditable: true,
+            value: { team: "platform" },
+          },
+        ],
+      };
+
+      it("submits {} for a map set to empty", async () => {
+        const onChange = vi.fn();
+        render(
+          <SectionCards section={section({}, inherited)} onChange={onChange} />,
+        );
+        await userEvent.click(
+          screen.getByRole("button", { name: "Remove entry 1" }),
+        );
+        await userEvent.click(
+          screen.getByRole("button", { name: "Set to an empty map" }),
+        );
+        expect(onChange).toHaveBeenLastCalledWith(
+          [
+            {
+              section: "connectors-permissions",
+              registration: "tuning",
+              parameters: { tags: {} },
+            },
+          ],
+          [],
+        );
+      });
+
+      it("submits no value once the map goes back to the inherited value", async () => {
+        const onChange = vi.fn();
+        render(
+          <SectionCards
+            section={section({}, inherited)}
+            defaultValue={[
+              {
+                section: "connectors-permissions",
+                registration: "tuning",
+                parameters: { tags: {} },
+              },
+            ]}
+            onChange={onChange}
+          />,
+        );
+        expect(
+          screen.getByText("Empty map, overrides the inherited value"),
+        ).toBeTruthy();
+        await userEvent.click(
+          screen.getByRole("button", { name: "Use the inherited value" }),
+        );
+        expect(onChange).toHaveBeenLastCalledWith(
+          [{ section: "connectors-permissions", registration: "tuning" }],
+          [],
+        );
+      });
+    });
+
+    it("offers no empty map without a value of the environment", () => {
+      render(<SectionCards section={section({}, tagged)} />);
+      expect(
+        screen.queryByRole("button", { name: "Set to an empty map" }),
+      ).toBeNull();
+    });
   });
 
   it("takes a new policy default and keeps a value that the user set", async () => {

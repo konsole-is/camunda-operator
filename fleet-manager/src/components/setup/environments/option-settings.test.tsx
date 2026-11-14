@@ -237,6 +237,57 @@ describe("OptionSettings", () => {
       });
     });
 
+    it("saves {} over a value of the registration", async () => {
+      const sources = withLabels();
+      sources.registrations.find(
+        (r) => r.metadata.name === "rustfs",
+      )!.spec.parameterValues = { replicas: 3, labels: { tier: "gold" } };
+      const actions = renderEditor("production", sources);
+      fireEvent.click(
+        within(labelsGroup()).getByRole("button", {
+          name: "Set to an empty map",
+        }),
+      );
+      expect(
+        within(labelsGroup()).getByText(
+          "Empty map, overrides the inherited value",
+        ),
+      ).toBeTruthy();
+      expect(await save(actions)).toMatchObject({
+        parameters: { rustfs: { labels: { value: {} } } },
+      });
+    });
+
+    it("offers no empty map without a value of the registration", () => {
+      renderEditor("production", withLabels());
+      expect(
+        within(labelsGroup()).queryByRole("button", {
+          name: "Set to an empty map",
+        }),
+      ).toBeNull();
+    });
+
+    it("lets an allowed choice hold {}", () => {
+      const sources = withLabels();
+      const environment = sources.environments.find(
+        (e) => e.metadata.name === "production",
+      )!;
+      environment.spec.parameters = {
+        rustfs: {
+          labels: {
+            claimEditable: true,
+            allowed: [{ name: "none", label: "No labels", value: {} }],
+          },
+        },
+      };
+      renderEditor("production", sources);
+      expect(
+        within(screen.getByRole("group", { name: "Choice 1" })).getByText(
+          "Empty map",
+        ),
+      ).toBeTruthy();
+    });
+
     it("blocks Review while a key is set twice", () => {
       const { previewChange } = renderEditor("production", withLabels());
       const labels = labelsGroup();

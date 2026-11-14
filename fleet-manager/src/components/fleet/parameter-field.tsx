@@ -15,7 +15,7 @@ import {
   schemaRules,
 } from "@/lib/schema";
 import { cn } from "@/lib/utils";
-import { KeyValueEditor } from "./key-value-editor";
+import { type EmptyMap, KeyValueEditor } from "./key-value-editor";
 import { LockedField } from "./locked-field";
 import { YamlEditor } from "./yaml-editor";
 
@@ -27,19 +27,22 @@ import { YamlEditor } from "./yaml-editor";
  * cleared text field and [] for choices with none checked. It also gets the
  * errors of an editor that shows its own, but from YamlEditor only those of
  * text that does not parse. error shows while the editor shows no error of
- * its own.
+ * its own. emptyMap lets a map of strings take {}, as KeyValueEditor says.
+ * A map that starts as {} gets "unset" when emptyMap is not given.
  */
 export function ParameterField({
   id,
   rule,
   value,
   error,
+  emptyMap,
   onValue,
 }: {
   id: string;
   rule: ParameterRule;
   value: unknown;
   error?: string;
+  emptyMap?: EmptyMap;
   onValue: (value: unknown, parse?: ValidationError[]) => void;
 }) {
   const [rowErrors, setRowErrors] = useState(false);
@@ -236,7 +239,16 @@ export function ParameterField({
             label={rule.label}
             format={editor.format}
             defaultValue={
-              editorValueOf(editor, value) as Record<string, string>
+              editorValueOf(editor, value) as Record<string, string> | undefined
+            }
+            emptyMap={emptyMap ?? (isEmptyMap(mounted) ? "unset" : undefined)}
+            describedBy={
+              [
+                !rowErrors && error && `${id}-error`,
+                rules.length > 0 && `${id}-rules`,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
             }
             onChange={(v, errors) => {
               setRowErrors(errors.length > 0);
@@ -248,6 +260,15 @@ export function ParameterField({
         </div>
       );
   }
+}
+
+function isEmptyMap(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+  );
 }
 
 /**

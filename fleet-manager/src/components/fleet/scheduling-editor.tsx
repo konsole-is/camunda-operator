@@ -33,15 +33,18 @@ type Row = {
  * SchedulingEditor edits the tolerations of the pods as rows of key,
  * operator, value, effect, and seconds. A field that the row does not use
  * is not written. onChange gets the tolerations and the errors after each
- * edit.
+ * edit. describedBy names the hint and error elements of the field for
+ * each control of a row.
  */
 export function SchedulingEditor({
   label,
   defaultValue = [],
+  describedBy,
   onChange,
 }: {
   label: string;
   defaultValue?: Toleration[];
+  describedBy?: string;
   onChange?: (value: Toleration[], errors: ValidationError[]) => void;
 }) {
   const id = useId();
@@ -73,9 +76,13 @@ export function SchedulingEditor({
           .filter((e) => e.path.startsWith(`${index}.`))
           .map((e) => e.message)
           .join(". ");
-        const keyInvalid =
-          errors.some((e) => e.path === `${index}.key`) || undefined;
+        const invalid = (field: string) =>
+          errors.some((e) => e.path === `${index}.${field}`) || undefined;
         const at = (field: string) => `${id}-${row.id}-${field}`;
+        const described =
+          [rowErrorsText && at("error"), describedBy]
+            .filter(Boolean)
+            .join(" ") || undefined;
         const select = (
           field: string,
           name: string,
@@ -90,6 +97,7 @@ export function SchedulingEditor({
             <NativeSelect
               id={at(field)}
               value={value}
+              aria-describedby={described}
               onChange={(event) => onPick(event.target.value)}
             >
               {options.map(([v, l]) => (
@@ -114,6 +122,7 @@ export function SchedulingEditor({
             <Input
               id={at(field)}
               value={value}
+              aria-describedby={described}
               onChange={(event) => onText(event.target.value)}
               {...extra}
             />
@@ -131,7 +140,7 @@ export function SchedulingEditor({
           >
             <div className="flex flex-wrap items-end gap-2">
               {text("key", "Key", row.key, (v) => replace({ ...row, key: v }), {
-                "aria-invalid": keyInvalid,
+                "aria-invalid": invalid("key"),
               })}
               {select(
                 "operator",
@@ -175,7 +184,12 @@ export function SchedulingEditor({
                   "Seconds",
                   row.seconds,
                   (v) => replace({ ...row, seconds: v }),
-                  { type: "number", step: 1, className: "w-28" },
+                  {
+                    type: "number",
+                    step: 1,
+                    className: "w-28",
+                    "aria-invalid": invalid("tolerationSeconds"),
+                  },
                 )}
               <Button
                 variant="ghost"
@@ -187,7 +201,9 @@ export function SchedulingEditor({
               </Button>
             </div>
             {rowErrorsText && (
-              <p className="text-xs text-bad">{rowErrorsText}</p>
+              <p id={at("error")} className="text-xs text-bad">
+                {rowErrorsText}
+              </p>
             )}
           </div>
         );

@@ -62,15 +62,18 @@ const FIELDS: [Side, Resource, string][] = [
  * Every other resource, such as ephemeral-storage, and every other key stay
  * unchanged, and a value in a unit that the list does not hold keeps its
  * unit. onChange gets the resources and the errors after each edit: an
- * amount that is not a number, and a limit below its request.
+ * amount that is not a number, and a limit below its request. describedBy
+ * names the hint and error elements of the field for each amount and unit.
  */
 export function ResourcesEditor({
   label,
   defaultValue = {},
+  describedBy,
   onChange,
 }: {
   label: string;
   defaultValue?: Resources;
+  describedBy?: string;
   onChange?: (value: Resources, errors: ValidationError[]) => void;
 }) {
   const id = useId();
@@ -97,6 +100,10 @@ export function ResourcesEditor({
         const path = `${side}.${resource}`;
         const value = amounts[path];
         const error = errors.find((e) => e.path === path)?.message;
+        const described =
+          [error && `${id}-${path}-error`, describedBy]
+            .filter(Boolean)
+            .join(" ") || undefined;
         const units = UNITS[resource].some((u) => u.value === value.unit)
           ? UNITS[resource]
           : [...UNITS[resource], { value: value.unit, label: value.unit }];
@@ -116,7 +123,7 @@ export function ResourcesEditor({
                 inputMode="decimal"
                 value={value.amount}
                 aria-invalid={error ? true : undefined}
-                aria-describedby={error ? `${id}-${path}-error` : undefined}
+                aria-describedby={described}
                 onChange={(event) =>
                   update(path, { ...value, amount: event.target.value })
                 }
@@ -128,6 +135,7 @@ export function ResourcesEditor({
                 id={`${id}-${path}-unit`}
                 className="w-32"
                 value={value.unit}
+                aria-describedby={described}
                 onChange={(event) =>
                   update(path, { ...value, unit: event.target.value })
                 }

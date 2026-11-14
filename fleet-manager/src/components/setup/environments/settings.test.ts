@@ -125,12 +125,14 @@ describe("optionSettings", () => {
     );
     expect(settings.parameters[0]).toMatchObject({
       registrationSummary: "3",
+      registrationSet: true,
       claimEditable: false,
       allowed: [],
     });
     expect(settings.parameters[0].value).toBeUndefined();
     expect(settings.parameters[1]).toMatchObject({
       registrationSummary: "Not set",
+      registrationSet: false,
       value: "gold",
       claimEditable: true,
       allowed: [{ name: "g", label: "Gold", value: "gold" }],

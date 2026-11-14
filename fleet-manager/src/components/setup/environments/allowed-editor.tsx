@@ -123,6 +123,7 @@ export function AllowedEditor({
                 }}
                 value={choice.value}
                 error={errorAt(`${row}.value`)}
+                emptyMap="unset"
                 onValue={(value, parse) => {
                   textErrors.current[id] = parse ?? [];
                   reportText();
