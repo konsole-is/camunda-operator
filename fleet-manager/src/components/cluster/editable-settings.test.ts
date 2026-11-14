@@ -113,6 +113,25 @@ describe("settingsOf", () => {
     });
   });
 
+  it("a value that the editor of a field cannot keep opens as YAML", () => {
+    const tolerations = setting(
+      processSettings("zeebe", "zeebe", {
+        preset: {
+          zeebe: {
+            scheduling: {
+              tolerations: [{ key: "spot", operator: "Exists", extra: true }],
+            },
+          },
+        },
+      }),
+      "scheduling.tolerations",
+    );
+    expect(tolerations.editor).toEqual({
+      kind: "yaml",
+      schema: { type: "array", items: { type: "object" } },
+    });
+  });
+
   it("a list that each layer appends to edits the list of the claim", () => {
     const a = { configMapRef: { name: "preset-env" } };
     const b = { secretRef: { name: "claim-env" } };

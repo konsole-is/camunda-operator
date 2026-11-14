@@ -434,7 +434,7 @@ describe("SelectionSettingsEditor", () => {
       ).toHaveProperty("value", "all");
     });
 
-    it("shows a value that the editor of the name cannot read as YAML", () => {
+    it("edits an extraEnv list as YAML checked against its schema", () => {
       renderEditor({
         fields: [field("extraEnv", { TZ: "UTC" })],
         schema: {
@@ -445,12 +445,56 @@ describe("SelectionSettingsEditor", () => {
       expect(textarea("extraEnv")?.value).toContain("TZ: UTC");
     });
 
-    it("shows a value of a parameter without a schema that the editor of the name cannot read as YAML", () => {
+    it("edits a storageSize string as text", () => {
       renderEditor({
-        fields: [field("tolerations", "all")],
+        fields: [field("storageSize", "50Gi")],
+        schema: {
+          type: "object",
+          properties: { storageSize: { type: "string" } },
+        },
+      });
+      expect(
+        within(settingRow("storageSize")).getByRole("textbox"),
+      ).toHaveProperty("value", "50Gi");
+      expect(
+        within(settingRow("storageSize")).queryByRole("textbox", {
+          name: "Amount",
+        }),
+      ).toBeNull();
+    });
+
+    it("edits a part of an object parameter other than overrides by its schema", () => {
+      renderEditor({
+        fields: [field("volume", { storageSize: "50Gi" })],
+        schema: {
+          type: "object",
+          properties: {
+            volume: {
+              type: "object",
+              properties: { storageSize: { type: "string" } },
+            },
+          },
+        },
+      });
+      expect(
+        within(settingRow("volume.storageSize")).getByRole("textbox"),
+      ).toHaveProperty("value", "50Gi");
+      expect(
+        within(settingRow("volume.storageSize")).queryByRole("textbox", {
+          name: "Amount",
+        }),
+      ).toBeNull();
+    });
+
+    it("keeps a parameter without a schema read only", () => {
+      renderEditor({
+        fields: [field("tolerations", [{ key: "a" }])],
         schema: undefined,
       });
-      expect(textarea("tolerations")?.value).toContain("all");
+      expect(screen.getByText("Change it in the Claim tab.")).toBeDefined();
+      expect(
+        screen.queryByRole("button", { name: "Add a toleration" }),
+      ).toBeNull();
     });
 
     it("keeps the editors of the overrides and shows a part they cannot read as YAML", () => {
@@ -480,20 +524,22 @@ describe("SelectionSettingsEditor", () => {
     });
 
     it("keeps the YAML editor once the YAML gives a value that rows read", () => {
-      const props = { schema: undefined, set: () => {}, reset: () => {} };
+      const props = { schema: SCHEMA, set: () => {}, reset: () => {} };
       const { rerender } = render(
         <SelectionSettingsEditor
-          fields={[field("tolerations", "all")]}
+          fields={[field("overrides", { resources: "big" })]}
           {...props}
         />,
       );
       rerender(
         <SelectionSettingsEditor
-          fields={[field("tolerations", [{ key: "a" }])]}
+          fields={[
+            field("overrides", { resources: { requests: { cpu: "1" } } }),
+          ]}
           {...props}
         />,
       );
-      expect(textarea("tolerations")).toBeDefined();
+      expect(textarea("overrides.resources")).toBeDefined();
     });
   });
 });

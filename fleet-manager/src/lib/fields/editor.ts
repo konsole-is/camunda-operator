@@ -21,6 +21,18 @@ export type SettingEditor =
 export type SchemaEditor = Exclude<SettingEditor, { kind: "secretRef" }>;
 
 /**
+ * ParameterEditor is an editor that a registration schema picks: any but a
+ * Secret reference and the editors that only the name of a cluster field
+ * picks.
+ */
+export type ParameterEditor = Exclude<
+  SchemaEditor,
+  { kind: "resources" | "storageSize" | "env" | "tolerations" }
+>;
+
+type YamlEditor = Extract<SchemaEditor, { kind: "yaml" }>;
+
+/**
  * editorOf returns the editor of the field at path with schema, or
  * undefined only when the field has neither a schema nor choices. choices
  * are names that the field takes in place of its values. openAPI is the
@@ -38,6 +50,9 @@ export type SchemaEditor = Exclude<SettingEditor, { kind: "secretRef" }>;
  *  5. An object: a map of strings, with label rules for podLabels.
  *  6. Anything else: YAML, checked against openAPI, else against the type
  *     of the schema when it has one.
+ *
+ * value is the value that the editor opens with. When the editor of rule 2
+ * or 5 cannot keep it as it is, the result is YAML, checked as in rule 6.
  */
 export function editorOf(
   path: string,
@@ -45,17 +60,86 @@ export function editorOf(
   {
     choices,
     openAPI,
-  }: { choices?: readonly string[]; openAPI?: OpenAPISchema } = {},
+    value,
+  }: {
+    choices?: readonly string[];
+    openAPI?: OpenAPISchema;
+    value?: unknown;
+  } = {},
 ): SchemaEditor | undefined {
+  const last = path.slice(path.lastIndexOf(".") + 1);
+  if (!choices) {
+    const byName = Object.hasOwn(BY_NAME, last) ? BY_NAME[last] : undefined;
+    if (byName && (!openAPI || byName.fits(openAPI)))
+      return kept(byName.editor, value, openAPI ?? openAPIOf(schema));
+    const full = openAPI ? undefined : fullSchemaOf(path);
+    if (full) return { kind: "yaml", schema: full };
+  }
+  return schemaEditorOf(schema, {
+    choices,
+    openAPI,
+    value,
+    labels: last === "podLabels",
+  });
+}
+
+/**
+ * parameterEditorOf returns the editor of a registration parameter with
+ * schema its property schema, or undefined only when schema is not an
+ * object and there are no choices. choices are the names that the claim
+ * stores in place of the values. The editor depends on the schema only, not
+ * on the name of the parameter: rules 1 and 4 to 6 of editorOf. A map of
+ * strings with a value that is not a map of strings gives YAML.
+ */
+export function parameterEditorOf(
+  schema: unknown,
+  { choices, value }: { choices?: readonly string[]; value?: unknown } = {},
+): ParameterEditor | undefined {
+  return schemaEditorOf(fieldSchemaFromOpenAPI(schema), {
+    choices,
+    openAPI: isObject(schema) ? (schema as OpenAPISchema) : undefined,
+    value,
+  });
+}
+
+/**
+ * overrideEditorOf returns the editor of the part name of the parameter
+ * overrides of a registration, with schema its property schema. Its
+ * resources, storageSize, extraEnv, and tolerations replace the fields of
+ * those names, so a part gets the editor of the field when schema fits it,
+ * as in editorOf. A value that the editor cannot keep as it is gives YAML.
+ */
+export function overrideEditorOf(
+  name: string,
+  schema: unknown,
+  { value }: { value?: unknown } = {},
+): SchemaEditor | undefined {
+  return editorOf(name, fieldSchemaFromOpenAPI(schema), {
+    ...(isObject(schema) && { openAPI: schema as OpenAPISchema }),
+    value,
+  });
+}
+
+// schemaEditorOf picks the editor by rules 1 and 4 to 6 of editorOf, with
+// label rules for a map of strings when labels is set.
+function schemaEditorOf(
+  schema: FieldSchema | undefined,
+  {
+    choices,
+    openAPI,
+    value,
+    labels,
+  }: {
+    choices?: readonly string[];
+    openAPI?: OpenAPISchema;
+    value?: unknown;
+    labels?: boolean;
+  },
+): ParameterEditor | undefined {
   if (choices)
     return schema?.type === "array"
       ? { kind: "choices", options: choices }
       : { kind: "select", options: choices };
-  const last = path.slice(path.lastIndexOf(".") + 1);
-  const byName = Object.hasOwn(BY_NAME, last) ? BY_NAME[last] : undefined;
-  if (byName && (!openAPI || byName.fits(openAPI))) return byName.editor;
-  const full = openAPI ? undefined : fullSchemaOf(path);
-  if (full) return { kind: "yaml", schema: full };
   if (schema === undefined) return undefined;
   if (schema.enum) return { kind: "select", options: schema.enum };
   if (schema.type === "boolean") return { kind: "toggle" };
@@ -67,35 +151,28 @@ export function editorOf(
       ...(schema.maximum !== undefined && { maximum: schema.maximum }),
     };
   if (schema.type === "string" || schema.intOrString) return { kind: "text" };
+  const yaml = openAPI ?? openAPIOf(schema);
   if (schema.type === "object")
-    return last === "podLabels"
-      ? { kind: "keyValue", format: "label" }
-      : { kind: "keyValue" };
-  if (openAPI) return { kind: "yaml", schema: openAPI };
-  if (schema.type === undefined) return { kind: "yaml" };
-  return { kind: "yaml", schema: openAPIOf(schema) };
+    return kept(
+      labels ? { kind: "keyValue", format: "label" } : { kind: "keyValue" },
+      value,
+      yaml,
+    );
+  return yamlOf(yaml);
 }
 
-/**
- * parameterEditorOf returns the editor of the parameter name of a
- * registration, with schema its property schema, or undefined only when
- * schema is not an object and there are no choices. choices are the names
- * that the claim stores in place of the values. A value that the editor of
- * a cluster field or of a map of strings cannot read gives YAML.
- */
-export function parameterEditorOf(
-  name: string,
-  schema: unknown,
-  { choices, value }: { choices?: readonly string[]; value?: unknown } = {},
-): SchemaEditor | undefined {
-  const openAPI = isObject(schema) ? (schema as OpenAPISchema) : undefined;
-  const editor = editorOf(name, fieldSchemaFromOpenAPI(schema), {
-    ...(choices && { choices }),
-    ...(openAPI && { openAPI }),
-  });
-  return editor && !reads(editor, value)
-    ? { kind: "yaml", ...(openAPI && { schema: openAPI }) }
-    : editor;
+// kept returns editor when it can keep value as it is, else YAML checked
+// against schema.
+function kept<E extends SchemaEditor>(
+  editor: E,
+  value: unknown,
+  schema: OpenAPISchema | undefined,
+): E | YamlEditor {
+  return reads(editor, value) ? editor : yamlOf(schema);
+}
+
+function yamlOf(schema: OpenAPISchema | undefined): YamlEditor {
+  return { kind: "yaml", ...(schema && { schema }) };
 }
 
 const BY_NAME: Partial<
@@ -142,7 +219,8 @@ function isListOfObjects(schema: Record<string, unknown>): boolean {
 }
 
 // reads tells whether editor can show value and keep it in an edit. It
-// checks only the editors that fail on a value of another shape.
+// checks only the editors that fail on a value of another shape or drop a
+// part of it.
 function reads(editor: SchemaEditor, value: unknown): boolean {
   if (value === undefined || value === null) return true;
   switch (editor.kind) {
@@ -161,34 +239,71 @@ function reads(editor: SchemaEditor, value: unknown): boolean {
         )
       );
     case "storageSize":
-      return isString(value) || typeof value === "number";
+      // The editor writes a string, also for a number.
+      return isString(value);
     case "env":
-      return (
-        Array.isArray(value) &&
-        value.every(
-          (e) =>
-            isObject(e) &&
-            isString(e.name) &&
-            (e.value === undefined || isString(e.value)) &&
-            (e.valueFrom === undefined || isObject(e.valueFrom)),
-        )
-      );
+      return Array.isArray(value) && value.every(keepsEnv);
     case "tolerations":
-      return (
-        Array.isArray(value) &&
-        value.every(
-          (t) =>
-            isObject(t) &&
-            ["key", "operator", "value", "effect"].every(
-              (f) => t[f] === undefined || isString(t[f]),
-            ) &&
-            (t.tolerationSeconds === undefined ||
-              typeof t.tolerationSeconds === "number"),
-        )
-      );
+      return Array.isArray(value) && value.every(keepsToleration);
     default:
       return true;
   }
+}
+
+const ENV_FIELDS = ["name", "value", "valueFrom"];
+
+// keepsEnv tells whether the env editor keeps entry as it is.
+function keepsEnv(entry: unknown): boolean {
+  if (
+    !isObject(entry) ||
+    !isString(entry.name) ||
+    !Object.keys(entry).every((k) => ENV_FIELDS.includes(k))
+  )
+    return false;
+  const from = entry.valueFrom;
+  if (from === undefined)
+    return entry.value === undefined || isString(entry.value);
+  if (!isObject(from)) return false;
+  // EnvEditor writes an entry with only a Secret key that is not optional
+  // from the name and the key of the reference. It keeps any other entry
+  // whole.
+  const ref = from.secretKeyRef;
+  if (
+    !isObject(ref) ||
+    Object.keys(from).length !== 1 ||
+    !ref.name ||
+    ref.optional
+  )
+    return true;
+  return (
+    entry.value === undefined &&
+    Object.keys(ref).every((k) => k === "name" || k === "key")
+  );
+}
+
+const TOLERATION_FIELDS = [
+  "key",
+  "operator",
+  "value",
+  "effect",
+  "tolerationSeconds",
+];
+
+// keepsToleration tells whether the tolerations editor keeps toleration as
+// it is. It writes a value only for an operator other than Exists, and
+// seconds only for the effect NoExecute.
+function keepsToleration(toleration: unknown): boolean {
+  return (
+    isObject(toleration) &&
+    Object.keys(toleration).every((k) => TOLERATION_FIELDS.includes(k)) &&
+    ["key", "operator", "value", "effect"].every(
+      (f) => toleration[f] === undefined || isString(toleration[f]),
+    ) &&
+    !(toleration.operator === "Exists" && toleration.value) &&
+    (toleration.tolerationSeconds === undefined ||
+      (Number.isInteger(toleration.tolerationSeconds) &&
+        toleration.effect === "NoExecute"))
+  );
 }
 
 /**
@@ -298,11 +413,12 @@ function resourcesOf(value: unknown): unknown {
   return Object.keys(result).length === 0 ? undefined : result;
 }
 
-function openAPIOf(schema: FieldSchema): OpenAPISchema {
-  return {
-    type: schema.type,
-    ...(schema.items && { items: openAPIOf(schema.items) }),
-  };
+// openAPIOf returns the schema of the type of schema, or undefined when it
+// has no type.
+function openAPIOf(schema: FieldSchema | undefined): OpenAPISchema | undefined {
+  if (schema?.type === undefined) return undefined;
+  const items = openAPIOf(schema.items);
+  return { type: schema.type, ...(items && { items }) };
 }
 
 function isEmpty(value: unknown): boolean {

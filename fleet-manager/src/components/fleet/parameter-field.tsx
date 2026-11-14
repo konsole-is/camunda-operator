@@ -7,12 +7,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import {
-  claimValueOf,
-  editorValueOf,
-  parameterEditorOf,
-  type SchemaEditor,
-} from "@/lib/fields";
+import { claimValueOf, editorValueOf, parameterEditorOf } from "@/lib/fields";
 import type { ParameterRule } from "@/lib/policy/types";
 import {
   type SchemaRule,
@@ -20,13 +15,8 @@ import {
   schemaRules,
 } from "@/lib/schema";
 import { cn } from "@/lib/utils";
-import { EnvEditor, type EnvVar } from "./env-editor";
 import { KeyValueEditor } from "./key-value-editor";
 import { LockedField } from "./locked-field";
-import { ResourcesEditor, type Resources } from "./resources-editor";
-import { SchedulingEditor, type Toleration } from "./scheduling-editor";
-import type { SecretRefs } from "./secret-ref-picker";
-import { StorageSizeEditor } from "./storage-size-editor";
 import { YamlEditor } from "./yaml-editor";
 
 /**
@@ -90,7 +80,6 @@ export function ParameterField({
   // A claim stores one name for a list whose choices are each a whole list.
   // A schema always gives an editor.
   const editor = parameterEditorOf(
-    rule.name,
     rule.allowedLists ? { type: "string" } : schema,
     { choices: rule.allowed?.map((a) => a.name), value: mounted },
   )!;
@@ -240,13 +229,15 @@ export function ParameterField({
           {hints}
         </div>
       );
-    default:
+    case "keyValue":
       return (
         <div className="flex min-w-0 flex-col gap-1">
-          <RowsEditor
+          <KeyValueEditor
             label={rule.label}
-            editor={editor}
-            value={value}
+            format={editor.format}
+            defaultValue={
+              editorValueOf(editor, value) as Record<string, string>
+            }
             onChange={(v, errors) => {
               setRowErrors(errors.length > 0);
               onValue(claimValueOf(editor, v), errors);
@@ -257,85 +248,6 @@ export function ParameterField({
         </div>
       );
   }
-}
-
-// RowsEditor is the input of an editor kind that shows the errors of its
-// own rows.
-function RowsEditor({
-  label,
-  editor,
-  value,
-  onChange,
-}: {
-  label: string;
-  editor: Extract<
-    SchemaEditor,
-    { kind: "keyValue" | "resources" | "storageSize" | "env" | "tolerations" }
-  >;
-  value: unknown;
-  onChange: (value: unknown, errors: ValidationError[]) => void;
-}) {
-  const initial = editorValueOf(editor, value);
-  // An edit that clears a Secret key changes value, and the Secret must
-  // stay on offer.
-  const [secrets] = useState(() =>
-    editor.kind === "env" ? secretKeysOf(initial as EnvVar[]) : [],
-  );
-  switch (editor.kind) {
-    case "keyValue":
-      return (
-        <KeyValueEditor
-          label={label}
-          format={editor.format}
-          defaultValue={initial as Record<string, string>}
-          onChange={onChange}
-        />
-      );
-    case "resources":
-      return (
-        <ResourcesEditor
-          label={label}
-          defaultValue={initial as Resources}
-          onChange={onChange}
-        />
-      );
-    case "storageSize":
-      return (
-        <StorageSizeEditor
-          label={label}
-          defaultValue={String(initial)}
-          onChange={onChange}
-        />
-      );
-    case "env":
-      return (
-        <EnvEditor
-          label={label}
-          // SecretRefPicker drops a reference to a Secret that secrets lack.
-          secrets={secrets}
-          defaultValue={initial as EnvVar[]}
-          onChange={onChange}
-        />
-      );
-    case "tolerations":
-      return (
-        <SchedulingEditor
-          label={label}
-          defaultValue={initial as Toleration[]}
-          onChange={onChange}
-        />
-      );
-  }
-}
-
-function secretKeysOf(env: readonly EnvVar[]): SecretRefs {
-  const keys = new Map<string, string[]>();
-  for (const entry of env) {
-    const ref = entry.valueFrom?.secretKeyRef;
-    if (ref?.name && ref.key)
-      keys.set(ref.name, [...(keys.get(ref.name) ?? []), ref.key]);
-  }
-  return [...keys].map(([name, list]) => ({ name, keys: list }));
 }
 
 /**

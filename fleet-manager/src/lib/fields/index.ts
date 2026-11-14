@@ -9,7 +9,9 @@ export {
   editorOf,
   editorValueOf,
   fieldSchemaFromOpenAPI,
+  overrideEditorOf,
   parameterEditorOf,
+  type ParameterEditor,
   type SchemaEditor,
   type SettingEditor,
 } from "./editor";
