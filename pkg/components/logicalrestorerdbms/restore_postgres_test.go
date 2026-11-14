@@ -145,8 +145,8 @@ func TestRestoreLeavesOnlyTheObjectsOfTheDump(t *testing.T) {
 
 // TestRestoreDropsOnlyTheRelationsOfTheApplicationRole pins the bounds of the
 // drop: a relation of the application role goes in every schema, a table of
-// another role stays, and a view of another role over a dropped table goes
-// with that table.
+// another role and an extension that the admin installed stay, and a view of
+// another role over a dropped table goes with that table.
 func TestRestoreDropsOnlyTheRelationsOfTheApplicationRole(t *testing.T) {
 	t.Parallel()
 
@@ -164,6 +164,11 @@ CREATE TABLE table_of_another_role (id BIGINT);
 CREATE VIEW view_of_another_role AS SELECT * FROM process_instance;
 `)
 	require.NoError(t, err)
+	admin, err := pgbootstrap.Open(t.Context(), target.server, targetDatabase)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = admin.Close(context.Background()) })
+	_, err = admin.Exec(t.Context(), "CREATE EXTENSION pg_stat_statements")
+	require.NoError(t, err)
 
 	code, output := target.restore(t)
 	require.Zero(t, code, output)
@@ -172,8 +177,8 @@ CREATE VIEW view_of_another_role AS SELECT * FROM process_instance;
 SELECT string_agg(n.nspname || '.' || c.relname, ',' ORDER BY n.nspname, c.relname)
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relname IN ('wait_state', 'table_of_another_role', 'view_of_another_role')`)
-	assert.Equal(t, "public.table_of_another_role", relations)
+WHERE c.relname IN ('wait_state', 'table_of_another_role', 'view_of_another_role', 'pg_stat_statements')`)
+	assert.Equal(t, "public.pg_stat_statements,public.table_of_another_role", relations)
 }
 
 func TestBackupRoleReadsTheDatabaseAfterTheRestore(t *testing.T) {
