@@ -37,8 +37,8 @@ import { YamlEditor } from "./yaml-editor";
  * cleared text field and [] for choices with none checked. It also gets the
  * errors of an editor that shows its own, but from YamlEditor only those of
  * text that does not parse. error shows while the editor shows no error of
- * its own. emptyMap lets a map of strings take {}, as KeyValueEditor says;
- * a value of {} gets it as "unset" when emptyMap is not given.
+ * its own. emptyMap lets a map of strings take {}, as KeyValueEditor says.
+ * A map that starts as {} gets "unset" when emptyMap is not given.
  */
 export function ParameterField({
   id,

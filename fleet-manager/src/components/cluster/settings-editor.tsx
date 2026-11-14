@@ -107,11 +107,11 @@ export function SettingsEditor({
  * its lock reason. A change with errors shows them and is not passed on. A
  * claim value of undefined resets the field. A map of strings of a setting
  * that replaces the value below it can be set to {} when it starts with a
- * value. errors are field errors from outside the row. onReset runs after a click on the reset link: the caller
- * remounts the rows, so that they show the values below the claim. invalid
- * gets the claim steps of the shown field and "<label>: <error>" while the
- * editor shows an error, and undefined once the error goes or the row
- * unmounts.
+ * value. errors are field errors from outside the row. onReset runs after a
+ * click on the reset link: the caller remounts the rows, so that they show
+ * the values below the claim. invalid gets the claim steps of the shown
+ * field and "<label>: <error>" while the editor shows an error, and
+ * undefined once the error goes or the row unmounts.
  */
 export function SettingRow({
   setting,
@@ -246,8 +246,9 @@ function useShownError(
 // Editor is the input of one editor kind. It is uncontrolled: it starts
 // from value and reports each valid change. A change with errors is not
 // reported; onInvalid gets its first error, and undefined after a valid
-// change. current is the value before the pending changes. replaces and
-// describedBy reach the editors with rows only.
+// change. current is the value before the pending changes. replaces reaches
+// only the editor of a map of strings. describedBy reaches only the editors
+// of resources, storage size, environment, maps of strings, and tolerations.
 function Editor({
   label,
   editor,
