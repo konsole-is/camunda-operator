@@ -29,9 +29,9 @@ import { YamlEditor } from "./yaml-editor";
  * errors of an editor that shows its own, but from YamlEditor only those of
  * text that does not parse. error shows while the editor shows no error of
  * its own. inherited says that a value applies while the field has none of
- * its own, as givesNoValue decides: the field then says so. emptyMap lets
- * a map of strings take {}, as KeyValueEditor says. Without it, a map gets
- * "inherited" when inherited is set, and "unset" when it starts as {}.
+ * its own, as givesNoValue decides. emptyMap lets a map of strings take {},
+ * as KeyValueEditor says. Without it, a map gets "inherited" when inherited
+ * is set, or else "unset" when it starts as {}.
  */
 export function ParameterField({
   id,
