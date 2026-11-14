@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { type ComponentProps, useState } from "react";
+import { fn } from "storybook/test";
 import type { MetricChartData, Series } from "@/lib/observe/types";
 import { DetailMetricsView } from "./detail-metrics";
 import { brokers, pod, usage } from "./fixtures";
@@ -46,10 +48,29 @@ const brokerCharts: MetricChartData[] = [
   },
 ];
 
+// DetailMetricsViewHarness keeps the picked range, as the Metrics tab does.
+// The charts stay the same, because the story has no Prometheus to ask.
+function DetailMetricsViewHarness(
+  props: ComponentProps<typeof DetailMetricsView>,
+) {
+  const [range, setRange] = useState(props.range);
+  return (
+    <DetailMetricsView
+      {...props}
+      range={range}
+      onRange={(value) => {
+        props.onRange?.(value);
+        setRange(value);
+      }}
+    />
+  );
+}
+
 const meta = {
   title: "cluster/DetailMetrics",
   component: DetailMetricsView,
-  args: { pods: brokers, usage: brokerUsage, range: "1h" },
+  args: { pods: brokers, usage: brokerUsage, range: "1h", onRange: fn() },
+  render: (args) => <DetailMetricsViewHarness key={args.range} {...args} />,
 } satisfies Meta<typeof DetailMetricsView>;
 export default meta;
 type Story = StoryObj<typeof meta>;

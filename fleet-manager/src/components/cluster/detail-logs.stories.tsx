@@ -1,4 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { type ComponentProps, useState } from "react";
+import { fn } from "storybook/test";
 import { parseLogLine } from "@/lib/observe/logs";
 import type { LogLine } from "@/lib/observe/types";
 import { DetailLogsView } from "./detail-logs";
@@ -26,10 +28,27 @@ function logLine(
   };
 }
 
+// DetailLogsViewHarness keeps the picked pod, as the Logs tab does. The
+// lines stay the same, because the story reads no log stream.
+function DetailLogsViewHarness(props: ComponentProps<typeof DetailLogsView>) {
+  const [picked, setPicked] = useState(props.picked);
+  return (
+    <DetailLogsView
+      {...props}
+      picked={picked}
+      onPick={(value) => {
+        props.onPick?.(value);
+        setPicked(value);
+      }}
+    />
+  );
+}
+
 const meta = {
   title: "cluster/DetailLogs",
   component: DetailLogsView,
-  args: { picked: "" },
+  args: { picked: "", onPick: fn() },
+  render: (args) => <DetailLogsViewHarness key={args.picked} {...args} />,
 } satisfies Meta<typeof DetailLogsView>;
 export default meta;
 type Story = StoryObj<typeof meta>;

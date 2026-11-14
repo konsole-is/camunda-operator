@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { useState } from "react";
 import { fn } from "storybook/test";
 import type { Resource } from "@/lib/k8s/kinds";
 import { CLAIM_LABEL } from "@/lib/labels";
@@ -15,11 +16,13 @@ import { TopologyChangePanel } from "./topology-editor";
 
 type Claim = Resource<"CamundaClusterClaim">;
 
-// argsOf gives the props of the panel for a change of the cluster orders
+type Pick = [ModeProcess, ComponentMode];
+
+// propsOf gives the props of the panel for a change of the cluster orders
 // with spec, after the user picked the modes of picks.
-function argsOf(
+function propsOf(
   spec: Record<string, unknown>,
-  picks: [ModeProcess, ComponentMode][],
+  picks: Pick[],
   locks: LockProvider = () => undefined,
 ) {
   const metadata = { name: "orders", namespace: "team-payments" };
@@ -57,33 +60,69 @@ function argsOf(
   };
 }
 
+// TopologyChangePanelHarness keeps the picks of the user, as the edit
+// session of the page does, so that a pick changes the panel.
+function TopologyChangePanelHarness({
+  spec,
+  picks,
+  locks,
+  onPick,
+}: {
+  spec: Record<string, unknown>;
+  picks: Pick[];
+  locks?: LockProvider;
+  onPick: (process: ModeProcess, mode: ComponentMode) => void;
+}) {
+  const [current, setCurrent] = useState(picks);
+  return (
+    <TopologyChangePanel
+      {...propsOf(spec, current, locks)}
+      onPick={(process, mode) => {
+        onPick(process, mode);
+        setCurrent((was) => [
+          ...was.filter(([p]) => p !== process),
+          [process, mode],
+        ]);
+      }}
+    />
+  );
+}
+
 const meta = {
   title: "cluster/TopologyChangePanel",
-  component: TopologyChangePanel,
+  component: TopologyChangePanelHarness,
   args: { onPick: fn() },
-} satisfies Meta<typeof TopologyChangePanel>;
+  render: (args) => (
+    <TopologyChangePanelHarness
+      key={JSON.stringify([args.spec, args.picks])}
+      {...args}
+    />
+  ),
+} satisfies Meta<typeof TopologyChangePanelHarness>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const GatewayBecomesEmbedded: Story = {
   name: "Gateway becomes embedded",
-  args: argsOf({}, [["gateway", "Embedded"]]),
+  args: { spec: {}, picks: [["gateway", "Embedded"]] },
 };
 
 export const OperateBecomesStandaloneWithPreparedSettings: Story = {
   name: "Operate becomes standalone with prepared settings",
-  args: argsOf(
-    { operate: { replicas: 2, resources: { requests: { cpu: "1" } } } },
-    [["operate", "Standalone"]],
-  ),
+  args: {
+    spec: {
+      operate: { replicas: 2, resources: { requests: { cpu: "1" } } },
+    },
+    picks: [["operate", "Standalone"]],
+  },
 };
 
 export const LockedMode: Story = {
   name: "Locked mode",
-  args: argsOf(
-    { connectors: { enabled: true } },
-    [["tasklist", "Standalone"]],
-    (path) =>
+  args: {
+    spec: { connectors: { enabled: true } },
+    picks: [["tasklist", "Standalone"]],
+    locks: (path) =>
       path === "spec.cluster.gateway.mode" ? { reason: "admin" } : undefined,
-  ),
+  },
 };

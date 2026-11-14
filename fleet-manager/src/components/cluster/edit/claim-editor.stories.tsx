@@ -209,9 +209,9 @@ const ATTACHED: StoryCluster = {
   },
 };
 
-// SectionPanel follows the Secrets of the namespace on /api/watch, which a
-// static Storybook does not serve. The story offers no Secret, so a watch
-// that never connects shows the same panel and sends no request.
+// A section in edit follows the Secrets of the namespace on /api/watch,
+// which a static Storybook does not serve. The stories offer no Secret, so
+// a watch that never connects shows the same panel and sends no request.
 class IdleEventSource {
   static readonly CLOSED = 2;
   readyState = 0;
@@ -225,6 +225,13 @@ const meta = {
   title: "cluster/edit/Claim editor",
   component: ClaimEditorPanels,
   args: { context: contextOf({}) },
+  beforeEach: () => {
+    const real = globalThis.EventSource;
+    globalThis.EventSource = IdleEventSource as unknown as typeof EventSource;
+    return () => {
+      globalThis.EventSource = real;
+    };
+  },
   decorators: [
     (Story, { args }) => (
       <div className="max-w-5xl">
@@ -278,13 +285,6 @@ export const ReleaseWhileSuspended: Story = {
 export const ASectionWithAnEditableParameter: Story = {
   name: "A section with an editable parameter",
   args: { context: contextOf(ACCESS), requested: "section:access" },
-  beforeEach: () => {
-    const real = globalThis.EventSource;
-    globalThis.EventSource = IdleEventSource as unknown as typeof EventSource;
-    return () => {
-      globalThis.EventSource = real;
-    };
-  },
 };
 
 export const AttachmentsInEdit: Story = {
