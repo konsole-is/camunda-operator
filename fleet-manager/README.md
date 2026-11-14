@@ -127,7 +127,8 @@ link and the commit of the build.
 - When the pull request closes, merged or not, CI removes the preview and edits the comment. A weekly run removes a
   preview that a closed pull request left. The same run then replaces the history of the `gh-pages` branch with one
   commit, so that old previews do not make the repository larger. A local copy of `gh-pages` from before that run
-  cannot push to the branch, so fetch the branch again before you push to it.
+  cannot push to the branch. Clone the branch again, or fetch it and reset your local branch to `origin/gh-pages`.
+  A reset removes your commits that are not pushed, so save them first.
 - The Storybook of `main` is at <https://konsole-is.github.io/camunda-operator/storybook/>.
 
 The preview is public, so a story uses invented fixture data only.
