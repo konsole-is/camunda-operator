@@ -41,7 +41,7 @@ graph LR
 | --- | --- |
 | `Pending` | The restore waits. The backup or the target does not exist, the backup is not completed, another operation holds the target, or the target is not prepared. The restore suspends the target and sets its version here. It erases nothing. |
 | `ValidatingCompatibility` | The operator compares the backup against the target. |
-| `RestoringSecondaryStorage` | One Job downloads the dump from the backup bucket and runs `pg_restore` against the logical database of the target. |
+| `RestoringSecondaryStorage` | One Job downloads the dump from the backup bucket, drops the tables of the logical database of the target, and runs `pg_restore` against it. |
 | `RestoringPrimaryStorage` | The operator deletes and creates the broker data volumes, and runs the Camunda restore application once per broker. |
 | `Completed` | The restore finished. The target starts again, unless you suspended it yourself or another hold remains. |
 | `Failed` | The restore ended. `status.failureMessage` says why. |
@@ -54,8 +54,32 @@ Before it erases anything, the operator compares the backup against the target. 
 - The target stores its data in a relational database. For an Elasticsearch cluster, use a [LogicalRestoreElasticsearch](logicalrestoreelasticsearch.md).
 - The `spec.backupStorageRef` of the target names the `ObjectStorageConfig` that the backup wrote to.
 - The target runs the exact Camunda version that the backup recorded in `status.version`. The restore sets this version on the target in `Pending`. So this rule fails only when the backup recorded no version, or a value that is not of the form `x.y.z`.
+- The backup is at most one minor newer than the version that the brokers of the target run. The cluster refuses a larger step, see [CamundaCluster: A skipped minor is refused](camundacluster.md#a-skipped-minor-is-refused).
 
 After the restore, the target runs the version of the backup. To run a newer version, upgrade the target again, one minor at a time, as [CamundaCluster: Upgrade](camundacluster.md#upgrade) says. The rules compare no partition count, because a relational backup records none.
+
+### A backup more than one minor newer than the brokers
+
+An older backup, a backup of the same minor, and a backup one minor newer pass this rule. The restore compares the two versions in `Pending`, before it suspends the target or sets its version. A breach fails the restore at once and leaves the target as it was. A breach of any other rule fails the restore after it suspended the target.
+
+The failed restore reports the breach:
+
+```yaml
+status:
+  phase: Failed
+  terminalReason: IncompatibleTarget
+  failureMessage: the backup was taken with Camunda 8.11.0, and the brokers of CamundaCluster
+    my-cluster-ns/my-cluster run 8.9.9. Camunda upgrades one minor at a time, so the cluster
+    cannot move to the version of the backup. Upgrade the cluster one minor at a time, first
+    to the latest patch of 8.10, until it runs at most one minor below 8.11.0. Then create
+    a new restore
+```
+
+To restore this backup:
+
+1. Upgrade the target one minor at a time, as [CamundaCluster: Upgrade](camundacluster.md#upgrade) says. Stop when the brokers run at most one minor below the version of the backup.
+2. Delete the failed restore.
+3. Create a new restore of the same backup.
 
 ### Why the downgrade is safe here
 
@@ -81,7 +105,9 @@ In `Pending` this wait has no limit. After `Pending`, these reasons hold the res
 
 One Job downloads the dump from the backup bucket and runs `pg_restore --clean --if-exists --no-owner` on it. `status.secondaryJobName` names the Job while it exists.
 
-**The Job connects as the application role of the target**, the role in `DatabaseConfig.spec.credentialsSecretRef`. `pg_restore --clean` drops each object before it creates it again, and only the owner of an object can drop it. The application role owns the database and its objects, and the backup role owns nothing.
+**After the restore, the application role owns the tables of the backup and no others.** Before `pg_restore`, the Job drops every table, view, and sequence that the application role owns, in every schema. A table that a newer Camunda minor created after the backup does not stay. An object of another role stays, unless it depends on a dropped table. For example, a view of another role over a Camunda table goes with that table.
+
+**The Job connects as the application role of the target**, the role in `DatabaseConfig.spec.credentialsSecretRef`. Only the owner of an object can drop it. The application role owns the database and its objects, and the backup role owns nothing.
 
 The Job takes its pod settings and its `postgres` image from `spec.backup.dump` of the target, through its preset when it names one. It runs under the ServiceAccount of the cluster. The restore resource carries no pod settings of its own.
 
@@ -91,7 +117,7 @@ The Job needs these, and holds the restore until they exist:
 - The Secret of the bucket credentials in the namespace of the target. If it is missing or lacks a key, the reason is `MissingCredentials`.
 - `status.serverVersion` on the `DatabaseServerConfig`, for its current spec. The Job runs the client tools of that PostgreSQL major. If it is not there, the reason is `InvalidReference`.
 
-A failed Job fails the restore, and the message names the Job. So does a Job that disappears before it completes, and a Job of that name that belongs to another restore. The logical database then holds a partial restore, which only a new restore repairs.
+A failed Job fails the restore, and the message names the Job. So does a Job that disappears before it completes, and a Job of that name that belongs to another restore. The logical database then holds a partial restore, which only a new restore repairs. A new restore of the same backup gives the same database as a restore that did not fail.
 
 ## Primary storage
 
@@ -116,7 +142,7 @@ Deleting the restore removes its Jobs and their pods. The broker volumes stay, a
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster, or a claim Lease that no backup or restore holds. The message names it. | Wait. The restore starts when the holder gives the cluster back. If the message names a claim Lease to delete, delete it. |
 | `Ready` | `StorageAlreadyAttached` | Another cluster holds the logical database of the target. | Read [The backend](#the-backend). |
 | `Ready` | `WaitingForHandover` | The target does not hold its logical database yet, or pods still write it. | Wait. The message names what the restore waits for. |
-| `Ready` | `IncompatibleTarget` | The target cannot hold the backup, or its version moved after `Pending`. | Read [Compatibility](#compatibility). Create a new restore against a target that fits. |
+| `Ready` | `IncompatibleTarget` | The target cannot hold the backup, or its version moved after `Pending`. A backup more than one minor newer than the brokers also fails with this reason. | Read [Compatibility](#compatibility). Create a new restore against a target that fits. |
 | `Ready` | `InvalidReference` | A referenced resource does not exist, or the backup is not `Completed`. Or the database server has no `status.serverVersion`. | Correct what the message names. |
 | `Ready` | `MissingSecret` | The Secret of the database credentials is missing or lacks a key. Or a pod of a restore Job cannot start, because a Secret it needs does not exist. | Create the Secret that the message names. |
 | `Ready` | `MissingCredentials` | The Secret of the bucket credentials is missing or lacks a key. | Create the Secret that the message names. |

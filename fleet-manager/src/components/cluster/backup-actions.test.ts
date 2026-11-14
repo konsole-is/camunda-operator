@@ -665,7 +665,7 @@ describe("restore confirm", () => {
 
   it("a PostgreSQL restore says that it writes over the database and deletes the broker volumes", () => {
     expect(text(restoreConfirm(context(), dump))).toContain(
-      "The restore runs pg_restore over the database of the cluster, which drops each table of the dump and creates it again. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
+      "The restore drops the tables in the database of the cluster and restores the tables of the backup with pg_restore. It also deletes the broker volumes and creates them again from the Zeebe data of the backup.",
     );
   });
 

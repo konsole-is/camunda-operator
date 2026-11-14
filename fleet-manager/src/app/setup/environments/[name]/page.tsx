@@ -2,6 +2,12 @@ import { notFound } from "next/navigation";
 import { EnvironmentEditorLive } from "@/components/setup/environments/environment-editor";
 import { get } from "@/lib/k8s/read";
 import { writeMode } from "@/lib/write/writer";
+import {
+  applyEnvironmentChange,
+  applyNamespaceLabel,
+  previewEnvironmentChange,
+  previewNamespaceLabel,
+} from "../actions";
 import { loadEnvironments } from "../load";
 
 // The page reads the cache of the server. A static prerender would call the
@@ -18,5 +24,17 @@ export default async function EnvironmentPage({
     writeMode().catch(() => undefined),
   ]);
   if (!found) notFound();
-  return <EnvironmentEditorLive initial={sources} name={name} mode={mode} />;
+  return (
+    <EnvironmentEditorLive
+      initial={sources}
+      name={name}
+      mode={mode}
+      actions={{
+        previewChange: previewEnvironmentChange,
+        applyChange: applyEnvironmentChange,
+        previewLabel: previewNamespaceLabel,
+        applyLabel: applyNamespaceLabel,
+      }}
+    />
+  );
 }

@@ -1,5 +1,11 @@
 import { EnvironmentEditorLive } from "@/components/setup/environments/environment-editor";
 import { writeMode } from "@/lib/write/writer";
+import {
+  applyEnvironmentChange,
+  applyNamespaceLabel,
+  previewEnvironmentChange,
+  previewNamespaceLabel,
+} from "../environments/actions";
 import { loadEnvironments } from "../environments/load";
 
 // The page reads the cache of the server. A static prerender would call the
@@ -11,5 +17,16 @@ export default async function NewEnvironmentPage() {
     loadEnvironments(),
     writeMode().catch(() => undefined),
   ]);
-  return <EnvironmentEditorLive initial={sources} mode={mode} />;
+  return (
+    <EnvironmentEditorLive
+      initial={sources}
+      mode={mode}
+      actions={{
+        previewChange: previewEnvironmentChange,
+        applyChange: applyEnvironmentChange,
+        previewLabel: previewNamespaceLabel,
+        applyLabel: applyNamespaceLabel,
+      }}
+    />
+  );
 }

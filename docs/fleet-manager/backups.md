@@ -73,7 +73,7 @@ The operator removes the artifacts before the resource goes. When it cannot reac
 Each row of a `Completed` backup has **Restore**. A backup in another phase has no **Restore**. **Restore** opens a confirm. Its first line says that the restore loses everything that the cluster wrote after the backup. Under it, the confirm lists these facts:
 
 - The Camunda version of the backup and the Camunda version of the cluster. The restore sets the version of the cluster to the version of the backup.
-- What the restore deletes. A restore of an Elasticsearch backup deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. A restore of a PostgreSQL backup runs `pg_restore` over the database of the cluster. `pg_restore` drops each table of the dump and creates it again. Both kinds delete the broker volumes and create them again from the Zeebe data of the backup.
+- What the restore deletes. A restore of an Elasticsearch backup deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. A restore of a PostgreSQL backup drops the tables in the database of the cluster, and restores the tables of the backup with `pg_restore`. Both kinds delete the broker volumes and create them again from the Zeebe data of the backup.
 - Whether the cluster starts again. The restore suspends a running cluster while it runs, and starts it again when it completes. A cluster that you suspended yourself stays suspended after the restore, and you resume it. A cluster that a suspension hold or its secondary storage keeps suspended stays suspended until that suspension ends.
 - What a failed restore leaves. The Camunda indices or the database, and the broker volumes, can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and create a new restore, as [When the cluster starts again](../guides/operations.md#when-the-cluster-starts-again) shows.
 
@@ -103,6 +103,8 @@ If a restore of the namespace has that name, the fleet manager adds `-2`, `-3`, 
 | "Changes are off: the fleet manager could not read its settings." | Make sure that the fleet manager can read the ConfigMap `fleet-manager-settings`, as [Fleet manager settings](settings.md) shows. |
 
 **Restore** has one version rule for both kinds: the backup recorded a version of the form `x.y.z`. The restore sets that version on the cluster, as [LogicalRestoreElasticsearch: Compatibility](../crds/logicalrestoreelasticsearch.md#compatibility) and [LogicalRestoreRDBMS: Compatibility](../crds/logicalrestorerdbms.md#compatibility) show. A cluster that ran a newer version comes back on the version of the backup. [The version after a logical restore](../guides/operations.md#the-version-after-a-logical-restore) shows how to upgrade it again.
+
+**Restore** stays on for a backup more than one minor newer than the brokers of the cluster. Such a restore fails at once with the reason `IncompatibleTarget`, and it leaves the cluster as it was. [LogicalRestoreRDBMS: A backup more than one minor newer than the brokers](../crds/logicalrestorerdbms.md#a-backup-more-than-one-minor-newer-than-the-brokers) says what to do. The same rule applies to an Elasticsearch backup.
 
 While a backup of the cluster runs, **Restore** stays on, and the confirm says that the new restore waits. For example:
 

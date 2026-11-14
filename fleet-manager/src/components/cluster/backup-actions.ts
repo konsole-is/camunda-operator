@@ -303,8 +303,9 @@ export function clusterVersionOf(
  * restoreBlock gives the reason that Restore is off for the Completed
  * backup of row, or undefined. It is off when the page cannot write, while
  * a restore of the cluster has not ended, and when the backup recorded no
- * x.y.z version. A restore of either kind sets the version of the backup on
- * the cluster, so the version of the cluster is no rule.
+ * x.y.z version. It stays on for a backup more than one minor above the
+ * version that the brokers run: the page does not read that version, and the
+ * restore fails on it with IncompatibleTarget.
  */
 export function restoreBlock(
   context: BackupContext,
@@ -397,7 +398,7 @@ export function restoreConfirm(
       `Backup ${row.name} has Camunda ${row.version}. ${cluster} The restore sets the cluster to ${row.version}.`,
       es
         ? `The restore deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. ${volumes}`
-        : `The restore runs pg_restore over the database of the cluster, which drops each table of the dump and creates it again. ${volumes}`,
+        : `The restore drops the tables in the database of the cluster and restores the tables of the backup with pg_restore. ${volumes}`,
       startsAgain(context.suspension),
       failed(
         es

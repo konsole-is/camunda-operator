@@ -323,7 +323,7 @@ On a PostgreSQL cluster, keep the retained dumps inside the primary-storage rete
 
 ## What an upgrade does to the backups you hold
 
-A backup records the Camunda version of the cluster in `status.version`. Do not change the version of the cluster while a backup runs. The backup fails when Zeebe moves to another version before the Zeebe part of the backup is final. A PostgreSQL backup whose Zeebe backup has not started yet first waits 10 minutes for the recorded version to return. A restore of either kind sets the cluster to the exact version in `status.version`, also when the cluster runs a newer minor. It refuses a backup that recorded no version of the form `x.y.z`.
+A backup records the Camunda version of the cluster in `status.version`. Do not change the version of the cluster while a backup runs. The backup fails when Zeebe moves to another version before the Zeebe part of the backup is final. A PostgreSQL backup whose Zeebe backup has not started yet first waits 10 minutes for the recorded version to return. A restore of either kind sets the cluster to the exact version in `status.version`, also when the cluster runs a newer minor. It refuses a backup that recorded no version of the form `x.y.z`. It also refuses a backup more than one minor newer than the version that the brokers run, and leaves the cluster as it was. To restore such a backup, upgrade the cluster one minor at a time. Stop when it runs at most one minor below the backup.
 
 You do not change `spec.version` by hand for a restore. [The version after a logical restore](./operations.md#the-version-after-a-logical-restore) says what the restore writes on the cluster and what you do after it.
 
