@@ -64,13 +64,13 @@ type recoveryRefusal struct {
 // keyed on what exists, so a reconcile that re-enters in the middle continues
 // where the last one stopped.
 //
-// The steps are: record the request, wait for the archive to hold the
-// requested point, build the cluster that recovers to it, wait for
-// CloudNativePG to declare it healthy, point the contract at it, publish the
-// outcome, and remove what it replaced. The contract points at the new
-// cluster before the old one goes, so a failure at any point up to that leaves
-// the old server whole and the restore reads a refusal rather than an empty
-// server.
+// The steps are: record the request, wait, for a bounded time, for the
+// archive to hold the requested point, build the cluster that recovers to it,
+// wait for CloudNativePG to declare it healthy, point the contract at it,
+// publish the outcome, and remove what it replaced. The contract points at
+// the new cluster before the old one goes, so a failure at any point up to
+// that leaves the old server whole and the restore reads a refusal rather
+// than an empty server.
 //
 // status.recovery is the record of the answer, and the contract is where the
 // answer is published. Every step reads the record, so an answer whose status
@@ -678,8 +678,8 @@ func (r *DatabaseServerReconciler) advanceRecovery(
 			return false, fmt.Errorf("reading the recovery cluster %s: %w", key, err)
 		}
 
-		// PostgreSQL fails a recovery whose target the archive does not
-		// reach, so the server waits for the archive to hold it first.
+		// PostgreSQL fails a recovery whose target the archive lacks, so the
+		// server first waits, for a bounded time, for the archive to hold it.
 		if r.awaitArchivedTarget(ctx, server, source) {
 			return true, nil
 		}
