@@ -39,9 +39,9 @@ const namespaces: V1Namespace[] = [
   { metadata: { name: "sandbox", labels: { [ENVIRONMENT_LABEL]: "dev" } } },
 ];
 
-// ClusterBasicsStep holds no draft, so BasicsFlow holds the draft and the
+// ClusterBasicsStep holds no draft, so the harness holds the draft and the
 // checks of step 1 as the create flow does. usage is by preset name.
-function BasicsFlow({
+function ClusterBasicsStepHarness({
   environments,
   namespaces,
   presets,
@@ -115,7 +115,7 @@ function BasicsFlow({
 
 const meta = {
   title: "create/ClusterBasicsStep",
-  component: BasicsFlow,
+  component: ClusterBasicsStepHarness,
   args: {
     environments: [production, development, legacy],
     namespaces,
@@ -128,7 +128,10 @@ const meta = {
     },
     set: fn(),
   },
-} satisfies Meta<typeof BasicsFlow>;
+  render: (args) => (
+    <ClusterBasicsStepHarness key={JSON.stringify(args.initial)} {...args} />
+  ),
+} satisfies Meta<typeof ClusterBasicsStepHarness>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 

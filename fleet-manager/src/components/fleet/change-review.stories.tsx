@@ -34,7 +34,7 @@ const keptPreview = {
 };
 
 // A page shows the toast of the write under the review.
-function WithToast(props: ComponentProps<typeof ChangeReview>) {
+function ChangeReviewHarness(props: ComponentProps<typeof ChangeReview>) {
   const { toast, show, dismiss } = useWriteToast();
   return (
     <div className="flex flex-col gap-4">
@@ -69,7 +69,7 @@ const meta = {
     apply: fn(async () => ({ ok: true as const, mode: "direct" as const })),
     show: fn(),
   },
-  render: (args) => <WithToast {...args} />,
+  render: (args) => <ChangeReviewHarness {...args} />,
 } satisfies Meta<typeof ChangeReview>;
 export default meta;
 type Story = StoryObj<typeof meta>;

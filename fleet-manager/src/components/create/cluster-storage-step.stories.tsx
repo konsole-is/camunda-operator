@@ -192,9 +192,9 @@ function searchPreset(
   };
 }
 
-// ClusterStorageStep holds no draft, so StorageFlow holds the draft, the
-// card errors, and the check of step 2 as the create flow does.
-function StorageFlow({
+// ClusterStorageStep holds no draft, so the harness holds the draft, the card
+// errors, and the check of step 2 as the create flow does.
+function ClusterStorageStepHarness({
   sections,
   registrations,
   environment,
@@ -256,7 +256,7 @@ function StorageFlow({
 
 const meta = {
   title: "create/ClusterStorageStep",
-  component: StorageFlow,
+  component: ClusterStorageStepHarness,
   args: {
     sections: storageSections,
     registrations: storageRegistrations,
@@ -268,7 +268,10 @@ const meta = {
     onSection: fn(),
     onDeletion: fn(),
   },
-} satisfies Meta<typeof StorageFlow>;
+  render: (args) => (
+    <ClusterStorageStepHarness key={JSON.stringify(args.initial)} {...args} />
+  ),
+} satisfies Meta<typeof ClusterStorageStepHarness>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 

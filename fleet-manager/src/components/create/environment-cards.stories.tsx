@@ -1,7 +1,40 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { useState } from "react";
 import { fn } from "storybook/test";
-import { EnvironmentCards } from "./environment-cards";
+import {
+  EnvironmentCards,
+  type EnvironmentCardsProps,
+} from "./environment-cards";
 import { development, legacy, production } from "./fixtures";
+
+// The create flow holds the picked environments, so the story holds them too.
+function EnvironmentCardsHarness(props: EnvironmentCardsProps) {
+  const [value, setValue] = useState(props.value);
+  if (props.multiple) {
+    const { onChange } = props;
+    return (
+      <EnvironmentCards
+        {...props}
+        value={value as string[]}
+        onChange={(names: string[]) => {
+          onChange?.(names);
+          setValue(names);
+        }}
+      />
+    );
+  }
+  const { onChange } = props;
+  return (
+    <EnvironmentCards
+      {...props}
+      value={value as string | undefined}
+      onChange={(name: string) => {
+        onChange?.(name);
+        setValue(name);
+      }}
+    />
+  );
+}
 
 const meta = {
   title: "create/EnvironmentCards",
@@ -15,6 +48,9 @@ const meta = {
     },
     onChange: fn(),
   },
+  render: (args) => (
+    <EnvironmentCardsHarness key={JSON.stringify(args.value)} {...args} />
+  ),
 } satisfies Meta<typeof EnvironmentCards>;
 export default meta;
 type Story = StoryObj<typeof meta>;

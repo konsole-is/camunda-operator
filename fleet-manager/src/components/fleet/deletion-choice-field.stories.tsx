@@ -4,7 +4,9 @@ import { fn } from "storybook/test";
 import { DeletionChoiceField } from "./deletion-choice";
 
 // The create flow holds the picked policy, so the story holds it too.
-function WithPick(props: ComponentProps<typeof DeletionChoiceField>) {
+function DeletionChoiceFieldHarness(
+  props: ComponentProps<typeof DeletionChoiceField>,
+) {
   const [policy, setPolicy] = useState(props.choice.policy);
   return (
     <DeletionChoiceField
@@ -29,7 +31,9 @@ const meta = {
       </div>
     ),
   ],
-  render: (args) => <WithPick {...args} />,
+  render: (args) => (
+    <DeletionChoiceFieldHarness key={args.choice.policy} {...args} />
+  ),
 } satisfies Meta<typeof DeletionChoiceField>;
 export default meta;
 type Story = StoryObj<typeof meta>;
