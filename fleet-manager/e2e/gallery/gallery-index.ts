@@ -7,6 +7,8 @@ export type Shot = {
   component: string;
   name: string;
   width: number;
+  /** theme is absent for a shot of the gallery, which has only dark. */
+  theme?: "dark" | "light";
   file: string;
 };
 
@@ -20,7 +22,8 @@ const escape = (text: string) =>
 /**
  * renderIndex returns one HTML page with every shot: a section per component
  * in first-seen order, a row per story, and its widths side by side, widest
- * first. The image paths stay relative, so the page works from the artifact.
+ * first, with the dark shot of a width before its light shot. The caption of
+ * a light shot names the theme. The image paths stay relative, so the page works from the artifact.
  * title is the title and the heading of the page.
  */
 export function renderIndex(
@@ -36,11 +39,15 @@ export function renderIndex(
   const sections = [...components.entries()].map(([component, byStory]) => {
     const rows = [...byStory.values()].map((group) => {
       const images = [...group]
-        .sort((a, b) => b.width - a.width)
-        .map(
-          (s) =>
-            `<figure><img src="${escape(s.file)}" alt="${escape(`${s.name} at ${s.width} px`)}" loading="lazy"><figcaption>${s.width} px</figcaption></figure>`,
+        .sort(
+          (a, b) =>
+            b.width - a.width ||
+            Number(a.theme === "light") - Number(b.theme === "light"),
         )
+        .map((s) => {
+          const caption = `${s.width} px${s.theme === "light" ? ", light" : ""}`;
+          return `<figure><img src="${escape(s.file)}" alt="${escape(`${s.name} at ${caption}`)}" loading="lazy"><figcaption>${caption}</figcaption></figure>`;
+        })
         .join("");
       return `<h3>${escape(group[0].name)}</h3><div class="row">${images}</div>`;
     });

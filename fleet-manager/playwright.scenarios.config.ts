@@ -10,7 +10,9 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   reporter: [["list"]],
-  use: { browserName: "chromium" },
+  // The pages follow the theme of the system, so a test starts dark and
+  // switches to light with inBothThemes of e2e/scenarios/themes.ts.
+  use: { browserName: "chromium", colorScheme: "dark" },
   projects: [
     { name: "scenarios", testMatch: "*.spec.ts", teardown: "pages-index" },
     { name: "pages-index", testMatch: "index.teardown.ts" },

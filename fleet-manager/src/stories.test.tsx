@@ -66,6 +66,7 @@ describe("the Storybook stories", () => {
       "LockedField",
       "Logo",
       "TopNav",
+      "ThemeSwitch",
       "SetupNav",
       "SetupBreadcrumb",
       "AppShell",

@@ -2,7 +2,7 @@
 export function Logo() {
   return (
     <span className="flex items-center gap-3">
-      <span className="flex size-9 items-center justify-center rounded-[9px] border border-accent bg-panel-2 shadow-[0_0_18px_rgba(255,107,26,0.35)]">
+      <span className="flex size-9 items-center justify-center rounded-[9px] border border-accent bg-panel-2 shadow-[0_0_18px_color-mix(in_srgb,var(--accent)_35%,transparent)]">
         <svg
           width="22"
           height="22"

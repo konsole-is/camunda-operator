@@ -29,6 +29,29 @@ describe("renderIndex", () => {
     expect(html.match(/<h3>Ready<\/h3>/g)).toHaveLength(1);
   });
 
+  it("puts the light shot of a width after its dark shot and names it", () => {
+    const light = (width: number): Shot => ({
+      ...shot("logo/default", "Logo", "Default", width),
+      theme: "light",
+      file: `logo/default-${width}-light.png`,
+    });
+    const html = renderIndex([
+      light(390),
+      light(1440),
+      shot("logo/default", "Logo", "Default", 390),
+      { ...shot("logo/default", "Logo", "Default", 1440), theme: "dark" },
+    ]);
+    const order = [...html.matchAll(/src="([^"]+)"/g)].map((m) => m[1]);
+    expect(order).toEqual([
+      "logo/default-1440.png",
+      "logo/default-1440-light.png",
+      "logo/default-390.png",
+      "logo/default-390-light.png",
+    ]);
+    expect(html).toContain("<figcaption>1440 px, light</figcaption>");
+    expect(html).toContain("<figcaption>1440 px</figcaption>");
+  });
+
   it("escapes names", () => {
     const html = renderIndex([shot("a/b", "<A>", 'B "x"', 390)]);
     expect(html).toContain("&lt;A&gt;");

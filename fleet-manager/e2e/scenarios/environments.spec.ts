@@ -1,5 +1,6 @@
 import { blockingViolations } from "../axe";
 import { expect, test } from "./fixture";
+import { inBothThemes } from "./themes";
 
 test.use({ scenarioName: "environment-named-new" });
 
@@ -15,7 +16,12 @@ test("an Environment named new opens its own page", async ({ page }) => {
   ).toBeVisible();
   const crumbs = page.getByRole("navigation", { name: "Breadcrumb" });
   await expect(crumbs.locator('[aria-current="page"]')).toHaveText("new");
-  expect(await blockingViolations(page)).toEqual([]);
+  await inBothThemes(page, async (theme) => {
+    expect(
+      await blockingViolations(page),
+      `axe violations in the ${theme} theme`,
+    ).toEqual([]);
+  });
 });
 
 test("New environment opens the create page beside the lists", async ({

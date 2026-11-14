@@ -1,7 +1,6 @@
 import type { Page } from "@playwright/test";
-import { blockingViolations } from "../axe";
-import { PAGES_DIR, shot } from "../shot";
 import { expect, test } from "./fixture";
+import { checkPage } from "./themes";
 
 test.use({ scenarioName: "cluster-ready" });
 
@@ -30,8 +29,7 @@ test("the fleet page lists the cluster of the scenario", async ({ page }) => {
   ).toHaveAttribute("href", CLUSTER);
   await expect(row.getByText("Not managed")).toBeVisible();
   await expect(row.getByText("Ready", { exact: true })).toBeVisible();
-  expect(await blockingViolations(page)).toEqual([]);
-  await shot(page, "fleet", { dir: PAGES_DIR });
+  await checkPage(page, "fleet");
 });
 
 test("the cluster page shows the cluster of the scenario", async ({ page }) => {
@@ -40,8 +38,7 @@ test("the cluster page shows the cluster of the scenario", async ({ page }) => {
     page.getByRole("heading", { level: 1, name: "camundacluster-sample" }),
   ).toBeVisible();
   await expect(header(page).getByText("Ready", { exact: true })).toBeVisible();
-  expect(await blockingViolations(page)).toEqual([]);
-  await shot(page, "cluster", { dir: PAGES_DIR });
+  await checkPage(page, "cluster");
 });
 
 test("advance to three-brokers-ready changes the open cluster page without a reload", async ({
@@ -65,8 +62,7 @@ test("advance to three-brokers-ready changes the open cluster page without a rel
       () => (window as unknown as { scenarioMark?: boolean }).scenarioMark,
     ),
   ).toBe(true);
-  expect(await blockingViolations(page)).toEqual([]);
-  await shot(page, "three-brokers-ready", { dir: PAGES_DIR });
+  await checkPage(page, "three-brokers-ready");
 });
 
 test("the log stream reads observe.yaml", async ({ page }) => {

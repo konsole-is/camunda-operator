@@ -1,13 +1,15 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Logo } from "./logo";
+import { ThemeSwitch } from "./theme-switch";
 import { TopNav } from "./top-nav";
 
 /**
- * AppShell is the frame of every page: the logo and the top navigation, an
- * optional banner (the Git waiting banner), an optional side navigation, and
- * the page. A banner needs its own page gutter, because AppShell adds none.
- * pathname goes to TopNav, for the gallery.
+ * AppShell is the frame of every page: the logo, the top navigation, and the
+ * theme switch, an optional banner (the Git waiting banner), an optional side
+ * navigation, and the page. A banner needs its own page gutter, because
+ * AppShell adds none. pathname goes to TopNav, for the gallery. AppShell
+ * needs a ThemeProvider above it.
  */
 export function AppShell({
   pathname,
@@ -27,6 +29,9 @@ export function AppShell({
           <Logo />
         </Link>
         <TopNav pathname={pathname} />
+        <div className="ml-auto">
+          <ThemeSwitch />
+        </div>
       </header>
       {banner}
       {sideNav ? (

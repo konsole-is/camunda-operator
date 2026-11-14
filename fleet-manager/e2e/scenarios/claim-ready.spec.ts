@@ -1,6 +1,5 @@
-import { blockingViolations } from "../axe";
-import { PAGES_DIR, shot } from "../shot";
 import { expect, test } from "./fixture";
+import { checkPage } from "./themes";
 
 test.use({ scenarioName: "claim-ready" });
 
@@ -19,6 +18,5 @@ test("the fleet page shows the cluster of a claim in its environment tab as read
   await expect(
     row.getByRole("img", { name: /^Secondary storage/ }),
   ).toBeVisible();
-  expect(await blockingViolations(page)).toEqual([]);
-  await shot(page, "fleet-claim-ready", { dir: PAGES_DIR });
+  await checkPage(page, "fleet-claim-ready");
 });

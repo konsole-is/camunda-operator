@@ -39,6 +39,20 @@ The Fleet page lists the Camunda clusters of this Kubernetes cluster, as [The fl
 
 To set the cluster name, the Git repository, and the Prometheus address, see [Fleet manager settings](settings.md).
 
+## Theme
+
+The fleet manager has a light theme and a dark theme. On the first visit, it uses the light or dark setting of your operating system.
+
+The three buttons at the right of the top bar select the theme:
+
+| Button | Theme |
+| --- | --- |
+| **System** | The setting of the operating system. The page changes when that setting changes. |
+| **Light** | The light theme. |
+| **Dark** | The dark theme. |
+
+The page changes at once, without a reload. The browser keeps the choice for one year in the cookie `fleet-theme`, so the choice applies to that browser only. **System** removes the cookie.
+
 ## Trust a private CA
 
 If a private CA signs the certificate of your Git server or your Prometheus server, the fleet manager does not trust it by default. Give the fleet manager the CA bundle in a ConfigMap. The bundle is a PEM file, and it can hold more than one CA. Put the ConfigMap in the release namespace:

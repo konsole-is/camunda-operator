@@ -20,22 +20,31 @@ const counts = new Map<string, number>();
 /**
  * shot saves a full-page PNG of the page into options.dir and records it for
  * the index that writeShotIndex writes there. Call it from a test. The
- * images are not compared with a baseline.
+ * images are not compared with a baseline. With options.theme "light", the
+ * shot is the light copy of the shot before it in the same test: its file
+ * gets the suffix -light, and the numbers of the later shots do not change.
  */
 export async function shot(
   page: Page,
   name: string,
-  options: { dir: string },
+  options: { dir: string; theme?: "dark" | "light" },
 ): Promise<void> {
   const info = test.info();
-  const seq = (counts.get(info.testId) ?? 0) + 1;
+  const light = options.theme === "light";
+  const seq = (counts.get(info.testId) ?? 0) + (light ? 0 : 1);
   counts.set(info.testId, seq);
   const journey = info.titlePath.slice(1).join(" › ");
-  const file = shotFile(journey, seq, name);
+  const file = light
+    ? shotFile(journey, seq, name).replace(/\.png$/, "-light.png")
+    : shotFile(journey, seq, name);
 
   await mkdir(options.dir, { recursive: true });
   await page.screenshot({ path: path.join(options.dir, file), fullPage: true });
-  const entry: JourneyShot = { journey, name, file };
+  const entry: JourneyShot = {
+    journey,
+    name: light ? `${name} (light)` : name,
+    file,
+  };
   await appendFile(
     path.join(options.dir, SHOTS_FILE),
     `${JSON.stringify(entry)}\n`,
