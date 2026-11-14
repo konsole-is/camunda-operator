@@ -235,7 +235,11 @@ const meta = {
   decorators: [
     (Story, { args }) => (
       <div className="max-w-5xl">
-        <ClusterEditProvider context={args.context} actions={actions}>
+        <ClusterEditProvider
+          key={JSON.stringify(args.context)}
+          context={args.context}
+          actions={actions}
+        >
           <Story />
         </ClusterEditProvider>
       </div>

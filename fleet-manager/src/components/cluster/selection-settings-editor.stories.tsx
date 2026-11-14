@@ -83,6 +83,14 @@ const meta = {
   title: "cluster/SelectionSettingsEditor",
   component: SelectionSettingsEditor,
   args: { secrets, set: fn(), reset: fn() },
+  // The fields keep their first value, so a change of the args remounts
+  // the editor.
+  render: (args) => (
+    <SelectionSettingsEditor
+      key={JSON.stringify([args.fields, args.schema])}
+      {...args}
+    />
+  ),
 } satisfies Meta<typeof SelectionSettingsEditor>;
 export default meta;
 type Story = StoryObj<typeof meta>;

@@ -89,6 +89,14 @@ const meta = {
   title: "cluster/SettingsEditor",
   component: SettingsEditor,
   args: { secrets, set: fn(), reset: fn() },
+  // The fields keep their first value, so a change of the args remounts
+  // the editor.
+  render: (args) => (
+    <SettingsEditor
+      key={JSON.stringify([args.group, args.settings])}
+      {...args}
+    />
+  ),
 } satisfies Meta<typeof SettingsEditor>;
 export default meta;
 type Story = StoryObj<typeof meta>;
