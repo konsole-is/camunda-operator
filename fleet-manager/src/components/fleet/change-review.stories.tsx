@@ -69,7 +69,12 @@ const meta = {
     apply: fn(async () => ({ ok: true as const, mode: "direct" as const })),
     show: fn(),
   },
-  render: (args) => <ChangeReviewHarness {...args} />,
+  render: (args) => (
+    <ChangeReviewHarness
+      key={JSON.stringify([args.change, args.mode])}
+      {...args}
+    />
+  ),
 } satisfies Meta<typeof ChangeReview>;
 export default meta;
 type Story = StoryObj<typeof meta>;

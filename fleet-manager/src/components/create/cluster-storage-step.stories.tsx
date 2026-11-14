@@ -269,7 +269,7 @@ const meta = {
     onDeletion: fn(),
   },
   render: (args) => (
-    <ClusterStorageStepHarness key={JSON.stringify(args.initial)} {...args} />
+    <ClusterStorageStepHarness key={JSON.stringify(args)} {...args} />
   ),
 } satisfies Meta<typeof ClusterStorageStepHarness>;
 export default meta;

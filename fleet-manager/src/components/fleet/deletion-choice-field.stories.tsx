@@ -32,7 +32,7 @@ const meta = {
     ),
   ],
   render: (args) => (
-    <DeletionChoiceFieldHarness key={args.choice.policy} {...args} />
+    <DeletionChoiceFieldHarness key={JSON.stringify(args.choice)} {...args} />
   ),
 } satisfies Meta<typeof DeletionChoiceField>;
 export default meta;

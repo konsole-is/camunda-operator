@@ -129,7 +129,7 @@ const meta = {
     set: fn(),
   },
   render: (args) => (
-    <ClusterBasicsStepHarness key={JSON.stringify(args.initial)} {...args} />
+    <ClusterBasicsStepHarness key={JSON.stringify(args)} {...args} />
   ),
 } satisfies Meta<typeof ClusterBasicsStepHarness>;
 export default meta;
