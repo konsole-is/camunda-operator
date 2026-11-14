@@ -3,32 +3,57 @@
 /* The data-open, data-checked, and other variants of the primitives. */
 @import "shadcn/tailwind.css";
 
-/* The app has one theme, dark. The layout puts the class dark on <html>, so
-   the dark: variants of the shadcn primitives always apply. */
-@custom-variant dark (&:is(.dark *));
+/* The class light or dark on <html> holds the choice of the user. Without a
+   class, the theme follows prefers-color-scheme. The dark: variants of the
+   shadcn primitives follow the same rule. */
+@custom-variant dark {
+  &:is(.dark *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:not(.light *) {
+      @slot;
+    }
+  }
+}
 
+/* Each token is light-dark(<light>, <dark>), and color-scheme picks the
+   value. light-dark() needs Chrome 123, Firefox 120, or Safari 17.5.
+   The light values meet the same floors as the dark values: 4.5:1 for text
+   on --bg, --panel, and --panel-2, also on the 10 and 15 percent tint of its
+   own status color, and 3:1 for --faint as the edge of a form control. */
 :root {
-  color-scheme: dark;
-  --bg: #0a0f1e;
-  --panel: #0f1630;
-  --panel-2: #151d3b;
-  --border: #1f2a55;
-  --divider: #1c2650;
-  --text: #e8ecf5;
-  --text-2: #c9d2e6;
-  --muted: #a3adc2;
-  /* Lighter than the #6b7591 of the UI draft, which is under 4.5:1 as text
-     on every surface. */
-  --faint: #7d869e;
-  --accent: #ff6b1a;
-  --accent-hover: #ff8541;
-  --ok: #3dd68c;
-  --warn: #ffc14d;
-  --bad: #ff6b81;
-  --info: #5b9bff;
+  color-scheme: light dark;
+  --bg: light-dark(#f4f6fa, #0a0f1e);
+  --panel: light-dark(#ffffff, #0f1630);
+  --panel-2: light-dark(#ebeff6, #151d3b);
+  --border: light-dark(#d3d9e8, #1f2a55);
+  --divider: light-dark(#e1e6f0, #1c2650);
+  --text: light-dark(#0d1430, #e8ecf5);
+  --text-2: light-dark(#2a3454, #c9d2e6);
+  --muted: light-dark(#4a5470, #a3adc2);
+  /* The dark value is lighter than the #6b7591 of the UI draft, which is
+     under 4.5:1 as text on every surface. */
+  --faint: light-dark(#59637d, #7d869e);
+  /* #ff6b1a is under 3:1 on the light surfaces, as text and under the --bg
+     text of a button, so the light accent is a darker orange. */
+  --accent: light-dark(#b5440b, #ff6b1a);
+  --accent-hover: light-dark(#963808, #ff8541);
+  --ok: light-dark(#0b6c41, #3dd68c);
+  --warn: light-dark(#7a4f00, #ffc14d);
+  --bad: light-dark(#ab1a37, #ff6b81);
+  --info: light-dark(#1a55bf, #5b9bff);
   /* A dot color only. As text it is under the contrast floor. */
-  --off: #3c4c85;
+  --off: light-dark(#aab4cf, #3c4c85);
   --radius: 0.5rem;
+}
+
+:root.light {
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
 }
 
 @theme inline {

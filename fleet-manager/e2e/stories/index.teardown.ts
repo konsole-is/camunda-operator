@@ -10,7 +10,7 @@ const OUT = path.resolve("ui-stories");
 test("write the stories index", async () => {
   await mkdir(OUT, { recursive: true });
   const manifests = (await readdir(OUT)).filter((file) =>
-    /^manifest-\d+\.json$/.test(file),
+    /^manifest-\d+(-light)?\.json$/.test(file),
   );
   const shots: Shot[] = [];
   for (const file of manifests) {

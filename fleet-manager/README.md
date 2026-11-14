@@ -28,6 +28,10 @@ Storybook shows each UI component of the app in its states, with the styles, fon
 Each component has a docs page and one entry for each story. The Controls panel changes the props, the Actions
 panel shows each call of an event handler, and the Accessibility panel runs axe on the story.
 
+The **Theme** menu of the toolbar selects the dark theme or the light theme of the app. The stories, the docs pages,
+and the frame of Storybook change to that theme. Storybook opens in the dark theme. To open a story in the light
+theme from a link, add `&globals=theme:light` to its URL.
+
 ## Write a story
 
 Put the stories of a component in a stories file next to the component. Name the file after the component in kebab
@@ -91,16 +95,19 @@ make fleet-stories-test
 ```
 
 The check builds Storybook into `fleet-manager/storybook-static` and serves the build under a sub-path, as GitHub
-Pages does. Then it opens each story at 1440 px and at 390 px. The check fails when one of these occurs:
+Pages does. Then it opens each story at 1440 px and at 390 px, first in the dark theme and then in the light
+theme. The check fails when one of these occurs:
 
 - The story throws when it renders.
 - The `play` function of the story fails.
 - The page scrolls sideways.
-- axe finds a violation of serious or critical impact.
+- axe finds a violation of serious or critical impact, in one of the two themes.
 - The story requests a file outside the Storybook folder, for example from `/api/watch` or from another host.
 
-The check writes a screenshot of each story at each width into `fleet-manager/ui-stories`. Open
-`fleet-manager/ui-stories/index.html` to see all of them on one page.
+The check writes a screenshot of each story at each width and in each theme into `fleet-manager/ui-stories`. The
+light screenshot of a story has the name of its dark screenshot with `-light` before `.png`, for example
+`ui-button--variants-390-light.png`. Open `fleet-manager/ui-stories/index.html` to see all of them on one
+page.
 
 In CI, the `Fleet manager` workflow (`.github/workflows/fleet-manager.yml`) runs the same check. The run uploads two artifacts: `storybook` holds the
 static build for 7 days, and `ui-stories` holds the screenshots and `index.html`.

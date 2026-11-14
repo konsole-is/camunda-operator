@@ -17,7 +17,8 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   reporter: [["list"]],
-  use: { browserName: "chromium", baseURL },
+  // The pages follow the theme of the system. The journeys check dark only.
+  use: { browserName: "chromium", baseURL, colorScheme: "dark" },
   projects: [
     { name: "journeys", testMatch: "*.spec.ts", teardown: "journeys-index" },
     { name: "journeys-index", testMatch: "index.teardown.ts" },

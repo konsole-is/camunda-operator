@@ -756,7 +756,7 @@ fleet-gallery: fleet-build fleet-build-gallery fleet-playwright setup-envtest ##
 	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run gallery
 
 .PHONY: fleet-scenarios-test
-fleet-scenarios-test: fleet-build-gallery fleet-playwright setup-envtest ## Run the fleet manager pages in Playwright against the page scenarios on envtest, with screenshots in fleet-manager/ui-pages. Fails on a serious or critical axe violation.
+fleet-scenarios-test: fleet-build-gallery fleet-playwright setup-envtest ## Run the fleet manager pages in Playwright against the page scenarios on envtest, with screenshots in the dark and the light theme in fleet-manager/ui-pages. Fails on a serious or critical axe violation in either theme.
 	export KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" && $(FLEET_PNPM) run scenarios
 
 .PHONY: fleet-build-stories
@@ -764,7 +764,7 @@ fleet-build-stories: fleet-install ## Build the Storybook of the fleet manager i
 	$(FLEET_PNPM) run build-storybook
 
 .PHONY: fleet-stories-test
-fleet-stories-test: fleet-build-stories fleet-playwright ## Screenshot each story of the built Storybook at 1440 px and 390 px into fleet-manager/ui-stories, served under a sub-path. Fails when a story throws, its play function fails, it scrolls sideways, it has a serious or critical axe violation, or it requests a file outside the Storybook.
+fleet-stories-test: fleet-build-stories fleet-playwright ## Screenshot each story of the built Storybook at 1440 px and 390 px, in the dark and the light theme, into fleet-manager/ui-stories, served under a sub-path. Fails when a story throws, its play function fails, it scrolls sideways, it has a serious or critical axe violation in either theme, or it requests a file outside the Storybook.
 	$(FLEET_PNPM) run stories
 
 # The kind cluster of the fleet manager journeys. The harness targets run in

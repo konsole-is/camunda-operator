@@ -8,20 +8,30 @@ import "@fontsource/sora/500.css";
 import "@fontsource/sora/600.css";
 import "@fontsource/sora/700.css";
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import { GitPushesProvider } from "@/components/fleet/git-pushes";
 import { QueryProvider } from "@/components/fleet/query-provider";
+import { ThemeProvider } from "@/components/fleet/theme-switch";
+import { THEME_COOKIE, themeClass, themeOf } from "@/lib/theme";
 import "./globals.css";
 
 export const metadata: Metadata = { title: "Fleet manager" };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const theme = themeOf((await cookies()).get(THEME_COOKIE)?.value);
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className={themeClass(theme)}>
       <body>
-        <QueryProvider>
-          <GitPushesProvider>{children}</GitPushesProvider>
-        </QueryProvider>
+        <ThemeProvider initial={theme}>
+          <QueryProvider>
+            <GitPushesProvider>{children}</GitPushesProvider>
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

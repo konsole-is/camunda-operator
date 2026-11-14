@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import type { CamundaManagementClusterClaim } from "../../src/generated/crds/camundamanagementclusterclaim";
 import { parseImagesTable } from "../../src/startup/bundled-data";
 import { kubeRequest } from "../../test/scenarios/kube";
-import { blockingViolations } from "../axe";
 import { PAGES_DIR, shot } from "../shot";
 import { expect, test } from "./fixture";
+import { checkPage, inBothThemes } from "./themes";
 
 test.use({ scenarioName: "plane-create" });
 
@@ -57,8 +57,7 @@ test("creates a plane with no access from outside and existing database configs"
   // Review
   const create = page.getByRole("button", { name: "Create" });
   await expect(create).toBeEnabled();
-  await shot(page, "plane-create-review", { dir: PAGES_DIR });
-  expect(await blockingViolations(page)).toEqual([]);
+  await checkPage(page, "plane-create-review");
   await create.click();
 
   // Progress: no controller runs, so each row stays pending.
@@ -75,7 +74,9 @@ test("creates a plane with no access from outside and existing database configs"
     await expect(page.getByText(row, { exact: true })).toBeVisible();
   }
   await expect(page.getByText("Access", { exact: true })).toHaveCount(0);
-  await shot(page, "plane-create-progress", { dir: PAGES_DIR });
+  await inBothThemes(page, (theme) =>
+    shot(page, "plane-create-progress", { dir: PAGES_DIR, theme }),
+  );
 
   const claim = await kubeRequest<CamundaManagementClusterClaim>(
     scenario.admin,

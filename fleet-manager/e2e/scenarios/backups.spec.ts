@@ -1,7 +1,6 @@
 import { kubeRequest } from "../../test/scenarios/kube";
-import { blockingViolations } from "../axe";
-import { PAGES_DIR, shot } from "../shot";
 import { expect, test } from "./fixture";
+import { checkPage } from "./themes";
 
 test.use({ scenarioName: "cluster-es-backups" });
 
@@ -39,6 +38,5 @@ test("back up now creates a backup with the cluster reference", async ({
   await expect(
     page.getByRole("button", { name: `Details of ${name}` }),
   ).toBeVisible();
-  expect(await blockingViolations(page)).toEqual([]);
-  await shot(page, "cluster-backups", { dir: PAGES_DIR });
+  await checkPage(page, "cluster-backups");
 });

@@ -1,6 +1,5 @@
-import { blockingViolations } from "../axe";
-import { PAGES_DIR, shot } from "../shot";
 import { expect, test } from "./fixture";
+import { checkPage } from "./themes";
 
 test.use({ scenarioName: "cluster-ready" });
 test.afterEach(({ scenario }) => scenario.prometheus.respond());
@@ -68,8 +67,7 @@ test("the Metrics tab of the brokers shows the live usage and a chart that the s
     ]);
     expect(url.searchParams.get("component")).toBe("zeebe");
   }
-  expect(await blockingViolations(page)).toEqual([]);
-  await shot(page, "component-metrics", { dir: PAGES_DIR });
+  await checkPage(page, "component-metrics");
 });
 
 test("the Logs tab of the brokers shows a line of each broker pod", async ({
@@ -84,8 +82,7 @@ test("the Logs tab of the brokers shows a line of each broker pod", async ({
   await expect(
     log.getByText("camundacluster-sample-zeebe-1").first(),
   ).toBeVisible();
-  expect(await blockingViolations(page)).toEqual([]);
-  await shot(page, "component-logs", { dir: PAGES_DIR });
+  await checkPage(page, "component-logs");
 });
 
 test("the Events tab of the brokers shows the events of the cluster", async ({
@@ -98,6 +95,5 @@ test("the Events tab of the brokers shows the events of the cluster", async ({
   await expect(
     page.getByText("CamundaCluster/camundacluster-sample").first(),
   ).toBeVisible();
-  expect(await blockingViolations(page)).toEqual([]);
-  await shot(page, "component-events", { dir: PAGES_DIR });
+  await checkPage(page, "component-events");
 });

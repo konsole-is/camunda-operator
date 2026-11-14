@@ -13,7 +13,8 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   reporter: [["list"]],
-  use: { browserName: "chromium" },
+  // The pages follow the theme of the system. The gallery checks dark only.
+  use: { browserName: "chromium", colorScheme: "dark" },
   webServer: [
     {
       command:
