@@ -104,7 +104,8 @@ theme. The check fails when one of these occurs:
 - The story requests a file outside the Storybook folder, for example from `/api/watch` or from another host.
 
 The check writes a screenshot of each story at each width and in each theme into `fleet-manager/ui-stories`. The
-file of the light theme has the suffix `-light`. Open `fleet-manager/ui-stories/index.html` to see all of them on one
+light screenshot of a story has the name of its dark screenshot with `-light` before `.png`, for example
+`ui-button--variants-390-light.png`. Open `fleet-manager/ui-stories/index.html` to see all of them on one
 page.
 
 In CI, the `Fleet manager` workflow (`.github/workflows/fleet-manager.yml`) runs the same check. The run uploads two artifacts: `storybook` holds the

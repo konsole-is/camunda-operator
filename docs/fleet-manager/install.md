@@ -51,7 +51,7 @@ The three buttons at the right of the top bar select the theme:
 | **Light** | The light theme. |
 | **Dark** | The dark theme. |
 
-The page changes at once, without a reload. The browser keeps the choice for one year in the cookie `fleet-theme`, so the choice applies to that browser only. **System** removes the cookie.
+The page changes at once, without a reload, so a form that you are filling in keeps its values. The browser keeps the choice for one year in the cookie `fleet-theme`. Another browser does not have the cookie, so it uses the setting of the operating system. **System** removes the cookie.
 
 ## Trust a private CA
 
