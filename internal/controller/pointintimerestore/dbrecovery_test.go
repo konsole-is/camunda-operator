@@ -453,6 +453,41 @@ var _ = Describe("PointInTimeRestore database recovery", func() {
 		}, timeout, interval).Should(Succeed())
 	})
 
+	It("reads the answer of a server that stopped declaring operator after the rollback", func() {
+		w := operatorRecoveryWorld()
+		pitr := createRestore(w)
+		expectRecovering(pitr)
+
+		repointContract(w)
+		request := expectRecoveryRequest(w)
+		// One write carries the answer and the capability that the server
+		// publishes once the rollback ends, so no reconcile reads one alone.
+		Eventually(func(g Gomega) {
+			var contract v1.DatabaseServerConfig
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(w.server), &contract)).To(Succeed())
+			contract.Spec.PITR = &v1.PITRCapability{
+				Enabled:  false,
+				Recovery: v1.RecoveryModeExternal,
+				LastRecovery: &v1.RecoveryOutcome{
+					RequestID:   request.RequestID,
+					RequestedBy: request.RequestedBy,
+					TargetTime:  request.TargetTime,
+					CompletedAt: metav1.Now(),
+					Result:      v1.RecoveryResultCompleted,
+				},
+			}
+			g.Expect(k8sClient.Update(ctx, &contract)).To(Succeed())
+		}, timeout, interval).Should(Succeed())
+		publishContractReady(w, recoveredIdentifier)
+
+		Eventually(func(g Gomega) {
+			current := readRestore(g, pitr)
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreRestoringDatabase))
+			g.Expect(current.Status.Phase).NotTo(Equal(v1.PointInTimeRestoreFailed))
+			g.Expect(current.Status.Storage.SystemIdentifier).To(Equal(recoveredIdentifier))
+		}, timeout, interval).Should(Succeed())
+	})
+
 	It("ends the restore when the rolled-back server reports another identity", func() {
 		w := operatorRecoveryWorld()
 		pitr := createRestore(w)

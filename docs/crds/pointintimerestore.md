@@ -63,7 +63,7 @@ The server finishes a rollback that it started. So these changes during the roll
 - If you delete the restore, it stays and holds the database until the answer.
 - If no `DatabaseServerConfig` can answer, for example because you deleted it, the restore fails, or goes, 10 minutes later.
 
-Before a cluster uses the database again, wait until `spec.pitr.lastRecovery` on the `DatabaseServerConfig` answers the request. A contract that stops declaring `pitr.recovery: operator` holds the restore until you set it back or delete the restore.
+Before a cluster uses the database again, wait until `spec.pitr.lastRecovery` on the `DatabaseServerConfig` answers the request. If the contract stops declaring `pitr.recovery: operator` before the contract answers, the restore waits until you set it back or delete the restore. An answer stays valid when the contract declares `external` after it. A `DatabaseServer` declares `external` after a rollback when [its archive moved](databaseserver.md#the-archive) during the rollback, until the first base backup at the new location completes.
 
 ## Choose the point to restore to
 
