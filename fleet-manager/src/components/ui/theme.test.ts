@@ -31,7 +31,8 @@ const STATES = [
 ];
 const FIELD = [
   "border-control-edge",
-  "hover:not-disabled:border-control-edge-strong",
+  "hover:border-control-edge-strong",
+  "disabled:border-control-edge",
   ...STATES,
 ];
 const CONTROLS: Record<string, string[]> = {
@@ -93,6 +94,16 @@ describe("shadcn primitives", () => {
     const source = readFileSync(path.join(dir, file), "utf8");
     expect(source).not.toMatch(/aria-invalid:border-destructive\//);
   });
+
+  // A variant stacked on hover, such as not-disabled, makes the hover edge
+  // outrank the focus-visible and aria-invalid edges.
+  it.each(Object.keys(CONTROLS))(
+    "%s gives the hover edge no second variant",
+    (file) => {
+      const source = readFileSync(path.join(dir, file), "utf8");
+      expect(source).not.toMatch(/hover:[\w-]+:border-/);
+    },
+  );
 
   it.each(Object.entries(CONTROLS))(
     "%s fills the control and gives each state other than rest a strong edge",
