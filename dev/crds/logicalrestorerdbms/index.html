@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2960,7 +2960,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 </tr>
 <tr>
 <td><code>RestoringSecondaryStorage</code></td>
-<td>One Job downloads the dump from the backup bucket and runs <code>pg_restore</code> against the logical database of the target.</td>
+<td>One Job downloads the dump from the backup bucket, drops the tables of the logical database of the target, and runs <code>pg_restore</code> against it.</td>
 </tr>
 <tr>
 <td><code>RestoringPrimaryStorage</code></td>
@@ -3016,7 +3016,8 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <p>In <code>Pending</code> this wait has no limit. After <code>Pending</code>, these reasons hold the restore for 10 minutes, and then it fails. A target that now resolves to another backend than <code>status.backend</code> holds it with <code>InvalidReference</code> for the same time.</p>
 <h2 id="secondary-storage">Secondary storage<a class="headerlink" href="#secondary-storage" title="Permanent link">&para;</a></h2>
 <p>One Job downloads the dump from the backup bucket and runs <code>pg_restore --clean --if-exists --no-owner</code> on it. <code>status.secondaryJobName</code> names the Job while it exists.</p>
-<p><strong>The Job connects as the application role of the target</strong>, the role in <code>DatabaseConfig.spec.credentialsSecretRef</code>. <code>pg_restore --clean</code> drops each object before it creates it again, and only the owner of an object can drop it. The application role owns the database and its objects, and the backup role owns nothing.</p>
+<p><strong>After the restore, the application role owns the tables of the backup and no others.</strong> Before <code>pg_restore</code>, the Job drops every table, view, and sequence that the application role owns, in every schema. A table that a newer Camunda minor created after the backup does not stay. An object of another role stays, unless it depends on a dropped table. For example, a view of another role over a Camunda table goes with that table.</p>
+<p><strong>The Job connects as the application role of the target</strong>, the role in <code>DatabaseConfig.spec.credentialsSecretRef</code>. Only the owner of an object can drop it. The application role owns the database and its objects, and the backup role owns nothing.</p>
 <p>The Job takes its pod settings and its <code>postgres</code> image from <code>spec.backup.dump</code> of the target, through its preset when it names one. It runs under the ServiceAccount of the cluster. The restore resource carries no pod settings of its own.</p>
 <p>The Job needs these, and holds the restore until they exist:</p>
 <ul>
@@ -3024,7 +3025,7 @@ Hold "Alt" / "Option" to enable pan &amp; zoom
 <li>The Secret of the bucket credentials in the namespace of the target. If it is missing or lacks a key, the reason is <code>MissingCredentials</code>.</li>
 <li><code>status.serverVersion</code> on the <code>DatabaseServerConfig</code>, for its current spec. The Job runs the client tools of that PostgreSQL major. If it is not there, the reason is <code>InvalidReference</code>.</li>
 </ul>
-<p>A failed Job fails the restore, and the message names the Job. So does a Job that disappears before it completes, and a Job of that name that belongs to another restore. The logical database then holds a partial restore, which only a new restore repairs.</p>
+<p>A failed Job fails the restore, and the message names the Job. So does a Job that disappears before it completes, and a Job of that name that belongs to another restore. The logical database then holds a partial restore, which only a new restore repairs. A new restore of the same backup gives the same database as a restore that did not fail.</p>
 <h2 id="primary-storage">Primary storage<a class="headerlink" href="#primary-storage" title="Permanent link">&para;</a></h2>
 <p>The operator deletes the data volume of every broker, creates it again, and runs the restore application once per broker, with no arguments. The restore application reads the exporter position from the restored database and selects the backups itself.</p>
 <p>The new volume takes the size that the backup recorded in <code>status.storageSizes.zeebe</code>. If the backup recorded none, it takes the size of the claim template of the broker StatefulSet. The storage class, the access modes, and the labels come from the claim template. The volumes belong to the broker StatefulSet, not to the restore. Deleting the restore leaves them in place.</p>

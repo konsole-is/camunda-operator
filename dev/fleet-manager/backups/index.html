@@ -62,7 +62,7 @@
     
     
   <meta name="panzoom-theme" content="material">
-<meta name="panzoom-data" content='{"selectors": [".d2", ".mermaid"], "initial_zoom_level": 1.0}'> </head>
+<meta name="panzoom-data" content='{"selectors": [".mermaid", ".d2"], "initial_zoom_level": 1.0}'> </head>
   
   
     
@@ -2892,7 +2892,7 @@
 <p>Each row of a <code>Completed</code> backup has <strong>Restore</strong>. A backup in another phase has no <strong>Restore</strong>. <strong>Restore</strong> opens a confirm. Its first line says that the restore loses everything that the cluster wrote after the backup. Under it, the confirm lists these facts:</p>
 <ul>
 <li>The Camunda version of the backup and the Camunda version of the cluster. The restore sets the version of the cluster to the version of the backup.</li>
-<li>What the restore deletes. A restore of an Elasticsearch backup deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. A restore of a PostgreSQL backup runs <code>pg_restore</code> over the database of the cluster. <code>pg_restore</code> drops each table of the dump and creates it again. Both kinds delete the broker volumes and create them again from the Zeebe data of the backup.</li>
+<li>What the restore deletes. A restore of an Elasticsearch backup deletes the Camunda indices in Elasticsearch and restores the snapshots of the backup. A restore of a PostgreSQL backup drops the tables in the database of the cluster, and restores the tables of the backup with <code>pg_restore</code>. Both kinds delete the broker volumes and create them again from the Zeebe data of the backup.</li>
 <li>Whether the cluster starts again. The restore suspends a running cluster while it runs, and starts it again when it completes. A cluster that you suspended yourself stays suspended after the restore, and you resume it. A cluster that a suspension hold or its secondary storage keeps suspended stays suspended until that suspension ends.</li>
 <li>What a failed restore leaves. The Camunda indices or the database, and the broker volumes, can be empty or half written. Then the cluster has no usable data, and it stays suspended. Do not resume it. Correct the cause and create a new restore, as <a href="../../guides/operations/#when-the-cluster-starts-again">When the cluster starts again</a> shows.</li>
 </ul>
