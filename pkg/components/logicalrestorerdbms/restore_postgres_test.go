@@ -145,8 +145,9 @@ func TestRestoreLeavesOnlyTheObjectsOfTheDump(t *testing.T) {
 
 // TestRestoreDropsOnlyTheRelationsOfTheApplicationRole pins the bounds of the
 // drop: a relation of the application role goes in every schema, a table of
-// another role and an extension that the admin installed stay, and a view of
-// another role over a dropped table goes with that table.
+// another role and the members of an extension stay, also a member that the
+// application role owns, and a view of another role over a dropped table goes
+// with that table.
 func TestRestoreDropsOnlyTheRelationsOfTheApplicationRole(t *testing.T) {
 	t.Parallel()
 
@@ -157,6 +158,7 @@ func TestRestoreDropsOnlyTheRelationsOfTheApplicationRole(t *testing.T) {
 	target.exec(t, `
 CREATE SCHEMA extra;
 CREATE TABLE extra.wait_state (wait_state_key BIGINT PRIMARY KEY);
+CREATE TABLE extension_member (id BIGINT);
 `)
 	backupConn := target.connect(t, backupRole)
 	_, err := backupConn.Exec(t.Context(), `
@@ -167,7 +169,10 @@ CREATE VIEW view_of_another_role AS SELECT * FROM process_instance;
 	admin, err := pgbootstrap.Open(t.Context(), target.server, targetDatabase)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close(context.Background()) })
-	_, err = admin.Exec(t.Context(), "CREATE EXTENSION pg_stat_statements")
+	_, err = admin.Exec(t.Context(), `
+CREATE EXTENSION pg_stat_statements;
+ALTER EXTENSION pg_stat_statements ADD TABLE extension_member;
+`)
 	require.NoError(t, err)
 
 	code, output := target.restore(t)
@@ -177,8 +182,10 @@ CREATE VIEW view_of_another_role AS SELECT * FROM process_instance;
 SELECT string_agg(n.nspname || '.' || c.relname, ',' ORDER BY n.nspname, c.relname)
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relname IN ('wait_state', 'table_of_another_role', 'view_of_another_role', 'pg_stat_statements')`)
-	assert.Equal(t, "public.pg_stat_statements,public.table_of_another_role", relations)
+WHERE c.relname IN (
+	'wait_state', 'table_of_another_role', 'view_of_another_role', 'pg_stat_statements', 'extension_member'
+)`)
+	assert.Equal(t, "public.extension_member,public.pg_stat_statements,public.table_of_another_role", relations)
 }
 
 func TestBackupRoleReadsTheDatabaseAfterTheRestore(t *testing.T) {
