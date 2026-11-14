@@ -287,6 +287,18 @@ describe("givesNoValue", () => {
   ])("for required %s, %j gives no value: %s", (required, value, none) => {
     expect(givesNoValue({ required }, value)).toBe(none);
   });
+
+  it("takes an empty text as a value of a required parameter whose enum or choices hold it", () => {
+    expect(
+      givesNoValue({ required: true, schema: { enum: ["", "on"] } }, ""),
+    ).toBe(false);
+    expect(
+      givesNoValue(
+        { required: true, allowed: [{ name: "", label: "None" }] },
+        "",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("valueErrors and an empty list of names", () => {

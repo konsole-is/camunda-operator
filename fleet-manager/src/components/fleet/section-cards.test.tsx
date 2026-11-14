@@ -623,12 +623,20 @@ describe("SectionCards", () => {
     const option = (
       schema: Record<string, unknown>,
       value: string,
+      required = false,
     ): OptionView => ({
       registration: "naming",
       label: "Naming",
       isDefault: true,
       parameters: [
-        { name: "prefix", label: "Prefix", schema, claimEditable: true, value },
+        {
+          name: "prefix",
+          label: "Prefix",
+          schema,
+          claimEditable: true,
+          value,
+          ...(required && { required }),
+        },
       ],
     });
 
@@ -673,29 +681,40 @@ describe("SectionCards", () => {
       ]);
     });
 
-    it("lets a select pick an empty enum value", async () => {
-      const onChange = vi.fn();
-      render(
-        <SectionCards
-          section={section(
-            {},
-            option({ type: "string", enum: ["", "enabled"] }, "enabled"),
-          )}
-          onChange={onChange}
-        />,
-      );
-      await userEvent.selectOptions(
-        screen.getByRole("combobox", { name: "Prefix" }),
-        "Empty",
-      );
-      expect(onChange.mock.lastCall![0]).toEqual([
-        {
-          section: "connectors-permissions",
-          registration: "naming",
-          parameters: { prefix: "" },
-        },
-      ]);
-    });
+    it.each([
+      ["an optional", false],
+      ["a required", true],
+    ])(
+      "lets a select of %s parameter pick an empty enum value",
+      async (_, required) => {
+        const onChange = vi.fn();
+        render(
+          <SectionCards
+            section={section(
+              {},
+              option(
+                { type: "string", enum: ["", "enabled"] },
+                "enabled",
+                required,
+              ),
+            )}
+            onChange={onChange}
+          />,
+        );
+        await userEvent.selectOptions(
+          screen.getByRole("combobox", { name: "Prefix" }),
+          "Empty",
+        );
+        expect(onChange.mock.lastCall![0]).toEqual([
+          {
+            section: "connectors-permissions",
+            registration: "naming",
+            parameters: { prefix: "" },
+          },
+        ]);
+        expect(onChange.mock.lastCall![1]).toEqual([]);
+      },
+    );
   });
 
   it("checks an empty list against the schema of an optional parameter", async () => {
