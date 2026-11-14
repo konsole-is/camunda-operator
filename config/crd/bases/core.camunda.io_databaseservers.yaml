@@ -1024,18 +1024,22 @@ spec:
                           type: string
                         to:
                           description: |-
-                            To is the latest point that a recovery from this archive can reach. It
-                            is unset while the server still writes to this archive.
+                            To is the end of this archive. A recovery from it can reach each point
+                            before To, but not To itself. It is unset while the server still writes
+                            to this archive.
                           format: date-time
                           type: string
                         unverifiedFrom:
                           description: |-
-                            UnverifiedFrom is the point after which this archive can miss parts of
-                            the write-ahead log. It is set while CloudNativePG reports that the
-                            uploads of the server fail. A restore cannot reach a point after it.
-                            When the uploads work again, the plugin uploads the segments that it
-                            held back. The field is then cleared, and a restore can reach the whole
-                            interval again. Only the record that the server writes to now has it.
+                            UnverifiedFrom is when CloudNativePG first reported that the uploads of
+                            the write-ahead log fail. It is set at that first report, while the
+                            server runs and asks for an archive. ArchiveReady reports the failure
+                            only after five minutes. The archive can miss the write-ahead log after
+                            it, and the write-ahead log before it that the segment of the first
+                            failed upload held. When the uploads work again, the plugin uploads the
+                            segments that it held back. The field is then cleared, and a restore
+                            can reach the whole interval again. Only the record that the server
+                            writes to now has it.
                           format: date-time
                           type: string
                       required:

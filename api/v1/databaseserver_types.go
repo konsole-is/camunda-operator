@@ -69,8 +69,9 @@ type DatabaseServerMonitoringSpec struct {
 // DatabaseServerArchiveSpec points a server at the bucket of its continuous
 // archive. The archive holds the write-ahead log of every instance, and the
 // base backups that a recovery starts from. A server with an archive publishes
-// pitr.enabled true on its contract. A server without one publishes false,
-// and no point-in-time restore can reach it.
+// pitr.enabled true on its contract once the first base backup of the archive
+// completes, with the windows of status.archive.history. A server without one
+// publishes false, and no point-in-time restore can reach it.
 //
 // The archive is not the backup model of the operator. BackupSchedule and
 // LogicalBackupRDBMS take logical dumps and never use these base backups.
@@ -333,16 +334,20 @@ type ArchiveRecord struct {
 	// From is the earliest point that a recovery from this archive can reach:
 	// the time when its first base backup completed.
 	From metav1.Time `json:"from"`
-	// To is the latest point that a recovery from this archive can reach. It
-	// is unset while the server still writes to this archive.
+	// To is the end of this archive. A recovery from it can reach each point
+	// before To, but not To itself. It is unset while the server still writes
+	// to this archive.
 	// +optional
 	To *metav1.Time `json:"to,omitempty"`
-	// UnverifiedFrom is the point after which this archive can miss parts of
-	// the write-ahead log. It is set while CloudNativePG reports that the
-	// uploads of the server fail. A restore cannot reach a point after it.
-	// When the uploads work again, the plugin uploads the segments that it
-	// held back. The field is then cleared, and a restore can reach the whole
-	// interval again. Only the record that the server writes to now has it.
+	// UnverifiedFrom is when CloudNativePG first reported that the uploads of
+	// the write-ahead log fail. It is set at that first report, while the
+	// server runs and asks for an archive. ArchiveReady reports the failure
+	// only after five minutes. The archive can miss the write-ahead log after
+	// it, and the write-ahead log before it that the segment of the first
+	// failed upload held. When the uploads work again, the plugin uploads the
+	// segments that it held back. The field is then cleared, and a restore
+	// can reach the whole interval again. Only the record that the server
+	// writes to now has it.
 	// +optional
 	UnverifiedFrom *metav1.Time `json:"unverifiedFrom,omitempty"`
 }

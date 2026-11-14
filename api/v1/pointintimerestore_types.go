@@ -25,7 +25,7 @@ import (
 const (
 	// ReasonPitrUnavailable means that the database server does not declare
 	// point-in-time recovery, or that spec.timestamp is outside its retention
-	// period.
+	// period or outside its recovery windows.
 	ReasonPitrUnavailable = "PitrUnavailable"
 	// ReasonSharedServer means that more than one Database has a logical
 	// database on the database server. Point-in-time recovery rolls back the

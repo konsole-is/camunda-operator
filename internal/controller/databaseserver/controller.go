@@ -122,8 +122,7 @@ type resolvedSpec struct {
 	contractWithdrawn string
 	// archiveOutage is the stop in the write-ahead log uploads that the server
 	// reports on, or nil when it reports on none. It blocks the archive
-	// component, it reports ArchiveFailing, and it marks the open archive
-	// record: see reportedArchiveOutage.
+	// component, and it reports ArchiveFailing: see reportedArchiveOutage.
 	archiveOutage *components.ArchiveOutage
 	// requested is what the merged spec asked for before keepAppliedStorageSize
 	// raised it to the volumes that are there.
@@ -384,6 +383,9 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// A taken ObjectStore writes none for the same reason. The server takes
 	// the archive off the cluster while that name is held, so nothing of this
 	// server reaches the bucket that a record here names.
+	//
+	// A change here reaches the contract on the next pass, which the status
+	// write of this pass starts.
 	if !resolved.holdArchive && resolved.clusterTaken == "" && resolved.archiveTaken == "" {
 		now := metav1.Now()
 		advanceArchiveFloor(&server, resolved.merged, now)
@@ -398,7 +400,9 @@ func (r *DatabaseServerReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		if err := r.recordArchiveMove(ctx, read, &server); err != nil {
 			return ctrl.Result{}, err
 		}
-		markArchiveOutage(&server, resolved.archiveOutage)
+		// From the first report, not after the grace of ArchiveReady: the
+		// published windows end before the segment that failed.
+		markArchiveOutage(&server, liveArchiveOutage(derived.outage, resolved.merged))
 	}
 
 	server.Status.Volumes = volumes.all()
@@ -486,8 +490,15 @@ func (r *DatabaseServerReconciler) buildComponents(
 	built.archive = archive
 	built.archiveDestination = destination
 
+	// A held archive is not applied, so the server still archives to the
+	// location that the running rollback recorded.
+	location := resolved.archiveLocation
+	if resolved.holdArchive {
+		location = server.Status.Recovery.Archive.Location
+	}
 	built.contract, err = components.ContractComponent(
 		server, merged, resolved.contractWithdrawn, resolved.contractTaken, resolved.archiveTaken,
+		location, time.Now(),
 	)
 	if err != nil {
 		return built, fmt.Errorf("building contract component: %w", err)

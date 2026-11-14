@@ -105,7 +105,7 @@ func (r *Reconciler) admit(
 		return r.waiting(pitr, failure), nil
 	}
 
-	if failure := pitrAvailable(resolved.server, pitr.Spec.Timestamp.Time); failure != nil {
+	if failure := pitrAvailable(resolved.server, pitr.Spec.Timestamp.Time, time.Now()); failure != nil {
 		return r.waiting(pitr, failure), nil
 	}
 
@@ -498,24 +498,25 @@ func (r *Reconciler) resolveFailed(
 	return restore.Outcome{}, err
 }
 
-// pitrAvailable reports why the server cannot serve the requested point, or
-// nil when it can. The DatabaseServerConfig is the capability declaration of
-// the server. This operator never restores the server itself, and it never
-// uses the admin credentials of the contract.
-func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.PreCheckFailure {
+// pitrAvailable reports why the server cannot serve the requested point at
+// now, or nil when it can. The DatabaseServerConfig is the capability
+// declaration of the server.
+func pitrAvailable(server *v1.DatabaseServerConfig, want, now time.Time) *conditions.PreCheckFailure {
 	pitr := server.Spec.PITR
 	if pitr == nil || !pitr.Enabled {
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
-				"DatabaseServerConfig %s declares no point-in-time recovery. Set spec.pitr.enabled "+
-					"to true once the server archives its write-ahead log", client.ObjectKeyFromObject(server),
+				"DatabaseServerConfig %s declares no point-in-time recovery. A DatabaseServer "+
+					"declares it once the first base backup of its archive completes. On a contract "+
+					"that you write yourself, set spec.pitr.enabled to true once the server archives "+
+					"its write-ahead log", client.ObjectKeyFromObject(server),
 			),
 		}
 	}
 
 	// The clock is the reason this rule cannot be a CEL rule on the schema.
-	if want.After(time.Now()) {
+	if want.After(now) {
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
@@ -529,7 +530,7 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 	if pitr.RetentionPeriodDays != nil {
 		days = *pitr.RetentionPeriodDays
 	}
-	if oldest := time.Now().Add(-time.Duration(days) * day); want.Before(oldest) {
+	if oldest := now.Add(-time.Duration(days) * day); want.Before(oldest) {
 		return &conditions.PreCheckFailure{
 			Reason: v1.ReasonPitrUnavailable,
 			Message: fmt.Sprintf(
@@ -540,7 +541,78 @@ func pitrAvailable(server *v1.DatabaseServerConfig, want time.Time) *conditions.
 		}
 	}
 
-	return nil
+	reached := slices.ContainsFunc(pitr.Windows, func(window v1.RecoveryWindow) bool {
+		return windowReaches(window, want, now)
+	})
+	if len(pitr.Windows) == 0 || reached {
+		return nil
+	}
+
+	return &conditions.PreCheckFailure{
+		Reason: v1.ReasonPitrUnavailable,
+		Message: fmt.Sprintf(
+			"spec.timestamp %s is in no window that DatabaseServerConfig %s can restore. It can "+
+				"restore %s",
+			want.UTC().Format(time.RFC3339), client.ObjectKeyFromObject(server),
+			describeWindows(pitr.Windows),
+		),
+	}
+}
+
+// windowReaches reports whether a restore at now can reach want in window.
+func windowReaches(window v1.RecoveryWindow, want, now time.Time) bool {
+	if want.Before(window.From.Time) {
+		return false
+	}
+	if window.UnverifiedFrom != nil && want.After(window.UnverifiedFrom.Time) {
+		return false
+	}
+	if window.To != nil {
+		return want.Before(window.To.Time)
+	}
+
+	end := now
+	if window.Lag != nil {
+		end = now.Add(-window.Lag.Duration)
+	}
+
+	return !want.After(end)
+}
+
+// describedWindows is how many windows a refusal names at most. The message
+// goes into a condition, whose message the API server limits to 32768
+// characters, and a contract can hold 256 windows.
+const describedWindows = 8
+
+// describeWindows names the newest windows for a refusal message, oldest
+// first.
+func describeWindows(windows []v1.RecoveryWindow) string {
+	var parts []string
+	if older := len(windows) - describedWindows; older > 0 {
+		parts = append(parts, fmt.Sprintf("%d older windows", older))
+		windows = windows[older:]
+	}
+
+	for _, window := range windows {
+		end := "now"
+		switch {
+		case window.To != nil:
+			end = window.To.UTC().Format(time.RFC3339)
+		case window.Lag != nil:
+			end = window.Lag.Duration.String() + " before now"
+		}
+
+		part := fmt.Sprintf("from %s to %s", window.From.UTC().Format(time.RFC3339), end)
+		if window.UnverifiedFrom != nil {
+			part += fmt.Sprintf(" (nothing after %s)", window.UnverifiedFrom.UTC().Format(time.RFC3339))
+		}
+		if window.Location != "" {
+			part += " at " + window.Location
+		}
+		parts = append(parts, part)
+	}
+
+	return strings.Join(parts, ", ")
 }
 
 // dedicatedServer reports that the server holds any logical database other

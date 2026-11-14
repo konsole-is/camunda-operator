@@ -99,7 +99,7 @@ spec:
   # ... the rest of your server
 ```
 
-The contract of a server with an archive declares `pitr.enabled: true`, `pitr.recovery: operator`, and `pitr.retentionPeriodDays`. A [PointInTimeRestore](pointintimerestore.md) reads these values.
+The contract of a server with an archive declares `pitr.enabled: true`, `pitr.recovery: operator`, `pitr.retentionPeriodDays`, and `pitr.windows`. A [PointInTimeRestore](pointintimerestore.md) reads these values. Until the first base backup completes, the contract declares `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet. The same is true after the archive moves to another location, until the first base backup there completes.
 
 ### Retention
 
@@ -147,8 +147,8 @@ status:
 
 - `serverName` is the directory in the bucket that holds the archive.
 - `objectStorageRef` and `location` name the bucket and the path. Each server writes under a path of its own, so one bucket can hold the archives of many servers.
-- `from` is the earliest point a restore can reach in the archive, and `to` is the latest. The record without `to` is the archive that the server writes now.
-- `unverifiedFrom` is set on the open record while uploads fail. A restore to a point after it can find no data.
+- `from` is the earliest point a restore can reach in the archive. `to` is the end of the archive: a restore reaches each point before `to`, but not `to` itself. The record without `to` is the archive that the server writes now.
+- `unverifiedFrom` is set on the open record when CloudNativePG first reports that uploads fail, and it is the time of that report. The segment of the failed upload holds write-ahead log from before that moment. A restore to a point after `unverifiedFrom`, or shortly before it, can find no data. `ArchiveReady` reports the failure only after five minutes.
 
 The server closes the open record and opens a new one in these cases:
 
@@ -157,6 +157,38 @@ The server closes the open record and opens a new one in these cases:
 - The archive moves to another location. A change of `spec.archive.objectStorageRef` to another bucket does this. So does an edit of the `ObjectStorageConfig` to another bucket, path, endpoint, or region.
 
 A new record starts at the first base backup of the new archive. No restore can reach a point between two records. A rollback reads only the location that the server archives to now. A point in a record of an earlier location is refused, and the message names both locations.
+
+The contract publishes the archive history as [recovery windows](databaseserverconfig.md#recovery-windows) in `pitr.windows`:
+
+- Each record at the location that the server archives to now gives one window, with the same `from`, `to`, and `location`. A record of an earlier location gives no window, because a rollback cannot read it.
+- The `unverifiedFrom` of a window is six minutes before the one of its record.
+- The open window gets `lag: 6m0s`. CloudNativePG uploads the write-ahead log in segments, and closes a segment at least every five minutes while the server writes. So a point of the last six minutes can be missing from the bucket. A `PointInTimeRestore` of such a point waits in `Pending` until the point is six minutes old.
+- A history of more than 256 records publishes the newest 256.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  pitr:
+    enabled: true
+    recovery: operator
+    retentionPeriodDays: 30
+    windows:
+      - location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)
+        from: "2026-08-01T10:00:00Z"
+        to: "2026-08-20T15:02:11Z"
+      - location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)
+        from: "2026-08-20T15:20:40Z"
+        lag: 6m0s
+  # ... the rest of the published contract
+```
+
+After a raised retention period, `status.archive.reachableFrom` can be later than the start of the retention period. Then no window starts before `reachableFrom`, and a record that ends before it gives no window.
+
+While a rollback runs, the contract keeps `pitr.recovery: operator`, also when no window is left.
 
 ### Base backups are not the backup model
 
@@ -470,6 +502,6 @@ spec:
 - [DatabaseServerConfig](databaseserverconfig.md): the contract this kind publishes.
 - [Database](database.md): creates the logical database and its users on the published contract.
 - [ObjectStorageConfig](objectstorageconfig.md): the bucket that `spec.archive.objectStorageRef` names.
-- [PointInTimeRestore](pointintimerestore.md): reads `pitr.enabled` and the retention period from the published contract.
+- [PointInTimeRestore](pointintimerestore.md): reads `pitr.enabled`, the retention period, and the recovery windows from the published contract.
 - [Secondary storage guide](../guides/secondary-storage.md): how to choose and connect secondary storage.
 - [Installation](../installation.md): CloudNativePG, cert-manager, and the Barman Cloud plugin.

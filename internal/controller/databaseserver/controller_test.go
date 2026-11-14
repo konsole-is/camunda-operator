@@ -856,6 +856,16 @@ var _ = Describe("DatabaseServer controller", func() {
 		// cannot be recovered to any point yet is not ready.
 		expectConditionReason(server, v1.ConditionReady, metav1.ConditionFalse, string(component.GuardBlocked))
 
+		// No restore can reach a point before the first base backup, so the
+		// contract declares nothing to reach yet.
+		Eventually(func(g Gomega) {
+			pitr := publishedContract(g, server).Spec.PITR
+			g.Expect(pitr).NotTo(BeNil())
+			g.Expect(pitr.Enabled).To(BeFalse())
+			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeExternal))
+			g.Expect(pitr.Windows).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
 		completedAt := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
 		completeBaseBackup(server, "base", completedAt)
 
@@ -865,12 +875,18 @@ var _ = Describe("DatabaseServer controller", func() {
 		// on its own condition and never on Ready.
 		expectConditionReason(server, v1.ConditionReady, metav1.ConditionTrue, v1.ReasonHealthy)
 
-		var contract v1.DatabaseServerConfig
-		Expect(k8sClient.Get(
-			ctx, client.ObjectKey{Namespace: server.Namespace, Name: "camunda"}, &contract,
-		)).To(Succeed())
-		Expect(contract.Spec.PITR.Enabled).To(BeTrue())
-		Expect(contract.Spec.PITR.RetentionPeriodDays).To(HaveValue(Equal(int32(30))))
+		// The contract publishes the archive the server writes as one open
+		// window from the first base backup.
+		Eventually(func(g Gomega) {
+			pitr := publishedContract(g, server).Spec.PITR
+			g.Expect(pitr.Enabled).To(BeTrue())
+			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeOperator))
+			g.Expect(pitr.RetentionPeriodDays).To(HaveValue(Equal(int32(30))))
+			g.Expect(pitr.Windows).To(HaveLen(1))
+			g.Expect(pitr.Windows[0].From.Time).To(BeTemporally("==", completedAt.Time))
+			g.Expect(pitr.Windows[0].To).To(BeNil())
+			g.Expect(pitr.Windows[0].Lag).To(HaveValue(Equal(metav1.Duration{Duration: components.ArchiveLag})))
+		}, timeout, interval).Should(Succeed())
 
 		// The archive interval opens at the first base backup: nothing before
 		// it can be recovered to.
@@ -1888,6 +1904,16 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(history[0].UnverifiedFrom.Time).To(BeTemporally("==", stoppedAt.Time))
 		}, timeout, interval).Should(Succeed())
 
+		// The contract stops advertising them too, so a restore refuses them.
+		Eventually(func(g Gomega) {
+			windows := publishedContract(g, server).Spec.PITR.Windows
+			g.Expect(windows).To(HaveLen(1))
+			g.Expect(windows[0].UnverifiedFrom).NotTo(BeNil())
+			g.Expect(windows[0].UnverifiedFrom.Time).To(
+				BeTemporally("==", stoppedAt.Add(-components.ArchiveLag)),
+			)
+		}, timeout, interval).Should(Succeed())
+
 		By("running the uploads again")
 		reportArchiving(server, metav1.ConditionTrue, metav1.Now())
 
@@ -1898,13 +1924,15 @@ var _ = Describe("DatabaseServer controller", func() {
 		// can be reached again.
 		Eventually(func(g Gomega) {
 			g.Expect(archiveHistory(server)[0].UnverifiedFrom).To(BeNil())
+			g.Expect(publishedContract(g, server).Spec.PITR.Windows[0].UnverifiedFrom).To(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
 
 	// CloudNativePG reports the condition on the first upload that fails, and
 	// the plugin uploads that segment again. A server that reported every one
-	// of them would report an archive that is running.
-	It("keeps the archive True while a failed upload is inside the grace period", func() {
+	// of them would report an archive that is running. A restore refuses a
+	// point after the mark that the contract carries.
+	It("marks the record but keeps the archive True while a failed upload is inside the grace period", func() {
 		bucket := archiveBucket()
 		server := serverInBucketNamespace(bucket, &v1.DatabaseServerArchiveSpec{
 			ObjectStorageRef:    bucket.Name,
@@ -1916,13 +1944,23 @@ var _ = Describe("DatabaseServer controller", func() {
 
 		expectCondition(server, v1.ConditionArchiveReady, metav1.ConditionTrue)
 
-		reportArchiving(server, metav1.ConditionFalse, metav1.Now())
+		stoppedAt := metav1.NewTime(metav1.Now().Rfc3339Copy().Time)
+		reportArchiving(server, metav1.ConditionFalse, stoppedAt)
+
+		Eventually(func(g Gomega) {
+			history := archiveHistory(server)
+			g.Expect(history[0].UnverifiedFrom).NotTo(BeNil())
+			g.Expect(history[0].UnverifiedFrom.Time).To(BeTemporally("==", stoppedAt.Time))
+
+			windows := publishedContract(g, server).Spec.PITR.Windows
+			g.Expect(windows).To(HaveLen(1))
+			g.Expect(windows[0].UnverifiedFrom).NotTo(BeNil())
+		}, timeout, interval).Should(Succeed())
 
 		Consistently(func(g Gomega) {
 			condition := conditionOf(server, v1.ConditionArchiveReady)
 			g.Expect(condition).NotTo(BeNil())
 			g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), condition.Message)
-			g.Expect(archiveHistory(server)[0].UnverifiedFrom).To(BeNil())
 		}, 3*time.Second, interval).Should(Succeed())
 	})
 
@@ -1985,6 +2023,16 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(archiveHistory(server)).To(HaveLen(1))
 		}, 2*time.Second, interval).Should(Succeed())
 
+		// A rollback reads only the bucket the server writes to now, so the
+		// window of the bucket it left leaves the contract, and no window is
+		// left.
+		Eventually(func(g Gomega) {
+			pitr := publishedContract(g, server).Spec.PITR
+			g.Expect(pitr.Enabled).To(BeFalse())
+			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeExternal))
+			g.Expect(pitr.Windows).To(BeEmpty())
+		}, timeout, interval).Should(Succeed())
+
 		openedAt := metav1.NewTime(closedAt.Add(5 * time.Second))
 		completeBaseBackup(server, "second", openedAt)
 
@@ -1996,6 +2044,19 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(history[1].ObjectStorageRef).To(Equal(second.Name))
 			g.Expect(history[1].From.Time).To(BeTemporally("==", openedAt.Time))
 			g.Expect(history[1].To).To(BeNil())
+		}, timeout, interval).Should(Succeed())
+
+		// The contract publishes the open window of the bucket the server
+		// writes now, and nothing of the bucket it left.
+		Eventually(func(g Gomega) {
+			pitr := publishedContract(g, server).Spec.PITR
+			g.Expect(pitr.Enabled).To(BeTrue())
+			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeOperator))
+			g.Expect(pitr.Windows).To(HaveLen(1))
+			g.Expect(pitr.Windows[0].Location).To(Equal(archiveHistory(server)[1].Location))
+			g.Expect(pitr.Windows[0].From.Time).To(BeTemporally("==", openedAt.Time))
+			g.Expect(pitr.Windows[0].To).To(BeNil())
+			g.Expect(pitr.Windows[0].Lag).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
 

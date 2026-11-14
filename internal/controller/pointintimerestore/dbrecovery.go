@@ -103,7 +103,13 @@ func (r *Reconciler) enterDatabaseRecovery(
 		return r.holdStarted(pitr, failure), nil
 	}
 
+	// An answer stands whatever the contract declares after it. The server can
+	// stop declaring operator as soon as the rollback that answered it ends.
 	contract := resolved.server
+	request := recoveryRequest(pitr)
+	if capability := contract.Spec.PITR; capability != nil && request.AnsweredBy(capability.LastRecovery) {
+		return r.recoveryAnswered(ctx, pitr, resolved, capability.LastRecovery)
+	}
 	if !contract.OperatorRecovers() {
 		return r.holdRecovering(pitr, &conditions.PreCheckFailure{
 			Reason: v1.ReasonPitrUnavailable,
@@ -114,11 +120,6 @@ func (r *Reconciler) enterDatabaseRecovery(
 				client.ObjectKeyFromObject(contract),
 			),
 		}), nil
-	}
-
-	request := recoveryRequest(pitr)
-	if outcome := contract.Spec.PITR.LastRecovery; request.AnsweredBy(outcome) {
-		return r.recoveryAnswered(ctx, pitr, resolved, outcome)
 	}
 
 	if err := r.askForRecovery(ctx, contract, request); err != nil {

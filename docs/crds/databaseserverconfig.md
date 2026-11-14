@@ -102,6 +102,40 @@ spec:
   # ... the rest of your contract
 ```
 
+### Recovery windows
+
+`pitr.windows` lists the intervals of time that the server can restore, oldest first. When the list is set, a `PointInTimeRestore` accepts a point only when a window holds it. The point must also be inside the retention period. Without windows, a restore can ask for every point of the retention period up to the present.
+
+A window is one continuous interval of time that the archive covers. Uploads extend the open window, and they do not start a new one. A new window starts only where the archive breaks. For a `DatabaseServer`, that is a rollback, a move to another location, or an archive that is turned off and on again. The limit of 256 windows counts these breaks, not time.
+
+```yaml
+apiVersion: core.camunda.io/v1
+kind: DatabaseServerConfig
+metadata:
+  name: my-db-server
+  namespace: my-cluster-ns
+spec:
+  pitr:
+    enabled: true
+    retentionPeriodDays: 7
+    windows:
+      - from: "2026-08-14T02:00:00Z"
+        to: "2026-08-18T09:30:00Z"
+      - from: "2026-08-18T10:00:00Z"
+        lag: 5m
+  # ... the rest of your contract
+```
+
+- `from` is the earliest point of the window.
+- `to` is the end of the window. A restore can reach each point before `to`, but not `to` itself. A window without `to` is open: it continues to the present.
+- `lag` is how far an open window is behind the present, as a duration such as `5m` or `6m0s`. A managed database, for example, can restore a point only some minutes after it happened. A window without `lag` reaches the present.
+- `unverifiedFrom` is a point after which the window can miss parts of the write-ahead log. A restore can reach `unverifiedFrom` itself, but no point after it.
+- `location` says where the archive of the window is. A restore does not read it.
+
+For a managed database with a rolling retention, one open window is sufficient. Set `from` to the time when the database started to keep backups. Set `lag` to how far its latest restorable time is behind the present. The retention period limits the start of the window.
+
+A restore gets `PitrUnavailable` for a point before the first window, between two windows, after `unverifiedFrom`, or less than `lag` ago. The message names the windows that the server can restore. A `DatabaseServer` publishes the windows of its archive that a rollback can read. See [the archive history](databaseserver.md#the-archive-history). While it has no such window and runs no rollback, it publishes `pitr.enabled: false` and `pitr.recovery: external`, because no restore can reach a point yet.
+
 ## Recovery request
 
 `spec.recovery` asks for a rollback. A [PointInTimeRestore](pointintimerestore.md) writes it on a contract that declares `pitr.recovery: operator`. You can also write it by hand on a contract that a `DatabaseServer` publishes.
@@ -187,6 +221,8 @@ The [API reference](api-reference.md#databaseserverconfig) lists every field of 
 - `spec.port` must be from 1 to 65535.
 - If `spec.pitr.enabled` is `true`, `spec.pitr.retentionPeriodDays` must be set and from 1 to 36500.
 - If `spec.pitr.recovery` is `operator`, `spec.pitr.enabled` must be `true`.
+- If `spec.pitr.windows` is set, `spec.pitr.enabled` must be `true`. The list holds 256 windows at most.
+- Only a window without `to` can have `lag`. `lag` is a duration without a sign, such as `6m` or `1h30m`, of at most `2562047h`.
 - `spec.recovery.targetTime` and `spec.pitr.lastRecovery.targetTime` must be RFC 3339 with a zone, for example `2026-08-20T14:30:00Z`.
 - `spec.recovery.requestedBy` must name a namespace and a name, separated by `/`.
 - `spec.recovery.requestID` and `spec.pitr.lastRecovery.requestID` must be a UUID.

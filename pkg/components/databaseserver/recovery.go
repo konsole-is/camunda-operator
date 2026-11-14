@@ -113,18 +113,7 @@ func recoveryName(server string, n int) string {
 // start.
 //
 // location is where the server archives to now, and bucket is the
-// ObjectStorageConfig that names it. A record of another location holds its
-// interval, and a recovery still cannot read it: the recovered cluster is
-// given one ObjectStore, and that one describes location. The comparison is on
-// the location rather than on the name, because an ObjectStorageConfig can be
-// edited in place, and removed and created again, without its name changing.
-// A record that names no location was written before the field existed and is
-// taken as the current one.
-//
-// A record written before the location was recorded carries only the contract
-// that named it. It is the archive the server writes now when that contract is
-// the one it writes through, and it is unplaceable when it is not: the
-// contract has moved since, and nothing says where its objects went.
+// ObjectStorageConfig that names it.
 //
 // The error wraps ErrNoArchiveHolds when no interval holds target, and
 // ErrArchiveInAnotherLocation when one holds it somewhere else, or somewhere
@@ -144,31 +133,7 @@ func SelectArchive(
 			continue
 		}
 		if record.To == nil || target.Before(record.To.Time) {
-			if record.ObjectStorageRef == "" {
-				record.ObjectStorageRef = bucket
-			}
-			if record.Location == "" && record.ObjectStorageRef == bucket {
-				record.Location = location
-			}
-			if record.Location == "" {
-				return v1.ArchiveRecord{}, fmt.Errorf(
-					"%w. It was written through ObjectStorageConfig %q, which the server no "+
-						"longer archives through, and its location was not recorded. Nothing "+
-						"says where those objects are",
-					ErrArchiveInAnotherLocation, record.ObjectStorageRef,
-				)
-			}
-			if record.Location != location {
-				return v1.ArchiveRecord{}, fmt.Errorf(
-					"%w. It is at %q (ObjectStorageConfig %q), and the server archives to %q "+
-						"(ObjectStorageConfig %q) now. Reading the archive of an earlier "+
-						"location is not supported yet",
-					ErrArchiveInAnotherLocation,
-					record.Location, record.ObjectStorageRef, location, bucket,
-				)
-			}
-
-			return record, nil
+			return placeArchive(record, location, bucket)
 		}
 	}
 
@@ -176,6 +141,49 @@ func SelectArchive(
 		"%w. It archived %s, and %s lies in none of those windows",
 		ErrNoArchiveHolds, describeArchives(history), target.UTC().Format(time.RFC3339),
 	)
+}
+
+// placeArchive returns record with its bucket and its location filled in when
+// a recovery can read it at location, the place the server archives to now
+// through bucket. Otherwise it returns an error that wraps
+// ErrArchiveInAnotherLocation.
+//
+// A record that names no bucket was written before that field existed, and it
+// takes bucket. A record that names no location takes location when its
+// bucket is bucket, and it cannot be placed when it is not: the contract moved
+// since, and nothing says where its objects went.
+func placeArchive(record v1.ArchiveRecord, location, bucket string) (v1.ArchiveRecord, error) {
+	if record.ObjectStorageRef == "" {
+		record.ObjectStorageRef = bucket
+	}
+	if record.Location == "" && record.ObjectStorageRef == bucket {
+		record.Location = location
+	}
+
+	if record.Location == "" {
+		return v1.ArchiveRecord{}, fmt.Errorf(
+			"%w. It was written through ObjectStorageConfig %q, which the server no "+
+				"longer archives through, and its location was not recorded. Nothing "+
+				"says where those objects are",
+			ErrArchiveInAnotherLocation, record.ObjectStorageRef,
+		)
+	}
+
+	// The recovered cluster is given one ObjectStore, and that one describes
+	// location. The location decides rather than the name, because an
+	// ObjectStorageConfig can be edited in place, or removed and created
+	// again, under the same name.
+	if record.Location != location {
+		return v1.ArchiveRecord{}, fmt.Errorf(
+			"%w. It is at %q (ObjectStorageConfig %q), and the server archives to %q "+
+				"(ObjectStorageConfig %q) now. Reading the archive of an earlier "+
+				"location is not supported yet",
+			ErrArchiveInAnotherLocation,
+			record.Location, record.ObjectStorageRef, location, bucket,
+		)
+	}
+
+	return record, nil
 }
 
 // describeArchives names the windows of history for a refusal message, oldest

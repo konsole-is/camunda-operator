@@ -2841,11 +2841,11 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#archiverecord"
       },
       "status.archive.history.to": {
-        "description": "To is the latest point that a recovery from this archive can reach. It\nis unset while the server still writes to this archive.",
+        "description": "To is the end of this archive. A recovery from it can reach each point\nbefore To, but not To itself. It is unset while the server still writes\nto this archive.",
         "anchor": "#archiverecord"
       },
       "status.archive.history.unverifiedFrom": {
-        "description": "UnverifiedFrom is the point after which this archive can miss parts of\nthe write-ahead log. It is set while CloudNativePG reports that the\nuploads of the server fail. A restore cannot reach a point after it.\nWhen the uploads work again, the plugin uploads the segments that it\nheld back. The field is then cleared, and a restore can reach the whole\ninterval again. Only the record that the server writes to now has it.",
+        "description": "UnverifiedFrom is when CloudNativePG first reported that the uploads of\nthe write-ahead log fail. It is set at that first report, while the\nserver runs and asks for an archive. ArchiveReady reports the failure\nonly after five minutes. The archive can miss the write-ahead log after\nit, and the write-ahead log before it that the segment of the first\nfailed upload held. When the uploads work again, the plugin uploads the\nsegments that it held back. The field is then cleared, and a restore\ncan reach the whole interval again. Only the record that the server\nwrites to now has it.",
         "anchor": "#archiverecord"
       },
       "status.archive.reachableFrom": {
@@ -3031,8 +3031,32 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pitrcapability"
       },
       "spec.pitr.retentionPeriodDays": {
-        "description": "RetentionPeriodDays is how many days into the past a point-in-time\nrestore can go. Required when enabled is true.\n\nThe maximum is 36500 days, which is a hundred years. A reader counts\nthe reachable window in nanoseconds, and that count overflows at about\n292 years. The maximum stays well below that limit.",
+        "description": "RetentionPeriodDays is how many days into the past a point-in-time\nrestore can go. It is the declared policy of the server. Windows can\nlimit a restore more. Required when enabled is true.\n\nThe maximum is 36500 days, which is a hundred years. A reader counts\nthe reachable window in nanoseconds, and that count overflows at about\n292 years. The maximum stays well below that limit.",
         "anchor": "#pitrcapability"
+      },
+      "spec.pitr.windows": {
+        "description": "Windows are the continuous intervals of time that a restore can reach,\noldest first. A new window starts only where the archive breaks. So\nthe maximum of 256 limits the breaks, not the time that the windows\ncover. When Windows holds a window, a restore accepts a point only when\na window reaches it, also when the point is inside the retention period.\nWhen Windows is unset, a restore can reach every point of the retention\nperiod up to the present. Windows require enabled: true.\n\nA DatabaseServer publishes here the intervals of its archive that a\nrestore can still read at the location that it archives to now. It\npublishes the newest 256 of them. The lag of an open window is how far the latest\nrestorable time is behind the present.",
+        "anchor": "#pitrcapability"
+      },
+      "spec.pitr.windows.from": {
+        "description": "From is the earliest point that a restore can reach in this window.",
+        "anchor": "#recoverywindow"
+      },
+      "spec.pitr.windows.lag": {
+        "description": "Lag is how far the end of an open window is behind the present, as a\nduration such as 5m. A restore cannot reach a point that is less than\nLag in the past. An open window without a lag reaches the present. You\ncan set Lag only on an open window.",
+        "anchor": "#recoverywindow"
+      },
+      "spec.pitr.windows.location": {
+        "description": "Location is where the archive of this window is, in the form of\nArchiveRecord.Location of a DatabaseServer. It is information for the\nreader. A restore does not read it.",
+        "anchor": "#recoverywindow"
+      },
+      "spec.pitr.windows.to": {
+        "description": "To is the end of this window. A restore can reach every point before\nTo, but not To itself. A point at To is in the next window, if a\nwindow starts there. When To is unset, the window is open: the server\nstill writes to it, and it continues to the present, less Lag.",
+        "anchor": "#recoverywindow"
+      },
+      "spec.pitr.windows.unverifiedFrom": {
+        "description": "UnverifiedFrom is the point after which this window can miss parts of\nthe write-ahead log. A restore cannot reach a point after it.",
+        "anchor": "#recoverywindow"
       },
       "spec.port": {
         "description": "Port is the port of the server.",

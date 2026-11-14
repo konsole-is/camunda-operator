@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -346,6 +347,34 @@ func TestReportedAndPendingArchiveOutage(t *testing.T) {
 	assert.Zero(t, pendingArchiveOutageWait(held, suspended, minuteIn))
 	assert.Zero(t, pendingArchiveOutageWait(held, v1.DatabaseServerSpec{}, minuteIn))
 	assert.Zero(t, pendingArchiveOutageWait(nil, archiving, minuteIn))
+}
+
+// A restore must not reach the write-ahead log of a failed upload, also while
+// ArchiveReady waits out its grace period. The open record takes the outage
+// from the first report of CloudNativePG, with the same exclusions as
+// ArchiveReady, and ArchiveReady stays as it is.
+func TestAnUnconfirmedOutageMarksTheRecordAndLeavesArchiveReady(t *testing.T) {
+	t.Parallel()
+
+	archiving := v1.DatabaseServerSpec{
+		Archive: &v1.DatabaseServerArchiveSpec{ObjectStorageRef: "bucket", RetentionPeriodDays: 30},
+	}
+	suspended := v1.DatabaseServerSpec{Archive: archiving.Archive, Suspend: true}
+	stoppedAt := metav1.NewTime(archiveOpenedAt.Add(30 * time.Minute))
+	held := &components.ArchiveOutage{Reason: "ContinuousArchivingFailing", Since: stoppedAt}
+
+	assert.Same(t, held, liveArchiveOutage(held, archiving))
+	assert.Nil(t, liveArchiveOutage(held, suspended))
+	assert.Nil(t, liveArchiveOutage(held, v1.DatabaseServerSpec{}))
+	assert.Nil(t, liveArchiveOutage(nil, archiving))
+
+	server := archivingServerWith([]v1.ArchiveRecord{archiveRecord(nil)}, nil)
+	markArchiveOutage(server, liveArchiveOutage(held, archiving))
+	stageArchiveOutage(server, reportedArchiveOutage(held, archiving))
+
+	require.NotNil(t, server.Status.Archive.History[0].UnverifiedFrom)
+	assert.True(t, server.Status.Archive.History[0].UnverifiedFrom.Equal(&stoppedAt))
+	assert.Nil(t, meta.FindStatusCondition(server.Status.Conditions, v1.ConditionArchiveReady))
 }
 
 // unverifiedFrom says what the archive the server writes now is missing. The

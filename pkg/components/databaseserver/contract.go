@@ -18,6 +18,7 @@ package databaseserver
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/sourcehawk/operator-component-framework/pkg/component"
 	"github.com/sourcehawk/operator-component-framework/pkg/feature"
@@ -28,11 +29,26 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/databaseserverconfig"
 )
 
+// ArchiveLag is how far the end of the archive that a server writes now is
+// behind the present. CloudNativePG sets archive_timeout to five minutes, and
+// the operator does not change it. Thus PostgreSQL closes a segment of the
+// write-ahead log at least every five minutes while the server writes. The
+// lag gives the upload of that segment one more minute.
+const ArchiveLag = 6 * time.Minute
+
+// maxRecoveryWindows is the maximum of spec.pitr.windows on a
+// DatabaseServerConfig.
+const maxRecoveryWindows = 256
+
 // ContractComponent builds the contract component: the DatabaseServerConfig
 // that the spec names, published in the namespace of the CR. It carries the
 // address of the primary instance, a reference to the superuser Secret that
 // CloudNativePG writes, and the point-in-time-recovery capability that the
-// archive of the server gives it.
+// archive of the server gives it. The windows of that capability come from
+// status.archive.history of server as it stands when the component is built.
+// Only a record that a rollback can read at location, where the server
+// archives to now, gives a window. now is the time from which the retention
+// period counts back.
 //
 // A read-only registration guards the contract on the superuser Secret and
 // blocks while that Secret is absent. A contract that named a Secret before
@@ -57,8 +73,8 @@ import (
 //
 // The withdrawn message is the ClusterTaken message when the contract must go
 // because a CloudNativePG cluster of the name the server derives is not this
-// server's, and empty otherwise. When it is set, the feature gate is off and
-// the framework removes the published contract, because the contract names the
+// server's, and empty otherwise. When it is set, the framework removes the
+// contract that this server published, because the contract names the
 // endpoint and the superuser Secret of a database this server does not own. A
 // consumer then reads InvalidReference instead of the endpoint of another
 // database. A contract the server never published is not removed by that gate,
@@ -74,6 +90,8 @@ func ContractComponent(
 	withdrawn string,
 	contractTaken string,
 	archiveTaken string,
+	location string,
+	now time.Time,
 ) (*component.Component, error) {
 	superuser, err := secret.NewBuilder(superuserSecretRef(server)).Build()
 	if err != nil {
@@ -95,7 +113,7 @@ func ContractComponent(
 				UsernameKey: SuperuserUsernameKey,
 				PasswordKey: SuperuserPasswordKey,
 			},
-			PITR: pitrCapability(merged, archiveTaken),
+			PITR: pitrCapability(server, merged, archiveTaken, location, now),
 		},
 	}).WithGuard(takenGuard[v1.DatabaseServerConfig](contractTaken)).Build()
 	if err != nil {
@@ -112,24 +130,112 @@ func ContractComponent(
 }
 
 // pitrCapability renders the point-in-time-recovery capability the server
-// publishes. A server with an archive declares the retention its bucket
-// enforces, and that the operator rolls it back on request. A server without
-// one declares that no restore can reach it, and that nobody rolls it back.
+// publishes at now. A server without an archive declares that no restore can
+// reach it, and that nobody rolls it back.
+//
+// A server with no window to publish declares the same as a server without an
+// archive, unless it runs a recovery. A restore that asked for that recovery
+// reads a contract that does not declare operator as one that nobody answers.
 //
 // A server whose ObjectStore another owner holds declares the same as a server
 // without an archive. It archives nothing while the name is held, and a
 // rollback reads the archive of that ObjectStore, so a capability here sends a
 // restore to the archive of another server.
-func pitrCapability(merged v1.DatabaseServerSpec, archiveTaken string) *v1.PITRCapability {
-	if merged.Archive == nil || archiveTaken != "" {
-		return &v1.PITRCapability{Enabled: false, Recovery: v1.RecoveryModeExternal}
+func pitrCapability(
+	server *v1.DatabaseServer,
+	merged v1.DatabaseServerSpec,
+	archiveTaken string,
+	location string,
+	now time.Time,
+) *v1.PITRCapability {
+	disabled := &v1.PITRCapability{Enabled: false, Recovery: v1.RecoveryModeExternal}
+	if merged.Archive == nil || archiveTaken != "" || server.Status.Archive == nil {
+		return disabled
+	}
+
+	placed := placedArchives(server.Status.Archive.History, location, merged.Archive.ObjectStorageRef)
+	windows := recoveryWindows(placed, prunedFloor(server, merged.Archive.RetentionPeriodDays, now))
+
+	running := server.Status.Recovery != nil && server.Status.Recovery.CompletedAt == nil
+	if len(windows) == 0 && !running {
+		return disabled
 	}
 
 	return &v1.PITRCapability{
 		Enabled:             true,
 		RetentionPeriodDays: new(merged.Archive.RetentionPeriodDays),
 		Recovery:            v1.RecoveryModeOperator,
+		Windows:             windows,
 	}
+}
+
+// placedArchives returns the records of history that a rollback can read at
+// location through bucket, with their location filled in.
+func placedArchives(history []v1.ArchiveRecord, location, bucket string) []v1.ArchiveRecord {
+	placed := make([]v1.ArchiveRecord, 0, len(history))
+	for _, record := range history {
+		if record, err := placeArchive(record, location, bucket); err == nil {
+			placed = append(placed, record)
+		}
+	}
+
+	return placed
+}
+
+// prunedFloor returns status.archive.reachableFrom while it is later than the
+// start of the retention period at now, and nil otherwise.
+func prunedFloor(server *v1.DatabaseServer, retentionDays int32, now time.Time) *metav1.Time {
+	if server.Status.Archive == nil || server.Status.Archive.ReachableFrom == nil {
+		return nil
+	}
+
+	// In steady state the floor trails the retention period by up to a
+	// minute. Admission checks the retention period itself, and a clip to
+	// that floor would change the contract each minute.
+	floor := server.Status.Archive.ReachableFrom
+	if !floor.After(now.Add(-time.Duration(retentionDays) * 24 * time.Hour)) {
+		return nil
+	}
+
+	return floor
+}
+
+// recoveryWindows returns the windows that history gives a restore, oldest
+// first. A window starts no earlier than floor, and a record that ends at or
+// before floor gives none. It keeps the newest maxRecoveryWindows windows, the
+// most that a contract holds.
+func recoveryWindows(history []v1.ArchiveRecord, floor *metav1.Time) []v1.RecoveryWindow {
+	windows := make([]v1.RecoveryWindow, 0, len(history))
+	for _, record := range history {
+		if floor != nil && record.To != nil && !record.To.After(floor.Time) {
+			continue
+		}
+
+		window := v1.RecoveryWindow{
+			Location: record.Location,
+			From:     record.From,
+			To:       record.To.DeepCopy(),
+		}
+		if floor != nil && window.From.Before(floor) {
+			window.From = *floor
+		}
+		if record.UnverifiedFrom != nil {
+			// The segment whose upload failed began before the record's time,
+			// by at most archive_timeout while the server writes.
+			cutoff := metav1.NewTime(record.UnverifiedFrom.Add(-ArchiveLag))
+			window.UnverifiedFrom = &cutoff
+		}
+		if record.To == nil {
+			window.Lag = &metav1.Duration{Duration: ArchiveLag}
+		}
+		windows = append(windows, window)
+	}
+
+	if older := len(windows) - maxRecoveryWindows; older > 0 {
+		windows = windows[older:]
+	}
+
+	return windows
 }
 
 // ContractTakenMessage says that a DatabaseServerConfig of the name the merged

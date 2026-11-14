@@ -63,7 +63,7 @@ The server finishes a rollback that it started. So these changes during the roll
 - If you delete the restore, it stays and holds the database until the answer.
 - If no `DatabaseServerConfig` can answer, for example because you deleted it, the restore fails, or goes, 10 minutes later.
 
-Before a cluster uses the database again, wait until `spec.pitr.lastRecovery` on the `DatabaseServerConfig` answers the request. A contract that stops declaring `pitr.recovery: operator` holds the restore until you set it back or delete the restore.
+Before a cluster uses the database again, wait until `spec.pitr.lastRecovery` on the `DatabaseServerConfig` answers the request. If the contract stops declaring `pitr.recovery: operator` before the contract answers, the restore waits until you set it back or delete the restore. An answer stays valid when the contract declares `external` after it. A `DatabaseServer` declares `external` after a rollback when [its archive moved](databaseserver.md#the-archive) during the rollback, until the first base backup at the new location completes.
 
 ## Choose the point to restore to
 
@@ -85,7 +85,7 @@ kubectl exec -n my-cluster-ns my-cluster-zeebe-0 -- \
 
 In that answer, the `checkpointTimestamp` of a backup is the time that the backup finished. The [Camunda API reference](https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/zeebe-backup-and-restore/#request-runtime-state) says that it is the time that the checkpoint was created. A backup covers the point when its `checkpointPosition` is at or past the exporter position that the database holds at the point. So a backup that finished after the point can fail to cover it.
 
-The point must also lie within the retention period that the `DatabaseServerConfig` declares, and not in the future.
+The point must also lie within the retention period that the `DatabaseServerConfig` declares, and not in the future. When the contract lists [recovery windows](databaseserverconfig.md#recovery-windows), one of them must hold the point. The restore checks this before it suspends the cluster. A contract that a `DatabaseServer` publishes reaches a point only six minutes after it happened. A restore of a more recent point waits in `Pending` until then. See [The archive history](databaseserver.md#the-archive-history).
 
 ### What goes in spec.timestamp
 
@@ -117,7 +117,7 @@ Each rule below holds the restore in `Pending` until it holds. Correct the cause
 | The cluster, its `SecondaryStorageConfig` of `type: rdbms`, its `DatabaseConfig`, and its `DatabaseServerConfig` exist, in the namespace of the restore. | `InvalidReference` |
 | The cluster names a `spec.backupStorageRef`. Without it, Zeebe takes no primary-storage backup. | `InvalidReference` |
 | The `DatabaseServerConfig` publishes `status.systemIdentifier` for its current spec. | `InvalidReference` |
-| The `DatabaseServerConfig` declares `spec.pitr.enabled: true`, and `spec.timestamp` lies within its retention period and not in the future. | `PitrUnavailable` |
+| The `DatabaseServerConfig` declares `spec.pitr.enabled: true`, and `spec.timestamp` lies within its retention period and not in the future. When the contract lists `spec.pitr.windows`, one of them holds `spec.timestamp`. | `PitrUnavailable` |
 | The brokers run in UTC. See [The database-state check](#the-database-state-check). | `PitrUnavailable` |
 | Exactly one `Database` resource runs a logical database on the PostgreSQL instance, and it is the database of the cluster. | `SharedServer`, or `InvalidReference` |
 | The cluster holds its database, and nothing else writes it. | `StorageAlreadyAttached`, or `WaitingForHandover` |
@@ -161,7 +161,7 @@ Deleting the restore removes its Jobs and their pods. The broker volumes stay. T
 | `Ready` | `ClusterNotSuspended` | Somebody removed the suspension hold of the restore and cleared `spec.suspend`, after `Pending`. | Suspend the cluster again. The restore fails 10 minutes after the first outage. During a rollback, the 10 minutes start when the contract answers. |
 | `Ready` | `ClusterClaimed` | Another backup or restore holds the cluster, or a claim Lease that no backup or restore holds. The message names it. | Wait. The restore starts when the holder gives the cluster back. If the message names a claim Lease to delete, delete it. |
 | `Ready` | `InvalidReference` | A rule in [Requirements](#requirements) does not hold, or the broker StatefulSet is gone. During a rollback: the cluster was deleted, replaced, or pointed at another database. | Correct what the message names. After a change during a rollback, wait for the answer, then create a new restore. |
-| `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, or the point lies outside its retention period or in the future. Or the server answered `Unavailable`, or the brokers do not run in a UTC zone that the operator can read. | Enable `pitr` on the server, or choose a point that the server holds. For the broker zone, do the step that the message names. |
+| `Ready` | `PitrUnavailable` | The server does not declare point-in-time recovery, or the point lies outside its retention period, outside its recovery windows, or in the future. Or the server answered `Unavailable`, or the brokers do not run in a UTC zone that the operator can read. | Enable `pitr` on the server, or choose a point that the server holds. The message names the windows that the server can restore. For the broker zone, do the step that the message names. |
 | `Ready` | `SharedServer` | More than one `Database` uses the PostgreSQL instance. The message names each one. | Move the cluster to a server of its own. |
 | `Ready` | `StorageAlreadyAttached` | Another `CamundaCluster` holds the database of the cluster. The message names it. | Move one of the two clusters to a database of its own, or delete the other cluster. |
 | `Ready` | `WaitingForHandover` | The cluster does not hold its database yet, or pods or a deleted restore still write it. The message names them. | Wait. |

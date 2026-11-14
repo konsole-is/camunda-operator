@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -63,6 +64,10 @@ func goldenScheme(t *testing.T) *runtime.Scheme {
 // goldenServerUID is the UID of every golden fixture. The bucket directory of
 // a server is derived from it, so the goldens need one that does not move.
 const goldenServerUID = "b7e4d2a1-3c58-4f60-9a1d-2e5f8c0b4d71"
+
+// goldenNow is the clock of every golden render, so a golden contract does not
+// move with the day the test runs.
+var goldenNow = time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 
 // goldenMinimalDatabaseServer is the minimal example of the CRD doc with a
 // deterministic name, resolved against the "standard" preset and the
@@ -184,7 +189,7 @@ func assertDatabaseServerGoldens(
 		)
 	}
 
-	contract, err := ContractComponent(server, merged, "", "", "")
+	contract, err := ContractComponent(server, merged, "", "", "", archive.ArchiveLocation(server), goldenNow)
 	require.NoError(t, err)
 	golden.AssertComponentYAML(
 		t, filepath.Join(base, "contract.yaml"), contract,
@@ -246,6 +251,29 @@ func archiveSpec() *v1.DatabaseServerArchiveSpec {
 	}
 }
 
+// archiveStatus is the archive history of every archive golden case, at
+// location: one archive that the server left, and the one it writes now. The
+// contract publishes both as windows.
+func archiveStatus(location string) *v1.DatabaseServerArchiveStatus {
+	return &v1.DatabaseServerArchiveStatus{
+		History: []v1.ArchiveRecord{
+			{
+				ServerName:       "my-cluster-db",
+				ObjectStorageRef: goldenBucketName,
+				Location:         location,
+				From:             metav1.NewTime(time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC)),
+				To:               new(metav1.NewTime(time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC))),
+			},
+			{
+				ServerName:       "my-cluster-db",
+				ObjectStorageRef: goldenBucketName,
+				Location:         location,
+				From:             metav1.NewTime(time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)),
+			},
+		},
+	}
+}
+
 // A server whose bucket uses workload identity gets the identity annotation on
 // the ServiceAccount that the operator creates, and an archive Secret that
 // carries the region alone: the plugin reads the region of an S3 bucket from a
@@ -262,6 +290,7 @@ func TestDatabaseServerGoldenArchiveWorkloadIdentity(t *testing.T) {
 		}),
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(
 		t, "archive-workload-identity", server, MergeSpec(server.Spec, preset, release), archive,
 	)
@@ -288,6 +317,7 @@ func TestDatabaseServerGoldenArchiveCredentials(t *testing.T) {
 		Credentials: &objectstore.Credentials{AccessKeyID: "minio-root", SecretAccessKey: "minio-secret"},
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(
 		t, "archive-credentials", server, MergeSpec(server.Spec, preset, release), archive,
 	)
@@ -322,6 +352,7 @@ func TestDatabaseServerGoldenArchiveGCSCredentials(t *testing.T) {
 		},
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(
 		t, "archive-gcs-credentials", server, MergeSpec(server.Spec, preset, release), archive,
 	)
@@ -355,6 +386,7 @@ func TestDatabaseServerGoldenArchiveAzureWorkloadIdentity(t *testing.T) {
 		},
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(
 		t, "archive-azure-workload-identity", server, MergeSpec(server.Spec, preset, release), archive,
 	)
@@ -381,6 +413,7 @@ func TestDatabaseServerGoldenSuspended(t *testing.T) {
 		}),
 	}
 
+	server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 	assertDatabaseServerGoldens(t, "suspended", server, MergeSpec(server.Spec, nil, nil), archive)
 }
 
@@ -415,12 +448,13 @@ func TestSuspensionKeepsTheDeclaredState(t *testing.T) {
 	render := func(suspend bool) (cluster, contract, archived string) {
 		server, preset, release := goldenMinimalDatabaseServer()
 		server.Spec.Archive = archiveSpec()
+		server.Status.Archive = archiveStatus(archive.ArchiveLocation(server))
 		server.Spec.Suspend = suspend
 		merged := MergeSpec(server.Spec, preset, release)
 
 		clusterComp, _, err := ClusterComponent(server, merged, requestedOf(merged), archive, "", nil, "", 0)
 		require.NoError(t, err)
-		contractComp, err := ContractComponent(server, merged, "", "", "")
+		contractComp, err := ContractComponent(server, merged, "", "", "", archive.ArchiveLocation(server), goldenNow)
 		require.NoError(t, err)
 		archiveComp, _, err := ArchiveComponent(server, merged, archive, nil, nil, "", "")
 		require.NoError(t, err)

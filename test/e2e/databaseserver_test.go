@@ -181,10 +181,23 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 		Expect(contract.Spec.Host).To(Equal(dscomponents.ReadWriteHost(&current)))
 		Expect(contract.Spec.Port).To(BeEquivalentTo(dscomponents.PostgresPort))
 		Expect(contract.Spec.AdminCredentialsSecretRef.Name).To(Equal(dscomponents.SuperuserSecretName(&current)))
-		Expect(contract.Spec.PITR).NotTo(BeNil())
-		Expect(contract.Spec.PITR.Enabled).To(BeTrue())
-		Expect(contract.Spec.PITR.Recovery).To(Equal(v1.RecoveryModeOperator))
-		Expect(contract.Spec.PITR.RetentionPeriodDays).To(HaveValue(BeEquivalentTo(dsRetentionDays)))
+
+		// The contract publishes the archive history one reconcile after the
+		// server records it.
+		By("waiting for the contract to publish the archive as an open window")
+		Eventually(func(g Gomega) {
+			var published v1.DatabaseServerConfig
+			g.Expect(utils.Get(dbServerResource, dsServer, dsNamespace, &published)).To(Succeed())
+			pitr := published.Spec.PITR
+			g.Expect(pitr).NotTo(BeNil())
+			g.Expect(pitr.Enabled).To(BeTrue())
+			g.Expect(pitr.Recovery).To(Equal(v1.RecoveryModeOperator))
+			g.Expect(pitr.RetentionPeriodDays).To(HaveValue(BeEquivalentTo(dsRetentionDays)))
+			g.Expect(pitr.Windows).To(HaveLen(1))
+			g.Expect(pitr.Windows[0].From).To(Equal(current.Status.Archive.History[0].From))
+			g.Expect(pitr.Windows[0].To).To(BeNil())
+			g.Expect(pitr.Windows[0].Lag).To(HaveValue(Equal(metav1.Duration{Duration: dscomponents.ArchiveLag})))
+		}, time.Minute, 5*time.Second).Should(Succeed())
 
 		By("waiting for the contract to report the identity of the instance behind it")
 		Eventually(func(g Gomega) {

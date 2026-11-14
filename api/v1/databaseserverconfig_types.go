@@ -126,17 +126,55 @@ func (r RecoveryRequest) AnsweredBy(outcome *RecoveryOutcome) bool {
 		outcome.TargetTime == r.TargetTime
 }
 
+// RecoveryWindow is one continuous interval of time that a point-in-time
+// restore of the server can reach. The open window extends to the present,
+// less its lag. A new window starts only where the archive breaks. On a
+// DatabaseServer, each window comes from one record of status.archive.history.
+// +kubebuilder:validation:XValidation:rule="!has(self.lag) || !has(self.to)",message="lag is allowed only on an open window, one without to"
+type RecoveryWindow struct {
+	// Location is where the archive of this window is, in the form of
+	// ArchiveRecord.Location of a DatabaseServer. It is information for the
+	// reader. A restore does not read it.
+	// +optional
+	Location string `json:"location,omitempty"`
+	// From is the earliest point that a restore can reach in this window.
+	From metav1.Time `json:"from"`
+	// To is the end of this window. A restore can reach every point before
+	// To, but not To itself. A point at To is in the next window, if a
+	// window starts there. When To is unset, the window is open: the server
+	// still writes to it, and it continues to the present, less Lag.
+	// +optional
+	To *metav1.Time `json:"to,omitempty"`
+	// UnverifiedFrom is the point after which this window can miss parts of
+	// the write-ahead log. A restore cannot reach a point after it.
+	// +optional
+	UnverifiedFrom *metav1.Time `json:"unverifiedFrom,omitempty"`
+	// Lag is how far the end of an open window is behind the present, as a
+	// duration such as 5m. A restore cannot reach a point that is less than
+	// Lag in the past. An open window without a lag reaches the present. You
+	// can set Lag only on an open window.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:MaxLength=32
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(ns|us|µs|μs|ms|s|m|h))+$`
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="lag must be a duration of at most 2562047h, such as 6m"
+	// +optional
+	Lag *metav1.Duration `json:"lag,omitempty"`
+}
+
 // PITRCapability declares the point-in-time recovery capability of a server:
-// continuous WAL archiving with the given retention.
+// continuous WAL archiving with the given retention. It can also declare the
+// windows of time that a restore can reach.
 // +kubebuilder:validation:XValidation:rule="!self.enabled || (has(self.retentionPeriodDays) && self.retentionPeriodDays >= 1)",message="retentionPeriodDays of at least 1 is required when enabled is true"
 // +kubebuilder:validation:XValidation:rule="self.recovery != 'operator' || self.enabled",message="recovery: operator requires enabled: true"
+// +kubebuilder:validation:XValidation:rule="self.enabled || !has(self.windows) || size(self.windows) == 0",message="windows require enabled: true"
 type PITRCapability struct {
 	// Enabled reports whether the server performs continuous WAL archiving.
 	// +kubebuilder:default=false
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
 	// RetentionPeriodDays is how many days into the past a point-in-time
-	// restore can go. Required when enabled is true.
+	// restore can go. It is the declared policy of the server. Windows can
+	// limit a restore more. Required when enabled is true.
 	//
 	// The maximum is 36500 days, which is a hundred years. A reader counts
 	// the reachable window in nanoseconds, and that count overflows at about
@@ -151,6 +189,22 @@ type PITRCapability struct {
 	// +kubebuilder:default=external
 	// +optional
 	Recovery RecoveryMode `json:"recovery,omitempty"`
+	// Windows are the continuous intervals of time that a restore can reach,
+	// oldest first. A new window starts only where the archive breaks. So
+	// the maximum of 256 limits the breaks, not the time that the windows
+	// cover. When Windows holds a window, a restore accepts a point only when
+	// a window reaches it, also when the point is inside the retention period.
+	// When Windows is unset, a restore can reach every point of the retention
+	// period up to the present. Windows require enabled: true.
+	//
+	// A DatabaseServer publishes here the intervals of its archive that a
+	// restore can still read at the location that it archives to now. It
+	// publishes the newest 256 of them. The lag of an open window is how far the latest
+	// restorable time is behind the present.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=256
+	// +optional
+	Windows []RecoveryWindow `json:"windows,omitempty"`
 	// LastRecovery is how the last recovery request ended. It is unset until
 	// the first answer. The answer to each later request replaces it.
 	// +optional

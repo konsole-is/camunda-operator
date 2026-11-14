@@ -383,7 +383,7 @@ kubectl get databaseserver my-db -n my-cluster-ns \
 kubectl get databaseserverconfig my-db-server -n my-cluster-ns -o jsonpath='{.spec.host}'
 ```
 
-The archive the rollback read stays in the bucket, next to the archive the new server writes. Nothing removes it, and `retentionPeriodDays` applies only to the archive the server writes now. `status.archive.history` on the `DatabaseServer` keeps its record with an end time. A later restore reaches a point from before the rollback while that point lies within `retentionPeriodDays` of now. A restore of an older point holds with reason `PitrUnavailable`, whatever the bucket still holds. No restore can reach the time between the two archives, because the archive of the new server starts at its first base backup.
+The archive the rollback read stays in the bucket, next to the archive the new server writes. Nothing removes it, and `retentionPeriodDays` applies only to the archive the server writes now. `status.archive.history` on the `DatabaseServer` keeps its record with an end time. A later restore reaches a point from before the rollback while that point lies within `retentionPeriodDays` of now. A restore of an older point holds with reason `PitrUnavailable`, whatever the bucket still holds. No restore can reach the time between the two archives, because the archive of the new server starts at its first base backup. A restore of a point in that time holds with reason `PitrUnavailable` and does not suspend the cluster.
 
 ## Grow storage
 
