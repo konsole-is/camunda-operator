@@ -266,14 +266,23 @@ describe("valueProblem", () => {
     expect(valueProblem(option(), zones, [], true)).toBeUndefined();
   });
 
-  it.each([
-    ["no policy value", undefined],
-    ["an empty policy value", ""],
-  ])("asks for a required value with %s", (_, policyValue) => {
-    const required = { ...preset, required: true, value: policyValue };
+  it("asks for a required value when the policy gives none", () => {
+    const required = { ...preset, required: true };
     expect(valueProblem(option(), required, undefined, false)).toEqual({
       kind: "required",
     });
+  });
+
+  it("passes no value of a required parameter whose policy value is empty, because the request then holds that value", () => {
+    const zones: EditableParameter = {
+      name: "zones",
+      label: "Zones",
+      claimEditable: true,
+      required: true,
+      allowed: [{ name: "a", label: "a" }],
+      value: [],
+    };
+    expect(valueProblem(option(), zones, [], false)).toBeUndefined();
   });
 
   it("checks an empty text of a parameter that is not required, because the claim sets it", () => {

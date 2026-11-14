@@ -228,9 +228,9 @@ export function givesNoValue(
 /**
  * valueProblem returns the problem of value, the value of rule in option,
  * or undefined when it passes. A value that givesNoValue names passes,
- * unless rule is required and rule.value gives no value either. claimed
- * says that the claim sets the value: only then is it checked against the
- * names of the choices, as the claim controller does.
+ * unless rule is required and has no rule.value either. claimed says that
+ * the claim sets the value: only then is it checked against the names of
+ * the choices, as the claim controller does.
  */
 export function valueProblem(
   option: OptionView,
@@ -239,7 +239,7 @@ export function valueProblem(
   claimed: boolean,
 ): ValueProblem | undefined {
   if (givesNoValue(rule, value)) {
-    return rule.required && givesNoValue(rule, rule.value)
+    return rule.required && rule.value === undefined
       ? { kind: "required" }
       : undefined;
   }

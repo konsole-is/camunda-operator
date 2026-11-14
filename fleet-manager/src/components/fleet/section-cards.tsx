@@ -377,7 +377,7 @@ function OptionParameters({
           rule={rule}
           value={values[rule.name]}
           error={errorOf(rule.name)}
-          inherited={rule.claimEditable && !givesNoValue(rule, rule.value)}
+          inherited={rule.claimEditable && rule.value !== undefined}
           onValue={(v, parse) => onValue(rule.name, v, parse)}
         />
       ))}
