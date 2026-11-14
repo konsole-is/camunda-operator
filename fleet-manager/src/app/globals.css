@@ -4,8 +4,8 @@
 @import "shadcn/tailwind.css";
 
 /* The class light or dark on <html> holds the choice of the user. Without a
-   class, the theme follows prefers-color-scheme. A dark: variant, which the
-   shadcn CLI writes into a new primitive, follows the same rule. */
+   class, the theme follows prefers-color-scheme. The dark: variants of the
+   shadcn primitives follow the same rule. */
 @custom-variant dark {
   &:is(.dark *) {
     @slot;
