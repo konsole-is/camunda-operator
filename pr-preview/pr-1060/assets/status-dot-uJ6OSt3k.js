@@ -1,0 +1,7 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./jsx-runtime-CndCZlyt.js";import{a as n,o as r}from"./iframe-B5UnGOtN.js";import{a as i,o as a,r as o}from"./status-CBDUVTbC.js";function s({label:e,condition:t,off:r=!1}){let a=i(t),s=r?`Not used`:a.reason?`${a.label} (${a.reason})`:a.label;return(0,c.jsx)(`span`,{role:`img`,"aria-label":`${e}: ${s}`,title:r?void 0:t?.message,className:n(`inline-block size-2 shrink-0 rounded-full`,o[r?`off`:a.tone])})}var c;function l(){return(l=e((()=>{c=t(),r(),a(),s.__docgenInfo={description:`StatusDot is the dot of one component in a row, for example Zeebe in the
+fleet table. Its accessible name says the component and its Ready state.
+off marks a component that the cluster does not use.`,methods:[],displayName:`StatusDot`,props:{label:{required:!0,tsType:{name:`string`},description:``},condition:{required:!1,tsType:{name:`signature`,type:`object`,raw:`{
+  status: ConditionStatus;
+  reason?: string;
+  message?: string;
+}`,signature:{properties:[{key:`status`,value:{name:`union`,raw:`"True" | "False" | "Unknown"`,elements:[{name:`literal`,value:`"True"`},{name:`literal`,value:`"False"`},{name:`literal`,value:`"Unknown"`}],required:!0}},{key:`reason`,value:{name:`string`,required:!1}},{key:`message`,value:{name:`string`,required:!1}}]}},description:``},off:{required:!1,tsType:{name:`boolean`},description:``,defaultValue:{value:`false`,computed:!1}}}}})))()}export{l as n,s as t};
