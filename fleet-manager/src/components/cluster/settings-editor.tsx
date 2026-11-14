@@ -3,10 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { EnvEditor, type EnvVar } from "@/components/fleet/env-editor";
 import { FieldValue } from "@/components/fleet/field-state";
-import {
-  type EmptyMap,
-  KeyValueEditor,
-} from "@/components/fleet/key-value-editor";
+import { KeyValueEditor } from "@/components/fleet/key-value-editor";
 import { LockedField } from "@/components/fleet/locked-field";
 import {
   ResourcesEditor,
@@ -181,9 +178,7 @@ export function SettingRow({
         editor={editor}
         value={setting.value}
         current={"current" in setting ? setting.current : mounted}
-        emptyMap={
-          setting.replaces && mounted !== undefined ? "inherited" : undefined
-        }
+        replaces={setting.replaces}
         describedBy={
           errors.map((_, i) => `${errorId}-${i}`).join(" ") || undefined
         }
@@ -251,14 +246,14 @@ function useShownError(
 // Editor is the input of one editor kind. It is uncontrolled: it starts
 // from value and reports each valid change. A change with errors is not
 // reported; onInvalid gets its first error, and undefined after a valid
-// change. current is the value before the pending changes. emptyMap and
+// change. current is the value before the pending changes. replaces and
 // describedBy reach the editors with rows only.
 function Editor({
   label,
   editor,
   value,
   current,
-  emptyMap,
+  replaces,
   describedBy,
   secrets,
   onChange,
@@ -268,13 +263,14 @@ function Editor({
   editor: SettingEditor;
   value: unknown;
   current: unknown;
-  emptyMap?: EmptyMap;
+  replaces?: boolean;
   describedBy?: string;
   secrets: SecretRefs;
   onChange: (value: unknown) => void;
   onInvalid: (message: string | undefined) => void;
 }) {
   const initial = editorValueOf(editor, value);
+  const [startsSet] = useState(value !== undefined);
   const valid = (v: unknown, errors: readonly ValidationError[]) => {
     onInvalid(errors[0]?.message);
     if (errors.length === 0) onChange(v);
@@ -363,7 +359,7 @@ function Editor({
           label={label}
           format={editor.format}
           defaultValue={initial as Record<string, string> | undefined}
-          emptyMap={emptyMap}
+          emptyMap={replaces && startsSet ? "inherited" : undefined}
           describedBy={describedBy}
           onChange={valid}
         />

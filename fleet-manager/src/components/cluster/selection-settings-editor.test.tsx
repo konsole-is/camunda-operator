@@ -427,6 +427,30 @@ describe("SelectionSettingsEditor", () => {
       expect(set).toHaveBeenLastCalledWith(field("labels", {}).claimSteps, {});
     });
 
+    it("shows a {} that a claim update brings as the empty map", () => {
+      const schema: OpenAPISchema = {
+        type: "object",
+        properties: {
+          labels: { type: "object", additionalProperties: { type: "string" } },
+        },
+      };
+      const editor = (value: unknown) => (
+        <SelectionSettingsEditor
+          fields={[field("labels", value)]}
+          schema={schema}
+          set={vi.fn()}
+          reset={vi.fn()}
+        />
+      );
+      const { rerender } = render(editor(undefined));
+      rerender(editor({}));
+      expect(
+        within(settingRow("labels")).getByText(
+          "Empty map, overrides the inherited value",
+        ),
+      ).toBeDefined();
+    });
+
     it("edits an extraEnv map of strings with key and value rows", () => {
       renderEditor({
         fields: [field("extraEnv", { TZ: "UTC" })],
