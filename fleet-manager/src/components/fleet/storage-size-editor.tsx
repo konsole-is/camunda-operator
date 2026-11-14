@@ -24,23 +24,30 @@ const NOT_POSITIVE = "Enter a size above 0";
  * Ti). A value in another unit keeps its unit. Empty means not set. A size
  * below current shows that volumes cannot shrink. onChange gets the size,
  * or undefined when empty, and the errors: an amount that is not a
- * positive number, at the path "".
+ * positive number, at the path "". describedBy names the hint and error
+ * elements of the field for the amount and the unit.
  */
 export function StorageSizeEditor({
   label,
   defaultValue,
   current,
+  describedBy,
   onChange,
 }: {
   label: string;
   defaultValue?: string;
   current?: string;
+  describedBy?: string;
   onChange?: (value: string | undefined, errors: ValidationError[]) => void;
 }) {
   const id = useId();
   const [size, setSize] = useState(() => parse(defaultValue));
   const error = errorOf(size.amount);
   const shrinks = !error && size.amount !== "" && below(size, current);
+  const described =
+    [error ? `${id}-error` : shrinks && `${id}-shrink`, describedBy]
+      .filter(Boolean)
+      .join(" ") || undefined;
   const units = UNITS.some((u) => u.value === size.unit)
     ? UNITS
     : [...UNITS, { value: size.unit, label: size.unit }];
@@ -64,9 +71,7 @@ export function StorageSizeEditor({
           className="w-32"
           value={size.amount}
           aria-invalid={error ? true : undefined}
-          aria-describedby={
-            error ? `${id}-error` : shrinks ? `${id}-shrink` : undefined
-          }
+          aria-describedby={described}
           onChange={(event) => update({ ...size, amount: event.target.value })}
         />
         <label className="sr-only" htmlFor={`${id}-unit`}>
@@ -76,6 +81,7 @@ export function StorageSizeEditor({
           id={`${id}-unit`}
           className="w-28"
           value={size.unit}
+          aria-describedby={described}
           onChange={(event) => update({ ...size, unit: event.target.value })}
         >
           {units.map((u) => (

@@ -236,6 +236,7 @@ function ParameterSettingRow({
           }}
           value={setting.value}
           error={errors.find((e) => e.path === `${base}.value`)?.message}
+          emptyMap={setting.registrationSet ? "inherited" : undefined}
           onValue={(value, parse) => {
             valueErrors.current = parse ?? [];
             report();

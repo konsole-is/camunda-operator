@@ -21,7 +21,7 @@ import {
 } from "@/lib/schema";
 import { cn } from "@/lib/utils";
 import { EnvEditor, type EnvVar } from "./env-editor";
-import { KeyValueEditor } from "./key-value-editor";
+import { type EmptyMap, KeyValueEditor } from "./key-value-editor";
 import { LockedField } from "./locked-field";
 import { ResourcesEditor, type Resources } from "./resources-editor";
 import { SchedulingEditor, type Toleration } from "./scheduling-editor";
@@ -37,19 +37,22 @@ import { YamlEditor } from "./yaml-editor";
  * cleared text field and [] for choices with none checked. It also gets the
  * errors of an editor that shows its own, but from YamlEditor only those of
  * text that does not parse. error shows while the editor shows no error of
- * its own.
+ * its own. emptyMap lets a map of strings take {}, as KeyValueEditor says.
+ * A map that starts as {} gets "unset" when emptyMap is not given.
  */
 export function ParameterField({
   id,
   rule,
   value,
   error,
+  emptyMap,
   onValue,
 }: {
   id: string;
   rule: ParameterRule;
   value: unknown;
   error?: string;
+  emptyMap?: EmptyMap;
   onValue: (value: unknown, parse?: ValidationError[]) => void;
 }) {
   const [rowErrors, setRowErrors] = useState(false);
@@ -247,6 +250,15 @@ export function ParameterField({
             label={rule.label}
             editor={editor}
             value={value}
+            emptyMap={emptyMap ?? (isEmptyMap(mounted) ? "unset" : undefined)}
+            describedBy={
+              [
+                !rowErrors && error && `${id}-error`,
+                rules.length > 0 && `${id}-rules`,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined
+            }
             onChange={(v, errors) => {
               setRowErrors(errors.length > 0);
               onValue(claimValueOf(editor, v), errors);
@@ -265,6 +277,8 @@ function RowsEditor({
   label,
   editor,
   value,
+  emptyMap,
+  describedBy,
   onChange,
 }: {
   label: string;
@@ -273,6 +287,8 @@ function RowsEditor({
     { kind: "keyValue" | "resources" | "storageSize" | "env" | "tolerations" }
   >;
   value: unknown;
+  emptyMap?: EmptyMap;
+  describedBy?: string;
   onChange: (value: unknown, errors: ValidationError[]) => void;
 }) {
   const initial = editorValueOf(editor, value);
@@ -287,7 +303,9 @@ function RowsEditor({
         <KeyValueEditor
           label={label}
           format={editor.format}
-          defaultValue={initial as Record<string, string>}
+          defaultValue={initial as Record<string, string> | undefined}
+          emptyMap={emptyMap}
+          describedBy={describedBy}
           onChange={onChange}
         />
       );
@@ -296,6 +314,7 @@ function RowsEditor({
         <ResourcesEditor
           label={label}
           defaultValue={initial as Resources}
+          describedBy={describedBy}
           onChange={onChange}
         />
       );
@@ -304,6 +323,7 @@ function RowsEditor({
         <StorageSizeEditor
           label={label}
           defaultValue={String(initial)}
+          describedBy={describedBy}
           onChange={onChange}
         />
       );
@@ -314,6 +334,7 @@ function RowsEditor({
           // SecretRefPicker drops a reference to a Secret that secrets lack.
           secrets={secrets}
           defaultValue={initial as EnvVar[]}
+          describedBy={describedBy}
           onChange={onChange}
         />
       );
@@ -322,10 +343,20 @@ function RowsEditor({
         <SchedulingEditor
           label={label}
           defaultValue={initial as Toleration[]}
+          describedBy={describedBy}
           onChange={onChange}
         />
       );
   }
+}
+
+function isEmptyMap(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+  );
 }
 
 function secretKeysOf(env: readonly EnvVar[]): SecretRefs {

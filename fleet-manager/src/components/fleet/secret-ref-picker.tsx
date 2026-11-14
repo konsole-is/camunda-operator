@@ -27,18 +27,21 @@ export function secretRefsOf(
  * it never has a Secret value. onChange gets the reference when both are
  * picked, and undefined otherwise. When secrets no longer hold the picked
  * Secret or key, onChange gets undefined if its last value was a reference.
+ * describedBy gives the ids for aria-describedby of both selects.
  */
 export function SecretRefPicker({
   label,
   secrets,
   defaultValue,
   invalid = false,
+  describedBy,
   onChange,
 }: {
   label: string;
   secrets: SecretRefs;
   defaultValue?: SecretKeyRef;
   invalid?: boolean;
+  describedBy?: string;
   onChange?: (ref: SecretKeyRef | undefined) => void;
 }) {
   const id = useId();
@@ -76,6 +79,7 @@ export function SecretRefPicker({
         id={`${id}-secret`}
         value={activeName}
         aria-invalid={invalid && !activeName ? true : undefined}
+        aria-describedby={describedBy}
         onChange={(event) => {
           setName(event.target.value);
           setKey("");
@@ -96,6 +100,7 @@ export function SecretRefPicker({
         value={activeKey}
         disabled={!activeName}
         aria-invalid={invalid && !activeKey ? true : undefined}
+        aria-describedby={describedBy}
         onChange={(event) => {
           setKey(event.target.value);
         }}

@@ -26,6 +26,9 @@ import type { SettingsGroup } from "./settings";
  * setting, so that a change keeps the rest of the field. claimSet shows the
  * reset link. current is the value before the pending changes. inherited
  * counts the entries that the preset and the release put before value.
+ * replaces says that a claim value replaces the value below it as a
+ * whole. Only then does a map of {} hide that value: the preset merges a
+ * map key by key.
  */
 export type Setting = {
   key: string;
@@ -41,6 +44,7 @@ export type Setting = {
   claimSet: boolean;
   resetLabel: string;
   resetNote?: string;
+  replaces?: true;
 };
 
 /**
@@ -181,7 +185,7 @@ export function settingChange(
  * one setting. A parameter in choices picks the names of its choices,
  * whatever its schema, because the claim stores the names: one name, or a
  * list of names for a list parameter. A parameter resets to the
- * environment.
+ * environment, and its value replaces the value of the environment.
  */
 export function selectionSettingsOf(
   fields: readonly ClusterField[],
@@ -198,6 +202,7 @@ export function selectionSettingsOf(
       state: field.state,
       claimSet: field.state.kind === "claim",
       resetLabel: "Reset to environment",
+      replaces: true,
     };
     if (field.lock || !field.claimSteps)
       return [{ ...base, ...(field.lock && { lock: field.lock }) }];

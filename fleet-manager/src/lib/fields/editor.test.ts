@@ -408,6 +408,7 @@ describe("the claim value of each editor", () => {
       [{ name: "TZ", value: "UTC" }, secretEnv],
     ],
     ["keyValue", { kind: "keyValue" }, { team: "orders" }, { team: "orders" }],
+    ["empty keyValue", { kind: "keyValue" }, {}, {}],
     [
       "tolerations",
       { kind: "tolerations" },
@@ -446,7 +447,7 @@ describe("the claim value of each editor", () => {
     ["yaml list", { kind: "yaml" }, []],
     ["yaml object", { kind: "yaml" }, {}],
     ["yaml", { kind: "yaml" }, undefined],
-    ["keyValue", { kind: "keyValue" }, {}],
+    ["keyValue", { kind: "keyValue" }, undefined],
     ["resources", { kind: "resources" }, { requests: {}, limits: {} }],
     ["secretRef", { kind: "secretRef" }, undefined],
   ])("an empty %s is a reset", (_, editor, input) => {
@@ -461,7 +462,7 @@ describe("the claim value of each editor", () => {
     [{ kind: "toggle" }, false],
     [{ kind: "env" }, []],
     [{ kind: "tolerations" }, []],
-    [{ kind: "keyValue" }, {}],
+    [{ kind: "keyValue" }, undefined],
     [{ kind: "resources" }, {}],
     [{ kind: "yaml" }, undefined],
     [{ kind: "secretRef" }, undefined],

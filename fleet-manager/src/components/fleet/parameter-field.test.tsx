@@ -211,6 +211,65 @@ describe("ParameterField", () => {
       expect(screen.getByText("team is set twice")).toBeTruthy();
       expect(screen.queryByText("is required")).toBeNull();
     });
+
+    it("gives {} for a map set to empty, and undefined to inherit", async () => {
+      const onValue = vi.fn();
+      render(
+        <ParameterField
+          id="p"
+          rule={editable(map)}
+          value={undefined}
+          emptyMap="inherited"
+          onValue={onValue}
+        />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: "Set to an empty map" }),
+      );
+      expect(onValue).toHaveBeenLastCalledWith({}, []);
+      await userEvent.click(
+        screen.getByRole("button", { name: "Use the inherited value" }),
+      );
+      expect(onValue).toHaveBeenLastCalledWith(undefined, []);
+    });
+
+    it("shows a value of {} as the empty map without emptyMap", () => {
+      render(
+        <ParameterField
+          id="p"
+          rule={editable(map)}
+          value={{}}
+          onValue={() => {}}
+        />,
+      );
+      expect(screen.getByText("Empty map")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Clear" })).toBeTruthy();
+    });
+
+    it("describes each input by the error and the rule hints of the field", () => {
+      render(
+        <ParameterField
+          id="p"
+          rule={editable({
+            ...map,
+            "x-kubernetes-validations": [
+              { rule: "size(self) < 3", message: "Use at most 2 labels" },
+            ],
+          })}
+          value={{ team: "orders" }}
+          error="is required"
+          onValue={() => {}}
+        />,
+      );
+      for (const name of ["Key", "Value"])
+        expect(
+          screen.getByRole("textbox", {
+            name,
+            description:
+              "is required Checked after you save Use at most 2 labels",
+          }),
+        ).toBeTruthy();
+    });
   });
 
   it.each<[string, ParameterRule["schema"]]>([

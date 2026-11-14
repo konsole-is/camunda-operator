@@ -126,4 +126,58 @@ describe("SchedulingEditor", () => {
       { path: "0.key", message: "Enter a key, or use the operator Exists" },
     ]);
   });
+
+  it("describes each text input by the hint of the field and the error of its row", async () => {
+    render(
+      <>
+        <SchedulingEditor
+          label="Tolerations"
+          defaultValue={[{ key: "dedicated", operator: "Equal" }]}
+          describedBy="hint"
+        />
+        <p id="hint">Checked after you save</p>
+      </>,
+    );
+    const row = screen.getByRole("group", { name: "Toleration 1" });
+    expect(
+      within(row).getByRole("textbox", {
+        name: "Value",
+        description: "Checked after you save",
+      }),
+    ).toBeTruthy();
+    await userEvent.clear(within(row).getByRole("textbox", { name: "Key" }));
+    const key = within(row).getByRole("textbox", {
+      name: "Key",
+      description:
+        "Enter a key, or use the operator Exists Checked after you save",
+    });
+    expect(key.getAttribute("aria-invalid")).toBe("true");
+    for (const name of ["Operator", "Effect"])
+      expect(
+        within(row).getByRole("combobox", {
+          name,
+          description:
+            "Enter a key, or use the operator Exists Checked after you save",
+        }),
+      ).toBeTruthy();
+  });
+
+  it("marks seconds that are not whole as invalid", async () => {
+    render(
+      <SchedulingEditor
+        label="Tolerations"
+        defaultValue={[{ key: "a", operator: "Exists", effect: "NoExecute" }]}
+      />,
+    );
+    const row = screen.getByRole("group", { name: "Toleration 1" });
+    await userEvent.type(
+      within(row).getByRole("spinbutton", { name: "Seconds" }),
+      "1.5",
+    );
+    const seconds = within(row).getByRole("spinbutton", {
+      name: "Seconds",
+      description: "Enter whole seconds",
+    });
+    expect(seconds.getAttribute("aria-invalid")).toBe("true");
+  });
 });

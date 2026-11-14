@@ -332,7 +332,9 @@ function pickValue(
       ? entered
         ? "An ARN that you entered"
         : "Set by your admin"
-      : lockedSummary(v));
+      : isEmptyMap(v)
+        ? "{}"
+        : lockedSummary(v));
   return {
     label: rule?.label ?? name,
     value:
@@ -367,4 +369,13 @@ function storageType(
       c.metadata?.namespace === draft.namespace?.name &&
       c.metadata?.name === name,
   )?.spec.type;
+}
+
+function isEmptyMap(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 0
+  );
 }
