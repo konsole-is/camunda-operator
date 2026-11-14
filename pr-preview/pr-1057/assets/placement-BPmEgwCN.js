@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";function t(e,t){return Object.hasOwn(e,t)?e[t]:`resource`}function n(e,n,r){return(n??[]).filter(n=>t(e,n.type)===r)}function r(){return(r=e((()=>{})))()}export{r as n,t as r,n as t};

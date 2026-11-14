@@ -1,0 +1,9 @@
+import{n as e}from"./rolldown-runtime-Bjp52BOI.js";import{t}from"./jsx-runtime-CndCZlyt.js";function n({namespace:e,serviceName:t}){return(0,r.jsxs)(`div`,{className:`space-y-2 text-sm`,children:[(0,r.jsx)(`pre`,{className:`rounded-md bg-panel-2 px-3 py-2 whitespace-pre-wrap [overflow-wrap:anywhere]`,children:(0,r.jsx)(`code`,{className:`font-mono text-xs text-text`,children:`kubectl -n ${e} port-forward service/${t??`<fleet manager Service>`} 3000:3000`})}),(0,r.jsx)(`p`,{className:`text-muted`,children:`Then open http://localhost:3000.`})]})}var r;function i(){return(i=e((()=>{r=t(),n.__docgenInfo={description:`AccessSection shows the kubectl port-forward command that opens the app.
+Without serviceName, the command names a placeholder for the Service.`,methods:[],displayName:`AccessSection`,props:{namespace:{required:!0,tsType:{name:`string`},description:``},serviceName:{required:!1,tsType:{name:`string`},description:``}}}})))()}var a,o,s,c;function l(){return(l=e((()=>{i(),a={title:`setup/AccessSection`,component:n,args:{namespace:`camunda-system`}},o={name:`With the Service name`,args:{serviceName:`camunda-operator-fleet-manager`}},s={name:`Without the Service name`},c=[`WithTheServiceName`,`WithoutTheServiceName`],o.parameters={...o.parameters,docs:{...o.parameters?.docs,source:{originalSource:`{
+  name: "With the Service name",
+  args: {
+    serviceName: "camunda-operator-fleet-manager"
+  }
+}`,...o.parameters?.docs?.source}}},s.parameters={...s.parameters,docs:{...s.parameters?.docs,source:{originalSource:`{
+  name: "Without the Service name"
+}`,...s.parameters?.docs?.source}}}})))()}l();export{o as WithTheServiceName,s as WithoutTheServiceName,c as __namedExportsOrder,a as default};
