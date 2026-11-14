@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { fn } from "storybook/test";
 import { ClaimReviewStory } from "@/components/fleet/claim-review-story";
 import type { Step } from "@/lib/fields";
 import type { Resource } from "@/lib/k8s/kinds";
@@ -91,7 +92,8 @@ function argsOf(changes: Change[], mode: WriteMode) {
     },
     [nightly],
     mode,
-    { backupsHref: "?tab=backups" },
+    // A plain link to ?tab=backups would replace the story in its frame.
+    { backupsHref: "?tab=backups", onOpenBackups: fn() },
   );
   return { claim, changes, mode, ...props };
 }

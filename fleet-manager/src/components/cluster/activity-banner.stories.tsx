@@ -1,10 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { fn } from "storybook/test";
 import { ActivityBanner } from "./banners";
 
 const meta = {
   title: "cluster/ActivityBanner",
   component: ActivityBanner,
-  args: { backupsHref: "?tab=backups" },
+  args: { backupsHref: "?tab=backups", onOpenBackups: fn() },
 } satisfies Meta<typeof ActivityBanner>;
 export default meta;
 type Story = StoryObj<typeof meta>;

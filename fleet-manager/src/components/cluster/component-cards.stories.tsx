@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
+import { fn } from "storybook/test";
 import type { CamundaClusterSpec } from "@/generated/crds/camundacluster";
 import type { Resource } from "@/lib/k8s/kinds";
 import { COMPONENT_LABEL, OPTIMIZE_UID_LABEL } from "@/lib/labels";
@@ -102,6 +103,7 @@ const threePartitions = [
 const meta = {
   title: "cluster/ComponentCards",
   component: ComponentCards,
+  args: { onOpen: fn() },
 } satisfies Meta<typeof ComponentCards>;
 export default meta;
 type Story = StoryObj<typeof meta>;
