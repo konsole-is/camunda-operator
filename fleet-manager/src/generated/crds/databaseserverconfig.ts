@@ -120,28 +120,21 @@ export interface DatabaseServerConfigSpec {
      *
      * A DatabaseServer publishes here the intervals of its archive that a
      * restore can still read at the location that it archives to now. It
-     * publishes the newest 256 of them. The lag of an open window is how far the latest
-     * restorable time is behind the present.
+     * publishes the newest 256 of them. The unverifiedFrom of a window is when
+     * the uploads of its write-ahead log started to fail.
      *
      * @maxItems 256
      *
      * Items: RecoveryWindow is one continuous interval of time that a point-in-time
-     * restore of the server can reach. The open window extends to the present,
-     * less its lag. A new window starts only where the archive breaks. On a
-     * DatabaseServer, each window comes from one record of status.archive.history.
+     * restore of the server can reach. The open window extends to the present.
+     * A new window starts only where the archive breaks. On a DatabaseServer,
+     * each window comes from one record of status.archive.history.
      */
     windows?: {
       /**
        * From is the earliest point that a restore can reach in this window.
        */
       from: string;
-      /**
-       * Lag is how far the end of an open window is behind the present, as a
-       * duration such as 5m. A restore cannot reach a point that is less than
-       * Lag in the past. An open window without a lag reaches the present. You
-       * can set Lag only on an open window.
-       */
-      lag?: string;
       /**
        * Location is where the archive of this window is, in the form of
        * ArchiveRecord.Location of a DatabaseServer. It is information for the
@@ -152,7 +145,7 @@ export interface DatabaseServerConfigSpec {
        * To is the end of this window. A restore can reach every point before
        * To, but not To itself. A point at To is in the next window, if a
        * window starts there. When To is unset, the window is open: the server
-       * still writes to it, and it continues to the present, less Lag.
+       * still writes to it, and it continues to the present.
        */
       to?: string;
       /**

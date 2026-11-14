@@ -56,10 +56,9 @@ func closed(from, to time.Duration) v1.RecoveryWindow {
 	return v1.RecoveryWindow{From: metav1.NewTime(ago(from)), To: new(metav1.NewTime(ago(to)))}
 }
 
-// open is a window from from ago that the server still writes, lag behind the
-// present.
-func open(from, lag time.Duration) v1.RecoveryWindow {
-	return v1.RecoveryWindow{From: metav1.NewTime(ago(from)), Lag: &metav1.Duration{Duration: lag}}
+// open is a window from from ago that the server still writes.
+func open(from time.Duration) v1.RecoveryWindow {
+	return v1.RecoveryWindow{From: metav1.NewTime(ago(from))}
 }
 
 func TestPitrAvailableChecksTheWindows(t *testing.T) {
@@ -67,8 +66,8 @@ func TestPitrAvailableChecksTheWindows(t *testing.T) {
 
 	// Two archives with a gap between them: the server wrote the first from
 	// five days ago to three days ago, and writes the second since two days
-	// ago, six minutes behind the present.
-	twoArchives := []v1.RecoveryWindow{closed(5*day, 3*day), open(2*day, 6*time.Minute)}
+	// ago.
+	twoArchives := []v1.RecoveryWindow{closed(5*day, 3*day), open(2 * day)}
 	failing := closed(5*day, 3*day)
 	failing.UnverifiedFrom = new(metav1.NewTime(ago(4 * day)))
 
@@ -81,14 +80,10 @@ func TestPitrAvailableChecksTheWindows(t *testing.T) {
 		{name: "a point inside a closed window", windows: twoArchives, want: ago(4 * day), accepted: true},
 		{name: "the start of a window", windows: twoArchives, want: ago(5 * day), accepted: true},
 		{name: "a point inside an open window", windows: twoArchives, want: ago(time.Hour), accepted: true},
-		{name: "the end of an open window", windows: twoArchives, want: ago(6 * time.Minute), accepted: true},
-		{name: "an open window without lag reaches the present", windows: []v1.RecoveryWindow{
-			{From: metav1.NewTime(ago(day))},
-		}, want: admitNow, accepted: true},
+		{name: "an open window reaches the present", windows: twoArchives, want: admitNow, accepted: true},
 		{name: "a point before the first window", windows: twoArchives, want: ago(6 * day)},
 		{name: "a point in the gap between two windows", windows: twoArchives, want: ago(60 * time.Hour)},
 		{name: "the end of a closed window", windows: twoArchives, want: ago(3 * day)},
-		{name: "a point beyond the lag of an open window", windows: twoArchives, want: ago(5 * time.Minute)},
 		{name: "a point after unverifiedFrom", windows: []v1.RecoveryWindow{failing}, want: ago(3*day + time.Hour)},
 		{name: "unverifiedFrom itself", windows: []v1.RecoveryWindow{failing}, want: ago(4 * day), accepted: true},
 	}
@@ -118,7 +113,7 @@ func TestPitrAvailableNamesTheReachableWindows(t *testing.T) {
 
 	located := closed(5*day, 3*day)
 	located.Location = "s3://camunda-backups/clusters/my-cluster-db"
-	failure := pitrAvailable(contractWith(located, open(2*day, 6*time.Minute)), ago(60*time.Hour), admitNow)
+	failure := pitrAvailable(contractWith(located, open(2*day)), ago(60*time.Hour), admitNow)
 
 	require.NotNil(t, failure)
 	assert.Contains(t, failure.Message, fmt.Sprintf(
@@ -126,7 +121,7 @@ func TestPitrAvailableNamesTheReachableWindows(t *testing.T) {
 		ago(5*day).Format(time.RFC3339), ago(3*day).Format(time.RFC3339),
 	))
 	assert.Contains(t, failure.Message, fmt.Sprintf(
-		"from %s to 6m0s before now", ago(2*day).Format(time.RFC3339),
+		"from %s to now", ago(2*day).Format(time.RFC3339),
 	))
 }
 

@@ -64,12 +64,13 @@ type recoveryRefusal struct {
 // keyed on what exists, so a reconcile that re-enters in the middle continues
 // where the last one stopped.
 //
-// The steps are: record the request, build the cluster that recovers to the
-// requested point, wait for CloudNativePG to declare it healthy, point the
-// contract at it, publish the outcome, and remove what it replaced. The
-// contract points at the new cluster before the old one goes, so a failure at
-// any point up to that leaves the old server whole and the restore reads a
-// refusal rather than an empty server.
+// The steps are: record the request, wait for the archive to hold the
+// requested point, build the cluster that recovers to it, wait for
+// CloudNativePG to declare it healthy, point the contract at it, publish the
+// outcome, and remove what it replaced. The contract points at the new
+// cluster before the old one goes, so a failure at any point up to that leaves
+// the old server whole and the restore reads a refusal rather than an empty
+// server.
 //
 // status.recovery is the record of the answer, and the contract is where the
 // answer is published. Every step reads the record, so an answer whose status
@@ -141,6 +142,7 @@ func (r *DatabaseServerReconciler) reconcileRecovery(
 			RequestedBy: request.RequestedBy,
 			TargetTime:  request.TargetTime,
 			Cluster:     components.RecoveryClusterName(server),
+			StartedAt:   new(metav1.Now()),
 			// recoverySource refuses a request the merged spec has no archive
 			// for, so the block is here on every path that records one.
 			Archive: recordedArchive(source, *resolved.merged.Archive, resolved.archive),
@@ -672,11 +674,17 @@ func (r *DatabaseServerReconciler) advanceRecovery(
 	// answers it at once.
 	var recovered cnpgv1.Cluster
 	if err := r.APIReader.Get(ctx, key, &recovered); err != nil {
-		if apierrors.IsNotFound(err) {
-			return true, r.createRecoveryCluster(ctx, server, resolved, source, request.TargetTime)
+		if !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("reading the recovery cluster %s: %w", key, err)
 		}
 
-		return false, fmt.Errorf("reading the recovery cluster %s: %w", key, err)
+		// PostgreSQL fails a recovery whose target the archive does not
+		// reach, so the server waits for the archive to hold it first.
+		if r.awaitArchivedTarget(ctx, server, source) {
+			return true, nil
+		}
+
+		return true, r.createRecoveryCluster(ctx, server, resolved, source, request.TargetTime)
 	}
 	if !recovered.DeletionTimestamp.IsZero() {
 		return true, nil
@@ -1042,10 +1050,11 @@ func recoveryMatches(recorded *v1.DatabaseServerRecoveryStatus, request v1.Recov
 }
 
 // answeredRecovery builds the record of an answered recovery. The request and
-// the outcome carry every part but three. Those three live only in the record
-// of the running recovery. They are the cluster it built, the cluster it came
-// from, and the archive it read. carry is that record when it belongs to this
-// request, and nil when it belongs to another one.
+// the outcome carry every part but five. Those five live only in the record of
+// the running recovery. They are the cluster it built, the cluster it came
+// from, the archive it read, when it started, and the segment it closed. carry
+// is that record when it belongs to this request, and nil when it belongs to
+// another one.
 //
 // Both writers of status.recovery build the record here, so neither of them
 // can drop a part that the other keeps.
@@ -1071,6 +1080,8 @@ func answeredRecovery(
 		answered.Cluster = carry.Cluster
 		answered.PreviousCluster = carry.PreviousCluster
 		answered.Archive = carry.Archive
+		answered.StartedAt = carry.StartedAt
+		answered.ClosedSegment = carry.ClosedSegment
 	}
 
 	return answered

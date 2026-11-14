@@ -115,7 +115,6 @@ func TestPITRCapabilityPublishesTheArchiveHistory(t *testing.T) {
 		Archive: &v1.DatabaseServerArchiveSpec{RetentionPeriodDays: 30},
 	}
 	location := capabilityLocation
-	lag := &metav1.Duration{Duration: ArchiveLag}
 	server := archiveServer()
 	server.Status.Archive = &v1.DatabaseServerArchiveStatus{
 		History: []v1.ArchiveRecord{{ServerName: "my-cluster-db", Location: location, From: windowTime(0)}},
@@ -123,20 +122,17 @@ func TestPITRCapabilityPublishesTheArchiveHistory(t *testing.T) {
 
 	assert.Equal(
 		t, []v1.RecoveryWindow{
-			{Location: location, From: windowTime(0), Lag: lag},
+			{Location: location, From: windowTime(0)},
 		}, pitrCapability(server, archiving, "", capabilityLocation, capabilityNow).Windows,
-		"an open record is an open window with the archive lag",
+		"an open record is an open window that reaches the present",
 	)
 
-	// The upload that failed at hour 2 carried the segment before it, so the
-	// window ends ArchiveLag before the failure.
 	server.Status.Archive.History[0].UnverifiedFrom = new(windowTime(2))
-	cutoff := metav1.NewTime(windowTime(2).Add(-ArchiveLag))
 	assert.Equal(
 		t, []v1.RecoveryWindow{
-			{Location: location, From: windowTime(0), UnverifiedFrom: &cutoff, Lag: lag},
+			{Location: location, From: windowTime(0), UnverifiedFrom: new(windowTime(2))},
 		}, pitrCapability(server, archiving, "", capabilityLocation, capabilityNow).Windows,
-		"unverifiedFrom moves back by the archive lag",
+		"unverifiedFrom is the start of the upload outage",
 	)
 
 	server.Status.Archive.History[0].UnverifiedFrom = nil
@@ -147,9 +143,9 @@ func TestPITRCapabilityPublishesTheArchiveHistory(t *testing.T) {
 	assert.Equal(
 		t, []v1.RecoveryWindow{
 			{Location: location, From: windowTime(0), To: new(windowTime(5))},
-			{Location: location, From: windowTime(6), Lag: lag},
+			{Location: location, From: windowTime(6)},
 		}, pitrCapability(server, archiving, "", capabilityLocation, capabilityNow).Windows,
-		"a closed record has no lag, and the new one is open",
+		"a closed record ends its window, and the new one is open",
 	)
 }
 
@@ -202,7 +198,7 @@ func TestPITRCapabilityPublishesOnlyTheArchivesARollbackCanRead(t *testing.T) {
 
 	assert.Equal(
 		t, []v1.RecoveryWindow{
-			{Location: capabilityLocation, From: windowTime(4), Lag: &metav1.Duration{Duration: ArchiveLag}},
+			{Location: capabilityLocation, From: windowTime(4)},
 		}, pitrCapability(server, archiving, "", capabilityLocation, capabilityNow).Windows,
 	)
 
@@ -252,7 +248,6 @@ func TestPITRCapabilityClipsTheWindowsToAPrunedFloor(t *testing.T) {
 	archiving := v1.DatabaseServerSpec{
 		Archive: &v1.DatabaseServerArchiveSpec{RetentionPeriodDays: 3},
 	}
-	lag := &metav1.Duration{Duration: ArchiveLag}
 	server := archiveServer()
 	server.Status.Archive = &v1.DatabaseServerArchiveStatus{
 		// Three days before capabilityNow is windowTime(168).
@@ -268,7 +263,7 @@ func TestPITRCapabilityClipsTheWindowsToAPrunedFloor(t *testing.T) {
 	assert.Equal(
 		t, []v1.RecoveryWindow{
 			{Location: capabilityLocation, From: windowTime(200), To: new(windowTime(220))},
-			{Location: capabilityLocation, From: windowTime(230), Lag: lag},
+			{Location: capabilityLocation, From: windowTime(230)},
 		}, pitrCapability(server, archiving, "", capabilityLocation, capabilityNow).Windows,
 		"a window starts at the floor, and a window that ends at or before it is left out",
 	)

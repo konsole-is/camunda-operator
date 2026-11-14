@@ -48,7 +48,7 @@ With `operator`, the restore writes the request in `spec.recovery` of the contra
 
 | Answer | Result |
 | --- | --- |
-| `Unavailable` | The server never held the point. The restore fails with the reason `PitrUnavailable`. |
+| `Unavailable` | The server does not hold the point. The restore fails with the reason `PitrUnavailable`. |
 | `Failed` | The rollback started and did not finish. The restore fails with the reason `Failed`. |
 
 `status.failureMessage` carries the message of the server.
@@ -85,7 +85,7 @@ kubectl exec -n my-cluster-ns my-cluster-zeebe-0 -- \
 
 In that answer, the `checkpointTimestamp` of a backup is the time that the backup finished. The [Camunda API reference](https://docs.camunda.io/docs/self-managed/operational-guides/backup-restore/zeebe-backup-and-restore/#request-runtime-state) says that it is the time that the checkpoint was created. A backup covers the point when its `checkpointPosition` is at or past the exporter position that the database holds at the point. So a backup that finished after the point can fail to cover it.
 
-The point must also lie within the retention period that the `DatabaseServerConfig` declares, and not in the future. When the contract lists [recovery windows](databaseserverconfig.md#recovery-windows), one of them must hold the point. The restore checks this before it suspends the cluster. A contract that a `DatabaseServer` publishes reaches a point only six minutes after it happened. A restore of a more recent point waits in `Pending` until then. See [The archive history](databaseserver.md#the-archive-history).
+The point must also lie within the retention period that the `DatabaseServerConfig` declares, and not in the future. When the contract lists [recovery windows](databaseserverconfig.md#recovery-windows), one of them must hold the point. The restore checks this before it suspends the cluster. Before the rollback, a `DatabaseServer` waits up to 5 minutes until its bucket holds the point. Meanwhile, the restore waits in `RestoringDatabase`. See [What a rollback does](databaseserver.md#what-a-rollback-does).
 
 ### What goes in spec.timestamp
 

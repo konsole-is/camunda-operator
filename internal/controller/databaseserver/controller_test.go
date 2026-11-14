@@ -885,7 +885,6 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(pitr.Windows).To(HaveLen(1))
 			g.Expect(pitr.Windows[0].From.Time).To(BeTemporally("==", completedAt.Time))
 			g.Expect(pitr.Windows[0].To).To(BeNil())
-			g.Expect(pitr.Windows[0].Lag).To(HaveValue(Equal(metav1.Duration{Duration: components.ArchiveLag})))
 		}, timeout, interval).Should(Succeed())
 
 		// The archive interval opens at the first base backup: nothing before
@@ -1909,9 +1908,7 @@ var _ = Describe("DatabaseServer controller", func() {
 			windows := publishedContract(g, server).Spec.PITR.Windows
 			g.Expect(windows).To(HaveLen(1))
 			g.Expect(windows[0].UnverifiedFrom).NotTo(BeNil())
-			g.Expect(windows[0].UnverifiedFrom.Time).To(
-				BeTemporally("==", stoppedAt.Add(-components.ArchiveLag)),
-			)
+			g.Expect(windows[0].UnverifiedFrom.Time).To(BeTemporally("==", stoppedAt.Time))
 		}, timeout, interval).Should(Succeed())
 
 		By("running the uploads again")
@@ -2056,7 +2053,6 @@ var _ = Describe("DatabaseServer controller", func() {
 			g.Expect(pitr.Windows[0].Location).To(Equal(archiveHistory(server)[1].Location))
 			g.Expect(pitr.Windows[0].From.Time).To(BeTemporally("==", openedAt.Time))
 			g.Expect(pitr.Windows[0].To).To(BeNil())
-			g.Expect(pitr.Windows[0].Lag).NotTo(BeNil())
 		}, timeout, interval).Should(Succeed())
 	})
 

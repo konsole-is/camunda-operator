@@ -481,6 +481,19 @@ type DatabaseServerRecoveryStatus struct {
 	// does not move a recovery that is already running.
 	// +optional
 	Archive *RecoveryArchiveRef `json:"archive,omitempty"`
+	// StartedAt is when the server took the request. The server waits up to
+	// five minutes from this time for the archive to hold the requested
+	// point.
+	// +optional
+	StartedAt *metav1.Time `json:"startedAt,omitempty"`
+	// ClosedSegment is the write-ahead log file that the server closed after
+	// it took the request. This file and the files before it hold the
+	// requested point. The server starts the recovery when the archive holds
+	// this file, or after five minutes. It is empty for a recovery from an
+	// earlier archive, while ArchiveReady reports ArchiveFailing, and while
+	// the primary instance does not answer.
+	// +optional
+	ClosedSegment string `json:"closedSegment,omitempty"`
 	// Result is the result that the server published for the request. It is
 	// unset while the recovery runs.
 	// +optional

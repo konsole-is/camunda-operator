@@ -1836,6 +1836,10 @@ func (in *DatabaseServerRecoveryStatus) DeepCopyInto(out *DatabaseServerRecovery
 		*out = new(RecoveryArchiveRef)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.StartedAt != nil {
+		in, out := &in.StartedAt, &out.StartedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.CompletedAt != nil {
 		in, out := &in.CompletedAt, &out.CompletedAt
 		*out = (*in).DeepCopy()
@@ -4016,11 +4020,6 @@ func (in *RecoveryWindow) DeepCopyInto(out *RecoveryWindow) {
 	if in.UnverifiedFrom != nil {
 		in, out := &in.UnverifiedFrom, &out.UnverifiedFrom
 		*out = (*in).DeepCopy()
-	}
-	if in.Lag != nil {
-		in, out := &in.Lag, &out.Lag
-		*out = new(metav1.Duration)
-		**out = **in
 	}
 }
 

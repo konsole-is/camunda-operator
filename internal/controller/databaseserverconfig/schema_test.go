@@ -22,8 +22,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/konsole-is/camunda-operator/api/v1"
@@ -139,27 +137,16 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 			}, "recovery: operator requires enabled: true",
 		),
 		Entry(
-			"accepts a closed window and an open window with lag", func(o *v1.DatabaseServerConfig) {
+			"accepts a closed window and an open window", func(o *v1.DatabaseServerConfig) {
 				o.Spec.PITR = &v1.PITRCapability{
 					Enabled:             true,
 					RetentionPeriodDays: new(int32(7)),
 					Windows: []v1.RecoveryWindow{
 						{From: windowAt(0), To: new(windowAt(2))},
-						{From: windowAt(3), Lag: &metav1.Duration{Duration: 5 * time.Minute}},
+						{From: windowAt(3)},
 					},
 				}
 			}, "",
-		),
-		Entry(
-			"rejects lag on a closed window", func(o *v1.DatabaseServerConfig) {
-				o.Spec.PITR = &v1.PITRCapability{
-					Enabled:             true,
-					RetentionPeriodDays: new(int32(7)),
-					Windows: []v1.RecoveryWindow{
-						{From: windowAt(0), To: new(windowAt(2)), Lag: &metav1.Duration{Duration: time.Minute}},
-					},
-				}
-			}, "lag is allowed only on an open window",
 		),
 		Entry(
 			"rejects windows on a server that archives nothing", func(o *v1.DatabaseServerConfig) {
@@ -230,47 +217,6 @@ var _ = Describe("DatabaseServerConfig schema", func() {
 				o.Spec.PITR = pitrWithOutcome(func(out *v1.RecoveryOutcome) { out.RequestID = "" })
 			}, "spec.pitr.lastRecovery.requestID",
 		),
-	)
-
-	// A typed object cannot carry a lag that does not parse, so only an
-	// unstructured object can send one to the API server.
-	DescribeTable(
-		"admission of a lag",
-		func(lag string, wantErr string) {
-			obj := newDatabaseServerConfig(schemaTestNamespace)
-			obj.Spec.PITR = &v1.PITRCapability{
-				Enabled:             true,
-				RetentionPeriodDays: new(int32(7)),
-				Windows:             []v1.RecoveryWindow{{From: windowAt(0)}},
-			}
-			raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
-			Expect(err).NotTo(HaveOccurred())
-
-			u := &unstructured.Unstructured{Object: raw}
-			u.SetAPIVersion(v1.GroupVersion.String())
-			u.SetKind("DatabaseServerConfig")
-			windows, _, err := unstructured.NestedSlice(u.Object, "spec", "pitr", "windows")
-			Expect(err).NotTo(HaveOccurred())
-			windows[0].(map[string]any)["lag"] = lag
-			Expect(unstructured.SetNestedSlice(u.Object, windows, "spec", "pitr", "windows")).To(Succeed())
-
-			err = k8sClient.Create(ctx, u)
-			if wantErr == "" {
-				Expect(err).NotTo(HaveOccurred())
-				DeferCleanup(func() { _ = k8sClient.Delete(ctx, u) })
-			} else {
-				Expect(err).To(MatchError(ContainSubstring(wantErr)))
-			}
-		},
-		Entry("accepts minutes", "6m", ""),
-		Entry("accepts a compound duration", "1h30m0.5s", ""),
-		Entry("accepts zero", "0s", ""),
-		Entry("accepts the µs that time.Duration writes", (1500*time.Nanosecond).String(), ""),
-		Entry("accepts the Greek μs", "2μs", ""),
-		Entry("rejects a word for the unit", "5minutes", "spec.pitr.windows[0].lag"),
-		Entry("rejects a negative duration", "-1m", "spec.pitr.windows[0].lag"),
-		Entry("rejects a number without a unit", "300", "spec.pitr.windows[0].lag"),
-		Entry("rejects a duration that overflows", "3000000h", "spec.pitr.windows[0].lag"),
 	)
 
 	It("defaults the recovery mode to external", func() {

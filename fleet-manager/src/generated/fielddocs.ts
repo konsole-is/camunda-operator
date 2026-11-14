@@ -2904,6 +2904,10 @@ export const fieldDocs: FieldDocs = {
         "description": "ServerName is the archive directory, equal to the name of the\nCloudNativePG cluster that wrote it.",
         "anchor": "#recoveryarchiveref"
       },
+      "status.recovery.closedSegment": {
+        "description": "ClosedSegment is the write-ahead log file that the server closed after\nit took the request. This file and the files before it hold the\nrequested point. The server starts the recovery when the archive holds\nthis file, or after five minutes. It is empty for a recovery from an\nearlier archive, while ArchiveReady reports ArchiveFailing, and while\nthe primary instance does not answer.",
+        "anchor": "#databaseserverrecoverystatus"
+      },
       "status.recovery.cluster": {
         "description": "Cluster is the CloudNativePG cluster that the recovery builds. It is\nempty for a request that the server refused, also when the server had\nbuilt a cluster before.",
         "anchor": "#databaseserverrecoverystatus"
@@ -2934,6 +2938,10 @@ export const fieldDocs: FieldDocs = {
       },
       "status.recovery.result": {
         "description": "Result is the result that the server published for the request. It is\nunset while the recovery runs.",
+        "anchor": "#databaseserverrecoverystatus"
+      },
+      "status.recovery.startedAt": {
+        "description": "StartedAt is when the server took the request. The server waits up to\nfive minutes from this time for the archive to hold the requested\npoint.",
         "anchor": "#databaseserverrecoverystatus"
       },
       "status.recovery.targetTime": {
@@ -3035,15 +3043,11 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#pitrcapability"
       },
       "spec.pitr.windows": {
-        "description": "Windows are the continuous intervals of time that a restore can reach,\noldest first. A new window starts only where the archive breaks. So\nthe maximum of 256 limits the breaks, not the time that the windows\ncover. When Windows holds a window, a restore accepts a point only when\na window reaches it, also when the point is inside the retention period.\nWhen Windows is unset, a restore can reach every point of the retention\nperiod up to the present. Windows require enabled: true.\n\nA DatabaseServer publishes here the intervals of its archive that a\nrestore can still read at the location that it archives to now. It\npublishes the newest 256 of them. The lag of an open window is how far the latest\nrestorable time is behind the present.",
+        "description": "Windows are the continuous intervals of time that a restore can reach,\noldest first. A new window starts only where the archive breaks. So\nthe maximum of 256 limits the breaks, not the time that the windows\ncover. When Windows holds a window, a restore accepts a point only when\na window reaches it, also when the point is inside the retention period.\nWhen Windows is unset, a restore can reach every point of the retention\nperiod up to the present. Windows require enabled: true.\n\nA DatabaseServer publishes here the intervals of its archive that a\nrestore can still read at the location that it archives to now. It\npublishes the newest 256 of them. The unverifiedFrom of a window is when\nthe uploads of its write-ahead log started to fail.",
         "anchor": "#pitrcapability"
       },
       "spec.pitr.windows.from": {
         "description": "From is the earliest point that a restore can reach in this window.",
-        "anchor": "#recoverywindow"
-      },
-      "spec.pitr.windows.lag": {
-        "description": "Lag is how far the end of an open window is behind the present, as a\nduration such as 5m. A restore cannot reach a point that is less than\nLag in the past. An open window without a lag reaches the present. You\ncan set Lag only on an open window.",
         "anchor": "#recoverywindow"
       },
       "spec.pitr.windows.location": {
@@ -3051,7 +3055,7 @@ export const fieldDocs: FieldDocs = {
         "anchor": "#recoverywindow"
       },
       "spec.pitr.windows.to": {
-        "description": "To is the end of this window. A restore can reach every point before\nTo, but not To itself. A point at To is in the next window, if a\nwindow starts there. When To is unset, the window is open: the server\nstill writes to it, and it continues to the present, less Lag.",
+        "description": "To is the end of this window. A restore can reach every point before\nTo, but not To itself. A point at To is in the next window, if a\nwindow starts there. When To is unset, the window is open: the server\nstill writes to it, and it continues to the present.",
         "anchor": "#recoverywindow"
       },
       "spec.pitr.windows.unverifiedFrom": {

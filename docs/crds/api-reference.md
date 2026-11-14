@@ -1372,6 +1372,8 @@ _Appears in:_
 | `cluster` _string_ | Cluster is the CloudNativePG cluster that the recovery builds. It is<br />empty for a request that the server refused, also when the server had<br />built a cluster before. |  | Optional: \{\} <br /> |
 | `previousCluster` _string_ | PreviousCluster is the cluster that the contract pointed at before the<br />recovery moved it. If a recovery fails after the move, the contract<br />points at this cluster again, because it still holds the data. |  | Optional: \{\} <br /> |
 | `archive` _[RecoveryArchiveRef](#recoveryarchiveref)_ | Archive is the archive that the recovery reads. The server records it<br />before the recovery builds anything. A spec change to another bucket<br />does not move a recovery that is already running. |  | Optional: \{\} <br /> |
+| `startedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | StartedAt is when the server took the request. The server waits up to<br />five minutes from this time for the archive to hold the requested<br />point. |  | Optional: \{\} <br /> |
+| `closedSegment` _string_ | ClosedSegment is the write-ahead log file that the server closed after<br />it took the request. This file and the files before it hold the<br />requested point. The server starts the recovery when the archive holds<br />this file, or after five minutes. It is empty for a recovery from an<br />earlier archive, while ArchiveReady reports ArchiveFailing, and while<br />the primary instance does not answer. |  | Optional: \{\} <br /> |
 | `result` _[RecoveryResult](#recoveryresult)_ | Result is the result that the server published for the request. It is<br />unset while the recovery runs. |  | Enum: [Completed Failed Unavailable] <br />Optional: \{\} <br /> |
 | `message` _string_ | Message is the message that the server published with Result. |  | Optional: \{\} <br /> |
 | `completedAt` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | CompletedAt is when the server answered the request. It is unset while<br />the recovery runs. |  | Optional: \{\} <br /> |
@@ -2953,7 +2955,7 @@ _Appears in:_
 | `enabled` _boolean_ | Enabled reports whether the server performs continuous WAL archiving. | false | Optional: \{\} <br /> |
 | `retentionPeriodDays` _integer_ | RetentionPeriodDays is how many days into the past a point-in-time<br />restore can go. It is the declared policy of the server. Windows can<br />limit a restore more. Required when enabled is true.<br />The maximum is 36500 days, which is a hundred years. A reader counts<br />the reachable window in nanoseconds, and that count overflows at about<br />292 years. The maximum stays well below that limit. |  | Maximum: 36500 <br />Optional: \{\} <br /> |
 | `recovery` _[RecoveryMode](#recoverymode)_ | Recovery says who rolls the server back to a point in time. Defaults to<br />external. The value operator means that the publisher of this contract<br />answers spec.recovery. It requires enabled: true. The value external<br />means that nobody answers, and you roll the server back manually. | external | Enum: [operator external] <br />Optional: \{\} <br /> |
-| `windows` _[RecoveryWindow](#recoverywindow) array_ | Windows are the continuous intervals of time that a restore can reach,<br />oldest first. A new window starts only where the archive breaks. So<br />the maximum of 256 limits the breaks, not the time that the windows<br />cover. When Windows holds a window, a restore accepts a point only when<br />a window reaches it, also when the point is inside the retention period.<br />When Windows is unset, a restore can reach every point of the retention<br />period up to the present. Windows require enabled: true.<br />A DatabaseServer publishes here the intervals of its archive that a<br />restore can still read at the location that it archives to now. It<br />publishes the newest 256 of them. The lag of an open window is how far the latest<br />restorable time is behind the present. |  | MaxItems: 256 <br />Optional: \{\} <br /> |
+| `windows` _[RecoveryWindow](#recoverywindow) array_ | Windows are the continuous intervals of time that a restore can reach,<br />oldest first. A new window starts only where the archive breaks. So<br />the maximum of 256 limits the breaks, not the time that the windows<br />cover. When Windows holds a window, a restore accepts a point only when<br />a window reaches it, also when the point is inside the retention period.<br />When Windows is unset, a restore can reach every point of the retention<br />period up to the present. Windows require enabled: true.<br />A DatabaseServer publishes here the intervals of its archive that a<br />restore can still read at the location that it archives to now. It<br />publishes the newest 256 of them. The unverifiedFrom of a window is when<br />the uploads of its write-ahead log started to fail. |  | MaxItems: 256 <br />Optional: \{\} <br /> |
 | `lastRecovery` _[RecoveryOutcome](#recoveryoutcome)_ | LastRecovery is how the last recovery request ended. It is unset until<br />the first answer. The answer to each later request replaces it. |  | Optional: \{\} <br /> |
 
 
@@ -3430,9 +3432,9 @@ _Appears in:_
 
 
 RecoveryWindow is one continuous interval of time that a point-in-time
-restore of the server can reach. The open window extends to the present,
-less its lag. A new window starts only where the archive breaks. On a
-DatabaseServer, each window comes from one record of status.archive.history.
+restore of the server can reach. The open window extends to the present.
+A new window starts only where the archive breaks. On a DatabaseServer,
+each window comes from one record of status.archive.history.
 
 
 
@@ -3443,9 +3445,8 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `location` _string_ | Location is where the archive of this window is, in the form of<br />ArchiveRecord.Location of a DatabaseServer. It is information for the<br />reader. A restore does not read it. |  | Optional: \{\} <br /> |
 | `from` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | From is the earliest point that a restore can reach in this window. |  |  |
-| `to` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | To is the end of this window. A restore can reach every point before<br />To, but not To itself. A point at To is in the next window, if a<br />window starts there. When To is unset, the window is open: the server<br />still writes to it, and it continues to the present, less Lag. |  | Optional: \{\} <br /> |
+| `to` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | To is the end of this window. A restore can reach every point before<br />To, but not To itself. A point at To is in the next window, if a<br />window starts there. When To is unset, the window is open: the server<br />still writes to it, and it continues to the present. |  | Optional: \{\} <br /> |
 | `unverifiedFrom` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#time-v1-meta)_ | UnverifiedFrom is the point after which this window can miss parts of<br />the write-ahead log. A restore cannot reach a point after it. |  | Optional: \{\} <br /> |
-| `lag` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.37/#duration-v1-meta)_ | Lag is how far the end of an open window is behind the present, as a<br />duration such as 5m. A restore cannot reach a point that is less than<br />Lag in the past. An open window without a lag reaches the present. You<br />can set Lag only on an open window. |  | MaxLength: 32 <br />Pattern: `^([0-9]+(\.[0-9]+)?(ns\|us\|µs\|μs\|ms\|s\|m\|h))+$` <br />Type: string <br />Optional: \{\} <br /> |
 
 
 #### ReleaseConnectorsSpec

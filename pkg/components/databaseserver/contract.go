@@ -29,13 +29,6 @@ import (
 	"github.com/konsole-is/camunda-operator/pkg/wrappers/databaseserverconfig"
 )
 
-// ArchiveLag is how far the end of the archive that a server writes now is
-// behind the present. CloudNativePG sets archive_timeout to five minutes, and
-// the operator does not change it. Thus PostgreSQL closes a segment of the
-// write-ahead log at least every five minutes while the server writes. The
-// lag gives the upload of that segment one more minute.
-const ArchiveLag = 6 * time.Minute
-
 // maxRecoveryWindows is the maximum of spec.pitr.windows on a
 // DatabaseServerConfig.
 const maxRecoveryWindows = 256
@@ -212,21 +205,13 @@ func recoveryWindows(history []v1.ArchiveRecord, floor *metav1.Time) []v1.Recove
 		}
 
 		window := v1.RecoveryWindow{
-			Location: record.Location,
-			From:     record.From,
-			To:       record.To.DeepCopy(),
+			Location:       record.Location,
+			From:           record.From,
+			To:             record.To.DeepCopy(),
+			UnverifiedFrom: record.UnverifiedFrom.DeepCopy(),
 		}
 		if floor != nil && window.From.Before(floor) {
 			window.From = *floor
-		}
-		if record.UnverifiedFrom != nil {
-			// The segment whose upload failed began before the record's time,
-			// by at most archive_timeout while the server writes.
-			cutoff := metav1.NewTime(record.UnverifiedFrom.Add(-ArchiveLag))
-			window.UnverifiedFrom = &cutoff
-		}
-		if record.To == nil {
-			window.Lag = &metav1.Duration{Duration: ArchiveLag}
 		}
 		windows = append(windows, window)
 	}

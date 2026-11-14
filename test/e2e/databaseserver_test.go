@@ -196,7 +196,6 @@ var _ = Describe("DatabaseServer", Ordered, Label(utils.LabelDatabaseServer), fu
 			g.Expect(pitr.Windows).To(HaveLen(1))
 			g.Expect(pitr.Windows[0].From).To(Equal(current.Status.Archive.History[0].From))
 			g.Expect(pitr.Windows[0].To).To(BeNil())
-			g.Expect(pitr.Windows[0].Lag).To(HaveValue(Equal(metav1.Duration{Duration: dscomponents.ArchiveLag})))
 		}, time.Minute, 5*time.Second).Should(Succeed())
 
 		By("waiting for the contract to report the identity of the instance behind it")

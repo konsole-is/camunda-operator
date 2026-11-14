@@ -127,10 +127,9 @@ func (r RecoveryRequest) AnsweredBy(outcome *RecoveryOutcome) bool {
 }
 
 // RecoveryWindow is one continuous interval of time that a point-in-time
-// restore of the server can reach. The open window extends to the present,
-// less its lag. A new window starts only where the archive breaks. On a
-// DatabaseServer, each window comes from one record of status.archive.history.
-// +kubebuilder:validation:XValidation:rule="!has(self.lag) || !has(self.to)",message="lag is allowed only on an open window, one without to"
+// restore of the server can reach. The open window extends to the present.
+// A new window starts only where the archive breaks. On a DatabaseServer,
+// each window comes from one record of status.archive.history.
 type RecoveryWindow struct {
 	// Location is where the archive of this window is, in the form of
 	// ArchiveRecord.Location of a DatabaseServer. It is information for the
@@ -142,23 +141,13 @@ type RecoveryWindow struct {
 	// To is the end of this window. A restore can reach every point before
 	// To, but not To itself. A point at To is in the next window, if a
 	// window starts there. When To is unset, the window is open: the server
-	// still writes to it, and it continues to the present, less Lag.
+	// still writes to it, and it continues to the present.
 	// +optional
 	To *metav1.Time `json:"to,omitempty"`
 	// UnverifiedFrom is the point after which this window can miss parts of
 	// the write-ahead log. A restore cannot reach a point after it.
 	// +optional
 	UnverifiedFrom *metav1.Time `json:"unverifiedFrom,omitempty"`
-	// Lag is how far the end of an open window is behind the present, as a
-	// duration such as 5m. A restore cannot reach a point that is less than
-	// Lag in the past. An open window without a lag reaches the present. You
-	// can set Lag only on an open window.
-	// +kubebuilder:validation:Type=string
-	// +kubebuilder:validation:MaxLength=32
-	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(ns|us|µs|μs|ms|s|m|h))+$`
-	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('0s')",message="lag must be a duration of at most 2562047h, such as 6m"
-	// +optional
-	Lag *metav1.Duration `json:"lag,omitempty"`
 }
 
 // PITRCapability declares the point-in-time recovery capability of a server:
@@ -199,8 +188,8 @@ type PITRCapability struct {
 	//
 	// A DatabaseServer publishes here the intervals of its archive that a
 	// restore can still read at the location that it archives to now. It
-	// publishes the newest 256 of them. The lag of an open window is how far the latest
-	// restorable time is behind the present.
+	// publishes the newest 256 of them. The unverifiedFrom of a window is when
+	// the uploads of its write-ahead log started to fail.
 	// +listType=atomic
 	// +kubebuilder:validation:MaxItems=256
 	// +optional

@@ -23,6 +23,5 @@ spec:
       location: gs://camunda-backups/clusters/databaseserver/my-cluster-ns/my-cluster-db-eec0942b
       to: "2026-10-20T09:30:00Z"
     - from: "2026-10-20T10:00:00Z"
-      lag: 6m0s
       location: gs://camunda-backups/clusters/databaseserver/my-cluster-ns/my-cluster-db-eec0942b
   port: 5432

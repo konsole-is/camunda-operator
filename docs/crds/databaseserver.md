@@ -148,7 +148,7 @@ status:
 - `serverName` is the directory in the bucket that holds the archive.
 - `objectStorageRef` and `location` name the bucket and the path. Each server writes under a path of its own, so one bucket can hold the archives of many servers.
 - `from` is the earliest point a restore can reach in the archive. `to` is the end of the archive: a restore reaches each point before `to`, but not `to` itself. The record without `to` is the archive that the server writes now.
-- `unverifiedFrom` is set on the open record when CloudNativePG first reports that uploads fail, and it is the time of that report. The segment of the failed upload holds write-ahead log from before that moment. A restore to a point after `unverifiedFrom`, or shortly before it, can find no data. `ArchiveReady` reports the failure only after five minutes.
+- `unverifiedFrom` is set on the open record when CloudNativePG first reports that uploads fail, and it is the time of that report. A restore cannot reach a point after it. The file whose upload failed also holds some minutes of write-ahead log from before that time. So a point shortly before it can be missing too. `ArchiveReady` reports the failure only after five minutes.
 
 The server closes the open record and opens a new one in these cases:
 
@@ -161,8 +161,8 @@ A new record starts at the first base backup of the new archive. No restore can 
 The contract publishes the archive history as [recovery windows](databaseserverconfig.md#recovery-windows) in `pitr.windows`:
 
 - Each record at the location that the server archives to now gives one window, with the same `from`, `to`, and `location`. A record of an earlier location gives no window, because a rollback cannot read it.
-- The `unverifiedFrom` of a window is six minutes before the one of its record.
-- The open window gets `lag: 6m0s`. CloudNativePG uploads the write-ahead log in segments, and closes a segment at least every five minutes while the server writes. So a point of the last six minutes can be missing from the bucket. A `PointInTimeRestore` of such a point waits in `Pending` until the point is six minutes old.
+- The `unverifiedFrom` of a window is the one of its record.
+- The open window reaches the present. CloudNativePG uploads the write-ahead log in segments, so the newest minutes can still be missing from the bucket. Before a rollback starts, the server waits until the bucket holds the point. See [What a rollback does](#what-a-rollback-does).
 - A history of more than 256 records publishes the newest 256.
 
 ```yaml
@@ -182,7 +182,6 @@ spec:
         to: "2026-08-20T15:02:11Z"
       - location: s3://my-backup-bucket/clusters/databaseserver/my-cluster-ns/my-db-4c2a9f1e (region eu-west-1)
         from: "2026-08-20T15:20:40Z"
-        lag: 6m0s
   # ... the rest of the published contract
 ```
 
@@ -220,7 +219,11 @@ The answer arrives in `spec.pitr.lastRecovery` on the same contract. [DatabaseSe
 
 ### What a rollback does
 
-The operator builds a new CloudNativePG cluster from the archive. Its name is the server name, `-r`, and the number of records in the archive history. For example, the first rollback of `my-db` builds `my-db-r1`. `status.recovery.cluster` names the cluster that the rollback builds.
+First, the server waits until the bucket holds the requested point. For a point in the archive that the server writes now, the server closes the current file of its write-ahead log. Then it waits up to 5 minutes until the bucket holds that file. `status.recovery.closedSegment` names the file. Usually the wait takes some seconds. The server does not wait for a point in an earlier archive, because that archive is complete. It also does not wait while `ArchiveReady` reports `ArchiveFailing`, because no file reaches the bucket then. If the primary instance does not answer, the server tries again for up to 5 minutes.
+
+After the wait, the operator builds a new CloudNativePG cluster from the archive. It does this also when the bucket did not get the file in time, or when the primary instance did not answer. The bucket can still hold an older point. If the bucket does not hold the point, CloudNativePG tries the recovery again for some minutes. If the point is still missing, the rollback ends with `result: Failed`, and the server keeps running from the old cluster. Repair the bucket or its credentials, then ask again.
+
+The name of the new cluster is the server name, `-r`, and the number of records in the archive history. For example, the first rollback of `my-db` builds `my-db-r1`. `status.recovery.cluster` names the cluster that the rollback builds.
 
 When the new cluster is healthy, the contract points at it, and the operator removes the old cluster and its volumes. The contract then carries a new `host` and a new superuser Secret. A `CamundaCluster` restarts its pods to use them. `status.cluster` names the cluster that the contract points at.
 
@@ -395,6 +398,8 @@ status:
     requestedBy: my-cluster-ns/my-restore
     targetTime: "2026-08-20T14:30:00Z"
     cluster: my-db-r1
+    startedAt: "2026-08-20T14:55:03Z"
+    closedSegment: 000000010000000A00000042
     result: Completed
     completedAt: "2026-08-20T15:02:11Z"
   volumes:
@@ -458,7 +463,7 @@ status:
 
 `status.version` is the PostgreSQL major that the server runs. `status.cluster` is the CloudNativePG cluster that the contract points at, and it changes after a rollback.
 
-`status.recovery` is the rollback that the server works on now, or the last one it answered. `result` and `completedAt` are empty while the rollback runs.
+`status.recovery` is the rollback that the server works on now, or the last one it answered. `result` and `completedAt` are empty while the rollback runs. `startedAt` is when the server took the request. `closedSegment` is the write-ahead log file that the rollback waits for. It is empty for a point in an earlier archive, while `ArchiveReady` reports `ArchiveFailing`, and when the primary instance did not answer. See [What a rollback does](#what-a-rollback-does).
 
 `status.observedGeneration` is the last generation that the operator reconciled.
 

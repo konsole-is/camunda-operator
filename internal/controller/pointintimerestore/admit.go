@@ -571,12 +571,7 @@ func windowReaches(window v1.RecoveryWindow, want, now time.Time) bool {
 		return want.Before(window.To.Time)
 	}
 
-	end := now
-	if window.Lag != nil {
-		end = now.Add(-window.Lag.Duration)
-	}
-
-	return !want.After(end)
+	return !want.After(now)
 }
 
 // describedWindows is how many windows a refusal names at most. The message
@@ -595,11 +590,8 @@ func describeWindows(windows []v1.RecoveryWindow) string {
 
 	for _, window := range windows {
 		end := "now"
-		switch {
-		case window.To != nil:
+		if window.To != nil {
 			end = window.To.UTC().Format(time.RFC3339)
-		case window.Lag != nil:
-			end = window.Lag.Duration.String() + " before now"
 		}
 
 		part := fmt.Sprintf("from %s to %s", window.From.UTC().Format(time.RFC3339), end)
